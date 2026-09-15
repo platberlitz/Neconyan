@@ -18076,6 +18076,9 @@ function buildBottomChatBar() {
 
     const topBtn = createBottomChatButton({ icon: 'fa-arrow-up', title: 'Go to top of chat' }, scrollCurrentChatToTop);
     const bottomBtn = createBottomChatButton({ icon: 'fa-arrow-down', title: 'Go to bottom of chat' }, scrollCurrentChatToBottom);
+    const regenerateBtn = createBottomChatButton({ icon: 'fa-arrows-rotate', title: 'Regenerate the last reply' }, () => {
+        document.getElementById('option_regenerate')?.click();
+    });
     const chatManagerBtn = createBottomChatButton({ icon: 'fa-address-book', title: 'View chat files' }, handleChatManagerClick);
     const newBtn = createBottomChatButton({ icon: 'fa-plus', title: 'New chat' }, handleNewChat);
     const massDeleteBtn = createBottomChatButton({ icon: 'fa-list-check', title: 'Mass delete chats', className: 'sb-advanced-only' }, () => { void handleMassDeleteChats(); });
@@ -18086,7 +18089,7 @@ function buildBottomChatBar() {
     });
     const deleteBtn = createBottomChatButton({ icon: 'fa-trash', title: 'Delete chat' }, () => { void handleDeleteChat(); });
 
-    navCluster.append(topBtn, bottomBtn);
+    navCluster.append(topBtn, bottomBtn, regenerateBtn);
     managementCluster.append(chatManagerBtn, newBtn, massDeleteBtn, autoNameBtn, renameBtn, searchToggleBtn, hideBtn, deleteBtn);
     secondaryRow.append(managementCluster);
     container.append(personaBubble, chatSelect, search.field, navCluster, collapseToggleBtn, secondaryRow);
@@ -18103,6 +18106,7 @@ function buildBottomChatBar() {
         secondaryRow,
         scrollTopButton: topBtn,
         scrollBottomButton: bottomBtn,
+        regenerateButton: regenerateBtn,
         managerButton: chatManagerBtn,
         massDeleteButton: massDeleteBtn,
         autoNameButton: autoNameBtn,
@@ -18151,6 +18155,7 @@ async function refreshBottomChatSelect() {
     setButtonDisabled(nnState.bottomChatBar?.searchToggleButton, !chatContext.hasChat);
     setButtonDisabled(nnState.bottomChatBar?.scrollTopButton, !chatContext.hasChat);
     setButtonDisabled(nnState.bottomChatBar?.scrollBottomButton, !chatContext.hasChat);
+    setButtonDisabled(nnState.bottomChatBar?.regenerateButton, !chatContext.hasChat);
     setButtonDisabled(nnState.bottomChatBar?.managerButton, !chatContext.canBrowseChats);
     setButtonDisabled(nnState.bottomChatBar?.massDeleteButton, !chatContext.canBrowseChats);
     setButtonDisabled(nnState.bottomChatBar?.autoNameButton, !chatContext.hasChat);

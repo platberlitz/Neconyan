@@ -766,7 +766,7 @@ body.neconyan .neconyan-chat-row-actions .neconyan-current-chat-export[aria-hidd
     body.neconyan #send_form > #gg-action-button-container > .gg-regular-buttons-container {
         flex: 6 1 0;
         width: auto;
-        justify-content: center;
+        justify-content: flex-end;
         order: 0;
         gap: 5px;
     }

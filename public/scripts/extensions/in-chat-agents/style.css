@@ -3792,7 +3792,7 @@ body.neconyan .ica--standalone-title { display: none; }
     border-radius: 12px;
     color: var(--neco-ginger, var(--SmartThemeQuoteColor));
 }
-#ica--cancel-agents[hidden] { display: none; }
+#ica--cancel-agents[hidden] { display: none !important; }
 #ica--settings .ica--toolbar-actions { flex-wrap: wrap; gap: 12px; }
 #ica--settings .ica--action-primary {
     --sb-button-bg: var(--neco-action-gradient, var(--SmartThemeQuoteColor));

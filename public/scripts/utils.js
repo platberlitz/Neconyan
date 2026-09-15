@@ -1143,6 +1143,8 @@ function parseTimestamp(timestamp) {
     dtFmt.push({ callback: convertFromHumanized, pattern: /(\d{4})-(\d{1,2})-(\d{1,2})@(\d{1,2})h(\d{1,2})m(\d{1,2})s/ });
     // 2024-6-5 @14h 56m 50s 682ms
     dtFmt.push({ callback: convertFromHumanized, pattern: /(\d{4})-(\d{1,2})-(\d{1,2}) @(\d{1,2})h (\d{1,2})m (\d{1,2})s (\d{1,3})ms/ });
+    // Neconyan chat names: 2026-09-15 18-58-07
+    dtFmt.push({ callback: convertFromHumanized, pattern: /(\d{4})-(\d{1,2})-(\d{1,2}) (\d{1,2})-(\d{1,2})-(\d{1,2})/ });
 
     for (const x of dtFmt) {
         let rgxMatch = timestamp.match(x.pattern);

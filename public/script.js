@@ -12,7 +12,7 @@ import {
     lodash,
 } from './lib.js';
 
-import { humanizedDateTime, favsToHotswap, getMessageTimeStamp, dragElement, isMobile, initRossMods } from './scripts/RossAscends-mods.js';
+import { favsToHotswap, getMessageTimeStamp, dragElement, isMobile, initRossMods } from './scripts/RossAscends-mods.js';
 import { userStatsHandler, statMesProcess, initStats } from './scripts/stats.js';
 import {
     generateKoboldWithStreaming,
@@ -1949,6 +1949,13 @@ async function getExistingCharacterChats(characterId, fileName = '') {
     return chats.filter(chatInfo => typeof chatInfo?.file_name === 'string');
 }
 
+/** Neconyan: new-chat file names read like 'Name - 2026-09-15 18-58-07' instead of '@18h58m37s653ms'. */
+function chatFileTimestamp() {
+    const now = new Date();
+    const part = (value) => String(value).padStart(2, '0');
+    return `${now.getFullYear()}-${part(now.getMonth() + 1)}-${part(now.getDate())} ${part(now.getHours())}-${part(now.getMinutes())}-${part(now.getSeconds())}`;
+}
+
 async function resolveCharacterChatForLoad(characterId, { allowCreate = false, allowMissingPersisted = false } = {}) {
     const character = characters[characterId];
     if (!character) {
@@ -1967,7 +1974,7 @@ async function resolveCharacterChatForLoad(characterId, { allowCreate = false, a
         persistedChat,
         existingChats,
         allowCreate,
-        newChatName: allowCreate ? `${character.name} - ${humanizedDateTime()}` : '',
+        newChatName: allowCreate ? `${character.name} - ${chatFileTimestamp()}` : '',
     });
     const nextChatName = resolvedChat.chatName;
 
@@ -2044,7 +2051,7 @@ export async function deleteCharacterChatByName(characterId, fileName) {
         });
         const chats = Object.values(await chatsResponse.json());
         chats.sort((a, b) => sortMoments(timestampToMoment(a.last_mes), timestampToMoment(b.last_mes)));
-        const newChatName = chats.length && typeof chats[0] === 'object' ? chats[0].file_name.replace('.jsonl', '') : `${character.name} - ${humanizedDateTime()}`;
+        const newChatName = chats.length && typeof chats[0] === 'object' ? chats[0].file_name.replace('.jsonl', '') : `${character.name} - ${chatFileTimestamp()}`;
         await updateRemoteChatName(characterId, newChatName);
     }
 
@@ -2078,7 +2085,7 @@ export async function replaceCurrentChat() {
             await getChat();
         } else {
             // start new chat
-            characters[this_chid].chat = `${name2} - ${humanizedDateTime()}`;
+            characters[this_chid].chat = `${name2} - ${chatFileTimestamp()}`;
             $('#selected_chat_pole').val(characters[this_chid].chat);
             await updateRemoteChatName(this_chid, characters[this_chid].chat);
             await getChat();
@@ -17316,9 +17323,9 @@ export async function doNewChat({ deleteCurrentChat = false } = {}) {
         await createNewGroupChat(selected_group, { chatAlreadyPrepared: true });
         if (deleteCurrentChat) await deleteGroupChat(selected_group, chat_file_for_del, { jumpToNewChat: false }); // don't jump, new chat was already created and jumped to above
     } else {
-        //RossAscends: added character name to new chat filenames and replaced Date.now() with humanizedDateTime;
+        //RossAscends: added character name to new chat filenames; Neconyan uses a tidy date-time stamp.
         chat_metadata = {};
-        const newChatName = `${name2} - ${humanizedDateTime()}`;
+        const newChatName = `${name2} - ${chatFileTimestamp()}`;
         const previousChatName = characters[this_chid].chat;
         characters[this_chid].chat = newChatName;
         $('#selected_chat_pole').val(newChatName);
