@@ -1,0 +1,80 @@
+{
+  "generator": "smol-image sunburst",
+  "image_model": "gpt-image-2.5-sunburst",
+  "coordinator": "gpt-5.5",
+  "provider": "Smolproxy OpenAI",
+  "expression_dimensions": [
+    512,
+    768
+  ],
+  "reference_dimensions": [
+    1024,
+    1536
+  ],
+  "expression_format": "WebP quality 92 with lossless alpha",
+  "variants": [
+    {
+      "id": "miso-male",
+      "expressions": 28,
+      "portrait": "miso-male/portrait.png",
+      "card": "miso-male/card.json",
+      "bytes": 2698122
+    },
+    {
+      "id": "miso-female",
+      "expressions": 28,
+      "portrait": "miso-female/portrait.png",
+      "card": "miso-female/card.json",
+      "bytes": 3205344
+    },
+    {
+      "id": "miso-neutral",
+      "expressions": 28,
+      "portrait": "miso-neutral/portrait.png",
+      "card": "miso-neutral/card.json",
+      "bytes": 2877368
+    },
+    {
+      "id": "taro-male",
+      "expressions": 28,
+      "portrait": "taro-male/portrait.png",
+      "card": "taro-male/card.json",
+      "bytes": 2412406
+    },
+    {
+      "id": "taro-female",
+      "expressions": 28,
+      "portrait": "taro-female/portrait.png",
+      "card": "taro-female/card.json",
+      "bytes": 2593920
+    },
+    {
+      "id": "taro-neutral",
+      "expressions": 28,
+      "portrait": "taro-neutral/portrait.png",
+      "card": "taro-neutral/card.json",
+      "bytes": 2316660
+    },
+    {
+      "id": "nori-male",
+      "expressions": 28,
+      "portrait": "nori-male/portrait.png",
+      "card": "nori-male/card.json",
+      "bytes": 2174920
+    },
+    {
+      "id": "nori-female",
+      "expressions": 28,
+      "portrait": "nori-female/portrait.png",
+      "card": "nori-female/card.json",
+      "bytes": 2611576
+    },
+    {
+      "id": "nori-neutral",
+      "expressions": 28,
+      "portrait": "nori-neutral/portrait.png",
+      "card": "nori-neutral/card.json",
+      "bytes": 2181906
+    }
+  ]
+}

@@ -1,0 +1,1306 @@
+<div id="pf--settings" class="pf--settings">
+    <!-- Status Banner -->
+    <div id="pf--status-banner" class="pf--status-banner pf--status-disabled" role="status" aria-live="polite">
+        <div class="pf--status-icon" aria-hidden="true"><i class="fa-solid fa-circle-xmark"></i></div>
+        <div class="pf--status-text">
+            <strong>Pathfinder is not configured</strong>
+            <span>Select at least one lorebook below to get started</span>
+        </div>
+    </div>
+
+    <div class="pf--save-state">
+        <span id="pf--settings-save-status" class="pf--prompt-status" role="status" aria-live="polite"></span>
+        <button type="button" id="pf--settings-retry" class="menu_button" style="display: none;">Retry</button>
+    </div>
+
+    <div class="pf--section pf--master-section">
+        <div class="pf--master-toggle">
+            <label class="checkbox_label">
+                <input type="checkbox" id="pf--master-enable" />
+                <span>Enable Pathfinder for this chat</span>
+            </label>
+            <div class="pf--setting-help">Saving settings will not change this switch. Turn it off only when you want Pathfinder inactive.</div>
+        </div>
+    </div>
+
+    <!-- Quick Start Guide -->
+    <div id="pf--quickstart" class="pf--quickstart">
+        <div class="pf--quickstart-header">
+            <div class="pf--quickstart-title">
+                <i class="fa-solid fa-route"></i>
+                <strong>What is Pathfinder?</strong>
+            </div>
+            <button type="button" id="pf--quickstart-dismiss" class="pf--quickstart-close" aria-label="Hide Pathfinder explanation" title="Hide Pathfinder explanation">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="pf--quickstart-body">
+            <p>Pathfinder gives the AI <b>intelligent access to your lorebooks</b>. Instead of relying on keywords, it uses AI to predict which lore entries are relevant to the current scene.</p>
+            <p><b>Two ways to use Pathfinder:</b></p>
+            <ol>
+                <li><b>Tool Mode:</b> The AI can actively browse and search your lorebook using tools (requires tool-calling API)</li>
+                <li><b>Pipeline Mode:</b> Automatically predicts and injects relevant lore before each message (works with any API)</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- Step 1: Select Lorebooks -->
+    <div id="pf--lorebook-section" class="pf--section pf--section-primary pf--section-collapsible">
+        <button type="button" class="pf--section-header pf--collapsible-header" aria-expanded="true" aria-controls="pf--lorebook-body">
+            <i class="fa-solid fa-chevron-down pf--chevron"></i>
+            <span class="pf--step-badge">1</span>
+            <strong>Select Lorebooks</strong>
+            <span class="pf--required">(Required)</span>
+        </button>
+        <div class="pf--section-body" id="pf--lorebook-body">
+            <div class="pf--section-desc">
+                Choose which lorebooks Pathfinder can access.
+            </div>
+            <div id="pf--lorebook-list" class="pf--lorebook-list">
+                <div class="pf--empty-state">
+                    <i class="fa-solid fa-book-open"></i>
+                    <span>No lorebooks found. Attach a lorebook to your character first.</span>
+                </div>
+            </div>
+            <div class="pf--lorebook-actions">
+                <button type="button" id="pf--refresh-lorebooks" class="menu_button menu_button_icon">
+                    <i class="fa-solid fa-rotate"></i>
+                    <span>Refresh List</span>
+                </button>
+            </div>
+            <div class="pf--setting-group pf--lorebook-toggle">
+                <label class="checkbox_label">
+                    <input type="checkbox" id="pf--auto-use-attached" data-pf-setting="autoUseAttachedLorebook" />
+                    <span>Automatically use attached character/chat lorebooks</span>
+                </label>
+                <div class="pf--setting-help">When enabled, Pathfinder auto-selects lorebooks attached to the active character card or chat.</div>
+            </div>
+            <div class="pf--setting-group pf--lorebook-toggle">
+                <label class="checkbox_label">
+                    <input type="checkbox" id="pf--auto-sync-lorebooks" data-pf-setting="autoSyncLorebooksOnChatChange" />
+                    <span>Reset selections to the current chat/character lorebooks on chat change</span>
+                </label>
+                <div class="pf--setting-help">Prevents a previous chat's lorebook from staying selected when the new chat has no attached lorebook.</div>
+            </div>
+            <div class="pf--setting-group pf--lorebook-toggle">
+                <label class="checkbox_label">
+                    <input type="checkbox" id="pf--include-contextual-lorebooks" data-pf-setting="includeContextualLorebooks" />
+                    <span>Automatically include attached lorebooks, aside from excluded lorebooks</span>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 2: Choose Mode -->
+    <div id="pf--mode-section" class="pf--section pf--section-collapsible">
+        <button type="button" class="pf--section-header pf--collapsible-header" aria-expanded="true" aria-controls="pf--mode-body">
+            <i class="fa-solid fa-chevron-down pf--chevron"></i>
+            <span class="pf--step-badge">2</span>
+            <strong>Choose How Pathfinder Works</strong>
+        </button>
+
+        <div class="pf--section-body" id="pf--mode-body">
+            <!-- Warning banner when both modes enabled -->
+            <div id="pf--dual-mode-warning" class="pf--dual-mode-warning" role="status" aria-live="polite" style="display: none;">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span>Both modes are enabled. This uses more tokens: the AI receives context automatically and can also search or edit lorebook entries.</span>
+            </div>
+
+            <div class="pf--mode-cards">
+                <!-- Tool Mode Card -->
+                <div class="pf--mode-card" data-mode="tools">
+                    <div class="pf--mode-card-header">
+                        <label class="checkbox_label">
+                            <input type="checkbox" id="pf--enable-tools" data-pf-setting="sidecarEnabled" />
+                            <span><i class="fa-solid fa-wrench"></i> Tool Mode</span>
+                        </label>
+                    </div>
+                    <div class="pf--mode-card-body">
+                        <p>The AI can actively <b>browse, search, and modify</b> your lorebook using function tools.</p>
+                        <ul>
+                            <li><i class="fa-solid fa-search"></i> Search & navigate waypoints</li>
+                            <li><i class="fa-solid fa-brain"></i> Remember new information</li>
+                            <li><i class="fa-solid fa-pen"></i> Update existing entries</li>
+                            <li><i class="fa-solid fa-book"></i> Private AI notebook</li>
+                        </ul>
+                        <div class="pf--mode-requirement">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            Requires an API that supports tool/function calling (OpenAI, Claude, etc.)
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pipeline Mode Card -->
+                <div class="pf--mode-card" data-mode="pipeline">
+                    <div class="pf--mode-card-header">
+                        <label class="checkbox_label">
+                            <input type="checkbox" id="pf--enable-pipeline" data-pf-setting="pipelineEnabled" />
+                            <span><i class="fa-solid fa-wand-magic-sparkles"></i> Predictive Pipeline</span>
+                        </label>
+                    </div>
+                    <div class="pf--mode-card-body">
+                        <p><b>Automatically</b> predicts and injects relevant lore before each AI response.</p>
+                        <ul>
+                            <li><i class="fa-solid fa-bolt"></i> Works with any API</li>
+                            <li><i class="fa-solid fa-brain"></i> AI predicts what's relevant</li>
+                            <li><i class="fa-solid fa-filter"></i> Two-stage filtering</li>
+                            <li><i class="fa-solid fa-sliders"></i> Fully customizable prompts</li>
+                        </ul>
+                        <div class="pf--mode-info">
+                            <i class="fa-solid fa-circle-info"></i>
+                            Uses a separate AI call to select entries before generation
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pipeline Settings (shown when pipeline enabled) -->
+    <div id="pf--pipeline-settings" class="pf--section pf--section-collapsible" style="display: none;">
+        <button type="button" class="pf--section-header pf--collapsible-header" aria-expanded="true" aria-controls="pf--pipeline-body">
+            <i class="fa-solid fa-chevron-down pf--chevron"></i>
+            <strong>Pipeline Settings</strong>
+        </button>
+        <div class="pf--section-body" id="pf--pipeline-body">
+            <div class="pf--setting-group">
+                <label class="pf--setting-label" for="pf--pipeline-type">Pipeline Type</label>
+                <select id="pf--pipeline-type" class="text_pole" data-pf-setting="pipelineId">
+                    <option value="default">Two-Stage (Recommended) - Select candidates, then filter</option>
+                    <option value="single-pass">Single-Pass (Faster) - Select only, no filtering</option>
+                </select>
+                <div class="pf--setting-help">Two-stage is more accurate but uses an extra AI call</div>
+            </div>
+
+            <div class="pf--setting-row">
+                <div class="pf--setting-group">
+                    <label class="pf--setting-label" for="pf--content-mode">Entry Content Mode</label>
+                    <select id="pf--content-mode" class="text_pole" data-pf-setting="entryContentMode">
+                        <option value="full">Full Content</option>
+                        <option value="truncated">Truncated (saves tokens)</option>
+                    </select>
+                </div>
+                <div class="pf--setting-group">
+                    <label class="pf--setting-label" for="pf--truncate-length">Truncate Length</label>
+                    <input type="number" id="pf--truncate-length" class="text_pole" min="100" max="2000" value="500" data-pf-setting="truncateLength" />
+                </div>
+                <div class="pf--setting-group">
+                    <label class="pf--setting-label" for="pf--max-candidates">Max Candidates</label>
+                    <input type="number" id="pf--max-candidates" class="text_pole" min="5" max="50" value="20" data-pf-setting="maxCandidates" />
+                </div>
+                <div class="pf--setting-group">
+                    <label class="pf--setting-label" for="pf--retrieval-timeout">Retrieval Timeout</label>
+                    <input type="number" id="pf--retrieval-timeout" class="text_pole" min="1" max="60" value="8" data-pf-setting="retrievalTimeoutSeconds" />
+                    <div class="pf--setting-help">Seconds before Pathfinder shows a slow-retrieval warning. Generation still waits unless cancelled.</div>
+                </div>
+            </div>
+
+            <div class="pf--setting-group">
+                <label class="pf--setting-label" for="pf--pipeline-profile">Connection Profile for Pipeline</label>
+                <select id="pf--pipeline-profile" class="text_pole" data-pf-setting="connectionProfile">
+                    <option value="">Use main model</option>
+                </select>
+                <div class="pf--setting-help">Use a faster/cheaper model for the pipeline (e.g., Haiku, GPT-4o-mini)</div>
+            </div>
+
+            <div class="pf--setting-group">
+                <label class="checkbox_label">
+                    <input type="checkbox" id="pf--dedupe-natural-activation" data-pf-setting="dedupeNaturalActivation" />
+                    <span>Skip entries already activated by World Info</span>
+                </label>
+                <div class="pf--setting-help">Keeps keyword/constant lore active naturally, then removes those entries from Pathfinder's injected context.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Advanced: Prompt Editor -->
+    <div id="pf--prompt-editor-section" class="pf--section pf--section-collapsible" style="display: none;">
+        <button type="button" class="pf--section-header pf--collapsible-header" aria-expanded="false" aria-controls="pf--prompt-editor-body">
+            <i class="fa-solid fa-chevron-right pf--chevron"></i>
+            <strong>Edit Pipeline Prompts</strong>
+            <span class="pf--badge">Advanced</span>
+        </button>
+        <div class="pf--section-body" id="pf--prompt-editor-body" style="display: none;">
+            <div class="pf--setting-group">
+                <label class="pf--setting-label" for="pf--prompt-selector">Select Prompt to Edit</label>
+                <select id="pf--prompt-selector" class="text_pole">
+                    <option value="">Choose a prompt...</option>
+                    <option value="candidate-selector">Stage 1: Candidate Selector</option>
+                    <option value="relevance-filter">Stage 2: Relevance Filter</option>
+                </select>
+            </div>
+
+            <div id="pf--prompt-fields" style="display: none;">
+                <div class="pf--setting-group">
+                    <label class="pf--setting-label" for="pf--prompt-system">System Prompt</label>
+                    <textarea id="pf--prompt-system" class="text_pole" rows="6" placeholder="Instructions for the AI..."></textarea>
+                </div>
+                <div class="pf--setting-group">
+                    <label class="pf--setting-label" for="pf--prompt-max-tokens">Max Tokens</label>
+                    <input type="number" id="pf--prompt-max-tokens" class="text_pole" min="100" max="200000" value="64000" />
+                    <div class="pf--setting-help">Maximum tokens Pathfinder can receive from this pipeline stage.</div>
+                </div>
+                <div class="pf--setting-group">
+                    <label class="pf--setting-label" for="pf--prompt-user">User Prompt Template</label>
+                    <textarea id="pf--prompt-user" class="text_pole" rows="4" placeholder="Template with {{variables}}..."></textarea>
+                    <div class="pf--setting-help">
+                        Variables: <code>{{chat_history}}</code>, <code>{{entry_list}}</code>, <code>{{candidate_entries}}</code>
+                    </div>
+                </div>
+                <div class="pf--prompt-actions">
+                    <button type="button" id="pf--prompt-save" class="menu_button">
+                        <i class="fa-solid fa-save"></i> <span>Save Prompt</span>
+                    </button>
+                    <button type="button" id="pf--prompt-reset" class="menu_button">
+                        <i class="fa-solid fa-rotate-left"></i> <span>Reset to Default</span>
+                    </button>
+                    <span id="pf--prompt-status" class="pf--prompt-status" role="status" aria-live="polite"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Memory Summary Settings -->
+    <div id="pf--memory-summary-settings" class="pf--section pf--section-collapsible">
+        <button type="button" class="pf--section-header pf--collapsible-header" aria-expanded="true" aria-controls="pf--memory-summary-body">
+            <i class="fa-solid fa-chevron-down pf--chevron"></i>
+            <strong>Memory Summaries</strong>
+            <span class="pf--badge">Lorebook</span>
+        </button>
+        <div class="pf--section-body" id="pf--memory-summary-body">
+            <div class="pf--setting-group">
+                <label class="checkbox_label">
+                    <input type="checkbox" id="pf--enable-summarize-tool" data-tool="Pathfinder_Summarize" />
+                    <span>Allow summary memory tool</span>
+                </label>
+                <div class="pf--setting-help">Lets Pathfinder write scene/event summaries into enabled lorebooks with the Summarize tool.</div>
+            </div>
+            <div class="pf--setting-row">
+                <div class="pf--setting-group">
+                    <label class="checkbox_label">
+                        <input type="checkbox" id="pf--auto-summary" data-pf-setting="autoSummary" />
+                        <span>Auto-track summary interval</span>
+                    </label>
+                    <div class="pf--setting-help">Counts sent/received messages toward automatic summary prompts.</div>
+                </div>
+                <div class="pf--setting-group">
+                    <label class="pf--setting-label" for="pf--auto-summary-interval">Summary Interval</label>
+                    <input type="number" id="pf--auto-summary-interval" class="text_pole" min="2" max="200" value="20" data-pf-setting="autoSummaryInterval" />
+                    <div class="pf--setting-help">Messages before Pathfinder should consider writing a memory summary.</div>
+                </div>
+            </div>
+            <div class="pf--setting-group pf--summary-editor">
+                <div class="pf--summary-editor-header">
+                    <label class="pf--setting-label" for="pf--summary-content">Latest memory summary</label>
+                    <span id="pf--summary-injection-indicator" class="pf--summary-indicator pf--summary-indicator-missing" role="status" aria-live="polite">No summary</span>
+                </div>
+                <textarea id="pf--summary-content" class="text_pole" rows="7" placeholder="When Pathfinder creates a memory summary, it will appear here for review and editing."></textarea>
+                <div class="pf--summary-meta" id="pf--summary-meta" aria-live="polite">No Pathfinder summary has been created yet.</div>
+                <div class="pf--summary-actions">
+                    <button type="button" id="pf--summary-create" class="menu_button menu_button_icon">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        <span>Create Summary</span>
+                    </button>
+                    <button type="button" id="pf--summary-save" class="menu_button menu_button_icon">
+                        <i class="fa-solid fa-save"></i>
+                        <span>Save Summary</span>
+                    </button>
+                    <button type="button" id="pf--summary-save-entry" class="menu_button menu_button_icon">
+                        <i class="fa-solid fa-book-medical"></i>
+                        <span>Save as Entry</span>
+                    </button>
+                    <span id="pf--summary-save-status" class="pf--prompt-status" role="status" aria-live="polite"></span>
+                </div>
+                <div class="pf--setting-help">Save Summary updates the tracked memory summary. Save as Entry creates a separate lorebook entry with a title derived from the summary text.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Permissions also apply to pipeline retrieval and summary writes. -->
+    <div id="pf--tool-settings" class="pf--section pf--section-collapsible">
+        <button type="button" class="pf--section-header pf--collapsible-header" aria-expanded="true" aria-controls="pf--tool-body">
+            <i class="fa-solid fa-chevron-down pf--chevron"></i>
+            <strong>Tool Settings</strong>
+        </button>
+        <div class="pf--section-body" id="pf--tool-body">
+            <div class="pf--setting-group pf--tool-mode-only">
+                <div class="pf--setting-label" id="pf--enabled-tools-label">Enabled Tools</div>
+                <div class="pf--tool-list" role="group" aria-labelledby="pf--enabled-tools-label">
+                    <div class="pf--empty-state pf--tool-loading"><i class="fa-solid fa-wrench"></i><span>Loading tool toggles...</span></div>
+                </div>
+            </div>
+
+            <div class="pf--setting-group">
+                <div class="pf--setting-label" id="pf--permissions-label">Lorebook Permissions</div>
+                <div class="pf--setting-help">Write permission allows creating, updating, disabling, and reorganizing entries. Delete permission is only needed for hard deletes.</div>
+                <div id="pf--permission-matrix" class="pf--permission-matrix" role="group" aria-labelledby="pf--permissions-label"></div>
+            </div>
+
+            <div class="pf--setting-group">
+                <div class="pf--setting-label" id="pf--confirm-tools-label">Ask Before Executing</div>
+                <div class="pf--setting-help">Show a confirmation dialog before the checked tools change lorebook data. Denying a call tells the AI to continue without it.</div>
+                <div class="pf--tool-list" id="pf--confirm-tool-list" role="group" aria-labelledby="pf--confirm-tools-label"></div>
+            </div>
+
+            <div class="pf--setting-group pf--tool-mode-only">
+                <label class="checkbox_label">
+                    <input type="checkbox" id="pf--mandatory-tools" data-pf-setting="mandatoryTools" />
+                    <span>Require tool use on every response</span>
+                </label>
+                <div class="pf--setting-help">Forces the AI to call at least one tool at the start of each response. The follow-up pass that writes the reply is not forced.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Diagnostics -->
+    <div class="pf--section pf--section-collapsible">
+        <button type="button" class="pf--section-header pf--collapsible-header" aria-expanded="false" aria-controls="pf--diagnostics-body">
+            <i class="fa-solid fa-chevron-right pf--chevron"></i>
+            <strong>Diagnostics</strong>
+        </button>
+        <div class="pf--section-body pf--diagnostics-panel" id="pf--diagnostics-body" style="display: none;">
+            <div id="pf--diagnostics-output" class="pf--diagnostics-output" role="status" aria-live="polite" tabindex="0">Click "Run Diagnostics" to check your Pathfinder configuration.</div>
+            <div class="pf--diagnostics-actions">
+                <button type="button" id="pf--run-diagnostics" class="menu_button menu_button_icon">
+                    <i class="fa-solid fa-stethoscope"></i>
+                    <span>Run Diagnostics</span>
+                </button>
+                <button type="button" id="pf--copy-diagnostics" class="menu_button menu_button_icon">
+                    <i class="fa-solid fa-copy"></i>
+                    <span>Copy Diagnostics</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pf--section pf--section-collapsible">
+        <button type="button" class="pf--section-header pf--collapsible-header" aria-expanded="false" aria-controls="pf--retrieval-log-body">
+            <i class="fa-solid fa-chevron-right pf--chevron"></i>
+            <strong>Retrieval Log</strong>
+            <span class="pf--badge">Detailed</span>
+        </button>
+        <div class="pf--section-body" id="pf--retrieval-log-body" style="display: none;">
+            <div class="pf--section-desc">Shows what Pathfinder actually selected or injected, including selected lore entries, stage results, and the prompt payload Pathfinder added before generation.</div>
+            <div class="pf--log-mode-row">
+                <label class="pf--log-mode-control" for="pf--log-mode">
+                    <span>Log detail</span>
+                    <select id="pf--log-mode" class="text_pole">
+                        <option value="summary">Summarized</option>
+                        <option value="detailed">Detailed</option>
+                    </select>
+                </label>
+            </div>
+            <div class="pf--log-actions">
+                <button type="button" id="pf--refresh-log" class="menu_button menu_button_icon">
+                    <i class="fa-solid fa-rotate"></i>
+                    <span>Refresh Log</span>
+                </button>
+                <button type="button" id="pf--clear-log" class="menu_button menu_button_icon">
+                    <i class="fa-solid fa-trash"></i>
+                    <span>Clear Log</span>
+                </button>
+            </div>
+            <div id="pf--retrieval-log-output" class="pf--retrieval-log-output" role="log" aria-live="polite" tabindex="0">No Pathfinder retrieval activity recorded yet.</div>
+        </div>
+    </div>
+</div>
+
+<style>
+.pf--extensions-host,
+.pf--settings {
+    --pf-accent: var(--color-primary, var(--sb-accent, var(--SmartThemeQuoteColor, oklch(79% 0.035 99))));
+    --pf-on-accent: var(--sb-on-solid-accent, oklch(22% 0.012 100));
+    --pf-surface: var(--color-surface, var(--sb-card-bg, var(--SmartThemeBlurTintColor, oklch(25% 0.012 260 / 0.94))));
+    --pf-surface-strong: var(--color-surface-strong, var(--sb-surface-elevated, oklch(29% 0.012 260 / 0.96)));
+    --pf-surface-soft: var(--sb-surface-elevated-soft, color-mix(in srgb, var(--pf-surface) 94%, var(--pf-accent) 6%));
+    --pf-surface-hover: var(--color-surface-hover, var(--sb-surface-hover, oklch(34% 0.012 260 / 0.96)));
+    --pf-control-bg: color-mix(in srgb, var(--pf-surface-strong) 92%, var(--pf-accent) 8%);
+    --pf-border: var(--sb-shell-border, color-mix(in srgb, var(--SmartThemeBorderColor, oklch(78% 0.01 100 / 0.24)) 78%, transparent));
+    --pf-border-strong: color-mix(in srgb, var(--pf-accent) 48%, var(--pf-border));
+    --pf-text: var(--SmartThemeBodyColor, oklch(84% 0.012 100));
+    --pf-text-muted: var(--sb-muted-fg, color-mix(in srgb, var(--pf-text) 68%, transparent));
+    --pf-muted-bg: var(--sb-muted-bg, color-mix(in srgb, var(--pf-surface-strong) 78%, var(--pf-text) 5%));
+    --pf-positive: var(--sb-positive-fg, oklch(78% 0.065 112));
+    --pf-positive-bg: var(--sb-positive-bg, color-mix(in srgb, var(--pf-positive) 14%, var(--pf-surface)));
+    --pf-warning: var(--sb-warning-fg, oklch(82% 0.08 88));
+    --pf-warning-bg: var(--sb-warning-bg, color-mix(in srgb, var(--pf-warning) 14%, var(--pf-surface)));
+    --pf-danger: var(--sb-danger-fg, oklch(74% 0.13 18));
+    --pf-danger-bg: var(--sb-danger-bg, color-mix(in srgb, var(--pf-danger) 12%, var(--pf-surface)));
+    --pf-radius-sm: var(--sb-radius-sm, 10px);
+    --pf-radius-md: var(--sb-radius-md, 14px);
+    --pf-radius-lg: var(--sb-radius-lg, 18px);
+    --pf-control-size: max(38px, var(--sb-control-min-height, 38px));
+    --pf-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pf--settings {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 8px 0 10px;
+    max-height: calc(100vh - 200px);
+    max-height: calc(100dvh - 200px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    text-align: left;
+    color: var(--pf-text);
+    font-size: var(--mainFontSize);
+    line-height: 1.5;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.pf--settings.pf--settings-embedded {
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+}
+
+.pf--settings * {
+    text-align: left;
+}
+
+.pf--settings :is(button, select, input:not([type="checkbox"])) {
+    min-height: var(--pf-control-size);
+}
+
+.pf--settings :is(button, select, input, textarea) {
+    min-width: 0;
+    max-width: 100%;
+    font-size: inherit;
+}
+
+.pf--settings button {
+    white-space: normal;
+}
+
+.pf--settings :is(button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--sb-focus-ring, var(--pf-accent));
+    outline-offset: 2px;
+}
+
+.pf--save-state {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.pf--save-state .pf--prompt-status {
+    margin: 0;
+}
+
+.pf--extensions-host .inline-drawer-header b {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pf--extensions-body {
+    padding: 10px 0;
+}
+
+.pf--extensions-empty {
+    padding: 12px 14px;
+    border: 1px solid var(--pf-border);
+    border-radius: var(--pf-radius-md);
+    background: var(--pf-surface-soft);
+    color: var(--pf-text-muted);
+    font-size: calc(var(--mainFontSize) * 0.84);
+}
+
+/* Status Banner */
+.pf--status-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: var(--pf-radius-md);
+    border: 1px solid var(--pf-border);
+    background: var(--pf-surface-strong);
+    text-align: left;
+}
+
+.pf--status-disabled {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--pf-muted-bg) 95%, var(--pf-accent) 5%), var(--pf-surface));
+    border-color: color-mix(in srgb, var(--pf-border) 72%, var(--pf-accent) 18%);
+}
+
+.pf--status-disabled .pf--status-icon {
+    color: var(--pf-text-muted);
+    background: var(--pf-muted-bg);
+}
+
+.pf--status-ready {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--pf-positive-bg) 92%, var(--pf-accent) 8%), var(--pf-surface));
+    border-color: color-mix(in srgb, var(--pf-positive) 42%, var(--pf-border));
+}
+
+.pf--status-ready .pf--status-icon {
+    color: var(--pf-positive);
+    background: color-mix(in srgb, var(--pf-positive-bg) 86%, transparent);
+}
+
+.pf--status-icon {
+    font-size: calc(var(--mainFontSize) * 1.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+}
+
+.pf--status-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.pf--status-text strong {
+    font-size: calc(var(--mainFontSize) * 0.92);
+    line-height: 1.2;
+}
+
+.pf--status-text span {
+    font-size: calc(var(--mainFontSize) * 0.84);
+    color: var(--pf-text-muted);
+}
+
+/* Master enable */
+.pf--master-section {
+    padding: 12px 14px;
+}
+
+.pf--master-toggle .checkbox_label {
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+}
+
+.pf--settings .checkbox_label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: var(--pf-control-size);
+    min-width: 0;
+    line-height: 1.35;
+}
+
+.pf--settings .checkbox_label input[type="checkbox"] {
+    flex: 0 0 auto;
+    align-self: center;
+    margin: 0;
+}
+
+.pf--settings .checkbox_label span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.pf--master-toggle input[type="checkbox"] {
+    flex-shrink: 0;
+}
+
+/* Quick Start */
+.pf--quickstart {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--pf-surface-strong) 92%, var(--pf-accent) 8%), var(--pf-surface));
+    border: 1px solid color-mix(in srgb, var(--pf-border) 76%, var(--pf-accent) 18%);
+    border-radius: var(--pf-radius-lg);
+    overflow: hidden;
+}
+
+.pf--quickstart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 14px;
+    background: color-mix(in srgb, var(--pf-surface-strong) 92%, var(--pf-accent) 8%);
+    border-bottom: 1px solid color-mix(in srgb, var(--pf-border) 70%, transparent);
+    font-size: calc(var(--mainFontSize) * 0.92);
+}
+
+.pf--quickstart-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.pf--quickstart-title i {
+    color: var(--pf-accent);
+}
+
+.pf--quickstart-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: var(--pf-control-size);
+    height: var(--pf-control-size);
+    margin: 0;
+    border: 1px solid color-mix(in srgb, var(--pf-border) 72%, transparent);
+    border-radius: var(--pf-radius-sm);
+    background: color-mix(in srgb, var(--pf-surface-strong) 88%, var(--pf-text) 4%);
+    color: var(--pf-text-muted);
+    cursor: pointer;
+    transition: background 0.18s var(--pf-ease), border-color 0.18s var(--pf-ease), color 0.18s var(--pf-ease);
+}
+
+.pf--quickstart-close:hover,
+.pf--quickstart-close:focus-visible {
+    background: var(--pf-surface-hover);
+    border-color: color-mix(in srgb, var(--pf-border) 66%, var(--pf-accent) 20%);
+    color: var(--pf-text);
+}
+
+.pf--quickstart-body {
+    padding: 12px 14px;
+    font-size: var(--mainFontSize);
+    line-height: 1.5;
+    color: var(--pf-text-muted);
+}
+
+.pf--quickstart-body p {
+    margin: 0 0 10px 0;
+}
+
+.pf--quickstart-body ol {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.pf--quickstart-body li {
+    margin-bottom: 6px;
+}
+
+/* Sections */
+.pf--section {
+    background: var(--pf-surface);
+    border: 1px solid var(--pf-border);
+    border-radius: var(--pf-radius-lg);
+    padding: 14px;
+    min-width: 0;
+    flex-shrink: 0;
+}
+
+.pf--section-primary {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--pf-accent) 8%, var(--pf-surface-strong)), var(--pf-surface));
+    border-color: var(--pf-border-strong);
+}
+
+.pf--section-header {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+    font-size: calc(var(--mainFontSize) * 0.92);
+    line-height: 1.25;
+    text-align: left;
+}
+
+.pf--collapsible-header {
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    width: 100%;
+    padding: 4px 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+}
+
+.pf--collapsible-header:hover {
+    color: var(--pf-accent);
+}
+
+.pf--chevron {
+    transition: transform 0.2s;
+    font-size: calc(var(--mainFontSize) * 0.84);
+    width: 1em;
+    flex: 0 0 auto;
+}
+
+.pf--section-collapsible .pf--section-body {
+    margin-top: 12px;
+}
+
+.pf--step-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    background: var(--pf-accent);
+    color: var(--pf-on-accent);
+    border-radius: 50%;
+    font-size: calc(var(--mainFontSize) * 0.84);
+    font-weight: bold;
+    flex: 0 0 auto;
+}
+
+.pf--required {
+    color: var(--pf-danger);
+    font-size: calc(var(--mainFontSize) * 0.84);
+}
+
+.pf--badge {
+    background: color-mix(in srgb, var(--pf-accent) 82%, var(--pf-surface-strong));
+    color: var(--pf-on-accent);
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: calc(var(--mainFontSize) * 0.72);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.pf--section-desc {
+    font-size: calc(var(--mainFontSize) * 0.92);
+    color: var(--pf-text-muted);
+    margin-bottom: 12px;
+    line-height: 1.4;
+}
+
+.pf--log-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.pf--log-mode-row {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    margin-bottom: 10px;
+    max-width: 100%;
+}
+
+.pf--log-mode-control {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    min-height: var(--pf-control-size);
+}
+
+.pf--log-mode-control span {
+    overflow-wrap: anywhere;
+}
+
+#pf--log-mode {
+    width: auto;
+    flex: 1 1 8em;
+    min-width: 0;
+}
+
+.pf--retrieval-log-output,
+.pf--diagnostics-output {
+    white-space: pre-wrap;
+    line-height: 1.55;
+    font-size: calc(var(--mainFontSize) * 0.84);
+    padding: 12px;
+    border-radius: var(--pf-radius-md);
+    background: color-mix(in srgb, var(--pf-surface-strong) 88%, var(--pf-text) 3%);
+    border: 1px solid color-mix(in srgb, var(--pf-border) 84%, transparent);
+    max-height: 320px;
+    overflow: auto;
+    tab-size: 2;
+    color: var(--pf-text-muted);
+}
+
+.pf--retrieval-log-output {
+    font-family: var(--mainFontFamily, inherit);
+}
+
+/* Lorebook List */
+.pf--lorebook-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 10px;
+}
+
+.pf--lorebook-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--pf-control-bg);
+    border: 1px solid color-mix(in srgb, var(--pf-border) 74%, transparent);
+    border-radius: var(--pf-radius-md);
+    cursor: pointer;
+    min-height: var(--pf-control-size);
+    min-width: 0;
+    flex-shrink: 0;
+    transition: background 0.18s var(--pf-ease), border-color 0.18s var(--pf-ease), transform 0.18s var(--pf-ease);
+}
+
+.pf--lorebook-item:hover {
+    background: var(--pf-surface-hover);
+    border-color: color-mix(in srgb, var(--pf-border) 68%, var(--pf-accent) 16%);
+}
+
+.pf--lorebook-item.selected {
+    background: color-mix(in srgb, var(--pf-accent) 18%, var(--pf-surface-strong));
+    border-color: color-mix(in srgb, var(--pf-accent) 62%, var(--pf-border));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pf-accent) 18%, transparent);
+}
+
+.pf--lorebook-item input[type="checkbox"] {
+    margin: 0;
+    flex: 0 0 auto;
+}
+
+.pf--lorebook-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.pf--lorebook-name {
+    font-weight: 500;
+    font-size: calc(var(--mainFontSize) * 0.92);
+}
+
+.pf--lorebook-meta {
+    font-size: calc(var(--mainFontSize) * 0.84);
+    color: var(--pf-text-muted);
+}
+
+.pf--lorebook-toggle {
+    margin-top: 10px;
+}
+
+.pf--empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 20px;
+    text-align: center;
+    color: var(--pf-text-muted);
+}
+
+.pf--empty-state i {
+    font-size: calc(var(--mainFontSize) * 1.6);
+}
+
+/* Mode Cards */
+.pf--mode-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16em), 1fr));
+    gap: 12px;
+}
+
+.pf--mode-card {
+    background: var(--pf-surface-strong);
+    border: 1px solid color-mix(in srgb, var(--pf-border) 72%, transparent);
+    border-radius: var(--pf-radius-lg);
+    overflow: hidden;
+    min-width: 0;
+    transition: background 0.18s var(--pf-ease), border-color 0.18s var(--pf-ease);
+}
+
+.pf--mode-card:hover {
+    background: var(--pf-surface-hover);
+    border-color: color-mix(in srgb, var(--pf-border) 70%, var(--pf-accent) 18%);
+}
+
+.pf--mode-card.active {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--pf-accent) 30%, var(--pf-surface-strong)), color-mix(in srgb, var(--pf-accent) 16%, var(--pf-surface)));
+    border-color: color-mix(in srgb, var(--pf-accent) 72%, var(--pf-border));
+}
+
+.pf--mode-card-header {
+    padding: 10px 12px;
+    background: color-mix(in srgb, var(--pf-surface) 72%, var(--pf-text) 4%);
+    border-bottom: 1px solid color-mix(in srgb, var(--pf-border) 70%, transparent);
+}
+
+.pf--mode-card.active .pf--mode-card-header {
+    background: color-mix(in srgb, var(--pf-accent) 24%, var(--pf-surface-strong));
+    border-bottom-color: color-mix(in srgb, var(--pf-accent) 34%, transparent);
+}
+
+.pf--mode-card-header .checkbox_label {
+    font-weight: 600;
+    font-size: calc(var(--mainFontSize) * 0.92);
+}
+
+.pf--mode-card-header i {
+    margin-right: 6px;
+    color: var(--pf-accent);
+}
+
+.pf--mode-card.active .pf--mode-card-header i {
+    color: var(--pf-on-accent);
+}
+
+.pf--mode-card-body {
+    padding: 12px;
+    font-size: calc(var(--mainFontSize) * 0.92);
+}
+
+.pf--mode-card-body p {
+    margin: 0 0 10px 0;
+    line-height: 1.4;
+    color: var(--pf-text-muted);
+}
+
+.pf--mode-card-body ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.pf--mode-card-body li {
+    padding: 4px 0;
+}
+
+.pf--mode-card-body li i {
+    width: 16px;
+    margin-right: 6px;
+    color: var(--pf-accent);
+}
+
+.pf--mode-requirement,
+.pf--mode-info {
+    margin-top: 10px;
+    padding: 8px 10px;
+    border-radius: var(--pf-radius-sm);
+    font-size: calc(var(--mainFontSize) * 0.84);
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.pf--mode-requirement {
+    background: var(--pf-danger-bg);
+    color: var(--pf-danger);
+}
+
+.pf--mode-info {
+    background: color-mix(in srgb, var(--pf-accent) 12%, var(--pf-surface));
+    color: var(--pf-accent);
+}
+
+/* Dual mode warning */
+.pf--dual-mode-warning {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--pf-warning-bg);
+    border: 1px solid color-mix(in srgb, var(--pf-warning) 34%, var(--pf-border));
+    border-radius: var(--pf-radius-md);
+    color: var(--pf-warning);
+    font-size: calc(var(--mainFontSize) * 0.84);
+    margin-bottom: 12px;
+}
+
+.pf--dual-mode-warning i {
+    flex-shrink: 0;
+}
+
+/* Settings */
+.pf--setting-group {
+    margin-bottom: 14px;
+}
+
+.pf--setting-group:last-child {
+    margin-bottom: 0;
+}
+
+.pf--setting-label {
+    display: block;
+    font-size: calc(var(--mainFontSize) * 0.92);
+    font-weight: 500;
+    margin-bottom: 6px;
+}
+
+.pf--setting-help {
+    font-size: calc(var(--mainFontSize) * 0.84);
+    color: var(--pf-text-muted);
+    margin-top: 4px;
+}
+
+.pf--setting-help code {
+    background: var(--pf-muted-bg);
+    border: 1px solid color-mix(in srgb, var(--pf-border) 80%, transparent);
+    padding: 1px 5px;
+    border-radius: 5px;
+    font-size: inherit;
+}
+
+.pf--setting-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.pf--setting-row .pf--setting-group {
+    flex: 1 1 180px;
+    min-width: 0;
+    margin-bottom: 0;
+}
+
+
+.pf--summary-editor-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.pf--summary-indicator {
+    border-radius: 999px;
+    font-size: calc(var(--mainFontSize) * 0.84);
+    padding: 3px 8px;
+    white-space: normal;
+}
+
+.pf--summary-indicator-injected {
+    background: var(--pf-positive-bg);
+    border: 1px solid color-mix(in srgb, var(--pf-positive) 34%, var(--pf-border));
+    color: var(--pf-positive);
+}
+
+.pf--summary-indicator-not-injected {
+    background: var(--pf-warning-bg);
+    border: 1px solid color-mix(in srgb, var(--pf-warning) 34%, var(--pf-border));
+    color: var(--pf-warning);
+}
+
+.pf--summary-indicator-missing {
+    background: var(--pf-muted-bg);
+    border: 1px solid color-mix(in srgb, var(--pf-border) 86%, transparent);
+    color: var(--pf-text-muted);
+}
+
+.pf--summary-meta {
+    font-size: calc(var(--mainFontSize) * 0.84);
+    color: var(--pf-text-muted);
+    margin-top: 5px;
+}
+
+.pf--summary-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.pf--summary-actions .menu_button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    max-width: 100%;
+    white-space: normal;
+}
+
+/* Tool List */
+.pf--tool-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.pf--tool-list .checkbox_label {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: center;
+    padding: 7px 10px;
+    background: var(--pf-control-bg);
+    border: 1px solid color-mix(in srgb, var(--pf-border) 76%, transparent);
+    border-radius: var(--pf-radius-sm);
+    column-gap: 10px;
+}
+
+.pf--permission-matrix {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.pf--permission-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    background: var(--pf-control-bg);
+    border: 1px solid color-mix(in srgb, var(--pf-border) 78%, transparent);
+    border-radius: var(--pf-radius-md);
+}
+
+.pf--permission-book {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    grid-column: 1 / -1;
+}
+
+.pf--permission-book strong,
+.pf--permission-book span {
+    overflow-wrap: anywhere;
+}
+
+.pf--permission-book span {
+    font-size: calc(var(--mainFontSize) * 0.84);
+    color: var(--pf-text-muted);
+}
+
+.pf--permission-row .checkbox_label {
+    margin: 0;
+    padding: 6px;
+    min-height: var(--pf-control-size);
+}
+
+/* Prompt Editor */
+.pf--prompt-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.pf--prompt-status {
+    font-size: calc(var(--mainFontSize) * 0.84);
+    margin-left: auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.pf--prompt-status.success {
+    color: var(--pf-positive);
+}
+
+.pf--prompt-status.error {
+    color: var(--pf-danger);
+}
+
+/* Diagnostics */
+.pf--diagnostics-output {
+    background: color-mix(in srgb, var(--pf-surface-strong) 84%, var(--pf-text) 4%);
+    border-radius: var(--pf-radius-md);
+    padding: 12px;
+    font-family: monospace;
+    font-size: calc(var(--mainFontSize) * 0.84);
+    white-space: pre-wrap;
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 10px;
+    text-align: left !important;
+    width: 100%;
+    box-sizing: border-box;
+    margin-right: auto;
+}
+
+.pf--diagnostics-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    text-align: left !important;
+}
+
+.pf--diagnostics-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+#pf--run-diagnostics,
+#pf--copy-diagnostics {
+    display: inline-flex;
+    align-self: flex-start;
+    width: fit-content;
+    inline-size: fit-content;
+    max-inline-size: 100%;
+    min-inline-size: var(--pf-control-size);
+    white-space: normal;
+    margin-left: 0;
+    margin-right: auto;
+}
+
+#pf--run-diagnostics span,
+#pf--copy-diagnostics span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    text-align: center;
+}
+
+.pf--section-body {
+    text-align: left !important;
+}
+
+.pf--section-body button {
+    text-align: center;
+}
+
+/* Responsive */
+@media (max-width: 768px), (pointer: coarse) {
+    .pf--extensions-host,
+    .pf--settings {
+        --pf-control-size: max(44px, var(--sb-control-min-height, 44px));
+    }
+}
+
+@media (max-width: 600px) {
+    .pf--settings {
+        max-height: calc(100dvh - 120px);
+    }
+
+    .pf--mode-cards {
+        grid-template-columns: 1fr;
+    }
+
+    .pf--setting-row {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .pf--setting-row .pf--setting-group {
+        flex: 0 1 auto;
+        width: 100%;
+    }
+
+    .pf--summary-actions {
+        align-items: stretch;
+    }
+
+    .pf--summary-actions .menu_button {
+        flex: 1 1 160px;
+    }
+
+    .pf--prompt-status {
+        flex: 1 1 100%;
+        margin-left: 0;
+    }
+
+    .pf--permission-row {
+        grid-template-columns: 1fr;
+        align-items: flex-start;
+    }
+}
+</style>

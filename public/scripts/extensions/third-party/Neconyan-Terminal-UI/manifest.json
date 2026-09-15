@@ -1,0 +1,22 @@
+{
+    "display_name": "Terminal UI",
+    "author": "platberlitz",
+    "version": "2.4.0",
+    "description": "A command-first terminal interface included with Neconyan, with native slash autocomplete, keyboard-revealed controls, live diagnostics, 37 palettes, and a touch-safe mobile fallback.",
+    "requires": [],
+    "optional": [],
+    "dependencies": [],
+    "minimum_client_version": "1.7.0",
+    "js": "index.js",
+    "css": "style.css",
+    "license": "AGPL-3.0",
+    "homePage": "https://github.com/SillyBunnyTeam/SillyBunny-Terminal-UI",
+    "loading_order": 130,
+    "bundled_opt_in": true,
+    "auto_update": false,
+    "hooks": {
+        "activate": "activate",
+        "enable": "enable",
+        "disable": "disable"
+    }
+}

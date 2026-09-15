@@ -1,0 +1,722 @@
+/* Story Mode - everything about the manuscript look is gated on body.sbstory.
+   Moonlit chat styles force layout on `body:is(...) #chat .mes:not(.smallSysMes)` with !important,
+   and the bundled mobile paper theme (≤768px) forces bubbles on `.mes` with !important,
+   so the reskin mirrors that specificity and relies on loading later. */
+
+body.sbstory {
+    /* ResizeObserver reserves the actual rewrite-row height, including wrapped controls and status. */
+    --sbstory-row-slot: 0px;
+}
+
+/* ---------------------------------------------------------------- story bar (above the composer) */
+
+/* The bar states its own width: themes turn #send_form into a centred column (Moonlit Echoes with
+   Input History), and a flex-basis alone collapses under inline-size containment there. */
+#sbstory-bar {
+    --sbstory-action-size: var(--sb-composer-action-size, var(--bottomFormBlockSize, 36px));
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+    grid-column: 1 / -1;
+    box-sizing: border-box;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px 2px;
+    container-type: inline-size;
+}
+
+#sbstory-bar[hidden] {
+    display: none;
+}
+
+#sbstory-bar .sbstory-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+}
+
+#sbstory-bar .sbstory-btn {
+    white-space: nowrap;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    height: var(--sbstory-action-size) !important;
+    min-height: var(--sbstory-action-size) !important;
+    max-height: var(--sbstory-action-size) !important;
+    min-width: var(--sbstory-action-size) !important;
+    border-radius: var(--sb-radius-button, 10px) !important;
+    padding: 0 10px !important;
+    gap: 6px;
+    font-size: var(--sb-composer-action-icon-size, 0.95em);
+    background: color-mix(in srgb, var(--SmartThemeBodyColor) 6%, transparent) !important;
+    border: 1px solid color-mix(in srgb, var(--sb-shell-border, var(--SmartThemeBorderColor)) 82%, transparent) !important;
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--SmartThemeShadowColor) 6%, transparent);
+    color: var(--SmartThemeBodyColor) !important;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+#sbstory-bar .sbstory-btn:hover {
+    background: color-mix(in srgb, var(--sb-button-hover, var(--SmartThemeQuoteColor)) 25%, transparent) !important;
+}
+
+#sbstory-bar .sbstory-btn:focus-visible {
+    outline: 2px solid var(--SmartThemeQuoteColor);
+    outline-offset: 1px;
+}
+
+#sbstory-bar .sbstory-btn:active {
+    transform: scale(0.97);
+}
+
+#sbstory-bar #sbstory-continue {
+    padding: 0 12px !important;
+    background: color-mix(in srgb, var(--color-primary, var(--sb-accent, var(--SmartThemeQuoteColor))) 18%, transparent) !important;
+    border-color: color-mix(in srgb, var(--color-primary, var(--sb-accent, var(--SmartThemeQuoteColor))) 45%, transparent) !important;
+    font-weight: 500;
+}
+
+#sbstory-bar #sbstory-continue:hover {
+    background: color-mix(in srgb, var(--color-primary, var(--sb-accent, var(--SmartThemeQuoteColor))) 28%, transparent) !important;
+    border-color: color-mix(in srgb, var(--color-primary, var(--sb-accent, var(--SmartThemeQuoteColor))) 65%, transparent) !important;
+}
+
+/* The bar must stay one row: every extra row comes out of the manuscript. The labelled row measures
+   about 43em at the bar's own font size, so the history buttons go icon-only below 44em (a narrow
+   chat pane, a tablet in portrait); Continue keeps its label because a feather alone says nothing. */
+@container (width < 44em) {
+    #sbstory-bar .sbstory-btn:not(#sbstory-continue) .sbstory-btn-label {
+        display: none;
+    }
+    #sbstory-bar .sbstory-btn:not(#sbstory-continue) {
+        width: var(--sbstory-action-size) !important;
+        min-width: var(--sbstory-action-size) !important;
+        max-width: var(--sbstory-action-size) !important;
+        padding: 0 !important;
+    }
+}
+
+/* Export is a once-a-session action; hide below 28em so word count has ample room on mobile.
+   ponytail: add `/story export` if anyone wants the file on a phone. */
+@container (width < 28em) {
+    #sbstory-bar #sbstory-export {
+        display: none;
+    }
+}
+
+/* On very tight mobile widths, drop the "words" suffix to keep the count visible without wrapping. */
+@container (width < 22em) {
+    #sbstory-bar .sbstory-words-unit {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+    }
+}
+
+/* Under 18em (extreme split screen / ultra narrow), hide the word count to prevent row wrapping. */
+@container (width < 18em) {
+    #sbstory-bar #sbstory-words {
+        display: none;
+    }
+}
+
+/* Export is a once-a-session action; icon-only at every width keeps the bar to one row. */
+#sbstory-bar #sbstory-export {
+    width: var(--sbstory-action-size) !important;
+    min-width: var(--sbstory-action-size) !important;
+    max-width: var(--sbstory-action-size) !important;
+    padding: 0 !important;
+}
+
+#sbstory-bar #sbstory-export .sbstory-btn-label {
+    display: none;
+}
+
+/* A typed direction with the panel closed: the toggle takes the same tint as the wand's On pill,
+   so an armed Continue is visible without opening the panel. */
+#sbstory-bar #sbstory-direction-toggle[data-set] {
+    background-color: color-mix(in srgb, var(--SmartThemeQuoteColor) 22%, transparent) !important;
+    border-color: color-mix(in srgb, var(--SmartThemeQuoteColor) 55%, transparent) !important;
+}
+
+/* Word count sits at the far end of the button row, vertically centered with the controls. */
+#sbstory-bar .sbstory-words {
+    margin-left: auto;
+    opacity: 0.65;
+    white-space: nowrap;
+    font-size: 0.85em;
+    padding: 0 4px;
+    font-variant-numeric: tabular-nums;
+    display: inline-flex;
+    align-items: center;
+    height: var(--sbstory-action-size);
+}
+
+#sbstory-bar .sbstory-direction-wrap {
+    flex-basis: 100%;
+    display: flex;
+    margin-top: 2px;
+}
+
+#sbstory-bar .sbstory-direction-wrap[hidden] {
+    display: none;
+}
+
+#sbstory-bar .sbstory-direction {
+    flex: 1;
+    min-width: 0;
+    height: var(--sbstory-action-size);
+    min-height: var(--sbstory-action-size);
+    max-height: var(--sbstory-action-size);
+    border-radius: var(--sb-radius-button, 10px) !important;
+    border: 1px solid color-mix(in srgb, var(--sb-shell-border, var(--SmartThemeBorderColor)) 82%, transparent);
+    background: color-mix(in srgb, var(--SmartThemeBodyColor) 4%, transparent);
+    padding: 0 10px;
+    box-sizing: border-box;
+    font-size: 0.95em;
+    color: var(--SmartThemeBodyColor);
+}
+
+/* The bar is a sibling of #nonQRFormItems, so it cannot inherit that row's phone sizing. */
+@media (pointer: coarse) {
+    #sbstory-bar {
+        --sbstory-action-size: max(44px, var(--sb-composer-action-size, var(--bottomFormBlockSize, 36px)));
+        gap: 4px;
+        padding-inline: 0;
+    }
+
+    /* 44px controls need earlier count fallbacks to keep book-length totals on one row. */
+    @container (width < 28em) {
+        #sbstory-bar #sbstory-continue {
+            padding-inline: 8px !important;
+        }
+        #sbstory-bar .sbstory-words-unit {
+            position: absolute;
+            clip-path: inset(50%);
+        }
+    }
+
+    @container (width < 22em) {
+        #sbstory-bar #sbstory-words {
+            display: none;
+        }
+    }
+
+    .sbstory-transforms .sbstory-tbtn,
+    .sbstory-dialog .sbstory-dialog-btn,
+    .sbstory-dialog .sbstory-thought-copy {
+        min-width: 44px;
+        min-height: 44px;
+    }
+}
+
+/* ---------------------------------------------------------------- the manuscript */
+
+/* Above the mobile shell, the page is the manuscript: use the screen. The chat-width setting only ever widens it further. */
+@media (min-width: 769px) {
+    body.sbstory:not(.movingUI) #sheld {
+        width: max(var(--sheldWidth, 50vw), min(100vw - 48px, 58em));
+    }
+}
+
+body.sbstory #chat .mes:not(.smallSysMes):not(.displayNone):not([hidden]) {
+    display: block !important;
+    grid-template-columns: none !important;
+    max-width: min(50em, 100%);
+    margin: 0 auto !important;
+    padding: 0 12px 0.85em !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+
+body.sbstory #chat .mes:not(.smallSysMes)::before,
+body.sbstory #chat .mes:not(.smallSysMes)::after,
+body.sbstory #chat .mes:not(.smallSysMes) .mesAvatarWrapper,
+body.sbstory #chat .mes:not(.smallSysMes) .mes_timer,
+body.sbstory #chat .mes:not(.smallSysMes) .mesIDDisplay,
+body.sbstory #chat .mes:not(.smallSysMes) .tokenCounterDisplay,
+body.sbstory #chat .mes:not(.smallSysMes) .name_text,
+body.sbstory #chat .mes:not(.smallSysMes) .timestamp {
+    display: none !important;
+}
+
+/* The host shows and hides swipe arrows itself; only the last block keeps them. */
+body.sbstory #chat .mes:not(.smallSysMes):not(.last_mes) .swipe_left,
+body.sbstory #chat .mes:not(.smallSysMes):not(.last_mes) .swipeRightBlock {
+    display: none !important;
+}
+
+body.sbstory #chat .mes:not(.smallSysMes) .mes_reasoning_details:not(:has(.reasoning_edit_textarea)) {
+    display: none !important;
+}
+
+body.sbstory #chat .mes:not(.smallSysMes) .mes_reasoning_details:has(.reasoning_edit_textarea) {
+    display: block !important;
+}
+
+/* Keep the host pencil in the tab order without taking up manuscript space at rest. */
+body.sbstory #chat .mes:not(.smallSysMes) .mes_buttons .mes_edit:not(:focus) {
+    position: absolute;
+    inline-size: 1px !important;
+    block-size: 1px !important;
+    min-inline-size: 1px !important;
+    min-block-size: 1px !important;
+    max-inline-size: 1px !important;
+    max-block-size: 1px !important;
+    padding: 0 !important;
+    overflow: hidden;
+    clip-path: inset(50%);
+}
+
+body.sbstory #chat .mes:not(.smallSysMes) .mes_block {
+    display: flow-root !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    transform: none !important;
+    float: none !important;
+    clear: none !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    background: transparent !important;
+}
+
+/* Message controls float beside the opening line instead of covering manuscript text.
+   The host already dims the icons and brightens them on hover. */
+body.sbstory #chat .mes:not(.smallSysMes) .ch_name {
+    position: relative;
+    float: right;
+    z-index: 1;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    width: auto !important;
+    max-width: 100%;
+    flex-wrap: wrap;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    justify-content: flex-end;
+}
+
+/* Hide names, not their wrapper: it also contains the host's prompt-exclusion warning. */
+body.sbstory #chat .mes:not(.smallSysMes) .ch_name > .flex-container:first-child {
+    flex: 0 1 auto !important;
+    min-width: 0;
+}
+
+/* With the host's "Expand message actions" on, the row is a dozen icons wide and would swallow
+   two-thirds of the opening line (clicks there hit the icon strip, not the prose), so it gets
+   its own line above the paragraph instead. */
+body.sbstory.expandMessageActions #chat .mes:not(.smallSysMes) .ch_name {
+    float: none;
+    width: 100% !important;
+}
+
+/* The text sits directly on the theme's chat background: the Echo/Whisper/... chat styles paint
+   .mes_text with the message tint (!important, specificity 1,4,1), so this rule outranks them. */
+body.sbstory #chat .mes:not(.smallSysMes):not(.displayNone) .mes_text {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: auto !important;
+    max-width: 100% !important;
+    min-height: 0 !important;
+    float: none !important;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    font-size: var(--mainFontSize);
+    line-height: 1.6;
+    cursor: text;
+}
+
+body.sbstory #chat .mes:not(.smallSysMes) .mes_text p {
+    font-size: var(--mainFontSize) !important;
+    line-height: 1.6 !important;
+    letter-spacing: 0 !important;
+    margin: 0 0 0.85em !important;
+}
+
+body.sbstory #chat .mes:not(.smallSysMes) .mes_text > :last-child {
+    margin-bottom: 0 !important;
+}
+
+body.sbstory.sbstory-serif #chat .mes .mes_text,
+body.sbstory.sbstory-serif #chat .mes .edit_textarea {
+    font-family: Georgia, 'Noto Serif', 'Times New Roman', serif !important;
+}
+
+/* Optional shading for the model's text (off by default): whole blocks it wrote, and the tail it added to one of yours. */
+body.sbstory.sbstory-shade #chat .mes[data-sbstory-origin="model"]:not(.smallSysMes):not(.displayNone) .mes_text {
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 10%, transparent) !important;
+    border-radius: 6px;
+    padding-inline: 6px !important;
+    margin-inline: -6px !important;
+}
+
+body.sbstory.sbstory-shade #chat .mes .mes_text .sbstory-model {
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 12%, transparent);
+    border-radius: 3px;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+}
+
+/* Soft join: a block that finishes the previous block's sentence sits flush against it. */
+body.sbstory #chat .mes[data-sbstory-join]:not(.smallSysMes) {
+    padding-top: 0 !important;
+}
+
+body.sbstory #chat .mes[data-sbstory-join] .mes_text > p:first-child {
+    margin-top: 0 !important;
+}
+
+body.sbstory #chat .mes:has(+ .mes[data-sbstory-join]) {
+    padding-bottom: 0 !important;
+}
+
+body.sbstory #chat .mes:has(+ .mes[data-sbstory-join]) .mes_text > p:last-child {
+    margin-bottom: 0 !important;
+}
+
+/* ---------------------------------------------------------------- editing inside the manuscript */
+
+body.sbstory #chat .mes:has(.edit_textarea) {
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 6%, transparent) !important;
+    box-shadow: none !important;
+    border-radius: var(--sb-radius-md, 16px) !important;
+}
+
+body.sbstory #chat .mes:has(.edit_textarea) .ch_name {
+    float: none;
+    width: 100% !important;
+}
+
+/* The host clips .mes_block; the rewrite row below has to escape that clip to stick. */
+body.sbstory #chat .mes:has(.edit_textarea) .mes_block {
+    overflow: visible !important;
+}
+
+body.sbstory #chat .mes .edit_textarea {
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font: inherit !important;
+    font-size: var(--mainFontSize) !important;
+    line-height: 1.6 !important;
+    color: inherit !important;
+    caret-color: var(--color-primary, var(--sb-accent, currentColor));
+    /* revealEditor() scrolls the box to the chat's bottom edge; keep the rewrite row's slot clear
+       under it, or the row sticks up over a short box the moment text is selected. */
+    scroll-margin-bottom: var(--sbstory-row-slot);
+}
+
+/* The slot only exists if there is something to scroll into: while the last block is being edited
+   nothing follows it, so the block itself carries the room. The host's textarea id lifts this above
+   the manuscript padding rule (both !important). */
+body.sbstory #chat .mes.last_mes:has(#curEditTextarea) {
+    padding-bottom: calc(var(--sbstory-row-slot) + 0.85em) !important;
+}
+
+body.sbstory #chat .mes .edit_textarea:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--sb-focus-ring, var(--SmartThemeQuoteColor)) 70%, transparent) !important;
+}
+
+/* ---------------------------------------------------------------- rewrite row (under the edit box while text is selected) */
+
+.sbstory-transforms {
+    position: -webkit-sticky;
+    position: sticky;
+    bottom: 4px;
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin: 8px 0 0;
+    padding: 4px;
+    border-radius: var(--sb-radius-sm, 10px);
+    /* The theme tint is ~90% opaque; drop its alpha so the text underneath does not ghost through. */
+    background: var(--SmartThemeBlurTintColor);
+    background: rgb(from var(--SmartThemeBlurTintColor) r g b);
+    box-shadow: 0 4px 8px color-mix(in srgb, var(--SmartThemeShadowColor, #000) 16%, transparent);
+}
+
+.sbstory-transforms[hidden] {
+    display: none;
+}
+
+.sbstory-transforms .sbstory-stop[hidden] {
+    display: none;
+}
+
+/* The status is a <small>, so the host's hint styling applies. */
+.sbstory-transforms .sbstory-tstatus {
+    flex-basis: 100%;
+}
+
+.sbstory-transforms .sbstory-tstatus:empty {
+    display: none;
+}
+
+/* ---------------------------------------------------------------- settings drawer */
+
+#sbstory-settings .sbstory-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-block: 4px;
+}
+
+#sbstory-settings .sbstory-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-block: 8px;
+}
+
+#sbstory-settings .sbstory-textarea {
+    min-height: 90px;
+    resize: vertical;
+}
+
+#sbstory-settings .sbstory-save-rules[hidden] {
+    display: none;
+}
+
+#sbstory-settings .sbstory-field [role="status"] {
+    opacity: 1;
+}
+
+/* General rules while the open card has its own: still editable, visibly not the live set. */
+#sbstory-settings .sbstory-muted {
+    opacity: 0.6;
+}
+
+#sbstory-settings .sbstory-muted:focus {
+    opacity: 1;
+}
+
+/* The Customize panel forces .menu_button labels to wrap; outrank it so "Reset rules" stays on one line. */
+#sbstory-settings .sbstory-reset,
+#user-settings-block #sbstory-settings .sbstory-reset {
+    align-self: flex-start;
+    white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- wand entry */
+
+#sbstory-menu-item .sbstory-menu-state {
+    margin-left: auto;
+    padding: 2px 8px;
+    border-radius: var(--sb-radius-button, 14px);
+    font-size: calc(var(--mainFontSize) * 0.72);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1.35;
+    opacity: 0.7;
+}
+
+#sbstory-menu-item .sbstory-menu-state[data-on] {
+    opacity: 1;
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 14%, transparent);
+}
+
+/* ---------------------------------------------------------------- consolidated reasoning dialog & button */
+
+body.sbstory #chat .mes .mes_buttons .sbstory-thinking-btn {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+body.sbstory #chat .mes .mes_buttons .sbstory-thinking-btn:hover {
+    opacity: 1;
+    transform: scale(1.1);
+    color: var(--SmartThemeQuoteColor, #e5a823);
+}
+
+dialog.sbstory-dialog {
+    padding: 0;
+    border: 1px solid color-mix(in srgb, var(--SmartThemeBodyColor, #fff) 18%, transparent);
+    border-radius: var(--sb-radius-sm, 12px);
+    background: var(--SmartThemeBlurTintColor, #1e1e24);
+    background: rgb(from var(--SmartThemeBlurTintColor, #1e1e24) r g b);
+    color: var(--SmartThemeBodyColor, #e0e0e0);
+    box-shadow: 0 16px 48px color-mix(in srgb, var(--SmartThemeShadowColor, #000) 55%, transparent);
+    max-width: min(640px, 92vw);
+    width: 600px;
+    max-height: 80vh;
+    max-height: 80dvh;
+    min-height: 0;
+    overflow: hidden;
+    margin: auto;
+}
+
+dialog.sbstory-dialog[open]::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+}
+
+#sbstory-thinking-dialog .popup-body,
+#sbstory-thinking-dialog .popup-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+.sbstory-dialog-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 80vh;
+    max-height: 80dvh;
+}
+
+.sbstory-dialog-header {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 18px;
+    border-bottom: 1px solid color-mix(in srgb, var(--SmartThemeBodyColor, #fff) 12%, transparent);
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor, #e5a823) 8%, transparent);
+}
+
+.sbstory-dialog-title-wrap {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+}
+
+.sbstory-dialog-title-wrap i {
+    font-size: 1.2em;
+    color: var(--SmartThemeQuoteColor, #e5a823);
+}
+
+.sbstory-dialog-title-wrap h3 {
+    margin: 0;
+    font-size: 1.1em;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.sbstory-dialog-header-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 8px;
+}
+
+.sbstory-dialog-btn {
+    cursor: pointer;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    opacity: 0.75;
+    transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.sbstory-dialog-btn:hover {
+    opacity: 1;
+    background: color-mix(in srgb, var(--SmartThemeBodyColor, #fff) 12%, transparent);
+}
+
+.sbstory-dialog-body {
+    min-height: 0;
+    padding: 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.sbstory-thought-entry {
+    flex: 0 0 auto;
+    border: 1px solid color-mix(in srgb, var(--SmartThemeBodyColor, #fff) 12%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--SmartThemeBodyColor, #fff) 3%, transparent);
+    overflow: hidden;
+}
+
+.sbstory-thought-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    font-weight: 600;
+    -webkit-user-select: none;
+    user-select: none;
+    background: color-mix(in srgb, var(--SmartThemeBodyColor, #fff) 4%, transparent);
+}
+
+.sbstory-thought-label {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.sbstory-thought-duration {
+    font-size: 0.85em;
+    opacity: 0.65;
+    font-variant-numeric: tabular-nums;
+}
+
+.sbstory-thought-copy {
+    margin-left: auto;
+    cursor: pointer;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    opacity: 0.6;
+    padding: 4px 6px;
+    border-radius: 4px;
+    transition: opacity 0.15s ease;
+}
+
+.sbstory-thought-copy:hover {
+    opacity: 1;
+    background: color-mix(in srgb, var(--SmartThemeBodyColor, #fff) 10%, transparent);
+}
+
+.sbstory-thought-text {
+    padding: 12px 14px;
+    font-size: 0.95em;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+    border-top: 1px solid color-mix(in srgb, var(--SmartThemeBodyColor, #fff) 8%, transparent);
+    font-family: inherit;
+}

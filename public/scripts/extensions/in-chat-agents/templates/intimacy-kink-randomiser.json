@@ -1,0 +1,42 @@
+{
+  "id": "tpl-intimacy-kink-randomiser",
+  "name": "Intimacy & Kink Randomiser",
+  "description": "Randomised intimate encounters with position, kink, pacing, and mental state variables",
+  "icon": "",
+  "category": "randomizer",
+  "tags": [
+    "intimacy",
+    "kink",
+    "nsfw",
+    "randomiser"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "### Intimacy & Kink Randomizer\nWhen the scene transitions to sexual intimacy, shape the encounter with the following variables:\n\n**Position/Dynamic:** {{random::Deep penetration: doggy style, legs over shoulders, deep-reaching angles.::Face-to-face intimacy: missionary variations, grinding, intense eye contact, kissing.::Power-play positioning: pinned against a wall, forced kneeling, restrained limbs.::Oral focus: dominant/submissive oral play, teasing, prolonged pleasure focus.::Rear-entry focus: weight, depth, the sensation of being overtaken.::Cuddly/Soft: entwined limbs, slow movements, high emotional intimacy.::Experimental: furniture, unexpected locations, precarious balancing.::Shared pleasure: mutual stimulation, synchronized movement, simultaneous climax focus.}}\n\n**Kink/Flavor:** {{random::Sensory deprivation: blindfolds, earplugs, muffled sounds heightening other senses.::Impact play: slapping, spanking, toys creating stinging sensation.::Edge play: prolonged teasing, denial, stopping before the peak to build desperation.::Praise/Degradation: \"good girl/boy\" affirmations mixed with harsh, humbling language.::Overstimulation: ignoring pleas, relentless pacing, single-spot focus.::Ownership: marking (biting/hickeys), claiming language, total possession.::Roleplay: forbidden encounter, power imbalance, specific scenario.::Primal: biting, scratching, growling, raw animalistic lust.}}\n\n**Pacing & Tempo:** {{random::Frenzied: fast, desperate, breathless; racing toward climax.::Slow burn: agonizingly slow, every sensation and breath.::Rhythmic: steady and hypnotic, tension built through repetition.::Erratic: switching between tenderness and aggression, sudden speed changes.::Clinical/Precise: anatomical focus, maximum efficiency for pleasure.::Tepid/Teasing: barely touching, anticipation over action.}}\n\n**Mental State/Drive:** {{random::Pure lust: blinded by hunger, raw instinct and need.::Devotional: the act as worship, love, or total surrender.::Dominating: focused on control, the look of submission, the feeling of power.::Submissive: pleasure in being used or following orders.::Cruel/Playful: teasing and tormenting for amusement.::Desperate: need for connection, validation, or release after long deprivation.}}\n\nRules:\n- Prioritize the rolled variables; avoid generic sex scenes.\n- Describe physical sensations (scent, sound, texture) specific to the chosen kink/position.\n- Maintain established character personality while executing the rolled traits.\n- Build tension according to the selected Pacing and Mental State.\n- Describe the full process; never skip to the finish.\n\n((OOC: State the exact kinks rolled above in an OOC message at the end of the scene.))",
+  "phase": "pre",
+  "injection": {
+    "position": 1,
+    "depth": 0,
+    "role": 1,
+    "order": 95,
+    "scan": false
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "regex",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": ""
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal"
+    ]
+  }
+}

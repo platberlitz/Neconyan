@@ -1,0 +1,45 @@
+.translation_settings .inline-drawer-content {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.translation_settings .inline-drawer-content > label {
+    margin: 0;
+    line-height: 1.25;
+}
+
+.translation_settings .inline-drawer-content > :is(select, .flex-container, .menu_button) {
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.translation_settings .flex-container {
+    align-items: center;
+    gap: 8px;
+}
+
+.translation_settings .flex-container > select {
+    min-width: 0;
+}
+
+.translation_settings .menu_button {
+    width: fit-content;
+    display: flex;
+    gap: 10px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--sb-field-min-height, 46px);
+    box-sizing: border-box;
+}
+
+@media screen and (max-width: 650px) {
+    .translation_settings .flex-container.flexnowrap {
+        flex-wrap: wrap;
+    }
+
+    .translation_settings .flex-container > select {
+        flex: 1 1 100%;
+    }
+}

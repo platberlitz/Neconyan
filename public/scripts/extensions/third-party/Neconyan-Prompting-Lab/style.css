@@ -1,0 +1,1632 @@
+/* ---- Prompting Lab: settings drawer ---- */
+
+.sbpl-settings-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75em;
+    padding: 0.5em 0;
+}
+
+.sbpl-settings-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5em;
+    width: 100%;
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.sbpl-settings-summary-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15em;
+    min-width: 0;
+}
+
+.sbpl-settings-summary-note,
+.sbpl-settings-note,
+.sbpl-field-hint {
+    font-size: calc(var(--mainFontSize, 1rem) * 0.85);
+    opacity: 0.75;
+}
+
+.sbpl-settings-status {
+    margin: 0;
+    font-size: calc(var(--mainFontSize, 1rem) * 0.9);
+}
+
+.sbpl-settings-ready {
+    color: var(--active, currentColor);
+}
+
+.sbpl-settings-error {
+    color: var(--warning, #f0ad4e);
+}
+
+.sbpl-settings-note {
+    margin: 0;
+}
+
+/* ---- wand menu ---- */
+
+.sbpl-menu-item {
+    cursor: pointer;
+}
+
+.sbpl-menu-item:focus-visible {
+    outline: 2px solid var(--active, currentColor);
+    outline-offset: 2px;
+}
+
+/* ---- full-page workspace ---- */
+
+.sbpl-page {
+    --sbpl-line: var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.4));
+    --sbpl-rail: 15.5em;
+    /* The theme tint is translucent by design (it expects a blur behind it),
+       so stack it on an opaque base: keeps the theme hue, hides the chat. */
+    --sbpl-surface: linear-gradient(var(--SmartThemeBlurTintColor, #1b1f20) 0 100%) #1b1f20;
+    position: fixed;
+    inset: 0;
+    z-index: 4000;
+    display: flex;
+    flex-direction: column;
+    background: var(--sbpl-surface);
+    color: var(--SmartThemeBodyColor, inherit);
+}
+
+.sbpl-page[hidden] {
+    display: none;
+}
+
+.sbpl-page-header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em 1.25em;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6em 1.1em;
+    border-bottom: 1px solid var(--sbpl-line);
+    background-color: var(--black30a, rgba(0, 0, 0, 0.2));
+}
+
+.sbpl-page-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.7em;
+    min-width: 0;
+}
+
+.sbpl-page-mark {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 2.3em;
+    height: 2.3em;
+    border: 1px solid var(--sbpl-line);
+    border-radius: 0.6em;
+    background-color: var(--black50a, rgba(0, 0, 0, 0.3));
+    opacity: 0.85;
+}
+
+.sbpl-page-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1em;
+    min-width: 0;
+}
+
+.sbpl-page-title {
+    margin: 0;
+    font-size: calc(var(--mainFontSize, 1rem) * 1.2);
+}
+
+.sbpl-page-subtitle {
+    margin: 0;
+    font-size: calc(var(--mainFontSize, 1rem) * 0.85);
+    opacity: 0.75;
+}
+
+.sbpl-page-status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4em;
+    align-items: center;
+    min-width: 0;
+}
+
+.sbpl-page-actions {
+    display: flex;
+    gap: 0.5em;
+    align-items: center;
+    /* Stays on the right even when the header wraps to a second line. */
+    margin-left: auto;
+}
+
+.sbpl-page-shortcut {
+    padding: 0.1em 0.45em;
+    border: 1px solid var(--sbpl-line);
+    border-radius: 0.3em;
+    font-family: var(--monoFontFamily, monospace);
+    font-size: calc(var(--mainFontSize, 1rem) * 0.75);
+    opacity: 0.6;
+}
+
+.sbpl-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    padding: 0.15em 0.7em;
+    border: 1px solid currentColor;
+    border-radius: 1em;
+    font-size: calc(var(--mainFontSize, 1rem) * 0.8);
+    white-space: nowrap;
+}
+
+.sbpl-pill-dot {
+    width: 0.45em;
+    height: 0.45em;
+    border-radius: 50%;
+    background-color: currentColor;
+}
+
+.sbpl-pill-ready { color: var(--active, #5cb85c); }
+.sbpl-pill-warning { color: var(--warning, #f0ad4e); }
+.sbpl-pill-error { color: var(--fullred, #d9534f); }
+.sbpl-pill-quiet { opacity: 0.6; }
+
+.sbpl-page-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overscroll-behavior: contain;
+}
+
+.sbpl-page-body > .sbpl-workbench-mount {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+}
+
+/* ---- workbench shell ---- */
+
+.sbpl-workbench {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75em;
+    margin-top: 0.75em;
+    padding-top: 0.75em;
+    border-top: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.4));
+}
+
+/*
+ * In the page the same markup becomes a workbench: a rail of sections on the
+ * left that stays put, and one scrolling work surface on the right.
+ */
+.sbpl-workbench-page {
+    display: grid;
+    grid-template-columns: var(--sbpl-rail) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    flex: 1;
+    gap: 0;
+    min-width: 0;
+    min-height: 0;
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+.sbpl-workbench-page > .sbpl-availability {
+    grid-column: 1 / -1;
+    margin: 0.6em 1.1em 0;
+}
+
+.sbpl-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75em;
+    min-width: 0;
+}
+
+.sbpl-workbench-page > .sbpl-nav {
+    grid-row: 2;
+    grid-column: 1;
+    gap: 1.1em;
+    padding: 0.9em 0.7em 1.1em;
+    border-right: 1px solid var(--sbpl-line);
+    overflow-y: auto;
+}
+
+.sbpl-main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75em;
+    min-width: 0;
+}
+
+.sbpl-workbench-page > .sbpl-main {
+    grid-row: 2;
+    grid-column: 2;
+    gap: 1em;
+    padding: 1em 1.4em 3em;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.sbpl-availability {
+    margin: 0;
+    padding: 0.5em 0.75em;
+    border-radius: 0.5em;
+    background-color: var(--black30a, rgba(0, 0, 0, 0.2));
+    font-size: calc(var(--mainFontSize, 1rem) * 0.9);
+}
+
+.sbpl-availability-error {
+    color: var(--warning, #f0ad4e);
+}
+
+.sbpl-availability-warning {
+    opacity: 0.85;
+}
+
+.sbpl-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25em;
+}
+
+/* The drawer keeps one flat strip, so the groups carry no box of their own. */
+.sbpl-tab-group {
+    display: contents;
+}
+
+.sbpl-tab-group-label {
+    display: none;
+}
+
+.sbpl-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45em;
+    padding: 0.4em 0.8em;
+    min-height: 2.4em;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.4));
+    border-radius: 0.5em;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.sbpl-tab-icon {
+    flex: none;
+    width: 1.1em;
+    text-align: center;
+    opacity: 0.7;
+}
+
+.sbpl-tab-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1em;
+    min-width: 0;
+}
+
+.sbpl-tab-line {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4em;
+    min-width: 0;
+}
+
+.sbpl-tab-label {
+    overflow-wrap: anywhere;
+}
+
+.sbpl-tab-badge {
+    flex: none;
+    padding: 0 0.4em;
+    border: 1px solid currentColor;
+    border-radius: 1em;
+    color: var(--warning, #f0ad4e);
+    font-size: calc(var(--mainFontSize, 1rem) * 0.7);
+    font-weight: 400;
+}
+
+.sbpl-tab-hint {
+    display: none;
+    font-size: calc(var(--mainFontSize, 1rem) * 0.78);
+    opacity: 0.6;
+}
+
+.sbpl-tab:hover {
+    background-color: var(--white20a, rgba(255, 255, 255, 0.1));
+}
+
+.sbpl-tab-active {
+    background-color: var(--white30a, rgba(255, 255, 255, 0.15));
+    font-weight: 600;
+}
+
+.sbpl-tab:focus-visible,
+.sbpl-button:focus-visible,
+.sbpl-settings-summary:focus-visible {
+    outline: 2px solid var(--active, currentColor);
+    outline-offset: 2px;
+}
+
+/* ---- the side rail, only in the page ---- */
+
+.sbpl-workbench-page .sbpl-tabs {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 1.1em;
+}
+
+.sbpl-workbench-page .sbpl-tab-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15em;
+}
+
+.sbpl-workbench-page .sbpl-tab-group-label {
+    display: block;
+    margin: 0 0 0.2em;
+    padding: 0 0.55em;
+    font-family: var(--monoFontFamily, monospace);
+    font-size: calc(var(--mainFontSize, 1rem) * 0.7);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    opacity: 0.5;
+}
+
+.sbpl-workbench-page .sbpl-tab {
+    align-items: flex-start;
+    gap: 0.6em;
+    padding: 0.45em 0.55em;
+    border-color: transparent;
+    border-left: 2px solid transparent;
+    border-radius: 0.45em;
+}
+
+.sbpl-workbench-page .sbpl-tab-icon {
+    margin-top: 0.15em;
+}
+
+.sbpl-workbench-page .sbpl-tab-hint {
+    display: block;
+}
+
+.sbpl-workbench-page .sbpl-tab-active {
+    border-color: var(--sbpl-line);
+    border-left-color: var(--active, currentColor);
+}
+
+.sbpl-workbench-page .sbpl-tab-active .sbpl-tab-icon {
+    opacity: 1;
+}
+
+/* The rail's own instrument panel: what this workspace currently holds. */
+.sbpl-readout {
+    display: none;
+}
+
+.sbpl-workbench-page .sbpl-readout {
+    display: flex;
+    position: sticky;
+    bottom: 0;
+    flex: none;
+    flex-direction: column;
+    gap: 0.25em;
+    /* Pinned to the foot of the rail, so a long list of sections cannot push
+       the counts off the bottom of the screen. */
+    margin-top: auto;
+    padding: 0.65em 0.7em;
+    border: 1px solid var(--sbpl-line);
+    border-radius: 0.5em;
+    background: var(--sbpl-surface);
+}
+
+.sbpl-readout-title {
+    margin: 0 0 0.25em;
+    font-family: var(--monoFontFamily, monospace);
+    font-size: calc(var(--mainFontSize, 1rem) * 0.7);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.5;
+}
+
+.sbpl-readout-row {
+    display: flex;
+    gap: 0.75em;
+    align-items: baseline;
+    justify-content: space-between;
+    font-size: calc(var(--mainFontSize, 1rem) * 0.82);
+}
+
+.sbpl-readout-label {
+    opacity: 0.7;
+}
+
+.sbpl-readout-value {
+    font-family: var(--monoFontFamily, monospace);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---- panel heading, only in the page ---- */
+
+.sbpl-panel-head {
+    display: none;
+}
+
+.sbpl-workbench-page .sbpl-panel-head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15em;
+    padding-bottom: 0.8em;
+    border-bottom: 1px solid var(--sbpl-line);
+}
+
+.sbpl-panel-eyebrow {
+    margin: 0;
+    font-family: var(--monoFontFamily, monospace);
+    font-size: calc(var(--mainFontSize, 1rem) * 0.7);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    opacity: 0.5;
+}
+
+.sbpl-panel-title {
+    margin: 0;
+    font-size: calc(var(--mainFontSize, 1rem) * 1.15);
+}
+
+.sbpl-panel-blurb {
+    margin: 0;
+    max-width: 80ch;
+    font-size: calc(var(--mainFontSize, 1rem) * 0.88);
+    opacity: 0.75;
+}
+
+.sbpl-panel-cost {
+    margin: 0.15em 0 0;
+    max-width: 80ch;
+    font-size: calc(var(--mainFontSize, 1rem) * 0.8);
+    opacity: 0.6;
+}
+
+.sbpl-panel-cost-sends {
+    color: var(--warning, #f0ad4e);
+    opacity: 0.85;
+}
+
+.sbpl-tab-select {
+    display: none;
+    width: 100%;
+}
+
+.sbpl-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75em;
+    min-width: 0;
+}
+
+.sbpl-workbench-page .sbpl-panel {
+    flex: 1;
+}
+
+.sbpl-panel:focus {
+    outline: none;
+}
+
+/* Long explanations stay readable however wide the workspace is. */
+.sbpl-workbench-page .sbpl-settings-note,
+.sbpl-workbench-page .sbpl-field-hint,
+.sbpl-workbench-page .sbpl-caveat-list,
+.sbpl-workbench-page .sbpl-warning,
+.sbpl-workbench-page .sbpl-caveats {
+    max-width: 80ch;
+}
+
+/*
+ * A single control gains nothing from being as wide as the window. Prompt
+ * fields are the exception: their text is the thing being worked on.
+ */
+.sbpl-workbench-page .sbpl-field:not(.sbpl-prompt-field) {
+    max-width: 46em;
+}
+
+.sbpl-workbench-page .sbpl-settings-tab {
+    max-width: 60em;
+}
+
+/* Short columns spread out oddly across a very wide window. */
+.sbpl-workbench-page .sbpl-queue {
+    max-width: 64em;
+}
+
+/* ---- shared controls ---- */
+
+.sbpl-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25em;
+}
+
+.sbpl-field-label {
+    font-weight: 600;
+}
+
+.menu_button.sbpl-button {
+    width: auto;
+    min-height: 2.4em;
+    white-space: nowrap;
+}
+
+.sbpl-empty {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35em;
+    padding: 1.25em 1em;
+    border: 1px dashed var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.4));
+    border-radius: 0.5em;
+    text-align: center;
+}
+
+.sbpl-empty-title {
+    margin: 0;
+    font-weight: 600;
+}
+
+.sbpl-empty-body {
+    margin: 0;
+    opacity: 0.8;
+}
+
+.sbpl-status {
+    margin: 0;
+    font-size: calc(var(--mainFontSize, 1rem) * 0.9);
+}
+
+/* Wide content must scroll inside its own box, never the page. */
+.sbpl-scroll-x {
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+/* ---- how the workspace answers the space it is given ---- */
+
+/*
+ * Wide enough for two columns: the library on the left stays visible while the
+ * editor works on the right, instead of pushing it below the fold.
+ */
+@media (min-width: 1100px) {
+    .sbpl-workbench-page .sbpl-cases-tab,
+    .sbpl-workbench-page .sbpl-presets-tab,
+    .sbpl-workbench-page .sbpl-prompts-tab {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+        align-content: start;
+        align-items: start;
+        gap: 0.7em 1.5em;
+    }
+
+    .sbpl-workbench-page .sbpl-cases-tab > *,
+    .sbpl-workbench-page .sbpl-presets-tab > *,
+    .sbpl-workbench-page .sbpl-prompts-tab > * {
+        grid-column: 1 / -1;
+        min-width: 0;
+    }
+
+    .sbpl-workbench-page .sbpl-cases-tab > .sbpl-case-list-host,
+    .sbpl-workbench-page .sbpl-presets-tab > .sbpl-preset-library,
+    .sbpl-workbench-page .sbpl-prompts-tab > .sbpl-preset-library {
+        grid-column: 1;
+    }
+
+    .sbpl-workbench-page .sbpl-cases-tab > .sbpl-editor-host,
+    .sbpl-workbench-page .sbpl-presets-tab > .sbpl-editor-host,
+    .sbpl-workbench-page .sbpl-prompts-tab > .sbpl-editor-host {
+        grid-column: 2;
+    }
+
+    /* With nothing being edited, the library has the whole surface. */
+    .sbpl-workbench-page .sbpl-cases-tab:has(> .sbpl-editor-host:empty) > .sbpl-case-list-host,
+    .sbpl-workbench-page .sbpl-presets-tab:has(> .sbpl-editor-host:empty) > .sbpl-preset-library,
+    .sbpl-workbench-page .sbpl-prompts-tab:has(> .sbpl-editor-host:empty) > .sbpl-preset-library {
+        grid-column: 1 / -1;
+    }
+
+    .sbpl-workbench-page .sbpl-editor {
+        margin-top: 0;
+    }
+
+    .sbpl-workbench-page .sbpl-prompt-pair {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-areas:
+            "a b"
+            "copy copy";
+        gap: 0.5em 1.5em;
+        align-items: start;
+    }
+
+    .sbpl-workbench-page .sbpl-prompt-pair > :nth-child(1) { grid-area: a; }
+    .sbpl-workbench-page .sbpl-prompt-pair > :nth-child(2) { grid-area: copy; justify-self: start; }
+    .sbpl-workbench-page .sbpl-prompt-pair > :nth-child(3) { grid-area: b; }
+
+    .sbpl-workbench-page .sbpl-prompt-pair .sbpl-textarea {
+        min-height: 11em;
+    }
+}
+
+/* Vertical room is the thing the page has most of. */
+.sbpl-workbench-page .sbpl-diff-body {
+    max-height: 60vh;
+}
+
+.sbpl-workbench-page .sbpl-ab-body {
+    max-height: 55vh;
+}
+
+/* A narrower window keeps the rail, but only the names fit in it. */
+@media (max-width: 900px) {
+    .sbpl-page {
+        --sbpl-rail: 11.5em;
+    }
+
+    .sbpl-workbench-page .sbpl-tab-hint {
+        display: none;
+    }
+
+    .sbpl-workbench-page > .sbpl-main {
+        padding: 0.9em 1em 2.5em;
+    }
+}
+
+/* ---- mobile ---- */
+
+@media (max-width: 620px) {
+    .sbpl-tabs {
+        display: none;
+    }
+
+    .sbpl-tab-select {
+        display: block;
+    }
+
+    /* No room for a rail: one column, one scroller, sections from the select. */
+    .sbpl-workbench-page {
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+
+    .sbpl-workbench-page > .sbpl-availability {
+        margin: 0.6em 0.8em 0;
+    }
+
+    .sbpl-workbench-page > .sbpl-nav {
+        padding: 0.7em 0.8em 0;
+        border-right: none;
+        overflow: visible;
+    }
+
+    .sbpl-workbench-page > .sbpl-main {
+        padding: 0.8em 0.8em 2.5em;
+        overflow: visible;
+    }
+
+    .sbpl-workbench-page .sbpl-readout {
+        display: none;
+    }
+
+    .sbpl-page-header {
+        padding: 0.5em 0.8em;
+    }
+
+    .sbpl-page-shortcut {
+        display: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sbpl-workbench * {
+        animation-duration: 0.001ms !important;
+        transition-duration: 0.001ms !important;
+    }
+}
+
+/* ---- controls and warnings ---- */
+
+.sbpl-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em;
+    align-items: center;
+}
+
+.sbpl-select,
+.sbpl-input,
+.sbpl-textarea {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.sbpl-textarea {
+    width: 100%;
+    resize: vertical;
+}
+
+.sbpl-warning {
+    padding: 0.6em 0.8em;
+    border: 1px solid var(--warning, #f0ad4e);
+    border-radius: 0.35em;
+    background-color: var(--black30a, rgba(0, 0, 0, 0.2));
+}
+
+.sbpl-warning-text {
+    margin: 0 0 0.4em;
+}
+
+.sbpl-warning:last-child .sbpl-warning-text:only-child {
+    margin-bottom: 0;
+}
+
+.sbpl-warnings:empty {
+    display: none;
+}
+
+.sbpl-progress {
+    width: 100%;
+    height: 0.6em;
+}
+
+.sbpl-run-tab,
+.sbpl-results {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6em;
+}
+
+/* What a run would do, shown before it is started. */
+.sbpl-queue {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+}
+
+.sbpl-queue:empty {
+    display: none;
+}
+
+.sbpl-progress-label:empty {
+    display: none;
+}
+
+/* ---- results table ---- */
+
+.sbpl-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.sbpl-table th,
+.sbpl-table td {
+    padding: 0.4em 0.6em;
+    border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.35));
+    text-align: left;
+    vertical-align: top;
+}
+
+.sbpl-table th {
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.sbpl-number {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.sbpl-summary {
+    margin: 0;
+    font-weight: 600;
+}
+
+/* Status is carried by the word as well as the colour. */
+.sbpl-chip {
+    display: inline-block;
+    padding: 0.1em 0.5em;
+    border: 1px solid currentColor;
+    border-radius: 1em;
+    font-size: calc(var(--mainFontSize, 1rem) * 0.85);
+    white-space: nowrap;
+}
+
+.sbpl-chip-pass { color: var(--active, #5cb85c); }
+.sbpl-chip-changed { color: var(--warning, #f0ad4e); }
+.sbpl-chip-fail { color: var(--fullred, #d9534f); }
+.sbpl-chip-error { color: var(--fullred, #d9534f); }
+.sbpl-chip-skipped { opacity: 0.7; }
+
+.sbpl-caveats {
+    padding: 0.6em 0.8em;
+    border-radius: 0.35em;
+    background-color: var(--black30a, rgba(0, 0, 0, 0.15));
+}
+
+.sbpl-caveats-title {
+    margin: 0 0 0.3em;
+    font-weight: 600;
+}
+
+.sbpl-caveat-list {
+    margin: 0;
+    padding-left: 1.2em;
+}
+
+.sbpl-caveat-list li + li {
+    margin-top: 0.3em;
+}
+
+/* ---- case list and editor ---- */
+
+.sbpl-case-list,
+.sbpl-assertion-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4em;
+}
+
+.sbpl-case-item,
+.sbpl-assertion-item {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5em 0.6em;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.35));
+    border-radius: 0.4em;
+}
+
+.sbpl-case-label {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.sbpl-case-name {
+    font-weight: 600;
+}
+
+.sbpl-case-meta,
+.sbpl-assertion-empty {
+    font-size: calc(var(--mainFontSize, 1rem) * 0.85);
+    opacity: 0.75;
+}
+
+.sbpl-case-actions,
+.sbpl-editor-actions,
+.sbpl-assertion-adder {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4em;
+    align-items: center;
+}
+
+.sbpl-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6em;
+    margin-top: 0.75em;
+    padding-top: 0.75em;
+    border-top: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.35));
+}
+
+.sbpl-assertions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4em;
+}
+
+.sbpl-problems {
+    margin: 0;
+    padding-left: 1.2em;
+    color: var(--fullred, #d9534f);
+}
+
+.sbpl-problems:empty {
+    display: none;
+}
+
+.sbpl-button-quiet {
+    opacity: 0.85;
+}
+
+/* ---- character picker ---- */
+
+.sbpl-picker-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25em;
+    min-width: 0;
+}
+
+.sbpl-picker {
+    position: relative;
+}
+
+.sbpl-picker-summary {
+    display: flex;
+    box-sizing: border-box;
+    gap: 0.5em;
+    align-items: center;
+    min-height: 2.6em;
+    padding: 0.3em 0.6em;
+    cursor: pointer;
+    list-style: none;
+}
+
+.sbpl-picker-summary::-webkit-details-marker {
+    display: none;
+}
+
+/* The chevron, rotated to point the way the menu will move. */
+.sbpl-picker-summary::after {
+    width: 0.45em;
+    height: 0.45em;
+    margin-left: auto;
+    border-bottom: 2px solid currentColor;
+    border-right: 2px solid currentColor;
+    content: '';
+    transform: rotate(45deg);
+}
+
+.sbpl-picker[open] > .sbpl-picker-summary::after {
+    transform: rotate(225deg);
+}
+
+.sbpl-picker-menu {
+    position: absolute;
+    /* Above the workspace's own layers, or the menu opens behind the panel. */
+    z-index: 4100;
+    top: calc(100% + 0.25em);
+    left: 0;
+    right: 0;
+    box-sizing: border-box;
+    padding: 0.5em;
+    border: 1px solid var(--sbpl-line, var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.4)));
+    border-radius: 0.5em;
+    background: var(--sbpl-surface, var(--SmartThemeBlurTintColor, #1b1f20));
+}
+
+.sbpl-picker-search {
+    box-sizing: border-box;
+    width: 100%;
+}
+
+.sbpl-picker-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15em;
+    max-height: min(20em, 45vh);
+    margin-top: 0.4em;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.sbpl-picker-option {
+    display: flex;
+    gap: 0.5em;
+    align-items: center;
+    width: 100%;
+    min-height: 2.75em;
+    margin: 0;
+    padding: 0.3em 0.4em;
+    border: 1px solid transparent;
+    border-radius: 0.4em;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+/* The search hides options with [hidden], which the display rule above would
+   otherwise win against at equal specificity. */
+.sbpl-picker-option[hidden] {
+    display: none;
+}
+
+.sbpl-picker-option:hover {
+    border-color: var(--sbpl-line, var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.4)));
+}
+
+.sbpl-picker-option[aria-pressed="true"] {
+    border-color: var(--active, currentColor);
+    background-color: var(--white20a, rgba(255, 255, 255, 0.1));
+    font-weight: 600;
+}
+
+.sbpl-picker-avatar {
+    width: 2em;
+    height: 2em;
+    flex: 0 0 2em;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.sbpl-picker-avatar-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.6;
+}
+
+.sbpl-picker-copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+}
+
+.sbpl-picker-name,
+.sbpl-picker-meta {
+    overflow-wrap: anywhere;
+}
+
+.sbpl-picker-meta,
+.sbpl-picker-empty {
+    font-size: calc(var(--mainFontSize, 1rem) * 0.85);
+    opacity: 0.7;
+}
+
+.sbpl-picker-empty {
+    margin: 0.4em 0 0;
+}
+
+/* The scene as it will be sent, read as a conversation before it is. */
+.sbpl-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4em;
+    min-width: 0;
+    margin: 0.6em 0;
+}
+
+.sbpl-preview:empty {
+    display: none;
+}
+
+.sbpl-preview-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6em;
+    padding: 0.7em 0.8em;
+    border: 1px solid var(--sbpl-line, var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.4)));
+    border-radius: 0.5em;
+    background-color: var(--black30a, rgba(0, 0, 0, 0.15));
+}
+
+.sbpl-preview-line {
+    display: flex;
+    gap: 0.6em;
+    align-items: flex-start;
+    min-width: 0;
+}
+
+.sbpl-preview-avatar {
+    width: 2.2em;
+    height: 2.2em;
+    flex: 0 0 2.2em;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.sbpl-preview-copy {
+    min-width: 0;
+}
+
+.sbpl-preview-who {
+    display: flex;
+    gap: 0.5em;
+    align-items: baseline;
+    margin: 0 0 0.15em;
+    font-weight: 600;
+}
+
+.sbpl-preview-note {
+    font-size: calc(var(--mainFontSize, 1rem) * 0.78);
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    opacity: 0.55;
+}
+
+/* The words as written, line breaks and all, but never a wall of text. */
+.sbpl-preview-text {
+    margin: 0;
+    max-height: 9em;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* A face beside a name in the lists, at reading size. */
+.sbpl-row-avatar {
+    width: 1.6em;
+    height: 1.6em;
+    flex: 0 0 1.6em;
+    margin-right: 0.4em;
+    border-radius: 50%;
+    object-fit: cover;
+    vertical-align: middle;
+}
+
+/* ---- comparison ---- */
+
+/* The setups a test case is built under, one row each, and what they produced. */
+.sbpl-setups,
+.sbpl-setup-rows,
+.sbpl-setup-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6em;
+    min-width: 0;
+}
+
+.sbpl-setups,
+.sbpl-setup-summary {
+    margin: 0.6em 0;
+}
+
+.sbpl-setups:empty,
+.sbpl-setup-summary:empty {
+    display: none;
+}
+
+/* One scene played under several presets. */
+.sbpl-scenes-tab,
+.sbpl-scene-turns,
+.sbpl-scene-presets {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6em;
+    min-width: 0;
+}
+
+.sbpl-scene-presets {
+    flex-flow: row wrap;
+    gap: 0.3em 1em;
+}
+
+.sbpl-scene-retry {
+    align-self: flex-start;
+    margin-top: 0.6em;
+}
+
+.sbpl-scene-export:empty {
+    display: none;
+}
+
+.sbpl-scene-turn-label {
+    margin: 0.6em 0 0.2em;
+    font-family: var(--monoFontFamily, monospace);
+    font-size: calc(var(--mainFontSize, 1rem) * 0.75);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.6;
+}
+
+/* What was said to the model, kept distinct from what came back. */
+.sbpl-scene-said {
+    margin: 0 0 0.3em;
+    padding-left: 0.6em;
+    border-left: 2px solid var(--sbpl-line, var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.4)));
+    font-style: italic;
+    opacity: 0.85;
+}
+
+.sbpl-raw-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+}
+
+.sbpl-diff-section {
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.35));
+    border-radius: 0.4em;
+    padding: 0.4em 0.6em;
+}
+
+.sbpl-diff-summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.sbpl-diff-body {
+    margin: 0.5em 0 0;
+    padding: 0.5em;
+    max-height: 24em;
+    overflow: auto;
+    border-radius: 0.3em;
+    background-color: var(--black30a, rgba(0, 0, 0, 0.2));
+    font-family: var(--monoFontFamily, monospace);
+    font-size: calc(var(--mainFontSize, 1rem) * 0.85);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Added and removed carry an underline style as well as a colour. */
+.sbpl-diff-added {
+    color: var(--active, #5cb85c);
+    text-decoration: underline;
+    text-decoration-style: solid;
+}
+
+.sbpl-diff-removed {
+    color: var(--fullred, #d9534f);
+    text-decoration: line-through;
+}
+
+.sbpl-diff-same {
+    opacity: 0.75;
+}
+
+.sbpl-diff-output {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6em;
+}
+
+/* ---- side by side replies ---- */
+
+.sbpl-ab-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6em;
+}
+
+.sbpl-ab-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3em;
+    min-width: 0;
+    padding: 0.5em 0.6em;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.35));
+    border-radius: 0.4em;
+}
+
+.sbpl-ab-title {
+    margin: 0;
+    font-size: calc(var(--mainFontSize, 1rem) * 1);
+}
+
+.sbpl-ab-body {
+    margin: 0;
+    padding: 0.5em;
+    max-height: 22em;
+    overflow: auto;
+    border-radius: 0.3em;
+    background-color: var(--black30a, rgba(0, 0, 0, 0.2));
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.sbpl-ab-error {
+    color: var(--warning, #f0ad4e);
+}
+
+.sbpl-ab-output {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6em;
+}
+
+@media (max-width: 620px) {
+    .sbpl-ab-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.sbpl-file-input {
+    max-width: 100%;
+}
+
+.sbpl-embed-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+    padding-top: 0.6em;
+    border-top: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.35));
+}
+
+.sbpl-settings-tab {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7em;
+}
+
+/* ---- prompt fields ---- */
+
+.sbpl-prompt-pair {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+    align-items: flex-start;
+}
+
+.sbpl-prompt-pair > .sbpl-prompt-field {
+    align-self: stretch;
+}
+
+.sbpl-prompt-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5em;
+}
+
+.sbpl-maximize {
+    cursor: pointer;
+    opacity: 0.75;
+}
+
+.sbpl-maximize:hover,
+.sbpl-maximize:focus-visible {
+    opacity: 1;
+}
+
+.sbpl-field-inline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4em;
+}
+
+.sbpl-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+}
+
+/* ---- preset workshop ---- */
+
+.sbpl-presets-tab,
+.sbpl-cases-tab {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7em;
+}
+
+.sbpl-preset-library {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8em;
+}
+
+.sbpl-preset-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4em;
+}
+
+.sbpl-preset-heading {
+    margin: 0;
+    font-size: calc(var(--mainFontSize, 1rem) * 1);
+    font-weight: 600;
+}
+
+.sbpl-preset-list,
+.sbpl-module-list,
+.sbpl-review-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4em;
+}
+
+.sbpl-preset-item,
+.sbpl-module-item,
+.sbpl-review-item {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5em 0.6em;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.35));
+    border-radius: 0.4em;
+}
+
+.sbpl-preset-label,
+.sbpl-module-label {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.sbpl-preset-name,
+.sbpl-module-name {
+    font-weight: 600;
+}
+
+.sbpl-preset-meta,
+.sbpl-module-meta {
+    font-size: calc(var(--mainFontSize, 1rem) * 0.85);
+    opacity: 0.75;
+    overflow-wrap: anywhere;
+}
+
+.sbpl-preset-actions,
+.sbpl-module-actions,
+.sbpl-bulk,
+.sbpl-modules-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4em;
+    align-items: center;
+}
+
+.sbpl-bulk {
+    padding: 0.4em 0.6em;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.35));
+    border-radius: 0.4em;
+}
+
+.sbpl-preset-fields,
+.sbpl-preset-pins,
+.sbpl-modules,
+.sbpl-matrix,
+.sbpl-review,
+.sbpl-assertion-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+}
+
+.sbpl-module-item {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.sbpl-module-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.sbpl-module-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+    padding-top: 0.5em;
+    border-top: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.35));
+}
+
+.sbpl-matrix-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12em, 1fr));
+    gap: 0.5em;
+}
+
+.sbpl-review,
+.sbpl-matrix,
+.sbpl-reload-host:not(:empty) {
+    padding: 0.6em 0.8em;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.35));
+    border-radius: 0.4em;
+}
+
+.sbpl-raw > summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.sbpl-raw .sbpl-textarea {
+    margin-top: 0.4em;
+    font-family: var(--monoFontFamily, monospace);
+    font-size: calc(var(--mainFontSize, 1rem) * 0.85);
+}
+
+/* ---- prompts space and prompt comparison ---- */
+
+.sbpl-prompts-tab,
+.sbpl-experiment-tab {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7em;
+}
+
+.sbpl-send-to-preset,
+.sbpl-analysis {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+    padding: 0.6em 0.8em;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.35));
+    border-radius: 0.4em;
+}
+
+.sbpl-send-to-preset .sbpl-field-label,
+.sbpl-analysis .sbpl-field-label,
+.sbpl-modules-head .sbpl-field-label {
+    margin: 0;
+}
+
+.sbpl-ledger-tab {
+    display: grid;
+    gap: 14px;
+    max-width: 860px;
+}
+
+.sbpl-ledger-summary-rows {
+    display: grid;
+    gap: 4px;
+    max-width: 420px;
+}
+
+.sbpl-ledger-list {
+    display: grid;
+    gap: 8px;
+}
+
+.sbpl-ledger-entry {
+    border: 1px solid var(--SmartThemeBorderColor, rgba(120, 120, 120, 0.35));
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+.sbpl-ledger-entry summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    align-items: baseline;
+    cursor: pointer;
+}
+
+.sbpl-ledger-when {
+    font-size: 0.82rem;
+    opacity: 0.8;
+}
+
+.sbpl-ledger-name {
+    font-weight: 600;
+}
+
+.sbpl-ledger-kind {
+    font-size: 0.82rem;
+    opacity: 0.8;
+}
+
+.sbpl-ledger-total {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+}
+
+.sbpl-ledger-sections {
+    display: grid;
+    gap: 4px;
+    margin: 8px 0 2px;
+    padding-left: 20px;
+    font-size: 0.85rem;
+}

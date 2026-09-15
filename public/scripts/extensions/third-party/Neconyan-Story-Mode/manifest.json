@@ -1,0 +1,20 @@
+{
+    "display_name": "Story Mode",
+    "author": "platberlitz",
+    "version": "0.2.4",
+    "description": "Optional manuscript co-writing: extend a continuous story with tap-to-edit, retry, undo, selection rewrites, directions, hotkeys, word count, and plain-text export.",
+    "requires": [],
+    "minimum_client_version": "1.7.0",
+    "js": "index.js",
+    "css": "style.css",
+    "license": "AGPL-3.0",
+    "license_file": "LICENSE",
+    "homePage": "https://github.com/platberlitz/SillyBunny-Story-Mode",
+    "loading_order": 150,
+    "auto_update": false,
+    "hooks": {
+        "activate": "activate",
+        "enable": "enable",
+        "disable": "disable"
+    }
+}

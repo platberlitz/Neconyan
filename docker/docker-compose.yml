@@ -1,0 +1,32 @@
+services:
+  sillybunny:
+    build:
+      # Repo root; Coolify and the documented local command set this as project directory.
+      context: .
+      dockerfile: Dockerfile
+    container_name: sillybunny
+    hostname: sillybunny
+    image: sillybunny:latest
+    environment:
+      - NODE_ENV=production
+      - FORCE_COLOR=1
+      - SILLYTAVERN_HEARTBEATINTERVAL=30
+      # Match container-created files to your host user and group by default.
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      # Uncomment on memory-capped hosts to trade throughput for aggressive GC.
+      # - NECONYAN_BUN_SMOL=1
+    ports:
+      - "4433:4433"
+    volumes:
+      - "./docker/config:/home/bun/app/config"
+      - "./docker/data:/home/bun/app/data"
+      - "./docker/plugins:/home/bun/app/plugins"
+      - "./docker/extensions:/home/bun/app/public/scripts/extensions/third-party"
+    healthcheck:
+      test: ["CMD", "bun", "src/healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+    restart: unless-stopped

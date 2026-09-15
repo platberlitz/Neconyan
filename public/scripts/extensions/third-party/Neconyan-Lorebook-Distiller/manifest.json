@@ -1,0 +1,21 @@
+{
+    "display_name": "Lorebook Distiller",
+    "author": "platberlitz",
+    "version": "0.1.0",
+    "description": "Turns chat history into one-concept lorebook entries: the model proposes, you approve each entry, and only approved entries are written.",
+    "requires": [],
+    "optional": [],
+    "dependencies": [],
+    "minimum_client_version": "1.7.0",
+    "js": "index.js",
+    "css": "style.css",
+    "license": "AGPL-3.0",
+    "homePage": "https://github.com/platberlitz/SillyBunny-Lorebook-Distiller",
+    "loading_order": 150,
+    "auto_update": false,
+    "hooks": {
+        "activate": "activate",
+        "enable": "enable",
+        "disable": "disable"
+    }
+}

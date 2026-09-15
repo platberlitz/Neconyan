@@ -1,0 +1,86 @@
+import { createHash, randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { tryWriteFileSync } from './util.js';
+import { isNativeLorebook, serializeLorebook } from '../public/scripts/neconyan-lorebook-tools-core.js';
+
+export function worldInfoRevision(data) {
+    return createHash('sha256').update(serializeLorebook(data)).digest('hex');
+}
+
+function historyPath(bookPath) {
+    const filename = createHash('sha256').update(path.basename(bookPath)).digest('hex');
+    return path.join(path.dirname(bookPath), '.history', `${filename}.json`);
+}
+
+export function newWorldInfoHistory() {
+    const now = Date.now();
+    return { version: 1, id: randomUUID(), createdAt: now, updatedAt: now, headCommitId: null, commits: [] };
+}
+
+export function validateWorldInfoHistory(history) {
+    if (!history || history.version !== 1 || !Array.isArray(history.commits)) return false;
+    const ids = new Set();
+    for (const commit of history.commits) {
+        if (!commit || typeof commit.id !== 'string' || !/^[a-f0-9]{64}$/.test(commit.id) || ids.has(commit.id)
+            || !(commit.parentId === null || ids.has(commit.parentId)) || !Number.isFinite(commit.timestamp)
+            || typeof commit.message !== 'string' || !isNativeLorebook(commit.snapshot)) return false;
+        ids.add(commit.id);
+    }
+    return history.headCommitId === null || ids.has(history.headCommitId);
+}
+
+export function readWorldInfoHistory(bookPath) {
+    const filename = historyPath(bookPath);
+    if (!fs.existsSync(filename)) return null;
+    const history = JSON.parse(fs.readFileSync(filename, 'utf8'));
+    if (!validateWorldInfoHistory(history)) throw new Error('Invalid World Info history');
+    return history;
+}
+
+export function writeWorldInfoHistory(bookPath, history) {
+    if (!validateWorldInfoHistory(history)) throw new Error('Invalid World Info history');
+    const filename = historyPath(bookPath);
+    fs.mkdirSync(path.dirname(filename), { recursive: true });
+    tryWriteFileSync(filename, JSON.stringify(history));
+}
+
+export function deleteWorldInfoHistory(bookPath) {
+    fs.rmSync(historyPath(bookPath), { force: true });
+}
+
+export function renameWorldInfoHistory(oldPath, newPath) {
+    const source = historyPath(oldPath);
+    const target = historyPath(newPath);
+    if (!fs.existsSync(source)) return;
+    if (fs.existsSync(target)) throw new Error('World Info history already exists');
+    fs.renameSync(source, target);
+}
+
+export function appendWorldInfoCommit(history, snapshot, message) {
+    const head = history.commits.find(commit => commit.id === history.headCommitId);
+    if (head && serializeLorebook(head.snapshot) === serializeLorebook(snapshot)) return history;
+    const parentId = history.headCommitId;
+    const id = createHash('sha256').update(`${parentId ?? 'root'}\0${serializeLorebook(snapshot)}`).digest('hex');
+    const timestamp = Date.now();
+    return {
+        ...history,
+        headCommitId: id,
+        updatedAt: timestamp,
+        commits: [...history.commits, { id, parentId, timestamp, message, snapshot: structuredClone(snapshot) }],
+    };
+}
+
+export function mergeWorldInfoHistory(previous, incoming, currentBook) {
+    if (!previous) return incoming;
+    const protectedHistory = appendWorldInfoCommit(previous, currentBook, 'Import');
+    const commits = new Map(protectedHistory.commits.map(commit => [commit.id, commit]));
+    for (const commit of incoming.commits) {
+        const existing = commits.get(commit.id);
+        if (existing && (serializeLorebook(existing.snapshot) !== serializeLorebook(commit.snapshot) || existing.parentId !== commit.parentId)) {
+            throw new Error('Invalid World Info history');
+        }
+        if (!existing) commits.set(commit.id, commit);
+    }
+    return { ...incoming, id: previous.id, createdAt: previous.createdAt, commits: [...commits.values()] };
+}

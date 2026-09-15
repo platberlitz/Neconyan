@@ -1,0 +1,16 @@
+{
+    "display_name": "Macro Enhanced",
+    "author": "platberlitz",
+    "version": "0.3.0",
+    "description": "Enhances the macro engine with utility, lorebook, pronoun, custom, and sandboxed workbench tools.",
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "loading_order": 100,
+    "hooks": {
+        "activate": "init",
+        "disable": "deactivate"
+    },
+    "homePage": "https://github.com/SillyBunnyTeam/SillyBunny-MacroEnhanced"
+}

@@ -1,0 +1,276 @@
+import {
+    currentRecords, eligibleRecords, fail, hash, id, list, object, POLICY_VERSION,
+    putRecord, recordEligible, recordRevision, refKey, sourceAt, sourceEligible, sourceFingerprint,
+    strings, uniqueRefs, validateRecord, validateRefs,
+} from './core.js';
+import { EXTRACTION_CONTRACT, PAWSPECTIVE_CONTRACT } from './contracts.js';
+import { callJsonRole, readConfig, roleVersion } from './models.js';
+import { loadCurrentState } from './sources.js';
+import { mutateState, statePath } from './store.js';
+
+const running = new Map();
+const objectiveKinds = ['entity', 'state', 'event', 'relationship', 'knowledge', 'commitment'];
+export const processingVersion = config => hash([POLICY_VERSION, roleVersion(config, 'extractor'), roleVersion(config, 'pawspective')]);
+
+export function pendingSources(state, config, { checkpoint = false, through = Infinity } = {}) {
+    const policy = processingVersion(config);
+    const coverage = checkpoint ? state.checkpoints : state.coverage;
+    return state.timeline.filter(ref => sourceEligible(state, ref, through) && coverage[refKey(ref)] !== policy);
+}
+
+export function addUsage(state, entries) {
+    state.usage ??= {};
+    for (const entry of entries) {
+        const total = state.usage[entry.role] ??= { requests: 0, input: 0, output: 0, milliseconds: 0 };
+        total.requests++;
+        for (const key of ['input', 'output', 'milliseconds']) total[key] += entry[key] || 0;
+    }
+}
+
+function seedCharacters(state) {
+    for (const ref of state.contextSources) {
+        const source = state.sources[ref.id];
+        const revision = sourceAt(state, ref);
+        if (source.type !== 'character' || !sourceEligible(state, ref)) continue;
+        if (state.records.some(record => record.kind === 'entity' && record.entityId === revision.entityId && recordEligible(state, record))) continue;
+        const record = validateRecord(state, {
+            id: 'entity:' + revision.entityId, kind: 'entity', entityId: revision.entityId,
+            name: revision.speaker, text: revision.speaker, isCharacter: true,
+            refs: [ref], subjectIds: [revision.entityId],
+        }, { asOf: -1, origin: 'character_card' });
+        putRecord(state, record, { automatic: true });
+    }
+}
+
+function knowledgeForTime(state, id, asOf) {
+    return eligibleRecords(state, { asOf }).filter(record => record.kind === 'knowledge'
+        && (record.id === id || record.restoredFrom?.id === id))
+        .sort((a, b) => b.asOf - a.asOf || b.createdAt - a.createdAt)[0];
+}
+
+function matchScore(text, query) {
+    const terms = new Set(String(query).toLocaleLowerCase().match(/[\p{L}\p{N}_-]{2,}/gu) || []);
+    return (String(text).toLocaleLowerCase().match(/[\p{L}\p{N}_-]{2,}/gu) || []).reduce((sum, term) => sum + Number(terms.has(term)), 0);
+}
+
+export function extractionInput(state, refs, asOf, checkpoint) {
+    const scene = refs.map(ref => ({ ...ref, type: 'chat', ...sourceAt(state, ref) }));
+    const query = scene.map(source => source.text).join('\n');
+    const context = state.contextSources.filter(ref => sourceEligible(state, ref))
+        .map(ref => ({ ...ref, type: state.sources[ref.id].type, ...sourceAt(state, ref) }));
+    const lore = context.filter(source => source.type === 'lore')
+        .map(source => ({ source, score: matchScore(source.text, query) }))
+        .filter(item => item.score > 0).sort((a, b) => b.score - a.score).slice(0, 16).map(item => item.source);
+    const sources = [...scene, ...context.filter(source => source.type === 'character'), ...lore];
+    const records = eligibleRecords(state, { asOf }).filter(record => objectiveKinds.includes(record.kind));
+    const reference = currentRecords(records.filter(record => ['entity', 'state'].includes(record.kind)), record => record.kind + ':' + record.entityId);
+    const relevant = records.filter(record => !['entity', 'state'].includes(record.kind))
+        .map(record => ({ record, score: matchScore(record.text, query) }))
+        .sort((a, b) => b.score - a.score || b.record.asOf - a.record.asOf).slice(0, 40).map(item => item.record);
+    return {
+        policy: POLICY_VERSION, mode: checkpoint ? 'preservation_checkpoint' : 'live_update', asOf,
+        sources, existing: [...reference, ...relevant],
+        authorOverrides: state.records.filter(record => record.authorOverride && record.asOf <= asOf),
+    };
+}
+
+export function applyExtraction(state, output, input) {
+    object(output, 'Extraction');
+    if (Object.keys(output).some(key => !['records', 'interviews', 'activeNpcIds'].includes(key))) fail('Unexpected extraction output.');
+    const refs = new Set(input.sources.map(refKey));
+    const records = list(output.records, 'Extracted records', 80);
+    const order = { entity: 0, state: 1, event: 2, relationship: 3, knowledge: 4, commitment: 5 };
+    const seen = new Set();
+    for (const proposed of records.slice().sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9))) {
+        if (!objectiveKinds.includes(proposed.kind) || seen.has(proposed.id)) fail('Extraction returned an invalid or duplicate record type.');
+        seen.add(proposed.id);
+        let candidate = proposed;
+        if (candidate.kind === 'entity') {
+            const previous = state.records.find(record => record.id === candidate.id && recordEligible(state, record, { asOf: input.asOf }));
+            if (previous) {
+                candidate = {
+                    ...candidate,
+                    appearance: candidate.appearance || previous.appearance,
+                    speech: candidate.speech || previous.speech,
+                    refs: uniqueRefs([...(candidate.refs || []), ...previous.refs]),
+                };
+                for (const ref of previous.refs) refs.add(refKey(ref));
+            }
+        }
+        const record = validateRecord(state, candidate, { asOf: input.asOf, origin: 'objective_extractor', allowedRefs: refs });
+        record.asOf = Math.max(-1, ...record.refs.map(ref => sourceAt(state, ref).sequence),
+            ...record.dependencies.map(dependency => recordRevision(state, dependency.id, dependency.version).asOf));
+        record.provenance = input.provenance;
+        record.inputRefs = input.sources.filter(source => source.type === 'chat').map(({ id, revision }) => ({ id, revision }));
+        putRecord(state, record, { automatic: true });
+    }
+    const active = strings(output.activeNpcIds, 'Active characters');
+    if (active.some(entityId => !state.records.some(record => record.kind === 'entity' && record.entityId === entityId
+        && record.isCharacter && recordEligible(state, record, { asOf: input.asOf })))) fail('An active participant is not an eligible AI character.');
+    state.sceneNpcIds = active;
+    return list(output.interviews, 'Interview requests', 4).map(request => {
+        object(request, 'Interview request');
+        return {
+            ownerId: id(request.ownerId), subjectIds: strings(request.subjectIds),
+            knowledgeIds: strings(request.knowledgeIds, 'Knowledge IDs', 24),
+            refs: validateRefs(state, request.refs, { asOf: input.asOf, allowedRefs: refs }),
+            evidenceRefs: request.evidenceRefs?.length ? validateRefs(state, request.evidenceRefs, { asOf: input.asOf, allowedRefs: refs }) : [],
+            significance: request.significance || 'low', reason: String(request.reason || '').slice(0, 2000),
+        };
+    });
+}
+
+/** Only acquired knowledge enters an interview, never an omniscient scene or a whole lore entry. */
+export function interviewInput(state, request, asOf) {
+    const eligible = eligibleRecords(state, { asOf });
+    const owner = eligible.find(record => record.kind === 'entity' && record.entityId === request.ownerId && record.isCharacter);
+    if (!owner || request.ownerId === 'player' || !request.subjectIds.length) fail('Invalid interview owner or subject.');
+    const knowledge = request.knowledgeIds.map(key => knowledgeForTime(state, key, asOf))
+        .map(record => record?.ownerId === request.ownerId ? record : null);
+    if (!knowledge.length || knowledge.some(record => !record)) fail('An interview needs evidence this character actually learned.');
+    const history = eligible.filter(record => record.kind === 'interview' && record.ownerId === request.ownerId
+        && record.subjectIds.some(subject => request.subjectIds.includes(subject)))
+        .sort((a, b) => b.asOf - a.asOf || b.createdAt - a.createdAt).slice(0, 3).reverse();
+    const overviews = currentRecords(eligible.filter(record => record.kind === 'overview' && record.ownerId === request.ownerId
+        && record.subjectIds.some(subject => request.subjectIds.includes(subject))), record => record.subjectIds.join(':'));
+    return {
+        policy: POLICY_VERSION, asOf,
+        owner: { id: owner.entityId, recordId: owner.id, version: owner.version, name: owner.name, appearance: owner.appearance, speech: owner.speech },
+        subjectIds: request.subjectIds,
+        knownFacts: knowledge.map(record => ({ id: record.id, text: record.text, method: record.method, refs: record.refs })),
+        priorInterviews: history.map(record => ({ id: record.id, version: record.version, asOf: record.asOf, interview: record.interview, changeExplanation: record.changeExplanation })),
+        currentOverviews: overviews.map(record => ({ id: record.id, version: record.version, subjectIds: record.subjectIds, text: record.text })),
+    };
+}
+
+export function interviewEvidenceKey(state, request, asOf = Infinity) {
+    return hash([request.ownerId, request.subjectIds, request.refs,
+        request.knowledgeIds.map(id => {
+            const record = knowledgeForTime(state, id, asOf);
+            return record && [record.id, record.text, record.refs];
+        })]);
+}
+
+export function applyInterview(state, request, output, input, jobId) {
+    object(output, 'Pawspective');
+    if (output.changed === false) {
+        if (Object.keys(output).some(key => key !== 'changed')) fail('An unchanged interview cannot contain new records.');
+        return;
+    }
+    if (output.changed !== true || Object.keys(output).some(key => !['changed', 'interview', 'searchDescription', 'changeExplanation', 'overviews'].includes(key))) {
+        fail('Unexpected Pawspective output.');
+    }
+    const knowledge = request.knowledgeIds.map(key => knowledgeForTime(state, key, input.asOf));
+    const snapshotId = 'interview:' + hash([jobId, request.ownerId, request.subjectIds, input.asOf]).slice(0, 32);
+    const dependencies = [
+        ...knowledge.map(record => ({ id: record.id, version: record.version })),
+        { id: input.owner.recordId, version: input.owner.version },
+        ...input.priorInterviews.map(record => ({ id: record.id, version: record.version })),
+        ...input.currentOverviews.map(record => ({ id: record.id, version: record.version })),
+    ].filter(record => record.id !== snapshotId);
+    const refs = uniqueRefs([...request.refs, ...knowledge.flatMap(record => record.refs)]);
+    const record = validateRecord(state, {
+        id: snapshotId,
+        kind: 'interview', ownerId: request.ownerId, subjectIds: request.subjectIds,
+        refs, dependencies, interview: output.interview, searchDescription: output.searchDescription,
+        previousId: input.priorInterviews.at(-1)?.id || '', changeExplanation: output.changeExplanation,
+        significance: request.significance, evidenceRefs: request.evidenceRefs,
+    }, { asOf: input.asOf, origin: 'generated_interview' });
+    record.provenance = input.provenance;
+    record.evidenceKey = interviewEvidenceKey(state, request, input.asOf);
+    const saved = putRecord(state, record, { automatic: true });
+    if (!recordEligible(state, saved, { asOf: input.asOf })) return;
+    if (saved.authorOverride) return;
+    const overviews = list(output.overviews, 'Subject overviews', request.subjectIds.length);
+    if (overviews.length !== request.subjectIds.length || new Set(overviews.map(item => item.subjectId)).size !== request.subjectIds.length) {
+        fail('Pawspective must supply one current overview for each requested subject.');
+    }
+    for (const overview of overviews) {
+        if (!request.subjectIds.includes(overview.subjectId)) fail('Unexpected interview subject.');
+        const current = validateRecord(state, {
+            id: 'overview:' + hash([record.id, overview.subjectId]).slice(0, 32),
+            kind: 'overview', ownerId: request.ownerId, subjectIds: [overview.subjectId],
+            text: overview.text, status: overview.status, refs,
+            dependencies: [{ id: saved.id, version: saved.version }],
+            significance: request.significance, evidenceRefs: request.evidenceRefs,
+        }, { asOf: input.asOf, origin: 'generated_overview' });
+        current.provenance = input.provenance;
+        putRecord(state, current, { automatic: true });
+    }
+}
+
+async function runBatch(directories, locator, options, call) {
+    const config = readConfig(directories);
+    let state = await loadCurrentState(directories, locator);
+    if (!state.enabled) return state;
+    const refs = pendingSources(state, config, options).slice(0, config.batchMessages);
+    if (!refs.length) return state;
+    const asOf = Math.max(...refs.map(ref => sourceAt(state, ref).sequence));
+    const snapshot = sourceFingerprint(state);
+    const policy = processingVersion(config);
+    const jobId = hash([policy, snapshot, refs, Boolean(options.checkpoint)]);
+    state = mutateState(directories, locator, current => {
+        seedCharacters(current);
+        current.jobs = current.jobs.filter(job => job.id !== jobId).slice(-39);
+        current.jobs.push({ id: jobId, status: 'processing', checkpoint: Boolean(options.checkpoint),
+            from: sourceAt(current, refs[0]).sequence, through: asOf, startedAt: Date.now(), policy });
+    }, state.revision);
+    const expectedRevision = state.revision;
+    const usage = [];
+    try {
+        const input = extractionInput(state, refs, asOf, options.checkpoint);
+        input.provenance = { policy: POLICY_VERSION, jobId, role: 'extractor', model: config.roles.extractor.model, modelRevision: config.roles.extractor.modelRevision };
+        const dataTypes = [...new Set([...input.sources.map(source => source.type), ...(input.existing.length || input.authorOverrides.length ? ['memory'] : [])])];
+        const extraction = await call(directories, config, 'extractor', EXTRACTION_CONTRACT, input, { dataTypes, signal: options.signal });
+        usage.push(extraction.usage);
+        const requestAsOf = request => Math.max(-1, ...request.refs.map(ref => sourceAt(state, ref).sequence));
+        const requests = applyExtraction(state, extraction.value, input).sort((a, b) => requestAsOf(a) - requestAsOf(b));
+        for (const request of requests) {
+            const interviewAsOf = requestAsOf(request);
+            const interview = interviewInput(state, request, interviewAsOf);
+            const evidenceKey = interviewEvidenceKey(state, request, interviewAsOf);
+            if (state.records.some(record => record.kind === 'interview' && record.evidenceKey === evidenceKey && recordEligible(state, record, { asOf: interviewAsOf }))) continue;
+            interview.provenance = { policy: POLICY_VERSION, jobId, role: 'pawspective',
+                model: config.roles.pawspective.model, modelRevision: config.roles.pawspective.modelRevision };
+            const generated = await call(directories, config, 'pawspective', PAWSPECTIVE_CONTRACT, interview, { dataTypes: ['memory'], signal: options.signal });
+            usage.push(generated.usage);
+            applyInterview(state, request, generated.value, interview, jobId);
+        }
+        const fresh = await loadCurrentState(directories, locator);
+        if (options.signal?.aborted) fail('Mewmory request cancelled.', 499);
+        if (sourceFingerprint(fresh) !== snapshot || fresh.revision !== expectedRevision || processingVersion(readConfig(directories)) !== policy) {
+            fail('The story, settings, or an author correction changed during processing. This result was discarded.', 409);
+        }
+        return mutateState(directories, locator, () => {
+            for (const ref of refs) {
+                state.coverage[refKey(ref)] = policy;
+                if (options.checkpoint) state.checkpoints[refKey(ref)] = policy;
+            }
+            Object.assign(state.jobs.at(-1), { status: 'complete', finishedAt: Date.now(), usage });
+            addUsage(state, usage);
+            return state;
+        }, expectedRevision);
+    } catch (error) {
+        mutateState(directories, locator, current => {
+            const job = current.jobs.find(item => item.id === jobId);
+            if (job) Object.assign(job, { status: 'failed', error: error.message, finishedAt: Date.now(), usage });
+            addUsage(current, usage);
+        });
+        throw error;
+    }
+}
+
+export async function processBatch(directories, locator, options = {}, call = callJsonRole) {
+    const key = statePath(directories, locator);
+    if (running.has(key)) {
+        await running.get(key);
+        return loadCurrentState(directories, locator);
+    }
+    const job = runBatch(directories, locator, options, call);
+    running.set(key, job);
+    try {
+        return await job;
+    } finally {
+        running.delete(key);
+    }
+}

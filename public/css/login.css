@@ -1,0 +1,116 @@
+:root {
+    color-scheme: dark;
+    --login-paper: oklch(18.5% 0.01 55);
+    --login-surface: oklch(22% 0.012 55);
+    --login-border: oklch(34% 0.016 55);
+    --login-ink: oklch(91% 0.025 80);
+    --login-muted: oklch(72% 0.022 65);
+    --login-ginger: oklch(75% 0.115 50);
+    font-family: 'Fredoka One', 'Figtree', system-ui, sans-serif;
+    color: var(--login-ink);
+    background: var(--login-paper);
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; }
+
+#shadow_popup {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: grid;
+    place-items: center;
+    padding: max(32px, env(safe-area-inset-top)) 24px max(32px, env(safe-area-inset-bottom));
+}
+
+#dialogue_popup { width: min(100%, 400px); }
+
+#logoBlock { text-align: left; margin-bottom: 32px; }
+
+.logo { display: block; margin: 0 0 16px; image-rendering: pixelated; }
+
+h1 { margin: 0; font-size: 2rem; letter-spacing: -0.04em; }
+
+h2 { font-size: 1.125rem; margin: 0 0 20px; }
+
+p { line-height: 1.5; color: var(--login-muted); }
+
+#logoBlock p { margin: 10px 0 0; }
+
+#userList { display: grid; gap: 10px; padding: 0; list-style: none; }
+
+button, input { font: inherit; }
+
+button {
+    min-height: 44px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 11px 18px;
+    background: var(--login-ginger);
+    color: var(--login-paper);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+button:hover { filter: brightness(1.08); }
+
+button:active { filter: brightness(0.92); }
+
+button:disabled { opacity: 0.6; cursor: wait; }
+
+button:focus-visible, input:focus-visible {
+    outline: 3px solid var(--login-ginger);
+    outline-offset: 3px;
+}
+
+.userSelect {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    column-gap: 14px;
+    row-gap: 2px;
+    align-items: center;
+    text-align: left;
+    width: 100%;
+    padding: 12px;
+    background: var(--login-surface);
+    color: var(--login-ink);
+    border-color: var(--login-border);
+}
+
+.avatar { grid-row: span 2; }
+
+.avatar img { display: block; width: 44px; height: 44px; border-radius: 50%; object-fit: cover; }
+
+.userName, .userHandle { overflow-wrap: anywhere; }
+
+.userHandle { color: var(--login-muted); font-weight: 400; }
+
+label { display: block; font-weight: 600; margin: 20px 0 8px; }
+
+input {
+    display: block;
+    width: 100%;
+    min-height: 48px;
+    border: 1px solid var(--login-border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    background: var(--login-surface);
+    color: var(--login-ink);
+}
+
+#loginButton { width: 100%; margin-top: 24px; }
+
+.text-button { color: var(--login-ginger); background: transparent; }
+
+#recoverPassword { display: block; margin: 8px auto 0; }
+
+.recovery-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 24px; }
+
+#errorMessage { color: oklch(77% 0.13 27); overflow-wrap: anywhere; }
+
+#errorMessage:empty { display: none; }
+
+@media (max-width: 480px) {
+    #shadow_popup { padding-inline: 20px; align-items: start; }
+    #dialogue_popup { margin-block: 24px; }
+}

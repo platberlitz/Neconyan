@@ -1,0 +1,42 @@
+{
+  "id": "tpl-html-toggle",
+  "name": "HTML Toggle",
+  "description": "Use inline HTML for diegetic in-world objects (signs, letters, screens)",
+  "icon": "",
+  "category": "content",
+  "subcategory": "behaviour",
+  "tags": [
+    "html",
+    "artifacts",
+    "visual"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "### HTML\n- Use inline HTML for diegetic objects whose visual form carries information: signs, posters, letters, receipts, terminals, screens, forms, warnings, maps, menus, dossiers, labels, graffiti, book pages. Present them as in-world artifacts characters encounter, inspect, and interpret.\n- Write all HTML directly in the response with inline styling or one compact <style> block. Make each object readable, setting-native, and materially specific. Let layout, typography, wear, color, glitches, stamps, annotations, and hierarchy communicate clues, mood, urgency, legitimacy, or hidden tension.\n- Use JS only for diegetic behavior the object itself would display: flicker, blinking indicators, scrolling text, cursor pulse, countdowns, refresh states, expandable on-object sections. Keep interaction light, inspectable, and tied to the artifact.\n- Surround each object with plain-text prose and dialogue so it feels embedded in the scene, not replacing narration. Favor objects that add clues, constraints, choices, or texture the scene can act on.",
+  "phase": "pre",
+  "injection": {
+    "position": 0,
+    "depth": 4,
+    "role": 0,
+    "order": 100,
+    "scan": false
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "regex",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": ""
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal"
+    ]
+  }
+}

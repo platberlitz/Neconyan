@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Unauthorized</title>
+    <style>
+        :root { color-scheme: dark; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100dvh;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            background: radial-gradient(circle at 50% 0%, #1e201d, #161716 72%);
+            color: #f6edda;
+            font-family: 'Nunito', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            text-align: center;
+        }
+        main {
+            width: min(560px, 100%);
+            padding: 26px 24px 22px;
+            border: 1px solid #61534d;
+            border-radius: 20px;
+            background: #242420;
+            box-shadow: 0 18px 42px rgba(0, 0, 0, .45);
+        }
+        .stage { height: 178px; display: grid; place-items: center; }
+        .flip {
+            width: 132px;
+            height: auto;
+            image-rendering: pixelated;
+            filter: drop-shadow(0 10px 14px rgba(0, 0, 0, .45));
+            animation: neconyan-backflip 1.5s cubic-bezier(.45, 0, .55, 1) infinite;
+        }
+        @keyframes neconyan-backflip {
+            0% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-34px) rotate(180deg); }
+            100% { transform: translateY(0) rotate(360deg); }
+        }
+        h1 { margin: 8px 0 6px; font-size: 24px; letter-spacing: .01em; }
+        .lead { margin: 0 0 18px; color: #ddd0bf; font-size: 14px; }
+        ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; text-align: left; }
+        li {
+            display: grid;
+            grid-template-columns: 24px minmax(0, 1fr);
+            gap: 10px;
+            align-items: start;
+            padding: 10px 12px;
+            border: 1px solid rgba(97, 83, 77, .8);
+            border-radius: 12px;
+            background: #302e29;
+            font-size: 13px;
+            line-height: 1.45;
+        }
+        li b { color: #d69270; font-weight: 700; }
+        li span { color: #ddd0bf; }
+        code {
+            padding: 1px 5px;
+            border-radius: 6px;
+            background: rgba(0, 0, 0, .35);
+            color: #f6edda;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 12px;
+        }
+        footer { margin-top: 16px; color: #a89b8c; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+        @media (prefers-reduced-motion: reduce) {
+            .flip { animation: none; }
+        }
+    </style>
+</head>
+
+<body>
+    <main>
+        <div class="stage">
+            <img class="flip" src="/img/neconyan-pixel-cat.webp" alt="A pixel cat doing a backflip" width="208" height="192">
+        </div>
+        <h1>Unauthorized</h1>
+        <p class="lead">This Neconyan is behind a login. Here is how to get back in.</p>
+        <ol>
+            <li><b>1</b><span>When the browser asks, enter the username and password from <code>basicAuthUser</code> in <code>config.yaml</code>. Cancel the prompt to see this page.</span></li>
+            <li><b>2</b><span>Still refused? Re-type them. Both values are case sensitive and may contain spaces or symbols.</span></li>
+            <li><b>3</b><span>Forgot them? On the server, edit <code>config.yaml</code>, set new values, then run <code>sudo systemctl restart neconyan</code>.</span></li>
+            <li><b>4</b><span>Stuck in a loop or seeing an old page? Clear this site's cookies and cached data, or try a private window.</span></li>
+            <li><b>5</b><span>Wrong address? Open the exact URL you normally use, for example <code>https://neconyan.purabunny.cc</code>.</span></li>
+            <li><b>6</b><span>Several wrong tries in a row? Wait a minute for the rate limit to reset, then try again.</span></li>
+        </ol>
+        <footer>Neconyan</footer>
+    </main>
+</body>
+
+</html>

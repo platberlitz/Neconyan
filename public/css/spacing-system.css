@@ -1,0 +1,56 @@
+:root {
+    /* Base spacing scale - 4px increments */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 12px;
+    --spacing-lg: 16px;
+    --spacing-xl: 20px;
+    --spacing-2xl: 24px;
+    --spacing-3xl: 32px;
+    --spacing-4xl: 40px;
+
+    /* Button sizing */
+    --button-size-sm: 38px;
+    --button-size-md: 42px;
+    --button-size-lg: 48px;
+    --button-padding-x: 16px;
+    --button-padding-y: 12px;
+
+    /* Input sizing */
+    --input-padding-x: 16px;
+    --input-padding-y: 14px;
+
+    /* Card/Panel spacing */
+    --card-padding: 18px;
+    --card-gap: 18px;
+    --panel-padding: 18px;
+    --panel-gap: 12px;
+
+    /* Icon sizes */
+    --icon-size-sm: 20px;
+    --icon-size-md: 24px;
+    --icon-size-lg: 32px;
+
+    /* Header heights */
+    --header-height-sm: 44px;
+    --header-height-md: 48px;
+    --header-height-lg: 52px;
+}
+
+/* Mobile adjustments */
+@media screen and (max-width: 1000px) {
+    :root {
+        --button-size-md: 40px;
+        --card-padding: 16px;
+        --panel-padding: 16px;
+        --input-padding-y: 12px;
+    }
+}
+
+@media screen and (max-width: 620px) {
+    :root {
+        --button-size-md: 38px;
+        --card-padding: 14px;
+        --panel-padding: 14px;
+    }
+}

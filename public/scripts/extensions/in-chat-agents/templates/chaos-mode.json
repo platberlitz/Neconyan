@@ -1,0 +1,41 @@
+{
+  "id": "tpl-chaos-mode",
+  "name": "Chaos Mode",
+  "description": "Inject random surreal, chaotic, or unexpected turns into the scene (30% chance)",
+  "icon": "",
+  "category": "randomizer",
+  "tags": [
+    "chaos",
+    "random",
+    "twist"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "### Chaos Mode\nForce creative deviation. The story takes hard left turns, introduces complications from unexpected angles, and refuses predictable paths.\n\nThis scene must include at least one of the following:\n\n{{random::Tonal shift: the genre bends mid-scene. Tension becomes absurdity, intimacy becomes horror, mundane becomes surreal, or violence becomes comedy. Jarring but coherent.::Intrusion: the setting itself acts. Architecture moves, weather turns hostile, an animal intervenes, background NPCs collide with the main action, or the environment creates a new problem.::Character rupture: someone acts sharply against their established pattern, justified by hidden pressure, breaking point, or context the scene suddenly reveals.::Surreal logic: reality gets slippery. Time dilates, sensory input warps, coincidence becomes too perfect, or the physical world stops behaving predictably. Characters notice but cannot control it.::Chaotic escalation: a small thing spirals. A minor annoyance becomes a crisis, a joke becomes a threat, a question becomes an interrogation, or a gesture becomes a fight. The scene accelerates past where it should have stopped.::Forbidden juxtaposition: combine two elements that do not belong together. Intimacy during danger, laughter during grief, tenderness during cruelty, boredom during spectacle, or professionalism during chaos.::Unexpected arrival: someone or something shows up that should not be here. A character from a different context, an object out of place, a message at the wrong time, or a stranger with inexplicable knowledge.::Power reversal: the dynamic inverts. The person in control loses it, the vulnerable one seizes leverage, the observer becomes the observed, or the helper becomes the problem.::Constraint introduced: a new rule suddenly applies. A time limit, a physical barrier, a social obligation, a resource running out, or a promise that must be kept. Possibility space narrows.::Information rupture: something believed true is not. A lie is exposed, a misunderstanding clarifies in the worst way, or a secret spills.::Sensory overload or deprivation: the scene's texture warps. Everything becomes too loud, too bright, too close; or muffled, distant, numb. Characters struggle to process their environment.::Parallel action collision: something happening off-screen crashes into this scene. A consequence arrives early, a subplot intersects, or the world's momentum forces its way in.}}\n\n{{random::The weirdness is diegetic. Characters react to it.::The weirdness is normalized. Characters accept it as part of their world.::The weirdness is unacknowledged. It happens in the margins while characters focus on something else.::The weirdness is contested. Characters disagree about whether it is happening or what it means.}}\n\n{{random::Resolve the weirdness by the end of the scene.::Leave the weirdness unresolved; let it linger.::Escalate the weirdness further before cutting away.::The weirdness becomes the new normal for subsequent scenes.}}\n\n{{random::The chaos creates an opportunity.::The chaos creates a threat.::The chaos creates a revelation.::The chaos creates a choice.::The chaos creates a bond.::The chaos creates a rift.}}\n\nRules:\n- The weirdness must change the scene coherently.\n- Keep deviation expressive of character, world, or emotional logic.\n- Use the chaos to produce a new problem, choice, revelation, or shift in direction.",
+  "phase": "pre",
+  "injection": {
+    "position": 1,
+    "depth": 0,
+    "role": 1,
+    "order": 95,
+    "scan": false
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "regex",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": ""
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 30,
+    "generationTypes": [
+      "normal"
+    ]
+  }
+}

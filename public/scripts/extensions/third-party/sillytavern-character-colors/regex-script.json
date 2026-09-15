@@ -1,0 +1,15 @@
+{
+  "id": "dialogue-colors:trim-font-tags:v1",
+  "scriptName": "[Dialogue Colors] Trim Exact Font Tags",
+  "findRegex": "/<font(?:\\s+[^<>]*?)?\\s*\\/?>|<\\/font\\s*>/gi",
+  "replaceString": "",
+  "trimStrings": [],
+  "placement": [2],
+  "disabled": false,
+  "markdownOnly": false,
+  "promptOnly": true,
+  "runOnEdit": true,
+  "substituteRegex": 0,
+  "minDepth": null,
+  "maxDepth": null
+}

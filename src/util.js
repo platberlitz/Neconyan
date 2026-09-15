@@ -1,0 +1,2798 @@
+import path from 'node:path';
+import fs from 'node:fs';
+import process from 'node:process';
+import { createRequire } from 'node:module';
+import { Buffer } from 'node:buffer';
+import { promises as dnsPromise } from 'node:dns';
+import os from 'node:os';
+import crypto from 'node:crypto';
+
+import yaml from 'yaml';
+import util from 'node:util';
+import { sync as commandExistsSync } from 'command-exists';
+import _ from 'lodash';
+import yauzl from 'yauzl';
+import mime from 'mime-types';
+import { default as simpleGit } from 'simple-git';
+import chalk from 'chalk';
+import bytes from 'bytes';
+import { LOG_LEVELS, CHAT_COMPLETION_SOURCES, MEDIA_REQUEST_TYPE } from './constants.js';
+import { serverDirectory } from './server-directory.js';
+import { sync as writeFileAtomicSync } from 'write-file-atomic';
+import { isFirefox } from './express-common.js';
+import { pollSocketConnection } from './connection-state-checker.js';
+import { isRequestCancellationError, observeRequestCancellation } from './request-cancellation.js';
+import { getResumableGeneration } from './resumable-generations.js';
+import { isBunRuntime } from './runtime.js';
+
+const DEFAULT_STREAMING_CONNECTION_POLLING_INTERVAL_MS = 150;
+
+/**
+ * Parsed config object.
+ */
+let CACHED_CONFIG = null;
+let CONFIG_PATH = null;
+
+/**
+ * Converts a configuration key to an environment variable key.
+ * @param {string} key Configuration key
+ * @returns {string} Environment variable key
+ * @example keyToEnv('extensions.models.speechToText') // 'SILLYTAVERN_EXTENSIONS_MODELS_SPEECHTOTEXT'
+ */
+export const keyToEnv = (key) => 'SILLYTAVERN_' + String(key).toUpperCase().replace(/\./g, '_');
+
+/**
+ * Set the config file path.
+ * @param {string} configFilePath Path to the config file
+ */
+export function setConfigFilePath(configFilePath) {
+    if (CONFIG_PATH !== null) {
+        console.error(color.red('Config file path already set. Please restart the server to change the config file path.'));
+    }
+    CONFIG_PATH = path.resolve(configFilePath);
+}
+
+/**
+ * Returns the config object from the config.yaml file.
+ * @returns {object} Config object
+ */
+export function getConfig() {
+    if (CONFIG_PATH === null) {
+        console.trace();
+        console.error(color.red('No config file path set. Please set the config file path using setConfigFilePath().'));
+        process.exit(1);
+    }
+    if (CACHED_CONFIG) {
+        return CACHED_CONFIG;
+    }
+    if (!fs.existsSync(CONFIG_PATH)) {
+        console.error(color.red('No config file found. Please create a config.yaml file. The default config file can be found in the /default folder.'));
+        console.error(color.red('The program will now exit.'));
+        process.exit(1);
+    }
+
+    try {
+        const config = yaml.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+        CACHED_CONFIG = config;
+        return config;
+    } catch (error) {
+        console.error(color.red('FATAL: Failed to read config.yaml. Please check the file for syntax errors.'));
+        console.error(error.message);
+        process.exit(1);
+    }
+}
+
+/**
+ * Returns the value for the given key from the config object.
+ * @param {string} key - Key to get from the config object
+ * @param {any} defaultValue - Default value to return if the key is not found
+ * @param {'number'|'boolean'|null} typeConverter - Type to convert the value to
+ * @returns {any} Value for the given key
+ */
+export function getConfigValue(key, defaultValue = null, typeConverter = null) {
+    function _getValue() {
+        const envKey = keyToEnv(key);
+        if (envKey in process.env) {
+            const needsJsonParse = defaultValue && typeof defaultValue === 'object';
+            const envValue = process.env[envKey];
+            return needsJsonParse ? (tryParse(envValue) ?? defaultValue) : envValue;
+        }
+        const config = getConfig();
+        return _.get(config, key, defaultValue);
+    }
+
+    const value = _getValue();
+    switch (typeConverter) {
+        case 'number':
+            return isNaN(parseFloat(value)) ? defaultValue : parseFloat(value);
+        case 'boolean':
+            return toBoolean(value);
+        default:
+            return value;
+    }
+}
+
+/**
+ * Encodes the Basic Auth header value for the given user and password.
+ * @param {string} auth username:password
+ * @returns {string} Basic Auth header value
+ */
+export function getBasicAuthHeader(auth) {
+    const encoded = Buffer.from(`${auth}`).toString('base64');
+    return `Basic ${encoded}`;
+}
+
+/**
+ * Returns the version of the running instance. Get the version from the package.json file and the git revision.
+ * Also returns the agent string for the Horde API.
+ * @returns {Promise<{agent: string, pkgVersion: string, gitRevision: string | null, gitBranch: string | null, commitDate: string | null, isLatest: boolean}>} Version info object
+ */
+export async function getVersion() {
+    let pkgVersion = 'UNKNOWN';
+    let gitRevision = null;
+    let gitBranch = null;
+    let commitDate = null;
+    let isLatest = true;
+
+    try {
+        const require = createRequire(import.meta.url);
+        const pkgJson = require(path.join(serverDirectory, './package.json'));
+        pkgVersion = pkgJson.version;
+        if (commandExistsSync('git')) {
+            const git = simpleGit({ baseDir: serverDirectory });
+            gitRevision = await git.revparse(['--short', 'HEAD']);
+            gitBranch = await git.revparse(['--abbrev-ref', 'HEAD']);
+            commitDate = await git.show(['-s', '--format=%ci', gitRevision]);
+
+            const trackingBranch = await git.revparse(['--abbrev-ref', '@{u}']);
+
+            // Might fail, but exception is caught. Just don't run anything relevant after in this block...
+            const localLatest = await git.revparse(['HEAD']);
+            const remoteLatest = await git.revparse([trackingBranch]);
+            isLatest = localLatest === remoteLatest;
+        }
+    } catch {
+        // suppress exception
+    }
+
+    const agent = `Neconyan:${pkgVersion}`;
+    return { agent, pkgVersion, gitRevision, gitBranch, commitDate: commitDate?.trim() ?? null, isLatest };
+}
+
+/**
+ * Delays the current async function by the given amount of milliseconds.
+ * @param {number} ms Milliseconds to wait
+ * @returns {Promise<void>} Promise that resolves after the given amount of milliseconds
+ */
+export function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Generates a random hex string of the given length.
+ * @param {number} length String length
+ * @returns {string} Random hex string
+ * @example getHexString(8) // 'a1b2c3d4'
+ */
+export function getHexString(length) {
+    const chars = '0123456789abcdef';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+        result += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return result;
+}
+
+/**
+ * Formats a byte size into a human-readable string with units
+ * @param {number} numBytes - The size in bytes to format
+ * @returns {string} The formatted string (e.g., "1.5 MB")
+ */
+export function formatBytes(numBytes) {
+    return bytes.format(numBytes) ?? '';
+}
+
+/**
+ * Extracts a file with given extension from an ArrayBuffer containing a ZIP archive.
+ * @param {ArrayBufferLike} archiveBuffer Buffer containing a ZIP archive
+ * @param {string} fileExtension File extension to look for
+ * @returns {Promise<Buffer|null>} Buffer containing the extracted file. Null if the file was not found.
+ */
+export async function extractFileFromZipBuffer(archiveBuffer, fileExtension) {
+    return await new Promise((resolve) => {
+        try {
+            yauzl.fromBuffer(Buffer.from(archiveBuffer), { lazyEntries: true }, (err, zipfile) => {
+                if (err) {
+                    console.warn(`Error opening ZIP file: ${err.message}`);
+                    return resolve(null);
+                }
+
+                zipfile.readEntry();
+
+                zipfile.on('entry', (entry) => {
+                    if (entry.fileName.endsWith(fileExtension) && !entry.fileName.startsWith('__MACOSX')) {
+                        zipfile.openReadStream(entry, (err, readStream) => {
+                            if (err) {
+                                console.warn(`Error opening read stream: ${err.message}`);
+                                return zipfile.readEntry();
+                            } else {
+                                const chunks = [];
+                                readStream.on('data', (chunk) => {
+                                    chunks.push(chunk);
+                                });
+
+                                readStream.on('end', () => {
+                                    const buffer = Buffer.concat(chunks);
+                                    resolve(buffer);
+                                    zipfile.readEntry(); // Continue to the next entry
+                                });
+
+                                readStream.on('error', (err) => {
+                                    console.warn(`Error reading stream: ${err.message}`);
+                                    zipfile.readEntry();
+                                });
+                            }
+                        });
+                    } else {
+                        zipfile.readEntry();
+                    }
+                });
+
+                zipfile.on('error', (err) => {
+                    console.warn('ZIP processing error', err);
+                    resolve(null);
+                });
+
+                zipfile.on('end', () => resolve(null));
+            });
+        } catch (error) {
+            console.warn('Failed to process ZIP buffer', error);
+            resolve(null);
+        }
+    });
+}
+
+/**
+ * Normalizes a ZIP entry path for safe extraction.
+ * @param {string} entryName The entry name from the ZIP archive
+ * @returns {string|null} Normalized path or null if invalid
+ */
+export function normalizeZipEntryPath(entryName) {
+    if (typeof entryName !== 'string') {
+        return null;
+    }
+
+    let normalized = entryName.replace(/\\/g, '/').trim();
+
+    if (!normalized) {
+        return null;
+    }
+
+    normalized = normalized.replace(/^\.\/+/g, '');
+    normalized = path.posix.normalize(normalized);
+
+    if (!normalized || normalized === '.' || normalized.startsWith('..')) {
+        return null;
+    }
+
+    if (normalized.startsWith('/')) {
+        normalized = normalized.slice(1);
+    }
+
+    return normalized;
+}
+
+/**
+ * Extracts multiple files from an ArrayBuffer containing a ZIP archive.
+ * @param {ArrayBufferLike} archiveBuffer Buffer containing a ZIP archive
+ * @param {string[]} fileNames Array of file paths to extract
+ * @returns {Promise<Map<string, Buffer>>} Map of normalized paths to their extracted buffers
+ */
+export async function extractFilesFromZipBuffer(archiveBuffer, fileNames) {
+    const targets = new Map();
+
+    if (Array.isArray(fileNames)) {
+        for (const fileName of fileNames) {
+            const normalized = normalizeZipEntryPath(fileName);
+            if (normalized && !targets.has(normalized)) {
+                targets.set(normalized, true);
+            }
+        }
+    }
+
+    if (targets.size === 0) {
+        return new Map();
+    }
+
+    return await new Promise((resolve) => {
+        const results = new Map();
+
+        try {
+            yauzl.fromBuffer(Buffer.from(archiveBuffer), { lazyEntries: true }, (err, zipfile) => {
+                if (err) {
+                    console.warn(`Error opening ZIP file: ${err.message}`);
+                    return resolve(results);
+                }
+
+                let finished = false;
+                const finalize = () => {
+                    if (finished) {
+                        return;
+                    }
+                    finished = true;
+                    resolve(results);
+                };
+
+                zipfile.readEntry();
+
+                zipfile.on('entry', (entry) => {
+                    const normalizedEntry = normalizeZipEntryPath(entry.fileName);
+                    if (!normalizedEntry || !targets.has(normalizedEntry)) {
+                        return zipfile.readEntry();
+                    }
+
+                    zipfile.openReadStream(entry, (streamErr, readStream) => {
+                        if (streamErr) {
+                            console.warn(`Error opening read stream: ${streamErr.message}`);
+                            return zipfile.readEntry();
+                        }
+
+                        const chunks = [];
+                        readStream.on('data', (chunk) => {
+                            chunks.push(chunk);
+                        });
+
+                        readStream.on('end', () => {
+                            results.set(normalizedEntry, Buffer.concat(chunks));
+                            targets.delete(normalizedEntry);
+
+                            if (targets.size === 0) {
+                                finalize();
+                            } else {
+                                zipfile.readEntry();
+                            }
+                        });
+
+                        readStream.on('error', (streamError) => {
+                            console.warn(`Error reading stream: ${streamError.message}`);
+                            zipfile.readEntry();
+                        });
+                    });
+                });
+
+                zipfile.on('error', (zipError) => {
+                    console.warn('ZIP processing error', zipError);
+                    finalize();
+                });
+
+                zipfile.on('close', () => {
+                    finalize();
+                });
+
+                zipfile.on('end', () => {
+                    finalize();
+                });
+            });
+        } catch (error) {
+            console.warn('Failed to process ZIP buffer', error);
+            resolve(results);
+        }
+    });
+}
+
+/**
+ * Ensures a directory exists, creating it if necessary.
+ * @param {string} dirPath Path to the directory
+ * @returns {boolean} True if the directory exists or was created, false on error
+ */
+export function ensureDirectory(dirPath) {
+    try {
+        if (!fs.existsSync(dirPath)) {
+            fs.mkdirSync(dirPath, { recursive: true });
+        } else if (!fs.statSync(dirPath).isDirectory()) {
+            console.warn(`ensureDirectory: Path ${dirPath} exists and is not a directory.`);
+            return false;
+        }
+        return true;
+    } catch (error) {
+        console.error(`ensureDirectory: Failed to prepare directory ${dirPath}`, error);
+        return false;
+    }
+}
+
+/**
+ * Extracts all images from a ZIP archive.
+ * @param {string} zipFilePath Path to the ZIP archive
+ * @returns {Promise<[string, Buffer][]>} Array of image buffers
+ */
+export async function getImageBuffers(zipFilePath) {
+    return new Promise((resolve, reject) => {
+        // Check if the zip file exists
+        if (!fs.existsSync(zipFilePath)) {
+            reject(new Error('File not found'));
+            return;
+        }
+
+        const imageBuffers = [];
+
+        yauzl.open(zipFilePath, { lazyEntries: true }, (err, zipfile) => {
+            if (err) {
+                reject(err);
+            } else {
+                zipfile.readEntry();
+                zipfile.on('entry', (entry) => {
+                    const mimeType = mime.lookup(entry.fileName);
+                    if (mimeType && mimeType.startsWith('image/') && !entry.fileName.startsWith('__MACOSX')) {
+                        zipfile.openReadStream(entry, (err, readStream) => {
+                            if (err) {
+                                reject(err);
+                            } else {
+                                const chunks = [];
+                                readStream.on('data', (chunk) => {
+                                    chunks.push(chunk);
+                                });
+
+                                readStream.on('end', () => {
+                                    imageBuffers.push([path.parse(entry.fileName).base, Buffer.concat(chunks)]);
+                                    zipfile.readEntry(); // Continue to the next entry
+                                });
+                            }
+                        });
+                    } else {
+                        zipfile.readEntry(); // Continue to the next entry
+                    }
+                });
+
+                zipfile.on('end', () => {
+                    resolve(imageBuffers);
+                });
+
+                zipfile.on('error', (err) => {
+                    reject(err);
+                });
+            }
+        });
+    });
+}
+
+/**
+ * Gets all chunks of data from the given readable stream.
+ * @param {any} readableStream Readable stream to read from
+ * @returns {Promise<Buffer[]>} Array of chunks
+ */
+export async function readAllChunks(readableStream) {
+    return new Promise((resolve, reject) => {
+        // Consume the readable stream
+        const chunks = [];
+        readableStream.on('data', (chunk) => {
+            chunks.push(chunk);
+        });
+
+        readableStream.on('end', () => {
+            resolve(chunks);
+        });
+
+        readableStream.on('error', (error) => {
+            console.error('Error while reading the stream:', error);
+            reject();
+        });
+    });
+}
+
+function isObject(item) {
+    return (item && typeof item === 'object' && !Array.isArray(item));
+}
+
+export function deepMerge(target, source) {
+    let output = Object.assign({}, target);
+    if (isObject(target) && isObject(source)) {
+        Object.keys(source).forEach(key => {
+            if (isObject(source[key])) {
+                if (!(key in target)) {
+                    Object.assign(output, { [key]: source[key] });
+                } else {
+                    output[key] = deepMerge(target[key], source[key]);
+                }
+            } else {
+                Object.assign(output, { [key]: source[key] });
+            }
+        });
+    }
+    return output;
+}
+
+export const color = chalk;
+
+/**
+ * Gets a random UUIDv4 string.
+ * @returns {string} A UUIDv4 string
+ */
+export function uuidv4() {
+    // Node v16.7.0+
+    if ('crypto' in globalThis && 'randomUUID' in globalThis.crypto) {
+        return globalThis.crypto.randomUUID();
+    }
+    // Node v14.17.0+
+    if ('randomUUID' in crypto) {
+        return crypto.randomUUID();
+    }
+    // Very insecure UUID generator, but it's better than nothing.
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+/**
+ * Gets a humanized date time string from a given timestamp.
+ * @param {number} timestamp Timestamp in milliseconds
+ * @returns {string} Humanized date time string in the format `YYYY-MM-DD@HHhMMmSSsMSms`
+ */
+export function humanizedDateTime(timestamp = Date.now()) {
+    const date = new Date(timestamp);
+    const dt = {
+        year: date.getFullYear(),
+        month: date.getMonth() + 1,
+        day: date.getDate(),
+        hour: date.getHours(),
+        minute: date.getMinutes(),
+        second: date.getSeconds(),
+        millisecond: date.getMilliseconds(),
+    };
+    for (const key in dt) {
+        const padLength = key === 'millisecond' ? 3 : 2;
+        dt[key] = dt[key].toString().padStart(padLength, '0');
+    }
+    return `${dt.year}-${dt.month}-${dt.day}@${dt.hour}h${dt.minute}m${dt.second}s${dt.millisecond}ms`;
+}
+
+export function tryParse(str) {
+    try {
+        return JSON.parse(str);
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Takes a path to a client-accessible file in the data folder and converts it to a relative URL segment that the
+ * client can fetch it from. This involves stripping the data root path prefix and always using `/` as the separator.
+ * @param {string} root The root directory of the user data folder.
+ * @param {string} inputPath The path to be converted.
+ * @returns The relative URL path from which the client can access the file.
+ */
+export function clientRelativePath(root, inputPath) {
+    if (!inputPath.startsWith(root)) {
+        throw new Error('Input path does not start with the root directory');
+    }
+
+    return inputPath.slice(root.length).split(path.sep).join('/');
+}
+
+/**
+ * Returns a name that is unique among the names that exist.
+ * @param {string} baseName The name to check.
+ * @param {{ (name: string): boolean; }} exists Function to check if name exists.
+ * @param {Object} [options] The options.
+ * @param {((baseName: string, i: number) => string)|null} [options.nameBuilder=null] Function to build the name.
+ *        Starts with the index provided by `startIndex` (default is 1). If not provided, uses "${baseName} (${i})".
+ * @param {number} [options.maxTries=1000] The maximum number of tries to find a unique name. Default is 1000.
+ * @param {number} [options.startIndex=1] The index to start with when building the name. Default is 1.
+ *        When set to 0, the intention is to also check if the basename (without applied index) is free.
+ * @returns {string|null} A unique name. Null if no unique name could be found in `maxTries`.
+ */
+export function getUniqueName(baseName, exists, { nameBuilder = null, maxTries = 1000, startIndex = 1 } = {}) {
+    nameBuilder ??= (baseName, i) => i === 0 ? baseName : `${baseName} (${i})`;
+    let i = startIndex;
+    let name;
+    while (i < maxTries + startIndex) {
+        name = nameBuilder(baseName, i);
+        if (!exists(name)) {
+            return name;
+        }
+        i++;
+    }
+    return null;
+}
+
+/**
+ * Provides safe replacements for characters in filenames. Intended for use with sanitize() from the sanitize-filename package.
+ * @param {string} char Character to sanitize
+ * @returns {string} Safe replacement character
+ */
+export function sanitizeSafeCharacterReplacements(char) {
+    return '_';
+}
+
+/**
+ * Strip the last file extension from a given file name. If there are multiple extensions, only the last is removed.
+ * @param {string} filename The file name to remove the extension from.
+ * @returns The file name, sans extension
+ */
+export function removeFileExtension(filename) {
+    return filename.replace(/\.[^.]+$/, '');
+}
+
+export function generateTimestamp() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+
+    return `${year}${month}${day}-${hours}${minutes}${seconds}`;
+}
+
+/**
+ * Remove old backups with the given prefix from a specified directory.
+ * @param {string} directory The root directory to remove backups from.
+ * @param {string} prefix File prefix to filter backups by.
+ * @param {number?} limit Maximum number of backups to keep. If null, the limit is determined by the `backups.common.numberOfBackups` config value.
+ */
+export function removeOldBackups(directory, prefix, limit = null) {
+    const MAX_BACKUPS = limit ?? Number(getConfigValue('backups.common.numberOfBackups', 50, 'number'));
+
+    let files = fs.readdirSync(directory).filter(f => f.startsWith(prefix));
+    if (files.length > MAX_BACKUPS) {
+        files = files.map(f => path.join(directory, f));
+        files.sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs);
+
+        while (files.length > MAX_BACKUPS) {
+            const oldest = files.shift();
+            if (!oldest) {
+                break;
+            }
+
+            fs.unlinkSync(oldest);
+        }
+    }
+}
+
+/**
+ * Get a list of images in a directory.
+ * @param {string} directoryPath Path to the directory containing the images
+ * @param {'name' | 'date'} sortBy Sort images by name or date
+ * @param {number} type Bitwise flag representing media types to include
+ * @returns {string[]} List of image file names
+ */
+export function getImages(directoryPath, sortBy = 'name', type = MEDIA_REQUEST_TYPE.IMAGE) {
+    function getSortFunction() {
+        switch (sortBy) {
+            case 'name':
+                return Intl.Collator().compare;
+            case 'date':
+                return (a, b) => fs.statSync(path.join(directoryPath, a)).mtimeMs - fs.statSync(path.join(directoryPath, b)).mtimeMs;
+            default:
+                return (_a, _b) => 0;
+        }
+    }
+
+    return fs
+        .readdirSync(directoryPath, { withFileTypes: true })
+        .filter(dirent => dirent.isFile())
+        .map(dirent => dirent.name)
+        .filter(file => {
+            const fileType = mime.lookup(file);
+            if (!fileType) {
+                return false;
+            }
+            if ((type & MEDIA_REQUEST_TYPE.IMAGE) && fileType.startsWith('image/')) {
+                return true;
+            }
+            if ((type & MEDIA_REQUEST_TYPE.VIDEO) && fileType.startsWith('video/')) {
+                return true;
+            }
+            if ((type & MEDIA_REQUEST_TYPE.AUDIO) && fileType.startsWith('audio/')) {
+                return true;
+            }
+            return false;
+        })
+        .sort(getSortFunction());
+}
+
+function getStreamingConnectionPollingInterval() {
+    if (CONFIG_PATH === null) {
+        return DEFAULT_STREAMING_CONNECTION_POLLING_INTERVAL_MS;
+    }
+
+    const enabled = getConfigValue('performance.streaming.enableConnectionPolling', true, 'boolean');
+    if (!enabled) {
+        return null;
+    }
+
+    const intervalMs = getConfigValue('performance.streaming.connectionPollingInterval', DEFAULT_STREAMING_CONNECTION_POLLING_INTERVAL_MS, 'number');
+
+    return Number.isFinite(intervalMs) && intervalMs > 0
+        ? intervalMs
+        : DEFAULT_STREAMING_CONNECTION_POLLING_INTERVAL_MS;
+}
+
+/**
+ * Starts OS-level polling for a streaming request socket.
+ * @param {import('express').Request} request The Express request to observe.
+ * @param {import('express').Response} response The Express response being streamed.
+ * @param {() => void | Promise<void>} onDisconnect Disconnect callback.
+ * @returns {() => void} Stops polling.
+ */
+export function pollStreamingRequestConnection(request, response, onDisconnect) {
+    // Neconyan: a resumable generation is never aborted by a client disconnect. See resumable-generations.js.
+    if (getResumableGeneration(request)) {
+        return () => undefined;
+    }
+
+    if (!request?.socket || response?.writableEnded || response?.destroyed) {
+        return () => undefined;
+    }
+
+    const intervalMs = getStreamingConnectionPollingInterval();
+    if (!intervalMs) {
+        return () => undefined;
+    }
+
+    return pollSocketConnection(request.socket, intervalMs, () => {
+        if (response?.writableEnded || response?.destroyed) {
+            return;
+        }
+
+        try {
+            const disconnectResult = onDisconnect?.();
+            if (disconnectResult && typeof disconnectResult.catch === 'function') {
+                disconnectResult.catch(error => console.warn('Error handling streaming client disconnect:', error));
+            }
+        } catch (error) {
+            console.warn('Error handling streaming client disconnect:', error);
+        }
+    });
+}
+
+/**
+ * Neconyan: drains the upstream body to the end even after the client has gone, so a resumable
+ * generation (see resumable-generations.js) can be picked up later. Only an explicit cancel stops it.
+ * @param {import('node-fetch').Response} from The Fetch API response to drain.
+ * @param {import('express').Response} to The Express response; writes after the client left are mirrored, not sent.
+ * @param {import('./resumable-generations.js').ResumableGeneration} generation The registered generation.
+ * @param {() => void | Promise<void>} [onDisconnect] Provider-specific abort hook, run on cancel.
+ */
+function forwardResumableFetchBody(from, to, generation, onDisconnect = null) {
+    const unregisterCancel = generation.onCancel(() => {
+        try {
+            const disconnectResult = onDisconnect?.();
+            if (disconnectResult && typeof disconnectResult.catch === 'function') {
+                disconnectResult.catch(error => console.warn('Error cancelling resumable generation:', error));
+            }
+        } catch (error) {
+            console.warn('Error cancelling resumable generation:', error);
+        }
+
+        try {
+            from.body?.destroy?.();
+        } catch {
+            // Best effort; the upstream stream is going away anyway.
+        }
+
+        if (!to.writableEnded) {
+            to.end();
+        }
+    });
+
+    const finish = () => {
+        unregisterCancel();
+        if (!to.writableEnded) {
+            to.end();
+        }
+    };
+
+    from.body.on('data', chunk => {
+        if (!to.writableEnded) {
+            to.write(chunk);
+        }
+    });
+
+    from.body.on('end', () => {
+        console.info('Streaming request finished');
+        finish();
+    });
+
+    from.body.on('error', error => {
+        if (!isRequestCancellationError(error)) {
+            console.warn('Streaming request failed:', error?.message ?? error);
+        }
+        finish();
+    });
+}
+
+/**
+ * Pipe a fetch() response to an Express.js Response, including status code.
+ * @param {import('node-fetch').Response} from The Fetch API response to pipe from.
+ * @param {import('express').Response} to The Express response to pipe to.
+ * @param {import('express').Request} [request] The Express request to poll for OS-level disconnects.
+ * @param {() => void | Promise<void>} [onDisconnect] Additional disconnect callback.
+ * @returns {Promise<void>}
+ */
+export async function forwardFetchResponse(from, to, request = null, onDisconnect = null) {
+    let statusCode = from.status;
+    let statusText = from.statusText;
+
+    // Avoid sending 401 responses as they reset the client Basic auth.
+    // This can produce an interesting artifact as "400 Unauthorized", but it's not out of spec.
+    // https://www.rfc-editor.org/rfc/rfc9110.html#name-overview-of-status-codes
+    // "The reason phrases listed here are only recommendations -- they can be replaced by local
+    //  equivalents or left out altogether without affecting the protocol."
+    if (statusCode === 401) {
+        statusCode = 400;
+    }
+
+    to.statusCode = statusCode;
+    to.statusMessage = statusText;
+
+    if (!from.ok) {
+        try {
+            const rawErrorText = await from.text();
+            const detail = rawErrorText || 'Unknown error occurred';
+
+            console.warn(`Streaming request failed with status ${from.status} ${statusText}: ${detail}`);
+            to.end(rawErrorText, 'utf-8');
+        } catch {
+            console.warn(`Streaming request failed with status ${from.status} ${statusText}: Unknown error occurred`);
+            to.end();
+        }
+
+        return;
+    }
+
+    if (from.body && to.socket) {
+        const resumableGeneration = getResumableGeneration(request);
+        if (resumableGeneration) {
+            forwardResumableFetchBody(from, to, resumableGeneration, onDisconnect);
+            return;
+        }
+
+        const stopPolling = pollStreamingRequestConnection(request, to, () => {
+            try {
+                const disconnectResult = onDisconnect?.();
+                if (disconnectResult && typeof disconnectResult.catch === 'function') {
+                    disconnectResult.catch(error => console.warn('Error handling streaming client disconnect:', error));
+                }
+            } catch (error) {
+                console.warn('Error handling streaming client disconnect:', error);
+            }
+
+            try {
+                from.body?.destroy?.();
+            } catch {
+                // Best effort; the client response is already gone.
+            }
+
+            if (!to.writableEnded) {
+                to.end();
+            }
+        });
+
+        from.body.pipe(to);
+
+        to.on('close', function () {
+            stopPolling();
+
+            if (to.writableEnded) {
+                return;
+            }
+
+            try {
+                from.body?.destroy?.(); // Close the remote stream
+            } catch {
+                // Best effort; the client response is already closing.
+            }
+
+            to.end(); // End the Express response
+        });
+
+        from.body.on('end', function () {
+            stopPolling();
+            console.info('Streaming request finished');
+            to.end();
+        });
+
+        from.body.on('error', function (error) {
+            stopPolling();
+            if (isRequestCancellationError(error) || to.destroyed || to.writableEnded) {
+                if (!to.destroyed && !to.writableEnded) {
+                    to.end();
+                }
+                return;
+            }
+
+            console.warn('Streaming request failed:', error?.message ?? error);
+            to.end();
+        });
+    } else {
+        to.end();
+    }
+}
+
+/**
+ * Aborts an upstream request if the client connection closes early.
+ * @param {import('express').Request} request The Express request to observe.
+ * @param {AbortController} controller Abort controller for the upstream request.
+ * @param {import('express').Response|null} [response] The Express response to observe.
+ * @param {object} [options] Additional cancellation options.
+ */
+export function abortOnRequestClose(request, controller, response = null, options = {}) {
+    const pollIntervalMs = getStreamingConnectionPollingInterval();
+
+    return observeRequestCancellation(request, response, {
+        controller,
+        pollConnection: Boolean(isBunRuntime() && pollIntervalMs),
+        pollIntervalMs,
+        ...options,
+    });
+}
+
+/**
+ * Adds YAML-serialized object to the object.
+ * @param {object} obj Object
+ * @param {string} yamlString YAML-serialized object
+ * @returns
+ */
+export function mergeObjectWithYaml(obj, yamlString) {
+    if (!yamlString) {
+        return;
+    }
+
+    try {
+        const parsedObject = yaml.parse(yamlString);
+
+        if (Array.isArray(parsedObject)) {
+            for (const item of parsedObject) {
+                if (typeof item === 'object' && item && !Array.isArray(item)) {
+                    Object.assign(obj, item);
+                }
+            }
+        } else if (parsedObject && typeof parsedObject === 'object') {
+            Object.assign(obj, parsedObject);
+        }
+    } catch {
+        // Do nothing
+    }
+}
+
+/**
+ * Removes keys from the object by YAML-serialized array.
+ * @param {object} obj Object
+ * @param {string} yamlString YAML-serialized array
+ * @returns {void} Nothing
+ */
+export function excludeKeysByYaml(obj, yamlString) {
+    if (!yamlString) {
+        return;
+    }
+
+    try {
+        const parsedObject = yaml.parse(yamlString);
+
+        if (Array.isArray(parsedObject)) {
+            parsedObject.forEach(key => {
+                delete obj[key];
+            });
+        } else if (typeof parsedObject === 'object') {
+            Object.keys(parsedObject).forEach(key => {
+                delete obj[key];
+            });
+        } else if (typeof parsedObject === 'string') {
+            delete obj[parsedObject];
+        }
+    } catch {
+        // Do nothing
+    }
+}
+
+/**
+ * Removes trailing slash and /v1 from a string.
+ * @param {string} str Input string
+ * @returns {string} Trimmed string
+ */
+export function trimV1(str) {
+    return String(str ?? '').replace(/\/$/, '').replace(/\/v1$/, '');
+}
+
+/**
+ * Removes trailing slash from a string.
+ * @param {string} str Input string
+ * @returns {string} String with trailing slash removed
+ */
+export function trimTrailingSlash(str) {
+    return String(str ?? '').replace(/\/$/, '');
+}
+
+/**
+ * Simple TTL memory cache.
+ */
+export class Cache {
+    /**
+     * @param {number} ttl Time to live in milliseconds
+     */
+    constructor(ttl) {
+        this.cache = new Map();
+        this.ttl = ttl;
+    }
+
+    /**
+     * Gets a value from the cache.
+     * @param {string} key Cache key
+     */
+    get(key) {
+        const value = this.cache.get(key);
+        if (value?.expiry > Date.now()) {
+            return value.value;
+        }
+
+        // Cache miss or expired, remove the key
+        this.cache.delete(key);
+        return null;
+    }
+
+    /**
+     * Sets a value in the cache.
+     * @param {string} key Key
+     * @param {object} value Value
+     */
+    set(key, value) {
+        this.cache.set(key, {
+            value: value,
+            expiry: Date.now() + this.ttl,
+        });
+    }
+
+    /**
+     * Removes a value from the cache.
+     * @param {string} key Key
+     */
+    remove(key) {
+        this.cache.delete(key);
+    }
+
+    /**
+     * Clears the cache.
+     */
+    clear() {
+        this.cache.clear();
+    }
+}
+
+/**
+ * Removes color formatting from a text string.
+ * @param {string} text Text with color formatting
+ * @returns {string} Text without color formatting
+ */
+export function removeColorFormatting(text) {
+    // ANSI escape codes for colors are usually in the format \x1b[<codes>m
+    return text.replace(/\x1b\[\d{1,2}(;\d{1,2})*m/g, '');
+}
+
+/**
+ * Gets a separator string repeated n times.
+ * @param {number} n Number of times to repeat the separator
+ * @returns {string} Separator string
+ */
+export function getSeparator(n) {
+    return '='.repeat(n);
+}
+
+/**
+ * Checks if the string is a valid URL.
+ * @param {string} url String to check
+ * @returns {boolean} If the URL is valid
+ */
+export function isValidUrl(url) {
+    try {
+        new URL(url);
+        return true;
+    } catch (error) {
+        return false;
+    }
+}
+
+/**
+ * removes starting `[` or ending `]` from hostname.
+ * @param {string} hostname hostname to use
+ * @returns {string} hostname plus the modifications
+ */
+export function urlHostnameToIPv6(hostname) {
+    if (hostname.startsWith('[')) {
+        hostname = hostname.slice(1);
+    }
+    if (hostname.endsWith(']')) {
+        hostname = hostname.slice(0, -1);
+    }
+    return hostname;
+}
+
+/**
+ * Test if can resolve a dns name.
+ * @param {string} name Domain name to use
+ * @param {boolean} useIPv6 If use IPv6
+ * @param {boolean} useIPv4 If use IPv4
+ * @returns Promise<boolean> If the URL is valid
+ */
+export async function canResolve(name, useIPv6 = true, useIPv4 = true) {
+    try {
+        let v6Resolved = false;
+        let v4Resolved = false;
+
+        if (useIPv6) {
+            try {
+                await dnsPromise.resolve6(name);
+                v6Resolved = true;
+            } catch (error) {
+                v6Resolved = false;
+            }
+        }
+
+        if (useIPv4) {
+            try {
+                await dnsPromise.resolve(name);
+                v4Resolved = true;
+            } catch (error) {
+                v4Resolved = false;
+            }
+        }
+
+        return v6Resolved || v4Resolved;
+    } catch (error) {
+        return false;
+    }
+}
+
+/**
+ * Checks the network interfaces to determine the presence of IPv6 and IPv4 addresses.
+ *
+ * @typedef {object} IPQueryResult
+ * @property {boolean} hasIPv6Any - Whether the computer has any IPv6 address, including (`::1`).
+ * @property {boolean} hasIPv4Any - Whether the computer has any IPv4 address, including (`127.0.0.1`).
+ * @property {boolean} hasIPv6Local - Whether the computer has local IPv6 address (`::1`).
+ * @property {boolean} hasIPv4Local - Whether the computer has local IPv4 address (`127.0.0.1`).
+ * @returns {Promise<IPQueryResult>} A promise that resolves to an array containing:
+ */
+export async function getHasIP() {
+    let hasIPv6Any = false;
+    let hasIPv6Local = false;
+
+    let hasIPv4Any = false;
+    let hasIPv4Local = false;
+
+    const interfaces = os.networkInterfaces();
+
+    for (const iface of Object.values(interfaces)) {
+        if (iface === undefined) {
+            continue;
+        }
+
+        for (const info of iface) {
+            if (info.family === 'IPv6') {
+                hasIPv6Any = true;
+                if (info.address === '::1') {
+                    hasIPv6Local = true;
+                }
+            }
+
+            if (info.family === 'IPv4') {
+                hasIPv4Any = true;
+                if (info.address === '127.0.0.1') {
+                    hasIPv4Local = true;
+                }
+            }
+            if (hasIPv6Any && hasIPv4Any && hasIPv6Local && hasIPv4Local) break;
+        }
+        if (hasIPv6Any && hasIPv4Any && hasIPv6Local && hasIPv4Local) break;
+    }
+
+    return { hasIPv6Any, hasIPv4Any, hasIPv6Local, hasIPv4Local };
+}
+
+
+/**
+ * Converts various JavaScript primitives to boolean values.
+ * Handles special case for "true"/"false" strings (case-insensitive)
+ *
+ * @param {any} value - The value to convert to boolean
+ * @returns {boolean} - The boolean representation of the value
+ */
+export function toBoolean(value) {
+    // Handle string values case-insensitively
+    if (typeof value === 'string') {
+        // Trim and convert to lowercase for case-insensitive comparison
+        const trimmedLower = value.trim().toLowerCase();
+
+        // Handle explicit "true"/"false" strings
+        if (trimmedLower === 'true') return true;
+        if (trimmedLower === 'false') return false;
+    }
+
+    // Handle all other JavaScript values based on their "truthiness"
+    return Boolean(value);
+}
+
+/**
+ * converts string to boolean accepts 'true' or 'false' else it returns the string put in
+ * @param {string|null} str Input string or null
+ * @returns {boolean|string|null} boolean else original input string or null if input is
+ */
+export function stringToBool(str) {
+    if (String(str).trim().toLowerCase() === 'true') return true;
+    if (String(str).trim().toLowerCase() === 'false') return false;
+    return str;
+}
+
+/**
+ * Setup the minimum log level
+ */
+export function setupLogLevel() {
+    const logLevel = getConfigValue('logging.minLogLevel', LOG_LEVELS.INFO, 'number');
+
+    globalThis.console.debug = logLevel <= LOG_LEVELS.DEBUG ? console.debug : () => { };
+    globalThis.console.info = logLevel <= LOG_LEVELS.INFO ? console.info : () => { };
+    globalThis.console.warn = logLevel <= LOG_LEVELS.WARN ? console.warn : () => { };
+    globalThis.console.error = logLevel <= LOG_LEVELS.ERROR ? console.error : () => { };
+}
+
+const LLM_LOG_SCALAR_KEYS = [
+    'id',
+    'object',
+    'type',
+    'model',
+    'stream',
+    'status',
+    'seed',
+    'n',
+    'temperature',
+    'top_p',
+    'top_k',
+    'presence_penalty',
+    'frequency_penalty',
+    'max_tokens',
+    'max_completion_tokens',
+    'max_output_tokens',
+];
+const LLM_LOG_PREVIEW_LIMIT = 3;
+const LLM_LOG_PREVIEW_TEXT_LIMIT = 160;
+
+function addSummaryCount(target, key, amount = 1) {
+    if (!key) {
+        return;
+    }
+
+    const safeAmount = Number.isFinite(amount) ? amount : 1;
+    target[key] = (target[key] ?? 0) + safeAmount;
+}
+
+function mergeSummaryCounts(target, source) {
+    if (!source) {
+        return;
+    }
+
+    for (const [key, value] of Object.entries(source)) {
+        addSummaryCount(target, key, Number(value) || 0);
+    }
+}
+
+function normalizeLlmLogPreviewText(value) {
+    return String(value ?? '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function truncateLlmLogPreviewText(value, maxLength = LLM_LOG_PREVIEW_TEXT_LIMIT) {
+    if (value.length <= maxLength) {
+        return value;
+    }
+
+    return `${value.slice(0, maxLength - 1)}…`;
+}
+
+function addSummaryPreview(target, role, type, text) {
+    if (!Array.isArray(target) || target.length >= LLM_LOG_PREVIEW_LIMIT) {
+        return;
+    }
+
+    const normalizedText = normalizeLlmLogPreviewText(text);
+    if (!normalizedText) {
+        return;
+    }
+
+    target.push({
+        role: role || 'unknown',
+        type: type || 'text',
+        preview: truncateLlmLogPreviewText(normalizedText),
+    });
+}
+
+function mergeSummaryPreviews(target, source) {
+    if (!Array.isArray(target) || !Array.isArray(source)) {
+        return;
+    }
+
+    for (const preview of source) {
+        if (target.length >= LLM_LOG_PREVIEW_LIMIT) {
+            break;
+        }
+
+        if (!preview || typeof preview !== 'object') {
+            continue;
+        }
+
+        target.push(preview);
+    }
+}
+
+function getPartPreview(part) {
+    if (typeof part === 'string') {
+        return { type: 'text', text: part };
+    }
+
+    if (!part || typeof part !== 'object') {
+        return null;
+    }
+
+    if (typeof part.text === 'string') {
+        return { type: part.type ?? 'text', text: part.text };
+    }
+
+    if (typeof part.input_text === 'string') {
+        return { type: part.type ?? 'input_text', text: part.input_text };
+    }
+
+    if (typeof part.output_text === 'string') {
+        return { type: part.type ?? 'output_text', text: part.output_text };
+    }
+
+    if (typeof part.content === 'string' && !part.functionCall && !part.functionResponse) {
+        return { type: part.type ?? 'text', text: part.content };
+    }
+
+    return null;
+}
+
+function summarizePartsForLog(parts, { role = 'unknown' } = {}) {
+    const summary = { count: parts.length };
+    const types = {};
+    let textChars = 0;
+    const previews = [];
+
+    for (const part of parts) {
+        if (typeof part === 'string') {
+            addSummaryCount(types, 'string');
+            textChars += part.length;
+            addSummaryPreview(previews, role, 'text', part);
+            continue;
+        }
+
+        if (!part || typeof part !== 'object') {
+            addSummaryCount(types, typeof part);
+            continue;
+        }
+
+        if (typeof part.text === 'string') {
+            addSummaryCount(types, part.type ?? 'text');
+            textChars += part.text.length;
+        } else if (typeof part.type === 'string') {
+            addSummaryCount(types, part.type);
+        }
+
+        if (part.inlineData) {
+            addSummaryCount(types, 'inlineData');
+        }
+
+        if (part.functionCall) {
+            addSummaryCount(types, 'functionCall');
+        }
+
+        if (part.functionResponse) {
+            addSummaryCount(types, 'functionResponse');
+        }
+
+        if (part.image_url) {
+            addSummaryCount(types, 'image_url');
+        }
+
+        if (part.video_url) {
+            addSummaryCount(types, 'video_url');
+        }
+
+        if (part.audio_url) {
+            addSummaryCount(types, 'audio_url');
+        }
+
+        if (Array.isArray(part.tool_calls)) {
+            addSummaryCount(types, 'tool_calls', part.tool_calls.length || 1);
+        }
+
+        if (part.thought || part.thoughtSignature) {
+            addSummaryCount(types, 'thought');
+        }
+
+        const preview = getPartPreview(part);
+        if (preview) {
+            addSummaryPreview(previews, role, preview.type, preview.text);
+        }
+    }
+
+    if (textChars) {
+        summary.textChars = textChars;
+    }
+
+    if (Object.keys(types).length) {
+        summary.types = types;
+    }
+
+    if (previews.length) {
+        summary.previews = previews;
+    }
+
+    return summary;
+}
+
+function summarizeMessagesForLog(messages) {
+    const summary = { count: messages.length };
+    const roles = {};
+    const partTypes = {};
+    let contentItems = 0;
+    let textChars = 0;
+    let namedMessages = 0;
+    let toolCalls = 0;
+    let toolResponses = 0;
+    const previews = [];
+
+    for (const message of messages) {
+        if (!message || typeof message !== 'object') {
+            addSummaryCount(roles, typeof message);
+            continue;
+        }
+
+        addSummaryCount(roles, message.role ?? 'unknown');
+
+        if (message.name) {
+            namedMessages++;
+        }
+
+        if (typeof message.content === 'string') {
+            contentItems++;
+            textChars += message.content.length;
+            addSummaryCount(partTypes, 'text');
+            addSummaryPreview(previews, message.role ?? 'unknown', 'text', message.content);
+        } else if (Array.isArray(message.content)) {
+            const contentSummary = summarizePartsForLog(message.content, { role: message.role ?? 'unknown' });
+            contentItems += contentSummary.count;
+            textChars += contentSummary.textChars ?? 0;
+            mergeSummaryCounts(partTypes, contentSummary.types);
+            mergeSummaryPreviews(previews, contentSummary.previews);
+        }
+
+        if (Array.isArray(message.parts)) {
+            const partsSummary = summarizePartsForLog(message.parts, { role: message.role ?? 'unknown' });
+            contentItems += partsSummary.count;
+            textChars += partsSummary.textChars ?? 0;
+            mergeSummaryCounts(partTypes, partsSummary.types);
+            mergeSummaryPreviews(previews, partsSummary.previews);
+        }
+
+        if (Array.isArray(message.tool_calls)) {
+            toolCalls += message.tool_calls.length;
+        }
+
+        if (message.tool_call_id) {
+            toolResponses++;
+        }
+    }
+
+    if (Object.keys(roles).length) {
+        summary.roles = roles;
+    }
+
+    if (namedMessages) {
+        summary.namedMessages = namedMessages;
+    }
+
+    if (contentItems) {
+        summary.contentItems = contentItems;
+    }
+
+    if (textChars) {
+        summary.textChars = textChars;
+    }
+
+    if (Object.keys(partTypes).length) {
+        summary.partTypes = partTypes;
+    }
+
+    if (toolCalls) {
+        summary.toolCalls = toolCalls;
+    }
+
+    if (toolResponses) {
+        summary.toolResponses = toolResponses;
+    }
+
+    if (previews.length) {
+        summary.previews = previews;
+    }
+
+    return summary;
+}
+
+function summarizeChoicesForLog(choices) {
+    const summary = { count: choices.length };
+    const finishReasons = {};
+    const choiceMessages = [];
+    let textChars = 0;
+    const previews = [];
+
+    for (const choice of choices) {
+        if (!choice || typeof choice !== 'object') {
+            addSummaryCount(finishReasons, typeof choice);
+            continue;
+        }
+
+        addSummaryCount(finishReasons, choice.finish_reason ?? choice.finishReason ?? 'unknown');
+
+        if (typeof choice.text === 'string') {
+            textChars += choice.text.length;
+            addSummaryPreview(previews, 'assistant', 'text', choice.text);
+        }
+
+        if (choice.message && typeof choice.message === 'object') {
+            choiceMessages.push(choice.message);
+        }
+
+        if (choice.delta && typeof choice.delta === 'object') {
+            choiceMessages.push(choice.delta);
+        }
+    }
+
+    if (Object.keys(finishReasons).length) {
+        summary.finishReasons = finishReasons;
+    }
+
+    if (choiceMessages.length) {
+        summary.messages = summarizeMessagesForLog(choiceMessages);
+        mergeSummaryPreviews(previews, summary.messages.previews);
+    }
+
+    if (textChars) {
+        summary.textChars = textChars;
+    }
+
+    if (previews.length) {
+        summary.previews = previews;
+    }
+
+    return summary;
+}
+
+function summarizeCandidatesForLog(candidates) {
+    const summary = { count: candidates.length };
+    const finishReasons = {};
+    const candidateMessages = [];
+    let textChars = 0;
+    const previews = [];
+
+    for (const candidate of candidates) {
+        if (!candidate || typeof candidate !== 'object') {
+            addSummaryCount(finishReasons, typeof candidate);
+            continue;
+        }
+
+        addSummaryCount(finishReasons, candidate.finishReason ?? 'unknown');
+
+        const content = candidate.content ?? candidate.output;
+        if (typeof content === 'string') {
+            textChars += content.length;
+            addSummaryPreview(previews, 'model', 'text', content);
+        } else if (content && typeof content === 'object' && Array.isArray(content.parts)) {
+            candidateMessages.push({ role: content.role ?? 'model', parts: content.parts });
+        }
+    }
+
+    if (Object.keys(finishReasons).length) {
+        summary.finishReasons = finishReasons;
+    }
+
+    if (candidateMessages.length) {
+        summary.messages = summarizeMessagesForLog(candidateMessages);
+        mergeSummaryPreviews(previews, summary.messages.previews);
+    }
+
+    if (textChars) {
+        summary.textChars = textChars;
+    }
+
+    if (previews.length) {
+        summary.previews = previews;
+    }
+
+    return summary;
+}
+
+function summarizeScalarObjectForLog(value) {
+    if (!value || typeof value !== 'object') {
+        return value;
+    }
+
+    const summary = {};
+
+    for (const [key, entry] of Object.entries(value)) {
+        if (entry === null || typeof entry === 'number' || typeof entry === 'boolean') {
+            summary[key] = entry;
+            continue;
+        }
+
+        if (typeof entry === 'string') {
+            summary[key] = entry.length <= 120 ? entry : { chars: entry.length };
+            continue;
+        }
+
+        if (Array.isArray(entry)) {
+            summary[key] = { count: entry.length };
+            continue;
+        }
+
+        if (typeof entry === 'object') {
+            summary[key] = { keys: Object.keys(entry) };
+        }
+    }
+
+    return summary;
+}
+
+/**
+ * Creates a compact, redacted summary of LLM payloads for debug logging.
+ * Keeps counts and scalar generation settings, but avoids dumping full prompt text.
+ * @param {any} payload Raw request or response payload
+ * @param {{includeText?: boolean}} [options] Logging options
+ * @returns {any} Safe summary for console output
+ */
+export function summarizeLlmPayloadForLog(payload, options = {}) {
+    if (options?.includeText) {
+        return payload;
+    }
+
+    if (payload === null || payload === undefined) {
+        return payload;
+    }
+
+    if (typeof payload === 'string') {
+        return { chars: payload.length };
+    }
+
+    if (typeof payload !== 'object') {
+        return payload;
+    }
+
+    if (Array.isArray(payload)) {
+        return summarizeMessagesForLog(payload);
+    }
+
+    const summary = {};
+
+    for (const key of LLM_LOG_SCALAR_KEYS) {
+        const value = payload[key];
+        if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+            summary[key] = value;
+        }
+    }
+
+    if (typeof payload.prompt === 'string') {
+        summary.prompt = { chars: payload.prompt.length };
+    }
+
+    if (typeof payload.instructions === 'string') {
+        summary.instructions = { chars: payload.instructions.length };
+    }
+
+    if (Array.isArray(payload.messages)) {
+        summary.messages = summarizeMessagesForLog(payload.messages);
+    }
+
+    if (Array.isArray(payload.contents)) {
+        summary.contents = summarizeMessagesForLog(payload.contents);
+    }
+
+    if (Array.isArray(payload.input)) {
+        summary.input = summarizeMessagesForLog(payload.input);
+    }
+
+    if (Array.isArray(payload.choices)) {
+        summary.choices = summarizeChoicesForLog(payload.choices);
+    }
+
+    if (Array.isArray(payload.candidates)) {
+        summary.candidates = summarizeCandidatesForLog(payload.candidates);
+    }
+
+    if (Array.isArray(payload.content)) {
+        summary.content = summarizePartsForLog(payload.content);
+    }
+
+    if (payload.responseContent && typeof payload.responseContent === 'object' && Array.isArray(payload.responseContent.parts)) {
+        summary.responseContent = summarizeMessagesForLog([{ role: payload.responseContent.role ?? 'model', parts: payload.responseContent.parts }]);
+    }
+
+    if (payload.systemInstruction && typeof payload.systemInstruction === 'object' && Array.isArray(payload.systemInstruction.parts)) {
+        summary.systemInstruction = summarizeMessagesForLog([{ role: 'system', parts: payload.systemInstruction.parts }]);
+    }
+
+    if (payload.system_instruction && typeof payload.system_instruction === 'object' && Array.isArray(payload.system_instruction.parts)) {
+        summary.system_instruction = summarizeMessagesForLog([{ role: 'system', parts: payload.system_instruction.parts }]);
+    }
+
+    if (Array.isArray(payload.stop)) {
+        summary.stop = {
+            count: payload.stop.length,
+            chars: payload.stop.reduce((total, entry) => total + (typeof entry === 'string' ? entry.length : 0), 0),
+        };
+    }
+
+    if (Array.isArray(payload.tools)) {
+        summary.tools = { count: payload.tools.length };
+    }
+
+    if (Array.isArray(payload.safetySettings)) {
+        summary.safetySettings = { count: payload.safetySettings.length };
+    }
+
+    if (payload.generationConfig && typeof payload.generationConfig === 'object') {
+        summary.generationConfig = summarizeScalarObjectForLog(payload.generationConfig);
+    }
+
+    if (payload.reasoning && typeof payload.reasoning === 'object') {
+        summary.reasoning = summarizeScalarObjectForLog(payload.reasoning);
+    }
+
+    if (payload.output_config && typeof payload.output_config === 'object') {
+        summary.output_config = summarizeScalarObjectForLog(payload.output_config);
+    }
+
+    if (payload.response_format && typeof payload.response_format === 'object') {
+        summary.response_format = { keys: Object.keys(payload.response_format) };
+    }
+
+    if (payload.usage && typeof payload.usage === 'object') {
+        summary.usage = summarizeScalarObjectForLog(payload.usage);
+    }
+
+    if (payload.usage_metadata && typeof payload.usage_metadata === 'object') {
+        summary.usage_metadata = summarizeScalarObjectForLog(payload.usage_metadata);
+    }
+
+    const otherKeys = Object.keys(payload).filter(key => !(key in summary) && !LLM_LOG_SCALAR_KEYS.includes(key)).sort();
+    if (otherKeys.length) {
+        summary.otherKeys = otherKeys;
+    }
+
+    return util.inspect(summary, { depth: null, colors: true });
+}
+
+/**
+ * MemoryLimitedMap class that limits the memory usage of string values.
+ */
+export class MemoryLimitedMap {
+    /**
+     * Creates an instance of MemoryLimitedMap.
+     * @param {string} cacheCapacity - Maximum memory usage in human-readable format (e.g., '1 GB').
+     */
+    constructor(cacheCapacity) {
+        this.maxMemory = bytes.parse(cacheCapacity) ?? 0;
+        this.currentMemory = 0;
+        this.map = new Map();
+        this.queue = [];
+    }
+
+    /**
+     * Estimates the memory usage of a string in bytes.
+     * Assumes each character occupies 2 bytes (UTF-16).
+     * @param {string} str
+     * @returns {number}
+     */
+    static estimateStringSize(str) {
+        return str ? str.length * 2 : 0;
+    }
+
+    /**
+     * Adds or updates a key-value pair in the map.
+     * If adding the new value exceeds the memory limit, evicts oldest entries.
+     * @param {string} key
+     * @param {string} value
+     */
+    set(key, value) {
+        if (this.maxMemory <= 0) {
+            return;
+        }
+
+        if (typeof key !== 'string' || typeof value !== 'string') {
+            return;
+        }
+
+        const newValueSize = MemoryLimitedMap.estimateStringSize(value);
+
+        // If the new value itself exceeds the max memory, reject it
+        if (newValueSize > this.maxMemory) {
+            return;
+        }
+
+        // Check if the key already exists to adjust memory accordingly
+        if (this.map.has(key)) {
+            const oldValue = this.map.get(key);
+            const oldValueSize = MemoryLimitedMap.estimateStringSize(oldValue);
+            this.currentMemory -= oldValueSize;
+            // Remove the key from its current position in the queue
+            const index = this.queue.indexOf(key);
+            if (index > -1) {
+                this.queue.splice(index, 1);
+            }
+        }
+
+        // Evict oldest entries until there's enough space
+        while (this.currentMemory + newValueSize > this.maxMemory && this.queue.length > 0) {
+            const oldestKey = this.queue.shift();
+            const oldestValue = this.map.get(oldestKey);
+            const oldestValueSize = MemoryLimitedMap.estimateStringSize(oldestValue);
+            this.map.delete(oldestKey);
+            this.currentMemory -= oldestValueSize;
+        }
+
+        // After eviction, check again if there's enough space
+        if (this.currentMemory + newValueSize > this.maxMemory) {
+            return;
+        }
+
+        // Add the new key-value pair
+        this.map.set(key, value);
+        this.queue.push(key);
+        this.currentMemory += newValueSize;
+    }
+
+    /**
+     * Retrieves the value associated with the given key.
+     * @param {string} key
+     * @returns {string | undefined}
+     */
+    get(key) {
+        return this.map.get(key);
+    }
+
+    /**
+     * Checks if the map contains the given key.
+     * @param {string} key
+     * @returns {boolean}
+     */
+    has(key) {
+        return this.map.has(key);
+    }
+
+    /**
+     * Deletes the key-value pair associated with the given key.
+     * @param {string} key
+     * @returns {boolean} - Returns true if the key was found and deleted, else false.
+     */
+    delete(key) {
+        if (!this.map.has(key)) {
+            return false;
+        }
+        const value = this.map.get(key);
+        const valueSize = MemoryLimitedMap.estimateStringSize(value);
+        this.map.delete(key);
+        this.currentMemory -= valueSize;
+
+        // Remove the key from the queue
+        const index = this.queue.indexOf(key);
+        if (index > -1) {
+            this.queue.splice(index, 1);
+        }
+
+        return true;
+    }
+
+    /**
+     * Clears all entries from the map.
+     */
+    clear() {
+        this.map.clear();
+        this.queue = [];
+        this.currentMemory = 0;
+    }
+
+    /**
+     * Returns the number of key-value pairs in the map.
+     * @returns {number}
+     */
+    size() {
+        return this.map.size;
+    }
+
+    /**
+     * Returns the current memory usage in bytes.
+     * @returns {number}
+     */
+    totalMemory() {
+        return this.currentMemory;
+    }
+
+    /**
+     * Returns an iterator over the keys in the map.
+     * @returns {IterableIterator<string>}
+     */
+    keys() {
+        return this.map.keys();
+    }
+
+    /**
+     * Returns an iterator over the values in the map.
+     * @returns {IterableIterator<string>}
+     */
+    values() {
+        return this.map.values();
+    }
+
+    /**
+     * Iterates over the map in insertion order.
+     * @param {Function} callback - Function to execute for each element.
+     */
+    forEach(callback) {
+        this.map.forEach((value, key) => {
+            callback(value, key, this);
+        });
+    }
+
+    /**
+     * Makes the MemoryLimitedMap iterable.
+     * @returns {Iterator} - Iterator over [key, value] pairs.
+     */
+    [Symbol.iterator]() {
+        return this.map[Symbol.iterator]();
+    }
+}
+
+/**
+ * A 'safe' version of `fs.readFileSync()`. Returns the contents of a file if it exists, falling back to a default value if not.
+ * @param {string} filePath Path of the file to be read.
+ * @param {Parameters<typeof fs.readFileSync>[1]} options Options object to pass through to `fs.readFileSync()` (default: `{ encoding: 'utf-8' }`).
+ * @returns The contents at `filePath` if it exists, or `null` if not.
+ */
+export function safeReadFileSync(filePath, options = { encoding: 'utf-8' }) {
+    if (fs.existsSync(filePath)) return fs.readFileSync(filePath, options);
+    return null;
+}
+
+/**
+ * Set the title of the terminal window
+ * @param {string} title Desired title for the window
+ */
+export function setWindowTitle(title) {
+    if (process.platform === 'win32') {
+        process.title = title;
+    } else {
+        process.stdout.write(`\x1b]2;${title}\x1b\x5c`);
+    }
+}
+
+/**
+ * Parses a JSON string and applies a mutation function to the parsed object.
+ * @param {string} jsonString JSON string to parse
+ * @param {function(any): void} mutation Mutation function to apply to the parsed JSON object
+ * @returns {string} Mutated JSON string
+ */
+export function mutateJsonString(jsonString, mutation) {
+    try {
+        const json = JSON.parse(jsonString);
+        mutation(json);
+        return JSON.stringify(json);
+    } catch (error) {
+        console.error('Error parsing or mutating JSON:', error);
+        return jsonString;
+    }
+}
+
+/**
+ * Sets the permissions of a file or directory to be writable.
+ * @param {string} targetPath Path to the file or directory
+ */
+export function setPermissionsSync(targetPath) {
+    /**
+     * Appends writable permission to the file mode.
+     * @param {string} filePath Path to the file
+     * @param {fs.Stats} stats File stats
+     */
+    function appendWritablePermission(filePath, stats) {
+        const currentMode = stats.mode;
+        const newMode = currentMode | 0o200;
+        if (newMode != currentMode) {
+            fs.chmodSync(filePath, newMode);
+        }
+    }
+
+    try {
+        const stats = fs.statSync(targetPath);
+
+        if (stats.isDirectory()) {
+            appendWritablePermission(targetPath, stats);
+            const files = fs.readdirSync(targetPath);
+
+            files.forEach((file) => {
+                setPermissionsSync(path.join(targetPath, file));
+            });
+        } else {
+            appendWritablePermission(targetPath, stats);
+        }
+    } catch (error) {
+        console.error(`Error setting write permissions for ${targetPath}:`, error);
+    }
+}
+
+/**
+ * Checks if a child path is under a parent path.
+ * @param {string} parentPath Parent path
+ * @param {string} childPath Child path
+ * @returns {boolean} Returns true if the child path is under the parent path, false otherwise
+ */
+export function isPathUnderParent(parentPath, childPath) {
+    const normalizedParent = path.normalize(parentPath);
+    const normalizedChild = path.normalize(childPath);
+
+    const relativePath = path.relative(normalizedParent, normalizedChild);
+
+    return relativePath !== '..' && !relativePath.startsWith('..' + path.sep) && !path.isAbsolute(relativePath);
+}
+
+/**
+ * Checks if the given request is a file URL.
+ * @param {string | URL | Request} request The request to check
+ * @return {boolean} Returns true if the request is a file URL, false otherwise
+ */
+export function isFileURL(request) {
+    if (typeof request === 'string') {
+        return request.startsWith('file://');
+    }
+    if (request instanceof URL) {
+        return request.protocol === 'file:';
+    }
+    if (request instanceof Request) {
+        return request.url.startsWith('file://');
+    }
+    return false;
+}
+
+/**
+ * Gets the URL from the request.
+ * @param {string | URL | Request} request The request to get the URL from
+ * @return {string} The URL of the request
+ */
+export function getRequestURL(request) {
+    if (typeof request === 'string') {
+        return request;
+    }
+    if (request instanceof URL) {
+        return request.href;
+    }
+    if (request instanceof Request) {
+        return request.url;
+    }
+    throw new TypeError('Invalid request type');
+}
+
+/**
+ * Flattens and simplifies a JSON schema to be compatible with the strict requirements
+ * of Google's Generative AI API.
+ * @param {object} schema The JSON schema to process.
+ * @param {string} api The API source.
+ * @returns {object} The flattened and simplified schema.
+ */
+export function flattenSchema(schema, api) {
+    if (!schema || typeof schema !== 'object') {
+        return schema;
+    }
+
+    const schemaCopy = structuredClone(schema);
+    const isGoogleApi = [CHAT_COMPLETION_SOURCES.VERTEXAI, CHAT_COMPLETION_SOURCES.MAKERSUITE].includes(api);
+
+    const definitions = schemaCopy.$defs || {};
+    delete schemaCopy.$defs;
+
+    function resolve(obj, parents = []) {
+        if (!obj || typeof obj !== 'object') {
+            return obj;
+        }
+        if (Array.isArray(obj)) {
+            return obj.map(item => resolve(item, parents));
+        }
+
+        // 1. Resolve $refs first
+        if (obj.$ref?.startsWith('#/$defs/')) {
+            const defName = obj.$ref.split('/').pop();
+            if (parents.includes(defName)) return {}; // Prevent infinite recursion
+            if (definitions[defName]) {
+                return resolve(structuredClone(definitions[defName]), [...parents, defName]);
+            }
+            return {}; // Broken reference
+        }
+
+        // 2. Process the object's properties
+        const result = {};
+        for (const key in obj) {
+            if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
+
+            // For Google, filter unsupported top-level keywords
+            if (isGoogleApi && ['default', 'additionalProperties', 'exclusiveMinimum', 'propertyNames'].includes(key)) {
+                continue;
+            }
+
+            result[key] = resolve(obj[key], parents);
+        }
+
+        return result;
+    }
+
+    const flattenedSchema = resolve(schemaCopy);
+    delete flattenedSchema.$schema;
+    return flattenedSchema;
+}
+
+const FILE_WRITE_RECOVERY_SUFFIX = '.sillybunny-write-recovery';
+
+function getFileWriteRecoveryPath(filePath) {
+    return `${filePath}${FILE_WRITE_RECOVERY_SUFFIX}`;
+}
+
+function hashFileWriteData(data) {
+    return crypto.createHash('sha256').update(data).digest('hex');
+}
+
+export function fsyncDirectorySync(directory) {
+    if (process.platform === 'win32') {
+        return;
+    }
+
+    const directoryDescriptor = fs.openSync(directory, 'r');
+    try {
+        try {
+            fs.fsyncSync(directoryDescriptor);
+        } catch (error) {
+            if (!['EBADF', 'EINVAL', 'ENOTSUP'].includes(error?.code)) {
+                throw error;
+            }
+        }
+    } finally {
+        fs.closeSync(directoryDescriptor);
+    }
+}
+
+function writeAllSync(fileDescriptor, data, position = 0) {
+    let offset = 0;
+    while (offset < data.byteLength) {
+        const bytesWritten = fs.writeSync(fileDescriptor, data, offset, data.byteLength - offset, position + offset);
+        if (bytesWritten === 0) {
+            throw new Error('Could not finish writing the file.');
+        }
+        offset += bytesWritten;
+    }
+}
+
+function resizeFileSync(fileDescriptor, size) {
+    // Windows can reject SetEndOfFile on a mapped file even when its size already matches.
+    if (fs.fstatSync(fileDescriptor, { bigint: true }).size !== BigInt(size)) {
+        fs.ftruncateSync(fileDescriptor, size);
+    }
+}
+
+function removeFileWriteRecovery(recoveryPath) {
+    const retryDelaysMs = process.platform === 'win32' ? [0, 50, 125, 250] : [0];
+    for (const delayMs of retryDelaysMs) {
+        if (delayMs) {
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+        }
+        try {
+            fs.unlinkSync(recoveryPath);
+            fsyncDirectorySync(path.dirname(recoveryPath));
+            return;
+        } catch (error) {
+            if (error?.code === 'ENOENT') {
+                return;
+            }
+            const isRetryable = ['EACCES', 'EBUSY', 'EPERM'].includes(error?.code);
+            if (!isRetryable || delayMs === retryDelaysMs.at(-1)) {
+                throw Object.assign(new Error(`Failed to remove completed write recovery file ${recoveryPath}.`, { cause: error }), { code: 'ERECOVERYCLEANUP' });
+            }
+        }
+    }
+}
+
+function finishDurableWriteSync(filePath) {
+    const retryDelaysMs = process.platform === 'win32' ? [0, 50, 125, 250] : [0];
+    for (const delayMs of retryDelaysMs) {
+        if (delayMs) {
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+        }
+        try {
+            const fileDescriptor = fs.openSync(filePath, 'r+');
+            try {
+                fs.fsyncSync(fileDescriptor);
+            } finally {
+                fs.closeSync(fileDescriptor);
+            }
+            fsyncDirectorySync(path.dirname(filePath));
+            return;
+        } catch (error) {
+            const isRetryable = ['EACCES', 'EBUSY', 'EPERM'].includes(error?.code);
+            if (!isRetryable || delayMs === retryDelaysMs.at(-1)) {
+                throw error;
+            }
+        }
+    }
+}
+
+/**
+ * Restores a file left partially updated by an interrupted identity-preserving write.
+ * @param {string} filePath
+ * @returns {boolean} Whether the original bytes were restored.
+ */
+function recoverFileWriteOnceSync(filePath) {
+    const recoveryPath = getFileWriteRecoveryPath(filePath);
+    if (!fs.existsSync(recoveryPath)) {
+        return false;
+    }
+
+    const record = JSON.parse(fs.readFileSync(recoveryPath, 'utf8'));
+    const originalData = Buffer.from(record.originalData, 'base64');
+    if (record.version !== 1 || hashFileWriteData(originalData) !== record.originalHash) {
+        throw new Error(`Invalid write recovery file: ${recoveryPath}`);
+    }
+
+    if (!fs.existsSync(filePath)) {
+        const restoreTempPath = `${filePath}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.restore`;
+        let restoreTempCreated = false;
+        try {
+            const restoreDescriptor = fs.openSync(restoreTempPath, 'wx');
+            restoreTempCreated = true;
+            try {
+                writeAllSync(restoreDescriptor, originalData);
+                resizeFileSync(restoreDescriptor, originalData.byteLength);
+                fs.fsyncSync(restoreDescriptor);
+            } finally {
+                fs.closeSync(restoreDescriptor);
+            }
+            try {
+                fs.linkSync(restoreTempPath, filePath);
+            } catch (error) {
+                if (error?.code === 'EEXIST') {
+                    return recoverFileWriteOnceSync(filePath);
+                }
+                throw error;
+            }
+            fsyncDirectorySync(path.dirname(filePath));
+            removeFileWriteRecovery(recoveryPath);
+            return true;
+        } finally {
+            if (restoreTempCreated) {
+                try {
+                    fs.unlinkSync(restoreTempPath);
+                } catch (error) {
+                    if (error?.code !== 'ENOENT') {
+                        console.warn(`Failed to clean up recovery temp file for ${filePath}.`, error?.code);
+                    }
+                }
+            }
+        }
+    }
+
+    const currentData = fs.readFileSync(filePath);
+    const currentHash = hashFileWriteData(currentData);
+    if (currentHash === record.originalHash || currentHash === record.nextHash) {
+        removeFileWriteRecovery(recoveryPath);
+        return false;
+    }
+
+    const pathStats = fs.lstatSync(filePath, { bigint: true });
+    // A recycled inode makes a replacement card indistinguishable from the interrupted one, so the
+    // creation time is checked alongside dev/ino whenever the record carries one. Records written
+    // before this field existed, and those the write path could not vouch for, have none and fall
+    // back to dev/ino on its own.
+    if (String(pathStats.dev) !== record.dev || String(pathStats.ino) !== record.ino
+        || (record.birthtime !== undefined && String(pathStats.birthtimeNs) !== record.birthtime)) {
+        throw Object.assign(new Error(`Refused to recover a replaced file: ${filePath}`), { code: 'ESTALE' });
+    }
+    if (!pathStats.isFile() || pathStats.nlink !== 1n) {
+        throw Object.assign(new Error(`Refused to recover a hard-linked file: ${filePath}`), { code: 'EMLINK' });
+    }
+
+    const fileDescriptor = fs.openSync(filePath, 'r+');
+    try {
+        const descriptorStats = fs.fstatSync(fileDescriptor, { bigint: true });
+        if (descriptorStats.dev !== pathStats.dev || descriptorStats.ino !== pathStats.ino || descriptorStats.nlink !== 1n) {
+            throw Object.assign(new Error(`Refused to recover a replaced file: ${filePath}`), { code: 'ESTALE' });
+        }
+        writeAllSync(fileDescriptor, originalData);
+        resizeFileSync(fileDescriptor, originalData.byteLength);
+        fs.fsyncSync(fileDescriptor);
+
+        const finalDescriptorStats = fs.fstatSync(fileDescriptor, { bigint: true });
+        const finalPathStats = fs.lstatSync(filePath, { bigint: true });
+        if (finalDescriptorStats.dev !== finalPathStats.dev || finalDescriptorStats.ino !== finalPathStats.ino
+            || finalDescriptorStats.nlink !== 1n || finalPathStats.nlink !== 1n) {
+            removeFileWriteRecovery(recoveryPath);
+            throw Object.assign(new Error(`Refused to finish recovering a replaced file: ${filePath}`), { code: 'ESTALE' });
+        }
+    } finally {
+        fs.closeSync(fileDescriptor);
+    }
+
+    removeFileWriteRecovery(recoveryPath);
+    return true;
+}
+
+/**
+ * Restores a file left partially updated by an interrupted identity-preserving write.
+ * @param {string} filePath
+ * @returns {boolean} Whether the original bytes were restored.
+ */
+export function recoverFileWriteSync(filePath) {
+    const retryDelaysMs = process.platform === 'win32' ? [0, 50, 125, 250] : [0];
+    for (const delayMs of retryDelaysMs) {
+        if (delayMs) {
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+        }
+        try {
+            return recoverFileWriteOnceSync(filePath);
+        } catch (error) {
+            const isRetryable = ['EACCES', 'EBUSY', 'EPERM'].includes(error?.code);
+            if (!isRetryable || delayMs === retryDelaysMs.at(-1)) {
+                throw error;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * Recovers every interrupted identity-preserving write in a directory.
+ * @param {string} directory
+ * @returns {number} Number of files restored.
+ */
+export function recoverFileWritesInDirectorySync(directory) {
+    if (!fs.existsSync(directory)) {
+        return 0;
+    }
+
+    let restored = 0;
+    for (const fileName of fs.readdirSync(directory)) {
+        if (!fileName.endsWith(FILE_WRITE_RECOVERY_SUFFIX)) {
+            continue;
+        }
+        const filePath = path.join(directory, fileName.slice(0, -FILE_WRITE_RECOVERY_SUFFIX.length));
+        restored += recoverFileWriteSync(filePath) ? 1 : 0;
+    }
+    return restored;
+}
+
+/**
+ * Writes to a file, creating it's parent directories if needed.
+ * @param {string} filePath
+ * @param {string|Buffer} data
+ * @param {import('node:fs').WriteFileOptions} [options]
+ * @param {{preserveFileIdentity?: boolean, expectedFileIdentity?: {dev: bigint, ino: bigint}, expectedFileHash?: string, expectedFileAbsent?: boolean, invalidateBeforeWrite?: boolean, replaceFileOnly?: boolean, durable?: boolean}} [writeOptions]
+ */
+export function tryWriteFileSync(filePath, data, options = typeof data === 'string' ? 'utf8' : undefined, { preserveFileIdentity = false, expectedFileIdentity = undefined, expectedFileHash = undefined, expectedFileAbsent = false, invalidateBeforeWrite = false, replaceFileOnly = false, durable = false } = {}) {
+    const isRetryableWindowsWriteError = (error) => process.platform === 'win32' && ['EACCES', 'EBUSY', 'EPERM'].includes(error?.code);
+    const sleepSync = (delayMs) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+    const retryDelaysMs = [50, 125, 250];
+    let lastError;
+    const runWithWindowsRetries = (operation) => {
+        for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
+            try {
+                operation();
+                return true;
+            } catch (error) {
+                if (!isRetryableWindowsWriteError(error)) {
+                    throw error;
+                }
+
+                lastError = error;
+                if (attempt < retryDelaysMs.length) {
+                    sleepSync(retryDelaysMs[attempt]);
+                }
+            }
+        }
+
+        return false;
+    };
+    const directory = path.dirname(filePath);
+    //Ensure the directory exists.
+    if (!fs.existsSync(directory)) {
+        fs.mkdirSync(directory, { recursive: true });
+    }
+
+    if (expectedFileAbsent) {
+        const encoding = typeof options === 'string' ? options : options?.encoding || 'utf8';
+        const dataBuffer = Buffer.isBuffer(data) ? data : Buffer.from(data, encoding);
+        let fileDescriptor;
+        let createdIdentity;
+        try {
+            fileDescriptor = fs.openSync(filePath, 'wx', typeof options === 'object' ? options?.mode : undefined);
+            const createdStats = fs.fstatSync(fileDescriptor, { bigint: true });
+            createdIdentity = { dev: createdStats.dev, ino: createdStats.ino };
+            writeAllSync(fileDescriptor, dataBuffer);
+            fs.ftruncateSync(fileDescriptor, dataBuffer.byteLength);
+            if (durable) {
+                fs.fsyncSync(fileDescriptor);
+            }
+            const finalPathStats = fs.lstatSync(filePath, { bigint: true });
+            if (finalPathStats.dev !== createdIdentity.dev || finalPathStats.ino !== createdIdentity.ino) {
+                throw Object.assign(new Error(`Refused to finish creating a changed file: ${filePath}`), { code: 'ESTALE' });
+            }
+        } catch (error) {
+            if (fileDescriptor !== undefined) {
+                try {
+                    fs.closeSync(fileDescriptor);
+                } catch {
+                    // Preserve the original write error.
+                }
+                fileDescriptor = undefined;
+                try {
+                    const pathStats = fs.lstatSync(filePath, { bigint: true });
+                    if (createdIdentity && pathStats.dev === createdIdentity.dev && pathStats.ino === createdIdentity.ino) {
+                        fs.unlinkSync(filePath);
+                    }
+                } catch {
+                    // A later recovery attempt can handle a partial file that could not be removed.
+                }
+            }
+            if (error?.code === 'EEXIST') {
+                throw Object.assign(new Error(`Refused to create a file that appeared after it was checked: ${filePath}`, { cause: error }), { code: 'ESTALE' });
+            }
+            throw error;
+        } finally {
+            if (fileDescriptor !== undefined) {
+                fs.closeSync(fileDescriptor);
+            }
+        }
+        if (durable) {
+            fsyncDirectorySync(directory);
+        }
+        return;
+    }
+
+    // Neconyan: some existing user data carries filesystem metadata that replacement would discard.
+    if (preserveFileIdentity) {
+        if (!invalidateBeforeWrite) {
+            recoverFileWriteSync(filePath);
+        }
+
+        const encoding = typeof options === 'string' ? options : options?.encoding || 'utf8';
+        const dataBuffer = Buffer.isBuffer(data) ? data : Buffer.from(data, encoding);
+        const dataLength = dataBuffer.byteLength;
+        const writeInPlace = () => {
+            const fileDescriptor = fs.openSync(filePath, 'r+');
+            let operationFailed = false;
+            let recoveryPath;
+            let originalData;
+            let targetMutated = false;
+            try {
+                const descriptorStats = fs.fstatSync(fileDescriptor, { bigint: true });
+                const pathStats = fs.lstatSync(filePath, { bigint: true });
+                const matchesExpectedIdentity = !expectedFileIdentity
+                    || (descriptorStats.dev === expectedFileIdentity.dev && descriptorStats.ino === expectedFileIdentity.ino);
+                if (!descriptorStats.isFile() || !pathStats.isFile()
+                    || descriptorStats.dev !== pathStats.dev || descriptorStats.ino !== pathStats.ino
+                    || !matchesExpectedIdentity) {
+                    throw Object.assign(new Error(`Refused to overwrite a replaced file: ${filePath}`), { code: 'ESTALE' });
+                }
+                if (descriptorStats.nlink !== 1n || pathStats.nlink !== 1n) {
+                    throw Object.assign(new Error(`Refused to overwrite a hard-linked file: ${filePath}`), { code: 'EMLINK' });
+                }
+
+                originalData = Buffer.alloc(Number(descriptorStats.size));
+                let offset = 0;
+                while (offset < originalData.byteLength) {
+                    const bytesRead = fs.readSync(fileDescriptor, originalData, offset, originalData.byteLength - offset, offset);
+                    if (bytesRead === 0) break;
+                    offset += bytesRead;
+                }
+                if (expectedFileHash && hashFileWriteData(originalData) !== expectedFileHash) {
+                    throw Object.assign(new Error(`Refused to overwrite a changed file: ${filePath}`), { code: 'ESTALE' });
+                }
+
+                if (invalidateBeforeWrite && dataLength > 0) {
+                    targetMutated = true;
+                    writeAllSync(fileDescriptor, Buffer.from([dataBuffer[0] ^ 0xFF]));
+                    fs.fsyncSync(fileDescriptor);
+                    writeAllSync(fileDescriptor, dataBuffer.subarray(1), 1);
+                    resizeFileSync(fileDescriptor, dataLength);
+                    fs.fsyncSync(fileDescriptor);
+                    writeAllSync(fileDescriptor, dataBuffer.subarray(0, 1));
+                    try {
+                        fs.fsyncSync(fileDescriptor);
+                    } catch (error) {
+                        try {
+                            writeAllSync(fileDescriptor, Buffer.from([dataBuffer[0] ^ 0xFF]));
+                            fs.fsyncSync(fileDescriptor);
+                        } catch {
+                            // The original flush error is more useful; recovery still has the exact snapshot.
+                        }
+                        throw error;
+                    }
+                } else {
+                    recoveryPath = getFileWriteRecoveryPath(filePath);
+                    const recoveryRecord = {
+                        version: 1,
+                        dev: String(descriptorStats.dev),
+                        ino: String(descriptorStats.ino),
+                        originalHash: hashFileWriteData(originalData),
+                        nextHash: hashFileWriteData(dataBuffer),
+                        originalData: originalData.toString('base64'),
+                    };
+                    // Neconyan: dev/ino alone does not survive the gap between the crash that
+                    // strands this record and the start that reads it. Deleting a card frees its
+                    // inode and the next file created in that directory can be handed the very same
+                    // one - on ext4 that is not a rare draw but the normal outcome - so a card the
+                    // user replaced in the meantime would look like the interrupted write and get
+                    // stamped back to the old bytes. A creation time is not recycled along with the
+                    // inode, so it tells the two apart.
+                    //
+                    // Only a creation time this file proves is real gets recorded. Filesystems
+                    // without one report ctime in its place, and every write moves that, so a
+                    // recovery reading it back would refuse the interrupted card it exists to
+                    // restore. A card already modified since it was created has the two apart and
+                    // settles it; a card still carrying its original bytes cannot, and its first
+                    // identity-preserving write falls back to dev/ino as before. That gap closes
+                    // for good on the write after it.
+                    if (descriptorStats.birthtimeNs !== descriptorStats.ctimeNs) {
+                        recoveryRecord.birthtime = String(descriptorStats.birthtimeNs);
+                    }
+                    writeFileAtomicSync(recoveryPath, JSON.stringify(recoveryRecord), 'utf8');
+                    fsyncDirectorySync(path.dirname(recoveryPath));
+
+                    targetMutated = true;
+                    writeAllSync(fileDescriptor, dataBuffer);
+                    resizeFileSync(fileDescriptor, dataLength);
+                    fs.fsyncSync(fileDescriptor);
+                }
+
+                const finalDescriptorStats = fs.fstatSync(fileDescriptor, { bigint: true });
+                const finalPathStats = fs.lstatSync(filePath, { bigint: true });
+                if (finalDescriptorStats.dev !== finalPathStats.dev || finalDescriptorStats.ino !== finalPathStats.ino
+                    || finalDescriptorStats.nlink !== 1n || finalPathStats.nlink !== 1n) {
+                    throw Object.assign(new Error(`Refused to finish writing a replaced or hard-linked file: ${filePath}`), { code: 'ESTALE' });
+                }
+            } catch (error) {
+                operationFailed = true;
+                const shouldRestoreOriginal = targetMutated && (recoveryPath || ['EMLINK', 'ESTALE'].includes(error?.code));
+                if (shouldRestoreOriginal && originalData) {
+                    try {
+                        writeAllSync(fileDescriptor, originalData);
+                        resizeFileSync(fileDescriptor, originalData.byteLength);
+                        fs.fsyncSync(fileDescriptor);
+                        if (recoveryPath) {
+                            removeFileWriteRecovery(recoveryPath);
+                        }
+                    } catch (rollbackError) {
+                        throw new AggregateError([error, rollbackError], `Failed to write and restore ${filePath}.`);
+                    }
+                }
+                throw error;
+            } finally {
+                try {
+                    fs.closeSync(fileDescriptor);
+                } catch (error) {
+                    if (!operationFailed) {
+                        console.warn(`Failed to close ${filePath} after its data was flushed.`, error?.code);
+                    }
+                }
+            }
+            if (recoveryPath) {
+                removeFileWriteRecovery(recoveryPath);
+            }
+        };
+
+        if (runWithWindowsRetries(writeInPlace)) {
+            return;
+        }
+
+        throw lastError;
+    }
+
+    const assertExpectedPathState = () => {
+        if (!expectedFileIdentity && !expectedFileHash) {
+            return;
+        }
+        const initialStats = fs.lstatSync(filePath, { bigint: true });
+        if (expectedFileIdentity && (initialStats.dev !== expectedFileIdentity.dev || initialStats.ino !== expectedFileIdentity.ino)) {
+            throw Object.assign(new Error(`Refused to replace a changed file: ${filePath}`), { code: 'ESTALE' });
+        }
+        if (expectedFileHash) {
+            const currentData = fs.readFileSync(filePath);
+            const finalStats = fs.lstatSync(filePath, { bigint: true });
+            if (finalStats.dev !== initialStats.dev || finalStats.ino !== initialStats.ino
+                || hashFileWriteData(currentData) !== expectedFileHash) {
+                throw Object.assign(new Error(`Refused to replace a changed file: ${filePath}`), { code: 'ESTALE' });
+            }
+        }
+    };
+
+    if (replaceFileOnly) {
+        const tempFilePaths = new Set();
+        let tempFilePath;
+        try {
+            assertExpectedPathState();
+            if (!runWithWindowsRetries(() => {
+                const candidatePath = `${filePath}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`;
+                const targetStats = fs.lstatSync(filePath, { bigint: true });
+                const tempDescriptor = fs.openSync(candidatePath, 'wx', Number(targetStats.mode & 0o777n));
+                tempFilePaths.add(candidatePath);
+                try {
+                    const encoding = typeof options === 'string' ? options : options?.encoding || 'utf8';
+                    const dataBuffer = Buffer.isBuffer(data) ? data : Buffer.from(data, encoding);
+                    writeAllSync(tempDescriptor, dataBuffer);
+                    resizeFileSync(tempDescriptor, dataBuffer.byteLength);
+                    fs.fsyncSync(tempDescriptor);
+                } finally {
+                    fs.closeSync(tempDescriptor);
+                }
+                tempFilePath = candidatePath;
+            })) {
+                throw lastError;
+            }
+            assertExpectedPathState();
+            if (!runWithWindowsRetries(() => {
+                assertExpectedPathState();
+                fs.renameSync(tempFilePath, filePath);
+            })) {
+                throw lastError;
+            }
+            fsyncDirectorySync(directory);
+            return;
+        } finally {
+            for (const createdTempPath of tempFilePaths) {
+                try {
+                    fs.unlinkSync(createdTempPath);
+                } catch (error) {
+                    if (error?.code !== 'ENOENT') {
+                        console.warn(`Failed to clean up temp write file for ${filePath}.`, error?.code);
+                    }
+                }
+            }
+        }
+    }
+
+    if (runWithWindowsRetries(() => writeFileAtomicSync(filePath, data, options))) {
+        if (durable) {
+            finishDurableWriteSync(filePath);
+        }
+        return;
+    }
+
+    if (lastError) {
+        console.debug(`Atomic write failed for ${filePath}. Falling back to a temp file rename.`, lastError?.code);
+    }
+
+    // Neconyan: keep the existing file intact while retrying a Windows-safe replacement.
+    const tempFilePath = `${filePath}.tmp`;
+    const cleanupTempFile = () => {
+        try {
+            if (fs.existsSync(tempFilePath)) {
+                fs.unlinkSync(tempFilePath);
+            }
+        } catch (error) {
+            console.warn(`Failed to clean up temp write file for ${filePath}.`, error?.code);
+        }
+    };
+
+    try {
+        if (!runWithWindowsRetries(() => fs.writeFileSync(tempFilePath, data, options))) {
+            throw lastError;
+        }
+
+        if (runWithWindowsRetries(() => fs.renameSync(tempFilePath, filePath))) {
+            if (durable) {
+                finishDurableWriteSync(filePath);
+            }
+            return;
+        }
+
+        console.warn(`Temp file rename failed for ${filePath}. Falling back to a copy replacement.`, lastError?.code);
+        if (runWithWindowsRetries(() => fs.copyFileSync(tempFilePath, filePath))) {
+            if (durable) {
+                finishDurableWriteSync(filePath);
+            }
+            return;
+        }
+
+        console.warn(`Temp file copy failed for ${filePath}. Falling back to a direct write.`, lastError?.code);
+        if (runWithWindowsRetries(() => fs.writeFileSync(filePath, data, options))) {
+            if (durable) {
+                finishDurableWriteSync(filePath);
+            }
+            return;
+        }
+
+        throw lastError;
+    } finally {
+        cleanupTempFile();
+    }
+}
+
+/**
+* Attempts to read a file as utf8.
+* @param {string} filePath
+* @returns {string|null}
+*/
+export function tryReadFileSync(filePath) {
+    try {
+        if (fs.existsSync(filePath)) {
+            return fs.readFileSync(filePath, 'utf8');
+        }
+    } catch (error) {
+        console.error(`Error reading ${filePath}: ${error.message}`);
+    }
+    return null;
+}
+
+/**
+* Attempts to delete a file.
+* @param {string} filePath Target file.
+* @returns {boolean} Returns true if the file was found and deleted.
+*/
+export function tryDeleteFile(filePath) {
+    if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.info(`Deleted file: ${filePath}`);
+        return true;
+    } else {
+        console.error(`File not found '${filePath}'`);
+        return false;
+    }
+}
+
+/**
+ * Reads the first line of a file using synchronous I/O.
+ * Returns a Promise for backwards compatibility, but the file descriptor
+ * is guaranteed to be released before the promise resolves. This prevents
+ * Windows file lock issues (EPERM) when the caller immediately performs
+ * synchronous file operations after awaiting this function.
+ * @param {string} filePath Path to the file
+ * @returns {Promise<string>} The first line of the file
+ */
+export function readFirstLine(filePath) {
+    let fd;
+    try {
+        fd = fs.openSync(filePath, 'r');
+        const buf = Buffer.alloc(1);
+        let line = '';
+        while (true) {
+            const bytesRead = fs.readSync(fd, buf, 0, 1, null);
+            if (bytesRead === 0) break;
+            const char = buf.toString('utf8', 0, 1);
+            if (char === '\n') break;
+            if (char === '\r') continue;
+            line += char;
+        }
+        return Promise.resolve(line);
+    } finally {
+        if (fd !== undefined) {
+            fs.closeSync(fd);
+        }
+    }
+}
+
+/**
+ * If the file is an image, and the request's user agent matches Firefox, then the response's headers are set to invalidate the cache.
+ * Without this, Firefox ignores updated images even after a refresh.
+ * https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cache-Control
+ * @param {string} file File path
+ * @param {import('express').Request} request Request object
+ * @param {import('express').Response} response Response object
+ */
+export function invalidateFirefoxCache(file, request, response) {
+    const mimeType = isFirefox(request) && mime.lookup(file);
+    if (mimeType && mimeType.startsWith('image/')) {
+        response.setHeader('Cache-Control', 'must-understand, no-store');
+    }
+}

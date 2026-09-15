@@ -1,0 +1,180 @@
+/* Fade animations with opacity */
+@keyframes fade-in {
+    0% {
+        opacity: 0;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+
+@keyframes fade-out {
+    0% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+    }
+}
+
+/* Pop animations with opacity and subtle scaling */
+@keyframes pop-in {
+    0% {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes pop-out {
+    0% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    100% {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+}
+
+/* Flashing for highlighting animation */
+@keyframes flash {
+
+    0%,
+    50%,
+    100% {
+        opacity: 1;
+    }
+
+    25%,
+    75% {
+        opacity: 0.2;
+    }
+}
+
+/* Pulsing highlight, slightly resizing the element */
+@keyframes pulse {
+    from {
+        transform: scale(1);
+        filter: brightness(1.1);
+    }
+
+    to {
+        transform: scale(1.01);
+        filter: brightness(1.3);
+    }
+}
+
+/* Ellipsis animation */
+@keyframes ellipsis {
+    0% {
+        content: ""
+    }
+
+    25% {
+        content: "."
+    }
+
+    50% {
+        content: ".."
+    }
+
+    75% {
+        content: "..."
+    }
+}
+
+/* HEINOUS */
+@keyframes infinite-spinning {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* STscript animation */
+@keyframes script_progress_pulse {
+
+    0%,
+    100% {
+        border-top-color: var(--progColor);
+    }
+
+    50% {
+        border-top-color: var(--progFlashColor);
+    }
+}
+
+/* Scroll delay animations */
+@keyframes hide-scroll {
+
+    from,
+    to {
+        overflow-y: hidden;
+    }
+}
+
+@keyframes slide {
+    0% {
+        transform: translateX(var(--slide-mes-x-start, 0px));
+    }
+
+    100% {
+        transform: translateX(var(--slide-mes-x-end, 0px));
+    }
+}
+
+@-webkit-keyframes slide {
+    0% {
+        transform: translateX(var(--slide-mes-x-start, 0px));
+    }
+
+    100% {
+        transform: translateX(var(--slide-mes-x-end, 0px));
+    }
+}
+
+@keyframes sb-list-item-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Success flash for button feedback */
+@keyframes success-flash {
+    0%, 100% {
+        background-color: transparent;
+    }
+    50% {
+        background-color: rgba(40, 167, 69, 0.3);
+    }
+}
+
+.success-flash {
+    animation: success-flash 1.2s ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .flash,
+    [class*="flash"],
+    .pulse,
+    [class*="pulse"] {
+        animation: none !important;
+    }
+}

@@ -1,0 +1,323 @@
+import { isPathfinderSubmoduleEnabled } from '../agent-store.js';
+import { getLinkApiRequestFormat } from '../../../linkapi-utils.js';
+import { getSettings, getTree, getAllEntryUids, isEntryEligible, isLorebookEnabled, canReadBook, canWriteBook, canDeleteBook } from './tree-store.js';
+
+const CHAT_LOREBOOK_METADATA_KEY = 'world_info';
+
+const PATHFINDER_LOG_PREFIX = '[Pathfinder]';
+
+export const TOOL_NAMES = {
+    SEARCH: 'Pathfinder_Search',
+    REMEMBER: 'Pathfinder_Remember',
+    UPDATE: 'Pathfinder_Update',
+    FORGET: 'Pathfinder_Forget',
+    SUMMARIZE: 'Pathfinder_Summarize',
+    REORGANIZE: 'Pathfinder_Reorganize',
+    MERGE_SPLIT: 'Pathfinder_MergeSplit',
+    NOTEBOOK: 'Pathfinder_Notebook',
+};
+
+export const ALL_TOOL_NAMES = Object.values(TOOL_NAMES);
+
+/** Tools that modify lorebook data and can be gated behind a confirmation dialog. */
+export const CONFIRMABLE_TOOLS = new Set([
+    TOOL_NAMES.REMEMBER,
+    TOOL_NAMES.UPDATE,
+    TOOL_NAMES.FORGET,
+    TOOL_NAMES.SUMMARIZE,
+    TOOL_NAMES.REORGANIZE,
+    TOOL_NAMES.MERGE_SPLIT,
+]);
+
+/**
+ * Resolve the tool_choice value that forces tool use, when the user enabled
+ * "require tool use on every response". The server backends translate:
+ * Anthropic-format backends use 'any'; OpenAI-format backends use 'required'.
+ * @param {string} chatCompletionSource - Source id from the generation data
+ * @param {string} model - Model id used to resolve format-switching providers
+ * @returns {string|null} Value for tool_choice, or null when not forcing
+ */
+export function getForcedToolChoice(chatCompletionSource, model) {
+    if (!isPathfinderSubmoduleEnabled()) {
+        return null;
+    }
+
+    const s = getSettings();
+    if (!s.sidecarEnabled || !s.mandatoryTools) {
+        return null;
+    }
+
+    if (chatCompletionSource === 'ai21') {
+        return null;
+    }
+
+    const usesAnthropicFormat = chatCompletionSource === 'claude'
+        || (chatCompletionSource === 'linkapi' && getLinkApiRequestFormat(model) === 'anthropic');
+    return usesAnthropicFormat ? 'any' : 'required';
+}
+
+export function getActiveTunnelVisionBooks(s = getSettings()) {
+    if (!isPathfinderSubmoduleEnabled()) {
+        return [];
+    }
+
+    const books = Array.isArray(s.enabledLorebooks)
+        ? s.enabledLorebooks.filter(b => isLorebookEnabled(b, s))
+        : [];
+
+    if (s.includeContextualLorebooks !== false || s.autoUseAttachedLorebook) {
+        books.push(...getContextualLorebooks());
+    }
+
+    return Array.from(new Set(books.filter(book => book && s.bookPermissions?.[book]?.enabled !== false)));
+}
+
+function addBookSource(sources, name, type) {
+    const bookName = String(name ?? '').trim();
+    if (!bookName) {
+        return;
+    }
+
+    const existing = sources.find(source => source.name === bookName);
+    if (existing) {
+        existing.types.add(type);
+        return;
+    }
+
+    sources.push({
+        name: bookName,
+        types: new Set([type]),
+    });
+}
+
+function getChatMetadata(ctx) {
+    return ctx?.chatMetadata ?? ctx?.chat_metadata ?? {};
+}
+
+function getPowerUserSettings(ctx) {
+    return ctx?.powerUserSettings ?? ctx?.power_user ?? {};
+}
+
+function getWorldInfoSettings(ctx) {
+    return ctx?.worldInfoSettings ?? ctx?.world_info ?? {};
+}
+
+function hasActiveGroup(ctx) {
+    return ctx?.groupId !== null && ctx?.groupId !== undefined && String(ctx.groupId).trim() !== '';
+}
+
+export function getContextualLorebookDetails() {
+    const ctx = window?.SillyTavern?.getContext?.();
+    const sources = [];
+    const chatLorebook = getChatMetadata(ctx)?.[CHAT_LOREBOOK_METADATA_KEY];
+    const personaLorebook = getPowerUserSettings(ctx)?.persona_description_lorebook;
+
+    addBookSource(sources, chatLorebook, 'chat');
+    addBookSource(sources, personaLorebook, 'persona');
+
+    for (const character of getContextCharacters(ctx)) {
+        const primaryBook = character?.data?.extensions?.world || character?.data?.character_book?.name;
+        addBookSource(sources, primaryBook, hasActiveGroup(ctx) ? 'group' : 'character');
+
+        const fileName = getCharacterFileName(character);
+        const extraCharLore = getWorldInfoSettings(ctx)?.charLore?.find?.(entry => String(entry?.name ?? '') === fileName);
+        if (Array.isArray(extraCharLore?.extraBooks)) {
+            for (const book of extraCharLore.extraBooks) {
+                addBookSource(sources, book, hasActiveGroup(ctx) ? 'group' : 'character');
+            }
+        }
+    }
+
+    return sources.map(source => ({
+        name: source.name,
+        types: [...source.types],
+        type: [...source.types][0] ?? 'attached',
+    }));
+}
+
+export function getContextualLorebooks() {
+    return getContextualLorebookDetails().map(source => source.name);
+}
+
+function getContextCharacters(ctx) {
+    if (!ctx?.characters?.length) {
+        return [];
+    }
+
+    if (hasActiveGroup(ctx)) {
+        const group = ctx.groups?.find?.(item => String(item?.id ?? '') === String(ctx.groupId ?? ''));
+        const memberAvatars = Array.isArray(group?.members) ? group.members : [];
+        return memberAvatars
+            .map(avatar => ctx.characters.find(character => character?.avatar === avatar))
+            .filter(Boolean);
+    }
+
+    const character = ctx.characters[ctx.characterId];
+    return character ? [character] : [];
+}
+
+function getCharacterFileName(character) {
+    const avatar = String(character?.avatar || '');
+    return avatar.replace(/\.[^.]+$/, '');
+}
+
+export function getReadableBooks(s = getSettings()) {
+    return getActiveTunnelVisionBooks(s).filter(b => canReadBook(b, s));
+}
+
+export function getWritableBooks(s = getSettings()) {
+    return getActiveTunnelVisionBooks(s).filter(b => canWriteBook(b, s));
+}
+
+export function getDeletableBooks(s = getSettings()) {
+    return getActiveTunnelVisionBooks(s).filter(b => canDeleteBook(b, s));
+}
+
+export function getToolWriteOptions(bookName, options = {}, getAllowedBooks = getWritableBooks) {
+    // Queued writes must recheck permissions after loading, not only when invoked.
+    return {
+        signal: options.signal,
+        isCurrent: () => (!options.isCurrent || options.isCurrent()) && getAllowedBooks().includes(bookName),
+    };
+}
+
+export function resolveTargetBook(requestedBook, writableBooks = null) {
+    const books = writableBooks ?? getWritableBooks();
+    if (books.length === 0) return null;
+    if (requestedBook && books.includes(requestedBook)) {
+        return requestedBook;
+    }
+
+    return books[0];
+}
+
+/**
+ * For UID-addressed operations an explicitly named book must not silently
+ * fall back to another book — UIDs are per-book, so the fallback would hit
+ * an unrelated entry. Returns an error string, or null when the request is
+ * fine (no book named, or the named book is allowed).
+ * @param {string} requestedBook - Book name from the tool call, may be empty
+ * @param {string[]} allowedBooks - Books the operation may target
+ * @returns {string|null}
+ */
+export function getUnknownBookError(requestedBook, allowedBooks) {
+    const name = String(requestedBook ?? '').trim();
+    if (!name || allowedBooks.includes(name)) {
+        return null;
+    }
+
+    return `Error: Lorebook "${name}" is not available for this operation. Available: ${allowedBooks.join(', ') || 'none'}.`;
+}
+
+export function getBookListWithDescriptions() {
+    const books = getReadableBooks();
+    return books.map(b => {
+        const tree = getTree(b);
+        const entryCount = getAllEntryUids(tree).length;
+        return `📚 ${b} (${entryCount} entries)`;
+    }).join('\n');
+}
+
+export function preflightToolRuntimeState() {
+    const books = getActiveTunnelVisionBooks();
+    return {
+        hasBooks: books.length > 0,
+        bookCount: books.length,
+        books,
+    };
+}
+
+/**
+ * Get entry content by UID from a lorebook
+ * @param {string} bookName - Lorebook name
+ * @param {number} uid - Entry UID
+ * @returns {Promise<Object|null>} Entry object with uid, comment, content, etc.
+ */
+export async function getEntryContent(bookName, uid) {
+    if (!canReadBook(bookName)) return null;
+    const ctx = window?.SillyTavern?.getContext?.();
+    if (!ctx?.loadWorldInfo) {
+        console.warn(`${PATHFINDER_LOG_PREFIX} Cannot fetch lorebook entry because loadWorldInfo is unavailable.`, {
+            bookName,
+            uid,
+        });
+        return null;
+    }
+
+    try {
+        const bookData = await ctx.loadWorldInfo(bookName);
+        if (!bookData?.entries) {
+            console.warn(`${PATHFINDER_LOG_PREFIX} Lorebook "${bookName}" has no entries while fetching UID ${uid}.`);
+            return null;
+        }
+
+        for (const entry of Object.values(bookData.entries)) {
+            if (isEntryEligible(entry) && entry.uid === uid) {
+                return {
+                    uid: entry.uid,
+                    world: entry.world || bookName,
+                    comment: entry.comment || entry.key?.[0] || '',
+                    content: entry.content || '',
+                    key: entry.key || [],
+                    keysecondary: entry.keysecondary || [],
+                    selective: entry.selective ?? false,
+                    selectiveLogic: entry.selectiveLogic ?? 0,
+                    caseSensitive: entry.caseSensitive,
+                    matchWholeWords: entry.matchWholeWords,
+                    constant: entry.constant ?? false,
+                    decorators: entry.decorators || [],
+                    disable: entry.disable ?? false,
+                };
+            }
+        }
+        console.warn(`${PATHFINDER_LOG_PREFIX} Entry ${uid} was not found in lorebook "${bookName}".`);
+    } catch (err) {
+        console.warn(`[Pathfinder] Failed to get entry ${uid} from ${bookName}:`, err);
+    }
+
+    return null;
+}
+
+/**
+ * Get all entries from a lorebook with their content
+ * @param {string} bookName - Lorebook name
+ * @returns {Promise<Object[]>} Array of entry objects
+ */
+export async function getAllEntriesWithContent(bookName) {
+    if (!canReadBook(bookName)) return [];
+    const ctx = window?.SillyTavern?.getContext?.();
+    if (!ctx?.loadWorldInfo) {
+        console.warn(`${PATHFINDER_LOG_PREFIX} Cannot fetch lorebook contents because loadWorldInfo is unavailable.`, {
+            bookName,
+        });
+        return [];
+    }
+
+    try {
+        const bookData = await ctx.loadWorldInfo(bookName);
+        if (!bookData?.entries) {
+            console.warn(`${PATHFINDER_LOG_PREFIX} Lorebook "${bookName}" has no entries while fetching all content.`);
+            return [];
+        }
+
+        return Object.values(bookData.entries)
+            .filter(isEntryEligible)
+            .map(entry => ({
+                uid: entry.uid,
+                world: entry.world || bookName,
+                comment: entry.comment || entry.key?.[0] || '',
+                content: entry.content || '',
+                key: entry.key || [],
+                keysecondary: entry.keysecondary || [],
+                selective: entry.selective ?? false,
+                selectiveLogic: entry.selectiveLogic ?? 0,
+                caseSensitive: entry.caseSensitive,
+                matchWholeWords: entry.matchWholeWords,
+                constant: entry.constant ?? false,
+                decorators: entry.decorators || [],
+            }));
+    } catch (err) {
+        console.warn(`[Pathfinder] Failed to get entries from ${bookName}:`, err);
+        return [];
+    }
+}

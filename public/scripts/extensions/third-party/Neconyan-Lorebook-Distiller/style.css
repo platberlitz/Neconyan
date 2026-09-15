@@ -1,0 +1,85 @@
+.sbld-dialog {
+    max-width: min(920px, 96vw);
+}
+
+.sbld-root {
+    display: grid;
+    gap: 12px;
+    text-align: left;
+}
+
+.sbld-heading {
+    margin: 0;
+}
+
+.sbld-note {
+    margin: 0;
+    opacity: 0.85;
+    font-size: 0.9em;
+}
+
+.sbld-controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+    align-items: end;
+}
+
+.sbld-field {
+    display: grid;
+    gap: 4px;
+}
+
+.sbld-field-label {
+    font-size: 0.82em;
+    opacity: 0.85;
+}
+
+.sbld-status {
+    margin: 0;
+    font-size: 0.9em;
+}
+
+.sbld-list {
+    display: grid;
+    gap: 10px;
+    max-height: 50vh;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.sbld-card {
+    display: grid;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(120, 120, 120, 0.35));
+    border-radius: 6px;
+}
+
+.sbld-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.sbld-card-head .sbld-title {
+    flex: 1 1 200px;
+    font-weight: 600;
+}
+
+.sbld-badge {
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(120, 120, 120, 0.35));
+    font-size: 0.78em;
+    opacity: 0.9;
+}
+
+.sbld-badge-duplicate {
+    border-color: color-mix(in srgb, currentcolor 45%, orange);
+}
+
+.sbld-apply {
+    justify-self: start;
+}

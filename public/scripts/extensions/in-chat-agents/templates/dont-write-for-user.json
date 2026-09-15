@@ -1,0 +1,42 @@
+{
+  "id": "tpl-dont-write-for-user",
+  "name": "Don't Write for User",
+  "description": "Never write {{user}}'s actions or dialogue -- only {{char}} and NPCs",
+  "icon": "",
+  "category": "content",
+  "subcategory": "pov",
+  "tags": [
+    "pov",
+    "user"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "{{setvar::writefor::Write for every character excluding <user>. Continue directly from <user>'s message through fresh action, dialogue, inference, and reaction that changes pressure, relation, or available options. Comprehension surfaces through behavior, timing, choice, and consequence.\nStop the scene the moment the ball is in <user>'s court. When a character finishes speaking, acting, or changing the situation, and the natural next move belongs to <user>, the response is over. Cut there. One scene beat per response.\nZero-Overlap Rule: The response must begin with new information. The first sentence must contain something <user> has yet to see, hear, or learn.}}{{trim}}",
+  "phase": "pre",
+  "injection": {
+    "position": 0,
+    "depth": 4,
+    "role": 0,
+    "order": 100,
+    "scan": false
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "regex",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": ""
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal",
+      "continue"
+    ]
+  }
+}

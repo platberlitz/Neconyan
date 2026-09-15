@@ -1,0 +1,282 @@
+/* global globalThis */
+import { afterEach, describe, expect, jest, test } from '@jest/globals';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+import {
+    createNeconyanFolder, moveNeconyanLorebook, normalizeNeconyanLorebookFolders,
+    renameNeconyanLorebookAssignment, unfileNeconyanLorebook,
+} from '../public/scripts/neconyan-lorebook-folders.js';
+import { normalizeAgentSetupPreset } from '../public/scripts/extensions/in-chat-agents/setup-presets.js';
+
+const originalFetch = globalThis.fetch;
+afterEach(() => { globalThis.fetch = originalFetch; });
+
+function folderRuntime() {
+    const source = readFileSync(new URL('../public/scripts/world-info.js', import.meta.url), 'utf8');
+    const field = { find() { return this; }, text: () => '', remove() { return this; }, append() { return this; } };
+    const context = vm.createContext({
+        world_info: { unrelated: 'keep', neconyanFolders: { folders: [createNeconyanFolder('Places', 'places')], assignments: { Notes: 'places' } } },
+        world_names: ['Notes'], worldInfoEditor: null, selected_world_info: [],
+        structuredClone, NECONYAN_LOREBOOK_FOLDERS_KEY: 'neconyanFolders', normalizeNeconyanLorebookFolders,
+        saveSettings: jest.fn(async () => true), getRequestHeaders: () => ({}),
+        warnNeconyanFolderSaveFailure: jest.fn(),
+        fetch: async () => ({ ok: true, json: async () => ({ world_names: ['Renamed'] }) }),
+        $: () => field, Option: class {}, updatePersonaLorebookActions() {}, updateWorldInfoWorkspaceState() {},
+    });
+    const functions = ['getNeconyanLorebookFolders', 'updateNeconyanLorebookFolders', 'updateWorldInfoList']
+        .map(name => source.match(new RegExp(`^export (?:async )?function ${name}\\([\\s\\S]*?^}`, 'm'))[0].replace('export ', ''));
+    vm.runInContext('let neconyanLorebookFolderSaveChain = Promise.resolve();\n' + functions.join('\n'), context);
+    return context;
+}
+
+describe('Neconyan Lorebook folders', () => {
+    test('exact book identities survive moves, getters, renames and reloads', async () => {
+        const context = folderRuntime();
+        context.world_names = ['__proto__', 'constructor', 'toString', ' Notes', 'Notes'];
+        for (const name of context.world_names) {
+            const result = await context.updateNeconyanLorebookFolders(metadata => moveNeconyanLorebook(metadata, name, 'places'));
+            expect(Object.hasOwn(result.assignments, name)).toBe(true);
+            expect(result.assignments[name]).toBe('places');
+        }
+        context.world_info.neconyanFolders = JSON.parse(JSON.stringify(context.world_info.neconyanFolders));
+        const current = context.getNeconyanLorebookFolders();
+        expect(Object.keys(current.assignments).sort()).toEqual([...context.world_names].sort());
+        expect(unfileNeconyanLorebook(current, ' Notes').assignments.Notes).toBe('places');
+        expect(unfileNeconyanLorebook(current, 'toString').assignments.toString).toBeUndefined();
+        expect(renameNeconyanLorebookAssignment(current, 'Notes', '__proto__').assignments.__proto__).toBe('places');
+        expect(renameNeconyanLorebookAssignment(current, 'Notes', 'Notes').assignments.Notes).toBe('places');
+    });
+
+    test('a queued settings save cannot resurrect a rolled-back folder change', async () => {
+        const context = folderRuntime();
+        const script = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
+        const saveSettings = script.match(/^export async function saveSettings\([\s\S]*?^}/m)[0].replace('export ', '');
+        let release;
+        let started;
+        const reached = new Promise(resolve => { started = resolve; });
+        const captured = [];
+        context.saveSettingsInner = async () => {
+            captured.push(structuredClone(context.world_info.neconyanFolders));
+            if (captured.length === 1) { started(); await new Promise(resolve => { release = resolve; }); return false; }
+            return true;
+        };
+        vm.runInContext('let settingsSaveQueue = Promise.resolve();\n' + saveSettings, context);
+        const mutation = context.updateNeconyanLorebookFolders(metadata => moveNeconyanLorebook(metadata, 'Notes', ''));
+        const failure = mutation.catch(error => error);
+        await reached;
+        const unrelatedSave = context.saveSettings(0, { returnResult: true });
+        release();
+        const [error] = await Promise.all([failure, unrelatedSave]);
+        expect(error.message).toContain('could not be saved');
+        expect(captured).toHaveLength(3);
+        expect(captured[1].assignments).toEqual({});
+        expect(captured[2].assignments).toEqual({ Notes: 'places' });
+        expect(context.getNeconyanLorebookFolders().assignments).toEqual({ Notes: 'places' });
+    });
+
+    test('failed compensating saves keep the prior state and expose a retry', async () => {
+        const context = folderRuntime();
+        context.saveSettings.mockResolvedValue(false);
+        await expect(context.updateNeconyanLorebookFolders(metadata => moveNeconyanLorebook(metadata, 'Notes', ''))).rejects.toThrow('previous folder state could not be saved');
+        expect(context.getNeconyanLorebookFolders().assignments).toEqual({ Notes: 'places' });
+        expect(context.warnNeconyanFolderSaveFailure).toHaveBeenCalledTimes(1);
+    });
+
+    test('normalization preserves metadata and distinguishes an empty library from no filter', () => {
+        const source = { unknown: { keep: true }, folders: [createNeconyanFolder('Places', 'places')], assignments: { Notes: 'places' } };
+        expect(normalizeNeconyanLorebookFolders(source).assignments).toEqual({ Notes: 'places' });
+        expect(normalizeNeconyanLorebookFolders(source, []).assignments).toEqual({});
+        expect(unfileNeconyanLorebook(source, 'Notes').unknown).toEqual({ keep: true });
+    });
+
+    test('refreshing renamed book names keeps the folder until reconciliation saves it', async () => {
+        const context = folderRuntime();
+        await context.updateWorldInfoList();
+        expect(context.getNeconyanLorebookFolders().assignments).toEqual({ Notes: 'places' });
+        await context.updateNeconyanLorebookFolders(metadata => renameNeconyanLorebookAssignment(metadata, 'Notes', 'Renamed'));
+        expect(context.world_info.neconyanFolders.assignments).toEqual({ Renamed: 'places' });
+        expect(context.world_info.unrelated).toBe('keep');
+        expect(context.saveSettings).toHaveBeenCalledWith(0, { returnResult: true });
+    });
+
+    test('failed folder moves roll back and retry, while committed book renames retain a retryable mapping', async () => {
+        const context = folderRuntime();
+        context.saveSettings.mockResolvedValueOnce(false);
+        await expect(context.updateNeconyanLorebookFolders(metadata => moveNeconyanLorebook(metadata, 'Notes', ''))).rejects.toThrow('could not be saved');
+        expect(context.getNeconyanLorebookFolders().assignments).toEqual({ Notes: 'places' });
+        await context.updateNeconyanLorebookFolders(metadata => moveNeconyanLorebook(metadata, 'Notes', ''));
+        expect(context.getNeconyanLorebookFolders().assignments).toEqual({});
+        context.world_info.neconyanFolders.assignments = { Notes: 'places' };
+        context.world_names = ['Renamed'];
+        context.saveSettings.mockResolvedValueOnce(false);
+        await expect(context.updateNeconyanLorebookFolders(metadata => renameNeconyanLorebookAssignment(metadata, 'Notes', 'Renamed'), { retainOnFailure: true })).rejects.toThrow();
+        expect(context.getNeconyanLorebookFolders().assignments).toEqual({ Renamed: 'places' });
+    });
+});
+
+async function storeRuntime({ loaded = true } = {}) {
+    jest.resetModules();
+    const settingsSave = jest.fn(async () => true);
+    const extensionSettings = {};
+    let uuid = 0;
+    jest.unstable_mockModule('../public/script.js', () => ({ getRequestHeaders: () => ({}), saveSettingsDebounced() {}, saveSettings: settingsSave }));
+    jest.unstable_mockModule('../public/scripts/extensions.js', () => ({ extension_settings: extensionSettings, getContext: () => ({ groupId: null }) }));
+    jest.unstable_mockModule('../public/scripts/utils.js', () => ({ regexFromString: value => new RegExp(String(value ?? '')), uuidv4: () => `uuid-${++uuid}` }));
+    const store = await import('../public/scripts/extensions/in-chat-agents/agent-store.js');
+    const initial = [
+        { id: 'a', name: 'A', prompt: 'old A', enabled: true, settings: { apiKey: 'test-only', secretId: 'reference' }, toolSchema: { properties: { password: { type: 'string' } } }, companion: { futureOption: { keep: true }, feedback: { futureOption: true } }, tools: [{ name: 'test', futureHandler: 'keep', parameters: { type: 'object', properties: { password: { type: 'string' } } } }] },
+        { id: 'extra', name: 'Extra', prompt: 'keep extra', enabled: true, unknown: { keep: true } },
+    ];
+    if (loaded) store.loadAgents(initial);
+    const agents = new Map(initial.map(agent => [agent.id, structuredClone(agent)]));
+    const presets = new Map();
+    const writes = [];
+    const state = { hook: async () => {} };
+    globalThis.fetch = jest.fn(async (url, options) => {
+        const payload = JSON.parse(options.body);
+        if (url.endsWith('/api/settings/get')) return { ok: true, json: async () => ({ inChatAgents: [...agents.values()] }) };
+        if (url.endsWith('/presets/save')) { presets.set(payload.id, structuredClone(payload)); return { ok: true, json: async () => payload }; }
+        if (url.endsWith('/presets/list')) return { ok: true, json: async () => [...presets.values()] };
+        if (url.endsWith('/presets/delete')) { presets.delete(payload.id); return { ok: true }; }
+        writes.push({ url, payload: structuredClone(payload) });
+        await state.hook(url, payload);
+        if (url.endsWith('/save')) agents.set(payload.id, structuredClone(payload));
+        else if (url.endsWith('/delete')) agents.delete(payload.id);
+        else throw new Error(`Unexpected URL: ${url}`);
+        return { ok: true };
+    });
+    const preset = { id: 'scene', name: 'Scene', version: 1, agents: [{ id: 'a', name: 'A', prompt: 'new A', enabled: true }, { id: 'b', name: 'B', prompt: 'new B', enabled: false }], globalSettings: {} };
+    return { store, agents, presets, writes, state, preset, initial, settingsSave, extensionSettings };
+}
+
+describe('Agent setup apply and recovery', () => {
+    test('an unloaded library cannot overwrite a setup or seed empty enabled scopes', async () => {
+        const runtime = await storeRuntime({ loaded: false });
+        expect(runtime.store.areAgentsLoaded()).toBe(false);
+        await runtime.store.loadAgentSetupPresets();
+        await expect(runtime.store.saveAgentSetupPreset('Scene', { id: 'scene' })).rejects.toThrow('finish loading');
+        await expect(runtime.store.applyAgentSetupPreset(runtime.preset)).rejects.toThrow('finish loading');
+        expect(runtime.store.initializeScopedAgentEnableState()).toBe(false);
+        expect(runtime.store.getGlobalSettings().scopedEnabledAgentIdsInitialized).toBe(false);
+        expect(runtime.presets.size).toBe(0);
+        expect(runtime.writes).toEqual([]);
+        runtime.store.loadAgents(runtime.initial);
+        const saved = await runtime.store.saveAgentSetupPreset('Scene', { id: 'scene' });
+        expect(saved.agents.map(agent => agent.id)).toEqual(['a', 'extra']);
+    });
+
+    test('round trip preserves arbitrary field names and rejects ambiguous identifiers', async () => {
+        const runtime = await storeRuntime();
+        const saved = await runtime.store.saveAgentSetupPreset('One', { id: 'one' });
+        expect(saved.agents[0]).toMatchObject({ settings: { apiKey: 'test-only', secretId: 'reference' }, toolSchema: { properties: { password: { type: 'string' } } } });
+        expect(normalizeAgentSetupPreset({ ...saved, agents: [saved.agents[0], saved.agents[0]] })).toBeNull();
+        expect(normalizeAgentSetupPreset({ ...saved, id: '../outside' })).toBeNull();
+        await runtime.store.loadAgentSetupPresets();
+        expect(runtime.store.getAgentSetupPresets()).toHaveLength(1);
+        await runtime.store.deleteAgentSetupPreset('one');
+        expect(runtime.presets.size).toBe(0);
+        expect(runtime.agents.size).toBe(2);
+    });
+
+    test('load is repeatable, preserves unknown live fields, and pauses extra agents without deleting them', async () => {
+        const runtime = await storeRuntime();
+        const confirmExtras = jest.fn(async () => true);
+        await expect(runtime.store.applyAgentSetupPreset(runtime.preset, { confirmExtras })).resolves.toBe(true);
+        expect(confirmExtras.mock.calls[0][0].map(agent => agent.id)).toEqual(['extra']);
+        expect(runtime.agents.get('a')).toMatchObject({ prompt: 'new A', settings: { apiKey: 'test-only', secretId: 'reference' } });
+        expect(runtime.agents.get('a')).toMatchObject({ companion: { futureOption: { keep: true }, feedback: { futureOption: true } }, tools: [{ futureHandler: 'keep', parameters: { properties: { password: { type: 'string' } } } }] });
+        expect(runtime.agents.get('extra')).toMatchObject({ enabled: false, unknown: { keep: true } });
+        expect(runtime.store.isAgentSetupCurrent(runtime.preset)).toBe(true);
+        await runtime.store.applyAgentSetupPreset(runtime.preset);
+        expect([...runtime.agents.keys()].sort()).toEqual(['a', 'b', 'extra']);
+        expect(runtime.presets.size).toBe(0);
+        expect(runtime.store.getGlobalSettings().scopedEnabledAgentIdsInitialized).toBe(false);
+        expect(runtime.store.isAgentEnabledForAnyScope(runtime.store.getAgentById('a'))).toBe(true);
+    });
+
+    test('failed apply rolls back only its own writes and queues a concurrent new agent safely', async () => {
+        const runtime = await storeRuntime();
+        let release;
+        let failed = false;
+        const reached = new Promise(resolve => {
+            runtime.state.hook = async (_url, payload) => {
+                if (payload.id === 'b' && !failed) { failed = true; resolve(); await new Promise(done => { release = done; }); throw new Error('Write failed'); }
+            };
+        });
+        const load = runtime.store.applyAgentSetupPreset(runtime.preset);
+        const failure = load.catch(error => error);
+        await reached;
+        expect(runtime.store.getAgentById('a').prompt).toBe('old A');
+        const later = runtime.store.saveAgent({ id: 'outside', name: 'Outside', prompt: 'concurrent' });
+        release();
+        expect(await failure).toMatchObject({ message: 'Write failed' });
+        await later;
+        expect(runtime.agents.get('a')).toEqual(runtime.initial[0]);
+        expect(runtime.agents.has('b')).toBe(false);
+        expect(runtime.agents.get('outside')).toMatchObject({ prompt: 'concurrent' });
+        expect(runtime.writes.filter(write => write.url.endsWith('/delete')).map(write => write.payload.id)).toEqual(['b']);
+        expect(runtime.presets.size).toBe(0);
+    });
+
+    test('failed settings commit restores agent files and settings; failed rollback retains a saved recovery setup', async () => {
+        const runtime = await storeRuntime();
+        const originalGlobals = structuredClone(runtime.store.getGlobalSettings());
+        runtime.settingsSave.mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+        await expect(runtime.store.applyAgentSetupPreset(runtime.preset)).rejects.toThrow('setup settings');
+        expect(runtime.agents.get('a')).toEqual(runtime.initial[0]);
+        expect(runtime.store.getGlobalSettings()).toEqual(originalGlobals);
+        runtime.state.hook = async (_url, payload) => {
+            if (payload.id === 'b' || payload.prompt === 'old A') throw new Error('Storage unavailable');
+        };
+        await expect(runtime.store.applyAgentSetupPreset(runtime.preset)).rejects.toMatchObject({ recoveryPreset: { agents: runtime.initial } });
+        expect([...runtime.presets.values()][0]).toMatchObject({ agents: runtime.initial, globalSettings: originalGlobals });
+    });
+
+    test('unacknowledged deletion preserves live state and cancellation writes no agents', async () => {
+        const runtime = await storeRuntime();
+        runtime.state.hook = async url => { if (url.endsWith('/delete')) throw new Error('Delete failed'); };
+        await expect(runtime.store.deleteAgent('a')).rejects.toThrow('Delete failed');
+        expect(runtime.store.getAgentById('a')).not.toBeNull();
+        expect(runtime.agents.has('a')).toBe(true);
+        const writes = runtime.writes.length;
+        await expect(runtime.store.applyAgentSetupPreset(runtime.preset, { confirmExtras: async () => false })).resolves.toBe(false);
+        expect(runtime.writes).toHaveLength(writes);
+        await expect(runtime.store.applyAgentSetupPreset(runtime.preset, { isCurrent: () => false })).rejects.toThrow('workspace changed');
+        expect(runtime.writes).toHaveLength(writes);
+    });
+
+    test('tool registrations recover after setup success, rollback and cancellation even when selection persistence fails', async () => {
+        for (const outcome of ['success', 'rollback', 'cancel']) {
+            const runtime = await storeRuntime();
+            const source = readFileSync(new URL('../public/scripts/extensions/in-chat-agents/index.js', import.meta.url), 'utf8');
+            const action = source.match(/^async function loadSelectedAgentSetup\([\s\S]*?^}/m)[0];
+            let registered = true;
+            const sync = jest.fn(() => { registered = runtime.store.areAgentsGloballyEnabled(); });
+            runtime.settingsSave.mockImplementation(async () => { sync(); return true; });
+            if (outcome === 'rollback') {
+                let failed = false;
+                runtime.state.hook = async (_url, payload) => {
+                    if (payload.id === 'b' && !failed) { failed = true; throw new Error('Temporary failure'); }
+                };
+            }
+            const context = vm.createContext({
+                agentSetupOperationAllowed: () => true,
+                getAgentSetupPresetById: () => runtime.preset,
+                selectedAgentSetupId: runtime.preset.id,
+                getCurrentUserHandle: () => 'test', getChatGeneration: () => 1,
+                is_send_press: false, is_group_generating: false, isAgentGenerationActive: () => false,
+                document: { querySelectorAll: () => [] }, window: { confirm: () => outcome !== 'cancel' },
+                applyingAgentSetup: false, agentSetupOperationBusy: false,
+                setAgentSetupStatus() {}, applyAgentSetupPreset: runtime.store.applyAgentSetupPreset,
+                buildConnectionProfileNameMap: () => new Map(), rememberAgentSetupSelection: async () => false,
+                syncToolAgentRegistrations: sync, renderAgentList() {}, renderAgentSetupControls() {},
+                toastr: { error() {} }, escapeHtml: value => value,
+            });
+            vm.runInContext(action, context);
+            await context.loadSelectedAgentSetup();
+            expect(sync).toHaveBeenCalled();
+            expect(registered).toBe(true);
+            expect(context.agentSetupOperationBusy).toBe(false);
+        }
+    });
+});

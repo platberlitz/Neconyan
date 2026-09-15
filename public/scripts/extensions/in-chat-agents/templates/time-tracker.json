@@ -1,0 +1,46 @@
+{
+  "id": "tpl-time-tracker",
+  "name": "Time Tracker",
+  "description": "Track in-story time progression with day/period/hour stamps",
+  "icon": "",
+  "category": "tracker",
+  "subcategory": "world",
+  "tags": [
+    "time",
+    "day",
+    "clock"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "### Time Tracker\nMaintain a running timestamp when time advances meaningfully: scene jumps, hours passing, sleeping, or deadline-relevant progression. Use this EXACT format:\n\n[TIME|Day X|Day of Week|Approximate Hour]\nnote: MANDATORY; explain the time context\n[/TIME]\n\nRules:\n- Time appears at the TOP of responses when time shifts without a location change\n- If both location and time change, use Scene Tracker and Time Tracker together\n- Day format: \"Day 1,\" \"Day 47,\" etc.\n- Day of week: Monday, Tuesday, etc., or \"Unknown\" if not established\n- Hour must be specific (e.g. 3:47 PM) unless time is genuinely unknown due to setting reasons.\n- Multiple Time Trackers per scene are allowed\n- When nothing qualifies this scene, output the single line tracker-none in place of the block",
+  "phase": "both",
+  "injection": {
+    "position": 0,
+    "depth": 4,
+    "role": 1,
+    "order": 100,
+    "scan": false
+  },
+  "postProcess": {
+    "enabled": true,
+    "type": "extract",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "\\[TIME\\|[^\\]\\r\\n]*\\](?:(?!\\[TIME(?=[:|\\]]))[\\s\\S])*?\\[/TIME\\]",
+    "extractVariable": "time_data"
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal",
+      "continue"
+    ]
+  },
+  "companion": {
+    "includeSystemPrompt": false
+  }
+}

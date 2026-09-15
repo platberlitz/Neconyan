@@ -1,0 +1,18 @@
+{
+    "display_name": "Prompt Tags",
+    "author": "platberlitz",
+    "version": "1.0.0",
+    "description": "Adds XML-style tags around selected prompt sections.",
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "loading_order": 100,
+    "hooks": {
+        "activate": "init",
+        "disable": "deactivate"
+    },
+    "homePage": "https://github.com/platberlitz/SillyBunny-PromptTags",
+    "license": "MIT",
+    "license_file": "LICENSE"
+}

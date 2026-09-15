@@ -1,0 +1,65 @@
+/* iPhone copium land */
+body.safari .popup .popup-body:has(.maximized_textarea),
+body.safari .popup.large_dialogue_popup .popup-body {
+    height: 100%;
+}
+
+body.safari .popup .popup-body {
+    height: fit-content;
+    max-height: 90vh;
+    max-height: 90dvh;
+}
+
+body.safari #select_chat_div {
+    height: auto;
+}
+
+body.safari #select_chat_popup {
+    height: max-content;
+}
+
+/* Safari iOS flex gap fix: Safari adds gap before first/after last flex items in wrapping contexts */
+@supports (-webkit-touch-callout: none) {
+    .flex-container.flex-wrap,
+    .flex-container {
+        row-gap: 3px;
+        column-gap: 3px;
+    }
+
+    .flexGap5 {
+        row-gap: 4px;
+        column-gap: 4px;
+    }
+
+    .flexGap10 {
+        row-gap: 8px;
+        column-gap: 8px;
+    }
+
+    #user-settings-block > .flex-container.flexFlowColumn {
+        row-gap: 12px;
+    }
+
+    #user-settings-block [name="userSettingsRowOne"],
+    #user-settings-block [name='UserSettingsRowTwo'] {
+        row-gap: 10px;
+        column-gap: 10px;
+    }
+
+    .sb-setting-inline-center {
+        column-gap: 10px;
+        row-gap: 10px;
+    }
+
+    .ica--settings {
+        gap: 10px !important;
+    }
+
+    .ica--category-items {
+        gap: 8px !important;
+    }
+
+    #rm_extensions_block .extensions_block {
+        gap: 12px !important;
+    }
+}

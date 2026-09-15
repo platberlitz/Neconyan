@@ -1,0 +1,372 @@
+{
+  "id": "tpl-pathfinder",
+  "name": "Pathfinder",
+  "description": "Automatic agentic lorebook retrieval. Lets a model actively browse, search, and modify your lorebook using function tools.",
+  "icon": "fa-route",
+  "category": "tool",
+  "tags": [
+    "lorebook",
+    "retrieval",
+    "memory",
+    "agentic",
+    "pathfinder"
+  ],
+  "version": 1,
+  "author": "SillyBunny",
+  "prompt": "",
+  "phase": "both",
+  "injection": {
+    "position": 0,
+    "depth": 4,
+    "role": 0,
+    "order": 50,
+    "scan": false
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "regex",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": "",
+    "promptTransformEnabled": false,
+    "promptTransformShowNotifications": true,
+    "promptTransformMode": "rewrite",
+    "promptTransformMaxTokens": 8192
+  },
+  "regexScripts": [],
+  "connectionProfile": "",
+  "sourceTemplateId": "tpl-pathfinder",
+  "enabled": false,
+  "tools": [
+    {
+      "name": "Pathfinder_Search",
+      "displayName": "Pathfinder Search",
+      "description": "Navigate the lorebook waypoint map and retrieve relevant entries for the current scene. Call without a node_id to see the top-level waypoint map. Call with a node_id to drill into a specific waypoint and see its sub-waypoints or retrieve entries. Use this tool whenever you need context about characters, locations, world rules, or recent events.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "description": "ID of the waypoint/node to navigate into. Omit to see the top-level waypoint guide."
+          }
+        }
+      },
+      "actionKey": "pathfinder_search",
+      "formatMessageKey": "pathfinder_search_fmt",
+      "shouldRegister": true,
+      "stealth": false,
+      "enabled": true
+    },
+    {
+      "name": "Pathfinder_Remember",
+      "displayName": "Pathfinder Remember",
+      "description": "Create a new lorebook entry to remember information for future reference. Use this when new facts, character developments, world details, or important information emerge that should be preserved beyond this conversation.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "title",
+          "content"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Title for the new entry (e.g., \"Sable - Personality\" or \"[Tracker] Mood\")"
+          },
+          "content": {
+            "type": "string",
+            "description": "Full content to remember"
+          },
+          "book": {
+            "type": "string",
+            "description": "Target lorebook name. Omit to use the default."
+          }
+        }
+      },
+      "actionKey": "pathfinder_remember",
+      "formatMessageKey": "pathfinder_remember_fmt",
+      "shouldRegister": true,
+      "stealth": false,
+      "enabled": true
+    },
+    {
+      "name": "Pathfinder_Update",
+      "displayName": "Pathfinder Update",
+      "description": "Edit an existing lorebook entry when information changes. Use this when a character's status changes, relationships evolve, or facts need correction.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "uid"
+        ],
+        "properties": {
+          "uid": {
+            "type": "number",
+            "description": "UID of the entry to update (found via Search)"
+          },
+          "content": {
+            "type": "string",
+            "description": "New content for the entry. Omit to keep existing."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title for the entry. Omit to keep existing."
+          },
+          "book": {
+            "type": "string",
+            "description": "Lorebook name. Omit for default."
+          }
+        }
+      },
+      "actionKey": "pathfinder_update",
+      "formatMessageKey": "pathfinder_update_fmt",
+      "shouldRegister": true,
+      "stealth": false,
+      "enabled": true
+    },
+    {
+      "name": "Pathfinder_Forget",
+      "displayName": "Pathfinder Forget",
+      "description": "Disable or delete a lorebook entry that is no longer relevant. Use this when a character dies, a location is destroyed, or a fact is proven false.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "uid"
+        ],
+        "properties": {
+          "uid": {
+            "type": "number",
+            "description": "UID of the entry to forget"
+          },
+          "book": {
+            "type": "string",
+            "description": "Lorebook name. Omit for default."
+          },
+          "hard_delete": {
+            "type": "boolean",
+            "description": "Permanently delete instead of disabling. Default: false."
+          }
+        }
+      },
+      "actionKey": "pathfinder_forget",
+      "formatMessageKey": "pathfinder_forget_fmt",
+      "shouldRegister": true,
+      "stealth": false,
+      "enabled": true
+    },
+    {
+      "name": "Pathfinder_Summarize",
+      "displayName": "Pathfinder Summarize",
+      "description": "Create a scene or event summary with significance level and optional narrative arc. Use this when important events happen: battles, confessions, discoveries, or turning points.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "title",
+          "content"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short title for the event/scene"
+          },
+          "content": {
+            "type": "string",
+            "description": "Full summary of what happened"
+          },
+          "arc": {
+            "type": "string",
+            "description": "Optional narrative arc name to file this under"
+          },
+          "significance": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "description": "How important this event is. Default: medium."
+          },
+          "book": {
+            "type": "string",
+            "description": "Lorebook name. Omit for default."
+          }
+        }
+      },
+      "actionKey": "pathfinder_summarize",
+      "formatMessageKey": "pathfinder_summarize_fmt",
+      "shouldRegister": true,
+      "stealth": false,
+      "enabled": true
+    },
+    {
+      "name": "Pathfinder_Reorganize",
+      "displayName": "Pathfinder Reorganize",
+      "description": "Move entries between waypoints or create new waypoints to reorganize the lorebook structure.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "move",
+              "create_waypoint"
+            ],
+            "description": "\"move\" to relocate an entry, \"create_waypoint\" to make a new waypoint"
+          },
+          "uid": {
+            "type": "number",
+            "description": "Entry UID to move (for \"move\" action)"
+          },
+          "target_node_id": {
+            "type": "string",
+            "description": "Target waypoint node ID (for \"move\" action)"
+          },
+          "name": {
+            "type": "string",
+            "description": "New waypoint name (for \"create_waypoint\" action)"
+          },
+          "parent_node_id": {
+            "type": "string",
+            "description": "Parent waypoint ID. Omit for top level."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description for new waypoint."
+          },
+          "book": {
+            "type": "string",
+            "description": "Lorebook name. Omit for default."
+          }
+        }
+      },
+      "actionKey": "pathfinder_reorganize",
+      "formatMessageKey": "pathfinder_reorganize_fmt",
+      "shouldRegister": true,
+      "stealth": false,
+      "enabled": true
+    },
+    {
+      "name": "Pathfinder_MergeSplit",
+      "displayName": "Pathfinder Merge/Split",
+      "description": "Merge related entries together or split a long entry into two. Use merge when two entries cover the same topic. Use split when one entry covers too many topics.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "merge",
+              "split"
+            ],
+            "description": "\"merge\" to combine entries, \"split\" to divide one"
+          },
+          "uid1": {
+            "type": "number",
+            "description": "First entry UID (for merge)"
+          },
+          "uid2": {
+            "type": "number",
+            "description": "Second entry UID (for merge)"
+          },
+          "merged_title": {
+            "type": "string",
+            "description": "Title for the merged entry (optional)"
+          },
+          "uid": {
+            "type": "number",
+            "description": "Entry UID to split (for split)"
+          },
+          "title1": {
+            "type": "string",
+            "description": "Title for first part (for split)"
+          },
+          "content1": {
+            "type": "string",
+            "description": "Content for first part (for split)"
+          },
+          "title2": {
+            "type": "string",
+            "description": "Title for second part (for split)"
+          },
+          "content2": {
+            "type": "string",
+            "description": "Content for second part (for split)"
+          },
+          "book": {
+            "type": "string",
+            "description": "Lorebook name. Omit for default."
+          }
+        }
+      },
+      "actionKey": "pathfinder_merge_split",
+      "formatMessageKey": "pathfinder_merge_split_fmt",
+      "shouldRegister": true,
+      "stealth": false,
+      "enabled": true
+    },
+    {
+      "name": "Pathfinder_Notebook",
+      "displayName": "Pathfinder Notebook",
+      "description": "Write to or read from a private AI scratchpad for plans, follow-ups, and narrative threads. This is NOT a permanent lorebook entry — use it for temporary notes that persist across turns but don't need to be in the lorebook.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "read",
+              "write",
+              "delete"
+            ],
+            "description": "\"read\" all entries, \"write\" a new entry, \"delete\" an entry"
+          },
+          "key": {
+            "type": "string",
+            "description": "Note key/title (for write and delete)"
+          },
+          "content": {
+            "type": "string",
+            "description": "Note content (for write)"
+          }
+        }
+      },
+      "actionKey": "pathfinder_notebook",
+      "formatMessageKey": "pathfinder_notebook_fmt",
+      "shouldRegister": true,
+      "stealth": false,
+      "enabled": true
+    }
+  ],
+  "settings": {
+    "searchMode": "traversal",
+    "recurseLimit": 5,
+    "mandatoryTools": false,
+    "dedupDetection": false,
+    "dedupThreshold": 0.85,
+    "autoSummary": false,
+    "autoSummaryInterval": 20,
+    "multiBookMode": "unified",
+    "ephemeralResults": true,
+    "sidecarEnabled": false,
+    "enabledLorebooks": []
+  },
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal",
+      "continue"
+    ]
+  }
+}

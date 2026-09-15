@@ -1,0 +1,92 @@
+[
+    {
+        "id": "grp-pura-trackers",
+        "name": "Pura's Trackers Only",
+        "description": "All tracker agents including interactive menus and profile sheets",
+        "builtin": true,
+        "agentTemplateIds": [
+            "tpl-achievements-tracker",
+            "tpl-cyoa-choices",
+            "tpl-direction-menu",
+            "tpl-event-tracker",
+            "tpl-item-tracker",
+            "tpl-npc-profiles",
+            "tpl-parallel-tracker",
+            "tpl-relationship-tracker",
+            "tpl-reputation-tracker",
+            "tpl-scene-tracker",
+            "tpl-secrets-tracker",
+            "tpl-status-tracker",
+            "tpl-time-tracker",
+            "tpl-world-detail",
+            "tpl-cyoa-choices-skill-checks"
+        ]
+    },
+    {
+        "id": "grp-pura-randomisers",
+        "name": "Pura's Randomisers Only",
+        "description": "Just the randomiser agents from Director Preset v12",
+        "builtin": true,
+        "agentTemplateIds": [
+            "tpl-chaos-mode",
+            "tpl-grounded-complication",
+            "tpl-genre-randomiser",
+            "tpl-scene-driving-force",
+            "tpl-scene-pressure",
+            "tpl-combined-directors-cut",
+            "tpl-dead-dove-escalation",
+            "tpl-intimacy-kink-randomiser"
+        ]
+    },
+    {
+        "id": "grp-companions",
+        "name": "Companions",
+        "description": "All bundled companion agents: auxiliary notes, reaction feeds, trackers fed back into context, and the rolling memory shard",
+        "builtin": true,
+        "agentTemplateIds": [
+            "tpl-continuity-companion",
+            "tpl-relationship-lens-companion",
+            "tpl-directors-commentary-companion",
+            "tpl-actor-interview-companion",
+            "tpl-lorebook-scout-companion",
+            "tpl-memory-shard-companion",
+            "tpl-plot-compass-companion",
+            "tpl-chatroom-companion",
+            "tpl-chat-only-companion",
+            "tpl-message-inbox-companion",
+            "tpl-expressions-agent",
+            "tpl-level-up-companion",
+            "tpl-user-based-stats-generator"
+        ]
+    },
+    {
+        "id": "grp-pura-ethereality-trackers",
+        "name": "Pura's Ethereality Trackers",
+        "description": "All trackers from The Ethereality Express, plus Unscheduled Phenomena and the Doors and Dice menus",
+        "builtin": true,
+        "agentTemplateIds": [
+            "tpl-unscheduled-phenomena",
+            "tpl-drift-tracker",
+            "tpl-motif-tracker",
+            "tpl-omen-tracker",
+            "tpl-thin-places-tracker",
+            "tpl-entanglement-tracker",
+            "tpl-clock-is-lying",
+            "tpl-improbable-effects",
+            "tpl-afflictions-blessings",
+            "tpl-the-ledger",
+            "tpl-what-the-town-knows",
+            "tpl-small-miracles",
+            "tpl-meanwhile-impossibly",
+            "tpl-thought-cabinet",
+            "tpl-the-committee",
+            "tpl-the-becoming",
+            "tpl-the-census",
+            "tpl-doors",
+            "tpl-four-winds",
+            "tpl-doors-fate-checks",
+            "tpl-almanac-generator",
+            "tpl-the-turning"
+        ]
+    }
+]

@@ -1,0 +1,1875 @@
+/*
+ * Neconyan-BotSearcher.
+ *
+ * Everything is namespaced .sbbs-*. Colours, radii and spacing come from the
+ * fork's own tokens (public/css/neconyan-theme.css, public/css/spacing-system.css)
+ * so the dialog tracks the user's theme without any per-theme work. The
+ * "Find cards online" button deliberately has no rules here; it borrows
+ * .sb-character-import-action from the fork.
+ *
+ * This sheet is injected at extension activation, i.e. after every core sheet,
+ * so plain specificity is enough and no !important is needed.
+ */
+
+/*
+ * Popup's own `wide` option only sets `min-width: var(--sheldWidth)`
+ * (public/style.css:4097), which lands around 750px — too narrow for a card
+ * grid. `large` supplies height: 90vh and a 90vw cap, so we only need to claim
+ * the width. Scoped by :has() so no other popup is affected.
+ */
+.popup:has(.sbbs-root) {
+    width: min(1400px, 90vw);
+}
+
+/*
+ * Core positions a popup close button just beyond the rounded corner. That is
+ * useful for text dialogs, but crowds this dialog's first control row. Keep it
+ * in a small, deliberate top rail instead.
+ */
+.popup:has(.sbbs-root) .popup-content {
+    margin-top: calc(24px + var(--spacing-sm, 8px));
+}
+
+.popup:has(.sbbs-root) .popup-button-close {
+    inset-block-start: var(--spacing-sm, 8px);
+    inset-inline-end: var(--spacing-sm, 8px);
+}
+
+.sbbs-root {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md, 12px);
+    height: 100%;
+    min-height: 0;
+    min-width: 0;
+    position: relative;
+    line-height: 1.5;
+    /*
+     * The dialog's only scroller: the whole page (controls, results, cards)
+     * scrolls here as one, with .sbbs-bar-sticky staying put at the top.
+     * Nothing else in this view is a scroll box. Header and body clip
+     * sideways overflow before it can reach this scroller, so focusing a
+     * control can never shift the page sideways with no way back.
+     */
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+}
+
+.sbbs-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/*
+ * `.menu_button` sets `display: flex` (public/style.css:4215), which beats the
+ * UA stylesheet's `[hidden] { display: none }` — so a hidden .menu_button stays
+ * visible. Doubled attribute selector raises specificity above the class
+ * without introducing an !important, matching the fork's house rule.
+ */
+.sbbs-root [hidden][hidden] {
+    display: none;
+}
+
+/* ---- search bar ---- */
+
+.sbbs-root > header:has(.sbbs-bar) {
+    /* The search controls stay fully exposed above the results. They are
+       never their own scroll box; .sbbs-root is the page scroller and only
+       .sbbs-bar-sticky stays put. Horizontal overflow is clipped (not
+       hidden) so this never becomes a scroll container that could trap the
+       sticky rows or feed sideways overflow to the page. */
+    flex: 0 0 auto;
+    min-height: 0;
+    max-height: none;
+    overflow-y: visible;
+    overflow-x: clip;
+}
+
+.sbbs-bar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm, 8px);
+    flex: 0 0 auto;
+}
+
+/*
+ * The only sticky part of the dialog: query, source, sort, Filters and the
+ * selection row stay put while the rest of the page scrolls. Opaque theme
+ * background, so results sliding underneath never show through the row gap.
+ */
+.sbbs-bar-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm, 8px);
+    overflow-x: clip;
+    background: var(--sb-shell-surface, var(--SmartThemeBlurTintColor, rgba(0, 0, 0, 0.72)));
+}
+
+.sbbs-bar-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm, 8px);
+}
+
+.sbbs-bar-sticky,
+.sbbs-bar details,
+.sbbs-bar-row > * {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.sbbs-root .menu_button,
+.sbbs-settings .menu_button,
+.sbbs-install .menu_button {
+    /* Host min-content sizing must not collapse labels into individual letters. */
+    width: auto;
+    max-width: 100%;
+    flex: 0 0 auto;
+    min-height: max(38px, var(--sb-control-min-height, 38px));
+    padding: 10px 14px;
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: break-word;
+}
+
+@media (pointer: coarse), (max-width: 768px) {
+    .sbbs-root .menu_button,
+    .sbbs-settings .menu_button,
+    .sbbs-install .menu_button {
+        min-height: var(--sb-mobile-touch-target, 44px);
+    }
+}
+
+.sbbs-root summary {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.sbbs-root details > summary {
+    cursor: pointer;
+}
+
+.sbbs-root summary:focus-visible {
+    outline: 2px solid var(--sb-focus-ring, currentColor);
+    outline-offset: -2px;
+}
+
+.sbbs-named-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-xs, 4px);
+}
+
+/*
+ * One collapsed line like Named searches. Plain block layout, not flex: flex
+ * on a details element hides the disclosure triangle in some browsers.
+ */
+.sbbs-file-actions[open] > summary {
+    margin-bottom: var(--spacing-xs, 4px);
+}
+
+.sbbs-named-controls .text_pole {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.sbbs-named-searches,
+.sbbs-shortlist {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.sbbs-shortlist-items {
+    list-style: none;
+    margin: var(--spacing-sm, 8px) 0;
+    padding: 0;
+}
+
+.sbbs-shortlist-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-xs, 4px) var(--spacing-sm, 8px);
+    margin-block: var(--spacing-sm, 8px);
+}
+
+.sbbs-shortlist-item > * {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.sbbs-shortlist-item > span {
+    flex: 1 1 100%;
+}
+
+.sbbs-root .sbbs-shortlist-toggle {
+    align-self: flex-start;
+    margin: 0 var(--spacing-sm, 8px) var(--spacing-sm, 8px);
+    max-width: calc(100% - 2 * var(--spacing-sm, 8px));
+}
+
+/*
+ * .text_pole is width:100% in the host stylesheet, so a select in a flex row
+ * stretches to fill. Both pickers size to their content instead.
+ */
+.sbbs-bar .sbbs-source,
+.sbbs-bar .sbbs-sort {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 9rem;
+    max-width: 14rem;
+}
+
+.sbbs-query {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+}
+
+.sbbs-go {
+    flex: 0 0 auto;
+}
+
+.sbbs-sfw {
+    margin: 0;
+}
+
+/* Both describe the results, so both sit above the grid rather than in the bar. */
+.sbbs-count {
+    color: var(--sb-muted-fg, currentColor);
+    font-size: 0.9em;
+}
+
+.sbbs-control-note {
+    color: var(--sb-muted-fg, currentColor);
+    font-size: 0.85em;
+}
+
+.sbbs-count:empty,
+.sbbs-control-note:empty {
+    display: none;
+}
+
+/* ---- filters ---- */
+
+.sbbs-filters-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+}
+
+.sbbs-filters-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.4em;
+    height: 1.4em;
+    padding: 0 0.35em;
+    border-radius: 999px;
+    background: var(--sb-accent, currentColor);
+    color: var(--sb-accent-fg, canvas);
+    font-size: 0.8em;
+    font-variant-numeric: tabular-nums;
+}
+
+.sbbs-filters {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm, 8px);
+    padding: var(--spacing-md, 12px) 0 0;
+}
+
+/*
+ * Content controls. These apply to every source and survive a source change, so
+ * they are kept visually apart from the per-source fields under them.
+ */
+.sbbs-filter-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-xs, 4px) var(--spacing-md, 12px);
+}
+
+/* Only a divider when there is something under it to divide from. */
+.sbbs-filter-group:has(+ .sbbs-filter-fields:not(:empty)) {
+    padding-bottom: var(--spacing-sm, 8px);
+    border-bottom: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
+}
+
+.sbbs-filter-fields:empty {
+    display: none;
+}
+
+.sbbs-filter-fields {
+    display: grid;
+    /* Wide enough for a tag list, narrow enough that two fit side by side. */
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+}
+
+.sbbs-filter {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.sbbs-filter-label {
+    font-size: 0.85em;
+    color: var(--sb-muted-fg, currentColor);
+}
+
+.sbbs-filter input {
+    min-width: 0;
+    width: 100%;
+}
+
+.sbbs-filter-boolean {
+    justify-content: center;
+}
+
+.sbbs-filter-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: var(--input-height, 36px);
+}
+
+.sbbs-filter-checkbox input {
+    flex: 0 0 auto;
+    width: auto;
+}
+
+.sbbs-filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.sbbs-filter-chips:empty {
+    display: none;
+}
+
+.sbbs-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--sb-border, currentColor);
+    font-size: 0.85em;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.sbbs-filter-chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* A real 24px target: these sit close together and are used on phones. */
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: none;
+    color: inherit;
+    font-size: 1.1em;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.sbbs-filter-chip-remove:hover,
+.sbbs-filter-chip-remove:focus-visible {
+    background: var(--sb-hover-bg, rgb(128 128 128 / 25%));
+}
+
+.sbbs-filter-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* ---- body ---- */
+
+.sbbs-body {
+    /*
+     * In normal flow with the page: .sbbs-root is the scroller, so this
+     * column needs neither its own scroll box nor a reserved floor. `clip`
+     * (not `hidden`) keeps wide children inside without becoming a scroll
+     * container, which would trap the page scroll again.
+     */
+    flex: 0 0 auto;
+    min-height: 0;
+    overflow: clip;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md, 12px);
+}
+
+.sbbs-state {
+    color: var(--sb-muted-fg, currentColor);
+    padding: var(--spacing-md, 12px) 0;
+}
+
+.sbbs-state:empty {
+    display: none;
+    padding: 0;
+}
+
+/*
+ * Requests for this source now leave from the browser rather than the server.
+ * Deliberately persistent rather than a toast: it describes an ongoing state,
+ * not an event, and it is the user's only on-screen sign that their own address
+ * is reaching the card site until they dismiss it.
+ */
+.sbbs-direct-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-sm, 8px);
+    padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+    border: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
+    border-radius: var(--sb-radius-sm, 6px);
+    color: var(--sb-muted-fg, currentColor);
+    font-size: 0.9em;
+    line-height: 1.45;
+}
+
+.sbbs-direct-notice-text {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.sbbs-direct-notice-dismiss {
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.7;
+    display: grid;
+    place-items: center;
+}
+
+.sbbs-direct-notice-dismiss:hover {
+    opacity: 1;
+}
+
+.sbbs-direct-notice-dismiss:focus-visible {
+    outline: 2px solid var(--sb-focus-ring, currentColor);
+    outline-offset: 2px;
+}
+
+/* ---- grid ---- */
+
+.sbbs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: var(--spacing-md, 12px);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.sbbs-grid:empty {
+    display: none;
+}
+
+/*
+ * The card is a container, not a button: the tags inside it are their own
+ * buttons and a button inside a button is neither valid nor keyboard-reachable.
+ * `.sbbs-card-open` is the primary action and fills everything above the tags.
+ */
+/*
+ * The positioning context for the rating and source chips. They live in the
+ * card's footer row in the DOM, because the narrow list layout has no room for
+ * them on its thumbnail; here they are lifted back over the artwork. Anchoring
+ * to the card rather than to .sbbs-card-img works because the image is the
+ * card's first content, so the card's top corners are the image's top corners.
+ */
+.sbbs-card {
+    position: relative;
+    background: var(--sb-card-bg, rgba(255, 255, 255, 0.04));
+    border: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
+    border-radius: var(--sb-radius-md, 10px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    transition:
+        transform var(--sb-transition-fast, 120ms) ease,
+        border-color var(--sb-transition-fast, 120ms) ease;
+}
+
+.sbbs-card-open {
+    cursor: pointer;
+    text-align: start;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    width: 100%;
+    /*
+     * Column flex rather than block: a <button> taller than its content centres
+     * that content vertically, so cards with fewer tags pushed their thumbnail
+     * down and the row of artwork came out ragged.
+     */
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    flex: 1 1 auto;
+}
+
+@media (hover: hover) {
+    .sbbs-card:has(.sbbs-card-open:hover) {
+        transform: translateY(-2px);
+        border-color: var(--sb-accent, currentColor);
+    }
+}
+
+/* The ring goes on the card, so it frames the whole thing rather than the
+   inner button's edge. */
+.sbbs-card:has(.sbbs-card-open:focus-visible) {
+    border-color: var(--sb-accent, currentColor);
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--sb-focus-ring, currentColor) 58%, transparent);
+}
+
+.sbbs-card-open:focus-visible {
+    outline: none;
+}
+
+/* :has() is widely supported, but a browser without it must still show focus. */
+@supports not selector(:has(*)) {
+    .sbbs-card-open:focus-visible {
+        outline: 2px solid var(--sb-focus-ring, currentColor);
+        outline-offset: -2px;
+    }
+}
+
+/*
+ * Fixed ratio so the grid never reflows as thumbnails arrive.
+ *
+ * min-height:0 is what makes that true. This is a grid container, so its
+ * automatic minimum size is the thumbnail's own min-content height — a portrait
+ * image taller than the ratio pushes the box past it and the row grows. The
+ * image is cropped by object-fit: cover instead, which is the intent.
+ */
+.sbbs-card-img {
+    /* Anchors the selection mark. */
+    position: relative;
+    aspect-ratio: 2 / 3;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--sb-surface-highlight, rgba(255, 255, 255, 0.06));
+    display: grid;
+    place-items: center;
+}
+
+.sbbs-card-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    /* Sits above the initial, which shows through when no image loads. */
+    grid-area: 1 / 1;
+}
+
+.sbbs-card-initial {
+    grid-area: 1 / 1;
+    font-size: 2.5rem;
+    font-weight: 600;
+    opacity: 0.35;
+    user-select: none;
+}
+
+.sbbs-rating {
+    position: absolute;
+    inset-block-start: var(--spacing-xs, 4px);
+    inset-inline-end: var(--spacing-xs, 4px);
+    z-index: 2;
+    border: 1px solid var(--sb-shell-border, currentColor);
+    border-radius: 999px;
+    background: var(--sb-shell-surface, rgba(0, 0, 0, 0.72));
+    color: inherit;
+    padding: 2px 7px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+/* Only rendered when results come from more than one site. */
+.sbbs-card-source {
+    position: absolute;
+    inset-block-start: var(--spacing-xs, 4px);
+    inset-inline-start: var(--spacing-xs, 4px);
+    z-index: 2;
+    max-width: calc(100% - 5.5rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    border-radius: 999px;
+    background: var(--sb-shell-surface, rgba(0, 0, 0, 0.72));
+    border: 1px solid var(--sb-shell-border, currentColor);
+    padding: 2px 7px;
+    font-size: 0.72rem;
+    line-height: 1.35;
+}
+
+.sbbs-partial {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    color: var(--sb-muted-fg, currentColor);
+    font-size: 0.85em;
+}
+
+/*
+ * Offers a failed source another try. Aligned to the start rather than centred
+ * so it reads as a continuation of the message above it.
+ */
+.sbbs-reload {
+    display: flex;
+    justify-content: flex-start;
+}
+
+.sbbs-reload-source {
+    flex: 0 0 auto;
+}
+
+.sbbs-rating-sensitive {
+    border-color: var(--sb-color-warning, var(--sb-accent, currentColor));
+}
+
+.sbbs-rating-unknown {
+    border-style: dashed;
+}
+
+.sbbs-card-meta {
+    padding: var(--spacing-sm, 8px);
+    display: grid;
+    gap: 2px;
+}
+
+.sbbs-card-name,
+.sbbs-card-sub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sbbs-card-sub {
+    color: var(--sb-muted-fg, currentColor);
+    font-size: 0.85em;
+}
+
+/*
+ * The source's own summary line. Clamped to two lines so a long tagline cannot
+ * push cards to different heights across the grid; the full text is in the
+ * detail pane, which is where reading it belongs.
+ */
+.sbbs-card-tagline {
+    color: var(--sb-muted-fg, currentColor);
+    font-size: 0.8em;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+}
+
+/*
+ * The card's last line. On a wide screen the rating and source chips are lifted
+ * out of it onto the artwork, so only the popularity figures remain in flow.
+ * min-width:0 because it is a grid item wrapping non-wrapping text.
+ */
+.sbbs-card-footer {
+    min-width: 0;
+}
+
+.sbbs-card-stats {
+    color: var(--sb-muted-fg, currentColor);
+    font-size: 0.78em;
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sbbs-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    padding: 0 var(--spacing-sm, 8px) var(--spacing-sm, 8px);
+}
+
+.sbbs-card-tag {
+    border: 1px solid var(--sb-shell-border, currentColor);
+    border-radius: 999px;
+    padding: 1px 7px;
+    font-size: 0.72em;
+    color: var(--sb-muted-fg, currentColor);
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sbbs-card-tag-button {
+    background: none;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+@media (hover: hover) {
+    .sbbs-card-tag-button:hover {
+        border-color: var(--sb-accent, currentColor);
+        color: inherit;
+    }
+}
+
+.sbbs-card-tag-button:focus-visible {
+    outline: 2px solid var(--sb-focus-ring, currentColor);
+    outline-offset: 1px;
+}
+
+/* ---- selecting cards ---- */
+
+/*
+ * Beside Refresh results, under the sticky search rows: the mode toggle
+ * alone when off, the count and the actions beside it when on. Zero basis
+ * with growth, so the toggle shares Refresh's line and only the overflow
+ * wraps inside this group rather than pushing the whole group down.
+ */
+.sbbs-selection {
+    flex: 1 1 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm, 8px);
+    padding-block: var(--spacing-xs, 4px);
+    background: var(--sb-shell-surface, var(--SmartThemeBlurTintColor, rgba(0, 0, 0, 0.72)));
+}
+
+.sbbs-selection[hidden] {
+    display: none;
+}
+
+.sbbs-select-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs, 4px);
+}
+
+.sbbs-selection-count {
+    color: var(--sb-muted-fg, currentColor);
+    font-size: 0.9em;
+    margin-inline-start: auto;
+}
+
+.sbbs-selection-count:empty {
+    display: none;
+}
+
+/*
+ * The mark sits on the thumbnail's bottom corner: the top corners already
+ * carry the rating and source chips. An empty ring on every card says the
+ * mode is on; a filled one says this card is in.
+ */
+.sbbs-root[data-selecting="true"] .sbbs-card-img::after {
+    content: '';
+    position: absolute;
+    inset-block-end: var(--spacing-xs, 4px);
+    inset-inline-end: var(--spacing-xs, 4px);
+    z-index: 2;
+    width: 1.35rem;
+    height: 1.35rem;
+    border-radius: 50%;
+    border: 2px solid var(--sb-shell-border, currentColor);
+    background: var(--sb-shell-surface, rgba(0, 0, 0, 0.72));
+    /* Same pairing as the filter-count badge, so the mark reads on any theme. */
+    color: var(--sb-accent-fg, canvas);
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1.15rem;
+    text-align: center;
+}
+
+.sbbs-root[data-selecting="true"] .sbbs-card-selected .sbbs-card-img::after {
+    content: '\2713';
+    border-color: var(--sb-accent, currentColor);
+    background: var(--sb-accent, currentColor);
+}
+
+.sbbs-root[data-selecting="true"] .sbbs-card-selected {
+    border-color: var(--sb-accent, currentColor);
+}
+
+.sbbs-more {
+    align-self: center;
+    flex: 0 0 auto;
+}
+
+/* Loading placeholders keep the grid from jumping as results arrive. */
+.sbbs-skeleton .sbbs-card-img {
+    border-radius: var(--sb-radius-md, 10px);
+    animation: sbbs-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes sbbs-shimmer {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 0.7; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sbbs-root *,
+    .sbbs-root *::before,
+    .sbbs-root *::after {
+        animation-duration: 0.01ms;
+        animation-iteration-count: 1;
+        transition-duration: 0.01ms;
+    }
+
+    .sbbs-skeleton .sbbs-card-img {
+        animation: none;
+        opacity: 0.4;
+    }
+}
+
+.sbbs-blurred img {
+    filter: blur(18px);
+}
+
+.sbbs-detail .sbbs-blurred {
+    cursor: pointer;
+}
+
+/* ---- detail ---- */
+
+/*
+ * Column layout with its own scroller, so the action bar can pin to the bottom.
+ * Card descriptions run to thousands of characters; without this the Import
+ * button lands far below the fold, which buries the one action people came for.
+ */
+.sbbs-detail {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.sbbs-detail-body {
+    flex: 1 1 auto;
+    min-height: var(--sb-mobile-touch-target, 44px);
+    overflow-y: auto;
+}
+
+.sbbs-root[data-view="detail"] .sbbs-bar,
+.sbbs-root[data-view="detail"] > header:has(.sbbs-bar),
+.sbbs-root[data-view="detail"] .sbbs-body,
+.sbbs-root[data-view="intake"] .sbbs-bar,
+.sbbs-root[data-view="intake"] > header:has(.sbbs-bar),
+.sbbs-root[data-view="intake"] .sbbs-body {
+    display: none;
+}
+
+.sbbs-root[data-view="grid"] .sbbs-detail,
+.sbbs-root[data-view="intake"] .sbbs-detail {
+    display: none;
+}
+
+/* Owned by data-view alone, like .sbbs-detail; never given a `hidden` attribute. */
+.sbbs-root[data-view="grid"] .sbbs-intake,
+.sbbs-root[data-view="detail"] .sbbs-intake {
+    display: none;
+}
+
+.sbbs-detail-header {
+    flex: 0 0 auto;
+    margin-bottom: var(--spacing-sm, 8px);
+}
+
+.sbbs-detail-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: max-content;
+    align-content: start;
+    gap: var(--spacing-lg, 16px);
+    align-items: flex-start;
+    padding-right: var(--spacing-xs, 4px);
+}
+
+.sbbs-detail-body:has(.sbbs-detail-image) {
+    grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+}
+
+.sbbs-detail-body:has(.sbbs-detail-image) > .sbbs-detail-identity,
+.sbbs-detail-body:has(.sbbs-detail-image) > .sbbs-detail-main {
+    grid-column: 2;
+}
+
+.sbbs-detail-image {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    width: 100%;
+    border-radius: var(--sb-radius-md, 10px);
+    overflow: hidden;
+    background: var(--sb-surface-highlight, rgba(255, 255, 255, 0.06));
+}
+
+.sbbs-detail-image img {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.sbbs-detail-main,
+.sbbs-detail-identity {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm, 8px);
+    overflow-wrap: anywhere;
+}
+
+.sbbs-detail-intro {
+    margin: 0;
+    max-width: 70ch;
+    color: var(--sb-muted-fg, currentColor);
+}
+
+.sbbs-detail-tags > .sbbs-tags {
+    margin-top: var(--spacing-sm, 8px);
+}
+
+.sbbs-detail-name {
+    margin: 0;
+}
+
+.sbbs-detail-meta,
+.sbbs-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs, 4px);
+}
+
+.sbbs-chip,
+.sbbs-tag {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    border: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
+    border-radius: var(--sb-radius-sm, 6px);
+    padding: 1px 8px;
+    font-size: 0.85em;
+}
+
+.sbbs-chip-link {
+    text-decoration: none;
+}
+
+.sbbs-tag-button {
+    background: none;
+    color: inherit;
+    font-family: inherit;
+    line-height: inherit;
+    /* Comfortable to hit on a phone without changing how the row reads. */
+    min-height: 28px;
+    cursor: pointer;
+}
+
+@media (hover: hover) {
+    .sbbs-tag-button:hover {
+        border-color: var(--sb-accent, currentColor);
+    }
+}
+
+.sbbs-tag-button:focus-visible {
+    outline: 2px solid var(--sb-focus-ring, currentColor);
+    outline-offset: 1px;
+}
+
+.sbbs-detail-stats {
+    color: var(--sb-muted-fg, currentColor);
+    font-size: 0.9em;
+}
+
+.sbbs-detail-subhead {
+    margin: var(--spacing-sm, 8px) 0 0;
+    font-size: 1em;
+    color: var(--sb-muted-fg, currentColor);
+}
+
+/* Untrusted description text: preserve the author's line breaks, never parse it. */
+.sbbs-description {
+    max-width: 70ch;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* ---- card contents ---- */
+
+.sbbs-inside {
+    border: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
+    border-radius: var(--sb-radius-md, 10px);
+    padding: var(--spacing-sm, 8px);
+    background: color-mix(in srgb, var(--sb-accent, currentColor) 6%, transparent);
+}
+
+.sbbs-inside > summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.sbbs-inside-list {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+    gap: 2px var(--spacing-md, 12px);
+    margin: var(--spacing-sm, 8px) 0 0;
+}
+
+.sbbs-inside-list dt {
+    color: var(--sb-muted-fg, currentColor);
+}
+
+.sbbs-inside-list dd {
+    margin: 0;
+}
+
+.sbbs-inside-empty {
+    margin: var(--spacing-sm, 8px) 0 0;
+    color: var(--sb-muted-fg, currentColor);
+}
+
+/* ---- detail actions ---- */
+
+/* Pinned, so Import is reachable without scrolling past the description. */
+.sbbs-detail-actions {
+    flex: 0 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm, 8px);
+    padding-top: var(--spacing-md, 12px);
+    margin-top: var(--spacing-md, 12px);
+    border-top: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
+    min-height: 0;
+    max-height: 50%;
+    overflow-y: auto;
+    overflow-wrap: anywhere;
+}
+
+.sbbs-detail-actions > * {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.sbbs-trust-note {
+    flex: 1 0 100%;
+    margin: 0;
+    color: var(--sb-muted-fg, currentColor);
+    font-size: 0.85em;
+}
+
+.sbbs-import-status {
+    color: var(--sb-muted-fg, currentColor);
+    font-size: 0.9em;
+}
+
+/* ---- settings drawer ---- */
+
+.sbbs-settings {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm, 8px);
+}
+
+.sbbs-settings [hidden][hidden] {
+    display: none;
+}
+
+.sbbs-settings-toggle {
+    width: 100%;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+}
+
+.sbbs-settings-toggle:focus-visible,
+.sbbs-reveal:focus-visible,
+#sbbs_wand_item:focus-visible {
+    outline: 2px solid var(--sb-focus-ring, currentColor);
+    outline-offset: 2px;
+}
+
+#sbbs_wand_item {
+    box-sizing: border-box;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    width: 100%;
+    margin: 0;
+    padding: 5px;
+    border: 0;
+    border-radius: 0;
+    appearance: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+    opacity: 0.5;
+}
+
+#sbbs_wand_item:hover {
+    opacity: 1;
+}
+
+.sbbs-setting-select {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+/*
+ * A checkbox with an explanation under it.
+ *
+ * The note is a SIBLING of .checkbox_label, never a child: that class is one of
+ * Neconyan's own and is a flex row with no flex-wrap, so a full-width child
+ * takes the row's width and collapses the label text to one character per line.
+ */
+.sbbs-setting-noted {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+/* Explains what a setting costs, on its own line under the control. */
+.sbbs-setting-note {
+    display: block;
+    color: var(--sb-muted-fg, currentColor);
+    font-size: 0.85em;
+    line-height: 1.4;
+}
+
+/*
+ * Only under a checkbox: clears the box itself so the sentence lines up with
+ * the label rather than with the control. Other settings have no box to clear.
+ */
+.sbbs-setting-noted > .sbbs-setting-note {
+    padding-inline-start: calc(1em + 10px);
+}
+
+.sbbs-setting-plugin {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs, 4px);
+    padding-bottom: var(--spacing-sm, 8px);
+    border-bottom: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
+}
+
+.sbbs-setting-account {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs, 4px);
+    padding-bottom: var(--spacing-sm, 8px);
+    border-bottom: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
+}
+
+.sbbs-account-status {
+    color: var(--sb-muted-fg, currentColor);
+}
+
+.sbbs-account-login,
+.sbbs-account-signed-in,
+.sbbs-account-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs, 4px);
+}
+
+.sbbs-account-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: var(--spacing-sm, 8px);
+}
+
+.sbbs-account-field .text_pole {
+    width: 100%;
+    min-width: 0;
+    margin-block: 0;
+}
+
+/* Standalone setting actions are rows, rather than compact toolbar buttons. */
+.sbbs-setting-account > .menu_button,
+.sbbs-account-login > .menu_button,
+.sbbs-account-signed-in > .menu_button,
+.sbbs-setting-select > .menu_button,
+.sbbs-plugin-update-actions > .menu_button {
+    align-self: stretch;
+    width: 100%;
+    white-space: normal;
+}
+
+.sbbs-account-nsfw {
+    margin: 0;
+}
+
+.sbbs-plugin-update-actions,
+.sbbs-install-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm, 8px);
+}
+
+.sbbs-plugin-update-commands {
+    font-size: 0.8em;
+}
+
+/* ---- install panel ---- */
+
+.sbbs-install {
+    max-width: 60ch;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md, 12px);
+}
+
+.sbbs-install [hidden][hidden] {
+    display: none;
+}
+
+.sbbs-install-steps {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md, 12px);
+    margin: 0;
+    padding-inline-start: 1.5em;
+}
+
+.sbbs-install-code {
+    background: var(--sb-input-bg, rgba(0, 0, 0, 0.25));
+    border: 1px solid var(--sb-input-border, rgba(255, 255, 255, 0.12));
+    border-radius: var(--sb-radius-sm, 6px);
+    padding: var(--spacing-sm, 8px);
+    margin: var(--spacing-xs, 4px) 0 0;
+}
+
+/*
+ * The host theme gives every <code> its own background box. Inside a <pre> that
+ * means a wrapped command renders as several boxes and reads as several
+ * commands. Let the block own the background and the code just be text.
+ */
+.sbbs-install-code code {
+    background: none;
+    border: none;
+    padding: 0;
+    display: block;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.sbbs-install-note {
+    color: var(--sb-muted-fg, currentColor);
+    font-size: 0.9em;
+}
+
+.sbbs-install-update-status {
+    margin: 0;
+    color: var(--sb-muted-fg, currentColor);
+    font-size: 0.9em;
+}
+
+/* ---- mobile ---- */
+
+@media screen and (max-width: 768px) {
+    /*
+     * A full-bleed sheet, following the fork's own contract for modal drawers
+     * (public/css/neconyan-mobile-shell.css:1, :204). Without this the dialog
+     * loses about a quarter of a phone's width before any content: 10vw to
+     * `large`'s 90vw cap, 40px to .popup's padding (public/css/popup.css:14)
+     * and 16px to .popup-content's (:66).
+     *
+     * !important is needed here and nowhere else in this sheet: the width and
+     * height come from .large_dialogue_popup (public/style.css:4090), which
+     * declares them !important, so load order alone cannot win. Do not "tidy"
+     * these away.
+     *
+     * --sb-shell-viewport-height is kept in sync with the visual viewport by
+     * public/scripts/neconyan-tabs.js:2750, so the sheet contracts when the
+     * software keyboard opens. dvh does not do that reliably on Android Chrome.
+     */
+    .popup:has(.sbbs-root) {
+        width: 100dvw !important;
+        max-width: 100dvw !important;
+        height: var(--sb-shell-viewport-height, 100dvh) !important;
+        max-height: var(--sb-shell-viewport-height, 100dvh) !important;
+        border-radius: 0 !important;
+        border-width: 0 !important;
+        padding:
+            calc(var(--spacing-sm, 8px) + env(safe-area-inset-top, 0px))
+            var(--spacing-sm, 8px)
+            calc(var(--spacing-sm, 8px) + env(safe-area-inset-bottom, 0px));
+    }
+
+    .popup:has(.sbbs-root) .popup-content {
+        margin-top: 0;
+        padding: 0;
+        /* The 44px close target gets its own row above the search controls. */
+        padding-block-start: calc(var(--sb-mobile-touch-target, 44px) + var(--spacing-sm, 8px));
+    }
+
+    .popup:has(.sbbs-root) .popup-body {
+        max-height: none;
+    }
+
+    /*
+     * The close button is parked just outside the dialog's corner
+     * (public/css/popup.css:220), which on a full-bleed sheet is off-screen.
+     * Bring it inside and give it a real touch target.
+     */
+    .popup:has(.sbbs-root) .popup-button-close {
+        inset-block-start: calc(var(--spacing-xs, 4px) + env(safe-area-inset-top, 0px));
+        inset-inline-end: var(--spacing-xs, 4px);
+        width: var(--sb-mobile-touch-target, 44px);
+        height: var(--sb-mobile-touch-target, 44px);
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 1;
+    }
+
+    /* Sticky behaviour itself lives on .sbbs-bar-sticky in the base rules;
+       nothing mobile-specific is needed for it. */
+
+    /* .text_pole's own 5px block margins add ~20px across two rows. */
+    .sbbs-source,
+    .sbbs-sort,
+    .sbbs-query {
+        margin-block: 0;
+    }
+
+    .sbbs-query {
+        flex: 1 1 0;
+        width: auto;
+        min-height: var(--sb-mobile-touch-target, 44px);
+    }
+
+    /* Wrap before the extra toolbar actions squeeze the pickers to arrows. */
+    .sbbs-bar .sbbs-source,
+    .sbbs-bar .sbbs-sort {
+        flex: 1 1 7rem;
+        min-width: 0;
+        max-width: none;
+    }
+
+    .sbbs-filters-toggle {
+        flex: 0 0 auto;
+        padding-inline: 10px;
+    }
+
+    .sbbs-go,
+    .sbbs-more,
+    .sbbs-back,
+    .sbbs-import,
+    .sbbs-open-character,
+    .sbbs-reveal {
+        min-width: var(--sb-mobile-touch-target, 44px);
+        min-height: var(--sb-mobile-touch-target, 44px);
+    }
+
+    .sbbs-direct-notice-dismiss {
+        width: var(--sb-mobile-touch-target, 44px);
+        height: var(--sb-mobile-touch-target, 44px);
+    }
+
+    .sbbs-filter-group {
+        gap: var(--spacing-xs, 4px) var(--spacing-md, 12px);
+    }
+
+    /* Ten BotBooru fields become one readable column. Keep that expanded panel
+       independently scrollable so its last controls remain reachable on short
+       screens and while the software keyboard reduces the visual viewport. */
+    .sbbs-filters {
+        min-height: 0;
+        max-height: calc(var(--sb-shell-viewport-height, 100dvh) - 11rem);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding-inline-end: var(--spacing-xs, 4px);
+    }
+
+    .sbbs-filter-fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .sbbs-filter .text_pole,
+    .sbbs-filter-checkbox {
+        margin-block: 0;
+    }
+
+    .sbbs-filter-boolean {
+        justify-content: flex-start;
+    }
+
+    .sbbs-account-fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    /* Chips sit close together and are removed with thumbs. A full 44px pad
+       would double every chip's height, so this is the size the pill absorbs. */
+    .sbbs-filter-chip-remove {
+        min-width: 34px;
+        min-height: 34px;
+    }
+
+    .sbbs-body {
+        gap: var(--spacing-sm, 8px);
+    }
+
+    /*
+     * Results become full-width rows: thumbnail left, text right. A two-column
+     * grid on a phone leaves each card about 135px wide, at which point every
+     * line of card text ellipsizes into a fragment.
+     */
+    .sbbs-grid {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-sm, 8px);
+    }
+
+    .sbbs-card {
+        height: auto;
+    }
+
+    .sbbs-card-open {
+        flex-direction: row;
+        align-items: flex-start;
+        gap: var(--spacing-sm, 8px);
+        padding: var(--spacing-sm, 8px);
+    }
+
+    /* 2/3 is a poster ratio; in a row it just costs height. */
+    .sbbs-card-img {
+        flex: 0 0 72px;
+        aspect-ratio: 3 / 4;
+        border-radius: var(--sb-radius-sm, 6px);
+    }
+
+    .sbbs-card-initial {
+        font-size: 1.75rem;
+    }
+
+    .sbbs-card-meta {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 0;
+    }
+
+    /* There is room to wrap now, and a truncated name identifies nothing. */
+    .sbbs-card-name {
+        white-space: normal;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+    }
+
+    .sbbs-card-sub {
+        white-space: normal;
+    }
+
+    /*
+     * Back into the flow as one metadata line: a 72px thumbnail cannot carry
+     * either chip legibly, and the content rating has to stay readable.
+     *
+     * It gets a whole row rather than sharing the creator's. Sharing squeezes
+     * the creator into whatever the chips leave — around 24px on a 360px phone,
+     * which wraps it to one character per line. The row is free anyway: the
+     * 96px thumbnail, not the text, sets the height of a typical result.
+     */
+    .sbbs-card-footer {
+        display: flex;
+        align-items: center;
+        flex-wrap: nowrap;
+        gap: var(--spacing-xs, 4px);
+    }
+
+    .sbbs-rating,
+    .sbbs-card-source {
+        position: static;
+    }
+
+    /* One line, and the popularity figures give way first: the rating is a
+       safety signal and must never be clipped, the source name identifies the
+       result, and the download count is the least of the three. */
+    .sbbs-rating {
+        flex: 0 0 auto;
+    }
+
+    /*
+     * Source labels are a single word, so shrinking one saves a few pixels and
+     * costs the whole name — "Chub" became "Ch…". The stats absorb all of it.
+     * The cap is only a guard against an unreasonably long label;
+     * calc(100% - 5.5rem) was sized for a poster card and leaves ~47px here.
+     */
+    .sbbs-card-source {
+        flex: 0 0 auto;
+        max-width: 50%;
+    }
+
+    .sbbs-card-stats {
+        flex: 0 1 auto;
+        min-width: 0;
+    }
+
+    /*
+     * A tag row costs ~40px on every result — about a third of a row — to
+     * repeat what the detail pane already lists and what the Filters panel can
+     * already search on. Off the card, three more results fit on screen.
+     */
+    .sbbs-card-tags {
+        display: none;
+    }
+
+    /* Skeletons are bare .sbbs-card-img nodes with no card around them, so
+       they need the row shape spelled out or the loading state shows twelve
+       posters where rows are about to appear. */
+    .sbbs-skeleton .sbbs-card-img {
+        aspect-ratio: auto;
+        height: 88px;
+        width: 100%;
+    }
+
+    .sbbs-detail {
+        position: absolute;
+        inset: 0;
+        background: var(--sb-shell-surface, transparent);
+    }
+
+    .sbbs-detail-body:has(.sbbs-detail-image) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .sbbs-detail-body:has(.sbbs-detail-image) > .sbbs-detail-identity,
+    .sbbs-detail-body:has(.sbbs-detail-image) > .sbbs-detail-main,
+    .sbbs-detail-image {
+        grid-column: 1;
+        grid-row: auto;
+    }
+
+    /* Capped by height, not width: a portrait preview sized to 60% of the
+       column pushed the name and the Import button below the fold. */
+    .sbbs-detail-image {
+        width: auto;
+        min-width: min(12rem, 100%);
+        max-width: 100%;
+        max-height: 34dvh;
+        justify-self: center;
+    }
+
+    .sbbs-detail-image img {
+        width: auto;
+        margin-inline: auto;
+        max-width: 100%;
+        max-height: 34dvh;
+    }
+
+    .sbbs-detail-actions {
+        background: var(--sb-shell-surface, transparent);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+}
+
+.sbbs-setting-sources {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-bottom: var(--spacing-xs, 4px);
+    border-bottom: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
+}
+
+.sbbs-source-row {
+    margin: 0;
+}
+
+.sbbs-source-note {
+    color: var(--sb-muted-fg, currentColor);
+    font-size: 0.8em;
+}
+
+/* Keyboard-reachable reveal for a blurred sensitive preview. */
+.sbbs-detail-image {
+    position: relative;
+}
+
+.sbbs-reveal {
+    position: absolute;
+    inset-inline-start: 50%;
+    inset-block-start: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1;
+    background: var(--sb-button-bg, rgba(0, 0, 0, 0.6));
+    border: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.2));
+    border-radius: var(--sb-radius-button, 14px);
+    color: inherit;
+    width: max-content;
+    max-width: calc(100% - 8px);
+    min-height: 44px;
+    padding: 6px 10px;
+    line-height: 1.25;
+    cursor: pointer;
+}
+
+/* ---- card intake ---- */
+
+.sbbs-intake {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.sbbs-bulk,
+.sbbs-bulk-review {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    overflow-y: auto;
+}
+
+.sbbs-bulk > .sbbs-trust-note,
+.sbbs-bulk > .sbbs-state,
+.sbbs-intake-title {
+    flex: 0 0 auto;
+}
+
+.sbbs-intake-body {
+    flex: 1 1 auto;
+    min-height: min(6rem, 20dvh);
+    overflow-y: auto;
+    padding-right: var(--spacing-xs, 4px);
+}
+
+.sbbs-intake-title {
+    margin: 0 0 var(--spacing-sm, 8px);
+    font-size: 1.1em;
+    opacity: 0.75;
+}
+
+.sbbs-intake-name {
+    margin: 0;
+    font-size: 1.3em;
+}
+
+/* One line per card in a batch: name, site, then what happened to it. */
+.sbbs-bulk-list {
+    flex: 1 1 auto;
+    min-height: min(8rem, 25dvh);
+    overflow-y: auto;
+    margin: 0;
+    padding-inline-start: 1.5em;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs, 4px);
+}
+
+.sbbs-bulk-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--spacing-xs, 4px) var(--spacing-sm, 8px);
+    overflow-wrap: anywhere;
+}
+
+.sbbs-bulk-row > * {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.sbbs-bulk-name {
+    font-weight: 600;
+}
+
+.sbbs-bulk-source,
+.sbbs-bulk-outcome {
+    color: var(--sb-muted-fg, currentColor);
+    font-size: 0.9em;
+}
+
+.sbbs-bulk-outcome {
+    flex: 1 1 100%;
+}
+
+.sbbs-intake-identity {
+    margin-top: var(--spacing-xs, 4px);
+    font-size: 0.85em;
+    opacity: 0.7;
+    /* A hash has no spaces to break at, and must not widen the dialog. */
+    overflow-wrap: anywhere;
+}
+
+.sbbs-intake-origin,
+.sbbs-intake-list {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--spacing-xs, 4px) var(--spacing-md, 12px);
+    margin: var(--spacing-sm, 8px) 0;
+    overflow-wrap: anywhere;
+}
+
+.sbbs-intake-origin dt,
+.sbbs-intake-list dt {
+    opacity: 0.75;
+}
+
+.sbbs-intake-origin dd,
+.sbbs-intake-list dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.sbbs-intake-section {
+    margin: var(--spacing-lg, 16px) 0 0;
+    padding-bottom: var(--spacing-xs, 4px);
+    border-bottom: 1px solid var(--sb-border, rgba(128, 128, 128, 0.3));
+    font-size: 0.95em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.65;
+}
+
+/*
+ * Findings are marked with weight and a leading glyph as well as colour, so the
+ * distinction survives a monochrome theme and does not depend on colour alone.
+ */
+.sbbs-intake-list dt.sbbs-intake-warn {
+    font-weight: 600;
+    opacity: 1;
+    color: var(--sb-warning-fg, currentColor);
+}
+
+.sbbs-intake-list dt.sbbs-intake-warn::before {
+    content: "\26A0\FE0E ";
+}
+
+.sbbs-intake-list dt.sbbs-intake-note::before {
+    content: "\2022 ";
+}
+
+.sbbs-intake-duplicate {
+    margin: var(--spacing-sm, 8px) 0;
+}
+
+.sbbs-intake-warn {
+    color: var(--sb-warning-fg, currentColor);
+}
+
+p.sbbs-intake-warn {
+    font-weight: 600;
+}
+
+.sbbs-intake-tokens,
+.sbbs-intake-empty {
+    margin: var(--spacing-sm, 8px) 0;
+    opacity: 0.8;
+}
+
+.sbbs-intake-clean-note {
+    flex-basis: 100%;
+    font-size: 0.9em;
+    opacity: 0.8;
+}
+
+.sbbs-intake-clean-note p {
+    margin: var(--spacing-xs, 4px) 0 0;
+}
+
+.sbbs-intake-replace {
+    flex-basis: 100%;
+}
+
+.sbbs-intake-choice {
+    flex: 1 1 100%;
+    margin: 0;
+    border: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
+    border-radius: var(--sb-radius-sm, 6px);
+    padding: var(--spacing-sm, 8px);
+}
+
+.sbbs-intake-choice,
+.sbbs-intake-match,
+.sbbs-intake-filename,
+.sbbs-intake-replace-note,
+.sbbs-intake-scan-warning,
+.sbbs-intake-name {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.sbbs-intake-match {
+    width: 100%;
+}
+
+.sbbs-intake-entry {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+/* Drop feedback for a card file dragged onto the dialog. */
+.sbbs-root.sbbs-dragging {
+    outline: 2px dashed var(--sb-accent, currentColor);
+    outline-offset: -4px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .sbbs-root {
+        transition: outline-color 120ms ease;
+    }
+}
+
+.sbbs-intake-undisclosed {
+    margin: var(--spacing-sm, 8px) 0;
+    font-weight: 600;
+    color: var(--sb-warning-fg, currentColor);
+}
+
+/*
+ * An account section embedded in the intake error screen rather than in the
+ * settings drawer: its own bordered box on a full row, so the login does not
+ * read as one more action button.
+ */
+.sbbs-detail-actions .sbbs-setting-account {
+    flex: 1 0 100%;
+    max-width: 32rem;
+    padding: var(--spacing-sm, 8px);
+    border: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
+    border-radius: var(--sb-radius-md, 10px);
+}

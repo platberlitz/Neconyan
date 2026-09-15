@@ -1,0 +1,51 @@
+<div class="flex-container flexFlowColumn height100p">
+    <h3 data-i18n="Additional Parameters">Additional Parameters</h3>
+    <div class="flex1 flex-container flexFlowColumn">
+        <h4 data-i18n="Include Body Parameters">Include Body Parameters</h4>
+        <textarea id="custom_include_body" class="flex1" placeholder="Parameters to be included in the Chat Completion request body (YAML object)&#10;&#10;Example:&#10;top_k: 20&#10;repetition_penalty: 1.1" data-i18n="[placeholder]custom_include_body_desc"></textarea>
+    </div>
+    <div class="flex1 flex-container flexFlowColumn">
+        <h4 data-i18n="Exclude Body Parameters">Exclude Body Parameters</h4>
+        <textarea id="custom_exclude_body" class="flex1" placeholder="Parameters to be excluded from the Chat Completion request body (YAML array)&#10;&#10;Example:&#10;- frequency_penalty&#10;- presence_penalty" data-i18n="[placeholder]custom_exclude_body_desc"></textarea>
+    </div>
+    <div class="flex1 flex-container flexFlowColumn">
+        <h4 data-i18n="Include Request Headers">Include Request Headers</h4>
+        <textarea id="custom_include_headers" class="flex1" placeholder="Additional headers for Chat Completion requests (YAML object)&#10;&#10;Example:&#10;CustomHeader: custom-value&#10;AnotherHeader: custom-value" data-i18n="[placeholder]custom_include_headers_desc"></textarea>
+    </div>
+    <div class="flex1 flex-container flexFlowColumn">
+        <h4>Reasoning Parameter Preset</h4>
+        <label class="flex-container flexFlowColumn">
+            <span>Model Preset</span>
+            <select id="custom_reasoning_preset" class="text_pole">
+                <option value="openai">Default OpenAI-style</option>
+                <option value="glm_5_1">GLM 5.1</option>
+                <option value="kimi_k2">Kimi K2.5/K2.6</option>
+                <option value="custom">Custom</option>
+            </select>
+        </label>
+        <label class="flex-container flexFlowColumn">
+            <span>Parameter Format</span>
+            <select id="custom_reasoning_param_format" class="text_pole">
+                <option value="openai">OpenAI effort string</option>
+                <option value="boolean">Boolean true/false</option>
+                <option value="string">String enabled/disabled</option>
+                <option value="thinking_object">Thinking object</option>
+            </select>
+        </label>
+        <label class="flex-container flexFlowColumn">
+            <span>Parameter Name</span>
+            <input id="custom_reasoning_param_name" class="text_pole" type="text" placeholder="reasoning_effort">
+        </label>
+        <div class="sb-custom-reasoning-toggle-values flex-container flexFlowColumn">
+            <label class="flex-container flexFlowColumn">
+                <span>Enabled Value</span>
+                <input id="custom_reasoning_enabled_value" class="text_pole" type="text" placeholder="enabled">
+            </label>
+            <label class="flex-container flexFlowColumn">
+                <span>Disabled Value</span>
+                <input id="custom_reasoning_disabled_value" class="text_pole" type="text" placeholder="disabled">
+            </label>
+        </div>
+        <small>Presets fill current provider-specific reasoning keys. If you also set the same key in Include Body YAML, the YAML value wins.</small>
+    </div>
+</div>

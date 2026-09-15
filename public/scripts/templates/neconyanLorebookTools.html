@@ -1,0 +1,78 @@
+<section id="neconyan-lorebook-tools" hidden>
+    <div class="neco-lore-tool-navigation">
+        <div class="neco-lore-tool-tabs" role="tablist" aria-label="Entry tools">
+            <button type="button" class="neco-lore-tab" role="tab" id="neco-lore-tab-history" aria-controls="neco-lore-history" data-mode="history">History</button>
+            <button type="button" class="neco-lore-tab" role="tab" id="neco-lore-tab-search" aria-controls="neco-lore-search" data-mode="search">Search &amp; replace</button>
+            <button type="button" class="neco-lore-tab" role="tab" id="neco-lore-tab-delimiters" aria-controls="neco-lore-delimiters" data-mode="delimiters">Delimiters</button>
+            <button type="button" class="neco-lore-tab" role="tab" id="neco-lore-tab-merge" aria-controls="neco-lore-merge" data-mode="merge">Merge lorebook</button>
+            <button type="button" class="neco-lore-tab" role="tab" id="neco-lore-tab-export" aria-controls="neco-lore-export" data-mode="export">Export</button>
+        </div>
+        <button type="button" class="menu_button" data-close>Close</button>
+    </div>
+    <p class="neco-lore-status" role="status" aria-live="polite"></p>
+    <div id="neco-lore-history" role="tabpanel" aria-labelledby="neco-lore-tab-history" hidden>
+        <form class="neco-lore-commit-form">
+            <label for="neco-lore-commit-message">Commit message</label>
+            <input id="neco-lore-commit-message" class="text_pole" required maxlength="2000" autocomplete="off">
+            <button type="submit" class="menu_button" data-commit>Commit</button>
+        </form>
+        <div class="neco-lore-history-layout">
+            <nav class="neco-lore-history-list" aria-label="Commit history"></nav>
+            <div>
+                <div class="neco-lore-history-diff"></div>
+                <button type="button" class="menu_button" data-rollback hidden>Rollback</button>
+            </div>
+        </div>
+    </div>
+    <div id="neco-lore-search" role="tabpanel" aria-labelledby="neco-lore-tab-search" hidden>
+        <form class="neco-lore-search-form">
+            <div class="neco-lore-fields">
+                <label for="neco-lore-search-text">Search<input id="neco-lore-search-text" class="text_pole" name="search" required></label>
+                <label for="neco-lore-replacement">Replace with<input id="neco-lore-replacement" class="text_pole" name="replacement"></label>
+            </div>
+            <div class="neco-lore-options">
+                <label class="checkbox_label"><input type="checkbox" name="regex">Regex</label>
+                <label class="checkbox_label"><input type="checkbox" name="wholeWord">Whole word</label>
+                <label class="checkbox_label"><input type="checkbox" name="caseSensitive">Case sensitive</label>
+            </div>
+            <fieldset class="neco-lore-options">
+                <legend>Search in</legend>
+                <label class="checkbox_label"><input type="checkbox" name="field" value="content" checked>Content</label>
+                <label class="checkbox_label"><input type="checkbox" name="field" value="key">Primary keys</label>
+                <label class="checkbox_label"><input type="checkbox" name="field" value="keysecondary">Secondary keys</label>
+                <label class="checkbox_label"><input type="checkbox" name="field" value="comment">Name</label>
+            </fieldset>
+            <div class="neco-lore-actions"><button type="submit" class="menu_button">Preview</button><button type="button" class="menu_button" data-apply="search" disabled>Replace all</button></div>
+        </form>
+        <div data-preview="search"></div>
+    </div>
+    <div id="neco-lore-delimiters" role="tabpanel" aria-labelledby="neco-lore-tab-delimiters" hidden>
+        <form class="neco-lore-delimiter-form">
+            <div class="neco-lore-fields">
+                <label for="neco-lore-delimiter-scope">Scope<select id="neco-lore-delimiter-scope" name="uid" class="text_pole"><option value="">All entries</option></select></label>
+                <label for="neco-lore-delimiter-style">Delimiter<select id="neco-lore-delimiter-style" name="delimiterStyle" class="text_pole"><option value="tag">&lt;Name&gt; … &lt;/Name&gt;</option><option value="bracket">[Name= … ]</option><option value="separator">---</option><option value="none">None</option></select></label>
+                <label for="neco-lore-delimiter-source">Name source<select id="neco-lore-delimiter-source" name="nameSource" class="text_pole"><option value="title">Entry name</option><option value="key">First primary key</option><option value="fixed">Custom</option></select></label>
+                <label for="neco-lore-delimiter-name">Name<input id="neco-lore-delimiter-name" name="delimiterName" class="text_pole" maxlength="80" disabled></label>
+            </div>
+            <div class="neco-lore-actions"><button type="submit" class="menu_button">Preview</button><button type="button" class="menu_button" data-apply="delimiters" disabled>Apply</button></div>
+        </form>
+        <div data-preview="delimiters"></div>
+    </div>
+    <div id="neco-lore-merge" role="tabpanel" aria-labelledby="neco-lore-tab-merge" hidden>
+        <div class="neco-lore-fields">
+            <label for="neco-lore-merge-book">Lorebook<select id="neco-lore-merge-book" class="text_pole"><option value="">--- Pick a lorebook ---</option></select></label>
+            <label for="neco-lore-merge-file">Import<input id="neco-lore-merge-file" type="file" class="text_pole" accept=".json,.lorebook,.stproj"></label>
+        </div>
+        <div class="neco-lore-merge-list"></div>
+        <div class="neco-lore-actions"><button type="button" class="menu_button" data-merge-preview disabled>Preview</button><button type="button" class="menu_button" data-apply="merge" disabled>Apply merge</button></div>
+        <div data-preview="merge"></div>
+    </div>
+    <div id="neco-lore-export" role="tabpanel" aria-labelledby="neco-lore-tab-export" hidden>
+        <div class="neco-lore-export-options">
+            <button type="button" class="menu_button" data-export="native">World Info JSON</button>
+            <button type="button" class="menu_button" data-export="project">Project archive (.stproj)</button>
+            <button type="button" class="menu_button" data-export="character">Character Book JSON</button>
+            <button type="button" class="menu_button" data-export="digest">Proofread digest (Markdown)</button>
+        </div>
+    </div>
+</section>

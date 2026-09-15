@@ -1,0 +1,273 @@
+/* Extensions */
+.extensions_block input[type="submit"]:hover {
+    background-color: color-mix(in srgb, var(--color-primary, var(--sb-accent)) 34%, transparent);
+}
+
+.extensions_block input[type="checkbox"],
+.extensions_block input[type="radio"] {
+    margin: 0;
+    flex: 0 0 auto;
+}
+
+label[for="extensions_notify_updates"] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 !important;
+}
+
+label[for="extensions_notify_updates"] input[type="checkbox"] {
+    margin: 0;
+    flex: 0 0 auto;
+}
+
+.extensions_block {
+    clear: both;
+    padding: 0.05px;
+}
+
+.extensions_info {
+    text-align: left;
+}
+
+.extensions_info h3:not(.margin0) {
+    margin-bottom: 0.5em;
+}
+
+.extensions_info h4 {
+    margin-bottom: 0.5em;
+}
+
+.extensions_info p {
+    margin-bottom: 0.5em;
+    margin-left: 1em;
+}
+
+.extensions_info .disabled {
+    color: var(--sb-muted-fg, color-mix(in srgb, var(--SmartThemeBodyColor) 58%, transparent));
+}
+
+.extensions_info .toggle_enable {
+    color: color-mix(in srgb, var(--color-primary, var(--sb-accent)) 88%, var(--SmartThemeBodyColor) 12%);
+}
+
+.extensions_info .toggle_disable {
+    color: var(--sb-danger, color-mix(in srgb, #fb7185 88%, var(--SmartThemeBodyColor) 12%));
+}
+
+.extensions_info .extension_enabled {
+    font-weight: bold;
+}
+
+.extensions_info .extension_disabled {
+    color: var(--sb-muted-fg, color-mix(in srgb, var(--SmartThemeBodyColor) 58%, transparent));
+}
+
+.extensions_info .extension_missing {
+    color: var(--sb-muted-fg, color-mix(in srgb, var(--SmartThemeBodyColor) 48%, transparent));
+}
+
+.extensions_info .extension_modules {
+    font-size: 0.8em;
+    font-weight: normal;
+}
+
+.extensions_info .extension_block {
+    display: flex;
+    flex-wrap: nowrap;
+    padding: 12px 14px;
+    margin-bottom: 5px;
+    border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor) 76%, transparent);
+    border-radius: 18px;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 72px;
+    background: color-mix(in srgb, var(--SmartThemeBodyColor) 4%, transparent);
+}
+
+.extensions_info .extension_name {
+    font-size: 1.05em;
+}
+
+.extensions_info :is(.extension_version, .extension_author) {
+    opacity: 0.8;
+    font-size: 0.8em;
+    font-weight: normal;
+    margin-left: 2px;
+}
+
+.extensions_info :is(.extension_version, .extension_author):empty {
+    display: none;
+}
+
+.extensions_info .extension_author {
+    display: inline-flex;
+    gap: 2px;
+    align-items: baseline;
+}
+
+.extensions_info .extension_block a {
+    color: var(--SmartThemeBodyColor);
+}
+
+.extensions_info .extension_name.update_available {
+    color: color-mix(in srgb, var(--color-primary, var(--sb-accent)) 92%, white 8%);
+}
+
+.extensions_info .third_party_toolbar {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+input.extension_missing[type="checkbox"] {
+    opacity: 0.5;
+}
+
+.update-button {
+    margin-right: 10px;
+    display: inline-flex;
+}
+
+/* Fixes order of settings for extensions */
+#extensions_settings,
+#extensions_settings2 {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    flex-direction: column;
+    gap: 14px;
+    height: auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
+}
+
+#rm_extensions_block .extensions_block {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 18px;
+}
+
+#rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+#rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p > h3 {
+    flex: 1 1 220px;
+}
+
+#rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p > label[for='extensions_notify_updates'] {
+    flex: 1 1 280px;
+    min-width: min(100%, 280px);
+    align-items: center;
+}
+
+#rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p > label[for='extensions_notify_updates'] > span {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: normal;
+}
+
+/* Own row each: the panel is a resizable drawer, so a viewport media query cannot tell when
+   these two have been squeezed narrower than their own labels. */
+#rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p > .menu_button,
+#rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p > .menu_button_icon {
+    flex: 1 0 100%;
+}
+
+#rm_extensions_block .inline-drawer {
+    width: 100%;
+    margin: 0;
+}
+
+/* Fixes order of settings for extensions */
+.extension_container {
+    display: block !important;
+    width: 100%;
+    min-width: 0;
+}
+
+#rm_extensions_block .extension_container:empty,
+#extensionsMenu>div.extension_container:empty {
+    display: none !important;
+}
+
+#rm_extensions_block .extension_container > *,
+#rm_extensions_block .extension_container .inline-drawer,
+#rm_extensions_block .extension_container .inline-drawer-toggle,
+#rm_extensions_block .extension_container .inline-drawer-content {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.extensions_info .extension_text_block {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.extensions_info .extension_actions {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    align-items: center;
+    align-self: center;
+}
+
+.extensions_toolbar {
+    top: 0;
+    position: -webkit-sticky;
+    position: sticky;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 92%, transparent);
+    gap: 8px;
+    z-index: 1;
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border-radius: 18px;
+    border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor) 72%, transparent);
+}
+
+@media screen and (max-width: 1360px) and (min-width: 769px) {
+    #rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p > label[for='extensions_notify_updates'] {
+        flex-basis: 100%;
+        min-width: 100%;
+    }
+}
+
+@media screen and (max-width: 1100px) {
+    #rm_extensions_block .extensions_block {
+        gap: 12px;
+    }
+
+    #rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p {
+        display: grid;
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    #rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p > h3,
+    #rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p > label,
+    #rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p > .menu_button,
+    #rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p > .menu_button_icon {
+        width: 100%;
+    }
+
+    .extensions_info .extension_block {
+        flex-wrap: wrap;
+    }
+
+    .extensions_info .extension_actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+}

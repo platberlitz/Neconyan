@@ -1,0 +1,13 @@
+{
+  "display_name": "Dialogue Colors",
+  "loading_order": 10,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "platberlitz",
+  "version": "6.1.3",
+  "homePage": "https://github.com/platberlitz/sillytavern-character-colors",
+  "description": "LLM or local DOM-only dialogue and thought coloring with auto-regex-install",
+  "generate_interceptor": "DialogueColorsInterceptor"
+}

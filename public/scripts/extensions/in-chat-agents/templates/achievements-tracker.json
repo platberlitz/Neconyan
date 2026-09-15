@@ -1,0 +1,44 @@
+{
+  "id": "tpl-achievements-tracker",
+  "name": "Achievements Tracker",
+  "description": "Track notable firsts, milestones, and memorable moments",
+  "icon": "",
+  "category": "tracker",
+  "subcategory": "progress",
+  "tags": [
+    "achievements",
+    "milestones"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "### Achievements\nTrack notable firsts, milestones, and memorable moments. Award only when something genuinely significant or entertaining happens. Use this EXACT format:\n\n[ACH|Title|Rarity|Description]\nunlocked: MANDATORY; explain what triggered it; NEVER leave empty\n[/ACH]\n\nRarity options: ★ COMMON | ★★ UNCOMMON | ★★★ RARE | ★★★★ EPIC | ★★★★★ LEGENDARY | 💀 SECRET\n\nRules:\n- Achievements appear AFTER narrative content\n- MAXIMUM one achievement per scene; most scenes have none\n- Achievements must feel earned, never automatic\n- NEVER output an empty unlocked line\n- When nothing qualifies this scene, output the single line tracker-none in place of the block",
+  "phase": "both",
+  "injection": {
+    "position": 0,
+    "depth": 4,
+    "role": 1,
+    "order": 100,
+    "scan": false
+  },
+  "postProcess": {
+    "enabled": true,
+    "type": "extract",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "\\[ACH\\|[^\\]\\r\\n]*\\](?:(?!\\[ACH(?=[:|\\]]))[\\s\\S])*?\\[/ACH\\]",
+    "extractVariable": "achievement_data"
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal"
+    ]
+  },
+  "companion": {
+    "includeSystemPrompt": false
+  }
+}

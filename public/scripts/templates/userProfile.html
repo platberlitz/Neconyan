@@ -1,0 +1,100 @@
+<div class="flex-container flexFlowColumn justifyLeft flexGap10 neconyan-account-panel neconyan-cat-panel">
+    <section class="neconyan-account-section neconyan-account-heading">
+        <div class="neconyan-account-title-row">
+            <h2 class="margin0">
+                <span data-i18n="Hi,">Hi,</span> <span class="userName margin0"></span>
+            </h2>
+            <button type="button" data-require-accounts class="userChangeNameButton right_menu_button menu_button menu_button_icon" data-i18n="[title]Change display name." title="Change display name." aria-label="Change display name">
+                <i class="fa-fw fa-solid fa-pencil fa-xs" aria-hidden="true"></i>
+                <span data-i18n="Change display name">Change display name</span>
+            </button>
+        </div>
+        <p class="neconyan-account-note">This is your Neconyan account profile. Chat personas are separate identities used inside conversations.</p>
+        <div class="accountsDisabledHint" style="display: none;">
+            <span>To enable multiple accounts, restart Neconyan with</span> <code>enableUserAccounts</code> <span>set to true in config.yaml.</span>
+        </div>
+    </section>
+
+    <section class="neconyan-account-section">
+        <h3 data-i18n="Account Info">Account Info</h3>
+        <div class="neconyan-account-info-grid">
+            <div class="neconyan-account-avatar-column">
+                <div class="avatar" data-i18n="[title]To change your user avatar, use the buttons below or select a default persona in the Persona Management menu." title="To change your user avatar, use the buttons below or select a default persona in the Persona Management menu.">
+                    <img src="img/user-default.png" alt="Account avatar">
+                </div>
+                <div class="neconyan-avatar-actions" role="group" aria-label="Avatar actions">
+                    <button type="button" class="userAvatarChange right_menu_button menu_button menu_button_icon" data-i18n="[title]Set your custom avatar." title="Set your custom avatar.">
+                        <i class="fa-fw fa-solid fa-image" aria-hidden="true"></i>
+                        <span data-i18n="Change avatar">Change avatar</span>
+                    </button>
+                    <button type="button" class="userAvatarRemove right_menu_button menu_button menu_button_icon" data-i18n="[title]Remove your custom avatar." title="Remove your custom avatar.">
+                        <i class="fa-fw fa-solid fa-trash" aria-hidden="true"></i>
+                        <span data-i18n="Remove avatar">Remove avatar</span>
+                    </button>
+                </div>
+                <form>
+                    <input type="file" class="avatarUpload" accept="image/*" hidden>
+                </form>
+            </div>
+            <dl class="neconyan-account-facts">
+                <div><dt data-i18n="Handle:">Handle:</dt><dd class="userHandle"></dd></div>
+                <div><dt data-i18n="Role:">Role:</dt><dd class="userRole"></dd></div>
+                <div><dt data-i18n="Created:">Created:</dt><dd class="userCreated"></dd></div>
+                <div>
+                    <dt data-i18n="Password:">Password:</dt>
+                    <dd>
+                        <span class="hasPassword"><i class="fa-fw fa-solid fa-lock" aria-hidden="true"></i> <span data-i18n="Protected">Protected</span></span>
+                        <span class="noPassword"><i class="fa-fw fa-solid fa-lock-open" aria-hidden="true"></i> <span data-i18n="Not set">Not set</span></span>
+                    </dd>
+                </div>
+            </dl>
+        </div>
+    </section>
+
+    <section class="neconyan-account-section">
+        <h3 data-i18n="Settings and backups">Settings and backups</h3>
+        <p class="neconyan-account-note">Restore saved settings snapshots or export a complete backup of this account.</p>
+        <div class="neconyan-account-action-grid">
+            <div class="neconyan-account-action">
+                <button type="button" class="userSettingsSnapshotsButton menu_button menu_button_icon" data-i18n="[title]Manage your settings snapshots." title="Manage your settings snapshots.">
+                    <i class="fa-fw fa-solid fa-camera" aria-hidden="true"></i>
+                    <span data-i18n="Settings Snapshots">Settings Snapshots</span>
+                </button>
+                <small>Save, restore, or remove settings snapshots.</small>
+            </div>
+            <div class="neconyan-account-action">
+                <button type="button" class="userBackupButton menu_button menu_button_icon" data-i18n="[title]Download a complete backup of your user data." title="Download a complete backup of your user data.">
+                    <i class="fa-fw fa-solid fa-download" aria-hidden="true"></i>
+                    <span data-i18n="Download Backup">Download Backup</span>
+                </button>
+                <small>Export your account data and settings in one backup.</small>
+            </div>
+            <div data-require-accounts class="neconyan-account-action">
+                <button type="button" class="userChangePasswordButton menu_button menu_button_icon" title="Change your password.">
+                    <i class="fa-fw fa-solid fa-key" aria-hidden="true"></i>
+                    <span data-i18n="Change Password">Change Password</span>
+                </button>
+                <small>Change the password used to sign in to this account.</small>
+            </div>
+        </div>
+    </section>
+
+    <section class="neconyan-account-section neconyan-account-danger">
+        <h3 data-i18n="Reset">Reset</h3>
+        <p class="neconyan-account-note">Reset Settings restores the default app settings. Reset Everything permanently removes this account’s data.</p>
+        <div class="neconyan-account-action-grid">
+            <div class="neconyan-account-action">
+                <button type="button" class="userResetSettingsButton menu_button menu_button_icon" data-i18n="[title]Reset your settings to factory defaults." title="Reset your settings to factory defaults.">
+                    <i class="fa-fw fa-solid fa-cog warning" aria-hidden="true"></i>
+                    <span data-i18n="Reset Settings">Reset Settings</span>
+                </button>
+            </div>
+            <div class="neconyan-account-action">
+                <button type="button" class="userResetAllButton menu_button menu_button_icon" data-i18n="[title]Wipe all user data and reset your account to factory settings." title="Wipe all user data and reset your account to factory settings.">
+                    <i class="fa-fw fa-solid fa-skull warning" aria-hidden="true"></i>
+                    <span data-i18n="Reset Everything">Reset Everything</span>
+                </button>
+            </div>
+        </div>
+    </section>
+</div>

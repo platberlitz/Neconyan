@@ -1,0 +1,26 @@
+<div class="wide100p">
+    <div class="flex-container alignItemsBaseline">
+        <h3 class="margin0">
+            <span data-i18n="Connection Profile">Connection Profile</span>
+            <a href="https://docs.sillytavern.app/usage/core-concepts/connection-profiles" target="_blank" class="notes-link">
+                <span class="fa-solid fa-circle-question note-link-span"></span>
+            </a>
+        </h3>
+        <i id="connection_profile_spinner" class="fa-solid fa-spinner fa-spin hidden"></i>
+    </div>
+    <div class="flex-container flexFlowColumn connection-profile-picker">
+        <select class="text_pole wide100p" id="connection_profiles" aria-label="Connection Profile" data-i18n="[aria-label]Connection Profile"></select>
+        <div class="connection-profile-actions" role="group" aria-label="Connection profile actions">
+            <button type="button" id="view_connection_profile" class="menu_button" title="View connection profile details" data-i18n="[title]View connection profile details"><i class="fa-solid fa-info-circle" aria-hidden="true"></i><span data-i18n="Details">Details</span></button>
+            <button type="button" id="create_connection_profile" class="menu_button" title="Create a new connection profile" data-i18n="[title]Create a new connection profile"><i class="fa-solid fa-file-circle-plus" aria-hidden="true"></i><span data-i18n="New profile">New profile</span></button>
+            <button type="button" id="manage_profile_folders" class="menu_button" title="Manage folders" data-i18n="[title]Manage folders"><i class="fa-solid fa-folder-tree" aria-hidden="true"></i><span data-i18n="Folders">Folders</span></button>
+            <button type="button" id="delete_all_connection_profiles" class="menu_button" title="Delete all connection profiles" data-i18n="[title]Delete all connection profiles"><i class="fa-solid fa-trash-arrow-up" aria-hidden="true"></i><span data-i18n="Delete all">Delete all</span></button>
+            <button type="button" id="update_connection_profile" class="menu_button" title="Update a connection profile" data-i18n="[title]Update a connection profile"><i class="fa-solid fa-save" aria-hidden="true"></i><span data-i18n="Save">Save</span></button>
+            <button type="button" id="edit_connection_profile" class="menu_button" title="Edit a connection profile" data-i18n="[title]Edit a connection profile"><i class="fa-solid fa-pencil" aria-hidden="true"></i><span data-i18n="Edit">Edit</span></button>
+            <button type="button" id="toggle_profile_favorite" class="menu_button" title="Toggle favorite" data-i18n="[title]Toggle favorite"><i class="fa-solid fa-star" aria-hidden="true"></i><span data-i18n="Favourite">Favourite</span></button>
+            <button type="button" id="reload_connection_profile" class="menu_button" title="Reload a connection profile" data-i18n="[title]Reload a connection profile"><i class="fa-solid fa-recycle" aria-hidden="true"></i><span data-i18n="Reload">Reload</span></button>
+            <button type="button" id="delete_connection_profile" class="menu_button" title="Delete a connection profile" data-i18n="[title]Delete a connection profile"><i class="fa-solid fa-trash-can" aria-hidden="true"></i><span data-i18n="Delete">Delete</span></button>
+        </div>
+    </div>
+    <div id="connection_profile_details_content" class="hidden"></div>
+</div>

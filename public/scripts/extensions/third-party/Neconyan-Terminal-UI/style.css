@@ -1,0 +1,3049 @@
+/*
+ * Terminal UI: command-first interface for Neconyan.
+ * Every rule is gated under body.sbterm (added by index.js), so this sheet is
+ * inert until the extension is enabled and disable is a single class removal.
+ *
+ * Tokens (12): --sbterm-bg, -bg-alt, -fg, -fg-dim, -accent, -accent2,
+ *              -ok, -warn, -err, -border, -glow, -selected-fg
+ * Palette selection: body[data-sbterm-palette="<slug>"].
+ */
+
+/* 1. Tokens and palettes */
+/* Defaults double as the phosphor-green palette so a missing/unknown
+   data attribute still renders. */
+body.sbterm {
+    --sbterm-bg: #050807;
+    --sbterm-bg-alt: #07100b;
+    --sbterm-fg: #d8ffe4;
+    --sbterm-fg-dim: #7fa88c;
+    --sbterm-accent: #73ff9b;
+    --sbterm-accent2: #8ff0d8;
+    --sbterm-ok: #73ff9b;
+    --sbterm-warn: #ffe082;
+    --sbterm-err: #ff6b6b;
+    --sbterm-border: #396b4a;
+    --sbterm-glow: rgba(115, 255, 155, 0.18);
+    --sbterm-selected-fg: var(--sbterm-bg);
+}
+
+body.sbterm[data-sbterm-palette='terminal-amber'] {
+    --sbterm-bg: #080500;
+    --sbterm-bg-alt: #100a00;
+    --sbterm-fg: #ffd591;
+    --sbterm-fg-dim: #a8823c;
+    --sbterm-accent: #ffb000;
+    --sbterm-accent2: #ffc94d;
+    --sbterm-ok: #ffd580;
+    --sbterm-warn: #ffb000;
+    --sbterm-err: #ff6040;
+    --sbterm-border: #7a5b21;
+    --sbterm-glow: rgba(255, 176, 0, 0.2);
+}
+
+/* Monochrome by design: states differ by weight/inversion, not hue. */
+body.sbterm[data-sbterm-palette='gameboy-dmg'] {
+    --sbterm-bg: #8bac0f;
+    --sbterm-bg-alt: #9bbc0f;
+    --sbterm-fg: #0f380f;
+    --sbterm-fg-dim: #173f17;
+    --sbterm-accent: #0f380f;
+    --sbterm-accent2: #1e3d1e;
+    --sbterm-ok: #0f380f;
+    --sbterm-warn: #0f380f;
+    --sbterm-err: #0f380f;
+    --sbterm-border: #0f380f;
+    --sbterm-glow: transparent;
+}
+
+/* The same four DMG shades with the panel unlit: ink becomes screen, screen
+   becomes ink. Monochrome by design like its light twin. */
+body.sbterm[data-sbterm-palette='gameboy-dmg-dark'] {
+    --sbterm-bg: #0f380f;
+    --sbterm-bg-alt: #1e4d1e;
+    --sbterm-fg: #9bbc0f;
+    --sbterm-fg-dim: #7f9c14;
+    --sbterm-accent: #9bbc0f;
+    --sbterm-accent2: #8bac0f;
+    --sbterm-ok: #9bbc0f;
+    --sbterm-warn: #9bbc0f;
+    --sbterm-err: #9bbc0f;
+    --sbterm-border: #8bac0f;
+    --sbterm-glow: transparent;
+}
+
+body.sbterm[data-sbterm-palette='teletext'] {
+    --sbterm-bg: #050509;
+    --sbterm-bg-alt: #12121a;
+    --sbterm-fg: #f7f7ff;
+    --sbterm-fg-dim: #8888aa;
+    --sbterm-accent: #ffff00;
+    --sbterm-accent2: #00ffff;
+    --sbterm-ok: #00ff00;
+    --sbterm-warn: #ffff00;
+    --sbterm-err: #ff5555;
+    --sbterm-border: #63636c;
+    --sbterm-glow: transparent;
+}
+
+body.sbterm[data-sbterm-palette='chrome-98'] {
+    --sbterm-bg: #c0c0c0;
+    --sbterm-bg-alt: #dfdfdf;
+    --sbterm-fg: #090914;
+    --sbterm-fg-dim: #444451;
+    --sbterm-accent: #000080;
+    --sbterm-accent2: #005757;
+    --sbterm-ok: #005c00;
+    --sbterm-warn: #5c4d00;
+    --sbterm-err: #800000;
+    --sbterm-border: #66666c;
+    --sbterm-glow: transparent;
+}
+
+body.sbterm[data-sbterm-palette='dos-cobalt'] {
+    --sbterm-bg: #081a52;
+    --sbterm-bg-alt: #102a78;
+    --sbterm-fg: #e5efff;
+    --sbterm-fg-dim: #8ea6d6;
+    --sbterm-accent: #ffe28a;
+    --sbterm-accent2: #87e5e0;
+    --sbterm-ok: #8ff0a8;
+    --sbterm-warn: #ffe28a;
+    --sbterm-err: #ff9f9f;
+    --sbterm-border: #5b82ca;
+    --sbterm-glow: rgba(167, 199, 255, 0.15);
+}
+
+body.sbterm[data-sbterm-palette='paper-tape'] {
+    --sbterm-bg: #f5e7c7;
+    --sbterm-bg-alt: #ead7ad;
+    --sbterm-fg: #403329;
+    --sbterm-fg-dim: #73522e;
+    --sbterm-accent: #8a4e27;
+    --sbterm-accent2: #326766;
+    --sbterm-ok: #3f665e;
+    --sbterm-warn: #82550f;
+    --sbterm-err: #9c2f2f;
+    --sbterm-border: #8b6942;
+    --sbterm-glow: transparent;
+}
+
+/* Paper Tape read by lamplight: the same warm stock and inks, but the page is
+   the dark side of the tape and the ink glows off it. */
+body.sbterm[data-sbterm-palette='paper-tape-dark'] {
+    --sbterm-bg: #1c1611;
+    --sbterm-bg-alt: #272018;
+    --sbterm-fg: #e8dcc0;
+    --sbterm-fg-dim: #a8977a;
+    --sbterm-accent: #d99a5c;
+    --sbterm-accent2: #7fb3ac;
+    --sbterm-ok: #8fbfa8;
+    --sbterm-warn: #d9b45c;
+    --sbterm-err: #e08a7a;
+    --sbterm-border: #8a7149;
+    --sbterm-glow: rgba(217, 154, 92, 0.14);
+}
+
+body.sbterm[data-sbterm-palette='vfd-cyan'] {
+    --sbterm-bg: #0e1c1c;
+    --sbterm-bg-alt: #172b2b;
+    --sbterm-fg: #d7f6f2;
+    --sbterm-fg-dim: #7fa8a5;
+    --sbterm-accent: #58e8dd;
+    --sbterm-accent2: #8cfff5;
+    --sbterm-ok: #9fe48c;
+    --sbterm-warn: #f6ce7a;
+    --sbterm-err: #ff9090;
+    --sbterm-border: #4d7b77;
+    --sbterm-glow: rgba(88, 232, 221, 0.18);
+}
+
+body.sbterm[data-sbterm-palette='dracula'] {
+    --sbterm-bg: #282a36;
+    --sbterm-bg-alt: #343746;
+    --sbterm-fg: #f8f8f2;
+    --sbterm-fg-dim: #9aa5ce;
+    --sbterm-accent: #bd93f9;
+    --sbterm-accent2: #8be9fd;
+    --sbterm-ok: #50fa7b;
+    --sbterm-warn: #f1fa8c;
+    --sbterm-err: #ff7777;
+    --sbterm-border: #7382b1;
+    --sbterm-glow: rgba(189, 147, 249, 0.15);
+}
+
+body.sbterm[data-sbterm-palette='gruvbox'] {
+    --sbterm-bg: #282828;
+    --sbterm-bg-alt: #3c3836;
+    --sbterm-fg: #ebdbb2;
+    --sbterm-fg-dim: #afa18e;
+    --sbterm-accent: #fe8019;
+    --sbterm-accent2: #88a99c;
+    --sbterm-ok: #b8bb26;
+    --sbterm-warn: #fabd2f;
+    --sbterm-err: #fc7c6d;
+    --sbterm-border: #8f8375;
+    --sbterm-glow: rgba(254, 128, 25, 0.12);
+}
+
+body.sbterm[data-sbterm-palette='solarized-dark'] {
+    --sbterm-bg: #002b36;
+    --sbterm-bg-alt: #073642;
+    --sbterm-fg: #93a1a1;
+    --sbterm-fg-dim: #8a9da3;
+    --sbterm-accent: #4da0da;
+    --sbterm-accent2: #3ba9a0;
+    --sbterm-ok: #8fa114;
+    --sbterm-warn: #bc951a;
+    --sbterm-err: #e87876;
+    --sbterm-border: #658188;
+    --sbterm-glow: rgba(38, 139, 210, 0.12);
+}
+
+body.sbterm[data-sbterm-palette='nord'] {
+    --sbterm-bg: #2e3440;
+    --sbterm-bg-alt: #3b4252;
+    --sbterm-fg: #d8dee9;
+    --sbterm-fg-dim: #a3b0c6;
+    --sbterm-accent: #88c0d0;
+    --sbterm-accent2: #98b2cc;
+    --sbterm-ok: #a3be8c;
+    --sbterm-warn: #ebcb8b;
+    --sbterm-err: #d9a0a6;
+    --sbterm-border: #8490a5;
+    --sbterm-glow: rgba(136, 192, 208, 0.12);
+}
+
+/* Cyan phosphor cut with magenta, the way a neon sign reads at night. */
+body.sbterm[data-sbterm-palette='neon-grid'] {
+    --sbterm-bg: #08080f;
+    --sbterm-bg-alt: #0c0c16;
+    --sbterm-fg: #d8e6ee;
+    --sbterm-fg-dim: #5f7a86;
+    --sbterm-accent: #00f0ff;
+    --sbterm-accent2: #ff2fa0;
+    --sbterm-ok: #00ff9f;
+    --sbterm-warn: #ffb400;
+    --sbterm-err: #ff4d4d;
+    --sbterm-border: #048893;
+    --sbterm-glow: rgba(0, 240, 255, 0.18);
+}
+
+body.sbterm[data-sbterm-palette='chrome-hud'] {
+    --sbterm-bg: #050e18;
+    --sbterm-bg-alt: #08151f;
+    --sbterm-fg: #cfe6f2;
+    --sbterm-fg-dim: #5b7d90;
+    --sbterm-accent: #4fc3f7;
+    --sbterm-accent2: #00e5ff;
+    --sbterm-ok: #26c6da;
+    --sbterm-warn: #ffcc66;
+    --sbterm-err: #ff6f61;
+    --sbterm-border: #1a6c92;
+    --sbterm-glow: rgba(79, 195, 247, 0.16);
+}
+
+/* The source theme splits its header into red and cyan fringes; here the split lives in the two accents instead. */
+body.sbterm[data-sbterm-palette='glitchwave'] {
+    --sbterm-bg: #060606;
+    --sbterm-bg-alt: #0d0d0d;
+    --sbterm-fg: #e8e8e8;
+    --sbterm-fg-dim: #787878;
+    --sbterm-accent: #ff00ff;
+    --sbterm-accent2: #00ffff;
+    --sbterm-ok: #00ff88;
+    --sbterm-warn: #ffea00;
+    --sbterm-err: #ff3860;
+    --sbterm-border: #9c389c;
+    --sbterm-glow: rgba(255, 0, 255, 0.16);
+}
+
+body.sbterm[data-sbterm-palette='circuitry'] {
+    --sbterm-bg: #062019;
+    --sbterm-bg-alt: #08281f;
+    --sbterm-fg: #cfe0d4;
+    --sbterm-fg-dim: #6f8a78;
+    --sbterm-accent: #d4af37;
+    --sbterm-accent2: #71c7a8;
+    --sbterm-ok: #8fbf9f;
+    --sbterm-warn: #e8c95a;
+    --sbterm-err: #d97a6c;
+    --sbterm-border: #767341;
+    --sbterm-glow: rgba(212, 175, 55, 0.14);
+}
+
+body.sbterm[data-sbterm-palette='datastream'] {
+    --sbterm-bg: #101010;
+    --sbterm-bg-alt: #161616;
+    --sbterm-fg: #c8ccc8;
+    --sbterm-fg-dim: #6c726c;
+    --sbterm-accent: #8cffaa;
+    --sbterm-accent2: #8ad8d8;
+    --sbterm-ok: #7ad8a0;
+    --sbterm-warn: #d8c48a;
+    --sbterm-err: #e08a8a;
+    --sbterm-border: #4f6e57;
+    --sbterm-glow: rgba(140, 255, 170, 0.12);
+}
+
+/* Light: a lab printout, ink on bright stock. */
+body.sbterm[data-sbterm-palette='biometric-lab'] {
+    --sbterm-bg: #fbfdfb;
+    --sbterm-bg-alt: #eef5f2;
+    --sbterm-fg: #29434a;
+    --sbterm-fg-dim: #718b91;
+    --sbterm-accent: #14758a;
+    --sbterm-accent2: #23616d;
+    --sbterm-ok: #3f7a6b;
+    --sbterm-warn: #8a6410;
+    --sbterm-err: #b03636;
+    --sbterm-border: #3a959f;
+    --sbterm-glow: transparent;
+}
+
+body.sbterm[data-sbterm-palette='hazard-console'] {
+    --sbterm-bg: #171a18;
+    --sbterm-bg-alt: #25271f;
+    --sbterm-fg: #e3e6d9;
+    --sbterm-fg-dim: #8f947f;
+    --sbterm-accent: #ffcc33;
+    --sbterm-accent2: #79c4b7;
+    --sbterm-ok: #b8d26b;
+    --sbterm-warn: #f0e06b;
+    --sbterm-err: #e05c3f;
+    --sbterm-border: #8b7326;
+    --sbterm-glow: rgba(255, 204, 51, 0.16);
+}
+
+body.sbterm[data-sbterm-palette='vaporwave-sunset'] {
+    --sbterm-bg: #20124d;
+    --sbterm-bg-alt: #3b1c6b;
+    --sbterm-fg: #eddcff;
+    --sbterm-fg-dim: #a78ac8;
+    --sbterm-accent: #ff2e93;
+    --sbterm-accent2: #00ffe0;
+    --sbterm-ok: #7cf5c4;
+    --sbterm-warn: #ffd700;
+    --sbterm-err: #ff5c5c;
+    --sbterm-border: #238697;
+    --sbterm-glow: rgba(255, 46, 147, 0.18);
+}
+
+body.sbterm[data-sbterm-palette='synthwave-drive'] {
+    --sbterm-bg: #150c33;
+    --sbterm-bg-alt: #241350;
+    --sbterm-fg: #e4d9ff;
+    --sbterm-fg-dim: #9d8ac0;
+    --sbterm-accent: #ff6ec7;
+    --sbterm-accent2: #4dd0e1;
+    --sbterm-ok: #69f0ae;
+    --sbterm-warn: #ffd740;
+    --sbterm-err: #ff5252;
+    --sbterm-border: #99568e;
+    --sbterm-glow: rgba(255, 110, 199, 0.18);
+}
+
+body.sbterm[data-sbterm-palette='arcade-cabinet'] {
+    --sbterm-bg: #0a0a0a;
+    --sbterm-bg-alt: #141414;
+    --sbterm-fg: #f0f0f0;
+    --sbterm-fg-dim: #7a7a7a;
+    --sbterm-accent: #ffd700;
+    --sbterm-accent2: #39cccc;
+    --sbterm-ok: #2ecc40;
+    --sbterm-warn: #ff851b;
+    --sbterm-err: #ff4136;
+    --sbterm-border: #847005;
+    --sbterm-glow: rgba(255, 215, 0, 0.16);
+}
+
+body.sbterm[data-sbterm-palette='cassette-future'] {
+    --sbterm-bg: #1d1d23;
+    --sbterm-bg-alt: #2d292e;
+    --sbterm-fg: #e7ddd3;
+    --sbterm-fg-dim: #9b8b80;
+    --sbterm-accent: #f19a5a;
+    --sbterm-accent2: #82c8c4;
+    --sbterm-ok: #94b66d;
+    --sbterm-warn: #f4c36d;
+    --sbterm-err: #d66e62;
+    --sbterm-border: #956f55;
+    --sbterm-glow: rgba(241, 154, 90, 0.14);
+}
+
+/* Light: warm stock, black rule, one spot red — the whole newspaper palette. */
+body.sbterm[data-sbterm-palette='newsprint'] {
+    --sbterm-bg: #f7f2e8;
+    --sbterm-bg-alt: #f2ece1;
+    --sbterm-fg: #1f1f1d;
+    --sbterm-fg-dim: #6e6a60;
+    --sbterm-accent: #b22222;
+    --sbterm-accent2: #2f4f6f;
+    --sbterm-ok: #2f5f3f;
+    --sbterm-warn: #7a6a4a;
+    --sbterm-err: #8a2a2a;
+    --sbterm-border: #5c584e;
+    --sbterm-glow: transparent;
+}
+
+/* Monochrome blue by design: the source draws in one ink on drafting stock. */
+body.sbterm[data-sbterm-palette='blueprint'] {
+    --sbterm-bg: #0b1a2b;
+    --sbterm-bg-alt: #0e1f33;
+    --sbterm-fg: #dceaf5;
+    --sbterm-fg-dim: #6a8ba8;
+    --sbterm-accent: #78c8ff;
+    --sbterm-accent2: #c0e4ff;
+    --sbterm-ok: #8ac0e0;
+    --sbterm-warn: #ffd08a;
+    --sbterm-err: #ff9a9a;
+    --sbterm-border: #467090;
+    --sbterm-glow: rgba(120, 200, 255, 0.12);
+}
+
+body.sbterm[data-sbterm-palette='eldritch-deep'] {
+    --sbterm-bg: #05121a;
+    --sbterm-bg-alt: #0a1c26;
+    --sbterm-fg: #cfe4e8;
+    --sbterm-fg-dim: #5f7d84;
+    --sbterm-accent: #7ce8dc;
+    --sbterm-accent2: #a78bfa;
+    --sbterm-ok: #4ade80;
+    --sbterm-warn: #e8b45c;
+    --sbterm-err: #f87171;
+    --sbterm-border: #457071;
+    --sbterm-glow: rgba(124, 232, 220, 0.16);
+}
+
+body.sbterm[data-sbterm-palette='steampunk-brass'] {
+    --sbterm-bg: #2b1f14;
+    --sbterm-bg-alt: #3a2a18;
+    --sbterm-fg: #e0d4c0;
+    --sbterm-fg-dim: #9a8468;
+    --sbterm-accent: #c4944a;
+    --sbterm-accent2: #8aa89a;
+    --sbterm-ok: #8a9a6a;
+    --sbterm-warn: #d4a85a;
+    --sbterm-err: #b5503a;
+    --sbterm-border: #8e7552;
+    --sbterm-glow: rgba(196, 148, 74, 0.14);
+}
+
+body.sbterm[data-sbterm-palette='celestial-chart'] {
+    --sbterm-bg: #080d20;
+    --sbterm-bg-alt: #0d1430;
+    --sbterm-fg: #d4dcf0;
+    --sbterm-fg-dim: #6e7a9c;
+    --sbterm-accent: #e6c46a;
+    --sbterm-accent2: #8ab4e8;
+    --sbterm-ok: #7fd8c8;
+    --sbterm-warn: #d4b45a;
+    --sbterm-err: #e88a9a;
+    --sbterm-border: #706753;
+    --sbterm-glow: rgba(230, 196, 106, 0.12);
+}
+
+body.sbterm[data-sbterm-palette='frost-rune'] {
+    --sbterm-bg: #182a3c;
+    --sbterm-bg-alt: #263e56;
+    --sbterm-fg: #d7e8ed;
+    --sbterm-fg-dim: #849eaa;
+    --sbterm-accent: #8fd1e2;
+    --sbterm-accent2: #b5e9ef;
+    --sbterm-ok: #7fb7a3;
+    --sbterm-warn: #d8c07a;
+    --sbterm-err: #d59bb3;
+    --sbterm-border: #6c8f9f;
+    --sbterm-glow: rgba(143, 209, 226, 0.14);
+}
+
+/* Monochrome by design like the DMG palettes: states differ by weight, not hue. */
+body.sbterm[data-sbterm-palette='monochrome-slate'] {
+    --sbterm-bg: #1c1c1c;
+    --sbterm-bg-alt: #232323;
+    --sbterm-fg: #dcdcdc;
+    --sbterm-fg-dim: #8a8a8a;
+    --sbterm-accent: #f2f2f2;
+    --sbterm-accent2: #c8c8c8;
+    --sbterm-ok: #a0a0a0;
+    --sbterm-warn: #dcdcdc;
+    --sbterm-err: #ffffff;
+    --sbterm-border: #717171;
+    --sbterm-glow: transparent;
+}
+
+body.sbterm[data-sbterm-palette='ember-hearth'] {
+    --sbterm-bg: #241c19;
+    --sbterm-bg-alt: #2e2420;
+    --sbterm-fg: #e4d8cc;
+    --sbterm-fg-dim: #9a8878;
+    --sbterm-accent: #d97736;
+    --sbterm-accent2: #e8c07d;
+    --sbterm-ok: #8aa8a0;
+    --sbterm-warn: #e0a458;
+    --sbterm-err: #c25b3c;
+    --sbterm-border: #8c6c59;
+    --sbterm-glow: rgba(217, 119, 54, 0.14);
+}
+
+body.sbterm[data-sbterm-palette='construction-paper'] {
+    --sbterm-bg: #241c20;
+    --sbterm-bg-alt: #332126;
+    --sbterm-fg: #eadfce;
+    --sbterm-fg-dim: #a39182;
+    --sbterm-accent: #ffb83e;
+    --sbterm-accent2: #7ed3c1;
+    --sbterm-ok: #9fd25c;
+    --sbterm-warn: #f4dc73;
+    --sbterm-err: #ff6b5a;
+    --sbterm-border: #956d2f;
+    --sbterm-glow: rgba(255, 184, 62, 0.14);
+}
+
+body.sbterm[data-sbterm-palette='midnight-kawaii'] {
+    --sbterm-bg: #0e1430;
+    --sbterm-bg-alt: #18183b;
+    --sbterm-fg: #e4e0f4;
+    --sbterm-fg-dim: #9994b8;
+    --sbterm-accent: #d0b9ff;
+    --sbterm-accent2: #8ee9e1;
+    --sbterm-ok: #b8f0b2;
+    --sbterm-warn: #ffd27d;
+    --sbterm-err: #f08fc7;
+    --sbterm-border: #6c6594;
+    --sbterm-glow: rgba(208, 185, 255, 0.16);
+}
+
+body.sbterm[data-sbterm-palette='night-orchid'] {
+    --sbterm-bg: #20162d;
+    --sbterm-bg-alt: #2d1b38;
+    --sbterm-fg: #eaddec;
+    --sbterm-fg-dim: #a893aa;
+    --sbterm-accent: #e5a9e4;
+    --sbterm-accent2: #8fd4d4;
+    --sbterm-ok: #7fc09b;
+    --sbterm-warn: #f2c17e;
+    --sbterm-err: #e36eaf;
+    --sbterm-border: #84658b;
+    --sbterm-glow: rgba(229, 169, 228, 0.14);
+}
+
+/* Inherit: tokens follow the active host theme; host vars are never
+   remapped in this mode (see §2 guard), which avoids a var() cycle. */
+body.sbterm[data-sbterm-palette='inherit'] {
+    --sbterm-bg: var(--color-background, #101014);
+    --sbterm-bg-alt: var(--color-surface, #18181f);
+    --sbterm-fg: var(--SmartThemeBodyColor, var(--color-text, #dddddd));
+    --sbterm-fg-dim: var(--color-text-secondary, #999999);
+    --sbterm-accent: var(--sb-accent, var(--SmartThemeQuoteColor, #73ff9b));
+    --sbterm-accent2: var(--SmartThemeEmColor, #8ff0d8);
+    --sbterm-ok: var(--color-success, #73ff9b);
+    --sbterm-warn: var(--color-warning, #ffe082);
+    --sbterm-err: var(--color-danger, #ff6b6b);
+    --sbterm-border: var(--SmartThemeBorderColor, var(--color-border, #444444));
+    --sbterm-glow: color-mix(in srgb, var(--sbterm-accent) 15%, transparent);
+    --sbterm-selected-fg: var(--sb-on-accent, var(--color-on-primary, var(--sbterm-bg)));
+}
+
+body.sbterm {
+    color-scheme: dark;
+}
+
+body.sbterm:is([data-sbterm-palette='gameboy-dmg'], [data-sbterm-palette='chrome-98'], [data-sbterm-palette='paper-tape'], [data-sbterm-palette='biometric-lab'], [data-sbterm-palette='newsprint']) {
+    color-scheme: light;
+}
+
+body.sbterm[data-sbterm-palette='inherit'] {
+    color-scheme: normal;
+}
+
+/* 2. Host variable remap */
+body.sbterm:not([data-sbterm-palette='inherit']) {
+    --SmartThemeBodyColor: var(--sbterm-fg);
+    --SmartThemeEmColor: var(--sbterm-accent2);
+    --SmartThemeUnderlineColor: var(--sbterm-accent2);
+    --SmartThemeQuoteColor: var(--sbterm-accent);
+    --SmartThemeBlurTintColor: var(--sbterm-bg-alt);
+    --SmartThemeChatTintColor: var(--sbterm-bg);
+    --SmartThemeUserMesBlurTintColor: var(--sbterm-bg);
+    --SmartThemeBotMesBlurTintColor: var(--sbterm-bg);
+    --SmartThemeShadowColor: color-mix(in oklch, var(--sbterm-bg) 72%, var(--sbterm-fg));
+    --SmartThemeBorderColor: var(--sbterm-border);
+    --color-primary: var(--sbterm-accent);
+    --color-accent: var(--sbterm-accent);
+    --sb-accent: var(--sbterm-accent);
+    --sb-accent-soft: var(--sbterm-glow);
+    --color-background: var(--sbterm-bg);
+    --color-surface: var(--sbterm-bg-alt);
+    --color-surface-strong: var(--sbterm-bg-alt);
+    --color-surface-hover: var(--sbterm-bg-alt);
+    --color-text: var(--sbterm-fg);
+    --color-text-secondary: var(--sbterm-fg-dim);
+    --color-border: var(--sbterm-border);
+    --color-focus-ring: var(--sbterm-accent);
+    --color-success: var(--sbterm-ok);
+    --color-danger: var(--sbterm-err);
+    --color-warning: var(--sbterm-warn);
+    --color-user-message-bg: transparent;
+    --color-bot-message-bg: transparent;
+    --sb-color-success: var(--sbterm-ok);
+    --sb-color-warning: var(--sbterm-warn);
+    --sb-color-danger: var(--sbterm-err);
+    --sb-color-error: var(--sbterm-err);
+    --sb-focus-ring: var(--sbterm-accent);
+    --sb-input-bg: var(--sbterm-bg-alt);
+    --sb-input-border: var(--sbterm-border);
+    --sb-shell-border: var(--sbterm-border);
+    --sb-on-accent: var(--sbterm-bg);
+    --sb-on-solid-accent: var(--sbterm-bg);
+    --active: var(--sbterm-accent);
+    --warning: var(--sbterm-warn);
+    --fullred: var(--sbterm-err);
+    --golden: var(--sbterm-warn);
+}
+
+/* 3. Foundation */
+body.sbterm {
+    --sb-radius-sm: 0;
+    --sb-radius-md: 0;
+    --sb-radius-lg: 0;
+    --sb-radius-xl: 0;
+    --sb-radius-button: 0;
+    --sbterm-prose-width: 78ch;
+    /* Monospace reads larger than a proportional face at the same px, so the
+       host's mainFontSize is oversized here. One knob — raise toward 1 to
+       match the host exactly. */
+    --sbterm-text-scale: 0.92;
+    --sb-shell-surface: var(--sbterm-bg);
+    --sb-shell-main-bg: var(--sbterm-bg);
+    --sb-shell-nav-bg: var(--sbterm-bg-alt);
+    --sb-shell-header-bg: var(--sbterm-bg-alt);
+    /* The host's mobile shell paints #top-bar/#send_form/#sb-chatbar from
+       these vars, which it RESOLVES AT :root — above body, so the §2 remap
+       never reaches them and light palettes got a hardcoded dark top bar.
+       Redeclaring them here makes them resolve against the terminal tokens. */
+    --sb-mobile-default-surface-solid: var(--sbterm-bg-alt);
+    --sb-mobile-default-card-solid: var(--sbterm-bg-alt);
+    --sb-mobile-default-input-solid: var(--sbterm-bg-alt);
+    --sb-topbar-surface-bg: var(--sbterm-bg-alt);
+    --sb-chatbar-surface-bg: var(--sbterm-bg-alt);
+    --sb-composer-surface-bg: var(--sbterm-bg);
+    /* The whole derived chain has to be redeclared, not just the source: the
+       host computes -base and -bg FROM -source at :root, so those keep the
+       host theme's dark tint even after -source is remapped here. Missing
+       these is what left the chat area dark under a light palette. */
+    --sb-chat-surface-source: var(--sbterm-bg);
+    --sb-chat-surface-base: var(--sbterm-bg);
+    --sb-chat-surface-bg: var(--sbterm-bg);
+    --sb-fixed-surface-base: var(--sbterm-bg-alt);
+    --sb-fixed-surface-bg: var(--sbterm-bg-alt);
+    --sb-composer-surface-base: var(--sbterm-bg);
+    --sb-composer-input-bg: var(--sbterm-bg-alt);
+    --sb-button-bg: var(--sbterm-bg-alt);
+    --sb-button-hover: var(--sbterm-bg-alt);
+    --sb-shell-tab-active-bg: var(--sbterm-bg-alt);
+    --sb-shell-header-bg: var(--sbterm-bg-alt);
+    /* Same trap, and the one that painted a dark slab behind every character
+       turn: neconyan-chat-styles.css derives these two from
+       --SmartThemeBotMesBlurTintColor AT :root, above the §2 remap, so they kept
+       the host theme's rgba(29,33,40,0.9) no matter which palette was live.
+       Whisper, Hush, Tide and Echo paint the character turn with them under
+       `!important` and outrank the transparent rule in §5, which is why Ripple —
+       whose rule only ties it — was the one style that looked right. Fixing the
+       source covers every style that reads them, now and later. */
+    --sbterm-user-mes-bg: color-mix(in oklch, var(--sbterm-bg-alt) 86%, var(--sbterm-bg));
+    --moonlit-sb-bot-message-bg: transparent;
+    --moonlit-sb-user-message-bg: var(--sbterm-user-mes-bg);
+    /* Same trap again, and the one that made roleplay text ignore the host's
+       font-size slider: neconyan-chat-styles.css:24 declares
+       --messageTextFontSize as a flat 15px, then :1296 applies it to
+       `#chat .mes_text p` under !important for Echo/Whisper/Hush/Ripple/Tide.
+       Targeting the <p> child outranks the §5 rule on .mes_text, so paragraphs
+       stayed 15px at every slider position while the rest of the interface
+       shrank. Fixing the token covers all five styles without naming any of
+       them; unlike --messageLineHeight, it is only declared at :root, so a
+       body-level value reaches the mobile shell too.
+       The two name tokens are the same bug one line up (:1289): the host sets
+       them to `inherit`, but a CSS-wide keyword in a custom property is
+       guaranteed-invalid at substitution, so `var(--charNameFontSize, 0.95rem)`
+       always takes the fallback — a fixed 15.2px that ends up LARGER than the
+       body text once the slider goes below 1. Giving them a real length is the
+       only way they ever track. */
+    --messageTextFontSize: calc(var(--mainFontSize, 15px) * var(--sbterm-text-scale, 0.92));
+    --charNameFontSize: var(--messageTextFontSize);
+    --userNameFontSize: var(--messageTextFontSize);
+    /* body::before / body::after are fixed full-viewport ambient washes
+       (neconyan-theme.css:446). Neutralising the tokens kills both without
+       fighting ::after when the CRT overlay claims it. */
+    --sb-ambient-a: transparent;
+    --sb-ambient-b: transparent;
+    --sb-selection-bg: var(--sbterm-accent);
+    --sb-selection-fg: var(--sbterm-selected-fg);
+    --sb-mobile-overlay-bg: var(--sbterm-bg);
+    --sb-mobile-panel-bg: var(--sbterm-bg);
+    --sb-card-bg: var(--sbterm-bg-alt);
+    --sb-surface-elevated: var(--sbterm-bg-alt);
+    --sb-surface-elevated-soft: var(--sbterm-bg-alt);
+    --sb-contrast-strong: var(--sbterm-fg);
+    --sb-contrast-muted: var(--sbterm-fg-dim);
+    --sb-landing-strong: var(--sbterm-fg);
+    --sb-landing-muted: var(--sbterm-fg-dim);
+    --sb-muted-fg: var(--sbterm-fg-dim);
+    --mainFontFamily: var(--monoFontFamily);
+    --mainFont: var(--monoFontFamily);
+    font-family: var(--monoFontFamily);
+    background-color: var(--sbterm-bg) !important;
+    color: var(--sbterm-fg);
+}
+
+/* The terminal look is the DEFAULT, not an opt-in. Flat, unshadowed and
+   unblurred applies to everything under body.sbterm, so host components this
+   sheet has never heard of — including whatever the host ships next — arrive
+   already terminal instead of arriving as themselves. Naming surfaces one at
+   a time is what let host chrome leak through in the first place.
+   Avatars are excluded: their shape follows the host's avatar setting.
+   Focus rings are drawn with outline, not box-shadow, so they survive.
+   The leading `html` is load-bearing: the Paper theme rounds with
+   `button:not(.a):not(.b) { border-radius: 14px !important }`, which ties this
+   selector's specificity exactly and then wins on source order — leaving
+   rounded composer chrome that also clipped the corners off its own icons. */
+html body.sbterm *:not([class*='avatar' i], [id*='avatar' i]),
+html body.sbterm *:not([class*='avatar' i], [id*='avatar' i])::before,
+html body.sbterm *:not([class*='avatar' i], [id*='avatar' i])::after {
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+
+/* Optional palette duotone for avatars, off by default. Recolouring alone isn't
+   enough: a hue swap leaves each photo at its own absolute brightness, so on a
+   light palette the pictures stayed dark slabs on a bright page. `multiply` over
+   a palette-coloured frame remaps the whole tonal range instead — highlights
+   land on --sbterm-avatar-tone and shadows fall away to black — which is how a
+   real phosphor screen or a DMG panel draws an image. `isolation` keeps the
+   blend inside the avatar frame instead of letting it reach the page behind it,
+   and `:has(> img)` puts the fill on the frame that actually holds the picture
+   rather than on every card that happens to contain one. */
+body.sbterm.sbterm-avatar-tinted {
+    /* Dark palettes light the picture up in the accent over a black page. */
+    --sbterm-avatar-tone: var(--sbterm-accent);
+    /* ponytail: two calibration knobs, not measurements — raise contrast if
+       midtones read muddy, lower it if faces blow out. */
+    --sbterm-avatar-filter: grayscale(1) contrast(1.05);
+    /* The same shadow lift as the brightness half of the filter above, for the
+       surfaces that can only reach it through an overlay. */
+    --sbterm-avatar-lift: 0;
+}
+
+/* The light palettes invert: the picture is printed as ink on the page
+   colour, so its highlights have to melt into the page rather than glow. Same
+   set the §1 color-scheme split uses. `multiply` can only darken, so a dark
+   portrait would otherwise land as a black slab on a bright page — which is the
+   whole complaint this treatment exists to fix. Measured against both bright and
+   dark source art: lifting the range before the blend is what keeps a dark
+   picture legible here, and 1.55/0.7 is the point where dark art reads without
+   bright art washing flat. Same set as the §1 color-scheme split. */
+body.sbterm.sbterm-avatar-tinted:is([data-sbterm-palette='gameboy-dmg'], [data-sbterm-palette='chrome-98'], [data-sbterm-palette='paper-tape'], [data-sbterm-palette='biometric-lab'], [data-sbterm-palette='newsprint']) {
+    --sbterm-avatar-tone: var(--sbterm-bg);
+    --sbterm-avatar-filter: grayscale(1) brightness(1.55) contrast(0.7);
+    --sbterm-avatar-lift: 0.34;
+}
+
+body.sbterm.sbterm-avatar-tinted :is([class*='avatar' i], [id*='avatar' i]):has(> img) {
+    background-color: var(--sbterm-avatar-tone);
+    isolation: isolate;
+}
+
+body.sbterm.sbterm-avatar-tinted :is([class*='avatar' i], [id*='avatar' i]) > img {
+    filter: var(--sbterm-avatar-filter);
+    mix-blend-mode: multiply;
+}
+
+/* Text selection is the one highlight the host lets a theme keep for itself
+   (neconyan-theme.css:151), so the tokens above aren't enough — a theme with
+   its own ::selection would still tint the block with its accent. Terminals
+   invert the selection, so take accent on accent-contrast. */
+body.sbterm ::selection {
+    background-color: var(--sbterm-accent) !important;
+    color: var(--sbterm-selected-fg) !important;
+}
+
+body.sbterm :is(.welcomePanel, .welcomeGuidePanel, .welcomePromptPanel) {
+    --welcome-strong-fg: var(--sbterm-fg);
+    --welcome-muted-fg: var(--sbterm-fg-dim);
+}
+
+body.sbterm input,
+body.sbterm textarea,
+body.sbterm select,
+body.sbterm button:not([class*='fa-']) {
+    font-family: var(--monoFontFamily);
+}
+
+body.sbterm input:is([type='checkbox'], [type='radio'], [type='range']) {
+    accent-color: var(--sbterm-accent);
+}
+
+body.sbterm input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']):not([type='hidden']):not([type='button']):not([type='submit']):not([type='reset']):not([type='image']),
+body.sbterm textarea:not(#send_textarea),
+body.sbterm select,
+body.sbterm .text_pole {
+    background-color: var(--sbterm-bg-alt) !important;
+    color: var(--sbterm-fg) !important;
+    border-color: var(--sbterm-border) !important;
+}
+
+body.sbterm ::placeholder {
+    color: var(--sbterm-fg-dim) !important;
+    opacity: 1;
+}
+
+body.sbterm :focus-visible {
+    outline: 2px solid var(--sbterm-accent) !important;
+    outline-offset: 2px;
+}
+
+body.sbterm .select2-container--focus .select2-selection,
+body.sbterm .select2-container:focus-within .select2-selection,
+body.sbterm .sb-universal-search-field:focus-within,
+body.sbterm #send_form:focus-within {
+    outline: 2px solid var(--sbterm-accent) !important;
+    outline-offset: 1px;
+}
+
+body.sbterm #bg1 {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* These ::before layers fill their parent at z-index -1: above the parent's own
+   background, below the content. #sheld::before paints
+   var(--sheldBackgroundColor) plus a backdrop blur, so a dark value there
+   covers the terminal surface while the messages — which this sheet makes
+   transparent — show it straight through. Killing background-image alone left
+   the colour and the blur behind. */
+body.sbterm #sheld::before,
+body.sbterm #top-bar::before,
+body.sbterm .sb-shell-root::before,
+body.sbterm .welcomeActionCard::before,
+body.sbterm .welcomeRecentShell::before,
+body.sbterm .welcomeGuidePanel::before,
+body.sbterm .welcomeGuideCard::before,
+body.sbterm .recentChat::before {
+    background: transparent !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+
+body.sbterm * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--sbterm-border) transparent;
+}
+
+body.sbterm ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+body.sbterm ::-webkit-scrollbar-thumb {
+    background-color: var(--sbterm-border);
+}
+
+body.sbterm ::-webkit-scrollbar-track {
+    background-color: transparent;
+}
+
+/* 4. Top statusline */
+body.sbterm #top-bar {
+    background-color: var(--sbterm-bg-alt) !important;
+    background-image: none !important;
+    border-block-end: 1px solid var(--sbterm-border);
+}
+
+body.sbterm #top-settings-holder {
+    background-color: transparent !important;
+    border: 0 !important;
+}
+
+body.sbterm #top-settings-holder::before {
+    content: none !important;
+}
+
+body.sbterm #top-bar #sb-topbar-inner {
+    color: var(--sbterm-fg);
+}
+
+/* /hide-topbar: collapse the neconyan nav groups, keep the statusline. */
+body.sbterm.sbterm-topbar-hidden #top-bar #sb-topbar-inner {
+    grid-template-columns: minmax(0, 1fr) !important;
+}
+
+body.sbterm.sbterm-topbar-hidden #sb-topbar-inner > .sb-topbar-group {
+    display: none !important;
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sb-topbar-title {
+    display: none !important;
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sb-topbar-brand {
+    min-inline-size: 0;
+    display: flex !important;
+    align-items: stretch;
+    inline-size: 100%;
+    max-inline-size: none;
+}
+
+body.sbterm:not(.sbterm-minimal):not(:has(#chat .welcomePanel)) #sbterm-banner,
+body.sbterm:not(.sbterm-minimal).sbterm-home-visible #sbterm-banner {
+    display: none !important;
+}
+
+body.sbterm .sbterm-status-row {
+    min-inline-size: 0;
+    inline-size: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.75ch;
+}
+
+body.sbterm #sbterm-statusline {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    inline-size: auto;
+    padding: 6px 10px;
+    overflow: hidden;
+    color: var(--sbterm-fg-dim);
+    /* A vw term in the preferred slot of a clamp stops the host's font-size
+       slider reaching this line: between the two bounds the viewport wins, so
+       on a ~1440px screen 1.0 -> 1.5 on the slider moved this 13.95px -> 18px
+       instead of 20.9px. Same multiplier the §11 rule uses for the other state,
+       so the statusline is now one size in both. */
+    font-size: calc(var(--mainFontSize, 15px) * 0.87);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.sbterm .sbterm-status-details {
+    position: relative;
+    flex: 0 0 auto;
+    padding: 2px 0;
+    border: 0;
+    background: transparent;
+    color: var(--sbterm-fg-dim);
+    font-size: calc(var(--mainFontSize, 15px) * 0.87);
+    text-decoration: underline;
+    text-underline-offset: 0.18em;
+    cursor: pointer;
+}
+
+/* This is an inline text control on a dense status line inside a FIXED-height
+   top bar. Given a 44px min-height with the blanket touch-target rule it made
+   the status row 44px, the banner 63px, and the 54px bar clipped the title off
+   the top. The target lives in a centered overlay instead: same 44px of
+   tappable area, no effect on the row's height. */
+body.sbterm .sbterm-status-details::after {
+    content: '';
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: 50%;
+    inline-size: var(--sb-mobile-touch-target, 44px);
+    block-size: var(--sb-mobile-touch-target, 44px);
+    transform: translate(-50%, -50%);
+}
+
+body.sbterm .sbterm-status-details:is(:hover, :focus-visible) {
+    color: var(--sbterm-accent);
+}
+
+body.sbterm #sbterm-statusline[data-state='generating'],
+body.sbterm #sbterm-statusline[data-state='command'] {
+    color: var(--sbterm-accent2);
+}
+
+body.sbterm #sbterm-statusline[data-state='disconnected'] {
+    color: var(--sbterm-err);
+}
+
+body.sbterm #sbterm-banner,
+body.sbterm .sbterm-banner-copy {
+    min-inline-size: 0;
+    inline-size: 100%;
+    text-align: center;
+}
+
+body.sbterm:not(.sbterm-minimal) :is(.sbterm-mascot, .sbterm-banner-title) {
+    display: none;
+}
+
+body.sbterm .sb-proxy-button,
+body.sbterm .sb-bottom-chat-btn,
+body.sbterm .sb-shell-close,
+body.sbterm .sb-shell-tab,
+body.sbterm .sb-settings-tab-btn,
+body.sbterm .drawer-icon {
+    color: var(--sbterm-fg-dim) !important;
+}
+
+body.sbterm .sb-proxy-button:is(:hover, :focus-visible, [aria-pressed='true'], [aria-current='page']),
+body.sbterm .sb-bottom-chat-btn:is(:hover, :focus-visible, .is-active, [aria-pressed='true']),
+body.sbterm .drawer-icon:is(:hover, .openIcon) {
+    color: var(--sbterm-accent) !important;
+}
+
+body.sbterm #sb-topbar-search-row,
+body.sbterm .sb-universal-search-field,
+body.sbterm .sb-search-results {
+    background-color: var(--sbterm-bg-alt) !important;
+    border-color: var(--sbterm-border) !important;
+    color: var(--sbterm-fg) !important;
+}
+
+/* 5. Transcript */
+/* ponytail: the host defaults --sheldWidth to 50vw; a CLI shouldn't run in half a
+   screen. Minimal density only — Full chrome respects the host chat-width slider. */
+body.sbterm.sbterm-minimal {
+    --sheldWidth: min(100%, 140rem);
+}
+
+body.sbterm #sheld {
+    background-color: var(--sbterm-bg) !important;
+    background-image: none !important;
+    border: 1px solid var(--sbterm-border);
+}
+
+body.sbterm #chat {
+    background-color: transparent !important;
+}
+
+body.sbterm #chat .mes,
+body.sbterm #chat .mes .mes_block,
+body.sbterm #chat .mes .mes_text,
+body.sbterm #chat .mes .mesAvatarWrapper,
+body.sbterm #chat .mes .mes_text p {
+    max-inline-size: 100% !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    transform: none !important;
+}
+
+body.sbterm #chat .mes {
+    inline-size: 100% !important;
+    margin-inline: 0 !important;
+    padding: 10px clamp(10px, 2.5vw, 28px) !important;
+    border: 0 !important;
+    border-block-end: 1px solid color-mix(in oklch, var(--sbterm-border) 58%, transparent) !important;
+}
+
+body.sbterm #chat .mes:is(:hover, :focus-within) {
+    background-color: color-mix(in oklch, var(--sbterm-bg-alt) 72%, transparent) !important;
+}
+
+/* The user's own turn is a distinct block at rest, not only under the pointer.
+   Full chrome previously left it transparent, so the palette fill showed up on
+   hover and the host's tint showed through the rest of the time. Both densities
+   share this now; Terminal density only adds its own spacing. */
+body.sbterm #chat .mes[is_user='true'],
+body.sbterm #chat .mes[is_user='true']:is(:hover, :focus-within) {
+    background-color: var(--sbterm-user-mes-bg) !important;
+}
+
+body.sbterm #chat .mes::before,
+body.sbterm #chat .mes::after,
+body.sbterm #chat .mes_block::before,
+body.sbterm #chat .mes_block::after,
+body.sbterm #chat .mes_text::before,
+body.sbterm #chat .mes_text::after,
+/* ponytail: the Ripple chat style draws a full-width divider under the name via .ch_name::after */
+body.sbterm #chat .ch_name::after {
+    content: none !important;
+    background: none !important;
+}
+
+/* ponytail: restore the Whisper and Echo avatar banners the kill list above
+   silenced — Whisper draws it on .mes::before, Echo on .mes_text::before */
+body.sbterm:not(.sbterm-avatar-hidden).whisperstyle #chat .mes::before {
+    content: "" !important;
+    background: var(--mes-avatar-url, var(--sb-message-avatar)) var(--customWhisperAvatarAlign, center)/cover no-repeat !important;
+}
+body.sbterm:not(.sbterm-avatar-hidden).whisperstyle #chat .mes {
+    padding-top: 40px !important;
+}
+body.sbterm:not(.sbterm-avatar-hidden).echostyle #chat .mes_text::before {
+    content: "" !important;
+    background: var(--mes-avatar-url, var(--sb-message-avatar)) center/cover no-repeat fixed !important;
+}
+
+/* Whisper and Echo paint the avatar as a `background:` shorthand, which resets
+   background-color — so the §3 duotone can't reach them and they need the
+   background-image equivalent, later in source order than the shorthand above.
+   ponytail: `luminosity` recolours these banners but can't remap their tonal
+   range the way §3 does, because a background layer can't be desaturated before
+   it is multiplied. Restack them as two blended layers if it ever matters. */
+body.sbterm.sbterm-avatar-tinted.whisperstyle #chat .mes::before,
+body.sbterm.sbterm-avatar-tinted.echostyle #chat .mes_text::before {
+    background-color: var(--sbterm-avatar-tone) !important;
+    background-blend-mode: luminosity !important;
+}
+
+body.sbterm.sbterm-avatar-hidden #chat .mesAvatarWrapper {
+    display: none !important;
+}
+
+/* ponytail: Flat/Bubbles chat styles sit the avatar bubble flush against the message bubble */
+body.sbterm:is(.flatchat, .bubblechat) #chat .mes:not(.smallSysMes) {
+    gap: 10px !important;
+}
+
+body.sbterm #sbterm-chat-topbar {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0 0.75rem;
+    margin-block-end: 4px;
+    border: 0;
+    border-block-start: 1px solid color-mix(in oklch, var(--sbterm-border) 45%, transparent);
+    background: transparent;
+}
+
+/* Match the composer width while each toolbar keeps its own intrinsic height.
+   The bottom bar keeps the host's own row structure and collapse mechanic
+   (persona / chat select / nav+collapse on top, management row below). */
+body.sbterm :is(#sbterm-chat-topbar, #sb-bottom-chat-bar) {
+    inline-size: var(--sbterm-composer-row-width, 100%) !important;
+    min-inline-size: var(--sbterm-composer-row-width, 100%) !important;
+    max-inline-size: var(--sbterm-composer-row-width, 100%) !important;
+    box-sizing: border-box;
+    margin-inline: auto !important;
+}
+
+body.sbterm #sbterm-chat-topbar {
+    block-size: auto !important;
+    min-block-size: 44px !important;
+    max-block-size: none !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+}
+
+body.sbterm #sbterm-chat-topbar #qr--bar {
+    flex: 1 1 auto;
+    inline-size: auto;
+    min-inline-size: 0;
+    justify-content: flex-start;
+}
+
+body.sbterm #sbterm-chat-topbar .gg-action-buttons-container {
+    display: contents;
+}
+
+body.sbterm #sbterm-chat-topbar .gg-regular-buttons-container,
+body.sbterm #sbterm-chat-topbar #qr--bar > .qr--buttons {
+    flex-wrap: nowrap;
+}
+
+body.sbterm #sbterm-chat-topbar .gg-qr-container {
+    display: contents;
+}
+
+body.sbterm #sbterm-chat-topbar .stih--buttons {
+    order: -1;
+    gap: 3px;
+    margin-inline: 0;
+}
+
+body.sbterm #sbterm-chat-topbar .gg-regular-buttons-container {
+    order: 2;
+    margin-inline-start: auto;
+}
+
+body.sbterm #sbterm-chat-topbar :is(.stih--button, .gg-action-button) {
+    inline-size: 34px !important;
+    min-inline-size: 34px !important;
+    max-inline-size: 34px !important;
+    block-size: 34px !important;
+    min-block-size: 34px !important;
+    max-block-size: 34px !important;
+    flex-basis: 34px !important;
+    padding: 0 !important;
+    font-size: calc(var(--mainFontSize, 15px) * 0.83) !important;
+}
+
+body.sbterm #sbterm-chat-topbar .stih--button {
+    opacity: 0.8;
+}
+
+body.sbterm #sbterm-chat-topbar .qr--button {
+    margin-block: 0;
+    padding: 1px 9px;
+    font-size: calc(var(--mainFontSize, 15px) * 0.77);
+    line-height: 1.6;
+}
+
+body.sbterm #sbterm-chat-topbar:empty {
+    display: none;
+}
+body.sbterm.sbterm-chat-topbar-hidden #sbterm-chat-topbar {
+    display: none !important;
+}
+
+/* Full chrome never builds #sbterm-chat-topbar — the Quick Replies and Guided
+   Generations bars stay where the host puts them — so the toggle has to reach
+   them directly or it is a dead checkbox in the default interface. */
+body.sbterm.sbterm-chat-topbar-hidden :is(#qr--bar, #gg-action-button-container) {
+    display: none !important;
+}
+body.sbterm.sbterm-bottom-bar-hidden #sb-bottom-chat-bar {
+    display: none !important;
+}
+
+/* Composer toolbars are useful in a chat, but distort the centered terminal
+   welcome grid when there is no conversation yet. */
+body.sbterm #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) :is(#sbterm-chat-topbar, #sb-bottom-chat-bar) {
+    display: none !important;
+}
+
+@media (min-width: 1001px) {
+    /* Keep desktop transcript text beside the In-Chat Agents companion panel.
+       On narrow screens the panel overlays instead of crushing the transcript. */
+    body.sbterm:has(#ica--tracker-panel.is-open[data-edge='right']) #chat {
+        padding-right: calc(min(420px, 40vw) + 12px);
+    }
+    body.sbterm:has(#ica--tracker-panel.is-open[data-edge='left']) #chat {
+        padding-left: calc(min(420px, 40vw) + 12px);
+    }
+}
+
+body.sbterm #chat .mes_block {
+    inline-size: 100% !important;
+    padding: 0 !important;
+}
+
+/* Transcript and composer share one scale so what you type matches what you
+   read. Applies in both densities. */
+body.sbterm #chat .mes_text,
+body.sbterm #send_textarea {
+    font-size: calc(var(--mainFontSize, 15px) * var(--sbterm-text-scale, 0.92)) !important;
+}
+
+/* Monospace runs unreadable past ~80ch; cap prose in BOTH densities
+   (audit: full chrome measured 184-column lines at 1920px). */
+body.sbterm #chat .mes .mes_block {
+    max-inline-size: var(--sbterm-prose-width) !important;
+    margin-inline: auto !important;
+}
+
+body.sbterm #chat .ch_name {
+    min-block-size: 1.4em;
+    display: flex;
+    align-items: baseline;
+    gap: 1ch;
+    margin-block-end: 4px;
+}
+
+/* The glyph rides on the name itself, not the row: as a separate flex item
+   it wrapped onto an orphan line whenever name + timestamp + buttons
+   overflowed the row (audit: every Ripple message). */
+body.sbterm #chat .ch_name .name_text::before {
+    content: '> ' / '';
+    color: var(--sbterm-accent2);
+    font-weight: 800;
+}
+
+body.sbterm #chat .mes[is_user='true'] .ch_name .name_text::before {
+    content: '$ ' / '';
+    color: var(--sbterm-accent);
+}
+
+body.sbterm #chat .mes[is_system='true'] .ch_name .name_text::before {
+    content: '# ' / '';
+    color: var(--sbterm-fg-dim);
+}
+
+body.sbterm #chat .ch_name .name_text {
+    color: var(--sbterm-accent);
+    font-weight: 750;
+}
+
+body.sbterm #chat .ch_name .mes_buttons {
+    margin-inline-start: auto;
+}
+
+/* The host fades every message action to opacity 0.3 and hangs a black
+   drop-shadow off it, which washes out on light palettes and smears on dark. */
+body.sbterm #chat :is(.mes_button, .extraMesButtons > div, .mes_reasoning_actions .mes_button) {
+    opacity: 1;
+    filter: none;
+}
+
+body.sbterm #chat .mes[is_system='true'] .ch_name .name_text,
+body.sbterm #chat .mes[is_system='true'] .mes_text {
+    color: var(--sbterm-fg-dim) !important;
+}
+
+body.sbterm .mesIDDisplay,
+body.sbterm .mes_timer,
+body.sbterm .tokenCounterDisplay,
+body.sbterm .mes .timestamp,
+body.sbterm .mes .mes_edit_buttons {
+    color: var(--sbterm-fg-dim) !important;
+    font-variant-numeric: tabular-nums;
+}
+
+body.sbterm .mes_reasoning,
+body.sbterm .mes_reasoning_details,
+body.sbterm .mes_reasoning_header,
+body.sbterm .mes_reasoning_header_block,
+body.sbterm .mes_file_container,
+body.sbterm .mes_audio_container,
+body.sbterm .mes_media_wrapper {
+    border-color: var(--sbterm-border) !important;
+    background-color: var(--sbterm-bg-alt) !important;
+    background-image: none !important;
+    color: var(--sbterm-fg) !important;
+}
+
+/* .mes_reasoning_details wraps the whole block and .mes_reasoning_header_block
+   is a flex-grow: 1 spacer; filling either paints a slab past the header box. */
+body.sbterm :is(.mes_reasoning_details, .mes_reasoning_header_block) {
+    background-color: transparent !important;
+}
+
+body.sbterm #chat pre,
+body.sbterm #chat code,
+body.sbterm #chat table {
+    border-color: var(--sbterm-border) !important;
+    background-color: var(--sbterm-bg-alt) !important;
+    color: var(--sbterm-fg) !important;
+}
+
+body.sbterm #chat a {
+    color: var(--sbterm-accent2);
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+}
+
+/* 6. Prompt and chat controls */
+body.sbterm #form_sheld,
+body.sbterm #send_form,
+body.sbterm #nonQRFormItems {
+    background-color: var(--sbterm-bg) !important;
+    background-image: none !important;
+}
+
+body.sbterm #form_sheld {
+    border-block-start: 1px solid var(--sbterm-border) !important;
+}
+
+/* Only where the composer is laid out as the terminal prompt grid (minimal
+   density and the terminal Home). In Full chrome the host lays the composer
+   out itself and the glyph wrapped onto an orphan line below the input. */
+body.sbterm.sbterm-minimal #nonQRFormItems::before,
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #nonQRFormItems::before {
+    content: '> ' / '';
+    align-self: center;
+    padding-inline: 7px 2px;
+    color: var(--sbterm-accent);
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+body.sbterm #send_textarea {
+    background-color: transparent !important;
+    color: var(--sbterm-fg) !important;
+    border-color: var(--sbterm-border);
+    font-family: var(--monoFontFamily);
+    caret-color: var(--sbterm-accent);
+    caret-shape: block;
+}
+
+/* The host caps this strip at 35% width and clips the overflow with
+   scrollbar-width: none, so a composer icon gets silently sliced with no hint
+   that anything scrolls.
+   max-content was the wrong tool: it sizes from the icon glyphs and ignores the
+   44px min-width on the buttons, so the strip computed NARROWER than its own
+   contents. Drop the cap and stop the strip shrinking instead; the textarea
+   still takes everything left over. */
+body.sbterm :is(#leftSendForm, #rightSendForm) {
+    max-inline-size: none !important;
+    flex: 0 0 auto !important;
+    /* Safe now that the strip always fits its buttons: the host's overflow-y
+       clip is what sliced the glyph, not a genuine overflow. */
+    overflow: visible !important;
+}
+
+/* These sit at font-size 16px with line-height 16px, and Font Awesome draws
+   outside that em box — fa-wand-magic-sparkles puts its sparkles above it. The
+   glyph has to be free to paint past the box on every ancestor that clips. */
+html body.sbterm #form_sheld :is(#options_button, #extensionsMenuButton, #send_but, #leftSendForm > *, #rightSendForm > *) {
+    overflow: visible !important;
+}
+
+/* Measured: #send_textarea and #options_button keep a 10px radius that outranks
+   the §3 reset, so the composer stayed rounded. The stray arcs beside the input
+   ARE those corners, and a rounded box also clips the corners off the icon
+   sitting in it — one cause, both symptoms. The #form_sheld ancestor puts this
+   out of reach of whatever is setting the 10px. */
+html body.sbterm #form_sheld :is(#send_form, #nonQRFormItems, #send_textarea, #leftSendForm, #rightSendForm, #send_but, #options_button, #extensionsMenuButton, .interactable) {
+    border-radius: 0 !important;
+}
+
+body.sbterm #send_but {
+    background: var(--sbterm-accent) !important;
+    color: var(--sbterm-selected-fg) !important;
+    border: 1px solid transparent !important;
+}
+
+body.sbterm #send_form.sb-generating-controls,
+body.sbterm #form_sheld.isExecutingCommandsFromChatInput {
+    border-color: var(--sbterm-accent2) !important;
+}
+
+/* Both chat bars read as quiet terminal strips — hairline separators and
+   monochrome glyphs — instead of the host's bordered chip grids. */
+body.sbterm #sb-bottom-chat-bar {
+    background: transparent !important;
+    border: 0 !important;
+    border-block-start: 1px solid color-mix(in oklch, var(--sbterm-border) 45%, transparent) !important;
+    color: var(--sbterm-fg) !important;
+}
+
+body.sbterm .sb-bottom-chat-search-field {
+    background: transparent !important;
+    border: 0 !important;
+    border-block-end: 1px solid var(--sbterm-border) !important;
+    color: var(--sbterm-fg) !important;
+}
+
+/* #sb-persona-bubble is excluded: it is a button whose persona portrait is
+   painted as an inline background-image, which `background: transparent`
+   would erase. */
+body.sbterm :is(#sbterm-chat-topbar, #sb-bottom-chat-bar) :is(button, .menu_button, .menu_button_icon, .sb-bottom-chat-btn, .stih--button, .gg-action-button, .qr--button):not(#sb-persona-bubble) {
+    background: transparent !important;
+    background-image: none !important;
+    border-color: transparent !important;
+    color: var(--sbterm-fg-dim) !important;
+}
+
+body.sbterm :is(#sbterm-chat-topbar, #sb-bottom-chat-bar) :is(button, .menu_button, .menu_button_icon, .sb-bottom-chat-btn, .stih--button, .gg-action-button, .qr--button):not(#sb-persona-bubble):is(:hover, :focus-visible, .is-active, [aria-pressed='true'], [aria-current='page']) {
+    background: transparent !important;
+    border-color: transparent !important;
+    color: var(--sbterm-accent) !important;
+}
+
+body.sbterm #sb-persona-bubble {
+    border-color: color-mix(in oklch, var(--sbterm-border) 60%, transparent) !important;
+    background-color: transparent !important;
+}
+
+body.sbterm #sb-persona-bubble:hover {
+    border-color: var(--sbterm-accent) !important;
+}
+
+/* The bottom bar's persona portrait and the picker rows below it are the two
+   avatar shapes the §3 duotone can't reach: the bubble is a bare button whose
+   portrait is an inline background-image, so there is no frame to fill, and a
+   picker row is a grid holding the portrait AND the persona name, so filling
+   its frame would put a slab of accent behind every name. Both are given the
+   same duotone by other means rather than left as the only untinted avatars.
+
+   Blending the inline background against white desaturates it in place — the
+   grayscale step the <img> rule gets from `filter`, which is unusable here
+   because it would recolour the tint overlay along with the portrait. */
+body.sbterm.sbterm-avatar-tinted #sb-persona-bubble {
+    position: relative;
+    isolation: isolate;
+    background-color: #fff !important;
+    background-blend-mode: luminosity;
+}
+
+body.sbterm.sbterm-avatar-tinted #sb-persona-bubble::before,
+body.sbterm.sbterm-avatar-tinted #sb-persona-bubble::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+}
+
+body.sbterm.sbterm-avatar-tinted #sb-persona-bubble::before {
+    background: #fff;
+    opacity: var(--sbterm-avatar-lift);
+    mix-blend-mode: screen;
+}
+
+body.sbterm.sbterm-avatar-tinted #sb-persona-bubble::after {
+    background: var(--sbterm-avatar-tone);
+    mix-blend-mode: multiply;
+}
+
+/* The row already gives the portrait a column of its own, so the tone is
+   painted as one more item in that same cell instead of across the button.
+   Both are pinned to 1/1: an explicitly placed pseudo-element would otherwise
+   push the portrait out of the cell auto-placement had been giving it. */
+body.sbterm.sbterm-avatar-tinted .sb-persona-option {
+    isolation: isolate;
+}
+
+body.sbterm.sbterm-avatar-tinted .sb-persona-option::before {
+    content: '';
+    grid-area: 1 / 1;
+    inline-size: 100%;
+    aspect-ratio: 1;
+    background: var(--sbterm-avatar-tone);
+    /* Round to match the portrait it sits under — a square patch would show its
+       corners around the circle. Avatars are the one carve-out from the flat
+       reset, and this is the shape they are carved out for. */
+    border-radius: 50% !important;
+}
+
+body.sbterm.sbterm-avatar-tinted .sb-persona-option > .sb-persona-option-avatar {
+    grid-area: 1 / 1;
+    filter: var(--sbterm-avatar-filter);
+    mix-blend-mode: multiply;
+}
+
+body.sbterm #sb-bottom-chat-select {
+    background: transparent !important;
+    border-color: transparent !important;
+    color: var(--sbterm-fg-dim) !important;
+}
+
+body.sbterm #sb-bottom-chat-select:is(:hover, :focus-visible) {
+    color: var(--sbterm-fg) !important;
+    border-block-end-color: var(--sbterm-border) !important;
+}
+
+body.sbterm .sb-shell-callout {
+    background: var(--sbterm-bg-alt) !important;
+    border-color: var(--sbterm-border) !important;
+    color: var(--sbterm-fg) !important;
+}
+
+body.sbterm .sb-shell-callout::before {
+    content: none !important;
+}
+
+body.sbterm .menu_button,
+body.sbterm .menu_button_icon,
+body.sbterm button.sb-conversation-channel-tab,
+body.sbterm button.sb-conversation-tool-button {
+    background-color: var(--sbterm-bg-alt) !important;
+    background-image: none !important;
+    border-color: var(--sbterm-border) !important;
+    color: var(--sbterm-fg) !important;
+}
+
+body.sbterm .menu_button:is(:hover, :focus-visible),
+body.sbterm .menu_button_icon:is(:hover, :focus-visible),
+body.sbterm button.sb-conversation-channel-tab:is(:hover, :focus-visible, [data-active='true'], [aria-pressed='true']),
+body.sbterm button.sb-conversation-tool-button:is(:hover, :focus-visible) {
+    background-color: var(--sbterm-bg) !important;
+    border-color: var(--sbterm-accent) !important;
+    color: var(--sbterm-accent) !important;
+}
+
+body.sbterm .popup-controls .menu_button:not(.menu_button_icon):not([class*='fa-'])::before {
+    content: '[ ' / '';
+    color: var(--sbterm-fg-dim);
+}
+
+body.sbterm .popup-controls .menu_button:not(.menu_button_icon):not([class*='fa-'])::after {
+    content: ' ]' / '';
+    color: var(--sbterm-fg-dim);
+}
+
+/* 7. Shells, settings, and Home */
+body.sbterm .sb-shell-root,
+body.sbterm .sb-shell-nav,
+body.sbterm .sb-shell-main,
+body.sbterm .sb-shell-header,
+body.sbterm .sb-shell-panel-scroller,
+body.sbterm .drawer-content,
+body.sbterm .inline-drawer,
+body.sbterm .inline-drawer-header,
+body.sbterm .inline-drawer-content,
+body.sbterm .sb-settings-group {
+    background-color: var(--sbterm-bg) !important;
+    background-image: none !important;
+    border-color: var(--sbterm-border) !important;
+    color: var(--sbterm-fg) !important;
+}
+
+body.sbterm .sb-shell-nav,
+body.sbterm .sb-shell-header,
+body.sbterm .inline-drawer-header {
+    background-color: var(--sbterm-bg-alt) !important;
+}
+
+body.sbterm .sb-shell-tab,
+body.sbterm .sb-settings-tab-btn {
+    border-color: transparent !important;
+    background-color: transparent !important;
+    color: var(--sbterm-fg-dim) !important;
+}
+
+body.sbterm .sb-shell-tab:is(:hover, :focus-visible, [aria-selected='true']),
+body.sbterm .sb-settings-tab-btn:is(:hover, :focus-visible, [aria-selected='true']) {
+    border-color: var(--sbterm-border) !important;
+    background-color: var(--sbterm-accent) !important;
+    color: var(--sbterm-selected-fg) !important;
+}
+
+/* The host tints active-tab icons with --color-primary (neconyan-tabs.css
+   :2127), which §2 remaps to --sbterm-accent — so the accent-filled highlight
+   above rendered accent-on-accent in every palette. Icons follow the row. */
+body.sbterm .sb-shell-tab:is(:hover, :focus-visible, [aria-selected='true']) :is(i, svg),
+body.sbterm .sb-settings-tab-btn:is(:hover, :focus-visible, [aria-selected='true']) :is(i, svg) {
+    color: var(--sbterm-selected-fg) !important;
+    opacity: 1 !important;
+}
+
+body.sbterm .welcomePanel,
+body.sbterm .welcomeGuidePanel,
+body.sbterm .welcomeRecentShell,
+body.sbterm .welcomeActionCard,
+body.sbterm .welcomeGuideCard,
+body.sbterm .welcomeDeckFrame,
+body.sbterm .recentChat,
+body.sbterm .noRecentChat {
+    background-color: transparent !important;
+    background-image: none !important;
+    border-color: var(--sbterm-border) !important;
+    color: var(--sbterm-fg) !important;
+}
+
+body.sbterm .welcomeGuidePanel,
+body.sbterm .welcomeRecentShell {
+    border: 1px solid var(--sbterm-border) !important;
+}
+
+body.sbterm .welcomeActionCard,
+body.sbterm .welcomeGuideCard,
+body.sbterm .recentChat {
+    border: 0 !important;
+    border-block-end: 1px solid var(--sbterm-border) !important;
+}
+
+body.sbterm .welcomeActionCard:is(:hover, :focus-visible),
+body.sbterm .welcomeGuideCard:is(:hover, :focus-visible),
+body.sbterm .recentChat:is(:hover, :focus-within) {
+    background-color: var(--sbterm-bg-alt) !important;
+}
+
+body.sbterm .welcomeActionCard > i,
+body.sbterm .welcomeGuideCardHeader > i,
+body.sbterm .welcomePanel .noRecentChat > i {
+    display: none !important;
+}
+
+body.sbterm .welcomeDeckTab,
+body.sbterm .welcomeRecentTab {
+    color: var(--sbterm-fg-dim) !important;
+}
+
+body.sbterm .welcomeDeckTab:is(.is-active, :focus-visible),
+body.sbterm .welcomeRecentTab:is(.active, :focus-visible) {
+    background-color: var(--sbterm-accent) !important;
+    color: var(--sbterm-selected-fg) !important;
+}
+
+/* 8. Conversation Mode */
+body.sbterm #sheld[data-sb-conversation-mode='on'] {
+    background-color: var(--sbterm-bg) !important;
+    background-image: none !important;
+}
+
+body.sbterm #sheld[data-sb-conversation-mode='on'] #sb_conversation_header,
+body.sbterm #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_rail,
+body.sbterm #sheld[data-sb-conversation-mode='on'] #sb_conversation_stage,
+body.sbterm .sb-conversation-tools,
+body.sbterm .sb-conversation-composer,
+body.sbterm #sb_conversation_settings_drawer {
+    background-color: var(--sbterm-bg) !important;
+    background-image: none !important;
+    border-color: var(--sbterm-border) !important;
+}
+
+body.sbterm #sheld[data-sb-conversation-mode='on'] #sb_conversation_header,
+body.sbterm .sb-conversation-tools,
+body.sbterm .sb-conversation-composer {
+    background-color: var(--sbterm-bg-alt) !important;
+}
+
+body.sbterm .sb-conversation-header-name,
+body.sbterm .sb-conversation-message-name,
+body.sbterm .sb-conversation-rail-title {
+    color: var(--sbterm-accent) !important;
+}
+
+body.sbterm .sb-conversation-header-status,
+body.sbterm .sb-conversation-header-kicker,
+body.sbterm .sb-conversation-message-meta,
+body.sbterm .sb-conversation-message-time,
+body.sbterm .sb-conversation-pal-preview {
+    color: var(--sbterm-fg-dim) !important;
+}
+
+body.sbterm .sb-conversation-message {
+    inline-size: 100% !important;
+    max-inline-size: 100% !important;
+    display: block !important;
+    align-self: stretch !important;
+    padding: 8px clamp(8px, 2vw, 20px);
+    border-block-end: 1px solid color-mix(in oklch, var(--sbterm-border) 58%, transparent);
+    animation: none !important;
+}
+
+body.sbterm.sbterm-avatar-hidden .sb-conversation-message-avatar {
+    display: none !important;
+}
+
+body.sbterm .sb-conversation-message-bubble,
+body.sbterm .sb-conversation-message-reply-preview,
+body.sbterm .sb-conversation-composer-reply-card,
+body.sbterm .sb-conversation-thread-empty,
+body.sbterm .sb-conversation-pal,
+body.sbterm .sb-conversation-branch-button,
+body.sbterm .sb-conversation-attachment,
+body.sbterm .sb-conversation-image-card {
+    inline-size: 100%;
+    background-color: transparent !important;
+    background-image: none !important;
+    border-color: var(--sbterm-border) !important;
+    transform: none !important;
+}
+
+body.sbterm .sb-conversation-message-bubble {
+    padding: 0 !important;
+    border: 0 !important;
+    max-inline-size: var(--sbterm-prose-width) !important;
+    margin-inline: auto;
+}
+
+body.sbterm .sb-conversation-message[data-role='user'] .sb-conversation-message-meta {
+    justify-content: flex-start !important;
+    text-align: start !important;
+}
+
+body.sbterm .sb-conversation-message-reply-preview,
+body.sbterm .sb-conversation-composer-reply-card {
+    border: 1px solid var(--sbterm-border) !important;
+}
+
+body.sbterm .sb-conversation-pal:is(:hover, :focus-visible, [aria-current='true']),
+body.sbterm .sb-conversation-branch-button:is(:hover, :focus-visible, [aria-current='true']) {
+    background-color: var(--sbterm-accent) !important;
+    color: var(--sbterm-selected-fg) !important;
+}
+
+body.sbterm .sb-conversation-message-actions,
+body.sbterm .sb-conversation-message-action,
+body.sbterm .sb-conversation-reaction-button {
+    background-color: var(--sbterm-bg-alt) !important;
+    border-color: var(--sbterm-border) !important;
+}
+
+body.sbterm #sb_conversation_input {
+    background-color: transparent !important;
+    color: var(--sbterm-fg) !important;
+    caret-color: var(--sbterm-accent);
+}
+
+body.sbterm #sb_conversation_settings_backdrop,
+body.sbterm .sb-conversation-schedule-modal-overlay {
+    background-color: color-mix(in oklch, var(--sbterm-bg) 78%, transparent) !important;
+}
+
+/* 9. Autocomplete, help, and selectors */
+body.sbterm {
+    --ac-style-color-border: var(--sbterm-border);
+    --ac-style-color-background: var(--sbterm-bg);
+    --ac-style-color-text: var(--sbterm-fg);
+    --ac-style-color-matchedBackground: transparent;
+    --ac-style-color-matchedText: var(--sbterm-accent2);
+    --ac-style-color-selectedBackground: var(--sbterm-accent);
+    --ac-style-color-selectedText: var(--sbterm-selected-fg);
+    --ac-style-color-notSelectableBackground: var(--sbterm-bg-alt);
+    --ac-style-color-notSelectableText: var(--sbterm-fg-dim);
+    --ac-style-color-hoveredBackground: var(--sbterm-bg-alt);
+    --ac-style-color-hoveredText: var(--sbterm-fg);
+    --ac-style-color-argName: var(--sbterm-accent2);
+    --ac-style-color-type: var(--sbterm-ok);
+    --ac-style-color-cmd: var(--sbterm-accent);
+    --ac-style-color-symbol: var(--sbterm-fg-dim);
+    --ac-style-color-string: var(--sbterm-warn);
+    --ac-style-color-number: var(--sbterm-ok);
+    --ac-style-color-variable: var(--sbterm-accent2);
+    --ac-style-color-variableLanguage: var(--sbterm-accent2);
+    --ac-style-color-punctuation: var(--sbterm-fg-dim);
+    --ac-style-color-punctuationL1: var(--sbterm-accent);
+    --ac-style-color-punctuationL2: var(--sbterm-accent2);
+    --ac-style-color-currentParenthesis: var(--sbterm-accent);
+    --ac-style-color-comment: var(--sbterm-fg-dim);
+    --ac-style-color-keyword: var(--sbterm-warn);
+}
+
+body.sbterm .autoComplete-wrap,
+body.sbterm .autoComplete,
+body.sbterm .autoComplete-detailsWrap,
+body.sbterm .autoComplete-details,
+body.sbterm .slashCommandBrowser {
+    background-color: var(--sbterm-bg) !important;
+    border-color: var(--sbterm-border) !important;
+    color: var(--sbterm-fg) !important;
+}
+
+body.sbterm .autoComplete-wrap:not(.isFloating),
+body.sbterm .autoComplete-detailsWrap:not(.isFloating) {
+    left: var(--sbterm-autocomplete-left, var(--leftOffset, 1vw)) !important;
+    right: var(--sbterm-autocomplete-right, var(--rightOffset, 1vw)) !important;
+}
+
+body.sbterm .autoComplete > .item {
+    color: var(--sbterm-fg) !important;
+    font-weight: 600;
+}
+
+body.sbterm .autoComplete > .item.selected,
+body.sbterm .autoComplete > .item:hover {
+    background-color: var(--sbterm-accent) !important;
+    color: var(--sbterm-selected-fg) !important;
+    font-weight: 700;
+}
+
+/* The per-character highlight inside an item must follow the row: on the
+   accent row it would otherwise render pale accent-on-accent. */
+body.sbterm .autoComplete > .item.selected :is(span, .matched),
+body.sbterm .autoComplete > .item:hover :is(span, .matched) {
+    color: inherit !important;
+    background-color: transparent !important;
+}
+
+body.sbterm .select2-container .select2-selection--single,
+body.sbterm .select2-container .select2-selection--multiple,
+body.sbterm .select2-dropdown,
+body.sbterm .select2-search__field,
+body.sbterm .select2-results__option {
+    background-color: var(--sbterm-bg-alt) !important;
+    border-color: var(--sbterm-border) !important;
+    color: var(--sbterm-fg) !important;
+}
+
+body.sbterm .select2-results__option--selected,
+body.sbterm .select2-results__option--highlighted {
+    background-color: var(--sbterm-accent) !important;
+    color: var(--sbterm-selected-fg) !important;
+}
+
+/* 10. Dialogs, media, generation, and notifications */
+body.sbterm dialog.popup,
+body.sbterm #dialogue_popup,
+body.sbterm #select_chat_popup,
+body.sbterm .popper-modal,
+body.sbterm .options-content,
+body.sbterm #extensionsMenu,
+body.sbterm #character_context_menu {
+    background-color: var(--sbterm-bg) !important;
+    background-image: none !important;
+    border-color: var(--sbterm-border) !important;
+    color: var(--sbterm-fg) !important;
+}
+
+body.sbterm dialog.popup::backdrop,
+body.sbterm .poly_dialog + .backdrop,
+body.sbterm #shadow_popup,
+body.sbterm #shadow_select_chat_popup {
+    background-color: color-mix(in oklch, var(--sbterm-bg) 78%, transparent) !important;
+}
+
+body.sbterm .mes_img_container,
+body.sbterm .mes_video_container,
+body.sbterm .mes_file_wrapper,
+body.sbterm .mes_audio_container,
+body.sbterm #file_form,
+body.sbterm .streaming-display {
+    background-color: var(--sbterm-bg-alt) !important;
+    border-color: var(--sbterm-border) !important;
+}
+
+body.sbterm .streaming-display-btn-stop,
+body.sbterm .sb-conversation-stop-image,
+body.sbterm #mes_stop,
+body.sbterm #stscript_stop {
+    border-color: var(--sbterm-err) !important;
+    color: var(--sbterm-err) !important;
+}
+
+body.sbterm #toast-container > div {
+    background-color: var(--sbterm-bg-alt) !important;
+    border: 1px solid var(--sbterm-border) !important;
+    color: var(--sbterm-fg) !important;
+    opacity: 1;
+}
+
+body.sbterm #toast-container .toast-info {
+    border-color: var(--sbterm-accent2) !important;
+}
+
+body.sbterm #toast-container .toast-success {
+    border-color: var(--sbterm-ok) !important;
+}
+
+body.sbterm #toast-container .toast-error {
+    border-color: var(--sbterm-err) !important;
+}
+
+body.sbterm #toast-container .toast-warning {
+    border-color: var(--sbterm-warn) !important;
+}
+
+body.sbterm #toast-container .toast-progress {
+    background-color: var(--sbterm-accent) !important;
+}
+
+body.sbterm #toast-container .toast-close-button {
+    color: var(--sbterm-fg) !important;
+}
+
+/* 11. Strict terminal density */
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) {
+    --sbterm-prose-width: 78ch;
+    /* ponytail: banner is two lines; grow the host's fixed topbar row so it isn't clipped */
+    --sb-topbar-primary-height: max(
+        calc(var(--sb-topbar-primary-height-base) * var(--sb-topbar-scale-active)),
+        var(--sb-topbar-primary-min-height),
+        3rem
+    );
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #top-bar {
+    background-color: var(--sbterm-bg) !important;
+    border-block-end: 0;
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sb-topbar-stack {
+    inline-size: 100%;
+    max-inline-size: none;
+}
+
+/* ponytail: re-anchor #sheld to the taller top bar, same idiom as host #charlib-embedded-container */
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sheld {
+    --topBarBlockSize: max(var(--sb-host-topbar-block-size), var(--sb-topbar-layout-offset));
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #top-bar #sb-topbar-inner {
+    min-block-size: 0;
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sb-topbar-brand {
+    align-items: flex-start;
+    /* The host clips this box, which would eat the status button's touch
+       overlay. The title and statusline each own their ellipsis, so nothing
+       here depends on the clip. */
+    overflow: visible;
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sbterm-banner {
+    position: relative;
+    min-inline-size: 0;
+    inline-size: 100%;
+    max-inline-size: none;
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 1ch;
+    margin-inline: auto;
+    padding-block: 0;
+    padding-inline: clamp(6px, 1vw, 12px);
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sbterm-banner::after {
+    content: none;
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-mascot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    inline-size: 2.75rem;
+    block-size: 2.75rem;
+    aspect-ratio: 1;
+    color: var(--sbterm-accent2);
+    filter: drop-shadow(0 0 6px var(--sbterm-glow));
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-mascot-button {
+    flex: 0 0 auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-mascot-button:is(:hover, :focus-visible) {
+    color: var(--sbterm-accent);
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-mascot-button:focus-visible {
+    outline: 1px solid var(--sbterm-accent);
+    outline-offset: 3px;
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-mascot img {
+    block-size: 100%;
+    inline-size: auto;
+    overflow: visible;
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-banner-copy {
+    min-inline-size: 0;
+    inline-size: 100%;
+    text-align: start;
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-banner-copy::after {
+    content: '';
+    display: block;
+    margin-block-start: 0.2rem;
+    border-block-end: 1px solid color-mix(in oklch, var(--sbterm-border) 68%, transparent);
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-banner-title {
+    display: block;
+    color: var(--sbterm-accent);
+    font-size: calc(var(--mainFontSize, 15px) * 0.83);
+    font-weight: 750;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sbterm-statusline {
+    inline-size: 100%;
+    padding: 1px 0 0;
+    color: var(--sbterm-fg-dim);
+    font-size: calc(var(--mainFontSize, 15px) * 0.87);
+    font-weight: 450;
+    letter-spacing: 0;
+    line-height: 1.35;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sbterm-statusline[data-state='generating'],
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sbterm-statusline[data-state='command'] {
+    color: var(--sbterm-accent2);
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sbterm-statusline[data-state='disconnected'] {
+    color: var(--sbterm-err);
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sheld {
+    border: 0;
+    background-color: var(--sbterm-bg) !important;
+}
+
+:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #chat {
+    padding-block: 10px 18px;
+}
+
+body.sbterm:not(.sbterm-home-visible) #chat .welcomePanel {
+    display: none !important;
+}
+
+/* Terminal Home is the same focused shell in either density, on the same flat
+   surface as every other screen. It used to reveal the host wallpaper and float
+   a 72%-opaque blurred #sheld over it, which read as three different
+   backgrounds stacked — statusline, a strip of raw wallpaper, then a tinted
+   panel. #bg1 stays hidden here like it is everywhere else. */
+body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel) #top-bar {
+    background-color: var(--sbterm-bg) !important;
+    border-block-end: 0;
+}
+
+/* Terminal Home used to hide the nav groups unconditionally here, which made
+   /show-top-navbar a no-op on the one screen you are most likely to run it
+   from. The .sbterm-topbar-hidden rules in §4 already collapse the bar to a
+   single column and hide the groups, so Home follows the toggle now. */
+
+body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel) #sheld {
+    border: 0;
+    background-color: var(--sbterm-bg) !important;
+}
+
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #form_sheld {
+    position: absolute !important;
+    inset: auto !important;
+    inset-block-start: 60% !important;
+    inset-inline-start: 50% !important;
+    margin: 0 !important;
+    inline-size: min(calc(100% - 2rem), 72ch) !important;
+    max-inline-size: none !important;
+    block-size: auto;
+    max-block-size: calc(80% - 2rem);
+    overflow: visible;
+    padding: 0 !important;
+    display: grid !important;
+    grid-template-columns: 4.5rem minmax(0, 1fr) !important;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+        'mascot prompt'
+        'mascot guide' !important;
+    column-gap: 1.25rem;
+    align-items: start;
+    transform: translate(-50%, -50%) !important;
+}
+
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #send_form {
+    grid-area: prompt;
+    padding: 0 !important;
+    overflow: visible;
+}
+
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #form_sheld::before {
+    content: none;
+}
+
+body.sbterm .sbterm-mascot-form {
+    display: none;
+}
+
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) .sbterm-mascot-form {
+    grid-area: mascot;
+    align-self: start;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-block-start: 0.1rem;
+    inline-size: 4.5rem;
+    block-size: 3.5rem;
+    color: var(--sbterm-accent2);
+    filter: drop-shadow(0 0 7px var(--sbterm-glow));
+}
+
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) .sbterm-mascot-form img {
+    block-size: 100%;
+    inline-size: auto;
+}
+
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #form_sheld::after {
+    content: none;
+}
+
+body.sbterm .sbterm-command-glossary {
+    display: none;
+}
+
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) .sbterm-command-glossary {
+    display: block;
+    grid-area: guide;
+    justify-self: stretch;
+    align-self: start;
+    margin-block-start: 1rem;
+    padding-inline-end: 0.75rem;
+    color: var(--sbterm-fg-dim);
+    font-size: calc(var(--mainFontSize, 15px) * 0.83);
+    font-weight: 450;
+    line-height: 1.4;
+    min-block-size: 0;
+    max-block-size: min(50dvh, 28rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+
+body.sbterm .sbterm-command-glossary-title {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+body.sbterm .sbterm-command-glossary-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.25rem;
+    min-inline-size: 0;
+}
+
+body.sbterm .sbterm-command-glossary-row {
+    display: grid;
+    grid-template-columns: minmax(18ch, 23ch) minmax(0, 1fr);
+    gap: 1.25ch;
+    min-inline-size: 0;
+    align-items: baseline;
+}
+
+body.sbterm .sbterm-command-glossary-command {
+    color: var(--sbterm-accent2);
+    background: transparent !important;
+    font: inherit;
+    font-weight: 650;
+    border: 0 !important;
+    padding: 0 !important;
+    white-space: nowrap;
+}
+
+body.sbterm .sbterm-command-glossary-help {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+}
+
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) :is(#form_sheld, #send_form, #nonQRFormItems) {
+    border: 0 !important;
+    background: var(--sbterm-bg) !important;
+}
+
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #nonQRFormItems {
+    display: grid !important;
+    grid-template-columns: max-content minmax(0, 1fr) max-content !important;
+    grid-template-areas: 'prompt input action' !important;
+    gap: 0 0.75ch !important;
+    min-block-size: 0 !important;
+    padding: 0 !important;
+}
+
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #nonQRFormItems::before {
+    grid-area: prompt;
+    align-self: start;
+    padding: 0.35rem 0 0 !important;
+    font-family: var(--monoFontFamily);
+    line-height: 1.5;
+}
+
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #leftSendForm,
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #send_form > #gg-action-button-container,
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #rightSendForm > :not(#send_but):not(#mes_stop):not(#stscript_continue):not(#stscript_pause):not(#stscript_stop),
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) .stih--standalone {
+    display: none !important;
+}
+
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #send_textarea {
+    background: transparent !important;
+    border: 0 !important;
+    line-height: 1.5;
+    text-align: start !important;
+    box-shadow: inset 0 -1px color-mix(in oklch, var(--sbterm-accent) 32%, transparent) !important;
+}
+
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #send_textarea::placeholder {
+    text-align: start !important;
+}
+
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #send_form:focus-within {
+    outline: 0 !important;
+}
+
+body.sbterm:not(.sbterm-home-visible):has(#sheld #chat .welcomePanel) .autoComplete-wrap:not(.isFloating) > .autoComplete {
+    max-block-size: min(34dvh, 18rem, calc(95vh - var(--bottom, 0px)));
+    overflow-y: auto;
+}
+
+@media (min-width: 701px) {
+    body.sbterm:not(.sbterm-home-visible):has(#sheld #chat .welcomePanel) .autoComplete > .item > .specs {
+        grid-column: 2 / 3;
+    }
+
+    body.sbterm:not(.sbterm-home-visible):has(#sheld #chat .welcomePanel) .autoComplete > .item > .help {
+        grid-column: 3 / 4;
+        padding-inline-start: 0.75rem;
+    }
+}
+
+body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #send_textarea {
+    min-block-size: 2.25rem !important;
+    max-block-size: min(40dvh, 18rem) !important;
+    /* ponytail: match the '> ' prompt prefix padding so baselines align */
+    padding: 0.35rem 0 !important;
+}
+
+body.sbterm.sbterm-minimal #chat .mes {
+    margin: 0 !important;
+    padding: 5px clamp(10px, 2.5vw, 28px) 18px !important;
+    border: 0 !important;
+}
+
+body.sbterm.sbterm-minimal #chat .mes:is(:hover, :focus-within) {
+    background-color: transparent !important;
+}
+
+body.sbterm.sbterm-minimal #chat .mes[is_user='true'] {
+    margin-block-end: 18px !important;
+    padding-block: 9px !important;
+}
+
+body.sbterm.sbterm-minimal #chat .mes_block {
+    max-inline-size: var(--sbterm-prose-width) !important;
+    margin-inline: auto;
+}
+
+body.sbterm.sbterm-minimal #chat .ch_name {
+    min-block-size: 0;
+    gap: 0.6ch;
+    margin-block-end: 3px;
+    color: var(--sbterm-fg-dim);
+    font-size: calc(var(--mainFontSize, 15px) * 0.87);
+    font-weight: 450;
+}
+
+body.sbterm.sbterm-minimal #chat .ch_name .name_text::before {
+    content: '@ ' / '';
+    color: var(--sbterm-fg-dim);
+    font-weight: 450;
+}
+
+body.sbterm.sbterm-minimal #chat .ch_name .name_text {
+    color: var(--sbterm-fg-dim);
+    font-weight: 450;
+}
+
+body.sbterm.sbterm-minimal #chat .mes[is_user='true'] .mes_block:not(:has(.edit_textarea, .reasoning_edit_textarea)) {
+    display: grid !important;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: first baseline;
+    column-gap: 0.75ch;
+}
+
+/* ponytail: .ch_name sits in the max-content grid column and never stretches,
+   so an auto margin can't push .mes_buttons right; anchor it to the block
+   edge instead. Hover-only reveal (see §12) keeps it from covering text. */
+body.sbterm.sbterm-minimal #chat .mes[is_user='true'] .mes_block {
+    position: relative;
+}
+
+body.sbterm.sbterm-minimal #chat .mes[is_user='true'] .mes_block .mes_buttons {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-end: 0;
+}
+
+body.sbterm.sbterm-minimal #chat .mes[is_user='true'] .ch_name {
+    margin: 0;
+    font-size: inherit;
+}
+
+body.sbterm.sbterm-minimal #chat .mes[is_user='true'] .ch_name .name_text::before {
+    content: '> ' / '';
+    color: var(--sbterm-accent);
+    font-weight: 800;
+}
+
+body.sbterm.sbterm-minimal #chat .mes[is_user='true'] .ch_name :is(.timestamp, .mesIDDisplay, .mes_timer, .tokenCounterDisplay) {
+    display: none !important;
+}
+
+body.sbterm.sbterm-minimal #chat .mes[is_system='true'] .ch_name .name_text::before {
+    content: '# ' / '';
+}
+
+body.sbterm.sbterm-minimal #chat .mes_text {
+    color: var(--sbterm-fg) !important;
+    line-height: 1.62;
+}
+
+body.sbterm.sbterm-minimal #chat .mes_text :is(em, strong) {
+    color: inherit !important;
+}
+
+body.sbterm.sbterm-minimal #chat .mes_text p {
+    margin-block: 0 0.72em;
+}
+
+body.sbterm.sbterm-minimal #chat .mes_text p:last-child {
+    margin-block-end: 0;
+}
+
+body.sbterm.sbterm-minimal #form_sheld,
+body.sbterm.sbterm-minimal #send_form,
+body.sbterm.sbterm-minimal #nonQRFormItems {
+    border: 0 !important;
+}
+
+body.sbterm.sbterm-minimal #form_sheld {
+    border-block-start: 0 !important;
+}
+
+body.sbterm.sbterm-minimal #send_form {
+    padding: 0 !important;
+    overflow: visible;
+}
+
+/* Desktop-pointer only: the host's phone composer is its own named-area grid
+   ('tools input action' with button rails); imposing this grid there collapses
+   the rails, stranding the options/wand row and floating send over the input. */
+@media not ((any-pointer: coarse) or (pointer: coarse) or (hover: none) or (max-width: 1000px)) {
+    body.sbterm.sbterm-minimal #nonQRFormItems {
+        grid-template-columns: max-content minmax(0, 1fr) max-content !important;
+        grid-template-areas: 'prompt input action' !important;
+        gap: 0 0.75ch !important;
+        min-block-size: 0 !important;
+        padding: 0 !important;
+    }
+
+    body.sbterm.sbterm-minimal #leftSendForm {
+        display: none !important;
+    }
+}
+
+body.sbterm.sbterm-minimal #nonQRFormItems::before {
+    content: '> ' / '';
+    grid-area: prompt;
+    align-self: start;
+    /* ponytail: match #send_textarea font metrics so the '> ' and the first
+       text line share one baseline */
+    font-family: var(--monoFontFamily);
+    line-height: 1.5;
+    padding: 0.35rem 0 0 !important;
+}
+
+/* #qig-input-btn (Quick Image Gen's palette button) stays: it is a primary
+   control the host relocates into the send rail, not composer clutter. */
+body.sbterm.sbterm-minimal #send_form > #gg-action-button-container,
+body.sbterm.sbterm-minimal #rightSendForm > :not(#send_but):not(#mes_stop):not(#stscript_continue):not(#stscript_pause):not(#stscript_stop):not(#qig-input-btn),
+body.sbterm.sbterm-minimal .stih--standalone {
+    display: none !important;
+}
+
+body.sbterm.sbterm-minimal #send_textarea {
+    border: 0 !important;
+    line-height: 1.5;
+}
+
+body.sbterm.sbterm-minimal #send_textarea::placeholder {
+    text-align: start !important;
+}
+
+body.sbterm.sbterm-minimal #send_form:focus-within {
+    outline: 0 !important;
+}
+
+body.sbterm.sbterm-minimal #send_textarea {
+    outline: 0 !important;
+    box-shadow: inset 0 -1px color-mix(in oklch, var(--sbterm-accent) 32%, transparent) !important;
+}
+
+body.sbterm.sbterm-minimal #send_textarea:focus-visible {
+    outline: 2px solid var(--sbterm-accent) !important;
+    outline-offset: 2px;
+    box-shadow: inset 0 -1px color-mix(in oklch, var(--sbterm-accent) 88%, transparent) !important;
+}
+
+body.sbterm.sbterm-minimal .sb-conversation-message {
+    margin: 0 !important;
+    padding: 5px clamp(10px, 2.5vw, 28px) 18px;
+    border-block-end: 0;
+}
+
+body.sbterm.sbterm-minimal .sb-conversation-message[data-role='user'] {
+    margin-block-end: 18px !important;
+    padding-block: 9px;
+    background-color: var(--sbterm-user-mes-bg) !important;
+}
+
+body.sbterm.sbterm-minimal .sb-conversation-message[data-role='user'] .sb-conversation-message-bubble::before {
+    content: '> ' / '';
+    float: inline-start;
+    margin-inline-end: 0.75ch;
+    color: var(--sbterm-accent);
+    font-weight: 800;
+}
+
+body.sbterm.sbterm-minimal .sb-conversation-message-bubble {
+    max-inline-size: var(--sbterm-prose-width) !important;
+    margin-inline: auto;
+    line-height: 1.62;
+}
+
+body.sbterm.sbterm-minimal .sb-conversation-message-name,
+body.sbterm.sbterm-minimal .sb-conversation-message-meta {
+    color: var(--sbterm-fg-dim) !important;
+    font-size: calc(var(--mainFontSize, 15px) * 0.87);
+    font-weight: 450;
+}
+
+body.sbterm.sbterm-minimal :is(.sb-conversation-composer, #sb_conversation_input) {
+    background-color: var(--sbterm-bg) !important;
+    border-color: transparent !important;
+}
+
+body.sbterm.sbterm-minimal .autoComplete-wrap,
+body.sbterm.sbterm-minimal .autoComplete-detailsWrap {
+    border-color: transparent !important;
+}
+
+body.sbterm.sbterm-minimal .autoComplete > .item.selected,
+body.sbterm.sbterm-minimal .autoComplete > .item:hover {
+    background-color: transparent !important;
+    color: var(--sbterm-accent) !important;
+    font-weight: 700;
+}
+
+body.sbterm.sbterm-minimal .autoComplete > .item.selected :is(span, .matched),
+body.sbterm.sbterm-minimal .autoComplete > .item:hover :is(span, .matched) {
+    color: inherit !important;
+    background-color: transparent !important;
+}
+
+body.sbterm.sbterm-minimal .autoComplete > .item.selected,
+body.sbterm.sbterm-minimal .welcomeRecentTab.active {
+    text-decoration-line: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 0.2em;
+}
+
+body.sbterm.sbterm-minimal .welcomeGuidePanel,
+body.sbterm.sbterm-minimal .welcomeRecentShell {
+    border-color: transparent !important;
+}
+
+body.sbterm.sbterm-minimal #chat .mes:has(.welcomePanel) {
+    padding: 0 clamp(10px, 2.5vw, 28px) 18px !important;
+}
+
+body.sbterm.sbterm-minimal .welcomePanel {
+    max-inline-size: var(--sbterm-prose-width);
+    gap: 14px;
+    margin-inline: auto;
+    padding: 10px 0 !important;
+    border: 0 !important;
+}
+
+body.sbterm.sbterm-minimal .welcomePanel::after {
+    display: none;
+}
+
+body.sbterm.sbterm-minimal :is(.welcomeRecentShell, .recentChat, .noRecentChat)::before {
+    display: none !important;
+}
+
+body.sbterm.sbterm-minimal :is(.welcomeActionCard, .welcomeGuideCard, .welcomeShortcut, .welcomePanelModeToggle, .recentChat, .noRecentChat) {
+    background-color: transparent !important;
+    border: 0 !important;
+}
+
+body.sbterm.sbterm-minimal :is(.welcomeActionCard, .welcomeGuideCard, .welcomeShortcut, .welcomePanelModeToggle, .recentChat):is(:hover, :focus-within) {
+    background-color: var(--sbterm-bg-alt) !important;
+}
+
+body.sbterm.sbterm-minimal .welcomeRecentShell {
+    padding-inline: 0 !important;
+    background-color: transparent !important;
+}
+
+body.sbterm.sbterm-minimal .welcomeHeaderLogo,
+body.sbterm.sbterm-minimal .welcomeShortcut > i {
+    display: none !important;
+}
+
+body.sbterm.sbterm-minimal .welcomeShortcuts {
+    justify-content: flex-start;
+    gap: 2px 1ch;
+}
+
+body.sbterm.sbterm-minimal .welcomeShortcut {
+    flex: 0 1 auto;
+    min-block-size: 32px;
+    max-inline-size: none;
+    justify-content: flex-start;
+    padding-inline: 0.75ch;
+}
+
+body.sbterm.sbterm-minimal .welcomeShortcut::before {
+    content: '> ' / '';
+    color: var(--sbterm-accent);
+    font-weight: 800;
+}
+
+body.sbterm.sbterm-minimal .welcomeRecentTabs {
+    padding: 0;
+    background-color: transparent;
+    border: 0;
+}
+
+body.sbterm.sbterm-minimal .welcomeRecentTab {
+    min-block-size: 32px;
+    padding: 4px 8px;
+}
+
+body.sbterm.sbterm-minimal .welcomeRecentTab.active {
+    background-color: transparent;
+    color: var(--sbterm-accent);
+    font-weight: 700;
+}
+
+body.sbterm.sbterm-minimal .welcomeRecent .recentChatList {
+    gap: 0;
+}
+
+body.sbterm.sbterm-minimal .welcomeRecent .recentChatList .recentChat {
+    gap: 0;
+    padding: 10px 1ch;
+    transform: none;
+}
+
+body.sbterm.sbterm-minimal .recentChat .avatar {
+    display: none !important;
+}
+
+/* 12. Desktop terminal density */
+@media (min-width: 1001px) and (hover: hover) and (pointer: fine) {
+    /* The neconyan nav groups stay visible and clickable at all times; the
+       statusline banner owns the flexible middle column. */
+    body.sbterm.sbterm-minimal #top-bar #sb-topbar-inner {
+        grid-template-columns: auto minmax(0, 1fr) auto !important;
+        column-gap: 0.75ch;
+    }
+
+    body.sbterm.sbterm-minimal #sb-topbar-inner > .sb-topbar-group {
+        min-inline-size: 0;
+    }
+
+    body.sbterm.sbterm-minimal #sb-topbar-inner > .sb-topbar-group-left {
+        justify-content: flex-start;
+    }
+
+    body.sbterm.sbterm-minimal #sb-topbar-inner > .sb-topbar-group-right {
+        justify-content: flex-end;
+        flex-wrap: nowrap;
+    }
+
+    body.sbterm.sbterm-minimal #sb-topbar-inner > .sb-topbar-group .sb-proxy-button {
+        flex: 0 0 auto;
+    }
+
+    body.sbterm.sbterm-minimal #chat .mes .mes_buttons,
+    body.sbterm.sbterm-minimal #chat .mes .swipe_left,
+    body.sbterm.sbterm-minimal #chat .mes .swipe_right,
+    body.sbterm.sbterm-minimal #chat .mes .swipes-counter,
+    body.sbterm.sbterm-minimal #chat .mes .mesIDDisplay,
+    body.sbterm.sbterm-minimal #chat .mes .mes_timer,
+    body.sbterm.sbterm-minimal #chat .mes .tokenCounterDisplay,
+    body.sbterm.sbterm-minimal .sb-conversation-message-actions,
+    body.sbterm.sbterm-minimal .welcomeRecent .recentChat .chatActions {
+        opacity: 0 !important;
+        pointer-events: none !important;
+        transition: opacity 120ms ease-out;
+    }
+
+    body.sbterm.sbterm-minimal #chat .mes:is(:hover, :focus-within) :is(.mes_buttons, .swipe_left, .swipe_right, .swipes-counter, .mesIDDisplay, .mes_timer, .tokenCounterDisplay),
+    body.sbterm.sbterm-minimal #chat .mes .extraMesButtons.visible,
+    body.sbterm.sbterm-minimal .sb-conversation-message-bubble:is(:hover, :focus-within) .sb-conversation-message-actions,
+    body.sbterm.sbterm-minimal .welcomeRecent .recentChat:is(:hover, :focus-within) .chatActions {
+        opacity: 1 !important;
+        pointer-events: auto !important;
+    }
+
+    body.sbterm.sbterm-minimal #sb_conversation_pals_toggle,
+    body.sbterm.sbterm-minimal .sb-conversation-header-actions,
+    body.sbterm.sbterm-minimal .sb-conversation-composer-actions {
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 120ms ease-out;
+    }
+
+    body.sbterm.sbterm-minimal #sb_conversation_header:is(:hover, :focus-within) :is(#sb_conversation_pals_toggle, .sb-conversation-header-actions),
+    body.sbterm.sbterm-minimal .sb-conversation-composer:is(:hover, :focus-within) .sb-conversation-composer-actions {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    body.sbterm.sbterm-minimal #sheld[data-sb-conversation-mode='on'] {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            'header'
+            'stage';
+    }
+
+    body.sbterm.sbterm-minimal #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_toggle,
+    body.sbterm.sbterm-minimal #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_rail .sb-conversation-rail-close {
+        display: inline-flex !important;
+    }
+
+    body.sbterm.sbterm-minimal #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_rail {
+        position: absolute;
+        inset-block: 0;
+        inset-inline-start: 0;
+        z-index: 82;
+        inline-size: min(36vw, 360px);
+        display: flex;
+        visibility: hidden;
+        pointer-events: none;
+        transform: translateX(calc(-100% - 12px));
+        transition:
+            transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+            visibility 0s linear 180ms;
+    }
+
+    body.sbterm.sbterm-minimal #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_rail[data-open='true'] {
+        visibility: visible;
+        pointer-events: auto;
+        transform: translateX(0);
+        transition-delay: 0s;
+    }
+
+    body.sbterm.sbterm-minimal:dir(rtl) #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_rail:not([data-open='true']) {
+        transform: translateX(calc(100% + 12px));
+    }
+}
+
+/* 13. Touch and narrow layouts */
+@media (any-pointer: coarse), (pointer: coarse), (hover: none), (max-width: 1000px) {
+    body.sbterm {
+        --sb-composer-action-size: var(--sb-mobile-touch-target, 44px);
+        --sb-composer-send-width: var(--sb-mobile-touch-target, 44px);
+        --sb-message-icon-size: var(--sb-mobile-touch-target, 44px);
+    }
+
+    body.sbterm #sb-bottom-chat-bar {
+        --sb-bottom-chat-mobile-button-size: var(--sb-mobile-touch-target, 44px);
+        --sb-bottom-chat-mobile-select-height: var(--sb-mobile-touch-target, 44px);
+        --sb-bottom-chat-mobile-persona-size: var(--sb-mobile-touch-target, 44px);
+    }
+
+    body.sbterm #top-bar #sb-topbar-inner {
+        grid-template-columns: auto minmax(5rem, 1fr) auto !important;
+    }
+
+    body.sbterm #sbterm-statusline {
+        padding-inline: 6px;
+    }
+
+    /* Each chat style keeps its own message layout on phones — Ripple's tall
+       portrait column and the Moonlit banners are the styles' identity. Only
+       the default styles' avatar is compacted to the 44px touch target;
+       the Moonlit families size their own columns and are left alone. */
+    body.sbterm #chat .mesAvatarWrapper {
+        --avatar-base-width: 44px;
+        --avatar-base-height: 44px;
+    }
+
+    /* ponytail: the auxiliary bars are one scrollable row on touch; fade the
+       clipped right edge so more controls are discoverable. The trailing
+       padding keeps the last button out of the permanent fade zone. */
+    body.sbterm #sbterm-chat-topbar {
+        gap: 0.25rem;
+        padding-inline: 0.5rem 1.75rem;
+        mask-image: linear-gradient(90deg, #000 0 calc(100% - 1.75rem), transparent);
+    }
+
+    body.sbterm:dir(rtl) #sbterm-chat-topbar {
+        mask-image: linear-gradient(270deg, #000 0 calc(100% - 1.75rem), transparent);
+    }
+
+    body.sbterm :is(#sbterm-chat-topbar, #sb-bottom-chat-bar) {
+        margin-block-end: 0 !important;
+    }
+
+    /* The active-chat autocomplete must not bury the transcript; cap it like
+       the Home dropdown already is (the Home rule keeps its 34dvh cap). */
+    body.sbterm .autoComplete-wrap:not(.isFloating) > .autoComplete {
+        max-block-size: min(50dvh, 22rem);
+        overflow-y: auto;
+    }
+
+    body.sbterm #chat .mes {
+        padding: 9px 10px !important;
+    }
+
+    /* These must carry the same specificity as the §11 grid rules they undo
+       (the :not(:has()) there outweighs a plain selector), or touch keeps the
+       grid and the always-visible buttons sit on top of the first text line. */
+    body.sbterm.sbterm-minimal #chat .mes[is_user='true'] .mes_block:not(:has(.edit_textarea, .reasoning_edit_textarea)) {
+        display: block !important;
+    }
+
+    body.sbterm.sbterm-minimal #chat .mes[is_user='true'] .mes_block .mes_buttons {
+        position: static;
+        inline-size: 100%;
+        flex-wrap: wrap;
+    }
+
+    body.sbterm .sb-conversation-message-bubble {
+        padding-inline-end: calc(var(--sb-mobile-touch-target, 44px) + 8px) !important;
+    }
+
+    body.sbterm .sb-conversation-mobile-menu-trigger {
+        right: auto;
+        inset-inline-end: 8px;
+    }
+
+    body.sbterm #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_rail:not([data-open='true']) {
+        visibility: hidden;
+        pointer-events: none;
+        transition:
+            transform 210ms cubic-bezier(0.16, 1, 0.3, 1),
+            visibility 0s linear 210ms;
+    }
+
+    body.sbterm #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_rail[data-open='true'] {
+        visibility: visible;
+        pointer-events: auto;
+        transition-delay: 0s;
+    }
+
+    body.sbterm:dir(rtl) #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_rail:not([data-open='true']) {
+        transform: translateX(calc(100% + 12px));
+    }
+
+    body.sbterm #chat .mes_buttons,
+    body.sbterm #chat .swipe_left,
+    body.sbterm #chat .swipe_right,
+    body.sbterm #chat .swipes-counter,
+    body.sbterm .mes_img_swipes,
+    body.sbterm .mes_img_controls,
+    body.sbterm .mes_video_controls {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    body.sbterm.sbterm-minimal #chat .mes :is(.mes_buttons, .swipe_left, .swipe_right, .swipes-counter, .mesIDDisplay, .mes_timer, .tokenCounterDisplay),
+    body.sbterm.sbterm-minimal .sb-conversation-message-actions,
+    body.sbterm.sbterm-minimal .welcomeRecent .recentChat .chatActions,
+    body.sbterm.sbterm-minimal #sb_conversation_pals_toggle,
+    body.sbterm.sbterm-minimal .sb-conversation-header-actions,
+    body.sbterm.sbterm-minimal .sb-conversation-composer-actions {
+        opacity: 1 !important;
+        pointer-events: auto !important;
+    }
+
+    body.sbterm :is(.menu_button, .menu_button_icon, .sb-proxy-button, .sb-shell-tab, .sb-shell-close, #send_but, #mes_stop, #options_button, #extensionsMenuButton, #sb_conversation_send, #sb_conversation_pals_toggle, .sb-conversation-tool-button, .qr--button, .welcomeShortcut, .welcomeRecentTab, .sb-conversation-channel-tab, .sb-conversation-mobile-menu-trigger, .sb-conversation-message-action, .sb-conversation-reaction-button, .sb-conversation-message-avatar, .sb-conversation-participant-avatar.is-interactive, .sb-conversation-rail-footer-avatar, .sb-conversation-pal-delete, .sb-conversation-branch-action, .sb-conversation-new-branch, .sb-conversation-stop-image, .swipes-counter.swipe-picker-enabled, .mes_img_swipes .right_menu_button, .mes_img_controls .right_menu_button, .mes_video_controls .right_menu_button) {
+        min-inline-size: var(--sb-mobile-touch-target, 44px);
+        min-block-size: var(--sb-mobile-touch-target, 44px);
+    }
+
+    body.sbterm #sheld[data-sb-conversation-mode='on'] #sb_conversation_header .menu_button_icon {
+        min-width: var(--sb-mobile-touch-target, 44px) !important;
+        min-inline-size: var(--sb-mobile-touch-target, 44px) !important;
+        min-height: var(--sb-mobile-touch-target, 44px) !important;
+        min-block-size: var(--sb-mobile-touch-target, 44px) !important;
+    }
+
+    body.sbterm #sbterm-chat-topbar :is(.stih--button, .gg-action-button) {
+        inline-size: 44px !important;
+        min-inline-size: 44px !important;
+        max-inline-size: 44px !important;
+        block-size: 44px !important;
+        min-block-size: 44px !important;
+        max-block-size: 44px !important;
+        flex-basis: 44px !important;
+    }
+
+    body.sbterm.sbterm-minimal #nonQRFormItems::before {
+        content: none;
+    }
+
+    body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #nonQRFormItems::before {
+        content: '> ' / '';
+    }
+
+    body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) .sbterm-command-glossary-list {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 700px) {
+    :is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sbterm-banner {
+        grid-template-columns: minmax(0, 1fr);
+        padding-block: 7px;
+    }
+
+    :is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-banner-title,
+    :is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-mascot {
+        display: none;
+    }
+
+    :is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sbterm-statusline {
+        padding-inline: 0;
+    }
+
+    /* The host's fixed top-bar row clips the banner's bottom hairline into a
+       stray sliver on phones; the divider is decoration, drop it. */
+    :is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-banner-copy::after {
+        content: none;
+    }
+
+    /* One column on phones, with the mascot restacked onto its own row above
+       the prompt instead of the desktop layout's left-hand column. */
+    body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #form_sheld {
+        grid-template-columns: minmax(0, 1fr) !important;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        grid-template-areas:
+            'mascot'
+            'prompt'
+            'guide' !important;
+        row-gap: 0.5rem;
+    }
+
+    body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) .sbterm-mascot-form {
+        grid-area: mascot;
+        justify-self: center;
+        align-self: center;
+        margin-block-start: 0;
+        inline-size: 4.5rem;
+        block-size: 3.5rem;
+    }
+
+    body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) .sbterm-command-glossary-list {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) .sbterm-command-glossary-row {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0;
+    }
+
+    body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #form_sheld::before {
+        display: none;
+    }
+}
+
+/* 15. Boot splash */
+/* Keep the generated Neconyan loading cat and its reduced-motion variant. */
+body.sbterm #preloader {
+    background-color: var(--sbterm-bg) !important;
+    color: var(--sbterm-fg) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+
+body.sbterm .splash-message {
+    color: var(--sbterm-fg-dim) !important;
+    font-family: var(--monoFontFamily);
+    font-size: 1rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    opacity: 1;
+}
+
+body.sbterm .splash-message::before {
+    content: '> ' / '';
+    color: var(--sbterm-accent);
+}
+
+body.sbterm #load-spinner {
+    color: var(--sbterm-accent) !important;
+}
+
+/* Conversation Mode brings its own shell, transcript and composer, but the
+   Terminal Home gate only asks whether #chat still holds a .welcomePanel —
+   which it does — so Home's prompt, mascot and command glossary rendered
+   straight over the conversation. */
+/* Conversation Mode and Hopper (data-sbtw-mode) each take over #sheld with a shell of
+   their own: the prompt, its mascot and the command glossary step aside, and the Terminal
+   Home layout above is switched off for #sheld while they are up. */
+body.sbterm:has(#sheld:is([data-sb-conversation-mode='on'], [data-sbtw-mode='on'])) :is(#form_sheld, #send_form, .sbterm-command-glossary, .sbterm-mascot-form) {
+    display: none !important;
+}
+
+/* 14. Optional CRT overlay */
+body.sbterm.sbterm-crt::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 2147483646;
+    pointer-events: none;
+    background-image: repeating-linear-gradient(
+        0deg,
+        rgba(2, 4, 3, 0.08) 0 1px,
+        transparent 1px 3px
+    );
+    animation: sbterm-flicker 4s infinite;
+}
+
+/* !important because the §3 reset strips text-shadow globally; the CRT glow
+   is the one deliberate exception. */
+body.sbterm.sbterm-crt :is(#chat .mes_text, #sbterm-statusline) {
+    text-shadow: 0 0 2px var(--sbterm-glow) !important;
+}
+
+@keyframes sbterm-flicker {
+    0%, 97%, 100% { opacity: 1; }
+    98% { opacity: 0.92; }
+}
+
+/* The host also has an in-app "reduced motion" toggle (body.reduced-motion)
+   that is independent of the OS media query; honor both. */
+body.sbterm.reduced-motion.sbterm-crt::after {
+    animation: none;
+}
+
+body.sbterm.reduced-motion *,
+body.sbterm.reduced-motion *::before,
+body.sbterm.reduced-motion *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.sbterm.sbterm-crt::after {
+        animation: none;
+    }
+
+    body.sbterm *,
+    body.sbterm *::before,
+    body.sbterm *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+    }
+}
+
+@media (forced-colors: active), (prefers-contrast: more) {
+    body.sbterm.sbterm-crt::after {
+        display: none;
+    }
+}
+
+@media (forced-colors: active) {
+    body.sbterm :focus-visible {
+        outline: 2px solid CanvasText !important;
+    }
+
+    body.sbterm.sbterm-minimal #send_textarea:focus-visible {
+        outline: 2px solid CanvasText !important;
+    }
+
+    /* The fill behind a tinted avatar becomes a system colour here, so the blend
+       would duotone the picture to something nobody chose. Hand the pictures
+       back untouched instead, overlays included. */
+    body.sbterm.sbterm-avatar-tinted :is([class*='avatar' i], [id*='avatar' i]) > img,
+    body.sbterm.sbterm-avatar-tinted .sb-persona-option > .sb-persona-option-avatar {
+        filter: none;
+        mix-blend-mode: normal;
+    }
+
+    body.sbterm.sbterm-avatar-tinted #sb-persona-bubble {
+        background-blend-mode: normal;
+    }
+
+    body.sbterm.sbterm-avatar-tinted :is(#sb-persona-bubble, .sb-persona-option)::before,
+    body.sbterm.sbterm-avatar-tinted #sb-persona-bubble::after {
+        display: none;
+    }
+}

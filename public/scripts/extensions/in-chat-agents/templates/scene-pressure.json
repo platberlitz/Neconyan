@@ -1,0 +1,41 @@
+{
+  "id": "tpl-scene-pressure",
+  "name": "Scene Pressure Cocktail",
+  "description": "Mix random tension, focus, consequence, mood, and pacing into each scene (50% chance)",
+  "icon": "",
+  "category": "randomizer",
+  "tags": [
+    "pressure",
+    "tension",
+    "pacing"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "### Scene Pressure Cocktail\nThis scene is shaped by the following pressures:\n\nTension: {{random::Direct disagreement::Avoidance and deflection::Competing priorities::Emotional asymmetry::Status imbalance::Misread intentions::Moral disagreement::Uneven vulnerability::Conflicting loyalties::One-sided urgency::Territorial friction::Testing boundaries::Unspoken resentment::Practical dependence without trust::Different ideas of what this moment is::Flirtation masked as something else}}\n\nFocus: {{random::Hands, objects, and small tasks::Distance, posture, and spatial pressure::Faces and failed expression control::Noise, crowding, and interruption::Texture, temperature, and bodily discomfort::Eye-lines, avoidance, and attention drift::Doorways, exits, and who can leave::Shared surfaces and territorial use of space::Clothing, disarray, and self-presentation::Breath, pauses, and speech rhythm::Weight, balance, and shifts in stance::Watching and being watched::Food, drink, and appetite::Lighting, visibility, and concealment::Sound carrying farther than intended::Touch, near-touch, and withheld contact}}\n\nConsequence: {{random::A relationship shifts slightly::A practical problem gets worse::A new obligation is created::A secret becomes harder to keep::Someone gains leverage::Someone loses face::The plan gets messier::A future scene gets set up::Trust is tested without resolution::An apology becomes harder::Someone is drawn in deeper than intended::A boundary is set or crossed::A favor is owed::A risk becomes unavoidable::A misunderstanding hardens::A new suspicion takes root::An option quietly closes off::Someone leaves with the wrong impression::A fragile alignment forms::A private tension becomes social}}\n\nSocial Weather: {{random::Everyone is a little tired::Someone is distracted by something else::Someone wants out of the conversation::Someone is unusually generous::Someone is touchy and easy to set off::Someone wants approval more than they admit::Someone is bored and making it everyone's problem::Someone is trying to keep the peace::Someone is carrying private embarrassment::Someone is more uncomfortable than they admit::Someone feels watched::Someone is in a better mood than the scene deserves::Someone is spoiling for a reaction::Someone is more affected than they want to show::Someone is treating this as lighter than it is::Someone is overcompensating for earlier weakness}}\n\nPace: {{random::Stalled and circling::Interrupted and jagged::Slow burn::Compressed and breathless::Awkwardly prolonged::Stop-start with false recoveries::Measured but tightening::Brief and loaded::Dragging under strain::Quick with hidden aftershock}}\n\nRules:\n- Combine the selected pressures into one specific scene texture.\n- Use each pressure as emphasis on rhythm, blocking, and behavior.\n- Keep the combination faithful to character, context, and scene scale.\n- The scene must produce a visible shift, complication, or opening shaped by these pressures.",
+  "phase": "pre",
+  "injection": {
+    "position": 1,
+    "depth": 0,
+    "role": 1,
+    "order": 95,
+    "scan": false
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "regex",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": ""
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 50,
+    "generationTypes": [
+      "normal"
+    ]
+  }
+}

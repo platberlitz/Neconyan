@@ -1,0 +1,138 @@
+<div class="sbbs-root" data-view="grid">
+    <header>
+      <form id="sbbs_search_form" class="sbbs-bar" role="search">
+        <!--
+            The only sticky part of the dialog: query, source, sort and
+            Filters stay put while everything below (including the results)
+            scrolls as one page, so the cards get the screen space.
+        -->
+        <div class="sbbs-bar-sticky">
+        <div class="sbbs-bar-row">
+            <!--
+                maxlength fits a pasted card URL (512, matching the server's URL
+                cap), not just a query; search terms are still capped at 128 by
+                the server and by rememberQuery().
+            -->
+            <label class="sbbs-visually-hidden" for="sbbs_query">Search character cards</label>
+            <input id="sbbs_query" class="text_pole sbbs-query" type="search" aria-label="Search character cards" aria-keyshortcuts="/" placeholder="Search character cards" maxlength="512" enterkeyhint="search" autocomplete="off" spellcheck="false" list="sbbs_query_history">
+            <!-- Previous searches, offered by the browser's own dropdown. -->
+            <datalist id="sbbs_query_history"></datalist>
+            <button id="sbbs_go" class="menu_button sbbs-go" type="submit" title="Search" aria-label="Search">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            </button>
+        </div>
+        <div class="sbbs-bar-row sbbs-bar-row-secondary">
+            <label class="sbbs-visually-hidden" for="sbbs_source">Card source</label>
+            <select id="sbbs_source" class="text_pole sbbs-source" aria-label="Source"></select>
+            <label class="sbbs-visually-hidden" for="sbbs_sort">Sort results</label>
+            <select id="sbbs_sort" class="text_pole sbbs-sort" aria-label="Sort"></select>
+            <button id="sbbs_filters_toggle" class="menu_button sbbs-filters-toggle" type="button" aria-expanded="false" aria-controls="sbbs_filters">
+                <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                <span>Filters</span>
+                <span id="sbbs_filters_badge" class="sbbs-filters-badge" hidden></span>
+            </button>
+        </div>
+        </div>
+        <!--
+            Refresh and selection scroll with the page, directly under the
+            sticky search rows: Select cards sits beside Refresh results, and
+            the count with Select all and Import selected joins them in this
+            row while selecting.
+        -->
+        <div class="sbbs-bar-row sbbs-bar-row-actions">
+        <button id="sbbs_refresh" class="menu_button sbbs-refresh" type="button">Refresh results</button>
+        <!--
+            Selecting several cards for one import. Off, it is a single button;
+            on, the grid's cards toggle instead of opening and the count and
+            the actions join it in this row.
+        -->
+        <div id="sbbs_selection" class="sbbs-selection" hidden>
+            <button id="sbbs_select_toggle" class="menu_button sbbs-select-toggle" type="button" aria-pressed="false">
+                <i class="fa-solid fa-square-check" aria-hidden="true"></i>
+                <span>Select cards</span>
+            </button>
+            <span id="sbbs_selection_count" class="sbbs-selection-count" role="status"></span>
+            <button id="sbbs_select_all" class="menu_button sbbs-selection-action" type="button">Select all</button>
+            <button id="sbbs_import_selected" class="menu_button sbbs-selection-action sbbs-import" type="button" disabled>Import selected</button>
+        </div>
+        </div>
+        <div class="sbbs-filter-group sbbs-content-controls" role="group" aria-label="Content restrictions">
+            <label class="checkbox_label sbbs-sfw">
+                <input id="sbbs_sfw" type="checkbox">
+                <span>SFW only</span>
+            </label>
+            <label id="sbbs_hide_ai_control" class="checkbox_label sbbs-hide-ai" hidden>
+                <input id="sbbs_hide_ai" type="checkbox">
+                <span>Hide AI-generated</span>
+            </label>
+        </div>
+        <div id="sbbs_filters" class="sbbs-filters" hidden>
+            <!--
+                Populated per source from capabilities.filters, so a control only
+                appears when the selected source can actually apply it.
+            -->
+            <div id="sbbs_filter_fields" class="sbbs-filter-fields"></div>
+            <div class="sbbs-filter-actions">
+                <button id="sbbs_filters_clear" class="menu_button sbbs-filters-clear" type="button">Clear source filters</button>
+            </div>
+        </div>
+        <details class="sbbs-intake-entry sbbs-file-actions" id="sbbs_file_actions" open>
+            <summary>Inspect a card file</summary>
+            <button id="sbbs_inspect_file" class="menu_button sbbs-inspect-file" type="button">
+                <i class="fa-solid fa-file-shield" aria-hidden="true"></i>
+                <span>Choose file</span>
+            </button>
+            <input id="sbbs_card_file" class="sbbs-visually-hidden" type="file" accept=".png,.json,image/png,application/json" tabindex="-1" aria-hidden="true">
+            <span class="sbbs-setting-note">Reports what is inside a PNG or JSON card before importing it. You can also drop one onto this dialog.</span>
+        </details>
+        <details class="sbbs-named-searches" id="sbbs_named_searches">
+            <summary>Named searches</summary>
+            <label class="checkbox_label"><input id="sbbs_named_consent" type="checkbox" aria-describedby="sbbs_named_privacy"><span id="sbbs_named_consent_label"></span></label>
+            <p id="sbbs_named_privacy" class="sbbs-setting-note"></p>
+            <div id="sbbs_named_controls" class="sbbs-named-controls" hidden>
+                <label for="sbbs_named_name">Search name</label>
+                <input id="sbbs_named_name" class="text_pole" type="text" autocomplete="off">
+                <button id="sbbs_named_save" class="menu_button" type="button">Save search</button>
+                <label for="sbbs_named_list">Named searches</label>
+                <select id="sbbs_named_list" class="text_pole"></select>
+                <button id="sbbs_named_load" class="menu_button" type="button">Load search</button>
+                <button id="sbbs_named_remove" class="menu_button" type="button">Delete search</button>
+            </div>
+            <p id="sbbs_named_status" class="sbbs-setting-note" role="status"></p>
+        </details>
+      </form>
+    </header>
+
+    <div class="sbbs-body" aria-busy="false">
+        <!--
+            Describes the results, so it sits with them rather than in the filter
+            panel: a source with no reliable SFW filter has to say so whether or
+            not the user has the panel open. Still the checkbox's aria-describedby.
+        -->
+        <span id="sbbs_sfw_note" class="sbbs-control-note" aria-live="polite"></span>
+        <span id="sbbs_count" class="sbbs-count" aria-live="polite"></span>
+        <div id="sbbs_state" class="sbbs-state" role="status"></div>
+        <!-- Sources a merged search could not reach. -->
+        <div id="sbbs_partial" class="sbbs-partial" role="status" hidden></div>
+        <!-- Offers to clear a failed source's cooldown and try it again. -->
+        <div id="sbbs_reload" class="sbbs-reload" hidden></div>
+        <div id="sbbs_recovered" class="sbbs-recovered-sources" hidden></div>
+        <details class="sbbs-shortlist" id="sbbs_shortlist">
+            <summary id="sbbs_shortlist_count">Shortlist (0)</summary>
+            <p class="sbbs-setting-note">Kept across searches until you close this browser. Separate from cards selected for import.</p>
+            <ul id="sbbs_shortlist_items" class="sbbs-shortlist-items"></ul>
+            <button id="sbbs_shortlist_import" class="menu_button" type="button" disabled>Review shortlist for import</button>
+            <button id="sbbs_shortlist_clear" class="menu_button" type="button" disabled>Clear shortlist</button>
+        </details>
+        <ul id="sbbs_grid" class="sbbs-grid" role="list"></ul>
+        <button id="sbbs_more" class="menu_button sbbs-more" type="button" hidden>Load more</button>
+    </div>
+
+    <!--
+        Visibility is owned solely by data-view on .sbbs-root. Do NOT add a
+        `hidden` attribute here: the [hidden][hidden] rule in style.css outranks
+        the data-view selector, so the pane would stay invisible after switching.
+    -->
+    <section id="sbbs_detail" class="sbbs-detail" aria-label="Card details"></section>
+    <section id="sbbs_intake" class="sbbs-intake" aria-label="Review and import"></section>
+</div>

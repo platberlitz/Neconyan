@@ -1,0 +1,21 @@
+{
+    "display_name": "Card & Lorebook Time Machine",
+    "author": "platberlitz",
+    "version": "0.2.2",
+    "description": "Automatic snapshots of characters, lorebooks and presets, with a comparison view and one-click restore. Nothing in Neconyan backs those three up.",
+    "requires": [],
+    "optional": [],
+    "dependencies": [],
+    "minimum_client_version": "1.7.0",
+    "js": "index.js",
+    "css": "style.css",
+    "license": "AGPL-3.0",
+    "homePage": "https://github.com/platberlitz/SillyBunny-Time-Machine",
+    "loading_order": 150,
+    "auto_update": false,
+    "hooks": {
+        "activate": "activate",
+        "enable": "enable",
+        "disable": "disable"
+    }
+}

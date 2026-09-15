@@ -1,0 +1,108 @@
+<div class="welcomePanel neconyan-home {{#if welcomePanelCompact}}welcomePanel--compact{{/if}}{{#if welcomePanelListOnly}} welcomePanel--listOnly{{/if}}" data-active-deck-view="tour" data-home-panel-mode="{{welcomePanelMode}}">
+    <details class="welcomeAdvancedHome neconyan-home-help neconyan-cat-panel"{{#if tutorialExpanded}} open{{/if}}{{#if tutorialHidden}} hidden{{/if}}>
+        <summary><span>First paws: a short tour</span><button type="button" class="menu_button welcomeActionButton tutorialHide" data-action="hide-tutorial">Hide</button></summary>
+        <div id="welcome-deck-panel-tour" class="welcomeDeckPanel welcomeTourPanel is-active{{#unless tutorialExpanded}} tutorialCollapsed{{/unless}}" data-deck-panel="tour" data-tutorial-expanded="{{#if tutorialExpanded}}true{{else}}false{{/if}}" data-tutorial-index="{{tutorialIndex}}">
+            <div class="neconyan-tour-heading"><h2>Learn the basics</h2><button type="button" class="menu_button welcomeActionButton tutorialSkip" data-action="skip-tutorial">Skip tour</button><button type="button" class="menu_button welcomeActionButton tutorialReplay" data-action="replay-tutorial">Start again</button></div>
+            <ol class="welcomeTourProgress" aria-label="Tour steps">
+                {{#each tutorialSteps}}<li><button type="button" class="welcomeTourProgressButton {{#if active}}is-active{{/if}}" aria-pressed="{{#if active}}true{{else}}false{{/if}}"{{#if active}} aria-current="step"{{/if}} data-step-target="{{@index}}"><span class="welcomeTourProgressNumber">{{stepNumber}}</span><span class="welcomeTourProgressLabel">{{title}}</span></button></li>{{/each}}
+            </ol>
+            <div class="welcomeTourSteps">
+                {{#each tutorialSteps}}<section class="welcomeTourStep {{#if active}}is-active{{/if}}"{{#unless active}} hidden aria-hidden="true"{{/unless}} data-step-index="{{@index}}">
+                    <div class="neconyan-tour-step-visual"><img src="{{image}}" alt="{{speaker}} speaking" width="512" height="768" loading="lazy" data-tour-image><span class="neconyan-tour-image-fallback" hidden aria-hidden="true">🐾</span></div>
+                    <div class="neconyan-tour-step-copy"><p class="neconyan-tour-speaker">{{speaker}}</p><h3 class="welcomeTourStepHeader"><strong>{{title}}</strong></h3><p class="neconyan-tour-dialogue">{{body}}</p>{{#if hint}}<p class="neconyan-tour-hint">{{hint}}</p>{{/if}}</div>
+                    <div class="welcomeTourActions">{{#each actions}}<button type="button" class="menu_button welcomeActionButton" data-action="{{type}}" data-action-value="{{value}}">{{label}}</button>{{/each}}</div>
+                </section>{{/each}}
+            </div>
+            <div class="welcomeTourNav"><button type="button" class="menu_button tutorialPrev"><span>Back</span></button><button type="button" class="menu_button tutorialNext"><span>Next</span></button><button type="button" class="menu_button welcomeActionButton tutorialSkip" data-action="skip-tutorial"><span>Skip tour</span></button></div>
+        </div>
+    </details>
+    <section class="neconyan-home-intro welcomeHero neconyan-cat-panel" aria-labelledby="welcome-home-title">
+        <div class="neconyan-home-cat">
+            <img src="img/neconyan-pixel-cat.webp?v=20260913g" alt="A calico cat blinking, flicking its tail, and tumbling" width="208" height="192" data-neconyan-cat>
+            <button type="button" class="neconyan-cat-toggle" data-neconyan-cat-toggle>Pause cat animation</button>
+        </div>
+        <h1 id="welcome-home-title">Meowlcome to Neconyan~</h1>
+        <p>Find your purrfect chat pal. Choose a character, or start a temporary chat.</p>
+        <div class="neconyan-home-actions">
+            {{#if hasActiveChat}}
+            <button type="button" class="menu_button welcomeActionButton neconyan-home-primary" data-action="resume-chat"><i class="fa-solid fa-comment" aria-hidden="true"></i><span>Continue your chat</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
+            {{/if}}
+            <button type="button" class="menu_button welcomeActionButton {{#unless hasActiveChat}}neconyan-home-primary{{/unless}}" data-action="open-characters-menu"><i class="fa-solid fa-address-card" aria-hidden="true"></i><span>Choose a character</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
+            <button type="button" class="menu_button openTemporaryChat"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>Start a temporary chat<small>Messages are not saved.</small></span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
+            <button type="button" class="menu_button welcomeActionButton" data-action="open-tab" data-action-value="left:api"><i class="fa-solid fa-plug" aria-hidden="true"></i><span>Connect a model</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
+        </div>
+    </section>
+    {{#if assistantPersonalities}}
+    <section class="neconyan-assistant-picker neconyan-cat-panel" data-assistant-picker aria-labelledby="neconyan-assistant-picker-title">
+        <div class="neconyan-assistant-picker-heading">
+            <div><h2 id="neconyan-assistant-picker-title">Choose an assistant</h2><p>Three resident cats, one desk, too many notebooks. Pick a personality and a gender to start a saved chat.</p></div>
+        </div>
+        <div class="neconyan-assistant-list">
+            {{#each assistantPersonalities}}
+            <article class="neconyan-assistant-row" data-assistant-name="{{name}}" data-assistant-personality="{{id}}">
+                <div class="neconyan-assistant-portrait-wrap"><img src="{{initialPortrait}}" alt="{{name}} assistant portrait" width="112" height="152" loading="lazy" decoding="async" data-assistant-portrait></div>
+                <div class="neconyan-assistant-copy"><h3>{{name}}</h3><p class="neconyan-assistant-role">{{role}}</p><p>{{summary}}</p><p class="neconyan-assistant-selection" data-assistant-selection aria-live="polite">Choose Male, Female or Neutral.</p></div>
+                <fieldset class="neconyan-assistant-variants"><legend>{{name}} gender</legend>
+                    {{#each variants}}<label for="neconyan-assistant-{{id}}"><input id="neconyan-assistant-{{id}}" type="radio" name="assistant-{{../id}}" value="{{id}}" data-assistant-variant data-gender="{{gender}}" data-portrait="{{portrait}}"{{#if selected}} checked{{/if}}><span>{{label}}</span></label>{{#if updateAvailable}}<button type="button" class="menu_button neconyan-assistant-update" data-assistant-update data-assistant-id="{{id}}" data-assistant-label="{{../name}} ({{label}})" data-assistant-update-avatar="{{installedAvatar}}" aria-label="Install updated {{../name}} ({{label}}) copy">Install updated copy</button>{{/if}}{{/each}}
+                </fieldset>
+                <button type="button" class="menu_button neconyan-assistant-open" data-assistant-open disabled><span data-assistant-action-label>Choose a gender</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
+            </article>
+            {{/each}}
+        </div>
+        <p class="neconyan-assistant-picker-status" data-assistant-picker-status role="status" aria-live="polite">Choose a gender to open an assistant.</p>
+    </section>
+    {{else}}
+    <section class="neconyan-assistant-picker neconyan-assistant-picker--error neconyan-cat-panel" data-assistant-picker aria-labelledby="neconyan-assistant-picker-title">
+        <img class="neconyan-empty-illustration" src="img/neconyan/curious-search.webp" alt="" width="536" height="510" aria-hidden="true" loading="lazy" decoding="async">
+        <div><p class="neconyan-eyebrow">Assistant library</p><h2 id="neconyan-assistant-picker-title">The assistant catalog is unavailable</h2><p>You can still choose a character or start a temporary chat.</p></div>
+        <button type="button" class="menu_button" data-assistant-catalog-retry>Try again</button>
+        <p class="neconyan-assistant-picker-status" data-assistant-picker-status role="status" aria-live="polite"></p>
+    </section>
+    {{/if}}
+    <section class="welcomeRecentShell neconyan-cat-panel" aria-labelledby="welcome-recent-title">
+        <div class="neconyan-recent-heading">
+            <h2 id="welcome-recent-title">Recent chats</h2>
+            <details class="neconyan-recent-filters">
+                <summary>Filter chats</summary>
+                <div class="welcomeRecentTabs" role="group" aria-label="Chat types">
+                    <button type="button" class="welcomeRecentTab active" data-recent-chat-filter="all" aria-pressed="true">All chats</button>
+                    <button type="button" class="welcomeRecentTab" data-recent-chat-filter="individual" aria-pressed="false">Character chats</button>
+                    <button type="button" class="welcomeRecentTab" data-recent-chat-filter="group" aria-pressed="false">Group chats</button>
+                    <button type="button" class="welcomeRecentTab" data-recent-chat-filter="conversation" aria-pressed="false">Direct chats</button>
+                    <button type="button" class="welcomeRecentTab {{#unless separateAgentRecentChats}}displayNone{{/unless}}" data-recent-chat-filter="agent" aria-pressed="false">Agent chats</button>
+                </div>
+            </details>
+            <button type="button" class="menu_button welcomeActionButton neconyan-recent-archive" data-action="open-chat-archive"><i class="fa-solid fa-box-archive" aria-hidden="true"></i><span>Chat Archive</span></button>
+        </div>
+        <div class="welcomeRecent">
+            <div id="welcome-recent-chat-list" class="recentChatList">
+                {{#if empty}}<div class="noRecentChat"><img class="neconyan-empty-illustration" src="img/neconyan/sleepy-chat.webp" alt="" width="536" height="436" aria-hidden="true" loading="lazy" decoding="async"><strong>Your chats will appear here.</strong><span>Mew beginnings start with a chat. Choose a character above, then find your saved chats here.</span></div>{{/if}}
+                <div class="noRecentChat displayNone" data-recent-chat-empty-state="filtered"><strong>No chats match this filter.</strong><span>Choose another chat type.</span></div>
+                {{#each chats}}{{#with this}}
+                <article class="recentChat {{#if hidden}}hidden{{/if}} {{#if is_group}}group{{else}}individual{{/if}} {{#if is_agent}}agent{{/if}} {{#if is_conversation}}conversation{{/if}}" data-recent-chat-type="{{recent_chat_type}}" data-file="{{chat_name}}" data-avatar="{{avatar}}" data-group="{{group}}" data-conversation-branch-id="{{conversation_branch_id}}" data-conversation-branch-name="{{conversation_branch_name}}">
+                    <button type="button" class="recentChatOpen"><span class="sr-only">Open {{char_name}}: {{chat_name}}</span></button>
+                    {{#if pinned}}<div class="recentChatPinned"><i class="fa-solid fa-thumbtack" title="Pinned chat" aria-label="Pinned chat"></i></div>{{/if}}
+                    <div class="avatar"><img src="{{char_thumbnail}}" alt="{{char_name}}" width="48" height="48" loading="lazy" decoding="async"></div>
+                    <div class="recentChatInfo">
+                        <div class="chatNameContainer">
+                            <div class="chatName"><strong class="characterName">{{char_name}}</strong><span>{{chat_name}}</span></div>
+                            <small class="chatDate" title="{{date_long}}">{{date_short}}</small>
+                        </div>
+                        <div class="chatMessageContainer"><div class="chatMessage">{{mes}}</div></div>
+                        <div class="chatActions">
+                            <button type="button" class="menu_button pinChat {{#if pinned}}active{{/if}}" aria-label="{{#if pinned}}Unpin chat{{else}}Pin chat{{/if}}" aria-pressed="{{#if pinned}}true{{else}}false{{/if}}"><i class="fa-solid fa-thumbtack" aria-hidden="true"></i><span>{{#if pinned}}Unpin{{else}}Pin{{/if}}</span></button>
+                            <button type="button" class="menu_button renameChat" aria-label="Rename chat"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>Rename</span></button>
+                            <button type="button" class="menu_button deleteChat" aria-label="Delete chat"><i class="fa-solid fa-trash" aria-hidden="true"></i><span>Delete</span></button>
+                        </div>
+                    </div>
+                </article>
+                {{/with}}{{/each}}
+                {{#if more}}<button type="button" class="menu_button showMoreChats" aria-controls="welcome-recent-chat-list" aria-expanded="false">Show more chats</button>{{/if}}
+            </div>
+        </div>
+    </section>
+    <div class="neconyan-home-footer welcomePanelPersistentControls">
+        <button type="button" class="menu_button welcomeActionButton" data-action="open-global-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><span>Find a setting</span></button>
+        <details><summary>Home layout</summary><div class="neconyan-home-layout"><button type="button" class="menu_button" data-welcome-panel-mode-target="full">Full home</button><button type="button" class="menu_button" data-welcome-panel-mode-target="compact">Compact</button><button type="button" class="menu_button" data-welcome-panel-mode-target="list">Recent chats only</button><button type="button" class="menu_button welcomeActionButton" data-action="reopen-tutorial"{{#unless tutorialHidden}} hidden{{/unless}}>Reopen First paws tour</button></div></details>
+    </div>
+</div>

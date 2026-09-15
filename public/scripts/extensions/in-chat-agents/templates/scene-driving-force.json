@@ -1,0 +1,41 @@
+{
+  "id": "tpl-scene-driving-force",
+  "name": "Scene Driving Force",
+  "description": "Choose random primary engine for the scene (dialogue, action, tension, etc.)",
+  "icon": "",
+  "category": "randomizer",
+  "tags": [
+    "pacing",
+    "structure",
+    "engine"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "### Scene Driving Force\nThis scene advances primarily through:\n\n{{random::Dialogue-driven: conversation, interruption, and what is said or deliberately left unsaid carry the scene.::Action-driven: movement and physical decisions create consequences.::Reaction-driven: how characters process what just happened matters most; recalibration, stance shifts, internal weather.::Problem-driven: a practical obstacle reveals character through approach.::Social-pressure-driven: etiquette, hierarchy, or public scrutiny shapes every move; characters perform for an audience, even an audience of one.::Discovery-driven: noticing, uncovering, or realizing something new reshapes the dynamic.::Tension-driven: nothing explodes, but everything is loaded; silences work, proximity matters, the scene is a held breath.::Task-driven: characters do something together; the task itself creates friction, cooperation, rhythm, and revelation.}}\n\nRules:\n- The chosen engine carries the greatest weight in how the scene moves.\n- Other elements remain present but subordinate to the selected engine.\n- Express the engine through each character's personality and habits.",
+  "phase": "pre",
+  "injection": {
+    "position": 1,
+    "depth": 0,
+    "role": 1,
+    "order": 95,
+    "scan": false
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "regex",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": ""
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 50,
+    "generationTypes": [
+      "normal"
+    ]
+  }
+}

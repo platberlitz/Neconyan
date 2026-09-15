@@ -1,0 +1,632 @@
+:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='dark'] body.neconyan {
+    --neco-canvas: #161716;
+    --neco-surface: #242420;
+    --neco-rail: #1b1c1a;
+    --neco-raised: #302e29;
+    --neco-ink: #f6edda;
+    --neco-muted: #ddd0bf;
+    --neco-ginger: #d69270;
+    --neco-ginger-hover: #f0b39d;
+    --neco-border: #61534d;
+    --neco-user: #302b25;
+    --neco-cream: #f4ead7;
+    --neco-charcoal: #141514;
+    --neco-pink: #efb0bd;
+    --neco-on-accent: #141514;
+    --neco-canvas-gradient:
+        url('../img/neconyan/paw-cream.webp') right 14px top 18px / 88px 88px no-repeat,
+        url('../img/neconyan/paw-pink.webp') 92% 24% / 48px 48px no-repeat,
+        url('../img/neconyan/paw-peach.webp') left 4px bottom 18px / 84px 84px no-repeat,
+        url('../img/neconyan/paw-ink.webp') 76% 97% / 72px 72px no-repeat,
+        #161716;
+    --neco-panel-gradient: color-mix(in srgb, var(--neco-surface) 90%, transparent);
+    --neco-action-gradient: linear-gradient(105deg, #f4ead7, #f0c7b0 45%, var(--neco-pink) 72%, #d58a68);
+}
+
+:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan {
+    --neco-canvas: #f6f2e8;
+    --neco-surface: #fffaf0;
+    --neco-rail: #343735;
+    --neco-raised: #ebe1d0;
+    --neco-ink: #303331;
+    --neco-muted: #504c45;
+    --neco-ginger: #b86b32;
+    --neco-ginger-hover: #d3935c;
+    --neco-border: #d5cec0;
+    --neco-user: #f7e2c3;
+    --neco-cream: #f3e6d1;
+    --neco-charcoal: #303331;
+    --neco-pink: #d88e9f;
+    --neco-on-accent: #303331;
+    --neco-canvas-gradient:
+        url('../img/neconyan/paw-cream.webp') right 14px top 18px / 88px 88px no-repeat,
+        url('../img/neconyan/paw-pink.webp') 92% 24% / 48px 48px no-repeat,
+        url('../img/neconyan/paw-peach.webp') left 4px bottom 18px / 84px 84px no-repeat,
+        url('../img/neconyan/paw-ink.webp') 76% 97% / 72px 72px no-repeat,
+        #f6f2e8;
+    --neco-panel-gradient: color-mix(in srgb, var(--neco-surface) 90%, transparent);
+    --neco-action-gradient: linear-gradient(105deg, #fff4de, #f1d2b3 45%, var(--neco-pink) 72%, #df985c);
+}
+
+:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan #neconyan-workspace-rail,
+:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan #sb-mobile-nav-content {
+    --neco-ink: #fff3d9;
+    --neco-muted: #d6cbbb;
+    --neco-border: #615f54;
+    --neco-raised: #54564a;
+    --neco-ginger: #e0ae78;
+    --neco-ginger-hover: #f3e6d1;
+    color: var(--neco-ink);
+}
+
+:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan #sb-mobile-nav-content .sb-nav-item {
+    --sb-card-bg: var(--neco-raised);
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+}
+
+:root[data-neconyan-palette='calico'] body.neconyan.neconyan-home-visible #neconyan-home-host,
+:root[data-neconyan-palette='calico'] body.neconyan .sb-shell-panel-scroller,
+:root[data-neconyan-palette='calico'] body.neconyan #right-nav-panel > :is(.scrollableInner, .scrollableInnerFull) {
+    background: var(--neco-canvas-gradient);
+}
+
+:root[data-neconyan-palette='calico'] body.neconyan #neconyan-workspace-rail {
+    background: linear-gradient(155deg, color-mix(in oklch, var(--neco-ginger) 10%, var(--neco-rail)), var(--neco-rail) 55%, color-mix(in oklch, var(--neco-cream) 5%, var(--neco-rail)));
+}
+
+/* Desktop only: on phones the rail is a drawer over the chat, so the tint would show the chat
+   through it; the solid gradient above stays there. */
+@media (min-width: 769px) {
+    :root[data-neconyan-palette='calico'][data-neconyan-calico-tone='dark'] body.neconyan :is(#neconyan-workspace-rail, #sb-mobile-nav-content) {
+        --neco-rail: #000;
+        background: rgba(0, 0, 0, .68);
+    }
+}
+
+:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='dark'] body.neconyan #sb-mobile-nav-content::before {
+    display: none;
+}
+
+body.neconyan :is(#sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner) { background: transparent; }
+
+:root[data-neconyan-palette='calico'] body.neconyan :is(.sb-shell-header, .sb-character-shell-header, #sb-mobile-nav-content),
+:root[data-neconyan-palette='calico'] body.neconyan dialog.popup {
+    background: var(--neco-panel-gradient);
+}
+
+:root[data-neconyan-palette='calico'] body.neconyan .neconyan-home-actions > button {
+    background: var(--neco-panel-gradient);
+    border-color: color-mix(in oklch, var(--neco-border) 80%, var(--neco-ginger));
+}
+
+:root[data-neconyan-palette='calico'] body.neconyan :is(.sb-shell-callout, .sb-theme-card, .sb-settings-group, .sb-admin-card, .sb-agent-card, .sb-character-editor-identity, .sb-character-editor-field-box) {
+    background: var(--neco-panel-gradient);
+    border-color: color-mix(in oklch, var(--neco-border) 88%, var(--neco-ginger));
+}
+
+:root[data-neconyan-palette='calico'] body.neconyan :is(.sb-shell-tab.is-active, .sb-character-shell-tab.is-active, .sb-settings-tab-btn.active, [aria-pressed='true']) {
+    background: color-mix(in oklch, var(--neco-ginger) 15%, var(--neco-raised));
+    border-color: color-mix(in oklch, var(--neco-ginger) 50%, var(--neco-border));
+}
+
+:root[data-neconyan-palette='calico'] body.neconyan .neconyan-home-actions > .neconyan-home-primary,
+:root[data-neconyan-palette='calico'] body.neconyan .neconyan-home-actions > .neconyan-home-primary:is(:hover, :focus-visible) {
+    background: var(--neco-action-gradient);
+    color: var(--neco-charcoal);
+    border-color: transparent;
+}
+
+:root[data-neconyan-palette='calico'] body.neconyan :is(
+    #neconyan-workspace-rail button,
+    #sb-mobile-nav .sb-nav-item,
+    .sb-shell-tab,
+    .sb-character-shell-tab,
+    .sb-shell-close,
+    .sb-settings-tab-btn,
+    #send_but,
+    #options_button,
+    .neconyan-chat-row-actions .neconyan-labelled-control
+) { border-radius: 12px; }
+
+body.neconyan .neconyan-home .neconyan-cat-control,
+body.neconyan .neconyan-cat-control {
+    --neconyan-cat-padding: 8px 38px 8px 56px;
+    position: relative;
+    isolation: isolate;
+    overflow: visible;
+    border-radius: 28px 28px 18px 18px !important;
+    padding-inline: 56px 38px !important;
+    min-height: 48px;
+}
+
+body.neconyan .neconyan-cat-control > :not(.neconyan-whiskers) { position: relative; z-index: 1; }
+
+body.neconyan .neconyan-cat-panel,
+body.neconyan .neconyan-assistant-row,
+body.neconyan #right-nav-panel .sb-character-editor-identity {
+    position: relative;
+    isolation: isolate;
+    overflow: visible;
+}
+
+body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::before,
+body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::after {
+    content: '';
+    display: block;
+    position: absolute;
+    top: 0;
+    width: clamp(18px, 7%, 30px);
+    height: 20px;
+    pointer-events: auto;
+    z-index: 0;
+    transform-origin: center bottom;
+    transition: transform 160ms ease;
+}
+
+body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::before { left: 10%; transform: translateY(-100%) skewX(-7deg); }
+body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::after { right: 10%; transform: translateY(-100%) skewX(7deg); }
+body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::before {
+    border: 0;
+    background: url('../img/neconyan/ear-left.webp') center / 100% 100% no-repeat;
+}
+body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::after {
+    border: 0;
+    background: url('../img/neconyan/ear-right.webp') center / 100% 100% no-repeat;
+}
+
+body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity):is(:hover, :focus-within)::before { animation: neconyan-ear-twitch-left 320ms ease-in-out; }
+body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity):is(:hover, :focus-within)::after { animation: neconyan-ear-twitch-right 320ms ease-in-out; }
+body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity):is(:active, .neconyan-cat-pressed)::before { animation: neconyan-ear-press-left 260ms ease-out; }
+body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity):is(:active, .neconyan-cat-pressed)::after { animation: neconyan-ear-press-right 260ms ease-out; }
+
+@keyframes neconyan-ear-twitch-left {
+    0%, 100% { transform: translateY(-100%) skewX(-7deg); }
+    38% { transform: translateY(-100%) skewX(-13deg); }
+    68% { transform: translateY(-100%) skewX(-3deg); }
+}
+@keyframes neconyan-ear-twitch-right {
+    0%, 100% { transform: translateY(-100%) skewX(7deg); }
+    38% { transform: translateY(-100%) skewX(13deg); }
+    68% { transform: translateY(-100%) skewX(3deg); }
+}
+@keyframes neconyan-ear-press-left {
+    0%, 100% { transform: translateY(-100%) skewX(-7deg); }
+    30% { transform: translateY(-100%) skewX(-1deg) scaleY(.88); }
+    62% { transform: translateY(-100%) skewX(-11deg); }
+}
+@keyframes neconyan-ear-press-right {
+    0%, 100% { transform: translateY(-100%) skewX(7deg); }
+    30% { transform: translateY(-100%) skewX(1deg) scaleY(.88); }
+    62% { transform: translateY(-100%) skewX(11deg); }
+}
+
+:where(body.neconyan .neconyan-cat-panel > *, body.neconyan .neconyan-assistant-row > *) { position: relative; z-index: 1; }
+
+@media (max-width: 768px) {
+    /* Phones move the composer ears up to #form_sheld (neconyan-tabs.js placeComposerControls)
+       so they sit above the chat-name pill instead of poking through it. */
+    body.neconyan #send_form.neconyan-cat-panel::before,
+    body.neconyan #send_form.neconyan-cat-panel::after { display: none; }
+    /* One box around the whole bottom bar (chat pill, action rows, composer); the composer
+       gives up its own box so the rows above it no longer float on the wallpaper. */
+    body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel {
+        background-color: var(--neco-surface) !important;
+        border-top: 1px solid var(--neco-border);
+        border-radius: 18px 18px 0 0;
+        padding-top: 6px !important;
+    }
+    body.neconyan:not(.sbterm) #send_form.neconyan-cat-panel {
+        background: transparent !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+    }
+}
+
+body.neconyan .neconyan-whiskers { position: absolute; inset: 0; width: auto; height: auto; pointer-events: none; z-index: 0; }
+body.neconyan .neconyan-whiskers,
+body.neconyan .neconyan-whiskers *,
+body.neconyan :is(#top-settings-holder, #left-nav-panel, #right-nav-panel, #user-settings-block) .neconyan-whiskers,
+body.neconyan :is(#top-settings-holder, #left-nav-panel, #right-nav-panel, #user-settings-block) .neconyan-whiskers * { pointer-events: none !important; }
+.neconyan-whiskers :is(.neconyan-whisker-left, .neconyan-whisker-right, .neconyan-cat-head, .neconyan-cat-tail) { position: absolute; overflow: visible; }
+.neconyan-whisker-left, .neconyan-whisker-right {
+    display: block;
+    width: 26px;
+    height: 24px;
+    top: calc(50% - 12px);
+    background-color: var(--neco-ginger);
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+}
+.neconyan-whisker-left { -webkit-mask-image: url('../img/neconyan/whisker-left.webp'); mask-image: url('../img/neconyan/whisker-left.webp'); }
+.neconyan-whisker-right { -webkit-mask-image: url('../img/neconyan/whisker-right.webp'); mask-image: url('../img/neconyan/whisker-right.webp'); }
+.neconyan-whisker-left { left: -16px; transform-origin: right center; }
+.neconyan-whisker-right { right: -16px; transform-origin: left center; }
+.neconyan-whiskers .neconyan-cat-head { width: 43px; height: 40px; left: 5px; top: -5px; object-fit: contain; transform: rotate(-10deg); transform-origin: center bottom; }
+.neconyan-whiskers .neconyan-cat-tail { width: 27px; height: 36px; right: 4px; bottom: 4px; object-fit: contain; transform-origin: left bottom; }
+.neconyan-cat-head, .neconyan-cat-tail { transition: transform 160ms ease; }
+.neconyan-cat-control:is(:hover, :focus-visible) :is(.neconyan-whisker-left, .neconyan-whisker-right) { animation: neconyan-whisker-twitch 420ms ease-in-out; }
+.neconyan-cat-control:is(:active, .neconyan-cat-pressed) .neconyan-cat-head { transform: translateY(-5px) rotate(4deg); }
+.neconyan-cat-control:is(:active, .neconyan-cat-pressed) .neconyan-cat-tail { transform: translateY(-5px) rotate(-18deg); }
+@keyframes neconyan-whisker-twitch {
+    0%, 100% { transform: rotate(0); }
+    42% { transform: rotate(8deg); }
+    70% { transform: rotate(-4deg); }
+}
+body.neconyan.reduced-motion .neconyan-whiskers :is(.neconyan-whisker-left, .neconyan-whisker-right, .neconyan-cat-head, .neconyan-cat-tail) { animation: none !important; transition: none !important; transform: none !important; }
+body.neconyan.reduced-motion :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::before,
+body.neconyan.reduced-motion :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::after { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+    body.neconyan .neconyan-whiskers :is(.neconyan-whisker-left, .neconyan-whisker-right, .neconyan-cat-head, .neconyan-cat-tail) { animation: none !important; transition: none !important; transform: none !important; }
+    body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::before,
+    body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::after { animation: none !important; transition: none !important; }
+}
+
+/* The generated cloud art is an ambient layer. #bg1 remains the user's own
+   background control and keeps its normal stacking and fitting behaviour. */
+body.neconyan {
+    isolation: isolate;
+    position: relative;
+}
+body.neconyan::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: url('../img/neconyan/kitty-clouds.webp?v=20260913g') 50% 50% / cover no-repeat;
+    opacity: .67;
+}
+body.neconyan:not(.sbterm) :is(#sheld, #form_sheld, #sb-bottom-chat-bar, #neconyan-home-host) {
+    background-color: transparent !important;
+}
+body.neconyan:not(.sbterm) :is(#chat, #sb_conversation_stage) {
+    background-color: transparent !important;
+}
+/* Conversation mode gets a theme-aware translucent surface instead of floating straight
+   on the wallpaper. Still translucent so the clouds read through it. */
+body.neconyan:not(.sbterm) #sheld[data-sb-conversation-mode='on'] #sb_conversation_stage {
+    background-color: var(--neco-panel-gradient) !important;
+}
+body.neconyan.neconyan-home-visible:not(.sbterm) #neconyan-home-host {
+    background-color: transparent !important;
+}
+body.neconyan:not(.sbterm) :is(.sb-shell-root.openDrawer, #right-nav-panel.openDrawer) {
+    background-color: transparent !important;
+}
+body.neconyan:not(.sbterm) #right-nav-panel > :is(.scrollableInner, .scrollableInnerFull) {
+    background-color: transparent !important;
+}
+body.neconyan:not(.sbterm) :is(.sb-shell-panel-scroller, .sb-conversation-thread-empty) {
+    background-color: color-mix(in srgb, var(--neco-surface) 90%, transparent) !important;
+}
+@media (max-width: 768px) {
+    /* Phone sheets fill the screen, so the floating-card look above turns into wallpaper
+       bleeding through the header zone and list gutters. Paint them solid. */
+    body.neconyan:not(.sbterm) :is(.sb-shell-root.openDrawer, #right-nav-panel.openDrawer),
+    body.neconyan:not(.sbterm) #right-nav-panel.openDrawer > :is(.scrollableInner, .scrollableInnerFull) {
+        background-color: var(--neco-surface) !important;
+    }
+}
+
+/* Character and Persona workspaces sit over the ambient canvas. Keep their
+   active roots and editor cards on the solid Calico surface. */
+body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='character_edit'], [data-menu-type='create'], [data-menu-type='persona']),
+body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='character_edit'], [data-menu-type='create'], [data-menu-type='persona']) > :is(.scrollableInner, .scrollableInnerFull),
+body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='character_edit'], [data-menu-type='create'], [data-menu-type='persona']) :is(
+    #form_create,
+    #spoiler_free_desc,
+    #PersonaManagement,
+    #persona-management-block,
+    .sb-character-editor-identity,
+    .sb-character-editor-field-box,
+    .sb-character-creator-notes-preview,
+    .persona_management_left_column,
+    .persona_management_current_persona,
+    .persona_management_global_settings,
+    .persona-editor-workspace,
+    .persona-editor-tabs,
+    .persona-editor-tab-panels,
+    .persona-editor-panel
+) {
+    background: var(--neco-surface) !important;
+}
+/* Full workspaces share the ambient canvas without showing the mounted chat
+   through them. Visibility preserves its layout, messages and draft. */
+body.neconyan:has(.sb-shell-root.openDrawer) #sheld { visibility: hidden; }
+
+/* Flat roleplay keeps the fork's existing Bubble, Document, and native styles
+   free to own their layout classes. */
+body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar,
+body.neconyan:not(.sbterm) .sb-conversation-message-avatar {
+    position: relative;
+    overflow: visible;
+    border: 2px solid color-mix(in oklch, var(--neco-ginger) 55%, var(--neco-border));
+    border-radius: 16px;
+    background: color-mix(in oklch, var(--neco-cream) 26%, var(--neco-surface));
+    box-shadow: 0 4px 12px color-mix(in oklch, var(--neco-charcoal) 18%, transparent);
+}
+body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar::before,
+body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar::after,
+body.neconyan:not(.sbterm) .sb-conversation-message-avatar::before,
+body.neconyan:not(.sbterm) .sb-conversation-message-avatar::after {
+    content: '';
+    position: absolute;
+    top: -8px;
+    width: 14px;
+    height: 12px;
+    pointer-events: none;
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+}
+body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar::before,
+body.neconyan:not(.sbterm) .sb-conversation-message-avatar::before { left: 5px; background-image: url('../img/neconyan/ear-left.webp'); }
+body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar::after,
+body.neconyan:not(.sbterm) .sb-conversation-message-avatar::after { right: 5px; background-image: url('../img/neconyan/ear-right.webp'); }
+body.neconyan:not(.sbterm) .sb-conversation-message-avatar img { border-radius: inherit; }
+body.neconyan.flatchat:not(.sbterm) #chat .mes[is_user='true'] .mes_block,
+body.neconyan:not(.sbterm) .sb-conversation-message[data-role='user'] .sb-conversation-message-bubble {
+    border: 1px solid color-mix(in oklch, var(--neco-pink) 26%, var(--neco-border));
+    background: color-mix(in srgb, color-mix(in oklch, var(--neco-pink) 14%, var(--neco-user)) 90%, transparent);
+}
+body.neconyan.flatchat:not(.sbterm) #chat .mes:not([is_user='true']) .mes_block,
+body.neconyan:not(.sbterm) .sb-conversation-message:not([data-role='user']) .sb-conversation-message-bubble {
+    padding: 12px 16px;
+    border: 1px solid color-mix(in oklch, var(--neco-cream) 22%, var(--neco-border));
+    border-radius: 14px 14px 14px 6px;
+    background: color-mix(in srgb, color-mix(in oklch, var(--neco-cream) 9%, var(--neco-surface)) 90%, transparent);
+}
+body.neconyan:not(.sbterm) #send_form.neconyan-cat-panel,
+body.neconyan:not(.sbterm) .sb-conversation-composer.neconyan-cat-panel {
+    position: relative;
+    overflow: visible;
+    border-radius: 18px;
+    background: var(--neco-panel-gradient);
+}
+body.neconyan:not(.sbterm) .sb-conversation-composer.neconyan-cat-panel { margin-top: 24px; }
+body.neconyan:not(.sbterm) #sheld[data-sb-conversation-mode='on'] .sb-conversation-composer.neconyan-cat-panel { background: var(--neco-panel-gradient) !important; }
+body.neconyan:not(.sbterm) .sb-conversation-message-actions {
+    gap: 6px;
+    padding: 6px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: var(--neco-surface);
+}
+body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header.neconyan-cat-panel,
+body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header.neconyan-cat-panel::before,
+body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header.neconyan-cat-panel::after {
+    overflow: visible;
+}
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) {
+    border-color: color-mix(in oklch, var(--neco-pink) 24%, var(--neco-border));
+    border-radius: 16px;
+    background: color-mix(in srgb, color-mix(in oklch, var(--neco-cream) 8%, var(--neco-surface)) 90%, transparent);
+}
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select):hover,
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select).is-active-entity {
+    border-color: color-mix(in oklch, var(--neco-ginger) 58%, var(--neco-border));
+    background: color-mix(in srgb, color-mix(in oklch, var(--neco-pink) 16%, var(--neco-raised)) 90%, transparent);
+}
+
+@media (max-width: 390px) {
+    body.neconyan::before { background-position: 78% 50%; }
+}
+
+/* Compact character header: mode and native workspace launchers share one
+   readable row, while the title and one line of help keep the drawer useful. */
+body.neconyan:not(.sbterm) #right-nav-panel.openDrawer > .sb-character-shell-header.neconyan-cat-panel {
+    display: flex;
+    flex: 0 0 auto;
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 0;
+    height: auto;
+    margin: 22px 14px 12px;
+    padding: 12px 58px 14px 16px;
+    border: 1px solid var(--neco-border);
+    border-radius: 18px;
+}
+body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > .sb-shell-close {
+    position: absolute;
+    inset: 10px 10px auto auto;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    margin: 0;
+    transform: none;
+}
+body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header #sb_character_mode_toggle { order: 2; flex: 0 0 auto; }
+body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > :is(.sbtw-launch, #sbstory-mode-button) {
+    order: 2;
+    flex: 0 0 auto;
+    min-height: 44px;
+    min-width: 0;
+    padding: 7px 10px;
+}
+body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > .sbtw-launch { margin-left: 0; }
+body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > .sb-shell-kicker { display: none; }
+body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > .sb-shell-title {
+    display: block;
+    order: 0;
+    flex: 1 0 100%;
+    margin: 0;
+    color: var(--neco-ink);
+    font-size: 18px;
+    text-align: left;
+}
+body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > .sb-shell-subtitle {
+    order: 1;
+    flex: 1 0 100%;
+    margin: 0;
+    white-space: normal;
+    text-align: left;
+}
+body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > .sb-shell-description { display: none; }
+
+/* Entity rows keep identity, metadata and actions in one predictable grid. */
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) {
+    display: grid !important;
+    flex: 0 0 auto;
+    grid-template-columns: 64px minmax(0, 1fr);
+    grid-template-areas: 'avatar body';
+    align-items: center;
+    column-gap: 12px;
+    min-height: 100px;
+    padding: 14px;
+}
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) > .avatar {
+    grid-area: avatar;
+    width: 64px !important;
+    min-width: 64px !important;
+    height: 64px !important;
+    min-height: 64px !important;
+    margin: 0;
+    border: 2px solid color-mix(in oklch, var(--neco-ginger) 42%, var(--neco-border));
+    border-radius: 18px;
+    background: color-mix(in oklch, var(--neco-cream) 18%, var(--neco-surface));
+}
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block .character_select_container,
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block .group_select_container {
+    grid-area: body;
+    grid-template-columns: minmax(0, 1fr);
+    align-self: center;
+    gap: 3px;
+}
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block .sb-entity-actions {
+    grid-area: auto;
+    align-self: center;
+    justify-content: flex-start;
+    margin-top: 6px;
+}
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block .sb-entity-action {
+    min-height: 44px;
+    padding: 7px 9px;
+    white-space: normal;
+}
+body.neconyan:not(.sbterm) #right-nav-panel #rm_buttons_container {
+    display: contents;
+}
+body.neconyan:not(.sbterm) #right-nav-panel #rm_buttons_container .sbca-drawer-button {
+    display: inline-flex;
+    width: auto;
+    min-width: 44px;
+    min-height: 44px;
+    aspect-ratio: auto;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    color: var(--neco-ink);
+}
+body.neconyan:not(.sbterm) #right-nav-panel #rm_buttons_container .sbca-drawer-button .sbca-drawer-button-label { display: inline; }
+body.neconyan #right-nav-panel :is(.rm_tag_filter .tag.actionable, #rm_print_characters_pagination .menu_button, #rm_button_bar .menu_button) {
+    min-width: 44px;
+    min-height: 44px;
+}
+body.neconyan #right-nav-panel .rm_tag_filter .tag.actionable { justify-content: center; padding: 8px; border-radius: 12px; }
+body.neconyan #right-nav-panel #rm_button_bar > select { flex: 1 1 140px; min-width: 0; max-width: 240px; min-height: 44px; }
+
+@media (max-width: 768px) {
+    /* Phones: the header is only its close button (see neconyan.css); the ears move to the tab row. */
+    body.neconyan:not(.sbterm) #right-nav-panel.openDrawer > .sb-character-shell-header.neconyan-cat-panel { margin: 0; padding: 0 !important; }
+    body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > .sb-shell-close { position: static !important; top: auto !important; right: auto !important; transform: none !important; }
+    /* The tab-row wrapper's pseudo-elements double as scroll-fade shadows (opacity 0 in neconyan-tabs.css); the ears need to be seen. */
+    body.neconyan:not(.sbterm) #right-nav-panel > .sb-character-shell-nav-wrapper.neconyan-cat-panel::before,
+    body.neconyan:not(.sbterm) #right-nav-panel > .sb-character-shell-nav-wrapper.neconyan-cat-panel::after { bottom: auto; opacity: 1; pointer-events: none; z-index: 0; }
+
+/* Tablets: keep the composer helper groups hugging their sides with the same tight gap as
+   phones instead of letting the extensions spread the buttons apart. */
+@media (max-width: 1000px) {
+    body.neconyan #send_form .stih--buttons { gap: 5px; justify-content: flex-start; }
+    body.neconyan #send_form .gg-regular-buttons-container { gap: 5px; justify-content: flex-end; }
+}
+    body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header #sb_character_mode_toggle { flex: 1 0 100%; }
+    body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > :is(.sbtw-launch, #sbstory-mode-button) { flex: 1 1 0; }
+    body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > .sbtw-launch { margin-left: 0; }
+    body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) {
+        grid-template-columns: 48px minmax(0, 1fr);
+        grid-template-areas: 'avatar body';
+        row-gap: 6px;
+        padding: 9px;
+    }
+    body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) > .avatar { width: 44px !important; min-width: 44px !important; height: 44px !important; min-height: 44px !important; }
+    body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block .sb-entity-actions { justify-content: flex-start; }
+    body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block .sb-entity-action { flex: 0 1 auto; }
+}
+
+/* Keep both mobile mode choices readable and give the selected light-theme
+   state its own contrast instead of relying on the cloud canvas. */
+@media (max-width: 900px) {
+    body.neconyan #right-nav-panel.openDrawer > .sb-character-shell-header .sb-character-shell-mode-button {
+        min-width: 96px;
+        min-height: 44px;
+        padding: 8px 10px;
+        gap: 6px;
+    }
+
+    body.neconyan #right-nav-panel.openDrawer > .sb-character-shell-header .sb-character-shell-mode-button span {
+        display: inline;
+        white-space: nowrap;
+    }
+
+    body.neconyan #right-nav-panel.openDrawer > .sb-character-shell-header .sb-character-shell-mode-button.is-active {
+        background: var(--neco-ginger);
+        border: 1px solid var(--neco-ginger);
+        color: var(--neco-on-accent);
+        box-shadow: none;
+    }
+}
+
+/* These panes sit over the 50% cloud canvas. Keep the image visible while
+   giving their existing labels a readable surface and ink colour. */
+body.neconyan :is(#world_popup, #SillyTavernImportSection, #sb_character_import_panel, #sb_character_world_info_panel) {
+    background: color-mix(in srgb, var(--neco-surface) 90%, transparent) !important;
+    color: var(--neco-ink) !important;
+    border-color: var(--neco-border) !important;
+}
+
+body.neconyan :is(#world_popup, #SillyTavernImportSection, #sb_character_import_panel, #sb_character_world_info_panel) :is(label, .toggle-description, .world_popup_action_group_label, .world_info_results_summary, .settings-section-header, h3, h4, strong, p, small) {
+    color: var(--neco-ink) !important;
+}
+
+body.neconyan :is(#world_popup, #SillyTavernImportSection, #sb_character_import_panel, #sb_character_world_info_panel) :is(.text_muted, .opacity50p, .world_info_workspace_state, .world_popup_editor_uid) {
+    color: var(--neco-muted) !important;
+}
+
+/* The inner Settings navigator follows the light surface, including its
+   labels and icons. The outer rail keeps its existing dark treatment. */
+:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan :is(.sb-settings-nav-column, .sb-settings-tabs-nav) {
+    background: color-mix(in srgb, var(--neco-surface) 92%, transparent) !important;
+    color: var(--neco-ink) !important;
+    border-color: var(--neco-border) !important;
+}
+
+:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan .sb-settings-nav-column .sb-settings-tab-btn {
+    color: var(--neco-ink) !important;
+}
+
+body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_header :is(#sb_conversation_pals_toggle, .sb-conversation-header-actions .menu_button_icon) {
+    min-width: 44px !important;
+    min-height: 44px !important;
+    width: auto !important;
+    height: auto !important;
+    padding: 8px 10px !important;
+    gap: 6px;
+}
+
+body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_header :is(#sb_conversation_pals_toggle, .sb-conversation-header-actions .menu_button_icon) > span:not([hidden]) {
+    display: inline !important;
+    white-space: normal;
+}

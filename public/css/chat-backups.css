@@ -1,0 +1,231 @@
+.chatBackupsList {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    transition: height var(--sb-transition);
+    max-height: min(25dvh, 250px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    border-radius: 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    padding: 5px;
+    width: 100%;
+}
+
+.chatBackupsList:not(.open),
+.chatBackupsList:empty {
+    display: none;
+}
+
+/* Neconyan: Backups replace the chat list so cleanup controls cannot consume a short nested tray. */
+#select_chat_popup.chatBackupsOpen {
+    height: 100%;
+}
+
+#select_chat_popup.chatBackupsOpen :is(#select_chat_search, #chat_management_tools, #chat_cleanup_status, #select_chat_div) {
+    display: none;
+}
+
+#select_chat_popup.chatBackupsOpen .chatBackupsList {
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: none;
+}
+
+body.safari #select_chat_popup.chatBackupsOpen {
+    height: 100%;
+}
+
+.chatBackupsListItem {
+    display: flex;
+    flex-wrap: wrap;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    padding: 5px 7px;
+    font-size: smaller;
+    background: var(--black30a);
+}
+
+.chatBackupsCleanupTools {
+    display: grid;
+    grid-template-columns: max-content minmax(4.5rem, 5.5rem) minmax(6rem, 7rem) max-content minmax(4.5rem, 5.5rem) max-content max-content;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 8px 12px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+}
+
+.chatBackupsCleanupField {
+    display: contents;
+}
+
+.chatBackupsCleanupField span {
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.chatBackupsCleanupField input,
+.chatBackupsCleanupTools select {
+    width: 100%;
+    height: 34px;
+    min-height: 34px;
+    box-sizing: border-box;
+    text-align: center;
+}
+
+.chatBackupsCleanupTools .menu_button {
+    min-height: 34px;
+    margin: 0;
+    padding-inline: 10px;
+}
+
+.chatBackupsCleanupStatus {
+    grid-column: 1 / -1;
+    font-size: calc(var(--mainFontSize) - 0.15rem);
+    opacity: 0.78;
+    text-align: center;
+}
+
+.chatBackupsEmptyMessage {
+    padding: 10px;
+    text-align: center;
+    opacity: 0.75;
+}
+
+.chatBackupsCleanupPreview {
+    display: grid;
+    gap: 4px;
+    max-height: min(45vh, 24rem);
+    overflow: auto;
+    padding-inline-start: 1.4rem;
+    text-align: left;
+}
+
+.chatBackupsCleanupPreview li {
+    line-height: 1.35;
+}
+
+.chatBackupsCleanupPreview code {
+    overflow-wrap: anywhere;
+}
+
+.chatBackupsList.previewing {
+    gap: 0;
+}
+
+.chatBackupPreview {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 0;
+}
+
+.chatBackupPreviewName {
+    position: -webkit-sticky;
+    position: sticky;
+    z-index: 1;
+    top: 0;
+    overflow: hidden;
+    padding: 8px 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: var(--sb-radius-button) var(--sb-radius-button) 0 0;
+    background: var(--sb-input-bg);
+    font-size: calc(var(--mainFontSize) * 0.9);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chatBackupPreviewMessages {
+    max-width: 100%;
+    min-width: 0;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-top: 0;
+    border-radius: 0 0 var(--sb-radius-button) var(--sb-radius-button);
+    background: var(--sb-input-bg);
+}
+
+.chatBackupPreviewMessage {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 12px;
+    color: var(--SmartThemeBodyColor);
+    font-size: calc(var(--mainFontSize) * 0.95);
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    text-align: start;
+    white-space: pre-wrap;
+}
+
+.chatBackupPreviewMessage + .chatBackupPreviewMessage {
+    border-top: 1px solid var(--SmartThemeBorderColor);
+}
+
+.chatBackupsListItemName {
+    opacity: 0.75;
+    flex-grow: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chatBackupsListItemInfo {
+    opacity: 0.75;
+}
+
+.chatBackupsListItemActions {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.chatBackupsListItemActions .right_menu_button {
+    font-size: var(--mainFontSize);
+}
+
+@media screen and (max-width: 700px) {
+    .chatBackupsCleanupTools {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        padding: 8px;
+    }
+
+    .chatBackupsCleanupField {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(3.75rem, 4.5rem);
+        align-items: center;
+        gap: 6px;
+    }
+
+    .chatBackupsCleanupTools select {
+        grid-column: auto;
+    }
+
+    .chatBackupsCleanupKeepField {
+        grid-column: 1 / -1;
+    }
+
+    .chatBackupsCleanupTools .menu_button {
+        width: 100%;
+        min-width: 0;
+    }
+}
+
+@media screen and (max-width: 360px) {
+    .chatBackupsCleanupField {
+        grid-column: 1 / -1;
+        grid-template-columns: minmax(0, 1fr) minmax(4.5rem, 5.5rem);
+    }
+
+    .chatBackupsCleanupTools select {
+        grid-column: 1 / -1;
+    }
+}

@@ -1,0 +1,26 @@
+{
+    "display_name": "Prompting Lab",
+    "author": "SillyBunnyTeam",
+    "version": "0.3.0",
+    "description": "Save prompt test cases for your characters and check whether a preset, macro, or update changed the prompts they produce.",
+    "requires": [],
+    "optional": [
+        "Neconyan-PromptTags",
+        "MacroEnhanced"
+    ],
+    "dependencies": [],
+    "minimum_client_version": "1.7.0",
+    "js": "index.js",
+    "css": "style.css",
+    "license": "AGPL-3.0",
+    "license_file": "LICENSE",
+    "homePage": "https://github.com/SillyBunnyTeam/SillyBunny-Prompting-Lab",
+    "loading_order": 100,
+    "auto_update": true,
+    "hooks": {
+        "activate": "init",
+        "enable": "init",
+        "disable": "deactivate",
+        "clean": "clean"
+    }
+}

@@ -1,0 +1,138 @@
+/**
+ * Merging results from several sources into one list.
+ *
+ * There is no honest way to rank across sources. Nothing returns a relevance
+ * score, and the numbers they do return mean different things: Chub's "count"
+ * changes with the sort it was asked for, Botbooru's is a row count, and several
+ * sources report nothing at all. Sorting a merged list by any of those would be
+ * inventing an order and presenting it as relevance.
+ *
+ * So the merge interleaves: one from each source in turn, in the order the user
+ * listed them. That is predictable, gives every source equal room, and makes no
+ * claim about which result is better.
+ */
+
+import crypto from 'node:crypto';
+
+/**
+ * Interleaves per-source result lists, round-robin.
+ *
+ * @param {{ source: string, items: any[] }[]} groups in the caller's preferred order
+ * @param {number} limit
+ * @returns {any[]}
+ */
+export function interleave(groups, limit) {
+    const out = [];
+    const lists = groups.filter((group) => Array.isArray(group?.items) && group.items.length > 0);
+    if (lists.length === 0) {
+        return out;
+    }
+
+    const deepest = Math.max(...lists.map((group) => group.items.length));
+    for (let round = 0; round < deepest && out.length < limit; round++) {
+        for (const group of lists) {
+            if (out.length >= limit) {
+                break;
+            }
+            if (round < group.items.length) {
+                out.push(group.items[round]);
+            }
+        }
+    }
+
+    return out;
+}
+
+/**
+ * Drops cards that already appeared under a different source.
+ *
+ * @param {any[]} items
+ * @param {Set<string>} [seen] carried across pages so page 2 does not repeat page 1
+ * @param {(item: any) => string | null} [keyOf]
+ * @returns {any[]}
+ */
+export function dedupe(items, seen = new Set(), keyOf = identityKey) {
+    const out = [];
+    for (const item of items) {
+        const key = keyOf(item);
+        if (key !== null && seen.has(key)) {
+            continue;
+        }
+        if (key !== null) {
+            seen.add(key);
+        }
+        out.push(item);
+    }
+    return out;
+}
+
+/**
+ * A cross-source identity for a card, or null when there is not enough to claim
+ * two records are the same character.
+ *
+ * A name with no creator is deliberately NOT a key: "Sakura" from two sites is
+ * usually two different characters, and dropping one would lose a real result to
+ * make the list look tidier.
+ */
+export function identityKey(item) {
+    const name = normalize(item?.name);
+    const creator = normalize(item?.creator);
+    if (name === '' || creator === '') {
+        return null;
+    }
+    return `${creator}\0${name}`;
+}
+
+/**
+ * Compact, opaque identity for a signed merged cursor. The raw name and creator
+ * must not be copied into a token that the client can persist or log.
+ */
+export function identityFingerprint(item) {
+    const key = identityKey(item);
+    if (key === null) {
+        return null;
+    }
+    return crypto.createHash('sha256').update(key).digest('base64url').slice(0, 16);
+}
+
+function normalize(value) {
+    if (typeof value !== 'string') {
+        return '';
+    }
+    return value
+        .normalize('NFKD')
+        // Strip combining marks so "Renee" and "Renee" match.
+        .replace(/\p{M}+/gu, '')
+        .toLowerCase()
+        // Punctuation and spacing vary freely between re-uploads.
+        .replace(/[^\p{L}\p{N}]+/gu, '')
+        .slice(0, 120);
+}
+
+/**
+ * Splits a page budget across sources, giving the remainder to the earliest.
+ *
+ * Asking each source for limit/n rather than limit keeps a merged search costing
+ * about what a single-source one did, which matters on a small box.
+ *
+ * @param {number} limit
+ * @param {number} count
+ * @returns {number[]}
+ */
+export function sharePageBudget(limit, count) {
+    if (count <= 0) {
+        return [];
+    }
+    const base = Math.floor(limit / count);
+    let remainder = limit % count;
+
+    return Array.from({ length: count }, () => {
+        // At least one, or a source with a tiny share would be asked for nothing
+        // and silently drop out of the results.
+        const share = Math.max(1, base + (remainder > 0 ? 1 : 0));
+        if (remainder > 0) {
+            remainder--;
+        }
+        return share;
+    });
+}

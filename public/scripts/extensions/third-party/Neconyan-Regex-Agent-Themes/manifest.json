@@ -1,0 +1,24 @@
+{
+    "display_name": "Regex Agent Themes",
+    "author": "platberlitz",
+    "version": "1.0.1",
+    "description": "Swappable HTML themes for Neconyan's bundled In-Chat Agent trackers and companion panels.",
+    "requires": [],
+    "optional": [],
+    "dependencies": [
+        "in-chat-agents"
+    ],
+    "minimum_client_version": "1.7.0",
+    "js": "index.js",
+    "css": "style.css",
+    "license": "AGPL-3.0",
+    "license_file": "LICENSE",
+    "homePage": "https://github.com/SillyBunnyTeam/SillyBunny-Regex-Agent-Themes",
+    "loading_order": 120,
+    "auto_update": true,
+    "hooks": {
+        "activate": "init",
+        "enable": "init",
+        "disable": "deactivate"
+    }
+}

@@ -1,0 +1,235 @@
+body.neconyan .neconyan-home {
+    width: min(100%, 760px); margin-inline: auto; padding: 32px 28px 48px;
+    display: flex; flex-direction: column; gap: 40px; text-align: left;
+}
+body.neconyan .neconyan-home-intro { gap: 12px; align-items: stretch; }
+body.neconyan .neconyan-home-intro h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.025em; }
+body.neconyan .neconyan-home-intro > p { margin: 0; max-width: 60ch; color: var(--neco-muted); line-height: 1.6; }
+.neconyan-home-cat { align-self: flex-start; display: flex; flex-direction: column; align-items: center; gap: 2px; margin: -16px 0 4px; }
+.neconyan-home-cat img { image-rendering: pixelated; width: min(248px, 100%); height: auto; aspect-ratio: 13 / 12; }
+.neconyan-cat-toggle { border: 0; background: none; color: var(--neco-muted); padding: 6px 10px; min-height: 32px; cursor: pointer; font: inherit; font-size: 11px; }
+.neconyan-home-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+body.neconyan .neconyan-home-actions > button { display: flex; align-items: center; gap: 14px; min-height: 48px; width: 100%; margin: 0; padding: 12px 16px; border: 1px solid var(--neco-border); border-radius: 6px; background: transparent; color: var(--neco-ink); text-align: left; font: inherit; font-size: 14px; }
+.neconyan-home-actions > button > span { flex: 1; }
+.neconyan-home-actions > button > i.fa-arrow-right { opacity: .65; font-size: 12px; }
+body.neconyan .neconyan-home-actions > .neconyan-home-primary { color: var(--neco-on-accent); background: var(--neco-ginger); border-color: var(--neco-ginger); font-weight: 600; }
+body.neconyan .neconyan-home-actions > button:hover { background: var(--neco-raised); }
+body.neconyan .neconyan-home-actions > .neconyan-home-primary:hover { background: var(--neco-ginger-hover); }
+.neconyan-home h2 { margin: 0; font-size: 18px; line-height: 1.4; font-weight: 600; }
+.neconyan-recent-heading { display: flex; flex-direction: column; gap: 12px; margin-bottom: 8px; }
+.neconyan-home summary { cursor: pointer; min-height: 44px; padding: 12px 0; color: var(--neco-muted); font-size: 13px; }
+body.neconyan .neconyan-recent-filters .welcomeRecentTabs { display: flex; flex-direction: column; align-items: stretch; width: 100%; gap: 2px; padding: 0; border: 0; }
+body.neconyan .neconyan-recent-filters .welcomeRecentTab { min-height: 44px; width: 100%; text-align: left; justify-content: flex-start; }
+body.neconyan .neconyan-home .noRecentChat { display: flex; flex-direction: column; border-radius: 0; align-items: flex-start; gap: 6px; padding: 16px 0; border: 0; background: none; text-align: left; }
+body.neconyan .neconyan-home .noRecentChat::before { display: none; }
+.neconyan-home .noRecentChat span { color: var(--neco-muted); font-size: 13px; }
+.neconyan-home .neconyan-empty-illustration { width: min(160px, 100%); height: auto; max-height: 132px; object-fit: contain; object-position: left center; }
+body.neconyan .neconyan-assistant-picker--error .neconyan-empty-illustration { width: 120px; max-height: 112px; flex: 0 0 auto; }
+body.neconyan .neconyan-home .recentChat { align-items: flex-start; gap: 12px; padding: 18px 0; }
+body.neconyan .neconyan-home .recentChat .chatNameContainer { flex-wrap: wrap; justify-content: flex-start; align-items: baseline; gap: 4px 12px; }
+body.neconyan .neconyan-home .recentChat .chatName { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; min-width: 0; }
+body.neconyan .neconyan-home .recentChat .chatName > span { color: var(--neco-muted); font-size: 12px; }
+body.neconyan .neconyan-home .recentChat .chatDate { color: var(--neco-muted); font-size: 11px; margin-left: auto; }
+body.neconyan .neconyan-home .recentChat .chatActions { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 4px; opacity: 1; margin-top: 4px; }
+body.neconyan .neconyan-home .recentChat .chatActions button { display: inline-flex; gap: 6px; min-height: 36px; height: auto; max-height: none; width: auto; max-width: none; padding: 6px 8px; font-size: 12px; }
+body.neconyan .neconyan-home .recentChat .chatActions .deleteChat { color: var(--neco-muted); }
+body.neconyan .neconyan-home .recentChat .chatActions .deleteChat:hover { color: var(--SmartThemeQuoteColor); }
+body.neconyan .neconyan-home-help { order: initial; padding: 16px 20px; background: var(--neco-surface); border: 1px solid var(--neco-border); border-radius: 20px; }
+.neconyan-tour-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; }
+body.neconyan .neconyan-home .welcomeTourPanel { padding: 0; border: 0; background: none; border-radius: 0; }
+body.neconyan .neconyan-home .welcomeTourProgress { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; list-style: none; margin: 12px 0 20px; padding: 0; border: 0; }
+body.neconyan .neconyan-home .welcomeTourProgress li { margin: 0; padding: 0; }
+body.neconyan .neconyan-home .welcomeTourProgressButton { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; padding: 8px; border: 1px solid var(--neco-border); border-radius: 12px; background: none; color: var(--neco-muted); text-align: center; }
+body.neconyan .neconyan-home .welcomeTourProgressLabel { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+body.neconyan .neconyan-home .tutorialReplay,
+body.neconyan .neconyan-home .tutorialCollapsed :is(.welcomeTourProgress, .welcomeTourSteps, .welcomeTourNav, .tutorialSkip) { display: none; }
+body.neconyan .neconyan-home .tutorialCollapsed .tutorialReplay { display: inline-flex; }
+@media (max-width: 600px) {
+    body.neconyan .neconyan-home .welcomeTourProgress { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+body.neconyan .neconyan-home .welcomeTourProgressButton.is-active { background: var(--neco-raised); color: var(--neco-ink); }
+body.neconyan .neconyan-home .welcomeTourProgressNumber { display: inline; background: none; color: inherit; font-size: calc(var(--mainFontSize) * 1.25); width: 16px; min-width: 16px; border: 0; border-radius: 0; }
+body.neconyan .neconyan-home .welcomeTourSteps { display: block; }
+body.neconyan .neconyan-home .welcomeTourStep { border: 0; border-radius: 0; background: none; padding: 0; }
+.neconyan-home .welcomeTourStep h3 { font-size: 16px; margin: 0 0 8px; }
+.neconyan-home .welcomeTourStep p { max-width: 65ch; font-size: 14px; line-height: 1.6; margin: 8px 0; }
+.neconyan-tour-hint { color: var(--neco-muted); }
+body.neconyan .neconyan-home :is(.welcomeTourActions, .welcomeTourNav) { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 8px; padding: 12px 0 0; }
+.neconyan-home :is(.welcomeTourActions, .welcomeTourNav) button { min-height: 44px; }
+.neconyan-home-footer { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding-top: 16px; border-top: 1px solid var(--neco-border); }
+.neconyan-home-footer > button { align-self: flex-start; min-height: 44px; display: inline-flex; align-items: center; gap: 8px; }
+.neconyan-home-layout { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.neconyan-home-layout button { min-height: 44px; }
+.neconyan-home :is(button, summary):focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 3px; }
+body.neconyan .neconyan-home [hidden] { display: none !important; }
+body.neconyan .neconyan-home.welcomePanel--listOnly > :is(.welcomeHero, .welcomeAdvancedHome) { display: none; }
+body.neconyan .neconyan-home.welcomePanel--listOnly > .welcomeAdvancedHome[open] { display: block; }
+body.neconyan .neconyan-home.welcomePanel--compact .neconyan-home-cat img { width: 90px; height: auto; }
+@media (prefers-reduced-motion: reduce) { .neconyan-cat-toggle { display: none; } }
+@media (max-width: 768px) {
+    body.neconyan .neconyan-home { padding: 20px 16px 32px; gap: 28px; }
+    body.neconyan .neconyan-home-intro h1 { font-size: 23px; }
+    .neconyan-home-cat { margin-top: 0; }
+    .neconyan-cat-toggle { min-height: 44px; }
+    body.neconyan .neconyan-home .recentChat .chatActions button { min-height: 44px; }
+    body.neconyan .neconyan-home .recentChat .chatDate { margin-left: 0; width: 100%; }
+}
+
+body.neconyan .neconyan-home button { border-radius: 6px !important; box-shadow: none !important; }
+body.neconyan .neconyan-home .welcomeTourStep h3 { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+
+body.neconyan .neconyan-home .showMoreChats.rotated { transform: none; }
+
+.neconyan-home-actions small { display: block; font-size: 12px; font-weight: 400; margin-top: 3px; color: var(--neco-muted); }
+
+/* Home is the friendly front door: rounded cards, cream-led depth and enough
+   space for the assistant choices to remain comfortable on touch screens. */
+body.neconyan .neconyan-home {
+    width: min(100%, 900px);
+    gap: 44px;
+}
+
+body.neconyan .neconyan-home-intro {
+    padding: 28px;
+    border: 1px solid color-mix(in oklch, var(--neco-border) 82%, var(--neco-ginger));
+    border-radius: 24px;
+    background: var(--neco-panel-gradient);
+    box-shadow: 0 16px 36px color-mix(in srgb, var(--neco-charcoal) 22%, transparent);
+}
+
+body.neconyan .neconyan-home-intro h1,
+body.neconyan .neconyan-home h2,
+body.neconyan .neconyan-assistant-picker h2 { color: var(--neco-ink); }
+
+body.neconyan .neconyan-home-actions { gap: 16px; }
+body.neconyan .neconyan-home-actions > button,
+body.neconyan .neconyan-home .welcomeTourProgressButton,
+body.neconyan .neconyan-home .showMoreChats,
+body.neconyan .neconyan-home-footer > button {
+    border-radius: 18px !important;
+}
+
+body.neconyan .neconyan-home-actions > button {
+    min-height: 56px;
+    padding-inline: 20px;
+    background: var(--neco-panel-gradient);
+    border-color: color-mix(in oklch, var(--neco-border) 76%, var(--neco-ginger));
+}
+
+body.neconyan .neconyan-home-actions > button:hover,
+body.neconyan .neconyan-home-actions > button:focus-visible {
+    border-color: var(--neco-ginger);
+    transform: translateY(-1px);
+}
+
+body.neconyan .neconyan-home-actions > .neconyan-home-primary {
+    background: var(--neco-action-gradient);
+    box-shadow: 0 10px 20px color-mix(in srgb, var(--neco-ginger) 24%, transparent);
+}
+
+body.neconyan .neconyan-assistant-picker {
+    padding: 24px;
+    border: 1px solid color-mix(in oklch, var(--neco-border) 78%, var(--neco-ginger));
+    border-radius: 24px;
+    background: var(--neco-panel-gradient);
+    box-shadow: 0 16px 34px color-mix(in srgb, var(--neco-charcoal) 18%, transparent);
+}
+
+.neconyan-assistant-picker-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 18px;
+}
+
+.neconyan-assistant-picker-heading h2 { margin: 2px 0 6px; }
+.neconyan-assistant-picker-heading p:not(.neconyan-eyebrow) { margin: 0; max-width: 62ch; color: var(--neco-muted); line-height: 1.5; }
+.neconyan-eyebrow { margin: 0; color: var(--neco-ginger-hover); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.neconyan-cat-mark { color: var(--neco-ginger); font-size: 32px; line-height: 1; transform: rotate(-18deg); }
+
+.neconyan-assistant-list { display: grid; gap: 40px; padding-top: 20px; container-type: inline-size; }
+.neconyan-assistant-row {
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr) minmax(190px, 240px);
+    grid-template-areas: 'portrait copy variants' 'portrait action action';
+    gap: 10px 16px;
+    align-items: center;
+    padding: 14px;
+    border: 1px solid color-mix(in oklch, var(--neco-border) 84%, var(--neco-cream));
+    border-radius: 20px;
+    background: color-mix(in oklch, var(--neco-surface) 72%, var(--neco-cream) 5%);
+}
+
+.neconyan-assistant-row.is-selected {
+    border-color: color-mix(in oklch, var(--neco-ginger) 70%, var(--neco-border));
+    background: color-mix(in oklch, var(--neco-raised) 76%, var(--neco-ginger) 8%);
+}
+
+.neconyan-assistant-portrait-wrap {
+    grid-area: portrait;
+    width: 88px;
+    height: 118px;
+    overflow: hidden;
+    border: 2px solid color-mix(in oklch, var(--neco-cream) 70%, var(--neco-ginger));
+    border-radius: 18px;
+    background: var(--neco-charcoal);
+}
+
+.neconyan-assistant-portrait-wrap img { width: 100%; height: 100%; object-fit: cover; object-position: center top; }
+.neconyan-assistant-copy { grid-area: copy; min-width: 0; align-self: start; }
+body.neconyan #neconyan-home-host .neconyan-assistant-copy h3 { margin: 0 0 2px; padding: 0; border: 0; background: none; box-shadow: none; color: var(--neco-ink); font-size: 17px; }
+.neconyan-assistant-copy p { margin: 4px 0; color: var(--neco-muted); font-size: 13px; line-height: 1.45; }
+.neconyan-assistant-copy .neconyan-assistant-role { color: var(--neco-ink); font-weight: 600; }
+.neconyan-assistant-selection { font-size: 12px !important; }
+.neconyan-assistant-selection:empty { display: none; }
+
+.neconyan-assistant-variants {
+    grid-area: variants;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    min-width: 190px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.neconyan-assistant-variants legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.neconyan-assistant-variants label { display: inline-flex; align-items: center; min-height: 44px; padding: 4px 9px; border: 1px solid var(--neco-border); border-radius: 999px; color: var(--neco-muted); cursor: pointer; font-size: 12px; }
+.neconyan-assistant-variants label:has(input:checked) { border-color: var(--neco-ginger); background: color-mix(in oklch, var(--neco-ginger) 22%, var(--neco-raised)); color: var(--neco-ink); }
+.neconyan-assistant-variants input { margin: 0 5px 0 0; accent-color: var(--neco-ginger); }
+.neconyan-assistant-update { min-height: 44px; padding: 4px 9px; border: 1px solid var(--neco-ginger); border-radius: 999px; color: var(--neco-ink); font-size: 12px; }
+.neconyan-assistant-update:disabled { cursor: not-allowed; opacity: .48; }
+body.neconyan #neconyan-home-host .neconyan-assistant-open { grid-area: action; justify-self: end; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; min-width: 0; width: min(100%, 280px); background: var(--neco-action-gradient); color: var(--neco-charcoal); font-weight: 700; white-space: normal; }
+.neconyan-assistant-open [data-assistant-action-label] { min-width: 0; }
+.neconyan-assistant-open:disabled { cursor: not-allowed; opacity: .48; }
+.neconyan-assistant-picker-status { min-height: 20px; margin: 14px 0 0; color: var(--neco-muted); font-size: 12px; }
+.neconyan-assistant-picker-status.is-error { color: var(--neco-ink); font-weight: 600; }
+.neconyan-assistant-picker--error { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.neconyan-assistant-picker--error > div { flex: 1 1 240px; }
+.neconyan-assistant-picker--error > button { min-height: 44px; border-radius: 999px !important; }
+
+body.neconyan .neconyan-home.welcomePanel--listOnly > .neconyan-assistant-picker { display: none; }
+
+@media (max-width: 680px) {
+    body.neconyan .neconyan-home { padding: 24px 12px 28px; gap: 40px; }
+    body.neconyan .neconyan-home-intro,
+    body.neconyan .neconyan-assistant-picker { padding: 18px 14px; border-radius: 20px; }
+    .neconyan-assistant-picker-heading { margin-bottom: 14px; }
+    .neconyan-assistant-picker-heading .neconyan-cat-mark { display: none; }
+}
+
+@container (max-width: 560px) {
+    .neconyan-assistant-row { grid-template-columns: 72px minmax(0, 1fr); grid-template-areas: 'portrait copy' 'variants variants' 'action action'; gap: 12px; }
+    .neconyan-assistant-portrait-wrap { width: 72px; height: 98px; align-self: start; }
+    .neconyan-assistant-variants { justify-content: flex-start; min-width: 0; }
+    .neconyan-assistant-open { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.neconyan .neconyan-home-actions > button { transform: none !important; }
+}
+body.neconyan.reduced-motion .neconyan-home-actions > button { transform: none !important; }

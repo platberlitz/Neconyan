@@ -1,0 +1,22 @@
+{
+    "display_name": "Meower",
+    "author": "platberlitz",
+    "version": "0.4.0",
+    "description": "Optional persona-scoped social timelines with editable profiles, Scenario Notes, and independent character casts.",
+    "requires": [],
+    "optional": [],
+    "dependencies": [],
+    "minimum_client_version": "1.7.0",
+    "js": "index.js",
+    "css": "style.css",
+    "license": "AGPL-3.0",
+    "license_file": "LICENSE",
+    "homePage": "https://github.com/platberlitz/SillyBunny-Hopper",
+    "loading_order": 150,
+    "auto_update": false,
+    "hooks": {
+        "activate": "activate",
+        "enable": "enable",
+        "disable": "disable"
+    }
+}

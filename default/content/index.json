@@ -1,0 +1,1006 @@
+[
+    {
+        "filename": "settings.json",
+        "type": "settings"
+    },
+    {
+        "filename": "themes/Neconyan Calico.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Neconyan Calico Dark.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Dark Lite.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Cappuccino.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Celestial Macaron.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Dark V 1.0.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Azure.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Amber Dusk.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Black Orange.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Burnt Orange.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Catppuccin Latte.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Catppuccin Mocha.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Cerulean.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Cinder.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Dracula Light.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Dracula.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Everforest Dark.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Everforest Light.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Glacier.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Gruvbox Dark.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Gruvbox Light.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Hacker-Terminal-Light.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Hacker-Terminal.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Lavender.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Lime.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Magenta.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Mint.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Monochrome.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Neon Abyss.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Neon Yellow.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Nord Light.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Nord.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Plum.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Rose.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Rosé Pine Dawn.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Rosé Pine.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sage.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Slate.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Solarized Dark.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Solarized Light.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sonokai Andromeda Light.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sonokai Andromeda.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sonokai Atlantis Light.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sonokai Atlantis.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sonokai Default Light.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sonokai Default.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sonokai Espresso Light.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sonokai Espresso.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sonokai Maia Light.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sonokai Maia.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sonokai Shusia Light.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sonokai Shusia.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Tokyo Night Day.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Tokyo Night.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Verdant Light.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Verdant.json",
+        "type": "theme"
+    },
+    {
+        "filename": "backgrounds/__transparent.png",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Sunlit Window.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Midnight Rooftops.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Rainy Reading Room.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Cream Clouds.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "user-default.png",
+        "type": "avatar"
+    },
+    {
+        "filename": "Default_Comfy_Workflow.json",
+        "type": "workflow"
+    },
+    {
+        "filename": "Char_Avatar_Comfy_Workflow.json",
+        "type": "workflow"
+    },
+    {
+        "filename": "presets/kobold/Deterministic.json",
+        "type": "kobold_preset"
+    },
+    {
+        "filename": "presets/kobold/Neutral.json",
+        "type": "kobold_preset"
+    },
+    {
+        "filename": "presets/kobold/RecoveredRuins.json",
+        "type": "kobold_preset"
+    },
+    {
+        "filename": "presets/kobold/Universal-Creative.json",
+        "type": "kobold_preset"
+    },
+    {
+        "filename": "presets/kobold/Universal-Light.json",
+        "type": "kobold_preset"
+    },
+    {
+        "filename": "presets/kobold/Universal-Super-Creative.json",
+        "type": "kobold_preset"
+    },
+    {
+        "filename": "presets/novel/Asper-Kayra.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Blended-Coffee-Kayra.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Blook-Kayra.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Carefree-Kayra.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/CosmicCube-Kayra.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Edgewise-Clio.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Fresh-Coffee-Clio.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Fresh-Coffee-Kayra.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Green-Active-Writer-Kayra.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Keelback-Clio.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Long-Press-Clio.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Pilotfish-Kayra.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Pro_Writer-Kayra.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Stelenes-Kayra.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Talker-Chat-Clio.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Tea_Time-Kayra.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Tesseract-Kayra.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Vingt-Un-Clio.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Writers-Daemon-Kayra.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Erato-Dragonfruit.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Erato-Golden Arrow.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Erato-Shosetsu.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Erato-Wilder.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/novel/Erato-Zany Scribe.json",
+        "type": "novel_preset"
+    },
+    {
+        "filename": "presets/textgen/Default.json",
+        "type": "textgen_preset"
+    },
+    {
+        "filename": "presets/textgen/Deterministic.json",
+        "type": "textgen_preset"
+    },
+    {
+        "filename": "presets/textgen/Neutral.json",
+        "type": "textgen_preset"
+    },
+    {
+        "filename": "presets/textgen/Universal-Creative.json",
+        "type": "textgen_preset"
+    },
+    {
+        "filename": "presets/textgen/Universal-Light.json",
+        "type": "textgen_preset"
+    },
+    {
+        "filename": "presets/textgen/Universal-Super-Creative.json",
+        "type": "textgen_preset"
+    },
+    {
+        "filename": "presets/openai/Default.json",
+        "type": "openai_preset"
+    },
+    {
+        "filename": "presets/context/Adventure.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/Alpaca-Single-Turn.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/Alpaca.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/ChatML.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/Default.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/Libra-32B.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/Lightning 1.1.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/Llama 2 Chat.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/Minimalist.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/NovelAI.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/OldDefault.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/Metharme.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/Story.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/Synthia.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/simple-proxy-for-tavern.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/Command R.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/Llama 3 Instruct.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/Llama 4 Instruct.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/Phi.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/instruct/Adventure.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/Alpaca-Single-Turn.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/Alpaca.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/ChatML.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/Koala.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/Libra-32B.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/Lightning 1.1.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/Llama 2 Chat.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/Metharme.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/OpenOrca-OpenChat.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/Story.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/Synthia.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/Tulu.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/context/Tulu.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/instruct/Vicuna 1.0.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/Vicuna 1.1.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/WizardLM-13B.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/WizardLM.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/simple-proxy-for-tavern.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/Command R.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/Llama 3 Instruct.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/Llama 4 Instruct.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/Phi.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/moving-ui/Default.json",
+        "type": "moving_ui"
+    },
+    {
+        "filename": "presets/quick-replies/Default.json",
+        "type": "quick_replies"
+    },
+    {
+        "filename": "presets/quick-replies/Memory Sharding.json",
+        "type": "quick_replies"
+    },
+    {
+        "filename": "presets/instruct/Llama-3-Instruct-Names.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/ChatML-Names.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/KoboldAI.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/context/Llama-3-Instruct-Names.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/ChatML-Names.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/Gemma 2.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/instruct/Gemma 2.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/Kimi K2.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/sysprompt/Actor.json",
+        "type": "sysprompt"
+    },
+    {
+        "filename": "presets/sysprompt/Assistant - Expert.json",
+        "type": "sysprompt"
+    },
+    {
+        "filename": "presets/sysprompt/Assistant - Simple.json",
+        "type": "sysprompt"
+    },
+    {
+        "filename": "presets/sysprompt/Chain of Thought.json",
+        "type": "sysprompt"
+    },
+    {
+        "filename": "presets/sysprompt/Roleplay - Detailed.json",
+        "type": "sysprompt"
+    },
+    {
+        "filename": "presets/sysprompt/Roleplay - Immersive.json",
+        "type": "sysprompt"
+    },
+    {
+        "filename": "presets/sysprompt/Roleplay - Simple.json",
+        "type": "sysprompt"
+    },
+    {
+        "filename": "presets/sysprompt/Text Adventure.json",
+        "type": "sysprompt"
+    },
+    {
+        "filename": "presets/sysprompt/Writer - Creative.json",
+        "type": "sysprompt"
+    },
+    {
+        "filename": "presets/sysprompt/Writer - Realistic.json",
+        "type": "sysprompt"
+    },
+    {
+        "filename": "presets/sysprompt/Blank.json",
+        "type": "sysprompt"
+    },
+    {
+        "filename": "presets/sysprompt/Neutral - Chat.json",
+        "type": "sysprompt"
+    },
+    {
+        "filename": "presets/sysprompt/Lightning 1.1.json",
+        "type": "sysprompt"
+    },
+    {
+        "filename": "presets/instruct/Mistral V1.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/context/Mistral V1.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/instruct/Mistral V2 & V3.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/context/Mistral V2 & V3.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/instruct/Mistral V3-Tekken.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/context/Mistral V3-Tekken.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/instruct/Mistral V7.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/context/Mistral V7.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/instruct/DeepSeek-V2.5.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/context/DeepSeek-V2.5.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/instruct/GLM-4.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/context/GLM-4.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/reasoning/DeepSeek.json",
+        "type": "reasoning"
+    },
+    {
+        "filename": "presets/reasoning/Blank.json",
+        "type": "reasoning"
+    },
+    {
+        "filename": "presets/instruct/Dots1.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/context/Dots1.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/Mistral V7-Tekken.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/instruct/Mistral V7-Tekken.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/Moonshot AI.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/context/Moonshot AI.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/context/OpenAI Harmony.json",
+        "type": "context"
+    },
+    {
+        "filename": "presets/instruct/OpenAI Harmony.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/instruct/OpenAI Harmony (Thinking).json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/reasoning/OpenAI Harmony.json",
+        "type": "reasoning"
+    },
+    {
+        "filename": "presets/reasoning/Think XML.json",
+        "type": "reasoning"
+    },
+    {
+        "filename": "presets/reasoning/Gemma 4.json",
+        "type": "reasoning"
+    },
+    {
+        "filename": "presets/instruct/Gemma 4.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/context/Gemma 4.json",
+        "type": "context"
+    },
+    {
+        "filename": "user.css",
+        "type": "stylesheet"
+    },
+    {
+        "filename": "errors/forbidden-by-whitelist.html",
+        "type": "error_page"
+    },
+    {
+        "filename": "errors/host-not-allowed.html",
+        "type": "error_page"
+    },
+    {
+        "filename": "errors/unauthorized.html",
+        "type": "error_page"
+    },
+    {
+        "filename": "errors/url-not-found.html",
+        "type": "error_page"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Misted Botanical.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Amber Train.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Coral Tidepool.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Moonlit Observatory.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Autumn Station.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Desert Teahouse.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Pastel Arcade.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Lakeside Cabin.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Sakura Rain.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Copper Workshop.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Foggy Harbour.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Lilac Moor.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Candle Library.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Glass Lagoon.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Winter Greenhouse.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Rustic Kitchen.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Neon Rainway.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Cloud Island.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Mossy Ruins.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Snowy Bookshop.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Saffron Market.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Deep Sea Window.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Summer Veranda.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Volcanic Sunset.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Bamboo Rain.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Retro Diner.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Orchard Dawn.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Ink Wash Mountains.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Lantern Canal.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Solarpunk Terrace.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Cottage Storm.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Rose Cliff.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Night Garden.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Mountain Onsen.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Paper Studio.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Tropical Storm.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Celestial Atlas.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Meadow Windmill.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Cobalt Gallery.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Firefly Marsh.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Honey Hills.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Ice Cavern.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Teal Record Shop.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Floating Garden.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Lavender Farm.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - River Stones.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Carnival Dusk.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Slate Library.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Peach Desert Dawn.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Woodland Cafe.jpg",
+        "type": "background"
+    }
+]

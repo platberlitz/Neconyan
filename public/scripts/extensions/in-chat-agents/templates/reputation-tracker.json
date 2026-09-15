@@ -1,0 +1,45 @@
+{
+  "id": "tpl-reputation-tracker",
+  "name": "Reputation Tracker",
+  "description": "Track how {{user}} is perceived by groups and factions",
+  "icon": "",
+  "category": "tracker",
+  "subcategory": "progress",
+  "tags": [
+    "reputation",
+    "rumors",
+    "perception"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "### Rumors & Reputation\nTrack how <user> is perceived by groups and factions. Update when public perception shifts due to witnessed actions, gossip, or deliberate manipulation. Use this EXACT format:\n\n[REP|Source|Perception|Direction]\ncause: MANDATORY; explain what triggered this reputation shift\n[/REP]\n\nDirection options: 📈 RISING | 📉 FALLING | 🔄 MIXED | 🆕 NEW\n\nRules:\n- Reputation appears AFTER narrative content when public perception changes\n- Source can be a named NPC, a group (e.g., \"Freshmen,\" \"Faculty\"), or a location (e.g., \"The dorm floor\")\n- Perception is what they think; a short phrase, not necessarily accurate\n- Only show reputations that CHANGED or were ESTABLISHED this scene\n- Contradictory reputations across different sources are encouraged and allowed\n- When nothing qualifies this scene, output the single line tracker-none in place of the block",
+  "phase": "both",
+  "injection": {
+    "position": 0,
+    "depth": 4,
+    "role": 1,
+    "order": 100,
+    "scan": false
+  },
+  "postProcess": {
+    "enabled": true,
+    "type": "extract",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "\\[REP\\|[^\\]\\r\\n]*\\](?:(?!\\[REP(?=[:|\\]]))[\\s\\S])*?\\[/REP\\]",
+    "extractVariable": "reputation_data"
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal"
+    ]
+  },
+  "companion": {
+    "includeSystemPrompt": false
+  }
+}

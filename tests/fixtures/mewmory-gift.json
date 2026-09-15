@@ -1,0 +1,74 @@
+{
+  "messages": [
+    {
+      "name": "Mara",
+      "is_user": false,
+      "send_date": "2026-01-01T00:00:00.000Z",
+      "mes": "Mara has silver eyes and ink-stained fingers. She speaks in clipped, formal sentences."
+    },
+    {
+      "name": "Player",
+      "is_user": true,
+      "send_date": "2026-01-01T00:01:00.000Z",
+      "mes": "I brought you a gift."
+    },
+    {
+      "name": "Mara",
+      "is_user": false,
+      "send_date": "2026-01-01T00:02:00.000Z",
+      "mes": "Mara accepts the gift. \"I do not need your pity.\" She places it carefully in her bag.",
+      "swipe_id": 0,
+      "swipes": [
+        "Mara accepts the gift. \"I do not need your pity.\" She places it carefully in her bag.",
+        "REJECTED: Mara throws the gift into the sea."
+      ]
+    },
+    {
+      "name": "Narrator",
+      "is_user": false,
+      "send_date": "2026-01-01T00:03:00.000Z",
+      "mes": "An unopened invoice remains in a locked drawer. SECRET: the giver is a prince. Mara has not seen it."
+    },
+    {
+      "name": "Player",
+      "is_user": true,
+      "send_date": "2026-01-01T00:04:00.000Z",
+      "mes": "\"I bought it before the accident,\" the player says, and shows Mara the dated receipt."
+    },
+    {
+      "name": "Mara",
+      "is_user": false,
+      "send_date": "2026-01-01T00:05:00.000Z",
+      "mes": "Mara reads the date on the receipt. \"Then perhaps I judged you too quickly.\""
+    },
+    {
+      "name": "Player",
+      "is_user": true,
+      "send_date": "2026-01-01T00:06:00.000Z",
+      "mes": "You kept it?"
+    }
+  ],
+  "lore": [
+    {
+      "id": "lore:true-name",
+      "type": "lore",
+      "name": "True names",
+      "text": "Giving a true name is an expression of trust in this setting.",
+      "enabled": true
+    },
+    {
+      "id": "lore:disabled",
+      "type": "lore",
+      "name": "Disabled secret",
+      "text": "DISABLED: The prince can hear every true name.",
+      "enabled": false
+    }
+  ],
+  "expectations": {
+    "appearance": "silver eyes and ink-stained fingers",
+    "original_view": "She suspects pity but kept the gift.",
+    "current_view": "Her objection has softened after learning the purchase date; this is not complete trust.",
+    "forbidden_claims": ["The player secretly wants romance.", "Mara knows the giver is a prince."],
+    "interview_only_gesture": "She grips the imaginary armchair."
+  }
+}

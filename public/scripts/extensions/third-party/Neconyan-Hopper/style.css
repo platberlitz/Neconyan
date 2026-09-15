@@ -1,0 +1,1757 @@
+/*
+ * Everything is prefixed sbtw- and scoped to .sbtw-shell, so nothing leaks into the host.
+ * Colours come from the host's own theme tokens rather than being hardcoded, which is what
+ * makes light and dark work without a second palette. The --sb-* tokens are Neconyan's
+ * and do not exist in every theme, so each one carries a fallback chain.
+ */
+
+/* --- launch button, integrated into the Character Menu mode pill -------- */
+
+/* The action stays outside the radiogroup in the DOM. Extra right padding on the native
+ * pill makes it look like the third control without giving a non-mode action radio semantics. */
+#right-nav-panel.openDrawer > .sb-character-shell-header .sb-character-shell-mode-toggle:has(+ .sbtw-launch) {
+    padding-right: 99px;
+}
+
+.sbtw-launch {
+    position: absolute;
+    top: 22px;
+    right: 70px;
+    width: 92px;
+    min-width: 92px;
+    min-height: 32px;
+    padding: 8px 11px;
+    justify-content: center;
+    opacity: 0.78;
+    /* The host only rings buttons inside the radiogroup; repeat its resting
+     * bubble so the third control reads as encased like Roleplay/Conversation. */
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sb-shell-border) 62%, transparent);
+    z-index: 2;
+}
+
+/* The label reads as the third mode on desktop. Narrow headers keep the hashtag only,
+ * where the button is still named by its aria-label and title. */
+.sbtw-launch span {
+    display: inline;
+}
+
+@media screen and (min-width: 901px) {
+    #right-nav-panel.openDrawer > .sb-character-shell-header:has(> .sbtw-launch) :is(.sb-shell-title, .sb-shell-subtitle) {
+        max-width: calc(100% - 374px);
+    }
+}
+
+@media (max-width: 900px) {
+    #right-nav-panel.openDrawer > .sb-character-shell-header .sb-character-shell-mode-toggle:has(+ .sbtw-launch) {
+        padding-right: 45px;
+    }
+
+    .sbtw-launch {
+        top: 20px;
+        right: 69px;
+        width: 40px;
+        min-width: 40px;
+        min-height: 34px;
+        padding: 8px 0;
+    }
+
+    .sbtw-launch span {
+        display: none;
+    }
+
+    #right-nav-panel.openDrawer > .sb-character-shell-header:has(> .sbtw-launch) {
+        padding-right: calc(var(--sb-shell-panel-padding-inline) + 170px);
+    }
+}
+
+@media (max-width: 768px) {
+    #right-nav-panel.openDrawer > .sb-character-shell-header .sb-character-shell-mode-toggle:has(+ .sbtw-launch) {
+        padding-right: 45px;
+    }
+
+    .sbtw-launch {
+        top: 12px;
+        right: 60px;
+        min-height: 36px;
+    }
+}
+
+/* --- chat workspace ----------------------------------------------------- */
+
+/* Meower takes over the native chat workspace, just like Conversation Mode. The top bar
+ * remains outside this element and stays fully interactive. */
+#sheld[data-sbtw-mode='on'] {
+    display: block;
+    width: 100dvw;
+    max-width: 100dvw;
+    left: 0 !important;
+    right: 0 !important;
+    margin: 0;
+    resize: none;
+    overflow: hidden;
+}
+
+#sheld[data-sbtw-mode='on'] > :not(.sbtw-shell) {
+    display: none !important;
+    /* Belt and braces: a reskin that forces the composer's display with a heavier selector
+       (Terminal UI's Terminal Home did) still leaves it unseen and untouchable. */
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+/* Companion Agents is a body sibling, not part of the chat workspace. */
+body:has(> #sheld[data-sbtw-mode='on']) :is(
+    #ica--tracker-panel,
+    #ica--tracker-panel-handle,
+    #ica_tracker_panel_wand_item,
+    #ica_companions_wand_item
+) {
+    display: none !important;
+}
+
+/* The workspace and extensions drawer live outside the shell, so all scopes need tokens. */
+#sheld[data-sbtw-mode='on'],
+.sbtw-shell,
+.sbtw-drawer {
+    --sbtw-text: var(--color-text, var(--SmartThemeBodyColor, CanvasText));
+    --sbtw-surface: var(--sb-shell-main-bg, var(--color-surface, var(--SmartThemeBlurTintColor, Canvas)));
+    --sbtw-nav-surface: var(--sb-shell-nav-bg, var(--sbtw-surface));
+    --sbtw-raised: var(--color-surface-strong, var(--sb-surface-elevated, var(--sbtw-surface)));
+    --sbtw-control: var(--sb-input-bg, var(--sb-button-bg, var(--sbtw-raised)));
+    --sbtw-accent: var(--color-primary, var(--sb-accent, var(--SmartThemeQuoteColor, currentColor)));
+    --sbtw-divider: var(--sb-shell-border, var(--color-border, var(--SmartThemeBorderColor, currentColor)));
+    --sbtw-control-border: var(--sb-input-border, var(--sbtw-divider));
+    --sbtw-muted: var(--sb-muted-fg, var(--color-text-secondary, color-mix(in srgb, var(--sbtw-text) 68%, transparent)));
+    --sbtw-hover: var(--sb-button-hover, var(--color-surface-hover, color-mix(in srgb, var(--sbtw-text) 7%, var(--sbtw-surface))));
+    --sbtw-active-bg: var(--sb-state-active-bg, color-mix(in srgb, var(--sbtw-accent) 16%, var(--sbtw-control)));
+    --sbtw-active-border: var(--sb-state-active-border, color-mix(in srgb, var(--sbtw-accent) 50%, var(--sbtw-divider)));
+    --sbtw-danger: var(--color-danger, var(--sb-color-danger, var(--sb-color-error, currentColor)));
+    --sbtw-danger-bg: var(--sb-warning-bg, color-mix(in srgb, var(--sbtw-danger) 12%, var(--sbtw-surface)));
+    --sbtw-danger-border: var(--sb-warning-border, color-mix(in srgb, var(--sbtw-danger) 42%, var(--sbtw-divider)));
+    --sbtw-focus: var(--sb-focus-ring, var(--color-focus-ring, var(--sbtw-accent)));
+    --sbtw-radius-sm: var(--sb-radius-sm, 0.625rem);
+    --sbtw-radius-button: var(--sb-radius-button, 0.875rem);
+    --sbtw-transition: var(--sb-transition-fast, 180ms cubic-bezier(0.22, 1, 0.36, 1));
+    --sbtw-gap: calc(var(--mainFontSize, 15px) * 0.75);
+}
+
+#sheld[data-sbtw-mode='on'] {
+    background: var(--sbtw-surface);
+    color: var(--sbtw-text);
+}
+
+.sbtw-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 42rem) 17rem;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+        'nav nav'
+        'main rail';
+    justify-content: center;
+    gap: var(--sbtw-gap);
+    align-items: stretch;
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0 var(--sbtw-gap);
+    background: var(--sbtw-surface);
+    color: var(--sbtw-text);
+    font-size: var(--mainFontSize, 15px);
+    /* Set here, not inherited: themes and the mobile shell hand different line-heights to
+       different elements, which read as uneven spacing inside the feed. */
+    line-height: 1.5;
+    text-align: left;
+}
+
+.sbtw-shell .sbtw-body,
+.sbtw-shell .sbtw-input,
+.sbtw-shell .sbtw-poll-text,
+.sbtw-shell .sbtw-empty {
+    line-height: 1.5;
+}
+
+.sbtw-shell .sbtw-meta,
+.sbtw-shell .sbtw-name,
+.sbtw-shell .sbtw-handle,
+.sbtw-shell .sbtw-time,
+.sbtw-shell .sbtw-hint,
+.sbtw-shell .sbtw-replying,
+.sbtw-shell .sbtw-field-label {
+    line-height: 1.35;
+}
+
+.sbtw-shell .sbtw-btn,
+.sbtw-shell .sbtw-tab,
+.sbtw-shell .sbtw-nav-item,
+.sbtw-shell .sbtw-action {
+    line-height: 1.2;
+}
+
+/* @mention picker under a composer field */
+.sbtw-mentions {
+    display: flex;
+    flex-direction: column;
+    margin-top: 4px;
+    padding: 4px;
+    border: 1px solid var(--sbtw-divider);
+    border-radius: var(--sbtw-radius-sm);
+    background: var(--sbtw-surface);
+    box-shadow: 0 4px 8px color-mix(in srgb, var(--SmartThemeShadowColor, #000) 16%, transparent);
+}
+
+.sbtw-mention-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: var(--sbtw-radius-sm);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.sbtw-mention-item:hover,
+.sbtw-mention-item:focus-visible {
+    background: var(--sbtw-hover);
+}
+
+.sbtw-mention-on {
+    background: var(--sbtw-active-bg);
+}
+
+.sbtw-shell-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sbtw-gap);
+    padding: 2rem;
+    text-align: center;
+}
+
+.sbtw-shell [hidden] {
+    display: none !important;
+}
+
+/* Content columns scroll independently under the fixed section navigation. */
+.sbtw-main,
+.sbtw-rail {
+    height: 100%;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+/* Drop the suggestion rail before the two content columns would clip. */
+@media (max-width: 1200px) {
+    .sbtw-shell {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            'nav'
+            'main';
+        justify-content: stretch;
+    }
+
+    .sbtw-shell .sbtw-rail {
+        display: none;
+    }
+}
+
+@media (max-width: 620px) {
+    .sbtw-shell .sbtw-nav {
+        justify-content: space-around;
+    }
+
+    .sbtw-shell .sbtw-nav-item {
+        flex: 1;
+        justify-content: center;
+        padding-inline: 0.5rem;
+    }
+
+    .sbtw-shell .sbtw-nav-item .sbtw-nav-label {
+        display: none;
+    }
+
+    /* Compact session bar: the New timeline button keeps its icon and title, drops its label. */
+    .sbtw-shell .sbtw-session-bar {
+        padding-block: 0.35rem;
+    }
+
+    .sbtw-shell .sbtw-session-bar .sbtw-btn:has(> i) span {
+        display: none;
+    }
+}
+
+/* --- navigation --------------------------------------------------------- */
+
+.sbtw-nav {
+    grid-area: nav;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    gap: 0.25rem;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid var(--sbtw-divider);
+    background: var(--sbtw-nav-surface);
+}
+
+.sbtw-main {
+    grid-area: main;
+}
+
+.sbtw-rail {
+    grid-area: rail;
+}
+
+.sbtw-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid transparent;
+    border-radius: var(--sbtw-radius-button);
+    background: transparent;
+    color: inherit;
+    font-size: 1em;
+    text-align: left;
+    cursor: pointer;
+    min-height: var(--sb-control-min-height, 2.2rem);
+    transition: background var(--sbtw-transition), border-color var(--sbtw-transition), color var(--sbtw-transition);
+}
+
+.sbtw-nav-item:hover {
+    background: var(--sbtw-hover);
+}
+
+/* Current view: the host's raised panel with a thin border and a restrained accent along the bottom edge
+   (drawn inset so the row never changes height), never a filled pill. */
+.sbtw-nav-on {
+    font-weight: 700;
+    background: var(--sbtw-raised);
+    border-color: var(--sbtw-control-border);
+    box-shadow: inset 0 -2px 0 var(--sbtw-accent);
+}
+
+/* Unread badge: accent on the theme's own surface colour, so it reads in light and dark themes alike. */
+.sbtw-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: 1.5em;
+    height: 1.5em;
+    padding: 0 0.35em;
+    border-radius: 999px;
+    font-size: 0.7em;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    /* Older engines stop here: the theme's own pair. */
+    background: var(--sbtw-accent);
+    color: var(--sbtw-surface);
+    /* The theme picks the accent, and its "surface" is often translucent (SmartThemeBlurTintColor
+       is a blur tint), which left the digits see-through over the icon behind them. Paint an
+       opaque chip and take black or white from that chip's own lightness, so a count reads on
+       any theme instead of inheriting whatever the theme happens to pair. */
+    background: oklch(from var(--sbtw-accent) l c h / 1);
+    color: oklch(from var(--sbtw-accent) clamp(0, (0.62 - l) * 1000, 1) 0 0 / 1);
+}
+
+.sbtw-nav-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.sbtw-nav-icon .sbtw-badge {
+    position: absolute;
+    top: -0.6em;
+    left: 60%;
+    /* The ring separates the chip from the icon underneath, so it has to be opaque too. */
+    box-shadow: 0 0 0 2px var(--sbtw-nav-surface);
+    box-shadow: 0 0 0 2px oklch(from var(--sbtw-nav-surface) l c h / 1);
+}
+
+.sbtw-tab .sbtw-badge {
+    margin-left: 0.4em;
+    vertical-align: 0.1em;
+}
+
+/* The brand mark: the bunny in the accent colour at the head of the nav, sized a step above the tab icons. */
+.sbtw-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.35rem 0.6rem;
+    margin-right: 0.35rem;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--sbtw-accent);
+    font-size: 1em;
+    cursor: pointer;
+    min-height: var(--sb-control-min-height, 2.2rem);
+    transition: background var(--sbtw-transition);
+}
+
+.sbtw-logo .sbtw-bunny {
+    width: 1.6em;
+    height: 1.6em;
+}
+
+.sbtw-logo:hover {
+    background: var(--sbtw-hover);
+}
+
+/* --- timeline ----------------------------------------------------------- */
+
+.sbtw-main {
+    min-width: 0;
+}
+
+.sbtw-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--sbtw-divider);
+}
+
+/* Slack under the last entry, so closing a reply box at the end of the list cannot clamp the scroll and jump the page. */
+.sbtw-timeline-results {
+    padding-bottom: 25vh;
+}
+
+.sbtw-tab {
+    flex: 1;
+    padding: 0.7rem 0.5rem;
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--sbtw-muted);
+    font-size: 1em;
+    cursor: pointer;
+    transition: background var(--sbtw-transition), border-color var(--sbtw-transition), color var(--sbtw-transition);
+}
+
+/* The host rounds every button (the Paper theme does it with !important on a two-class selector); a tab's
+   underline has to run square into the row's divider, so this outranks it on specificity as well. */
+#sheld[data-sbtw-mode='on'] .sbtw-tab {
+    border-radius: 0 !important;
+}
+
+.sbtw-tab:hover {
+    background: var(--sbtw-hover);
+}
+
+.sbtw-tab-on {
+    color: inherit;
+    font-weight: 700;
+    border-bottom-color: var(--sbtw-accent);
+}
+
+/* The magnifier at the end of the tab row: icon-only, does not share the tabs' equal width. */
+.sbtw-tab-search {
+    flex: 0 0 auto;
+    padding-inline: 0.9rem;
+}
+
+.sbtw-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.sbtw-post {
+    padding: var(--sbtw-gap) 0;
+    border-bottom: 1px solid var(--sbtw-divider);
+}
+
+.sbtw-repost-context {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.35rem;
+    padding-left: calc(2.75rem + var(--sbtw-gap));
+    color: var(--sbtw-muted);
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+/* A quote: the original post in a bordered card under the reposter's comment. */
+.sbtw-profile-actions,
+.sbtw-button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: flex-start;
+}
+
+.sbtw-quote-card {
+    margin-top: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--sbtw-divider);
+    border-radius: var(--sbtw-radius-sm);
+}
+
+.sbtw-post-compact {
+    padding: 0;
+    border-bottom: none;
+}
+
+.sbtw-post-row {
+    display: flex;
+    gap: var(--sbtw-gap);
+    align-items: flex-start;
+}
+
+.sbtw-post-main {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+}
+
+/* Room for the corner button so the name row never runs under it. */
+.sbtw-post .sbtw-meta:has(> .sbtw-delete) {
+    padding-right: 2rem;
+}
+
+.sbtw-meta {
+    display: flex;
+    align-items: baseline;
+    column-gap: 0.4rem;
+    /* When the date wraps to its own line it sits right under the name, not a row-gap below it. */
+    row-gap: 0;
+    flex-wrap: wrap;
+}
+
+.sbtw-name {
+    display: inline;
+    min-height: 0;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-weight: 700;
+    font-size: 1em;
+    line-height: inherit;
+    vertical-align: baseline;
+    cursor: pointer;
+}
+
+.sbtw-name:hover {
+    text-decoration: underline;
+}
+
+.sbtw-name-big {
+    font-size: 1.25em;
+}
+
+.sbtw-handle,
+.sbtw-time,
+.sbtw-hint,
+.sbtw-counts,
+.sbtw-location,
+.sbtw-replying,
+.sbtw-poll-total {
+    color: var(--sbtw-muted);
+    font-size: 0.85em;
+}
+
+.sbtw-body {
+    /* Post bodies are inserted as text nodes, so newlines need preserving here. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin: 0.25rem 0;
+    line-height: 1.35;
+}
+
+/* Inline like the text around it: the host's 44px touch-target minimum for buttons would
+   otherwise make every line that carries a mention taller than its neighbours. */
+.sbtw-mention {
+    display: inline;
+    min-height: 0;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--sbtw-accent);
+    font: inherit;
+    line-height: inherit;
+    vertical-align: baseline;
+    cursor: pointer;
+}
+
+/* Icon-to-number is this gap plus the icon button's right padding and the count
+   button's left padding: 14.4px, which .sbtw-action-count matches inside a button. */
+.sbtw-action-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+}
+
+.sbtw-action-who {
+    min-height: 0;
+    padding: 0.3rem 0.3rem;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--sbtw-muted);
+    font: inherit;
+    cursor: pointer;
+}
+
+.sbtw-action-who:hover,
+.sbtw-action-who:focus-visible,
+.sbtw-action-who-on {
+    color: var(--sbtw-text);
+    text-decoration: underline;
+}
+
+.sbtw-engagement {
+    margin-top: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--sbtw-divider);
+    border-radius: var(--sb-radius-sm, 10px);
+}
+
+.sbtw-engagement-title {
+    font-size: 0.85em;
+    color: var(--sbtw-muted);
+    margin-bottom: 0.35rem;
+}
+
+.sbtw-engagement-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.2rem 0;
+}
+
+.sbtw-delete {
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 1.35em;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--sbtw-muted);
+    line-height: 1;
+    cursor: pointer;
+}
+
+/* --- avatars ------------------------------------------------------------ */
+
+.sbtw-avatar {
+    flex: 0 0 auto;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--sbtw-hover);
+}
+
+/* The tappable avatar: a bare button around the image, so it sits in the row exactly like the image did. */
+.sbtw-avatar-button {
+    flex: 0 0 auto;
+    display: inline-flex;
+    padding: 0;
+    border: 0;
+    min-height: 0;
+    height: auto;
+    background: transparent;
+    border-radius: 50%;
+    line-height: 0;
+    cursor: pointer;
+}
+
+.sbtw-avatar-xs { width: 1.25rem; height: 1.25rem; }
+.sbtw-avatar-sm { width: 2rem; height: 2rem; }
+.sbtw-avatar-md { width: 2.75rem; height: 2.75rem; }
+.sbtw-avatar-lg { width: 4.5rem; height: 4.5rem; }
+
+.sbtw-avatar-initials {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.8em;
+    color: var(--sbtw-text);
+    background: var(--sbtw-active-bg);
+    border: 1px solid var(--sbtw-active-border);
+}
+
+.sbtw-avatar-xs.sbtw-avatar-initials {
+    font-size: 0.55em;
+}
+
+/* --- actions ------------------------------------------------------------ */
+
+.sbtw-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    max-width: 22rem;
+}
+
+.sbtw-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.4rem;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--sbtw-muted);
+    font-size: 0.9em;
+    cursor: pointer;
+    transition: background var(--sbtw-transition), color var(--sbtw-transition), transform var(--sbtw-transition);
+}
+
+.sbtw-action:hover:not(:disabled) {
+    color: var(--sbtw-accent);
+    background: var(--sbtw-hover);
+}
+
+.sbtw-action:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.sbtw-action-on {
+    color: var(--sbtw-accent);
+    transform: scale(1.05);
+}
+
+.sbtw-action-danger:hover:not(:disabled) {
+    color: var(--sbtw-danger);
+}
+
+.sbtw-action-count {
+    font-variant-numeric: tabular-nums;
+}
+
+/* A count inside its button (no who-list to open) has no padding of its own, so it
+   takes the difference here and sits at the same distance as a count button does. */
+.sbtw-action > .sbtw-action-count {
+    margin-left: 0.4rem;
+}
+
+/* --- replies ------------------------------------------------------------ */
+
+.sbtw-replies {
+    margin-top: 0.6rem;
+    padding-left: 0.5rem;
+    border-left: 1px solid var(--sbtw-divider);
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.sbtw-reply {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: var(--sbtw-gap);
+    row-gap: 0.2rem;
+    align-items: start;
+}
+
+.sbtw-reply-head {
+    display: contents;
+}
+
+.sbtw-reply-head > .sbtw-avatar-button {
+    position: relative;
+    align-items: center;
+    justify-content: center;
+}
+
+.sbtw-reply-head .sbtw-meta {
+    flex: 1;
+    min-width: 0;
+    align-self: center;
+}
+
+.sbtw-reply-main {
+    grid-column: 2;
+    min-width: 0;
+}
+
+.sbtw-reply-actions {
+    display: flex;
+    gap: 0.25rem;
+    margin-top: 0.15rem;
+}
+
+:is(.sbtw-actions, .sbtw-reply-actions) > .sbtw-action:first-child,
+:is(.sbtw-actions, .sbtw-reply-actions) > .sbtw-action-group:first-child > .sbtw-action:first-child {
+    justify-content: flex-start;
+    padding-left: 0;
+    transform-origin: left center;
+}
+
+/* --- composer ----------------------------------------------------------- */
+
+.sbtw-composer,
+.sbtw-reply-composer {
+    padding: var(--sbtw-gap) 0;
+    border-bottom: 1px solid var(--sbtw-divider);
+}
+
+.sbtw-input {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid var(--sbtw-control-border);
+    border-radius: var(--sbtw-radius-sm);
+    background: var(--sbtw-control);
+    color: inherit;
+    font: inherit;
+    resize: vertical;
+    transition: background var(--sbtw-transition), border-color var(--sbtw-transition);
+}
+
+.sbtw-input:hover,
+.sbtw-input:focus {
+    border-color: var(--sbtw-accent);
+}
+
+.sbtw-composer-input {
+    border: none;
+    /* A little inset: under a skin that paints this box (Terminal UI does) the text must not hug its edge. */
+    padding: 0.6rem 0.65rem;
+}
+
+.sbtw-timeline-search-row {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: var(--sbtw-gap) 0;
+    border-bottom: 1px solid var(--sbtw-divider);
+}
+
+.sbtw-timeline-search {
+    flex: 1;
+    min-width: 0;
+}
+
+.sbtw-search-status {
+    flex: 0 0 auto;
+    color: var(--sbtw-muted);
+    font-size: 0.85em;
+    font-variant-numeric: tabular-nums;
+}
+
+.sbtw-number {
+    width: 6rem;
+}
+
+.sbtw-composer-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    flex-wrap: nowrap;
+    container-type: inline-size;
+}
+
+.sbtw-composer-bar .sbtw-btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+/* Narrow bar: buttons that have an icon go icon-only; Post and Reply keep their labels. */
+@container (width < 32em) {
+    .sbtw-composer-bar .sbtw-btn:has(> i) span {
+        display: none;
+    }
+
+    .sbtw-composer-bar .sbtw-btn:has(> i) {
+        padding-inline: 0.7rem;
+    }
+}
+
+.sbtw-spacer {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.sbtw-attachment img,
+.sbtw-image img {
+    max-width: 100%;
+    height: auto;
+    max-height: 24rem;
+    border-radius: var(--sbtw-radius-sm);
+    object-fit: cover;
+}
+
+.sbtw-image {
+    display: block;
+    padding: 0;
+    margin-top: 0.5rem;
+    border: none;
+    background: transparent;
+    cursor: zoom-in;
+}
+
+.sbtw-viewer {
+    display: block;
+    max-width: 100%;
+    max-height: 80vh;
+    margin: 0 auto;
+}
+
+/* --- polls -------------------------------------------------------------- */
+
+.sbtw-poll {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin: 0.5rem 0;
+}
+
+.sbtw-poll-question {
+    font-weight: 600;
+}
+
+.sbtw-poll-option {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--sbtw-divider);
+    border-radius: var(--sbtw-radius-sm);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+}
+
+.sbtw-poll-bar {
+    position: absolute;
+    inset: 0;
+    transform: scaleX(var(--sbtw-poll-share, 0));
+    transform-origin: left;
+    background: color-mix(in srgb, var(--sbtw-accent) 22%, transparent);
+    transition: transform var(--sb-transition, 240ms cubic-bezier(0.22, 1, 0.36, 1));
+    pointer-events: none;
+}
+
+.sbtw-poll-text,
+.sbtw-poll-share {
+    position: relative;
+}
+
+.sbtw-poll-share {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+}
+
+.sbtw-poll-text {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Who voted for this option: an overlapping pile of small avatars, named by the tooltip. */
+.sbtw-poll-voters {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+}
+
+.sbtw-poll-voters .sbtw-avatar {
+    box-shadow: 0 0 0 1.5px var(--sbtw-surface);
+}
+
+.sbtw-poll-voters .sbtw-avatar + .sbtw-avatar {
+    margin-left: -0.4rem;
+}
+
+.sbtw-poll-mine {
+    border-color: var(--sbtw-accent);
+    font-weight: 600;
+}
+
+.sbtw-poll-option:disabled,
+.sbtw-delete:disabled,
+.sbtw-trend:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.sbtw-poll-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-top: 0.5rem;
+}
+
+/* --- buttons ------------------------------------------------------------ */
+
+.sbtw-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.9rem;
+    border: 1px solid var(--sbtw-control-border);
+    border-radius: var(--sbtw-radius-button);
+    background: var(--sb-button-bg, var(--sbtw-control));
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    min-height: var(--sb-control-min-height, 2rem);
+    transition: background var(--sbtw-transition), border-color var(--sbtw-transition), color var(--sbtw-transition), transform var(--sbtw-transition);
+}
+
+.sbtw-btn > i,
+.sbtw-action > i,
+.sbtw-delete > i {
+    width: 1em;
+    line-height: 1;
+    text-align: center;
+}
+
+.sbtw-btn:hover:not(:disabled) {
+    background: var(--sbtw-hover);
+    border-color: var(--sbtw-accent);
+}
+
+.sbtw-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.sbtw-btn-primary {
+    border-color: var(--sbtw-active-border);
+    background: var(--sbtw-active-bg);
+    color: var(--sbtw-text);
+    font-weight: 700;
+}
+
+.sbtw-btn-danger {
+    border-color: var(--sbtw-danger-border);
+    background: var(--sbtw-danger-bg);
+    color: var(--sbtw-danger);
+}
+
+/* Quiet tier: secondary actions (Image, Poll, New timeline, Unfollow, profile writers) that
+   should not compete with the view's one primary. Borderless and muted at rest; hover and
+   focus bring the text back so it still reads as a button. */
+.sbtw-btn-quiet {
+    border-color: transparent;
+    background: transparent;
+    color: var(--sbtw-muted);
+}
+
+.sbtw-btn-quiet:hover:not(:disabled),
+.sbtw-btn-quiet:focus-visible {
+    border-color: transparent;
+    color: var(--sbtw-text);
+}
+
+/* Undo toast: lives in the host's toast container, outside the shell, so it only uses host tokens. */
+.sbtw-undo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.sbtw-undo-button {
+    flex: none;
+    min-height: 2rem;
+    padding: 0.25em 0.75em;
+    border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+    border-radius: var(--sb-radius-button, 0.875rem);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.sbtw-undo-button:hover {
+    border-color: currentColor;
+}
+
+.sbtw-undo-button:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+    .sbtw-undo-button {
+        min-height: 44px;
+        min-width: 44px;
+    }
+}
+
+.sbtw-status,
+.sbtw-save-status {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--sbtw-muted);
+    font-size: 0.85em;
+}
+
+.sbtw-status:empty {
+    display: none;
+}
+
+.sbtw-save-status[data-state='error'] {
+    color: var(--sbtw-danger);
+}
+
+.sbtw-storage-mode {
+    margin-block: 0.5rem;
+    overflow-wrap: anywhere;
+}
+
+.sbtw-recovery-section {
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.sbtw-recovery {
+    padding: 0.8rem;
+    border: 1px solid var(--sbtw-divider);
+    border-radius: var(--sbtw-radius, 12px);
+    background: var(--sbtw-surface-alt, rgba(0, 0, 0, 0.1));
+}
+
+.sbtw-recovery > summary {
+    cursor: pointer;
+    font-weight: 600;
+    width: fit-content;
+    min-height: 44px;
+    padding-block: 0.5rem;
+}
+
+.sbtw-recovery > summary:focus-visible {
+    outline: 2px solid var(--sbtw-focus);
+    outline-offset: 2px;
+}
+
+.sbtw-more {
+    align-self: flex-start;
+    margin-block: 0.6rem;
+}
+
+/* --- profile, notifications, rail --------------------------------------- */
+
+.sbtw-profile-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--sbtw-gap);
+    padding: var(--sbtw-gap) 0;
+    border-bottom: 1px solid var(--sbtw-divider);
+}
+
+.sbtw-profile-meta {
+    /* Keeps a readable column beside the buttons; below that the buttons wrap under it. */
+    flex: 1 1 14rem;
+    min-width: 0;
+    /* A 20-character handle must wrap on a 320px screen, not push the layout out. */
+    overflow-wrap: anywhere;
+}
+
+.sbtw-profile-actions {
+    margin-left: auto;
+}
+
+@media (max-width: 620px) {
+    /* On a phone the buttons take their own row under the name, lined up with it. */
+    .sbtw-profile-actions {
+        flex-basis: 100%;
+        margin-left: 0;
+        padding-left: calc(4.5rem + var(--sbtw-gap));
+    }
+}
+
+.sbtw-bio {
+    margin: 0.3rem 0;
+}
+
+/* The pin is its own element, so it needs the space a space would have given it. */
+.sbtw-location {
+    display: flex;
+    align-items: center;
+    gap: 0.35em;
+}
+
+.sbtw-section > summary {
+    padding: 0.6rem 0;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.sbtw-section > .sbtw-list > .sbtw-reply {
+    padding-block: var(--sbtw-gap);
+    border-bottom: 1px solid var(--sbtw-divider);
+}
+
+.sbtw-notification {
+    display: flex;
+    gap: 0.6rem;
+    width: 100%;
+    padding: 0.6rem 0;
+    border: none;
+    border-bottom: 1px solid var(--sbtw-divider);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.sbtw-notification:hover {
+    background: var(--sbtw-hover);
+}
+
+.sbtw-notification-main {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.sbtw-notification-preview {
+    margin-top: 0.25rem;
+    color: var(--sbtw-muted);
+}
+
+.sbtw-unread {
+    color: var(--sbtw-accent);
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+/* Arrived since the last visit: a faint accent wash, the way unread rows look on the real thing. */
+.sbtw-notification-new,
+.sbtw-post-new,
+.sbtw-reply-new {
+    background: color-mix(in srgb, var(--sbtw-accent) 8%, transparent);
+}
+
+/* New posts and replies also carry a small accent dot in the name row, for themes where 8% is faint. */
+.sbtw-new-dot {
+    flex: 0 0 auto;
+    align-self: center;
+    margin-right: 0.15em;
+    width: 0.45em;
+    height: 0.45em;
+    border-radius: 50%;
+    background: var(--sbtw-accent);
+    background: oklch(from var(--sbtw-accent) l c h / 1);
+}
+
+@media (prefers-contrast: more) {
+    .sbtw-new-dot {
+        outline: 1px solid var(--sbtw-text);
+        outline-offset: 1px;
+    }
+}
+
+.sbtw-rail {
+    padding-left: var(--sbtw-gap);
+    border-left: 1px solid var(--sbtw-divider);
+    background: var(--sbtw-nav-surface);
+}
+
+.sbtw-rail h4 {
+    margin: 0 0 0.5rem;
+}
+
+.sbtw-suggestion {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0;
+}
+
+.sbtw-suggestion-meta {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+}
+
+.sbtw-suggestion-meta .sbtw-name,
+.sbtw-suggestion-meta .sbtw-handle {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sbtw-empty {
+    padding: 2rem 1rem;
+    text-align: center;
+    color: var(--sbtw-muted);
+}
+
+/* --- settings ----------------------------------------------------------- */
+
+.sbtw-session-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem var(--sbtw-gap);
+    border-bottom: 1px solid var(--sbtw-divider);
+    background: var(--sbtw-surface);
+}
+
+.sbtw-session-select {
+    min-width: 0;
+    flex: 1;
+    margin: 0; /* the host hands every select a 5px margin */
+}
+
+.sbtw-session-bar .sbtw-btn {
+    flex: none;
+}
+
+.sbtw-settings h3 {
+    margin: 1.2rem 0 0.4rem;
+    padding-bottom: 0.2rem;
+    border-bottom: 1px solid var(--sbtw-divider);
+}
+
+/* Sub-headings inside a folded group: smaller and quieter than the field labels they sit above. */
+.sbtw-settings h4 {
+    margin: 1.1rem 0 0;
+    font-size: 0.8em;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--sbtw-muted);
+}
+
+.sbtw-settings h4:first-child {
+    margin-top: 0.5rem;
+}
+
+/* Folded groups: the daily settings stay open above; the plumbing lives here, closed by default. */
+.sbtw-settings-group {
+    margin: 0.9rem 0 0;
+    border: 1px solid var(--sbtw-divider);
+    border-radius: var(--sbtw-radius-button);
+    background: var(--sbtw-nav-surface);
+}
+
+.sbtw-settings-group > summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 0.75rem;
+    align-items: center;
+    padding: 0.7rem 0.9rem;
+    border-radius: inherit;
+    cursor: pointer;
+    list-style: none;
+}
+
+.sbtw-settings-group > summary::-webkit-details-marker {
+    display: none;
+}
+
+.sbtw-settings-group > summary > .sbtw-hint {
+    grid-column: 1;
+}
+
+/* A chevron drawn with borders so it needs no icon font; it flips when the group opens. */
+.sbtw-settings-group > summary::after {
+    content: '';
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    width: 0.5em;
+    height: 0.5em;
+    margin-right: 0.25em;
+    border-right: 2px solid var(--sbtw-muted);
+    border-bottom: 2px solid var(--sbtw-muted);
+    transform: translateY(-25%) rotate(45deg);
+    transition: transform var(--sbtw-transition);
+}
+
+.sbtw-settings-group[open] > summary::after {
+    transform: translateY(25%) rotate(-135deg);
+}
+
+.sbtw-settings-group > summary:hover {
+    background: var(--sbtw-hover);
+}
+
+.sbtw-settings-group[open] > summary {
+    border-bottom: 1px solid var(--sbtw-divider);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.sbtw-settings-group-title {
+    font-weight: 600;
+}
+
+.sbtw-settings-group-body {
+    padding: 0.2rem 0.9rem 0.9rem;
+}
+
+/* The destructive pair, fenced and last. */
+.sbtw-danger-zone {
+    margin: 1.4rem 0 0;
+    padding: 0.2rem 0.9rem 0.9rem;
+    border: 1px solid var(--sbtw-danger-border);
+    border-radius: var(--sbtw-radius-button);
+}
+
+/* The host boxes every h3; inside the fence that would be a card in a card. Specificity outranks its :not() chain. */
+#sheld[data-sbtw-mode='on'] .sbtw-danger-zone h3 {
+    margin: 0.7rem 0 0.2rem;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: none;
+    color: var(--sbtw-danger);
+}
+
+.sbtw-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin: 0.5rem 0;
+}
+
+.sbtw-field-label {
+    font-weight: 600;
+}
+
+.sbtw-field-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.sbtw-field-tools {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.75rem;
+}
+
+.sbtw-invite-count,
+.sbtw-invite-empty {
+    color: var(--sbtw-muted);
+    font-size: 0.85em;
+}
+
+.sbtw-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.sbtw-check {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.35rem 0;
+    cursor: pointer;
+}
+
+.sbtw-invites {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    max-height: min(22rem, 45dvh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0.35rem;
+    border: 1px solid var(--sbtw-control-border);
+    border-radius: var(--sbtw-radius-sm);
+    background: var(--sbtw-raised);
+}
+
+.sbtw-character-search {
+    min-height: var(--sb-field-min-height, 2.75rem);
+}
+
+.sbtw-invite {
+    min-height: var(--sb-control-min-height, 2.5rem);
+    margin: 0;
+    padding: 0.35rem 0.45rem;
+    border: 1px solid transparent;
+    border-radius: var(--sbtw-radius-sm);
+    transition: background var(--sbtw-transition), border-color var(--sbtw-transition);
+    content-visibility: auto;
+    contain-intrinsic-size: auto 3rem;
+}
+
+.sbtw-invite:hover {
+    border-color: var(--sbtw-divider);
+    background: var(--sbtw-hover);
+}
+
+.sbtw-invite:has(input:checked) {
+    border-color: var(--sbtw-active-border);
+    background: var(--sbtw-active-bg);
+}
+
+.sbtw-invite > span:last-child {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.sbtw-invite-empty {
+    margin: 0;
+    padding: 1rem 0.75rem;
+    text-align: center;
+}
+
+@media (pointer: coarse) {
+    .sbtw-launch,
+    .sbtw-logo,
+    .sbtw-nav-item,
+    .sbtw-tab,
+    .sbtw-avatar-button,
+    .sbtw-mention-item,
+    .sbtw-notification,
+    .sbtw-poll-option,
+    .sbtw-btn,
+    .sbtw-section > summary,
+    .sbtw-settings-group > summary,
+    .sbtw-shell .sbtw-trend {
+        min-height: 44px;
+    }
+
+    .sbtw-launch,
+    .sbtw-logo,
+    .sbtw-avatar-button,
+    .sbtw-btn,
+    .sbtw-tab-search,
+    .sbtw-shell .sbtw-trend {
+        min-width: 44px;
+    }
+
+    .sbtw-delete::before {
+        position: absolute;
+        width: 44px;
+        height: 44px;
+        content: '';
+    }
+
+    .sbtw-actions,
+    .sbtw-reply-actions {
+        gap: 1.5rem;
+    }
+
+    .sbtw-action,
+    .sbtw-action-who {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+    }
+
+    .sbtw-action::before,
+    .sbtw-action-who::before {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 44px;
+        height: 44px;
+        transform: translate(-50%, -50%);
+        content: '';
+    }
+
+    /* A count sits close to its icon and is painted after it, so a 44px-wide box
+       would take the icon's right half. It keeps the full height, its own width. */
+    .sbtw-action-who::before {
+        width: 100%;
+    }
+
+    /* The inline name button keeps its text size; a 44px box behind it takes the tap. */
+    button.sbtw-name {
+        position: relative;
+    }
+
+    button.sbtw-name::before {
+        position: absolute;
+        top: 50%;
+        left: 0;
+        min-width: 44px;
+        width: 100%;
+        height: 44px;
+        transform: translateY(-50%);
+        content: '';
+    }
+
+    .sbtw-post .sbtw-meta:has(> .sbtw-delete) {
+        padding-right: 2rem;
+    }
+
+    .sbtw-reply-head > .sbtw-avatar-button {
+        min-width: 2rem;
+        min-height: 2rem;
+    }
+
+    .sbtw-reply-head > .sbtw-avatar-button::before {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 44px;
+        height: 44px;
+        transform: translate(-50%, -50%);
+        content: '';
+    }
+}
+
+/* --- focus and motion --------------------------------------------------- */
+
+.sbtw-shell :focus-visible,
+.sbtw-drawer :focus-visible {
+    outline: 2px solid var(--sbtw-focus);
+    outline-offset: 2px;
+}
+
+/* Fields run to the edge of the scroller (composer, search, session picker), and an outline
+   drawn outside the box is clipped there; inside their own box it is always whole. */
+.sbtw-shell :is(input, textarea, select):focus-visible,
+.sbtw-drawer :is(input, textarea, select):focus-visible {
+    outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :is(.sbtw-shell, .sbtw-drawer, .sbtw-launch, .sbtw-undo),
+    :is(.sbtw-shell, .sbtw-drawer, .sbtw-launch, .sbtw-undo)::before,
+    :is(.sbtw-shell, .sbtw-drawer, .sbtw-launch, .sbtw-undo)::after,
+    :is(.sbtw-shell, .sbtw-drawer, .sbtw-launch, .sbtw-undo) *,
+    :is(.sbtw-shell, .sbtw-drawer, .sbtw-launch, .sbtw-undo) *::before,
+    :is(.sbtw-shell, .sbtw-drawer, .sbtw-launch, .sbtw-undo) *::after {
+        transition: none !important;
+        animation: none !important;
+        scroll-behavior: auto !important;
+    }
+
+    .sbtw-action-on {
+        transform: none;
+    }
+}
+
+body.reduced-motion :is(.sbtw-shell, .sbtw-drawer, .sbtw-launch, .sbtw-undo),
+body.reduced-motion :is(.sbtw-shell, .sbtw-drawer, .sbtw-launch, .sbtw-undo)::before,
+body.reduced-motion :is(.sbtw-shell, .sbtw-drawer, .sbtw-launch, .sbtw-undo)::after,
+body.reduced-motion :is(.sbtw-shell, .sbtw-drawer, .sbtw-launch, .sbtw-undo) *,
+body.reduced-motion :is(.sbtw-shell, .sbtw-drawer, .sbtw-launch, .sbtw-undo) *::before,
+body.reduced-motion :is(.sbtw-shell, .sbtw-drawer, .sbtw-launch, .sbtw-undo) *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+}
+
+body.reduced-motion .sbtw-action-on {
+    transform: none;
+}
+
+/* Generated cat mark, sized like the neighbouring action icons. */
+.sbtw-bunny {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1em;
+    height: 1em;
+    vertical-align: -0.125em;
+    flex: 0 0 auto;
+}
+
+.sbtw-bunny img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+/* Mirror the host's .sb-character-shell-mode-button .fa-solid box so the third pill matches Roleplay/Conversation. */
+.sbtw-launch .sbtw-bunny {
+    width: 14px;
+    height: 14px;
+    font-size: 13px;
+}
+
+/* Inside the host's 20x20 wand slot the mark sits at the same size as the neighbouring Font Awesome glyphs. */
+.extensionsMenuExtensionButton.sbtw-bunny img {
+    width: 1em;
+    height: 1em;
+}
+
+.sbtw-btn .sbtw-bunny {
+    margin-right: 2px;
+}
+
+/* --- trending topics bar --------------------------------------------------- */
+
+/* A sideways rail. The host's mobile shell pans the document vertically only and its own
+   horizontal rails opt back in with pan-x; this row needs the same, or a swipe that starts
+   on a chip goes nowhere on a phone. */
+.sbtw-trends {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.6rem var(--sbtw-gap);
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    border-bottom: 1px solid var(--sbtw-divider);
+}
+
+.sbtw-trend {
+    touch-action: pan-x;
+    flex: 0 0 auto;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.1rem;
+    min-height: 0;
+    padding: 0.4rem 0.75rem;
+    border: 1px solid var(--sbtw-divider);
+    border-radius: var(--sbtw-radius-button);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: 1.25;
+    cursor: pointer;
+    text-align: left;
+}
+
+.sbtw-trend:hover:not(:disabled),
+.sbtw-trend:focus-visible {
+    background: var(--sbtw-hover);
+}
+
+.sbtw-trend-topic {
+    font-weight: 700;
+}
+
+.sbtw-trend-count {
+    font-size: 0.8em;
+    color: var(--sbtw-muted);
+}

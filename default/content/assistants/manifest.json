@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "personalities": [
+    {
+      "id": "miso",
+      "name": "Miso",
+      "role": "Welcoming guide",
+      "summary": "Curious, hospitable, quietly funny. Bring a stubborn setup, a character you've rewritten twice, or an idea that is still mostly gestures.",
+      "capabilities": [
+        "lorebooks",
+        "agents",
+        "presets",
+        "characters"
+      ],
+      "variants": [
+        {
+          "id": "miso-male",
+          "gender": "male",
+          "pronouns": "he/him",
+          "card": "miso-male/card.png",
+          "portrait": "miso-male/portrait.png",
+          "expressions": "miso-male/expressions",
+          "source": "miso-male/card.json"
+        },
+        {
+          "id": "miso-female",
+          "gender": "female",
+          "pronouns": "she/her",
+          "card": "miso-female/card.png",
+          "portrait": "miso-female/portrait.png",
+          "expressions": "miso-female/expressions",
+          "source": "miso-female/card.json"
+        },
+        {
+          "id": "miso-neutral",
+          "gender": "neutral",
+          "pronouns": "they/them",
+          "card": "miso-neutral/card.png",
+          "portrait": "miso-neutral/portrait.png",
+          "expressions": "miso-neutral/expressions",
+          "source": "miso-neutral/card.json"
+        }
+      ]
+    },
+    {
+      "id": "taro",
+      "name": "Taro",
+      "role": "Practical troubleshooter",
+      "summary": "Turns \"it broke\" into Expected and Observed, then fixes the part that actually misbehaved. Dry humour, tidy notes, one small step at a time.",
+      "capabilities": [
+        "lorebooks",
+        "agents",
+        "presets",
+        "characters"
+      ],
+      "variants": [
+        {
+          "id": "taro-male",
+          "gender": "male",
+          "pronouns": "he/him",
+          "card": "taro-male/card.png",
+          "portrait": "taro-male/portrait.png",
+          "expressions": "taro-male/expressions",
+          "source": "taro-male/card.json"
+        },
+        {
+          "id": "taro-female",
+          "gender": "female",
+          "pronouns": "she/her",
+          "card": "taro-female/card.png",
+          "portrait": "taro-female/portrait.png",
+          "expressions": "taro-female/expressions",
+          "source": "taro-female/card.json"
+        },
+        {
+          "id": "taro-neutral",
+          "gender": "neutral",
+          "pronouns": "they/them",
+          "card": "taro-neutral/card.png",
+          "portrait": "taro-neutral/portrait.png",
+          "expressions": "taro-neutral/expressions",
+          "source": "taro-neutral/card.json"
+        }
+      ]
+    },
+    {
+      "id": "nori",
+      "name": "Nori",
+      "role": "Creative writing partner",
+      "summary": "Opinionated about your characters, in your favour. Bring a scene that has gone quiet, a name that won't sit still, or a plot with three endings.",
+      "capabilities": [
+        "lorebooks",
+        "agents",
+        "presets",
+        "characters"
+      ],
+      "variants": [
+        {
+          "id": "nori-male",
+          "gender": "male",
+          "pronouns": "he/him",
+          "card": "nori-male/card.png",
+          "portrait": "nori-male/portrait.png",
+          "expressions": "nori-male/expressions",
+          "source": "nori-male/card.json"
+        },
+        {
+          "id": "nori-female",
+          "gender": "female",
+          "pronouns": "she/her",
+          "card": "nori-female/card.png",
+          "portrait": "nori-female/portrait.png",
+          "expressions": "nori-female/expressions",
+          "source": "nori-female/card.json"
+        },
+        {
+          "id": "nori-neutral",
+          "gender": "neutral",
+          "pronouns": "they/them",
+          "card": "nori-neutral/card.png",
+          "portrait": "nori-neutral/portrait.png",
+          "expressions": "nori-neutral/expressions",
+          "source": "nori-neutral/card.json"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+/*
+ * Nunito variable fonts from Google Fonts commit 809e4d8b8d7e9364a914909bb777679606c178b8:
+ * https://github.com/google/fonts/tree/809e4d8b8d7e9364a914909bb777679606c178b8/ofl/nunito
+ */
+@font-face {
+    font-family: 'Nunito';
+    font-style: normal;
+    font-weight: 200 1000;
+    font-display: swap;
+    src: url('/webfonts/Nunito/Nunito[wght].woff2?v=20260913g') format('woff2');
+}
+
+@font-face {
+    font-family: 'Nunito';
+    font-style: italic;
+    font-weight: 200 1000;
+    font-display: swap;
+    src: url('/webfonts/Nunito/Nunito-Italic[wght].woff2?v=20260913g') format('woff2');
+}

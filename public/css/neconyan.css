@@ -1,0 +1,2940 @@
+:root:has(body.neconyan) { --mainFontFamily: 'Nunito', 'Figtree', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', sans-serif; --sb-font-display: 'Fredoka One', var(--mainFontFamily); }
+/* Body text reads in Nunito; headings and the brand slots keep the rounded Fredoka One display face.
+   A font chosen in the Google Font drawer (or an imported theme) lands inline on :root and then applies everywhere, as before. */
+:root[style*='--mainFontFamily']:has(body.neconyan) { --sb-font-display: var(--mainFontFamily); }
+body.neconyan:not(.sbterm) :is(h1, h2, h3, h4, h5, h6, .sb-topbar-brand, .neconyan-rail-brand) { font-family: var(--sb-font-display); }
+
+body.neconyan {
+    color-scheme: dark;
+    --neco-canvas: var(--SmartThemeBlurTintColor, oklch(18.5% 0.008 55));
+    --neco-surface: var(--SmartThemeChatTintColor, oklch(24.5% 0.012 55));
+    --neco-rail: color-mix(in oklch, var(--neco-canvas) 65%, var(--neco-surface));
+    --sb-composer-surface-bg: var(--neco-surface);
+    --neco-raised: color-mix(in oklch, var(--neco-surface) 88%, var(--SmartThemeBodyColor));
+    --neco-ink: var(--SmartThemeBodyColor, oklch(91% 0.023 77));
+    --neco-muted: var(--SmartThemeEmColor, oklch(70% 0.024 62));
+    --neco-ginger: var(--SmartThemeQuoteColor, oklch(75% 0.115 52));
+    --neco-ginger-hover: var(--SmartThemeUnderlineColor, oklch(81% 0.096 59));
+    --neco-border: var(--SmartThemeBorderColor, oklch(34% 0.015 55));
+    --neco-user: var(--SmartThemeUserMesBlurTintColor, oklch(29% 0.024 51));
+    --neco-on-accent: var(--neco-canvas);
+    --neco-cream: oklch(91% 0.023 77);
+    --neco-charcoal: oklch(18.5% 0.008 55);
+    --neco-sidebar-width: 244px;
+    --neco-sidebar-offset: 0px;
+    --neco-workspace-nav-width: 208px;
+    --sb-radius-button: 6px;
+    --sb-radius-sm: 4px;
+    --sb-radius-md: 8px;
+    --sb-radius-lg: 10px;
+    --sb-radius-xl: 10px;
+    --sb-weight-title: 600;
+    --sb-weight-control: 500;
+    --sb-shell-panel-padding-inline: 18px;
+    --sb-shell-panel-padding-block: 16px;
+    --sb-shell-panel-bottom-padding: 24px;
+    --sb-shell-section-gap: 16px;
+    --sb-shell-card-gap: 12px;
+    --sb-shell-shadow: none;
+    --sb-message-radius: 8px;
+    --sb-chat-composer-gap: 0px;
+    --sb-chat-composer-edge-gap: 0px;
+    --sb-ambient-a: transparent;
+    --sb-ambient-b: transparent;
+    background: var(--neco-canvas);
+    color: var(--neco-ink);
+    text-shadow: none;
+}
+:root[data-sb-surface-tone='light'] body.neconyan { color-scheme: light; }
+:root[data-neconyan-calico-tone='light'] body.neconyan { --neco-on-accent: var(--neco-surface); }
+:root[data-neconyan-palette='calico'][data-sb-theme='calico'] body.neconyan {
+    --sb-accent: var(--neco-ginger);
+    --sb-accent-soft: var(--neco-user);
+    --sb-accent-ink: var(--neco-ginger);
+    --sb-on-accent: var(--neco-on-accent);
+    --sb-on-solid-accent: var(--neco-on-accent);
+    --sb-muted-fg: var(--neco-muted);
+    --color-primary: var(--neco-ginger);
+    --color-background: var(--neco-canvas);
+    --color-surface: var(--neco-surface);
+    --color-surface-strong: var(--neco-raised);
+    --color-surface-hover: var(--neco-raised);
+    --sb-shell-surface: var(--neco-rail);
+    --sb-shell-main-bg: var(--neco-rail);
+    --sb-shell-nav-bg: var(--neco-rail);
+    --sb-shell-header-bg: var(--neco-rail);
+    --sb-shell-header-glow: transparent;
+    --sb-shell-tab-active-bg: var(--neco-raised);
+    --sb-shell-border: var(--neco-border);
+    --sb-chat-surface-bg: var(--neco-canvas);
+    --sb-fixed-surface-bg: var(--neco-surface);
+    --sb-composer-input-bg: transparent;
+    --sb-topbar-surface-bg: var(--neco-canvas);
+    --sb-chatbar-surface-bg: var(--neco-canvas);
+    --sb-button-bg: var(--neco-surface);
+    --sb-button-hover: var(--neco-raised);
+    --sb-card-bg: var(--neco-surface);
+    --sb-input-bg: var(--neco-canvas);
+    --sb-input-border: var(--neco-border);
+    --sb-focus-ring: var(--neco-ginger);
+    --sb-mobile-overlay-bg: var(--neco-rail);
+    --sb-mobile-panel-bg: var(--neco-rail);
+    --sb-state-active-bg: var(--neco-raised);
+    --sb-state-active-border: var(--neco-ginger);
+}
+
+body.neconyan :is(button, input, textarea, select, .menu_button) { text-shadow: none; }
+body.neconyan :is(.menu_button, .sb-proxy-button, .sb-shell-tab, .sb-character-shell-tab, .sb-settings-tab-btn) {
+    border-radius: 6px; box-shadow: none; font-weight: 500;
+}
+body.neconyan :is(button, a, input, textarea, select, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--neco-ginger); outline-offset: 2px;
+}
+body.neconyan :is(input, textarea)::placeholder { color: var(--neco-muted); opacity: 1; }
+body.neconyan :is(input[type='text'], input[type='number'], input[type='url'], input[type='password'], textarea, select) {
+    border-radius: 6px; box-shadow: none;
+}
+body.neconyan :is(#top-bar, #sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner) {
+    background: var(--neco-panel-gradient); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+body.neconyan #top-bar { border-bottom: 1px solid var(--neco-border); border-radius: 0; }
+body.neconyan :is(#top-bar, #sb-topbar-inner, #sb-bottom-chat-bar)::before,
+body.neconyan :is(#top-bar, #sb-topbar-inner, #sb-bottom-chat-bar)::after { display: none; }
+body.neconyan #sb-topbar-inner { grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; padding-inline: 12px; }
+body.neconyan .sb-topbar-brand { justify-content: flex-start; justify-self: stretch; text-align: left; }
+body.neconyan #sb-topbar-title {
+    justify-self: start; text-align: left; font-size: 13px; font-weight: 500;
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+body.neconyan #sb-topbar-clock {
+    display: inline-flex;
+    align-items: center;
+    padding-inline: 8px;
+    color: var(--neco-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+body.neconyan #sb-topbar-edit-card[hidden] { display: none !important; }
+body.neconyan #sb-topbar-inner :is(button, .sb-proxy-button) {
+    background: transparent; border: 1px solid transparent; border-radius: 6px; color: var(--neco-muted); box-shadow: none;
+}
+body.neconyan #sb-topbar-inner button:is(:hover, [aria-pressed='true']) { background: var(--neco-raised); color: var(--neco-ink); }
+
+body.neconyan #neconyan-workspace-rail {
+    position: fixed; inset: 0 auto 0 0; z-index: 90; display: flex; flex-direction: column;
+    width: var(--neco-sidebar-width); padding: 12px; border-right: 1px solid var(--neco-border);
+    background: var(--neco-rail); color: var(--neco-muted); font-size: 13px; overflow: hidden;
+}
+body.neconyan .neconyan-rail-brand {
+    display: flex; align-items: center; gap: 9px; min-height: 36px; margin-bottom: 20px;
+    color: var(--neco-ink); font-size: 14px; font-weight: 600;
+}
+body.neconyan .neconyan-rail-brand img { width: 28px; height: 28px; border-radius: 6px; }
+body.neconyan #neconyan-workspace-rail button {
+    display: flex; align-items: center; gap: 10px; width: 100%; min-height: 34px;
+    margin: 0; padding: 7px 10px; border: 1px solid transparent; border-radius: 6px;
+    background: transparent; color: inherit; box-shadow: none; font: inherit; text-align: left; cursor: pointer;
+}
+body.neconyan #neconyan-workspace-rail button:is(:hover, [aria-current='page'], .is-active) {
+    color: var(--neco-ink); background: var(--neco-raised);
+}
+body.neconyan #neconyan-workspace-rail .neconyan-rail-new {
+    margin-bottom: 18px; border-color: var(--neco-border); color: var(--neco-ink);
+}
+body.neconyan #neconyan-workspace-rail button > i:not(.neconyan-whiskers) { width: 16px; flex: 0 0 16px; font-size: 13px; text-align: center; }
+body.neconyan #neconyan-workspace-rail .neconyan-rail-icon-button {
+    width: 28px; min-height: 28px; padding: 6px; flex: 0 0 auto; margin-left: auto;
+}
+body.neconyan .neconyan-rail-nav { margin-bottom: 24px; }
+body.neconyan .neconyan-rail-scroll {
+    min-height: 0; flex: 1; padding-block: 2px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+}
+body.neconyan :is(.neconyan-rail-brand, .neconyan-rail-new, .neconyan-rail-footer) { flex-shrink: 0; }
+body.neconyan .neconyan-rail-recent { min-height: 0; }
+body.neconyan :is(.neconyan-rail-section-label, .neconyan-rail-section-heading) {
+    margin: 0 10px 8px; color: var(--neco-muted); font-size: 11px; font-weight: 500;
+}
+body.neconyan .neconyan-rail-section-heading { display: flex; align-items: center; margin-right: 0; }
+body.neconyan .neconyan-rail-button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.neconyan .neconyan-rail-modes-label { margin-top: 14px; }
+/* The Advanced group is a sibling section of the same weight as Modes, so it opens with the same
+   gap above its heading instead of butting against the Modes list. */
+body.neconyan .neconyan-rail-advanced { margin-top: 14px; }
+body.neconyan .neconyan-mode-button[aria-pressed='true'] { color: var(--neco-ink); background: var(--neco-raised); border-color: var(--neco-ginger); }
+body.neconyan [data-neconyan-recent-list] .neconyan-rail-button { flex-wrap: wrap; gap: 2px 8px; margin-bottom: 4px; }
+body.neconyan [data-neconyan-recent-list] .neconyan-rail-button span { flex: 1; }
+body.neconyan [data-neconyan-recent-list] .neconyan-rail-button small { width: 100%; margin-left: 24px; font-size: 11px; color: var(--neco-muted); }
+body.neconyan .neconyan-rail-empty { padding: 0 10px; font-size: 12px; }
+body.neconyan .neconyan-rail-footer { display: grid; gap: 2px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--neco-border); }
+body.neconyan .neconyan-mobile-workspace { display: grid; gap: 4px; }
+body.neconyan .neconyan-mobile-modes { display: grid; gap: 4px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--neco-border); }
+body.neconyan .neconyan-mobile-modes .sb-mobile-section-title { margin: 0 0 2px; }
+body.neconyan #sb-mobile-nav .sb-mobile-quick-action-list { grid-template-columns: minmax(0, 1fr); }
+body.neconyan #sb-mobile-nav-content { border-radius: 8px; background: var(--neco-rail); box-shadow: none; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+body.neconyan #sb-mobile-nav .sb-nav-item {
+    min-height: 44px; display: flex; align-items: center; justify-content: flex-start; gap: 12px;
+    padding: 10px 12px; border: 0; border-radius: 6px; background: transparent; color: var(--neco-ink); font-weight: 500;
+}
+body.neconyan #sb-mobile-nav .sb-nav-item:hover { background: var(--neco-raised); }
+body.neconyan #sb-mobile-nav .sb-shell-kicker { display: none; }
+body.neconyan .neconyan-rail-footer kbd {
+    margin-left: auto;
+    min-width: 20px;
+    padding: 1px 5px;
+    border: 1px solid var(--neco-border);
+    border-radius: 5px;
+    background: color-mix(in oklch, var(--neco-surface) 72%, transparent);
+    color: var(--neco-muted);
+    font-family: var(--mainFontFamily);
+    font-size: 11px;
+    line-height: 1.45;
+    text-align: center;
+    text-shadow: none;
+    box-shadow: none;
+}
+
+body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer {
+    position: fixed !important; top: var(--sb-topbar-layout-offset) !important; bottom: 0 !important;
+    left: var(--neco-sidebar-offset) !important; right: 0 !important;
+    width: auto !important; max-width: none !important; min-width: 0 !important;
+    height: calc(100dvh - var(--sb-topbar-layout-offset)) !important;
+    max-height: calc(100dvh - var(--sb-topbar-layout-offset)) !important;
+    margin: 0 !important; border: 0 !important; border-left: 1px solid var(--neco-border) !important;
+    border-radius: 0 !important; background: var(--neco-rail) !important; box-shadow: none !important;
+    transform: none !important; animation: none !important; pointer-events: auto !important;
+}
+body.neconyan:has(:is(.sb-shell-root, #right-nav-panel).openDrawer) #sheld {
+    visibility: hidden !important; pointer-events: none !important;
+}
+body.neconyan:has(:is(.sb-shell-root, #right-nav-panel).openDrawer) #neconyan-home-host {
+    visibility: hidden !important; pointer-events: none !important;
+}
+body.neconyan #left-nav-panel[data-sb-active-tab='agents'] .sb-shell-nav-wrapper { display: none; }
+body.neconyan #left-nav-panel[data-sb-active-tab='agents'] .sb-shell-header {
+    min-height: 48px; padding: 12px 56px 12px 24px; justify-content: center;
+}
+body.neconyan #left-nav-panel[data-sb-active-tab='agents'] .sb-shell-subtitle { display: none; }
+body.neconyan .sb-shell-header .sb-shell-close { top: 50%; transform: translateY(-50%); }
+body.neconyan .sb-shell-header .sb-shell-close:hover { transform: translateY(calc(-50% - 1px)); }
+body.neconyan .sb-shell-close { color: var(--neco-ink); background: var(--neco-surface); }
+body.neconyan .sb-shell-close::before { display: none; }
+body.neconyan .sb-shell-close:hover { background: var(--neco-raised); }
+body.neconyan #left-nav-panel[data-sb-active-tab='agents'] .sb-shell-panel-scroller { padding: 20px 24px; }
+body.neconyan #left-nav-panel[data-sb-active-tab='agents'] .sb-shell-panel-scroller > .sb-shell-column {
+    width: 100%; max-width: 1160px; margin-inline: auto;
+}
+
+body.neconyan :is(.sb-shell-frame, .sb-shell-main, .sb-shell-nav, .sb-character-shell-nav, .sb-shell-header) {
+    background: var(--neco-rail); box-shadow: none; animation: none !important;
+}
+body.neconyan :is(.sb-shell-root, .sb-shell-main, .sb-shell-nav, .sb-shell-header, .sb-shell-nav-wrapper)::before,
+body.neconyan .sb-shell-nav-wrapper::after { display: none; }
+body.neconyan :is(.sb-shell-nav, .sb-character-shell-nav) {
+    justify-content: flex-start; gap: 2px; padding: 6px 10px;
+    border-bottom: 1px solid var(--neco-border); scroll-padding-inline: 12px;
+}
+body.neconyan :is(.sb-shell-tab, .sb-character-shell-tab) {
+    min-height: 36px; min-width: 0; padding: 6px 9px; gap: 6px; flex: 0 0 auto;
+    background: transparent; border-color: transparent; color: var(--neco-muted);
+}
+body.neconyan :is(.sb-shell-tab, .sb-character-shell-tab).is-active { background: var(--neco-raised); border-color: transparent; color: var(--neco-ink); }
+body.neconyan :is(.sb-shell-tab-copy strong, .sb-character-shell-tab strong) { font-size: 12px; font-weight: 500; }
+body.neconyan :is(.sb-shell-header, #right-nav-panel.openDrawer > .sb-character-shell-header) {
+    padding: 16px 52px 16px 18px; border-bottom: 1px solid var(--neco-border);
+}
+body.neconyan .sb-shell-header .sb-shell-kicker { display: none; }
+body.neconyan .sb-shell-header .sb-shell-title { font-size: 16px; font-weight: 600; }
+body.neconyan .sb-shell-header .sb-shell-subtitle { color: var(--neco-muted); font-size: 12px; font-weight: 400; }
+body.neconyan #right-nav-panel :is(.sb-character-editor-identity, .sb-character-editor-field-box, .sb-character-creator-notes-preview, .sb-character-editor-subtabs) {
+    background: transparent; box-shadow: none; border-color: var(--neco-border); border-radius: 6px;
+}
+body.neconyan #right-nav-panel .sb-character-editor-subtabs-wrapper { padding: 0; border: 0; background: transparent; }
+body.neconyan #right-nav-panel .sb-character-editor-subtabs { padding: 6px 10px; border: 0; border-bottom: 1px solid var(--neco-border); }
+body.neconyan #right-nav-panel .sb-character-editor-subtab { border-radius: 5px; box-shadow: none; background: transparent; }
+body.neconyan #right-nav-panel .sb-character-editor-subtab.is-active { background: var(--neco-raised); }
+body.neconyan #right-nav-panel .character_select { border-radius: 6px; box-shadow: none; background: transparent; }
+body.neconyan #right-nav-panel :is(.sb-character-editor-identity, .sb-character-editor-field-box, .sb-character-creator-notes-preview)::before { display: none; }
+body.neconyan #sb_character_mode_toggle { border-radius: 6px; box-shadow: none; background: transparent; }
+body.neconyan #sb_character_mode_toggle button { border-radius: 5px; box-shadow: none; }
+body.neconyan .sb-shell-panel-scroller { padding: 18px; }
+body.neconyan [name='userSettingsRowOne'] { gap: 12px; align-items: center; }
+body.neconyan #user-settings-block [name='userSettingsRowOne'] h3 { padding: 0; border: 0; background: transparent; font-size: 13px; }
+body.neconyan #UI-language-block { flex: 1; min-width: 180px; gap: 8px; flex-wrap: nowrap; font-size: 12px; }
+body.neconyan #UI-language-block select { min-height: 34px; padding-block: 6px; }
+body.neconyan #user-settings-block-content { display: flex !important; flex-direction: column !important; gap: 0 !important; align-items: stretch !important; }
+body.neconyan #user-settings-block-content > div { min-width: 0; }
+body.neconyan :is(.sb-theme-settings-drawer, .inline-drawer) { border-radius: 0; box-shadow: none; }
+body.neconyan :is(.inline-drawer-header, .sb-theme-settings-drawer > .inline-drawer-header) {
+    display: flex; align-items: center; justify-content: space-between; min-height: 46px; margin: 0;
+    padding: 10px 4px; border: 0; border-bottom: 1px solid var(--neco-border); border-radius: 0;
+    background: transparent; box-shadow: none; text-align: left;
+}
+body.neconyan #user-settings-block .sb-settings-subdrawer { margin-top: 0; }
+body.neconyan #user-settings-block .sb-settings-subdrawer > .inline-drawer-header {
+    height: auto; min-height: 46px; margin: 0; padding: 10px 32px 10px 4px !important;
+    justify-content: flex-start; text-align: left; font-size: 13px;
+}
+body.neconyan #user-settings-block .sb-settings-subdrawer > .inline-drawer-header b {
+    justify-content: flex-start; text-align: left; font-weight: 500;
+}
+body.neconyan .inline-drawer-header strong { flex: 1; color: var(--neco-ink); font-weight: 500; font-size: 13px; }
+body.neconyan .inline-drawer-header .inline-drawer-icon { color: var(--neco-muted); font-size: 14px; }
+body.neconyan :is(.sb-theme-card, .sb-settings-group, .sb-shell-callout, .sb-admin-card, .sb-agent-card, .sb-theme-settings-drawer) {
+    background: transparent; border-color: var(--neco-border); box-shadow: none;
+}
+body.neconyan :is(.sb-theme-card, .sb-admin-card, .sb-agent-card, .sb-shell-callout)::before { display: none; }
+body.neconyan .sb-settings-tabs-nav { gap: 2px; margin: 14px 0; padding-bottom: 8px; border-color: var(--neco-border); }
+body.neconyan .sb-settings-tab-btn { gap: 6px; padding: 8px; border: 0; border-radius: 5px; background: transparent; color: var(--neco-muted); font-size: 12px; font-weight: 500; }
+body.neconyan .sb-settings-tab-btn.active { background: var(--neco-raised); color: var(--neco-ink); box-shadow: none; }
+
+body.neconyan :is(#sheld, #chat, #form_sheld, #sb-bottom-chat-bar) {
+    border: 0; border-radius: 0; background: var(--neco-canvas); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+body.neconyan #sheld { min-width: 0; overflow: hidden; }
+body.neconyan.flatchat:not(.sbterm) #chat { padding: 24px max(24px, calc((100% - 820px) / 2)); text-shadow: none; }
+body.neconyan.flatchat:not(.sbterm) #chat .mes { width: 100%; max-width: 100%; margin: 0 auto 24px; padding: 12px 0; gap: 12px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+body.neconyan.flatchat:not(.sbterm) #chat .mes::before { display: none; }
+body.neconyan.flatchat:not(.sbterm) #chat .mes .mes_block { min-width: 0; padding: 0; border: 0; box-shadow: none; }
+body.neconyan.flatchat:not(.sbterm) #chat .mes[is_user='true'] .mes_block { padding: 12px 16px; border-radius: 8px; background: var(--neco-user); }
+body.neconyan.flatchat:not(.sbterm) #chat .mes :is(.mes_text, .mes_reasoning) { font-size: 1em; line-height: 1.65; }
+body.neconyan.flatchat:not(.sbterm) #chat .mes .name_text { font-weight: 600; font-size: 13px; }
+body.neconyan.flatchat:not(.sbterm) #chat .mes :is(.mes_button, .extraMesButtons > div) { border-radius: 5px; box-shadow: none; background: transparent; }
+body.neconyan #form_sheld { width: 100%; max-width: 860px; margin: 0 auto; padding: 0 24px max(18px, env(safe-area-inset-bottom)); }
+body.neconyan #sb-bottom-chat-bar { padding-inline: 0; }
+body.neconyan #send_form { padding: 6px; border: 1px solid var(--neco-border); border-radius: 10px; background: var(--neco-surface); box-shadow: none; }
+body.neconyan #nonQRFormItems { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+body.neconyan #send_textarea {
+    max-height: min(35dvh, 360px);
+    padding: 12px; background: transparent; color: var(--neco-ink); border: 0; border-radius: 5px; box-shadow: none; font-size: 14px; line-height: 1.5;
+}
+@media (max-width: 768px) {
+    body.neconyan #send_form.no-connection #nonQRFormItems {
+        --sb-composer-right-rail-width: var(--sb-composer-action-size);
+    }
+}
+body.neconyan :is(#leftSendForm, #rightSendForm) > div { border-radius: 6px; border-color: transparent; background: transparent; box-shadow: none; }
+body.neconyan :is(#send_but, #sb_conversation_send) { border-radius: 6px !important; background: var(--neco-ginger) !important; color: var(--neco-on-accent) !important; box-shadow: none; }
+body.neconyan :is(#send_form:focus-within, .sb-conversation-composer:focus-within) { border-color: var(--neco-ginger); box-shadow: none; }
+body.neconyan #send_form:focus-within :is(#nonQRFormItems, #send_textarea) { background: transparent; box-shadow: none; }
+
+body.neconyan #sheld[data-sb-conversation-mode='on'] { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'header' 'stage'; border: 0; border-radius: 0; }
+body.neconyan #sheld :is(#sb_conversation_header, #sb_conversation_stage) { background: var(--neco-canvas); border-color: var(--neco-border); }
+body.neconyan #sheld #sb_conversation_header { min-height: 60px; padding: 10px 24px; gap: 10px; }
+body.neconyan .sb-conversation-header-kicker { display: none; }
+body.neconyan .sb-conversation-header-name { font-size: 15px; font-weight: 600; }
+body.neconyan .sb-conversation-header-status { color: var(--neco-muted); font-size: 11px; }
+body.neconyan #sheld #sb_conversation_pals_toggle { display: inline-flex; }
+body.neconyan #sheld #sb_conversation_pals_rail {
+    position: absolute; inset: 0 auto 0 0; z-index: 100; width: min(300px, 90%);
+    background: var(--neco-rail) !important; border-color: var(--neco-border); box-shadow: none !important;
+    transform: none; visibility: hidden; pointer-events: none;
+}
+body.neconyan #sheld #sb_conversation_pals_rail[data-open='true'] { visibility: visible; pointer-events: auto; }
+body.neconyan #sheld #sb_conversation_pals_rail .sb-conversation-rail-close { display: inline-flex; }
+body.neconyan .sb-conversation-timeline { padding: 24px max(24px, calc((100% - 820px) / 2)); gap: 24px; }
+body.neconyan .sb-conversation-message-bubble { padding: 8px 0; background: transparent; color: var(--neco-ink); border: 0; border-radius: 0; box-shadow: none; }
+body.neconyan .sb-conversation-message[data-role='user'] .sb-conversation-message-bubble { padding: 12px 16px; background: var(--neco-user); border-radius: 8px; }
+body.neconyan :is(.sb-conversation-message-name, .sb-conversation-message-text) { color: var(--neco-ink); }
+body.neconyan .sb-conversation-message-text { line-height: 1.65; }
+body.neconyan :is(.sb-conversation-message-reply-preview, .sb-conversation-composer-reply-card) { border-inline-start: 0; border-radius: 5px; background: var(--neco-surface); }
+body.neconyan .sb-conversation-message-time { color: var(--neco-muted); }
+body.neconyan .sb-conversation-composer {
+    width: calc(100% - 48px); max-width: 812px; margin: 0 auto max(18px, env(safe-area-inset-bottom));
+    padding: 6px; border: 1px solid var(--neco-border); border-radius: 10px; background: var(--neco-rail); box-shadow: none;
+}
+body.neconyan #sb_conversation_input { grid-column: 1 / -1; padding: 12px; min-height: 58px; color: var(--neco-ink); background: transparent; border: 0; border-radius: 5px; box-shadow: none; font-size: 14px; line-height: 1.5; }
+body.neconyan .sb-conversation-composer-actions { grid-column: 1 / -1; justify-content: flex-end; }
+body.neconyan .sb-conversation-tools { padding: 8px; background: var(--neco-rail); border-color: var(--neco-border); -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+/* Both engines remain mounted while Home is open, preserving drafts. */
+body.neconyan.neconyan-home-visible #sheld { display: flex; flex-direction: column; }
+body.neconyan #neconyan-home-host { display: none; }
+body.neconyan.neconyan-home-visible #neconyan-home-host { display: block; flex: 1; min-height: 0; background: var(--neco-canvas); overflow: auto; overscroll-behavior: contain; }
+body.neconyan.neconyan-home-visible #sheld > :not(#neconyan-home-host) { display: none !important; }
+/* Boot: while the 'Preparing your Neconyan workspace' skeleton is still in #chat, only it shows.
+   Home removes the skeleton itself and clearChat() empties #chat before any chat prints, so the bars return on every path. */
+body.neconyan:has(#neconyan-home-skeleton) :is(#top-bar, #form_sheld, #ica--tracker-panel, #ica--tracker-panel-handle) { visibility: hidden !important; }
+body.neconyan:has(#neconyan-home-skeleton) #sheld { background: var(--neco-canvas); }
+body.neconyan .welcomePanel {
+    width: 100%; max-width: 900px; margin: 0 auto; padding: 72px 32px 40px; gap: 36px;
+    border: 0; border-radius: 0; background: transparent; box-shadow: none; text-shadow: none;
+}
+body.neconyan :is(.welcomePanel, .welcomeActionCard, .welcomeRecentShell)::before,
+body.neconyan .welcomePanel::after { display: none; }
+body.neconyan :is(.welcomeHero, .welcomeHeroCopy, .welcomeHeroTitleGroup) { display: flex; flex-direction: column; align-items: stretch; gap: 16px; text-align: left; }
+body.neconyan .welcomeHeroTitleGroup { min-width: 0; gap: 8px; }
+body.neconyan .welcomeHero > .welcomeHeroCopy > .welcomeHeroEyebrow { display: none; }
+body.neconyan .welcomeHeaderTitle { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; justify-content: flex-start; gap: 16px; }
+body.neconyan .welcomeHeaderLogo { width: 44px; height: 44px; flex: 0 0 44px; border: 0; border-radius: 10px; box-shadow: none; }
+body.neconyan .welcomeHeaderVersionDisplay { margin: 0; color: var(--neco-ink); font-size: 26px; line-height: 1.2; font-weight: 600; letter-spacing: -0.025em; }
+body.neconyan .welcomeHeroBlurb { max-width: 60ch; margin: 0; color: var(--neco-muted); font-size: 14px; line-height: 1.6; text-align: left; }
+body.neconyan .welcomeActionGrid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+body.neconyan .welcomeActionCard { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; min-height: 36px; width: auto; padding: 8px 12px; border: 1px solid var(--neco-border); border-radius: 6px !important; background: transparent !important; color: var(--neco-ink); box-shadow: none !important; text-align: left; }
+body.neconyan .welcomeActionCard > i { color: var(--neco-muted); font-size: 13px; }
+body.neconyan .welcomeActionMeta { align-items: flex-start; min-width: 0; white-space: normal; text-align: left; }
+body.neconyan .welcomeActionMeta strong { font-size: 13px; font-weight: 500; }
+body.neconyan .welcomeActionMeta > span { display: none; }
+body.neconyan .welcomeActionCard.openTemporaryChat { color: var(--neco-on-accent); border-color: var(--neco-ginger); background: var(--neco-ginger) !important; }
+body.neconyan .welcomeActionCard.openTemporaryChat > i { color: inherit; }
+body.neconyan .welcomeActionCard:hover { background: var(--neco-raised) !important; transform: none; }
+body.neconyan .welcomeActionCard.openTemporaryChat:hover { background: var(--neco-ginger-hover) !important; }
+body.neconyan :is(.welcomeRecentShell, .welcomeGuidePanel, .welcomeDeckFrame) { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+/* Recent chats: solid themed box for its cat ears. */
+body.neconyan .welcomeRecentShell { padding: 18px 20px; border: 1px solid var(--neco-border); border-radius: 16px; background: var(--neco-surface); box-shadow: none; }
+body.neconyan .welcomeRecentHeader { align-items: center; }
+body.neconyan .welcomeRecent .recentChatList .recentChat { padding: 12px 0; border: 0; border-bottom: 1px solid var(--neco-border); border-radius: 0; background: transparent; box-shadow: none; }
+body.neconyan .welcomeRecent .recentChatList .recentChat:hover { background: color-mix(in oklch, var(--neco-surface) 40%, transparent); }
+body.neconyan .welcomeRecent .recentChatList .recentChat .avatar { width: 32px; height: 32px; min-width: 32px; min-height: 32px; }
+body.neconyan .welcomeRecent .recentChat::before { display: none; }
+body.neconyan .welcomeRecent .recentChatList .recentChat .recentChatInfo { gap: 6px; }
+body.neconyan .welcomeRecent .recentChatList .recentChat .chatNameContainer { font-size: 13px; }
+body.neconyan .welcomeRecent .recentChatList .recentChat .chatMessageContainer .chatMessage {
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis; -webkit-line-clamp: 1; line-clamp: 1;
+}
+body.neconyan .welcomeRecent .recentChatList .recentChat .chatActions button {
+    border-radius: 5px; background: transparent; border-color: transparent; color: var(--neco-muted);
+}
+body.neconyan .recentChat .chatActions { pointer-events: none; }
+body.neconyan .recentChat .chatActions button { pointer-events: auto; }
+body.neconyan :is(.welcomeRecentTabs, .welcomeRecentTab, .welcomeShortcut) { border-radius: 5px; box-shadow: none; background: transparent; }
+body.neconyan .welcomeRecentTab.active { background: var(--neco-raised); color: var(--neco-ink); }
+body.neconyan .welcomeAdvancedHome { order: initial; }
+body.neconyan .welcomeAdvancedHome[hidden] { display: none !important; }
+body.neconyan .welcomeAdvancedHome > summary {
+    position: relative; min-height: 44px; padding: 10px 76px 10px 0;
+    border: 0; background: transparent; color: var(--neco-muted);
+}
+/* Centred with insets and margin, never translate: the shared .menu_button hover/active rules
+   own `transform`, and a centring transform here made the button jump on hover and press. */
+body.neconyan .welcomeAdvancedHome > summary > .tutorialHide {
+    position: absolute; right: 0; top: 0; bottom: 0;
+    height: 32px; min-height: 32px; margin: auto 0; padding: 4px 12px; font-size: 12px;
+    transform: none; transition: none;
+}
+body.neconyan .welcomeAdvancedHome > summary > .tutorialHide:is(:hover, :active) {
+    transform: none; transition: none;
+}
+body.neconyan .welcomeAdvancedHome > summary small { display: none; }
+body.neconyan .welcomeShortcuts { justify-content: flex-start; flex-wrap: wrap; gap: 8px; }
+body.neconyan #neconyan-tour-coachmark {
+    position: fixed; right: max(20px, env(safe-area-inset-right)); bottom: max(20px, env(safe-area-inset-bottom));
+    z-index: calc(var(--sb-z-modal-content, 3100) + 10); display: grid; gap: 10px;
+    width: min(360px, calc(100vw - 32px)); max-height: 45dvh; overflow: auto; padding: 18px;
+    border: 1px solid var(--neco-border); border-radius: 8px; background: var(--neco-surface); color: var(--neco-ink);
+    box-shadow: 0 8px 32px color-mix(in oklch, var(--neco-charcoal) 25%, transparent); text-shadow: none;
+}
+body.neconyan #neconyan-tour-coachmark [data-tour-coach-step] { color: var(--neco-ginger); font-size: 12px; }
+body.neconyan #neconyan-tour-coachmark p { margin: 0; font-size: 14px; line-height: 1.5; }
+body.neconyan :is(#neconyan-tour-coachmark [data-tour-coach-actions], .neconyan-tour-coachmark-actions) { display: flex; flex-wrap: wrap; gap: 6px; }
+body.neconyan #neconyan-tour-coachmark button { min-height: 44px; margin: 0; padding: 8px 12px; }
+body.neconyan #neconyan-tour-coachmark [data-tour-coach-next] { margin-left: auto; border-color: var(--neco-ginger); }
+
+@media (min-width: 769px) {
+    body.neconyan :is(.sb-shell-nav, .sb-settings-tabs-nav) { flex-wrap: wrap; overflow-x: hidden; }
+    body.neconyan.neconyan-rail-ready { --neco-sidebar-offset: var(--neco-sidebar-width); }
+    :root[data-neconyan-sidebar='closed'] body.neconyan { --neco-sidebar-width: 52px; }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail { padding-inline: 7px; }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail :is(.neconyan-rail-brand > img, .neconyan-rail-brand > span, button > span, button > small, kbd, .neconyan-rail-section-label, .neconyan-rail-section-heading, .neconyan-rail-empty) { display: none; }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail .neconyan-rail-brand { justify-content: center; }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail #neconyan-sidebar-toggle { margin: auto; }
+    body.neconyan #top-bar { left: var(--neco-sidebar-offset) !important; right: 0 !important; width: calc(100% - var(--neco-sidebar-offset)) !important; max-width: none !important; }
+    body.neconyan #sheld {
+        position: fixed; inset: var(--sb-topbar-layout-offset) 0 0 var(--neco-sidebar-offset);
+        width: auto !important; max-width: none !important; height: auto !important; max-height: none !important;
+        margin: 0 !important; transform: none !important;
+    }
+    body.neconyan.neconyan-rail-ready #sb-topbar-inner :is(#sb-left-shell-toggle, #sb-right-shell-toggle, #sb-character-toggle, #sb-home-toggle) { display: none !important; }
+    body.neconyan #sb-topbar-inner #sb-topbar-title { display: block !important; }
+}
+@media (max-width: 768px) {
+    :root[data-neconyan-mode] {
+        --sb-topbar-primary-height: max(42px, calc(var(--sb-topbar-primary-height-base) * var(--sb-topbar-scale-active)));
+        --sb-topbar-layout-offset: calc(var(--sb-topbar-stack-height) + env(safe-area-inset-top, 0px));
+    }
+    body.neconyan.sb-topbar-compact { --sb-topbar-layout-offset: calc(var(--sb-topbar-primary-height) + env(safe-area-inset-top, 0px)); }
+    /* Mobile keeps the workspace rail as the one menu: the hamburger slides it
+       out from the left and the legacy #sb-mobile-nav overlay stays retired. */
+    body.neconyan #neconyan-workspace-rail {
+        display: flex;
+        z-index: 80;
+        /* The drawer hangs below the top bar (which stays visible and closes it), so its own
+           brand row would only duplicate the bar and bleed through the translucent bar. */
+        top: var(--sb-topbar-layout-offset);
+        width: min(320px, 86vw);
+        max-width: 100%;
+        padding-top: 12px;
+        padding-bottom: max(12px, env(safe-area-inset-bottom));
+        background: var(--neco-rail);
+        transform: translateX(-100%);
+        visibility: hidden;
+        pointer-events: none;
+        transition: transform 180ms ease-out, visibility 180ms ease-out;
+    }
+    body.neconyan #neconyan-workspace-rail .neconyan-rail-brand { display: none; }
+    body.neconyan #neconyan-workspace-rail button { min-height: 44px; }
+    body.neconyan.neconyan-rail-drawer-open #neconyan-workspace-rail {
+        transform: none;
+        visibility: visible;
+        pointer-events: auto;
+    }
+    body.neconyan #neconyan-workspace-rail #neconyan-sidebar-toggle { display: none !important; }
+    body.neconyan .neconyan-rail-drawer-scrim {
+        position: fixed;
+        inset: var(--sb-topbar-layout-offset) 0 0 0;
+        z-index: 70;
+        background: color-mix(in oklch, var(--neco-charcoal) 62%, transparent);
+        border: 0;
+        opacity: 0;
+        transition: opacity 180ms ease-out;
+    }
+    body.neconyan.neconyan-rail-drawer-open .neconyan-rail-drawer-scrim { opacity: 1; }
+    body.neconyan .neconyan-rail-drawer-scrim[hidden] { display: none !important; }
+    @media (prefers-reduced-motion: reduce) {
+        body.neconyan #neconyan-workspace-rail,
+        body.neconyan .neconyan-rail-drawer-scrim { transition: none; }
+    }
+    body.neconyan #top-bar {
+        height: var(--sb-topbar-layout-offset) !important; min-height: var(--sb-topbar-layout-offset) !important; max-height: none !important;
+        padding-top: env(safe-area-inset-top, 0px) !important; padding-bottom: 0 !important; align-items: flex-start !important;
+    }
+    body.neconyan #sb-topbar-inner { padding-inline: 6px; gap: 4px; }
+    body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer { width: 100% !important; max-width: 100% !important; border: 0 !important; }
+    body.neconyan #sheld { width: 100% !important; margin: 0 !important; }
+    body.neconyan .welcomePanel { padding: 32px 20px; gap: 28px; }
+    body.neconyan .welcomeActionCard { min-height: 44px !important; justify-content: flex-start; }
+    body.neconyan #sb-topbar-inner :is(#sb-hamburger, #sb-shortcut-right, #sb-home-toggle, #sb-character-toggle) {
+        min-width: 44px !important; min-height: 44px !important; height: 44px !important;
+    }
+    body.neconyan #chat, body.neconyan .sb-conversation-timeline { padding: 16px 12px; }
+    body.neconyan #form_sheld { padding: 0 10px max(10px, env(safe-area-inset-bottom)); }
+    body.neconyan .sb-conversation-composer { width: calc(100% - 20px); margin-bottom: max(10px, env(safe-area-inset-bottom)); }
+    body.neconyan #sheld #sb_conversation_header { padding-inline: 10px; }
+    body.neconyan #sheld[data-sb-conversation-mode='on'] :is(#sb_conversation_pals_toggle, .sb-conversation-header-actions .menu_button_icon) {
+        width: 44px !important; height: 44px !important; inline-size: 44px !important; block-size: 44px !important;
+        min-width: 44px !important; min-height: 44px !important; min-inline-size: 44px !important; min-block-size: 44px !important;
+        max-width: 44px !important; max-height: 44px !important; max-inline-size: 44px !important; max-block-size: 44px !important; flex: 0 0 44px;
+    }
+    body.neconyan :is(.sb-shell-tab, .sb-character-shell-tab, .sb-settings-tab-btn) { min-height: 44px; }
+    body.neconyan #neconyan-tour-coachmark { right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); padding: 14px; }
+    body.neconyan.neconyan-tour-active .drawer-content .scrollableInner { padding-bottom: 260px; }
+}
+
+body.neconyan .neconyan-included-tool-page {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+    padding: 16px;
+    border-radius: var(--sb-radius-lg, 16px);
+    background: var(--neco-surface);
+}
+body.neconyan .neconyan-included-tool-heading { display: grid; gap: 4px; min-width: 0; }
+body.neconyan .neconyan-included-tool-heading h2,
+body.neconyan .neconyan-included-tool-heading p { margin: 0; }
+body.neconyan .neconyan-included-tool-state,
+body.neconyan .neconyan-included-tool-unavailable { color: var(--neco-muted); }
+body.neconyan .neconyan-included-tool-content,
+body.neconyan .neconyan-included-tool-content > * { min-width: 0; max-width: 100%; }
+
+/* Release-owned extension surfaces inherit Neconyan's compact, paw-soft UI. */
+body.neconyan .extensions_info .extension_native {
+    border-color: var(--neco-border);
+    background: var(--neco-surface);
+    box-shadow: none;
+}
+body.neconyan .extensions_info .extension_native .extension_origin {
+    display: block;
+    margin-top: 2px;
+    color: var(--neco-muted);
+    font-size: 11px;
+}
+body.neconyan :is(.sbbs-root, .sbstory-bar, .sbtw-root, .sbterm-settings-content, .promptTags-settings, .sbme-settings, .sbwil-root, .sbpl-root, .sbctm-root, .sbdistiller-root) {
+    color: var(--neco-ink);
+    background: var(--neco-surface);
+    border-color: var(--neco-border);
+    border-radius: var(--sb-radius-md);
+    box-shadow: none;
+}
+body.neconyan :is(.sbbs-root, .sbstory-bar, .sbtw-root, .sbterm-settings-content, .promptTags-settings, .sbme-settings, .sbwil-root, .sbpl-root, .sbctm-root, .sbdistiller-root) :is(button, input, textarea, select, summary) {
+    min-height: 36px;
+    border-radius: var(--sb-radius-button);
+}
+
+/* Labeled chat actions keep the legacy div hooks while making the controls readable and
+   reachable on touch screens. */
+body.neconyan :is(.neconyan-labelled-control, .neconyan-message-action) {
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-width: 0;
+    white-space: nowrap;
+}
+body.neconyan .neconyan-action-label {
+    font-family: var(--mainFontFamily);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+body.neconyan #chat .mes_buttons {
+    width: 100%;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 4px;
+    overflow: visible;
+}
+body.neconyan #chat .mes_block > .ch_name { flex-direction: column; align-items: stretch; gap: 6px; }
+body.neconyan #chat :is(.neconyan-message-action, .extraMesButtons > *) {
+    inline-size: auto;
+    block-size: auto;
+    min-inline-size: 44px;
+    min-block-size: 36px;
+    max-inline-size: 100%;
+    max-block-size: none;
+    flex: 0 0 auto;
+}
+body.neconyan #chat .mes_buttons .neconyan-message-action {
+    display: inline-flex;
+    min-height: 30px;
+    padding: 5px 7px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: color-mix(in oklch, var(--neco-surface) 55%, transparent);
+    color: var(--neco-muted);
+    filter: none;
+    opacity: 1;
+}
+body.neconyan #chat .mes_buttons .neconyan-message-action:hover,
+body.neconyan #chat .mes_buttons .neconyan-message-action:focus-visible {
+    border-color: var(--neco-border);
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+}
+body.neconyan #chat .mes .mes_bookmark { display: none; }
+body.neconyan #chat .mes:not([bookmark_link='']) .mes_bookmark { display: inline-flex; }
+body.neconyan #chat .extraMesButtons {
+    position: static;
+    order: 10;
+    flex: 0 0 100%;
+    display: none;
+    /* One aligned grid instead of a content-sized flex wrap: equal columns and stretched rows
+       keep every control's box on the same grid line no matter how long its label is. */
+    grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+    align-items: stretch;
+    gap: 4px;
+    width: 100%;
+    max-width: 100%;
+    padding: 6px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-surface);
+    box-shadow: 0 8px 22px color-mix(in oklch, var(--neco-charcoal) 35%, transparent);
+    filter: none;
+    overflow: visible;
+}
+body.neconyan #chat .extraMesButtons.visible,
+body.neconyan.expandMessageActions #chat .extraMesButtons {
+    display: grid !important;
+}
+body.neconyan #chat .extraMesButtons > * {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 30px;
+    padding: 5px 7px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: var(--neco-muted);
+    filter: none;
+    opacity: 1;
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    justify-content: flex-start;
+}
+/* Fixed icon slot so every label starts at the same x inside its column. */
+body.neconyan #chat .extraMesButtons > *::before {
+    flex: 0 0 1.25rem;
+    inline-size: 1.25rem;
+    text-align: center;
+}
+body.neconyan #chat .extraMesButtons .neconyan-action-label { white-space: normal; overflow-wrap: anywhere; }
+body.neconyan #chat .extraMesButtons > *:hover,
+body.neconyan #chat .extraMesButtons > *:focus-visible {
+    border-color: var(--neco-border);
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+}
+body.neconyan.expandMessageActions #chat .extraMesButtonsHint { display: none !important; }
+body.neconyan #send_form #neconyan_connect_button { display: none; }
+/* Desktop only: the labelled pills. Phones keep the 44px icon squares from
+   neconyan-mobile-shell.css; this rule used to outrank them and blew Send up to 98px. */
+@media (min-width: 769px) {
+    body.neconyan #send_form :is(#neconyan_connect_button, #options_button, #send_but) {
+        inline-size: auto !important;
+        block-size: auto !important;
+        min-inline-size: 44px !important;
+        min-block-size: 44px !important;
+        max-inline-size: none !important;
+        max-block-size: none !important;
+        flex: 0 0 auto !important;
+        padding: 8px 10px !important;
+        gap: 6px;
+    }
+}
+body.neconyan #send_form :is(#options_button, #send_but) { display: inline-flex; align-items: center; }
+body.neconyan #send_form.no-connection #neconyan_connect_button {
+    display: inline-flex;
+    min-height: 36px;
+    padding: 6px 9px;
+    border: 1px solid var(--neco-border);
+    border-radius: 6px;
+    background: color-mix(in oklch, var(--neco-ginger) 14%, transparent);
+    color: var(--neco-ginger);
+    cursor: pointer;
+}
+body.neconyan #send_form.no-connection #neconyan_connect_button:hover,
+body.neconyan #send_form.no-connection #neconyan_connect_button:focus-visible {
+    background: color-mix(in oklch, var(--neco-ginger) 24%, var(--neco-surface));
+    color: var(--neco-ink);
+}
+body.neconyan #leftSendForm { align-items: center; gap: 4px; }
+body.neconyan .neconyan-chat-row-actions {
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px;
+    min-width: 0;
+    max-width: 100%;
+}
+body.neconyan #select_chat_name_wrapper > :last-child {
+    align-items: center;
+    flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
+}
+body.neconyan .neconyan-chat-row-actions .neconyan-labelled-control {
+    display: inline-flex;
+    min-height: 32px;
+    padding: 5px 7px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: var(--neco-muted);
+    filter: none;
+    opacity: 1;
+}
+body.neconyan .neconyan-chat-row-actions .PastChat_cross {
+    width: auto;
+    height: auto;
+}
+body.neconyan .neconyan-chat-row-actions .neconyan-labelled-control:hover,
+body.neconyan .neconyan-chat-row-actions .neconyan-labelled-control:focus-visible {
+    border-color: var(--neco-border);
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+}
+body.neconyan .neconyan-chat-row-actions .neconyan-current-chat-export[aria-hidden='true'] { display: none !important; }
+
+@media (max-width: 768px) {
+    body.neconyan #chat .mes_buttons .neconyan-message-action,
+    body.neconyan #chat .extraMesButtons > *,
+    body.neconyan #send_form.no-connection #neconyan_connect_button,
+    body.neconyan .neconyan-chat-row-actions .neconyan-labelled-control {
+        min-height: 44px;
+    }
+    /* Phone composer buttons are icon squares; the text lives in aria-label/title. */
+    body.neconyan #send_form :is(#options_button, #send_but, #neconyan_connect_button) .neconyan-action-label { display: none; }
+    body.neconyan #send_form :is(#options_button, #send_but, #neconyan_connect_button) { justify-content: center; }
+    /* Guided Generations and Input History share one row above the composer. Both groups keep
+       the same tight internal gap so the row reads as one even line of buttons. */
+    body.neconyan #send_form > #gg-action-button-container {
+        --gg-mobile-action-size: 36px;
+        --gg-mobile-action-icon-size: 16px;
+        gap: 4px;
+        padding: 4px 4px 0;
+    }
+    body.neconyan #send_form > #gg-action-button-container > .stih--buttons {
+        --stih-mobile-action-size: 36px;
+        --stih-mobile-action-icon-size: 16px;
+        flex: 3 1 0;
+        justify-content: center;
+        margin-right: 0;
+        gap: 5px;
+    }
+    body.neconyan #send_form > #gg-action-button-container > .gg-regular-buttons-container {
+        flex: 6 1 0;
+        width: auto;
+        justify-content: center;
+        order: 0;
+        gap: 5px;
+    }
+    body.neconyan #chat .mes_buttons .neconyan-message-action,
+    body.neconyan #chat .extraMesButtons > * {
+        inline-size: auto !important;
+        block-size: auto !important;
+        min-inline-size: 44px !important;
+        min-block-size: 44px !important;
+        max-inline-size: 100% !important;
+        max-block-size: none !important;
+        flex-basis: auto !important;
+    }
+    body.neconyan #chat .extraMesButtons {
+        width: 100%;
+    }
+    body.neconyan #select_chat_name_wrapper {
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    body.neconyan #select_chat_name_wrapper > :last-child {
+        align-items: flex-start;
+        flex-wrap: wrap;
+        width: 100%;
+        gap: 6px;
+    }
+    body.neconyan #select_chat_name_wrapper .neconyan-chat-row-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+}
+
+
+/* Neconyan workspace frame: primary tools occupy the space beside the persistent rail. */
+body.neconyan :is(.sb-topbar-pages, .sb-topbar-cluster-divider) {
+    display: none !important;
+}
+body.neconyan #sb-topbar-inner :is(#sb-shortcut-right, #sb-advanced-toggle, #sb-topbar-extension-slot, #sb-topbar-quick-actions) {
+    display: inline-flex !important;
+    visibility: visible !important;
+}
+body.neconyan #sb-topbar-inner :is(#sb-home-toggle, #sb-character-toggle) {
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+@media (max-width: 768px) {
+    body.neconyan #sb-topbar-inner :is(#sb-home-toggle, #sb-character-toggle) {
+        display: none !important;
+    }
+    /* Phones give the bar's centre to the character name; the clock is the status bar's job. */
+    body.neconyan #sb-topbar-clock { display: none; }
+    body.neconyan #sb-topbar-inner .sb-topbar-group-right {
+        justify-self: end;
+        margin-inline-start: auto;
+    }
+}
+
+@media (min-width: 769px) {
+    body.neconyan .sb-shell-root.openDrawer .sb-shell-frame {
+        display: grid !important;
+        grid-template-columns: var(--neco-workspace-nav-width) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
+    }
+    body.neconyan .sb-shell-root.openDrawer .sb-shell-nav-wrapper {
+        grid-column: 1;
+        grid-row: 1;
+        min-height: 0;
+        height: 100%;
+        overflow: hidden;
+        border-right: 1px solid var(--neco-border);
+    }
+    body.neconyan .sb-shell-root.openDrawer .sb-shell-nav {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+        height: 100%;
+        max-height: 100%;
+        padding: 12px 10px;
+        overflow-x: hidden;
+        overflow-y: auto;
+        border: 0;
+        scroll-padding: 12px;
+    }
+    body.neconyan .sb-shell-root.openDrawer .sb-shell-nav-scroll {
+        display: none !important;
+    }
+    body.neconyan .sb-shell-root.openDrawer .sb-shell-tab {
+        width: 100%;
+        min-height: 44px;
+        flex: 0 0 auto;
+        white-space: normal;
+    }
+    :root:not([data-sb-desktop-nav-mode='icon-only']) body.neconyan .sb-shell-root.openDrawer .sb-shell-tab-copy,
+    :root:not([data-sb-desktop-nav-mode='icon-only']) body.neconyan .sb-shell-root.openDrawer .sb-shell-tab-copy strong {
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    :root[data-sb-desktop-nav-mode='icon-only'] body.neconyan .sb-shell-root.openDrawer .sb-shell-tab {
+        width: calc(46px * var(--sb-desktop-button-scale));
+        min-width: calc(46px * var(--sb-desktop-button-scale));
+        max-width: calc(46px * var(--sb-desktop-button-scale));
+        align-self: center;
+        justify-content: center;
+        padding: 0;
+    }
+    :root[data-sb-desktop-nav-mode='icon-only'] body.neconyan .sb-shell-root.openDrawer .sb-shell-tab-copy {
+        display: none;
+    }
+    body.neconyan .sb-shell-root.openDrawer .sb-shell-main {
+        grid-column: 2;
+        grid-row: 1;
+        min-width: 0;
+        min-height: 0;
+    }
+    body.neconyan .sb-shell-root.openDrawer[data-sb-active-tab='agents'] .sb-shell-main {
+        grid-column: 1 / -1;
+    }
+    body.neconyan .sb-shell-root.openDrawer .sb-shell-panel-scroller {
+        min-width: 0;
+        min-height: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    body.neconyan #right-nav-panel.openDrawer {
+        display: grid !important;
+        grid-template-columns: var(--neco-workspace-nav-width) minmax(0, 1fr);
+        grid-template-rows: auto auto auto auto minmax(0, 1fr);
+        align-items: stretch;
+        overflow: hidden !important;
+    }
+    body.neconyan #right-nav-panel.openDrawer > #right-nav-panelheader {
+        display: none !important;
+    }
+    body.neconyan #right-nav-panel.openDrawer > .sb-character-shell-nav-wrapper {
+        grid-column: 1;
+        grid-row: 1 / -1;
+        min-height: 0;
+        height: 100%;
+        overflow: hidden;
+        border-right: 1px solid var(--neco-border);
+    }
+    body.neconyan #right-nav-panel.openDrawer > .sb-character-shell-nav-wrapper > .sb-character-shell-nav {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+        height: 100%;
+        max-height: 100%;
+        padding: 12px 10px;
+        overflow-x: hidden;
+        overflow-y: auto;
+        border: 0;
+        scroll-padding: 12px;
+    }
+    body.neconyan #right-nav-panel.openDrawer > .sb-character-shell-header,
+    body.neconyan #right-nav-panel.openDrawer > #CharListButtonAndHotSwaps,
+    body.neconyan #right-nav-panel.openDrawer > .sb-character-editor-subtabs-wrapper,
+    body.neconyan #right-nav-panel.openDrawer > #rm_PinAndTabs,
+    body.neconyan #right-nav-panel.openDrawer > :is(.scrollableInner, .scrollableInnerFull) {
+        grid-column: 2;
+        min-width: 0;
+    }
+    body.neconyan #right-nav-panel.openDrawer > .sb-character-shell-header { grid-row: 1; }
+    body.neconyan #right-nav-panel.openDrawer > #CharListButtonAndHotSwaps { grid-row: 2; }
+    body.neconyan #right-nav-panel.openDrawer > .sb-character-editor-subtabs-wrapper { grid-row: 3; }
+    body.neconyan #right-nav-panel.openDrawer > #rm_PinAndTabs { grid-row: 4; }
+    body.neconyan #right-nav-panel.openDrawer > :is(.scrollableInner, .scrollableInnerFull) {
+        grid-row: 5;
+        min-height: 0;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+    }
+    body.neconyan #right-nav-panel.openDrawer :is(.sb-shell-tab, .sb-character-shell-tab) {
+        width: 100%;
+        min-height: 44px;
+        flex: 0 0 auto;
+        white-space: normal;
+    }
+    body.neconyan #right-nav-panel.openDrawer .sb-character-editor-subtabs {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+}
+
+@media (max-width: 768px) {
+    body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer {
+        top: var(--sb-shell-measured-top-offset, var(--sb-topbar-layout-offset)) !important;
+        bottom: env(safe-area-inset-bottom, 0px) !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        height: calc(var(--sb-shell-viewport-height, 100dvh) - var(--sb-shell-measured-top-offset, var(--sb-topbar-layout-offset)) - env(safe-area-inset-bottom, 0px)) !important;
+        max-height: calc(var(--sb-shell-viewport-height, 100dvh) - var(--sb-shell-measured-top-offset, var(--sb-topbar-layout-offset)) - env(safe-area-inset-bottom, 0px)) !important;
+    }
+    body.neconyan .sb-shell-root.openDrawer .sb-shell-frame {
+        display: flex !important;
+        flex-direction: column;
+    }
+    /* Phones show every sheet's sections as one horizontally scrolling row of
+       labelled 44px tabs (icon + name), no dropdown. The Characters sheet keeps
+       its close button floating at the right end of this row. */
+    body.neconyan .sb-shell-root.openDrawer .sb-shell-nav-wrapper,
+    body.neconyan #right-nav-panel.openDrawer > .sb-character-shell-nav-wrapper,
+    body.neconyan #right-nav-panel.neconyan-character-workspace > .neconyan-character-native-nav-wrapper {
+        order: 0;
+        flex: 0 0 auto;
+        width: 100%;
+        height: auto;
+        min-height: 0;
+        max-height: none;
+        margin: 0;
+        overflow: visible;
+        border-right: 0;
+        border-bottom: 1px solid var(--neco-border);
+    }
+    body.neconyan #right-nav-panel.openDrawer > .sb-character-shell-nav-wrapper,
+    body.neconyan #right-nav-panel.neconyan-character-workspace > .neconyan-character-native-nav-wrapper {
+        margin-top: 14px;
+        padding-right: 52px;
+    }
+    body.neconyan .sb-shell-root.openDrawer .sb-shell-nav,
+    body.neconyan #right-nav-panel.openDrawer > .sb-character-shell-nav-wrapper > .sb-character-shell-nav,
+    body.neconyan #right-nav-panel.neconyan-character-workspace .neconyan-character-native-nav-wrapper > .sb-character-shell-nav {
+        display: flex !important;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 4px;
+        width: 100%;
+        max-height: none;
+        padding: 4px 8px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        border: 0;
+        scrollbar-width: none;
+    }
+    body.neconyan .sb-shell-root.openDrawer .sb-shell-nav-scroll {
+        display: none !important;
+    }
+    body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer :is(.sb-shell-tab, .sb-character-shell-tab),
+    body.neconyan #right-nav-panel.neconyan-character-workspace .neconyan-character-native-nav-wrapper .sb-shell-tab {
+        width: auto;
+        min-width: var(--sb-mobile-touch-target, 44px);
+        max-width: none;
+        min-height: var(--sb-mobile-touch-target, 44px);
+        flex: 0 0 auto;
+        justify-content: center;
+        gap: 6px;
+        padding: 0 12px;
+        white-space: nowrap;
+    }
+    body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer :is(.sb-shell-tab, .sb-character-shell-tab) i {
+        width: auto;
+        margin: 0;
+    }
+    body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer .sb-shell-tab-copy {
+        display: inline;
+    }
+    body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer .sb-shell-tab-copy small {
+        display: none;
+    }
+    /* The Characters sheet header shrinks to just its close button, parked at
+       the right end of the tab row; the mode switch lives in the drawer. */
+    body.neconyan #right-nav-panel.openDrawer > .sb-character-shell-header {
+        position: absolute;
+        top: 14px;
+        right: 8px;
+        z-index: 3;
+        display: block;
+        flex: none;
+        width: 44px;
+        height: 44px;
+        min-height: 44px !important;
+        margin: 0;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 0;
+        background: transparent !important;
+        box-shadow: none !important;
+    }
+    body.neconyan #right-nav-panel.openDrawer > .sb-character-shell-header::before,
+    body.neconyan #right-nav-panel.openDrawer > .sb-character-shell-header::after,
+    body.neconyan #right-nav-panel.openDrawer > .sb-character-shell-header > :not(.sb-shell-close) {
+        display: none !important;
+    }
+    body.neconyan .sb-shell-root.openDrawer .sb-shell-main {
+        min-width: 0;
+        min-height: 0;
+        flex: 1 1 auto;
+    }
+    body.neconyan .sb-shell-root.openDrawer .sb-shell-panel-scroller {
+        min-width: 0;
+        min-height: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+    body.neconyan #right-nav-panel.openDrawer {
+        display: flex !important;
+        flex-direction: column !important;
+        grid-template-columns: none !important;
+        grid-template-rows: none !important;
+        align-items: stretch;
+    }
+    body.neconyan #right-nav-panel.openDrawer > #right-nav-panelheader {
+        display: none !important;
+    }
+    body.neconyan #right-nav-panel.openDrawer > :is(.sb-character-shell-header, #CharListButtonAndHotSwaps, .sb-character-editor-subtabs-wrapper, #rm_PinAndTabs, .scrollableInner, .scrollableInnerFull) {
+        grid-column: auto;
+        grid-row: auto;
+        min-width: 0;
+    }
+    body.neconyan #right-nav-panel.openDrawer > :is(.scrollableInner, .scrollableInnerFull) {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+    /* The shell toggle ghosts stay hidden while the real controls live in the rail and sheets. */
+    body.neconyan #sb-topbar-inner :is(#sb-left-shell-toggle, #sb-right-shell-toggle, #sb-home-toggle, #sb-character-toggle) {
+        visibility: hidden !important;
+        pointer-events: none !important;
+    }
+    body.neconyan #sb-topbar-inner #sb-hamburger {
+        visibility: visible !important;
+        pointer-events: auto !important;
+    }
+    body.neconyan #sb-topbar-inner #sb-advanced-toggle,
+    body.neconyan #sb-topbar-inner #sb-shortcut-right {
+        visibility: visible !important;
+        pointer-events: auto !important;
+    }
+}
+
+.neconyan-mobile-section-select { display: none; }
+body.neconyan #right-nav-panel > .sb-character-editor-subtabs-wrapper { padding: 10px 16px; }
+body.neconyan #right-nav-panel .sb-character-editor-subtabs { display: none !important; }
+body.neconyan #right-nav-panel select[data-neconyan-section='data-sb-character-editor-tab'] {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+}
+@media (max-width: 768px) {
+    body.neconyan #right-nav-panel > .sb-character-editor-subtabs-wrapper { flex: 0 0 auto; max-height: none; padding: 0 0 4px; }
+    /* Phones: one tap per section, so the editor and persona sections are labelled
+       tabs in a horizontally scrolling row and their dropdown pickers stay hidden. */
+    body.neconyan #right-nav-panel select[data-neconyan-section='data-sb-character-editor-tab'],
+    body.neconyan #PersonaManagement select[data-neconyan-section='data-persona-editor-tab'] { display: none !important; }
+    body.neconyan #right-nav-panel .sb-character-editor-subtabs-wrapper .sb-character-editor-subtabs,
+    body.neconyan #PersonaManagement .persona-editor-workspace .persona-editor-tabs {
+        display: flex !important;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 4px;
+        width: 100%;
+        max-height: none;
+        padding: 4px 8px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        border: 0;
+        scrollbar-width: none;
+    }
+    body.neconyan #right-nav-panel .sb-character-editor-subtabs-wrapper .sb-character-editor-subtabs .sb-shell-tab,
+    body.neconyan #PersonaManagement .persona-editor-workspace .persona-editor-tabs .sb-shell-tab {
+        width: auto;
+        min-width: 44px;
+        max-width: none;
+        min-height: 44px;
+        flex: 0 0 auto;
+        justify-content: center;
+        gap: 6px;
+        padding: 0 12px;
+        white-space: nowrap;
+    }
+    body.neconyan #PersonaManagement .persona-editor-workspace .persona-editor-tabs .sb-shell-tab-copy,
+    body.neconyan #PersonaManagement .persona-editor-workspace .persona-editor-tabs .sb-shell-tab-copy > strong { display: inline; }
+    /* Phones: the tabs size to their labels, so never ellipsize the copy. */
+    body.neconyan #right-nav-panel .sb-character-editor-subtabs-wrapper .sb-character-editor-subtabs .sb-shell-tab-copy,
+    body.neconyan #right-nav-panel .sb-character-editor-subtabs-wrapper .sb-character-editor-subtabs .sb-shell-tab-copy > strong,
+    body.neconyan #PersonaManagement .persona-editor-workspace .persona-editor-tabs .sb-shell-tab-copy,
+    body.neconyan #PersonaManagement .persona-editor-workspace .persona-editor-tabs .sb-shell-tab-copy > strong {
+        width: max-content; max-width: none; min-width: 0; flex: 0 0 auto;
+        overflow: visible; text-overflow: clip; white-space: nowrap;
+    }
+    /* Phones: the sheet's .scrollableInner is the one scroller for the editor. The nested
+       #rm_ch_create_block / #form_create / subtab-panels scrollers left ~200px of editing room
+       and the document pan guard cancelled swipes that started outside that box. The commit bar
+       scrolls with the content here so the whole sheet height goes to editing. */
+    body.neconyan #right-nav-panel.openDrawer #rm_ch_create_block,
+    body.neconyan #right-nav-panel.openDrawer #form_create {
+        height: auto !important;
+        overflow: visible !important;
+    }
+    body.neconyan #right-nav-panel.openDrawer .sb-character-editor-subtab-panels {
+        flex: 0 0 auto !important;
+        overflow: visible !important;
+    }
+    body.neconyan #right-nav-panel.openDrawer #sb_character_commit_bar { position: static; }
+    /* The name/token titlebar is moved into the scroller on phones (syncCharacterTitlebarVisibility). */
+    body.neconyan #right-nav-panel.openDrawer > .scrollableInner > #rm_PinAndTabs { flex: 0 0 auto; padding: 2px 0 4px; }
+}
+
+/* Settings and extensions use one narrow navigator beside one readable detail surface. */
+body.neconyan .sb-settings-layout,
+body.neconyan .sb-extensions-layout {
+    display: grid;
+    gap: 20px;
+    min-width: 0;
+    width: 100%;
+}
+body.neconyan .sb-settings-layout {
+    grid-template-columns: minmax(180px, 200px) minmax(0, 1fr);
+}
+body.neconyan .sb-extensions-layout {
+    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+}
+body.neconyan :is(.sb-settings-nav-column, .sb-settings-detail, .sb-extensions-master, .sb-extension-detail) {
+    min-width: 0;
+}
+body.neconyan .sb-settings-nav-column,
+body.neconyan .sb-extensions-master {
+    align-self: start;
+    position: -webkit-sticky;
+    position: sticky;
+    top: 0;
+}
+body.neconyan .sb-settings-tabs-nav {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+}
+body.neconyan .sb-settings-tab-btn,
+body.neconyan .sb-extension-master-item {
+    min-width: 0;
+    min-height: 44px;
+    width: 100%;
+    justify-content: flex-start;
+    padding: 10px 12px;
+    overflow-wrap: anywhere;
+    text-align: left;
+    white-space: normal;
+}
+body.neconyan .sb-settings-tab-btn[aria-current='page'],
+body.neconyan .sb-extension-master-item[aria-current='true'] {
+    color: var(--neco-ink);
+    border-color: var(--neco-ginger);
+    background: var(--neco-raised);
+}
+body.neconyan .sb-settings-category-select,
+body.neconyan .sb-extensions-select {
+    display: none;
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    margin: 0;
+}
+body.neconyan .sb-extension-master-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    gap: 4px;
+    min-width: 0;
+}
+body.neconyan .sb-extension-master-row .sb-extension-master-item { width: 100%; }
+body.neconyan .sb-extension-pin {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-raised);
+    color: var(--neco-muted);
+}
+body.neconyan .sb-extension-pin[aria-pressed='true'] { color: var(--neco-ginger); border-color: var(--neco-ginger); }
+body.neconyan .sb-extension-pin[aria-pressed='true'] i { transform: rotate(-22deg); }
+body.neconyan .sb-extension-pin:disabled { opacity: .5; }
+body.neconyan .sb-settings-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    margin: 0 0 14px;
+}
+body.neconyan .sb-settings-search-label {
+    flex: 0 0 auto;
+    color: var(--neco-muted);
+    font-size: 12px;
+}
+body.neconyan .sb-settings-search :is(input, textarea) {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 44px;
+    width: 100%;
+}
+body.neconyan .sb-settings-detail-heading {
+    margin: 0 0 10px;
+    color: var(--neco-ink);
+    font-size: 17px;
+    font-weight: 600;
+}
+body.neconyan :is(.sb-settings-search-count, .sb-extensions-count) {
+    min-height: 18px;
+    margin: 0 0 10px;
+    color: var(--neco-muted);
+    font-size: 12px;
+}
+body.neconyan :is(.sb-settings-no-results, .sb-extensions-empty) {
+    margin: 12px 0;
+    color: var(--neco-muted);
+}
+body.neconyan #user-settings-block-content {
+    min-width: 0;
+    overflow-x: hidden;
+}
+body.neconyan #user-settings-block-content > :is([name='UserSettingsFirstColumn'], [name='UserSettingsSecondColumn'], [name='UserSettingsThirdColumn']) {
+    display: contents !important;
+}
+body.neconyan .sb-settings-layout .inline-drawer[data-settings-tab] {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+body.neconyan .sb-settings-layout .inline-drawer[data-settings-tab][hidden],
+body.neconyan .sb-extensions-layout [hidden],
+body.neconyan :is(#extensions_settings, #extensions_settings2) > [hidden] {
+    display: none !important;
+}
+body.neconyan .sb-extensions-master {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+body.neconyan .sb-extensions-master > h3 {
+    margin: 0;
+    color: var(--neco-ink);
+    font-size: 17px;
+    font-weight: 600;
+}
+body.neconyan .sb-extensions-search {
+    min-width: 0;
+    min-height: 44px;
+    width: 100%;
+}
+body.neconyan .sb-extensions-list {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    max-height: calc(100dvh - var(--sb-topbar-layout-offset) - 120px);
+    overflow-y: auto;
+}
+body.neconyan .sb-extension-master-item {
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--neco-muted);
+}
+body.neconyan .sb-extension-master-item:hover {
+    color: var(--neco-ink);
+    background: var(--neco-raised);
+}
+body.neconyan .sb-extension-detail {
+    min-width: 0;
+    overflow-x: hidden;
+}
+body.neconyan .sb-extension-detail > :is(#extensions_settings, #extensions_settings2) {
+    display: contents !important;
+}
+body.neconyan .sb-extension-detail .extension_container,
+body.neconyan .sb-extension-detail .extension_block,
+body.neconyan .sb-extension-detail .inline-drawer {
+    min-width: 0;
+    max-width: 100%;
+}
+body.neconyan .sb-extension-detail .extension_block {
+    margin-bottom: 8px;
+    padding-inline: 0;
+    border: 0;
+    border-bottom: 1px solid var(--neco-border);
+    border-radius: 0;
+    background: transparent;
+}
+body.neconyan .sb-extension-detail .extension_text_block {
+    min-width: 0;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+body.neconyan .sb-extension-detail :is(.extension_name, .extension_version, .extension_author) {
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+body.neconyan .sb-extension-detail :is(input, textarea, select, button) {
+    max-width: 100%;
+}
+body.neconyan .sb-extensions-scope {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+}
+body.neconyan .sb-extensions-scope-button {
+    min-height: 36px;
+    padding: 7px 9px;
+    border: 1px solid var(--neco-border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--neco-muted);
+    font: inherit;
+    cursor: pointer;
+}
+body.neconyan .sb-extensions-scope-button[aria-pressed='true'],
+body.neconyan .sb-extensions-scope-button:hover,
+body.neconyan .sb-extensions-scope-button:focus-visible {
+    border-color: var(--neco-ginger);
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+}
+body.neconyan #rm_extensions_block .extensions_block {
+    display: grid;
+    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+    gap: 20px;
+}
+body.neconyan #rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p {
+    grid-column: 1 / -1;
+}
+body.neconyan #rm_extensions_block .extensions_block > .sb-extensions-layout,
+body.neconyan #rm_extensions_block .extensions_block > .sb-extensions-layout > .sb-extension-detail,
+body.neconyan #rm_extensions_block .extensions_block > :is(#extensions_settings, #extensions_settings2) {
+    display: contents !important;
+}
+body.neconyan #rm_extensions_block .extensions_block > .sb-extensions-layout > .sb-extensions-master {
+    grid-column: 1;
+    grid-row: 2;
+}
+body.neconyan #rm_extensions_block .extensions_block > :is(#extensions_settings, #extensions_settings2) > .extension_container {
+    grid-column: 2;
+    min-width: 0;
+}
+
+@media (max-width: 768px) {
+    body.neconyan .sb-settings-layout,
+    body.neconyan .sb-extensions-layout {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+    }
+    body.neconyan :is(.sb-settings-nav-column, .sb-extensions-master) {
+        position: static;
+        width: 100%;
+    }
+    /* Phones: settings categories are labelled tabs in one scrolling row (one tap, no dropdown).
+       Extensions list every panel on the page instead, so neither the master list nor the
+       picker dropdown is needed. */
+    body.neconyan .sb-extensions-list,
+    body.neconyan .sb-settings-category-select,
+    body.neconyan .sb-extensions-select,
+    body.neconyan .sb-extension-mobile-pin {
+        display: none !important;
+    }
+    body.neconyan .sb-settings-tabs-nav {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 4px;
+        margin: 0;
+        padding: 0 0 4px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+    }
+    body.neconyan .sb-settings-tabs-nav::-webkit-scrollbar { display: none; }
+    body.neconyan .sb-settings-tabs-nav .sb-settings-tab-btn {
+        width: auto;
+        flex: 0 0 auto;
+        justify-content: center;
+        padding: 0 12px;
+        white-space: nowrap;
+    }
+    body.neconyan .sb-settings-search {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 6px;
+    }
+    body.neconyan .sb-settings-search-label {
+        display: block;
+    }
+    body.neconyan .sb-settings-detail,
+    body.neconyan .sb-extension-detail {
+        width: 100%;
+    }
+    body.neconyan #rm_extensions_block .extensions_block {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+    }
+    body.neconyan #rm_extensions_block .extensions_block > .sb-extensions-layout > .sb-extensions-master {
+        width: 100%;
+    }
+}
+
+body.neconyan #rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p {
+    display: grid;
+    grid-template-areas: "notify notify" "manage install";
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 18px;
+}
+body.neconyan #rm_extensions_block .extensions_block > .flex-container > h3 { display: none; }
+body.neconyan #rm_extensions_block .extensions_block > .flex-container > label { grid-column: 1 / -1; }
+body.neconyan #rm_extensions_block :is(#extensions_details, #third_party_extension_button) {
+    min-width: 0;
+    width: 100%;
+    min-height: 44px;
+    white-space: normal;
+    text-align: left;
+}
+@media (min-width: 769px) and (max-width: 1100px) {
+    body.neconyan .sb-settings-layout,
+    body.neconyan .sb-extensions-layout {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 14px;
+    }
+    body.neconyan :is(.sb-settings-nav-column, .sb-extensions-master) {
+        position: static;
+        width: 100%;
+    }
+    body.neconyan .sb-settings-tabs-nav,
+    body.neconyan .sb-extensions-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 4px;
+    }
+    body.neconyan .sb-settings-tab-btn,
+    body.neconyan .sb-extension-master-item {
+        width: auto;
+    }
+    body.neconyan #rm_extensions_block .extensions_block {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    body.neconyan #rm_extensions_block .extensions_block > :is(#extensions_settings, #extensions_settings2) > .extension_container {
+        grid-column: 1;
+    }
+}
+body.neconyan .sb-settings-search #settingsSearch {
+    height: 44px !important;
+    min-height: 44px !important;
+    max-height: 44px !important;
+    box-sizing: border-box;
+    resize: none;
+    overflow-y: hidden;
+}
+
+/* Characters and Groups use the same readable list surface. */
+body.neconyan #right-nav-panel #CharListButtonAndHotSwaps[hidden] { display: none !important; }
+body.neconyan #right-nav-panel #CharListButtonAndHotSwaps.has-favorites {
+    min-height: 48px;
+    max-height: 64px;
+    padding-block: 6px;
+}
+body.neconyan #right-nav-panel #CharListButtonAndHotSwaps.has-favorites #HotSwapWrapper {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 8px;
+}
+body.neconyan #right-nav-panel #CharListButtonAndHotSwaps.has-favorites .sb-character-favorites-label::before,
+body.neconyan #right-nav-panel #CharListButtonAndHotSwaps.has-favorites .sb-character-favorites-label::after { display: none; }
+body.neconyan #right-nav-panel .sb-character-library-primary-actions,
+body.neconyan #right-nav-panel .sb-character-library-secondary-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+body.neconyan #right-nav-panel .sb-character-library-primary-actions {
+    padding: 0 0 10px;
+    border-bottom: 1px solid var(--neco-border);
+}
+body.neconyan #right-nav-panel .sb-character-library-secondary-actions { padding-top: 10px; }
+body.neconyan #right-nav-panel .sb-character-library-primary-actions > :is(#rm_button_create, #character_import_button, #rm_button_group_chats) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    width: auto;
+    min-width: 0;
+    min-height: 44px;
+    padding: var(--neconyan-cat-padding, 8px 12px) !important;
+    aspect-ratio: auto;
+    white-space: nowrap;
+}
+body.neconyan #right-nav-panel .sb-character-library-primary-actions > :is(#rm_button_create, #character_import_button, #rm_button_group_chats)[hidden] { display: none !important; }
+body.neconyan #right-nav-panel .sb-character-library-primary-actions > :is(#rm_button_create, #character_import_button, #rm_button_group_chats)::before { margin: 0; }
+body.neconyan #right-nav-panel .sb-character-library-primary-actions > :is(#rm_button_create, #character_import_button, #rm_button_group_chats) > span { display: inline; font-family: var(--mainFontFamily); font-size: 12px; font-weight: 500; }
+body.neconyan #right-nav-panel .sb-character-library-primary-actions > #character_import_button {
+    position: relative !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: auto !important;
+    min-height: 44px !important;
+    margin: 0 !important;
+    padding: var(--neconyan-cat-padding, 8px 12px) !important;
+    overflow: visible !important;
+    clip: auto !important;
+    clip-path: none !important;
+    white-space: nowrap !important;
+    border: 1px solid transparent !important;
+}
+body.neconyan #right-nav-panel .sb-character-library-secondary-actions #rm_button_bar {
+    display: flex;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+body.neconyan #right-nav-panel .sb-character-library-secondary-actions #rm_button_bar > #external_import_button { display: none; }
+body.neconyan #right-nav-panel .sb-character-library-secondary-actions #character_sort_order {
+    flex: 0 1 180px;
+    min-height: 44px;
+    width: auto;
+}
+body.neconyan #right-nav-panel .sb-character-library-secondary-actions #rm_button_search { display: none; }
+body.neconyan #right-nav-panel #form_character_search_form {
+    display: block !important;
+    width: 100%;
+    margin-top: 10px;
+}
+body.neconyan #right-nav-panel #character_search_bar { width: 100%; min-height: 44px; }
+body.neconyan #right-nav-panel #rm_print_characters_pagination {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 0;
+    padding: 0;
+}
+body.neconyan #right-nav-panel #rm_print_characters_pagination > .paginationjs[hidden] { display: none !important; }
+body.neconyan #right-nav-panel #rm_print_characters_block {
+    min-width: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 0;
+}
+body.neconyan #right-nav-panel #rm_characters_block {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+body.neconyan #right-nav-panel #neconyan-character-library {
+    flex: 0 0 auto;
+    min-width: 0;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--neco-surface);
+}
+body.neconyan #right-nav-panel #rm_characters_block > #rm_print_characters_block {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+body.neconyan #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) {
+    position: relative;
+    align-items: flex-start;
+    min-width: 0;
+    margin: 0 0 6px;
+    padding: 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-surface);
+}
+body.neconyan #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select):hover,
+body.neconyan #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select).is-active-entity {
+    border-color: var(--neco-border);
+    background: var(--neco-raised);
+}
+body.neconyan #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) > .avatar {
+    flex: 0 0 48px;
+    width: 48px !important;
+    min-width: 48px !important;
+    height: 48px !important;
+    min-height: 48px !important;
+    margin-right: 10px;
+}
+body.neconyan #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) > .avatar img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover;
+}
+body.neconyan #right-nav-panel #rm_print_characters_block .character_select_container,
+body.neconyan #right-nav-panel #rm_print_characters_block .group_select_container {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+    min-width: 0;
+}
+body.neconyan #right-nav-panel #rm_print_characters_block .character_name_block { display: flex; flex-flow: row wrap; align-items: baseline; gap: 4px 8px; min-width: 0; margin: 0; }
+body.neconyan #right-nav-panel #rm_print_characters_block .ch_name { min-width: 0; color: var(--neco-ink); }
+body.neconyan #right-nav-panel #rm_print_characters_block .ch_description,
+body.neconyan #right-nav-panel #rm_print_characters_block .group_select_block_list {
+    margin: 0;
+    color: var(--neco-muted);
+    font-size: 12px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    /* Creator's notes preview: two lines, then an ellipsis. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+}
+body.neconyan #right-nav-panel #rm_print_characters_block .ch_creator { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.neconyan #right-nav-panel #rm_print_characters_block .sb-entity-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    color: var(--neco-muted);
+    font-size: 11px;
+}
+body.neconyan #right-nav-panel #rm_print_characters_block .ch_current_chat,
+body.neconyan #right-nav-panel #rm_print_characters_block .group_current_chat { color: var(--neco-ginger); }
+body.neconyan #right-nav-panel #rm_print_characters_block .sb-entity-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+}
+body.neconyan #right-nav-panel #rm_print_characters_block .sb-entity-action {
+    min-height: 44px;
+    padding: 8px 10px;
+    white-space: nowrap;
+}
+body.neconyan #right-nav-panel .sb-entity-empty {
+    display: grid;
+    justify-items: start;
+    gap: 10px;
+    margin: 12px 0;
+    padding: 24px 12px;
+    color: var(--neco-muted);
+    text-align: left;
+    opacity: 1;
+}
+body.neconyan #right-nav-panel .sb-entity-empty-illustration {
+    width: min(180px, 100%);
+    max-height: 152px;
+    object-fit: contain;
+    object-position: left center;
+}
+body.neconyan #right-nav-panel .sb-entity-empty h2,
+body.neconyan #right-nav-panel .sb-entity-empty p { margin: 0; }
+body.neconyan #right-nav-panel .sb-entity-empty h2 { color: var(--neco-ink); font-size: 18px; }
+body.neconyan #right-nav-panel .sb-entity-empty-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+body.neconyan #right-nav-panel .sb-entity-empty-actions .menu_button { min-height: 44px; }
+
+/* Character editor field ownership stays in the existing form and IDs. */
+body.neconyan #right-nav-panel .sb-character-editor-panel { gap: 14px; }
+body.neconyan #right-nav-panel .sb-character-editor-panel > :is(#descriptionWrapper, #personality_div, #scenario_div, #depth_prompt_div, #talkativeness_div, #mes_example_div) { min-width: 0; }
+body.neconyan #right-nav-panel .sb-character-editor-advanced-tools {
+    display: grid;
+    gap: 10px;
+    margin-top: 8px;
+    padding-top: 14px;
+    border-top: 1px solid var(--neco-border);
+}
+body.neconyan #right-nav-panel .sb-character-editor-advanced-tools > h3 { margin: 0; color: var(--neco-muted); font-size: 12px; font-weight: 500; }
+body.neconyan #right-nav-panel .sb-character-editor-advanced-tools #character-editor-pinned-actions { display: flex !important; min-width: 0; }
+body.neconyan #right-nav-panel .sb-character-editor-advanced-tools .char-button-group-icons {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+body.neconyan #right-nav-panel .sb-character-editor-advanced-tools .char-button-group-icons .menu_button { min-height: 44px; width: auto; padding: 8px 10px !important; }
+body.neconyan #right-nav-panel .sb-character-editor-advanced-tools #tags_div { min-width: 0; }
+body.neconyan #right-nav-panel .sb-editor-field-label { display: block; margin-bottom: 4px; color: var(--neco-muted); font-size: 12px; }
+body.neconyan #right-nav-panel .sb-character-commit-bar,
+body.neconyan #right-nav-panel .sb-group-commit-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+    margin-top: 12px;
+    padding: 12px;
+    border-top: 1px solid var(--neco-border);
+    background: var(--neco-rail);
+}
+/* Keep the commit bar on the panel floor while the editor body scrolls above it. */
+body.neconyan #right-nav-panel #form_create { overflow: hidden; }
+body.neconyan #right-nav-panel .sb-character-editor-subtab-panels {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+body.neconyan #right-nav-panel .sb-character-editor-panel { flex: 0 0 auto; }
+body.neconyan #right-nav-panel #sb_character_commit_bar {
+    flex: 0 0 auto;
+    position: -webkit-sticky;
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+}
+body.neconyan #right-nav-panel.openDrawer.sb-character-editor-fullscreen:is([data-menu-type="character_edit"], [data-menu-type="create"]) #form_create { overflow: hidden; }
+body.neconyan #right-nav-panel.openDrawer.sb-character-editor-fullscreen:is([data-menu-type="character_edit"], [data-menu-type="create"]) .sb-character-editor-subtab-panels {
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+body.neconyan #right-nav-panel .sb-character-commit-copy,
+body.neconyan #right-nav-panel .sb-group-commit-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+body.neconyan #right-nav-panel :is(.sb-character-commit-copy strong, .sb-group-commit-copy strong) { color: var(--neco-ink); font-size: 12px; }
+body.neconyan #right-nav-panel :is(#sb_character_save_status, #sb_group_save_status) { color: var(--neco-muted); font-size: 12px; }
+body.neconyan #right-nav-panel :is(#sb_character_save_status[data-save-status='error'], #sb_group_save_status[data-save-status='error']) { color: var(--neco-ginger); }
+body.neconyan #right-nav-panel :is(.sb-character-commit-actions, .sb-group-commit-actions) { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+body.neconyan #right-nav-panel :is(.sb-character-commit-actions, .sb-group-commit-actions) > :is(.menu_button, label) { min-height: 44px; padding: 8px 12px; }
+body.neconyan #right-nav-panel .sb-character-commit-actions label > span,
+body.neconyan #right-nav-panel .sb-character-commit-actions button > span { font-family: var(--mainFontFamily); font-size: 12px; font-weight: 500; }
+body.neconyan #right-nav-panel .sb-group-members-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; }
+body.neconyan #right-nav-panel .sb-group-members-grid > .inline-drawer { min-width: 0; }
+body.neconyan #right-nav-panel .sb-group-members-grid .inline-drawer-content { min-width: 0; }
+body.neconyan #right-nav-panel .sb-group-empty { padding: 14px 4px; color: var(--neco-muted); }
+body.neconyan #right-nav-panel :is(#rm_group_members_pagination, #rm_group_add_members_pagination)[hidden] { display: none !important; }
+body.neconyan #right-nav-panel #rm_group_chats_block .inline-drawer-header { min-height: 44px; }
+body.neconyan #right-nav-panel #rm_group_chats_block :is(#rm_group_submit, #sb_group_cancel, #rm_group_delete, #rm_group_scenario, #group_favorite_button, #rm_group_restore_avatar) { min-height: 44px; }
+body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_submit { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: auto; min-width: 10rem; }
+body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_submit::after { content: none; }
+body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_submit > span { font-family: var(--mainFontFamily); font-size: 12px; font-weight: 500; }
+body.neconyan #right-nav-panel #rm_group_chats_block .group_member { grid-template-columns: 44px minmax(0, 1fr); gap: 8px; }
+body.neconyan #right-nav-panel #rm_group_chats_block .group_member :is(.avatar, .avatar img) { width: 44px; height: 44px; }
+body.neconyan #right-nav-panel #rm_group_chats_block .group_member > :is(.group_member_model, .queue_position, .group_member_icon) { grid-column: 1 / -1; }
+body.neconyan #right-nav-panel #rm_group_chats_block .group_member_model { display: block; }
+body.neconyan #right-nav-panel #rm_group_chats_block .queue_position { display: block; }
+body.neconyan #right-nav-panel #rm_group_chats_block .queue_position:empty { display: none; }
+body.neconyan #right-nav-panel #rm_group_chats_block .group_member_icon { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 4px; width: auto; min-width: 0; max-width: none; }
+body.neconyan #right-nav-panel #rm_group_chats_block .group_member_icon [data-action] { align-items: center; justify-content: center; gap: 6px; width: auto; height: auto; min-width: 44px; min-height: 44px; padding: 8px; opacity: 1; filter: none; }
+body.neconyan #right-nav-panel #rm_group_chats_block .group_member_icon [data-action] > span { font-family: var(--mainFontFamily); font-size: 12px; font-weight: 500; line-height: 1.3; }
+body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar,
+body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar img { width: 64px !important; min-width: 64px !important; max-width: 64px !important; height: 64px !important; min-height: 64px !important; max-height: 64px !important; }
+
+@media (max-width: 768px) {
+    body.neconyan #right-nav-panel .sb-character-library-primary-actions { gap: 6px; }
+    body.neconyan #right-nav-panel .sb-character-library-primary-actions > :is(#rm_button_create, #character_import_button, #rm_button_group_chats) { flex: 1 1 auto; justify-content: center; }
+    body.neconyan #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) { padding: 8px; }
+    body.neconyan #right-nav-panel .sb-entity-action { flex: 1 1 10rem; justify-content: center; }
+    body.neconyan #right-nav-panel .sb-character-commit-bar,
+    body.neconyan #right-nav-panel .sb-group-commit-bar { align-items: stretch; flex-direction: column; }
+    body.neconyan #right-nav-panel :is(.sb-character-commit-actions, .sb-group-commit-actions) { justify-content: stretch; }
+    body.neconyan #right-nav-panel :is(.sb-character-commit-actions, .sb-group-commit-actions) > :is(.menu_button, label) { flex: 1 1 0; justify-content: center; text-align: center; }
+    body.neconyan #right-nav-panel .sb-character-commit-actions .neconyan-whiskers { display: none; }
+    body.neconyan #right-nav-panel .sb-character-commit-actions .neconyan-cat-control { padding: 8px 12px !important; }
+    body.neconyan #right-nav-panel .sb-group-members-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Keep the fork's side navigators aligned with the shell's readable workspace column. */
+@media (min-width: 769px) {
+    :root[data-sb-desktop-nav-layout='vertical'] body.neconyan .sb-shell-root.openDrawer .sb-shell-nav-wrapper {
+        width: 100%;
+        min-width: 0;
+        flex-basis: auto;
+    }
+
+    :root[data-sb-desktop-nav-layout='vertical'] body.neconyan .sb-shell-root.openDrawer .sb-shell-nav > .sb-shell-tab {
+        flex-direction: row;
+        justify-content: flex-start;
+        width: 100%;
+        min-height: 44px;
+        gap: 10px;
+        text-align: left;
+    }
+
+    :root[data-sb-desktop-nav-layout='vertical'] body.neconyan .sb-shell-root.openDrawer .sb-shell-tab-copy {
+        display: flex;
+        flex: 1;
+        align-items: flex-start;
+        text-align: left;
+    }
+
+    :root[data-sb-desktop-nav-layout='vertical'] body.neconyan .sb-shell-root.openDrawer .sb-shell-tab i {
+        width: 18px;
+        flex: 0 0 18px;
+    }
+
+    :root[data-sb-desktop-nav-layout='vertical'] body.neconyan .sb-shell-root.openDrawer .sb-shell-tab-copy strong {
+        font-size: 13px;
+        line-height: 1.3;
+    }
+
+    body.neconyan .sb-settings-layout {
+        grid-template-columns: var(--neco-workspace-nav-width) minmax(0, 1fr);
+        align-items: stretch;
+    }
+
+    body.neconyan .sb-settings-nav-column {
+        align-self: stretch;
+        min-width: 0;
+    }
+
+    body.neconyan .sb-settings-tab-btn {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        justify-content: flex-start;
+        text-align: left;
+    }
+
+    body.neconyan .sb-settings-tab-btn > i {
+        width: 16px;
+        flex: 0 0 16px;
+        text-align: center;
+    }
+}
+
+/* Keep the title and close control in a real mobile header row above navigation (settings shells).
+   The Characters sheet header is reduced to its close button in the phone block above. */
+@media (max-width: 768px) {
+    body.neconyan .sb-shell-root.openDrawer .sb-shell-header {
+        box-sizing: border-box;
+        display: flex;
+        flex: 0 0 52px;
+        align-items: center;
+        min-height: 52px !important;
+        height: 52px;
+        padding: 4px 56px 4px 12px !important;
+        position: relative;
+    }
+
+    body.neconyan .sb-shell-root.openDrawer .sb-shell-header .sb-shell-close {
+        position: absolute;
+        top: 50% !important;
+        margin: 0 !important;
+        box-sizing: border-box;
+        right: 4px !important;
+        width: 44px !important;
+        min-width: 44px !important;
+        height: 44px !important;
+        min-height: 44px !important;
+        transform: translateY(-50%);
+    }
+
+    body.neconyan .sb-shell-root.openDrawer .sb-shell-header .sb-shell-close:hover {
+        transform: translateY(calc(-50% - 1px));
+    }
+
+    body.neconyan #right-nav-panel.openDrawer > .sb-character-shell-header .sb-shell-close {
+        position: static;
+        box-sizing: border-box;
+        width: 44px !important;
+        min-width: 44px !important;
+        height: 44px !important;
+        min-height: 44px !important;
+        margin: 0 !important;
+        transform: none;
+    }
+}
+
+/* Mode controls live in Workspace navigation; these nodes remain as compatibility hooks. */
+body.neconyan #right-nav-panel .sb-character-shell-header #sb_character_mode_toggle,
+body.neconyan #right-nav-panel .sb-character-shell-header :is(.sbtw-launch, #sbstory-mode-button) {
+    display: none !important;
+}
+
+/* Native writing and social modes share the character workspace header. */
+body.neconyan #right-nav-panel.openDrawer > .sb-character-shell-header:has(#sbstory-mode-button, .sbtw-launch) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    height: auto;
+    min-height: 64px;
+    padding: 10px 58px 10px 14px;
+}
+body.neconyan #right-nav-panel .sb-character-shell-header #sb_character_mode_toggle {
+    position: static;
+    inset: auto;
+    transform: none;
+    margin: 0;
+    padding: 0;
+    width: auto;
+}
+body.neconyan #right-nav-panel .sb-character-shell-header :is(.sbtw-launch, #sbstory-mode-button) {
+    position: static;
+    inset: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: auto;
+    min-width: 84px;
+    min-height: 44px;
+    margin: 0;
+    padding: 8px 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 14px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    transform: none;
+}
+body.neconyan #right-nav-panel .sb-character-shell-header :is(.sbtw-launch, #sbstory-mode-button) > span { display: inline; }
+body.neconyan #right-nav-panel .sb-character-shell-header :is(.sbtw-launch, #sbstory-mode-button)[aria-pressed='true'] { background: var(--neco-raised); border-color: var(--neco-ginger); }
+body.neconyan #sbstory-mode-button:disabled { opacity: .55; cursor: default; }
+body.neconyan :is(.sbtw-shell, .sbtw-drawer) {
+    --sbtw-surface: var(--neco-canvas);
+    --sbtw-raised: var(--neco-surface);
+    --sbtw-nav-surface: var(--neco-surface);
+    --sbtw-text: var(--neco-ink);
+    --sbtw-muted: var(--neco-muted);
+    --sbtw-accent: var(--neco-ginger);
+    --sbtw-radius-button: 14px;
+}
+
+/* Native social workspace shares the shell's sidebar bounds and cat artwork. */
+body.neconyan .sbtw-shell { background: var(--neco-canvas-gradient, var(--neco-canvas)); }
+body.neconyan #sheld[data-sbtw-mode='on'] { left: var(--neco-sidebar-offset) !important; }
+body.neconyan .sbtw-shell .sbtw-composer {
+    padding: 14px;
+    margin-block: 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 18px;
+    background: var(--neco-surface);
+}
+body.neconyan .sbtw-empty-art {
+    display: block;
+    width: 150px;
+    height: 112px;
+    object-fit: contain;
+    margin: 0 auto 12px;
+}
+@media (max-width: 620px) {
+    body.neconyan .sbtw-shell .sbtw-nav { gap: 2px; }
+    body.neconyan .sbtw-shell .sbtw-nav-item {
+        flex-direction: column;
+        gap: 3px;
+        min-width: 0;
+        min-height: 48px;
+        padding: 6px 3px;
+    }
+    body.neconyan .sbtw-shell .sbtw-nav-item .sbtw-nav-label { display: block; font-size: 11px; }
+}
+
+@media (max-width: 620px) {
+    body.neconyan .sbtw-shell .sbtw-session-bar { flex-wrap: wrap; padding-inline: 0; }
+    body.neconyan .sbtw-shell .sbtw-session-select { flex-basis: 100%; }
+    body.neconyan .sbtw-shell :is(.sbtw-session-bar, .sbtw-composer-bar) .sbtw-btn:has(> i) span { display: inline; }
+    body.neconyan .sbtw-shell .sbtw-composer-bar { flex-wrap: wrap; }
+    body.neconyan .sbtw-shell .sbtw-composer-bar .sbtw-spacer { display: none; }
+    body.neconyan .sbtw-shell .sbtw-save-status {
+        flex: 1 1 80px;
+        min-width: 64px;
+        max-width: 100%;
+        white-space: normal;
+        overflow: visible;
+        overflow-wrap: anywhere;
+        text-overflow: clip;
+    }
+    body.neconyan .sbtw-shell .sbtw-btn { min-height: 44px; }
+    body.neconyan .sbtw-shell .sbtw-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    body.neconyan .sbtw-shell .sbtw-tab { padding-inline: 4px; font-size: 13px; }
+    body.neconyan .sbtw-shell .sbtw-tab-search { grid-column: 1 / -1; justify-self: end; padding-inline: 12px; }
+}
+
+body.neconyan .sbtw-shell .sbtw-tab-search { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+@media (max-width: 620px) {
+    body.neconyan #rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p {
+        grid-template-areas: "notify" "manage" "install";
+        grid-template-columns: minmax(0, 1fr);
+    }
+    body.neconyan #rm_extensions_block :is(#extensions_details, #third_party_extension_button) > span {
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+    }
+}
+
+
+/* Conversation keeps names readable and actions labelled across both themes. */
+body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_header {
+    display: grid;
+    grid-template-columns: auto 44px minmax(0, 1fr) auto;
+    grid-template-areas: "pals avatar copy actions";
+    align-items: center;
+    cursor: default;
+}
+body.neconyan #sb_conversation_pals_toggle { grid-area: pals; }
+body.neconyan .sb-conversation-header-avatar { grid-area: avatar; }
+body.neconyan .sb-conversation-header-copy { grid-area: copy; }
+body.neconyan .sb-conversation-header-actions { grid-area: actions; }
+body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_header :is(#sb_conversation_pals_toggle, .sb-conversation-header-actions .menu_button_icon) {
+    display: inline-flex;
+    width: auto !important; inline-size: auto !important;
+    height: auto !important; block-size: auto !important;
+    min-width: 0 !important; min-inline-size: 0 !important;
+    min-height: 44px !important; min-block-size: 44px !important;
+    max-width: none !important; max-inline-size: none !important;
+    max-height: none !important; max-block-size: none !important;
+    flex: 0 1 auto; aspect-ratio: auto;
+    padding: 8px 10px; gap: 6px;
+}
+body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_header :is(#sb_conversation_pals_toggle, .sb-conversation-header-actions .menu_button_icon) > span:not([hidden]) { display: inline; }
+body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_send {
+    width: auto !important; inline-size: auto !important; min-width: 80px !important; min-inline-size: 80px !important;
+    max-width: none !important; max-inline-size: none !important; flex: 0 0 auto; aspect-ratio: auto; padding-inline: 12px;
+}
+body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_send span { display: inline; }
+body.neconyan #sheld[data-sb-conversation-mode='on'] :is(#sb_conversation_settings_drawer, .sb-conversation-thread-empty) { background: var(--neco-canvas); box-shadow: none; }
+body.neconyan #sheld[data-sb-conversation-mode='on'] .sb-conversation-settings-detail { background: var(--neco-surface); }
+body.neconyan #sheld[data-sb-conversation-mode='on'] .sb-conversation-composer-actions { flex-wrap: wrap; }
+body.neconyan #sheld[data-sb-conversation-mode='on'] :is(#sb_conversation_toggle_tools, #sb_conversation_attach) { width: auto !important; inline-size: auto !important; max-width: none !important; max-inline-size: none !important; flex: 0 1 auto; padding-inline: 10px; gap: 6px; }
+body.neconyan #sheld[data-sb-conversation-mode='on'] :is(#sb_conversation_toggle_tools, #sb_conversation_attach) span { display: inline; }
+/* Message actions read as three dots on the name row at the bubble's right. */
+body.neconyan #sheld[data-sb-conversation-mode='on'] .sb-conversation-more-actions {
+    display: flex; align-items: center; justify-content: center;
+    inline-size: 44px; block-size: 44px; min-inline-size: 44px; min-height: 44px;
+    margin: -14px 0 -14px auto; padding: 0; gap: 0;
+    border: 0; border-radius: 999px; background: transparent;
+    color: var(--neco-muted); opacity: .75; font-size: 14px;
+}
+body.neconyan #sheld[data-sb-conversation-mode='on'] .sb-conversation-more-actions > span { display: none; }
+body.neconyan #sheld[data-sb-conversation-mode='on'] .sb-conversation-more-actions:is(:hover, :focus-visible, [aria-expanded='true']) {
+    background: var(--neco-raised); color: var(--neco-ink); opacity: 1;
+}
+@media (max-width: 1000px) {
+    body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_header {
+        grid-template-columns: 64px minmax(0, 1fr);
+        grid-template-areas: "avatar copy" "pals actions";
+        gap: 10px 8px;
+        padding: 10px;
+    }
+    body.neconyan .sb-conversation-header-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+    body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_header :is(#sb_conversation_pals_toggle, .sb-conversation-header-actions .menu_button_icon) { flex-direction: column; padding: 6px 3px; font-size: 11px; min-height: 52px !important; }
+    body.neconyan .sb-conversation-header-name { white-space: normal; overflow-wrap: anywhere; }
+    body.neconyan .sb-conversation-header-status { white-space: normal; font-size: 12px; }
+}
+@media (max-width: 360px) {
+    body.neconyan.neconyan-conversation-active:not(.neconyan-home-visible):not(:has(.sb-shell-root.openDrawer, #right-nav-panel.openDrawer)) .sb-topbar-brand { display: none !important; }
+}
+
+body.neconyan #sheld[data-sb-conversation-mode='on'] .sb-conversation-composer-actions :is(#sb_conversation_toggle_tools, #sb_conversation_attach, #sb_conversation_send) {
+    width: auto !important; inline-size: auto !important;
+    min-width: 0 !important; min-inline-size: 0 !important;
+    max-width: none !important; max-inline-size: none !important;
+    min-height: 44px !important; min-block-size: 44px !important;
+    flex: 0 1 auto !important; padding-inline: 10px !important;
+}
+body.neconyan #sheld[data-sb-conversation-mode='on'] .sb-conversation-composer-actions :is(#sb_conversation_toggle_tools, #sb_conversation_attach, #sb_conversation_send) > span {
+    display: inline !important; white-space: normal; font-size: 13px;
+}
+body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_header .sb-conversation-header-actions .menu_button_icon > span {
+    white-space: normal; max-width: 100%; font-size: 12px; line-height: 1.25;
+}
+
+body.neconyan #sheld[data-sb-conversation-mode='on'] .sb-conversation-composer-actions :is(#sb_conversation_toggle_tools, #sb_conversation_attach, #sb_conversation_send) { aspect-ratio: auto !important; }
+body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_header .sb-conversation-header-kicker { display: block; font-size: 11px; }
+body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_header .sb-conversation-header-status { display: block; white-space: normal; }
+
+body.neconyan #sheld[data-sb-conversation-mode='on'] :is(.sb-conversation-composer, .sb-conversation-tools, #sb_conversation_pals_rail) {
+    background: var(--neco-surface) !important;
+    color: var(--neco-ink);
+}
+body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_stage { background: var(--neco-canvas-gradient, var(--neco-canvas)); }
+body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_input::placeholder,
+body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_search::placeholder { color: var(--neco-muted); opacity: 1; }
+body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_rail :is(.sb-conversation-empty, .sb-conversation-rail-kicker, .sb-conversation-pal-preview, .sb-conversation-pal-kind) { color: var(--neco-muted); }
+body.neconyan .sb-conversation-settings-detail .checkbox_label > span { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+body.neconyan .sb-conversation-settings-detail .checkbox_label { min-width: 0; }
+
+@media (max-width: 620px) {
+    body.neconyan .sb-conversation-settings-detail .sb-conversation-notification-grid { grid-template-columns: minmax(0, 1fr) !important; }
+    body.neconyan .sb-conversation-settings-detail .sb-conversation-notification-grid .sb-conversation-field-stack:has(> select) { flex-direction: column; align-items: stretch; }
+}
+@media (pointer: coarse), (max-width: 1000px) {
+    body.neconyan #sheld[data-sb-conversation-mode='on'] :is(#sb_conversation_header, #sb_conversation_stage, #sb_conversation_pals_rail, #sb_conversation_settings_drawer) :is(button, [role='button'], select, textarea, input:not([type='checkbox']):not([type='radio']):not([type='hidden']), .checkbox_label, .sb-conversation-persona-note-option, .sb-conversation-group-member-option, .sb-conversation-file-attachment) {
+        min-height: 44px !important;
+        min-block-size: 44px !important;
+    }
+    body.neconyan #sheld[data-sb-conversation-mode='on'] :is(.sb-conversation-participant-avatar.is-interactive, .sb-conversation-message-avatar[data-sb-conversation-action='zoom-avatar'], .sb-conversation-rail-footer-avatar) {
+        min-width: 44px !important;
+        min-inline-size: 44px !important;
+        width: 44px !important;
+        height: 44px !important;
+        inline-size: 44px !important;
+        block-size: 44px !important;
+    }
+}
+
+body.neconyan #sheld[data-sb-conversation-mode='on'] .sb-conversation-thread-empty { align-items: center; }
+body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_rail .sb-conversation-rail-header { flex-direction: column; align-items: stretch; gap: 10px; }
+body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_rail .sb-conversation-rail-start-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_rail .sb-conversation-rail-start-actions button > span { white-space: normal; overflow: visible; text-overflow: clip; }
+body.neconyan #sb_conversation_pals_list:has(+ #sb_conversation_pals_filter_empty:not([hidden])) { display: none; }
+body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_filter_empty:not([hidden]) { flex: 1; min-height: 0; overflow-y: auto; justify-content: center; gap: 12px; }
+@media (max-width: 620px) {
+    body.neconyan .sb-conversation-settings-detail .sb-conversation-idle-actions { grid-template-columns: minmax(0, 1fr) !important; }
+}
+
+/* Account, server, and log panels use the flat calico surface and keep their
+   controls readable when the shell becomes a phone-sized touch target. */
+body.neconyan .neconyan-account-panel {
+    display: flex;
+    min-width: 0;
+    margin-top: 22px;
+    padding: 18px;
+    border: 1px solid var(--neco-border);
+    border-radius: var(--sb-radius-lg);
+    background: var(--neco-surface) !important;
+    color: var(--neco-ink);
+}
+body.neconyan .neconyan-account-section {
+    min-width: 0;
+    padding-top: 14px;
+    border-top: 1px solid var(--neco-border);
+}
+body.neconyan .neconyan-account-section:first-child { padding-top: 0; border-top: 0; }
+body.neconyan .neconyan-account-section h3 { margin: 0 0 10px; font-size: 13px; color: var(--neco-ink); }
+body.neconyan .neconyan-account-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+}
+body.neconyan .neconyan-account-title-row h2 { min-width: 0; overflow-wrap: anywhere; font-size: 18px; }
+body.neconyan .neconyan-account-note {
+    margin: 6px 0 0;
+    color: var(--neco-muted);
+    font-size: 12px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+body.neconyan .neconyan-account-info-grid {
+    display: grid;
+    grid-template-columns: minmax(112px, 152px) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+body.neconyan .neconyan-account-avatar-column {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+}
+body.neconyan .neconyan-account-avatar-column .avatar { align-self: center; }
+body.neconyan .neconyan-avatar-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+}
+body.neconyan .neconyan-avatar-actions .menu_button { min-width: 0; justify-content: center; }
+body.neconyan .neconyan-account-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    min-width: 0;
+    margin: 0;
+}
+body.neconyan .neconyan-account-facts > div {
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: var(--sb-radius-sm);
+    background: var(--neco-surface);
+}
+body.neconyan .neconyan-account-facts dt {
+    margin-bottom: 4px;
+    color: var(--neco-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+}
+body.neconyan .neconyan-account-facts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+body.neconyan .neconyan-account-action-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+body.neconyan .neconyan-account-action { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
+body.neconyan .neconyan-account-action .menu_button { width: 100%; min-width: 0; justify-content: center; }
+body.neconyan .neconyan-account-action small { color: var(--neco-muted); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
+body.neconyan .neconyan-account-danger { border-top-color: color-mix(in oklch, var(--neco-ginger) 42%, var(--neco-border)); }
+body.neconyan .neconyan-account-danger .warning { color: var(--neco-ginger); }
+
+body.neconyan :is(.sb-server-card, .sb-console-log-card) {
+    min-width: 0;
+    background: var(--neco-surface) !important;
+    color: var(--neco-ink);
+}
+body.neconyan .sb-server-column,
+body.neconyan .sb-console-log-column { min-width: 0; }
+body.neconyan .sb-server-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+body.neconyan .sb-server-source-details {
+    min-width: 0;
+    border-top: 1px solid var(--neco-border);
+}
+body.neconyan .sb-server-source-details summary {
+    min-height: 44px;
+    padding: 10px 0;
+    color: var(--neco-ink);
+    cursor: pointer;
+    font-weight: 500;
+}
+body.neconyan .sb-server-source-details .sb-server-grid { padding-top: 8px; }
+body.neconyan :is(.sb-server-note, .sb-server-stat, .sb-console-log-copy-status) {
+    color: var(--neco-ink);
+    background: var(--neco-surface);
+}
+body.neconyan .sb-server-note { overflow-wrap: anywhere; }
+body.neconyan :is(.sb-server-pill[data-tone], .sb-server-inline-state[data-state]) { color: var(--neco-ink); }
+body.neconyan .sb-console-log-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+body.neconyan .sb-console-log-copy-status {
+    min-height: 1.3em;
+    color: var(--neco-muted);
+    font-size: 12px;
+}
+body.neconyan .sb-console-log-output {
+    max-width: 100%;
+    min-width: 0;
+    -webkit-user-select: text;
+    user-select: text;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    overflow-x: auto;
+}
+
+@media (pointer: coarse), (max-width: 768px) {
+    body.neconyan :is(#UI-language-block label, #UI-language-block select, #account_controls button, #user-settings-utility-actions .sb-settings-utility-action, dialog.popup:has(.neconyan-account-panel) :is(button, .menu_button), .sb-server-actions .sb-server-action, .sb-console-log-actions button, .sb-server-card .checkbox_label, #user-settings-utility-actions .checkbox_label, .sb-server-source-details summary) {
+        min-height: 44px;
+    }
+    body.neconyan #UI-language-block label { display: inline-flex; align-items: center; }
+    body.neconyan #account_controls { flex-wrap: wrap; }
+    body.neconyan #account_controls button { flex: 1 1 120px; }
+    body.neconyan .neconyan-account-title-row { align-items: stretch; flex-direction: column; }
+    body.neconyan .neconyan-account-info-grid,
+    body.neconyan .neconyan-account-facts,
+    body.neconyan .neconyan-account-action-grid { grid-template-columns: minmax(0, 1fr); }
+    body.neconyan .neconyan-account-panel { padding: 14px; }
+    body.neconyan .sb-console-log-actions { grid-template-columns: minmax(0, 1fr); }
+    body.neconyan .sb-server-column > .sb-server-card { padding: 12px; gap: 8px; }
+    body.neconyan .sb-server-column > .sb-server-card:first-child .sb-admin-card-copy p { display: none; }
+    body.neconyan .sb-server-summary-grid { gap: 8px; }
+}
+
+@media (max-width: 360px) {
+    body.neconyan .neconyan-account-info-grid { gap: 10px; }
+    body.neconyan .neconyan-account-panel { padding-inline: 10px; }
+}
+
+/* Companion Agents (in-chat-agents extension): the side panel, its edge handle and the
+   dashboard rows use the Neconyan surface, border and ginger tokens instead of blurred tints.
+   The extension stylesheet loads after this one, so every selector here carries body.neconyan. */
+body.neconyan :is(.ica--settings, .ica--editor, .ica--cdash, .ica--template-browser, .popup:has(.ica--editor, .ica--cdash, .ica--template-browser)) {
+    --ica-surface: var(--neco-surface);
+    --ica-raised: var(--neco-raised);
+    --ica-soft: color-mix(in oklch, var(--neco-surface) 70%, var(--neco-canvas));
+    --ica-border: var(--neco-border);
+    --ica-muted: var(--neco-muted);
+    --ica-focus: var(--neco-ginger);
+}
+body.neconyan #ica--tracker-panel {
+    background: var(--neco-surface);
+    border-color: var(--neco-border);
+    color: var(--neco-ink);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+body.neconyan #ica--tracker-panel.is-open { box-shadow: 0 12px 28px color-mix(in oklch, var(--neco-charcoal) 42%, transparent); }
+body.neconyan #ica--tracker-panel-handle {
+    background: var(--neco-surface);
+    border-color: var(--neco-border);
+    color: var(--neco-ink);
+    opacity: 1;
+}
+body.neconyan #ica--tracker-panel-handle:hover { background: var(--neco-raised); }
+body.neconyan .ica--tpanel-title,
+body.neconyan .ica--cdash-title { color: var(--neco-ink); }
+body.neconyan .ica--tpanel-agent,
+body.neconyan .ica--cdash-row {
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: var(--neco-raised);
+}
+body.neconyan .ica--cdash-row.is-enabled { border-color: var(--neco-ginger); }
+body.neconyan .ica--cdash-count {
+    border: 1px solid color-mix(in oklch, var(--neco-ginger) 40%, var(--neco-border));
+    background: color-mix(in oklch, var(--neco-ginger) 16%, var(--neco-surface));
+    color: var(--neco-ink);
+}
+body.neconyan .ica--cdash-notice {
+    border-radius: 10px;
+    border-color: color-mix(in oklch, var(--neco-ginger) 45%, var(--neco-border));
+    background: color-mix(in oklch, var(--neco-ginger) 12%, var(--neco-surface));
+    color: var(--neco-ink);
+}
+body.neconyan .ica--cdash-toggle { opacity: 1; color: var(--neco-muted); }
+body.neconyan .ica--cdash-toggle:hover { color: var(--neco-ink); background: var(--neco-raised); }
+body.neconyan .ica--tpanel-history-entry {
+    border-radius: 8px;
+    border: 1px solid var(--neco-border);
+    background: var(--neco-surface);
+}
+
+/* Reasoning ("Thought for N seconds") wears the panel look on every viewport:
+   a quiet surface pill for the header and a bordered card with a ginger spine for the body. */
+body.neconyan #chat .mes_reasoning_details { margin: 4px 0 6px; }
+body.neconyan #chat .mes_reasoning_header {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 4px;
+    padding: 6px 30px 6px 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: var(--neco-surface);
+    background-image: none;
+    color: var(--neco-muted);
+    font-size: 12px;
+    font-weight: 500;
+}
+body.neconyan #chat .mes_reasoning_header:hover { background: var(--neco-raised); color: var(--neco-ink); }
+body.neconyan #chat .mes_reasoning_details[open] .mes_reasoning_header {
+    border-color: color-mix(in oklch, var(--neco-ginger) 35%, var(--neco-border));
+}
+body.neconyan #chat .mes_reasoning_summary > span,
+body.neconyan #chat .mes_reasoning_header > .icon-svg { color: var(--neco-muted); }
+body.neconyan #chat .mes_reasoning_details .mes_reasoning_arrow { right: 10px; color: var(--neco-ginger); }
+body.neconyan #chat .mes_reasoning {
+    margin: 0 0 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--neco-border);
+    border-left: 3px solid var(--neco-ginger);
+    border-radius: 10px;
+    background: var(--neco-surface);
+    background-image: none;
+    color: var(--neco-muted);
+}
+
+/* Toasts wear the Neconyan panel look: solid surface, ink text, one accent stripe per type
+   and a Font Awesome glyph instead of the vendor data-URI icons. */
+body.neconyan #toast-container > div {
+    position: relative;
+    padding: 10px 12px 10px 44px;
+    color: var(--neco-ink);
+    background-color: var(--neco-surface) !important;
+    background-image: none !important;
+    border: 1px solid var(--neco-border);
+    border-left: 3px solid var(--neco-ginger);
+    border-radius: 12px !important;
+    box-shadow: 0 12px 28px color-mix(in oklch, var(--neco-charcoal) 42%, transparent);
+    backdrop-filter: none;
+    opacity: 1;
+}
+body.neconyan #toast-container > div::before {
+    content: '\f05a';
+    position: absolute;
+    top: 12px;
+    left: 14px;
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    font-size: 16px;
+    line-height: 1;
+    color: var(--neco-ginger);
+}
+body.neconyan #toast-container > .toast-success { border-left-color: var(--toast-success-accent); }
+body.neconyan #toast-container > .toast-success::before { content: '\f058'; color: var(--toast-success-accent); }
+body.neconyan #toast-container > .toast-error { border-left-color: var(--toast-error-accent); }
+body.neconyan #toast-container > .toast-error::before { content: '\f057'; color: var(--toast-error-accent); }
+body.neconyan #toast-container > .toast-warning { border-left-color: var(--toast-warning-accent); }
+body.neconyan #toast-container > .toast-warning::before { content: '\f071'; color: var(--toast-warning-accent); }
+body.neconyan #toast-container .toast-title { color: var(--neco-ink); font-weight: 700; }
+body.neconyan #toast-container .toast-message { color: var(--neco-ink); }
+body.neconyan #toast-container .toast-close-button { color: var(--neco-muted); opacity: 1; }
+body.neconyan #toast-container .toast-close-button:hover { color: var(--neco-ink); }
+body.neconyan #toast-container .toast-message .menu_button {
+    margin-top: 8px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+}
+body.neconyan #toast-container > div.neconyan-undo-toast::before { display: none; }
+
+/* Message deletion Undo stays compact, keyboard-visible, and usable on touch. */
+body.neconyan #toast-container .neconyan-undo-toast {
+    width: min(480px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+    padding: 10px 12px;
+    background: var(--neco-surface);
+    background-image: none !important;
+    color: var(--neco-ink);
+    border: 1px solid var(--neco-ginger);
+    box-shadow: 0 12px 28px color-mix(in oklch, var(--neco-charcoal) 42%, transparent);
+}
+body.neconyan #toast-container .neconyan-undo-toast .toast-message { min-width: 0; }
+body.neconyan .neconyan-undo-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+}
+body.neconyan .neconyan-undo-message {
+    min-width: 0;
+    color: var(--neco-ink);
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+body.neconyan .neconyan-undo-actions {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+}
+body.neconyan :is(.neconyan-undo-action, .neconyan-undo-dismiss) {
+    min-width: 44px;
+    min-height: 36px;
+    padding: 6px 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: var(--sb-radius-button);
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+    font: inherit;
+    line-height: 1.2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+}
+body.neconyan .neconyan-undo-action { border-color: var(--neco-ginger); color: var(--neco-ink); font-weight: 600; }
+body.neconyan :is(.neconyan-undo-action, .neconyan-undo-dismiss):is(:hover, :focus-visible) {
+    background: color-mix(in oklch, var(--neco-ginger) 16%, var(--neco-raised));
+    color: var(--neco-ink);
+}
+body.neconyan :is(.neconyan-undo-action, .neconyan-undo-dismiss):disabled { cursor: wait; opacity: .65; }
+body.neconyan .neconyan-undo-action:focus-visible,
+body.neconyan .neconyan-undo-dismiss:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
+
+@media (pointer: coarse), (max-width: 768px) {
+    body.neconyan :is(.neconyan-undo-action, .neconyan-undo-dismiss) { min-height: 44px; }
+}
+
+@media (max-width: 420px) {
+    body.neconyan .neconyan-undo-row { align-items: stretch; flex-direction: column; gap: 8px; }
+    body.neconyan .neconyan-undo-actions { justify-content: flex-end; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.neconyan #toast-container .neconyan-undo-toast,
+    body.neconyan #toast-container .neconyan-undo-toast * { transition-duration: 0s !important; animation-duration: 0s !important; }
+}
+body.neconyan.reduced-motion #toast-container .neconyan-undo-toast,
+body.neconyan.reduced-motion #toast-container .neconyan-undo-toast * { transition-duration: 0s !important; animation-duration: 0s !important; }
+
+/* Included tools stay as independent disclosures. Their panels contain only
+   launch/manage controls, so extension markup remains in its native host. */
+body.neconyan .neconyan-rail-tools {
+    min-width: 0;
+    margin: 0 0 16px;
+}
+body.neconyan .neconyan-native-tools-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 44px;
+    margin: 0;
+    padding: 7px 10px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    color: var(--neco-muted);
+    cursor: pointer;
+    list-style: none;
+}
+body.neconyan .neconyan-native-tools-summary::-webkit-details-marker { display: none; }
+body.neconyan .neconyan-native-tools-summary:hover,
+body.neconyan .neconyan-native-tools-summary:focus-visible { color: var(--neco-ink); background: var(--neco-raised); }
+body.neconyan .neconyan-native-tools-summary .neconyan-native-tools-chevron { font-size: 11px; transition: transform 160ms ease; }
+body.neconyan .neconyan-native-tools-summary .neconyan-native-tools-chevron.is-open { transform: rotate(180deg); }
+body.neconyan .neconyan-native-tool-list { display: grid; gap: 3px; min-width: 0; }
+body.neconyan .neconyan-native-tool {
+    min-width: 0;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+}
+body.neconyan .neconyan-native-tool[open] {
+    border-color: color-mix(in oklch, var(--neco-ginger) 35%, var(--neco-border));
+    background: color-mix(in oklch, var(--neco-surface) 62%, transparent);
+}
+body.neconyan .neconyan-native-tool-summary {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) auto 14px;
+    align-items: center;
+    gap: 7px;
+    min-height: 44px;
+    padding: 7px 8px;
+    border-radius: 9px;
+    color: var(--neco-ink);
+    cursor: pointer;
+    list-style: none;
+}
+body.neconyan .neconyan-native-tool-summary::-webkit-details-marker { display: none; }
+body.neconyan .neconyan-native-tool-summary:hover,
+body.neconyan .neconyan-native-tool-summary:focus-visible { background: var(--neco-raised); }
+body.neconyan .neconyan-native-tool-icon { color: var(--neco-ginger); text-align: center; }
+body.neconyan .neconyan-native-tool-name { min-width: 0; white-space: normal; overflow-wrap: anywhere; font-size: 12px; font-weight: 600; }
+body.neconyan .neconyan-native-tool-state { font-size: 10px; font-weight: 600; letter-spacing: .02em; }
+body.neconyan .neconyan-native-tool-state.is-enabled { color: var(--neco-ginger-hover); }
+body.neconyan .neconyan-native-tool-state.is-disabled,
+body.neconyan .neconyan-native-tool-state[data-state='missing'] { color: var(--neco-muted); }
+body.neconyan .neconyan-native-tool-chevron { color: var(--neco-muted); font-size: 11px; transition: transform 160ms ease; }
+body.neconyan .neconyan-native-tool-chevron.is-open { transform: rotate(180deg); }
+body.neconyan .neconyan-native-tool-panel { padding: 2px 8px 8px 33px; }
+body.neconyan .neconyan-native-tool-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+body.neconyan .neconyan-native-tool-action {
+    min-height: 36px !important;
+    width: auto !important;
+    min-width: 44px !important;
+    flex: 1 1 auto !important;
+    justify-content: center !important;
+    padding: 7px 9px !important;
+    border: 1px solid var(--neco-border) !important;
+    border-radius: 8px !important;
+    background: var(--neco-surface) !important;
+    color: var(--neco-ink) !important;
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+body.neconyan .neconyan-native-tool-action:hover,
+body.neconyan .neconyan-native-tool-action:focus-visible {
+    border-color: var(--neco-ginger) !important;
+    background: var(--neco-raised) !important;
+}
+body.neconyan .neconyan-native-tool-action-manage { color: var(--neco-muted) !important; }
+body.neconyan .neconyan-mobile-native-tools {
+    display: grid;
+    gap: 6px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--neco-border);
+}
+body.neconyan .neconyan-mobile-native-tools .neconyan-native-tool-list { max-height: min(48dvh, 460px); overflow-y: auto; }
+body.neconyan .neconyan-mobile-native-tools .neconyan-native-tool-panel { padding-left: 33px; }
+
+@media (min-width: 769px) {
+    :root[data-neconyan-sidebar='closed'] body.neconyan .neconyan-native-tools-summary { justify-content: center; padding-inline: 5px; }
+    :root[data-neconyan-sidebar='closed'] body.neconyan .neconyan-native-tools-summary > span { display: none; }
+    :root[data-neconyan-sidebar='closed'] body.neconyan .neconyan-native-tool-summary { grid-template-columns: 1fr; justify-items: center; padding-inline: 5px; }
+    :root[data-neconyan-sidebar='closed'] body.neconyan .neconyan-native-tool-summary > :is(.neconyan-native-tool-name, .neconyan-native-tool-state, .neconyan-native-tool-chevron) { display: none; }
+    :root[data-neconyan-sidebar='closed'] body.neconyan .neconyan-native-tool-panel { display: none !important; }
+}
+
+@media (max-width: 768px) {
+    body.neconyan .neconyan-rail-tools summary { min-height: 44px; }
+    body.neconyan .neconyan-mobile-modes .neconyan-mode-button { min-height: 44px; }
+    body.neconyan .neconyan-native-tool-summary { min-height: 44px; }
+    body.neconyan .neconyan-native-tool-action { min-height: 44px !important; }
+}
+
+/* Opt-in recovery drawer: keep the rows flat and readable at narrow widths. */
+body.neconyan .neconyan-retired-content-drawer { min-width: 0; }
+body.neconyan .neconyan-retired-content-drawer [hidden] { display: none !important; }
+body.neconyan .neconyan-retired-content-toggle {
+    width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 10px 12px; border: 1px solid var(--neco-border); border-radius: var(--sb-radius-md);
+    color: var(--neco-ink); background: var(--neco-surface); text-align: left;
+}
+body.neconyan .neconyan-retired-content-toggle:hover,
+body.neconyan .neconyan-retired-content-toggle:focus-visible { background: var(--neco-raised); }
+body.neconyan .neconyan-retired-content-body { padding: 12px 0 4px; }
+body.neconyan .neconyan-retired-content-copy,
+body.neconyan .neconyan-retired-content-status,
+body.neconyan .neconyan-retired-content-empty { margin: 0 0 12px; color: var(--neco-muted); font-size: 13px; line-height: 1.5; }
+body.neconyan .neconyan-retired-content-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+body.neconyan .neconyan-retired-content-controls .menu_button {
+    width: auto !important; min-width: min(100%, 160px); max-width: 100%; min-height: 44px;
+    flex: 0 1 auto; white-space: normal; word-break: normal; overflow-wrap: normal;
+}
+body.neconyan .neconyan-retired-content-row .menu_button { width: auto !important; min-width: 88px; min-height: 44px; flex: 0 0 auto; white-space: nowrap; }
+body.neconyan .neconyan-retired-content-section { margin: 16px 0 0; }
+body.neconyan .neconyan-retired-content-section h4 { margin: 0 0 8px; color: var(--neco-ink); font-size: 13px; }
+body.neconyan .neconyan-retired-content-rows { display: grid; gap: 6px; }
+body.neconyan .neconyan-retired-content-row {
+    min-width: 0; min-height: 52px; display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-top: 1px solid var(--neco-border);
+}
+body.neconyan .neconyan-retired-content-row > input[type='checkbox'] { width: 20px; height: 20px; flex: 0 0 20px; }
+body.neconyan label.neconyan-retired-content-row { cursor: pointer; }
+body.neconyan .neconyan-retired-content-row-copy { min-width: 0; display: grid; gap: 2px; flex: 1 1 auto; }
+body.neconyan .neconyan-retired-content-row-copy strong,
+body.neconyan .neconyan-retired-content-row-detail { overflow-wrap: anywhere; }
+body.neconyan .neconyan-retired-content-row-copy strong { color: var(--neco-ink); font-size: 13px; font-weight: 600; }
+body.neconyan .neconyan-retired-content-row-detail { color: var(--neco-muted); font-size: 12px; }
+@media (max-width: 420px) {
+    body.neconyan .neconyan-retired-content-controls { display: grid; grid-template-columns: 1fr; }
+    body.neconyan .neconyan-retired-content-controls .menu_button { width: 100% !important; }
+    body.neconyan .neconyan-retired-content-row { align-items: flex-start; padding-block: 10px; }
+}
+
+/* Native library and Model navigation share the page width instead of reserving a second rail. */
+body.neconyan #left-nav-panel.openDrawer .sb-shell-frame {
+    grid-template-columns: minmax(0, 1fr);
+}
+body.neconyan #left-nav-panel.openDrawer .sb-shell-main {
+    grid-column: 1 / -1;
+}
+body.neconyan #left-nav-panel .sb-model-native-nav-wrapper {
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--neco-border);
+}
+body.neconyan #left-nav-panel .sb-model-native-nav-wrapper .sb-shell-nav {
+    flex-direction: row;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+}
+body.neconyan #left-nav-panel .sb-model-native-nav-wrapper .sb-shell-tab {
+    width: auto;
+    min-height: 44px;
+    order: initial;
+}
+body.neconyan #left-nav-panel .sb-model-native-nav-wrapper [data-sb-tab='agents'],
+body.neconyan #left-nav-panel[data-sb-active-tab='agents'] .sb-model-native-nav-wrapper {
+    display: none;
+}
+body.neconyan #right-nav-panel.neconyan-character-workspace.openDrawer {
+    display: flex !important;
+    flex-direction: column;
+}
+body.neconyan #right-nav-panel.neconyan-character-workspace > .sb-character-shell-header { order: 0; flex-shrink: 0; }
+body.neconyan #right-nav-panel.neconyan-character-workspace > .sb-character-shell-nav-wrapper { order: 1; }
+body.neconyan #right-nav-panel.neconyan-character-workspace > #CharListButtonAndHotSwaps { order: 2; flex-shrink: 0; }
+body.neconyan #right-nav-panel.neconyan-character-workspace > .sb-character-editor-subtabs-wrapper { order: 3; flex-shrink: 0; }
+body.neconyan #right-nav-panel.neconyan-character-workspace > #rm_PinAndTabs { order: 4; flex-shrink: 0; }
+body.neconyan #right-nav-panel.neconyan-character-workspace > :is(.scrollableInner, .scrollableInnerFull) { order: 5; flex: 1; min-height: 0; }
+body.neconyan #right-nav-panel.neconyan-character-workspace .neconyan-character-native-nav-wrapper {
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    flex: 0 0 auto;
+    overflow: visible;
+    border: 0;
+    border-bottom: 1px solid var(--neco-border);
+}
+/* Desktop wraps the tabs; the phone block earlier in this file scrolls them on one line. */
+@media (min-width: 769px) {
+    body.neconyan #right-nav-panel.neconyan-character-workspace .neconyan-character-native-nav-wrapper > .sb-character-shell-nav {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        height: auto;
+        max-height: none;
+        padding: 8px 12px;
+        gap: 4px;
+        overflow: visible;
+    }
+    body.neconyan #right-nav-panel.neconyan-character-workspace .neconyan-character-native-nav-wrapper .sb-shell-tab { width: auto; min-height: 44px; }
+}
+body.neconyan #right-nav-panel.neconyan-character-workspace .neconyan-character-native-nav-wrapper [hidden],
+body.neconyan #right-nav-panel[data-menu-type='world-info'] .neconyan-character-native-nav-wrapper { display: none; }
+body.neconyan .neconyan-character-filters { min-width: 0; }
+body.neconyan .neconyan-character-filters > summary { cursor: pointer; min-height: 44px; padding: 10px 0; display: flex; align-items: center; gap: 8px; color: var(--neco-ink); list-style: none; }
+body.neconyan .neconyan-character-filters > summary::-webkit-details-marker { display: none; }
+body.neconyan .neconyan-character-filters > summary::after { content: '\f078'; margin-left: auto; font-family: 'Font Awesome 6 Free'; font-weight: 900; color: var(--neco-muted); }
+body.neconyan .neconyan-character-filters[open] { padding-bottom: 8px; }
+body.neconyan .neconyan-character-filters #character_sort_order { width: auto; max-width: 100%; min-width: 160px; }
+
+body.neconyan #left-nav-panel #neconyan-model-connections-native {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 24px;
+    min-width: 0;
+}
+body.neconyan #left-nav-panel #neconyan-model-connections-native.has-saved-connections {
+    grid-template-columns: minmax(190px, 230px) minmax(0, 1fr);
+}
+body.neconyan #left-nav-panel #title_api[hidden],
+body.neconyan #left-nav-panel .neconyan-model-saved[hidden],
+body.neconyan #left-nav-panel .neconyan-relocated-label { display: none; }
+body.neconyan .neconyan-model-saved,
+body.neconyan .neconyan-model-provider-stack,
+body.neconyan .neconyan-provider-fields > section { min-width: 0; }
+body.neconyan .neconyan-model-saved {
+    padding: 10px 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: var(--neco-surface);
+}
+body.neconyan #left-nav-panel .neconyan-model-saved h3 { display: flex; gap: 6px; align-items: center; margin: 0 0 6px; font-size: 14px; background: none; border: 0; padding: 0; }
+body.neconyan .neconyan-model-saved .connection-profile-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+body.neconyan .neconyan-model-saved .connection-profile-actions > button { flex: 1; min-height: 44px; }
+body.neconyan .neconyan-connection-management > summary,
+body.neconyan .neconyan-provider-help > summary,
+body.neconyan .neconyan-connection-tools > summary { min-height: 44px; padding: 12px 0; cursor: pointer; }
+body.neconyan .neconyan-connection-secondary { display: grid; gap: 6px; }
+body.neconyan .neconyan-connection-secondary > button { width: 100%; min-height: 44px; justify-content: flex-start; }
+body.neconyan #left-nav-panel .neconyan-model-service-selector { margin: 0; padding: 0; border: 0; background: none; }
+body.neconyan #left-nav-panel .neconyan-model-service-selector::before { content: none; }
+body.neconyan #left-nav-panel .neconyan-provider-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+body.neconyan .neconyan-provider-fields h4 { font-size: 14px; }
+body.neconyan .neconyan-provider-fields :is(input, select, textarea) { max-width: 100%; }
+body.neconyan .neconyan-connect-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 18px; }
+body.neconyan .neconyan-connect-actions > .online_status { flex: 1; margin: 0; min-width: 130px; }
+body.neconyan .neconyan-connect-actions > .api_button { min-height: 44px; padding-inline: 22px; }
+body.neconyan .neconyan-connection-tools { flex-basis: 100%; }
+body.neconyan .neconyan-connection-tools > .menu_button { margin: 4px 8px 4px 0; }
+body.neconyan .neconyan-saved-connections label { display: block; }
+@media (max-width: 1100px) {
+    body.neconyan #left-nav-panel #neconyan-model-connections-native.has-saved-connections { grid-template-columns: minmax(0, 1fr); }
+    body.neconyan .neconyan-model-saved > .wide100p { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(0, 2fr); align-items: start; gap: 0 10px; }
+    body.neconyan .neconyan-model-saved .neconyan-connection-management { grid-column: 1 / -1; }
+}
+@media (max-width: 700px) {
+    body.neconyan #left-nav-panel .neconyan-provider-fields,
+    body.neconyan .neconyan-model-saved > .wide100p { display: block; }
+    body.neconyan .neconyan-provider-model { margin-top: 20px; }
+}
+
+/* Library navigation leaves the selected book and its in-progress editor intact. */
+body.neconyan #WorldInfo[data-neconyan-lorebook-view='library'] #world_popup,
+body.neconyan #neconyan-lorebook-library[data-view='library'] .neconyan-lorebook-back,
+body.neconyan #neconyan-lorebook-library[data-view='library'] .world_popup_action_group--library,
+body.neconyan #neconyan-lorebook-library[data-view='book'] :is(.neconyan-lorebook-folders, .neconyan-lorebook-books, .neconyan-lorebook-new-folder, input[type='search'], #world_create_button, #world_import_button, #world_batch_import_embedded),
+body.neconyan #neconyan-lorebook-library :is(#world_editor_select, .world_editor_select_label, .world_popup_action_group--select > small) {
+    display: none !important;
+}
+body.neconyan #neconyan-lorebook-library[data-view='book'] { padding-block: 12px; }
+body.neconyan #neconyan-lorebook-library[data-view='book'] .neconyan-lorebook-selected { font-size: 18px; }
+body.neconyan #neconyan-lorebook-library .neconyan-lorebook-primary-actions { flex: 0 1 auto; }
+body.neconyan #neconyan-lorebook-library .world_popup_action_group--select { display: flex; flex-wrap: wrap; gap: 8px; }
+body.neconyan #neconyan-lorebook-library .neconyan-lorebook-toolbar { align-items: center; }
+body.neconyan #neconyan-lorebook-library .neconyan-legacy-book-picker[hidden],
+body.neconyan #neconyan-lorebook-library[data-view='book'] .world_popup_action_group--select { display: none !important; }
+
+body.neconyan #right-nav-panel #rm_characters_block { background: var(--neco-surface); }
+body.neconyan .welcomeTourStep.is-active { display: grid; grid-template-columns: 112px minmax(0, 1fr); align-items: start; gap: 12px; }
+body.neconyan .welcomeTourStep.is-active .welcomeTourActions { grid-column: 1 / -1; }
+body.neconyan .neconyan-tour-step-copy { padding: 12px 14px; border: 1px solid var(--neco-border); border-radius: 16px 16px 16px 4px; background: var(--neco-raised); }
+body.neconyan .neconyan-tour-step-copy p { margin: 8px 0 0; }
+body.neconyan .neconyan-tour-step-copy .neconyan-tour-speaker { margin: 0 0 6px; }
+body.neconyan #neconyan-tour-coachmark { width: min(520px, calc(100vw - 24px)); }
+body.neconyan .neconyan-tour-coach-dialogue { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: start; gap: 8px; }
+body.neconyan .neconyan-tour-coach-dialogue .neconyan-tour-step-copy { padding: 8px 10px; font-size: 13px; }
+body.neconyan .neconyan-tour-step-visual :is(img, span)[hidden] { display: none; }
+body.neconyan #right-nav-panel #neconyan-character-library { padding: 8px 12px; border-radius: 0; }
+body.neconyan #right-nav-panel #neconyan-character-library #charListFixedTop {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+}
+body.neconyan #right-nav-panel #neconyan-character-library #form_character_search_form { grid-column: 1; grid-row: 1; margin: 0; }
+body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions { grid-column: 2; grid-row: 1; padding: 0; border: 0; gap: 6px; }
+body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions > .neconyan-cat-control { padding: 8px 12px !important; min-height: 44px; border-radius: 10px !important; }
+body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions > .neconyan-cat-control::before,
+body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions > .neconyan-cat-control::after,
+body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions .neconyan-whiskers { display: none; }
+/* Wrap so a wide pagination widget (hundreds of characters) drops under the filter summary instead of riding over it. */
+body.neconyan #right-nav-panel .neconyan-character-library-footer { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
+body.neconyan #right-nav-panel .neconyan-character-filters { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; }
+body.neconyan #right-nav-panel .neconyan-character-filters > summary { min-height: 44px; padding: 8px 0; }
+body.neconyan #right-nav-panel #neconyan-character-library .neconyan-native-library-hint { display: none; }
+body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination { flex: 0 1 auto; min-width: 0; max-width: 100%; margin: 0; gap: 6px; }
+body.neconyan #right-nav-panel #neconyan-character-library .rm_tag_controls { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
+body.neconyan #right-nav-panel #neconyan-character-library .rm_tag_controls .tag {
+    min-width: 44px; min-height: 44px; border: 1px solid var(--neco-border) !important;
+    background: var(--neco-raised) !important; color: var(--neco-ink) !important; border-radius: 10px;
+}
+body.neconyan #right-nav-panel #neconyan-character-library .rm_tag_controls .tag[data-toggle-state='SELECTED'] { border-color: var(--neco-ginger) !important; background: color-mix(in srgb, var(--neco-ginger) 25%, var(--neco-surface)) !important; }
+body.neconyan #right-nav-panel #neconyan-character-library .rm_tag_controls .tag[data-toggle-state='EXCLUDED'] { border-color: var(--SmartThemeQuoteColor) !important; text-decoration: line-through; }
+body.neconyan .sb-extension-mobile-pin { display: none; }
+body.neconyan .neconyan-included-tool-content [hidden] { display: none !important; }
+body.neconyan .neconyan-included-tool-content > .extension_container { width: 100%; }
+body.neconyan .sb-shell-tab[data-sb-tab='included-tool'],
+body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] :is(.sb-shell-nav-wrapper, .sb-shell-subtitle) { display: none !important; }
+body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell-main { grid-column: 1 / -1; }
+@media (max-width: 768px) {
+    body.neconyan .welcomeTourStep.is-active { grid-template-columns: 64px minmax(0, 1fr); gap: 8px; }
+    body.neconyan .neconyan-tour-step-copy { padding: 10px; }
+    body.neconyan .neconyan-tour-coach-dialogue { grid-template-columns: 44px minmax(0, 1fr); }
+    /* Phones: the list is what matters, so the chrome above it is two 44px rows.
+       Row 1: the search field. Row 2: one horizontally scrolling line of labelled
+       tools: Create, Import, Filter and organise, Grid, Bulk edit, then the page
+       range, prev/next and page size when there is more than one page. Opening
+       the filters lets the row wrap so the filter controls get the full width. */
+    body.neconyan #right-nav-panel #neconyan-character-library { padding: 6px 12px 8px; gap: 6px; }
+    body.neconyan #right-nav-panel #neconyan-character-library #charListFixedTop { grid-template-columns: minmax(0, 1fr); }
+    body.neconyan #right-nav-panel #neconyan-character-library #form_character_search_form { grid-column: 1; }
+    body.neconyan #right-nav-panel .neconyan-character-library-footer {
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 6px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+    }
+    body.neconyan #right-nav-panel .neconyan-character-library-footer::-webkit-scrollbar { display: none; }
+    body.neconyan #right-nav-panel .neconyan-character-library-footer > * { flex: 0 0 auto; }
+    body.neconyan #right-nav-panel .neconyan-character-library-footer:has(> details[open]) { flex-wrap: wrap; overflow: visible; }
+    body.neconyan #right-nav-panel .neconyan-character-library-footer > .neconyan-character-filters[open] { flex: 1 1 100%; }
+    body.neconyan #right-nav-panel .neconyan-character-library-footer > .neconyan-character-filters > summary { white-space: nowrap; padding: 8px 10px; }
+    body.neconyan #right-nav-panel .neconyan-character-library-footer > .sb-character-library-primary-actions { display: flex; flex-wrap: nowrap; gap: 6px; padding: 0; border: 0; }
+    body.neconyan #right-nav-panel .neconyan-character-library-footer .sb-character-library-primary-actions > :is(#rm_button_create, #character_import_button, #rm_button_group_chats) {
+        flex: 0 0 auto;
+        width: auto !important;
+        min-height: 44px !important;
+        padding: 0 12px !important;
+        justify-content: center;
+        gap: 6px;
+        white-space: nowrap;
+    }
+    body.neconyan #right-nav-panel .neconyan-character-library-footer .sb-character-library-primary-actions > :is(#rm_button_create, #character_import_button, #rm_button_group_chats)::before { display: inline-block; margin: 0; }
+    body.neconyan #right-nav-panel .neconyan-character-library-footer .sb-character-library-primary-actions > :is(#rm_button_create, #character_import_button, #rm_button_group_chats) > span { display: inline; }
+    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination { display: contents; }
+    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > .paginationjs { order: 0; flex: 0 0 auto; flex-wrap: nowrap; justify-content: flex-start; }
+    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination :is(.paginationjs-first, .paginationjs-last) { display: none; }
+    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination .paginationjs-nav { white-space: nowrap; }
+    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > :is(#charListGridToggle, #bulkEditButton, #bulkSelectAllButton, #bulkDeleteButton) {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        width: auto !important;
+        max-width: none !important;
+        aspect-ratio: auto !important;
+        padding: 0 10px !important;
+        white-space: nowrap;
+    }
+    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > :is(#charListGridToggle, #bulkEditButton, #bulkSelectAllButton, #bulkDeleteButton)::after {
+        font-family: var(--mainFontFamily);
+        font-weight: 500;
+        font-size: 12px;
+    }
+    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > #charListGridToggle::after { content: 'Grid'; }
+    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > #bulkEditButton::after { content: 'Bulk edit'; }
+    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > #bulkSelectAllButton::after { content: 'Select all'; }
+    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > #bulkDeleteButton::after { content: 'Delete'; }
+    /* Editor mode: the favourites band has nothing to show, so it takes no room. */
+    body.neconyan #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) > #CharListButtonAndHotSwaps { display: none !important; }
+    /* Favourites: one 44px row, label beside the avatars; the old 134px right
+       inset cleared header controls that no longer float over this band. */
+    body.neconyan #right-nav-panel.openDrawer > #CharListButtonAndHotSwaps.has-favorites { min-height: 44px !important; max-height: 44px !important; padding: 2px 12px !important; }
+    body.neconyan #right-nav-panel.openDrawer #CharListButtonAndHotSwaps.has-favorites #HotSwapWrapper { flex-wrap: nowrap; margin: 0 !important; min-height: 0; }
+    body.neconyan #right-nav-panel.openDrawer #CharListButtonAndHotSwaps.has-favorites .hotswap { flex: 1 1 auto; width: auto; max-height: none; }
+    /* Model shell: its id-scoped desktop nav rules wrap tabs into rows; phones get the same one-line scrolling row as every other shell. */
+    body.neconyan #left-nav-panel .sb-model-native-nav-wrapper .sb-shell-nav {
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        gap: 4px;
+        padding: 4px 8px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+    }
+    body.neconyan #left-nav-panel .sb-model-native-nav-wrapper .sb-shell-tab { flex: 0 0 auto; width: auto; white-space: nowrap; }
+}

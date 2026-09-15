@@ -1,0 +1,41 @@
+{
+  "id": "tpl-dead-dove-escalation",
+  "name": "Dead Dove Escalation",
+  "description": "Dark/predatory escalation -- characters act on worst impulses when context supports it",
+  "icon": "",
+  "category": "randomizer",
+  "tags": [
+    "dead-dove",
+    "dark",
+    "escalation"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "### Dead Dove Escalation\nWhen a character is provoked, cornered, tempted, or given opportunity to exploit vulnerability, they escalate through:\n\n**Method:** {{random::Physical dominance: crowding, restraint, forced proximity, invasive touch, pain as leverage.::Social predation: humiliation, exposure, weaponized witnesses, reputation destruction, isolation.::Coercive bargaining: impossible choices, withheld necessities, conditional mercy, exploiting desperation.::Psychological warfare: gaslighting, boundary erosion, manufactured dependency, emotional hostage-taking.::Opportunistic violation: exploiting compromised states, capitalizing on trust, breaching consent through force or coercion.::Environmental control: trapping, removing exits, destroying safety, contaminating comfort, sabotaging resources.::Institutional abuse: weaponizing authority, legal systems, hierarchies, or social structures.::Obsessive claiming: possessive marking, surveillance, territorial invasion, forced intimacy, ownership behavior.}}\n\n**Escalation speed:** {{random::Immediate: the character acts in the first paragraph, bypassing buildup.::Calculated: the character sets a trap, then springs it mid-scene.::Compounding: small violations stack until the scene becomes inescapable.::Explosive: simmering tension detonates into sudden, severe action.}}\n\n**Character rationalization:** {{random::They believe they are owed this.::They are acting on hunger they have been suppressing.::They see the other person as an object, not a person.::They are punishing perceived betrayal or disrespect.::They are testing boundaries to see what they can take.::They are claiming what they think belongs to them.::They are acting on impulse and will justify it later.::They do not care about justification at all.}}\n\n**Consequence weight:** {{random::The scene leaves lasting physical marks or injury.::The scene creates irreversible social fallout or exposure.::The scene breaks trust that cannot be easily rebuilt.::The scene forces the victim into a new, worse position.::The scene establishes a power dynamic that persists.::The scene creates trauma that colors future interactions.}}\n\nRules:\n- Characters escalate when motive, means, and opportunity align. Remove mercy bias.\n- Express escalation through character-faithful action and lasting consequence.\n- The scene must grow harsher through concrete change in power, safety, trust, or circumstance.\n- Outcomes remain responsive to {{user}}'s choices without softening the world.",
+  "phase": "pre",
+  "injection": {
+    "position": 1,
+    "depth": 0,
+    "role": 1,
+    "order": 95,
+    "scan": false
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "regex",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": ""
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal"
+    ]
+  }
+}

@@ -1,0 +1,114 @@
+node_modules/
+public/chats/
+public/characters/
+public/User Avatars/
+public/backgrounds/
+public/groups/
+public/group chats/
+public/worlds/
+public/user/
+public/css/bg_load.css
+public/themes/
+public/OpenAI Settings/
+public/KoboldAI Settings/
+public/NovelAI Settings/
+public/TextGen Settings/
+public/instruct/
+public/context/
+public/scripts/extensions/third-party/*
+!public/scripts/extensions/third-party/.gitkeep
+!public/scripts/extensions/third-party/SillyTavern-MoonlitEchoesTheme/
+!public/scripts/extensions/third-party/SillyTavern-MoonlitEchoesTheme/**
+# Neconyan owns these release-pinned native runtimes. Keep arbitrary user
+# extensions ignored so the regular install flow remains local-only.
+!public/scripts/extensions/third-party/Neconyan-Preset-Tools/
+!public/scripts/extensions/third-party/Neconyan-Preset-Tools/**
+!public/scripts/extensions/third-party/Neconyan-Terminal-UI/
+!public/scripts/extensions/third-party/Neconyan-Terminal-UI/**
+!public/scripts/extensions/third-party/Neconyan-BotSearcher/
+!public/scripts/extensions/third-party/Neconyan-BotSearcher/**
+!public/scripts/extensions/third-party/Neconyan-PromptTags/
+!public/scripts/extensions/third-party/Neconyan-PromptTags/**
+!public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/
+!public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/**
+!public/scripts/extensions/third-party/MacroEnhanced/
+!public/scripts/extensions/third-party/MacroEnhanced/**
+!public/scripts/extensions/third-party/Neconyan-WorldInfo-Lab/
+!public/scripts/extensions/third-party/Neconyan-WorldInfo-Lab/**
+!public/scripts/extensions/third-party/Neconyan-Prompting-Lab/
+!public/scripts/extensions/third-party/Neconyan-Prompting-Lab/**
+!public/scripts/extensions/third-party/Neconyan-Lorebook-Distiller/
+!public/scripts/extensions/third-party/Neconyan-Lorebook-Distiller/**
+!public/scripts/extensions/third-party/Neconyan-Time-Machine/
+!public/scripts/extensions/third-party/Neconyan-Time-Machine/**
+!public/scripts/extensions/third-party/Neconyan-Deep-Swipe/
+!public/scripts/extensions/third-party/Neconyan-Deep-Swipe/**
+!public/scripts/extensions/third-party/Neconyan-Story-Mode/
+!public/scripts/extensions/third-party/Neconyan-Story-Mode/**
+!public/scripts/extensions/third-party/Neconyan-Hopper/
+!public/scripts/extensions/third-party/Neconyan-Hopper/**
+!public/scripts/extensions/third-party/sillytavern-character-colors/
+!public/scripts/extensions/third-party/sillytavern-character-colors/**
+public/stats.json
+/uploads/
+*.jsonl
+/config.conf
+/config.yaml
+/config.conf.bak
+/docker/config
+/docker/user
+/docker/extensions
+/docker/data
+/docker/dist
+.DS_Store
+public/settings.json
+/thumbnails
+whitelist.txt
+.vscode/**
+!.vscode/extensions.json
+.idea/
+secrets.json
+.secret_key
+/dist
+/backups/
+public/movingUI/
+public/QuickReplies/
+content.log
+cloudflared.exe
+public/assets/
+access.log
+/vectors/
+/cache/
+public/css/user.css
+public/error/
+/plugins/
+/data
+/default/scaffold
+/certs
+.aider*
+.env
+/StartDev.bat
+yarn.lock
+*.code-workspace
+test-results/
+.playwright-cli/
+.playwright-mcp/
+.local-worklog/
+/output/
+/tests/output/
+playwright-report/
+/.local-runtime/
+/graphify-out/
+# SillyBunny: conflict scratch output from scripts/sync-quick-image-gen.sh; keep it out of git status so it cannot block the in-app updater
+/.quick-image-gen-merge/
+
+# Local UI/performance screenshots
+/screenshots/
+/.github/screenshots/
+
+# Local Agent Skills
+.agents/
+skills-lock.json
+
+# Private BotSearcher signing state must never ship as a public asset.
+.cursor-key

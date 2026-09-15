@@ -1,0 +1,136 @@
+{
+  "Neconyan-Preset-Tools": {
+    "version": "1.5.4",
+    "pinnedRevision": "5a6d0733fddbfde6dc55b9e81d804d824b7a61ba",
+    "sourceOrigin": "https://github.com/SillyBunnyTeam/SillyBunny.git",
+    "sourceUrl": "https://github.com/SillyBunnyTeam/SillyBunny",
+    "licenseFiles": []
+  },
+  "ChatCompletionTabs": {
+    "version": "1.0.0",
+    "pinnedRevision": "5a6d0733fddbfde6dc55b9e81d804d824b7a61ba",
+    "sourceOrigin": "https://github.com/SillyBunnyTeam/SillyBunny.git",
+    "sourceUrl": "https://github.com/RivelleDays/SillyTavern-ChatCompletionTabs",
+    "licenseFiles": []
+  },
+  "Neconyan-Terminal-UI": {
+    "version": "2.4.0",
+    "pinnedRevision": "16d1540c6b88d97a9519725d89b04e1f7164bd1a",
+    "sourceOrigin": "https://github.com/SillyBunnyTeam/SillyBunny-Terminal-UI.git",
+    "sourceUrl": "https://github.com/SillyBunnyTeam/SillyBunny-Terminal-UI",
+    "licenseFiles": []
+  },
+  "Neconyan-BotSearcher": {
+    "version": "0.9.0",
+    "pinnedRevision": "2e175ff439f884fc0bb662ff9930212237053780",
+    "sourceOrigin": "https://github.com/SillyBunnyTeam/SillyBunny-BotSearcher.git",
+    "sourceUrl": "https://github.com/SillyBunnyTeam/SillyBunny-BotSearcher",
+    "licenseFiles": [
+      "LICENSE"
+    ]
+  },
+  "Neconyan-PromptTags": {
+    "version": "1.0.0",
+    "pinnedRevision": "20a0ef20c4ed9d2c81a5e4a893501462a6f39183",
+    "sourceOrigin": "https://github.com/platberlitz/SillyBunny-PromptTags.git",
+    "sourceUrl": null,
+    "licenseFiles": [
+      "LICENSE"
+    ]
+  },
+  "Neconyan-Regex-Agent-Themes": {
+    "version": "1.0.1",
+    "pinnedRevision": "3c8e708f8c86e77a92f23526c738e87c82df98c9",
+    "sourceOrigin": "https://github.com/SillyBunnyTeam/SillyBunny-Regex-Agent-Themes.git",
+    "sourceUrl": "https://github.com/SillyBunnyTeam/SillyBunny-Regex-Agent-Themes",
+    "licenseFiles": [
+      "LICENSE"
+    ]
+  },
+  "MacroEnhanced": {
+    "version": "0.3.0",
+    "pinnedRevision": "1b56c631a1d3f5f2c3548f0189f7f72a299c4f68",
+    "sourceOrigin": "https://github.com/SillyBunnyTeam/SillyBunny-MacroEnhanced.git",
+    "sourceUrl": null,
+    "licenseFiles": []
+  },
+  "Neconyan-WorldInfo-Lab": {
+    "version": "0.3.0",
+    "pinnedRevision": "dd71ab5fdc5aabb56ad88e0a836c52f7f9a5c3eb",
+    "sourceOrigin": "https://github.com/SillyBunnyTeam/SillyBunny-WorldInfo-Lab.git",
+    "sourceUrl": "https://github.com/SillyBunnyTeam/SillyBunny-WorldInfo-Lab",
+    "licenseFiles": [
+      "LICENSE"
+    ]
+  },
+  "Neconyan-Prompting-Lab": {
+    "version": "0.3.0",
+    "pinnedRevision": "a27547601af7fe2b07f77af6ddea72c89062f47f",
+    "sourceOrigin": "https://github.com/SillyBunnyTeam/SillyBunny-Prompting-Lab.git",
+    "sourceUrl": "https://github.com/SillyBunnyTeam/SillyBunny-Prompting-Lab",
+    "licenseFiles": [
+      "LICENSE"
+    ]
+  },
+  "Neconyan-Debugger": {
+    "version": "0.1.1",
+    "pinnedRevision": "e85bc651d2ef5e061943e8292884a0f6c12509ae",
+    "sourceOrigin": "https://github.com/platberlitz/SillyBunny-Debugger.git",
+    "sourceUrl": null,
+    "licenseFiles": []
+  },
+  "Neconyan-Chats-Archive": {
+    "version": "0.4.0",
+    "pinnedRevision": "a1d0fa757f64ff9cebeda63c6539ae7c6c89e27d",
+    "sourceOrigin": "https://github.com/platberlitz/SillyBunny-Chats-Archive.git",
+    "sourceUrl": "https://github.com/platberlitz/SillyBunny-Chats-Archive",
+    "licenseFiles": []
+  },
+  "Neconyan-Lorebook-Distiller": {
+    "version": "0.1.0",
+    "pinnedRevision": "237ea54d6f94e731d4b918f9c445e1b78fa2dcf6",
+    "sourceOrigin": "https://github.com/platberlitz/SillyBunny-Lorebook-Distiller.git",
+    "sourceUrl": "https://github.com/platberlitz/SillyBunny-Lorebook-Distiller",
+    "licenseFiles": []
+  },
+  "Neconyan-Time-Machine": {
+    "version": "0.2.2",
+    "pinnedRevision": "b9ec088a76480f014fc01e5cc9f78d36d897fc86",
+    "sourceOrigin": "https://github.com/SillyBunnyTeam/SillyBunny-Time-Machine.git",
+    "sourceUrl": "https://github.com/platberlitz/SillyBunny-Time-Machine",
+    "licenseFiles": []
+  },
+  "Neconyan-Deep-Swipe": {
+    "version": "1.5.5-sb1",
+    "pinnedRevision": "16d4bd5b9a9f1c7e128166e3338f3f248c258b78",
+    "sourceOrigin": "https://github.com/SillyBunnyTeam/SillyBunny-Deep-Swipe.git",
+    "sourceUrl": "https://github.com/SillyBunnyTeam/SillyBunny-Deep-Swipe",
+    "licenseFiles": []
+  },
+  "Neconyan-Story-Mode": {
+    "version": "0.2.4",
+    "pinnedRevision": "0a61c14ba0673f80e042c68dfb9b2dadf3d8ced9",
+    "sourceOrigin": "https://github.com/platberlitz/SillyBunny-Story-Mode.git",
+    "sourceUrl": "https://github.com/platberlitz/SillyBunny-Story-Mode",
+    "licenseFiles": [
+      "LICENSE"
+    ]
+  },
+  "Neconyan-Hopper": {
+    "displayName": "Meower",
+    "version": "0.4.0",
+    "pinnedRevision": "e7374c14a8cb1c87712c93f65666058fd4efa076",
+    "sourceOrigin": "https://github.com/platberlitz/SillyBunny-Hopper.git",
+    "sourceUrl": "https://github.com/platberlitz/SillyBunny-Hopper",
+    "licenseFiles": [
+      "LICENSE"
+    ]
+  },
+  "sillytavern-character-colors": {
+    "version": "6.1.3",
+    "pinnedRevision": "5af565658bc223a74e99d025670db6835dd83682",
+    "sourceOrigin": "https://github.com/platberlitz/sillytavern-character-colors.git",
+    "sourceUrl": "https://github.com/platberlitz/sillytavern-character-colors",
+    "licenseFiles": []
+  }
+}

@@ -1,0 +1,31 @@
+<div class="text_block empty_block sb-entity-empty" data-empty-view="{{view}}" data-empty-filtered="{{filtered}}">
+    <img class="sb-entity-empty-illustration" src="{{illustration}}" alt="" width="536" height="510" aria-hidden="true" loading="lazy" decoding="async">
+    <h2>{{text}}</h2>
+    <p>{{description}}</p>
+    <div class="sb-entity-empty-actions">
+        {{#if showCreateCharacter}}
+        <button type="button" class="menu_button menu_button_icon sb-empty-action" data-empty-action="create-character">
+            <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
+            <span data-i18n="Create character">Create character</span>
+        </button>
+        {{/if}}
+        {{#if showImport}}
+        <button type="button" class="menu_button menu_button_icon sb-empty-action" data-empty-action="import-character">
+            <i class="fa-solid fa-file-import" aria-hidden="true"></i>
+            <span data-i18n="Import">Import</span>
+        </button>
+        {{/if}}
+        {{#if showCreateGroup}}
+        <button type="button" class="menu_button menu_button_icon sb-empty-action" data-empty-action="create-group">
+            <i class="fa-solid fa-users-gear" aria-hidden="true"></i>
+            <span data-i18n="Create group">Create group</span>
+        </button>
+        {{/if}}
+        {{#if showClearSearch}}
+        <button type="button" class="menu_button menu_button_icon sb-empty-action" data-empty-action="clear-search">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            <span data-i18n="Clear search">Clear search</span>
+        </button>
+        {{/if}}
+    </div>
+</div>

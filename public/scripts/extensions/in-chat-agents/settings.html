@@ -1,0 +1,260 @@
+<div id="ica--settings" class="ica--settings" data-workspace-view="manage">
+    <div class="ica--inner">
+        <div class="ica--workspace-layout">
+        <nav id="ica--workspaceNav" class="ica--workspace-nav" aria-label="In-Chat Agents workspace">
+            <h2 class="ica--standalone-title">In-Chat Agents</h2>
+            <select id="ica--workspaceSelect" class="text_pole ica--workspace-select" aria-label="Agent workspace view">
+                <option value="manage">Manage agents</option>
+                <option value="connections">Connections &amp; defaults</option>
+            </select>
+            <div class="ica--workspace-tabs" role="tablist" aria-orientation="vertical" aria-label="Agent workspace views">
+                <button type="button" class="ica--workspace-tab is-active" data-workspace-view="manage" aria-controls="ica--panel-manage" role="tab" aria-selected="true" tabindex="0">
+                    <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                    <span>Manage agents</span>
+                </button>
+                <button type="button" class="ica--workspace-tab" data-workspace-view="connections" aria-controls="ica--panel-connections" role="tab" aria-selected="false" tabindex="-1">
+                    <i class="fa-solid fa-plug" aria-hidden="true"></i>
+                    <span>Connections &amp; defaults</span>
+                </button>
+            </div>
+        </nav>
+
+        <div class="ica--workspace-main neconyan-cat-panel">
+        <div class="ica--overview">
+            <div class="ica--overview-copy">
+                <strong id="ica--run-status" role="status">Ready</strong>
+                <span id="ica--scope-description" class="ica--overview-help">Switches apply to all chats.</span>
+            </div>
+            <div class="ica--overview-stats">
+                <span class="ica--overview-stat"><strong id="ica--agent-count">0</strong><span>agents</span></span>
+                <span class="ica--overview-stat"><strong id="ica--enabled-count">0</strong><span>enabled</span></span>
+                <span class="ica--overview-stat"><strong id="ica--companion-count">0</strong><span>companions</span></span>
+                <div id="ica--agent-token-counter" class="ica--token-counter" aria-live="polite">
+                    <span class="ica--token-counter-label"><i class="fa-solid fa-gauge-high" aria-hidden="true"></i> Prompt tokens</span>
+                    <strong id="ica--total-tokens-val">0</strong>
+                </div>
+                <button type="button" id="ica--globalEnabled" class="ica--master-toggle menu_button menu_button_icon" title="Pause future runs without changing individual agent switches" aria-pressed="true">
+                    <i class="fa-solid fa-power-off" aria-hidden="true"></i><span>Agents On</span>
+                </button>
+                <button type="button" id="ica--cancelGeneration" class="menu_button menu_button_icon caution" title="Stop the active agent generation" style="display:none">
+                    <i class="fa-solid fa-stop" aria-hidden="true"></i><span>Stop agent</span>
+                </button>
+            </div>
+        </div>
+
+        <section id="ica--panel-manage" class="ica--view-panel" data-ica-view="manage" data-view="manage" role="tabpanel" aria-label="Manage agents">
+            <div class="ica--toolbar">
+                <div class="ica--toolbar-actions">
+                    <button type="button" id="ica--addAgent" data-neconyan-cat-control class="ica--action-primary menu_button menu_button_icon" title="Create a new agent from scratch">
+                        <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                        <span>Create agent</span>
+                    </button>
+                    <button type="button" id="ica--templates" data-neconyan-cat-control class="ica--action-secondary menu_button menu_button_icon" title="Add pre-made agents from the template library">
+                        <i class="fa-solid fa-book-open" aria-hidden="true"></i>
+                        <span>Browse library</span>
+                    </button>
+                    <button type="button" id="ica--selectMode" class="menu_button menu_button_icon" title="Select multiple agents for bulk actions">
+                        <i class="fa-solid fa-check-square" aria-hidden="true"></i>
+                        <span>Select</span>
+                    </button>
+
+                </div>
+                <div class="ica--setup-controls" aria-label="Saved agent setups">
+                    <label class="ica--setup-select-label">
+                        <span>Saved setup</span>
+                        <select id="ica--setupSelect" class="text_pole" aria-label="Saved agent setup">
+                            <option value="">Choose a setup</option>
+                        </select>
+                    </label>
+                    <div class="ica--setup-actions">
+                        <button type="button" id="ica--setupSave" class="menu_button menu_button_icon" title="Save the current agents and effective switches as a setup">
+                            <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i><span>Save setup</span>
+                        </button>
+                        <button type="button" id="ica--setupLoad" class="menu_button menu_button_icon" title="Load the selected setup without deleting other agents">
+                            <i class="fa-solid fa-rotate" aria-hidden="true"></i><span>Load</span>
+                        </button>
+                        <button type="button" id="ica--setupDelete" class="menu_button menu_button_icon caution" title="Delete the selected saved setup">
+                            <i class="fa-solid fa-trash-can" aria-hidden="true"></i><span>Delete</span>
+                        </button>
+                    </div>
+                    <small id="ica--setupStatus" class="ica--setup-status" role="status" aria-live="polite"></small>
+                    <button type="button" id="ica--setupRefresh" class="menu_button" hidden>Retry loading</button>
+                </div>
+                <details id="ica--moreTools" class="ica--more-tools">
+                    <summary><i class="fa-solid fa-toolbox" aria-hidden="true"></i><span>More tools</span></summary>
+                    <div class="ica--more-tools-menu">
+                        <button type="button" id="ica--updateAllAgents" class="menu_button menu_button_icon" title="Update every agent whose bundled template has a newer version" style="display:none">
+                            <i class="fa-solid fa-arrow-up-right-dots" aria-hidden="true"></i>
+                            <span>Update templates</span>
+                        </button>
+                        <button type="button" id="ica--fixTrackers" class="menu_button menu_button_icon" title="Re-run enabled tracker agents on the last assistant reply">
+                            <i class="fa-solid fa-wrench" aria-hidden="true"></i>
+                            <span>Fix trackers</span>
+                        </button>
+                        <button type="button" id="ica--companionsDashboard" class="menu_button menu_button_icon" title="Open the Companions dashboard: manage, run, and convert companion agents">
+                            <i class="fa-solid fa-user-astronaut" aria-hidden="true"></i>
+                            <span>Activity &amp; companions</span>
+                        </button>
+                        <button type="button" id="ica--convertAllTrackers" class="menu_button menu_button_icon" title="Convert every inline tracker agent to companion execution (auto loop, tracker panel)">
+                            <i class="fa-solid fa-people-arrows" aria-hidden="true"></i>
+                            <span>Move trackers to companions</span>
+                        </button>
+                        <button type="button" id="ica--importAgent" class="menu_button menu_button_icon" title="Import agent(s) from a JSON file">
+                            <i class="fa-solid fa-file-import" aria-hidden="true"></i>
+                            <span>Import agents</span>
+                        </button>
+                        <button type="button" id="ica--exportAll" class="menu_button menu_button_icon" title="Export all agents to a file">
+                            <i class="fa-solid fa-file-export" aria-hidden="true"></i>
+                            <span>Export agents</span>
+                        </button>
+                        <button type="button" id="ica--resetDefaults" class="menu_button menu_button_icon caution" title="Reset all bundled agents to their original template settings (custom agents are not affected)">
+                            <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+                            <span>Reset bundled agents</span>
+                        </button>
+                    </div>
+                </details>
+            </div>
+
+            <div id="ica--bulkBar" class="ica--bulk-bar" style="display:none">
+                <div class="ica--bulk-bar-top">
+                    <span id="ica--bulkCount" class="ica--bulk-count">0 selected</span>
+                    <span class="ica--bulk-help">Apply one change to several agents at once.</span>
+                </div>
+                <div class="ica--bulk-bar-actions">
+                    <button type="button" id="ica--bulkSelectAll" class="menu_button menu_button_icon" title="Select all agents"><i class="fa-solid fa-check-double" aria-hidden="true"></i><span>Select all</span></button>
+                    <button type="button" id="ica--bulkEnable" class="menu_button menu_button_icon" title="Enable selected agents"><i class="fa-solid fa-toggle-on" aria-hidden="true"></i><span>Enable</span></button>
+                    <button type="button" id="ica--bulkEnableOnCompanions" class="menu_button menu_button_icon" title="Enable selected post-generation agents on Companion Agent outputs"><i class="fa-solid fa-user-astronaut" aria-hidden="true"></i><span>On Companions</span></button>
+                    <button type="button" id="ica--bulkDisable" class="menu_button menu_button_icon" title="Disable selected agents"><i class="fa-solid fa-toggle-off" aria-hidden="true"></i><span>Disable</span></button>
+                    <button type="button" id="ica--bulkRoleSystem" class="menu_button menu_button_icon" title="Set injection role to System for all selected agents"><i class="fa-solid fa-server" aria-hidden="true"></i><span>System role</span></button>
+                    <button type="button" id="ica--bulkRoleUser" class="menu_button menu_button_icon" title="Set injection role to User for all selected agents"><i class="fa-solid fa-user" aria-hidden="true"></i><span>User role</span></button>
+                    <button type="button" id="ica--bulkConvertCompanion" class="menu_button menu_button_icon" title="Convert selected agents to companion execution (side note cards under replies)"><i class="fa-solid fa-user-astronaut" aria-hidden="true"></i><span>To companion</span></button>
+                    <button type="button" id="ica--bulkEditProps" class="menu_button menu_button_icon" title="Bulk-edit properties for selected agents"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span>Edit</span></button>
+                    <button type="button" id="ica--bulkDelete" class="menu_button menu_button_icon caution" title="Delete selected agents"><i class="fa-solid fa-trash" aria-hidden="true"></i><span>Delete</span></button>
+                    <button type="button" id="ica--bulkCancel" class="menu_button menu_button_icon" title="Cancel selection"><i class="fa-solid fa-xmark" aria-hidden="true"></i><span>Done</span></button>
+                </div>
+            </div>
+
+            <div class="ica--manage-layout">
+            <aside class="ica--manage-nav" aria-label="Agent list filters">
+            <div id="ica--agentTabs" class="ica--agent-tabs" role="tablist" aria-orientation="vertical" aria-label="Agent list tabs">
+                <button type="button" class="ica--agent-tab is-active" data-tab="all" role="tab" aria-selected="true" tabindex="0">All</button>
+                <button type="button" class="ica--agent-tab" data-tab="quick" role="tab" aria-selected="false" tabindex="-1"><i class="fa-solid fa-star fa-xs" aria-hidden="true"></i> Pinned</button>
+                <button type="button" class="ica--agent-tab" data-tab="pre" role="tab" aria-selected="false" tabindex="-1">Before reply</button>
+                <button type="button" class="ica--agent-tab" data-tab="post" role="tab" aria-selected="false" tabindex="-1">After reply</button>
+                <button type="button" class="ica--agent-tab" data-tab="companion" role="tab" aria-selected="false" tabindex="-1"><i class="fa-solid fa-user-astronaut fa-xs" aria-hidden="true"></i> Companions</button>
+            </div>
+            <label class="ica--agent-view-select-label">
+                <span class="sr-only">Agent list view</span>
+                <select id="ica--agentViewSelect" class="text_pole" aria-label="Agent list view">
+                    <option value="all">All</option>
+                    <option value="quick">Pinned</option>
+                    <option value="pre">Before reply</option>
+                    <option value="post">After reply</option>
+                    <option value="companion">Companions</option>
+                </select>
+            </label>
+            </aside>
+
+            <div class="ica--manage-content">
+            <div class="ica--filter" role="search">
+                <label class="ica--search-field">
+                    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                    <span class="sr-only">Search agents</span>
+                    <input type="text" id="ica--search" class="text_pole" placeholder="Search agents" title="Search names, descriptions and tags" />
+                </label>
+                <label class="ica--category-field">
+                    <span class="sr-only">Filter by category</span>
+                    <select id="ica--categoryFilter" class="text_pole">
+                        <option value="">All categories</option>
+                        <option value="tracker">Tracker</option>
+                        <option value="randomizer">Randomizer</option>
+                        <option value="content">Content</option>
+                        <option value="companion">Companion</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </label>
+            </div>
+
+            <div id="ica--agentList" class="ica--agentList"></div>
+            </div>
+            </div>
+        </section>
+
+        <section class="ica--view-panel ica--connections-view" data-ica-view="connections" data-view="connections" role="tabpanel" aria-label="Connections and defaults" hidden>
+            <div class="ica--subview-heading">
+                <span class="ica--section-kicker">Connections &amp; defaults</span>
+                <h3>Connections and run behaviour</h3>
+                <p>Shared settings apply unless an agent has its own override.</p>
+            </div>
+            <div class="ica--settings-groups">
+                <section class="ica--settings-group" aria-labelledby="ica--connection-group-title">
+                    <div class="ica--settings-group-heading">
+                        <span class="ica--settings-group-icon"><i class="fa-solid fa-plug" aria-hidden="true"></i></span>
+                        <div><h4 id="ica--connection-group-title">Connection profiles</h4><p>Choose the model connection used by inline passes and companions.</p></div>
+                    </div>
+                    <label class="ica--profile-label"><span>Default connection profile</span><select id="ica--connectionProfile" class="text_pole" title="Which connection profile to use when an agent does not have its own editor profile override. Leave this on the selected Connection Manager profile to follow the active profile."><option value="">Current connection</option></select></label>
+                    <label class="ica--profile-label"><span>Companion connection profile</span><select id="ica--companionConnectionProfile" class="text_pole" title="Which connection profile Companion agents use when they do not have their own editor profile override. Leave empty to share the default above."><option value="">Default connection</option></select><small class="ica--profile-help">Use a quick, inexpensive model for notes that run after replies.</small></label>
+                </section>
+
+                <section class="ica--settings-group" aria-labelledby="ica--execution-group-title">
+                    <div class="ica--settings-group-heading">
+                        <span class="ica--settings-group-icon"><i class="fa-solid fa-shuffle" aria-hidden="true"></i></span>
+                        <div><h4 id="ica--execution-group-title">Execution rhythm</h4><p>Running together is faster. Taking turns is easier on rate limits.</p></div>
+                    </div>
+                    <label class="ica--profile-label"><span>Append agents</span><select id="ica--appendAgentsExecutionMode" class="text_pole" title="Run append-mode agents in parallel or sequentially."><option value="parallel">Run together</option><option value="sequential">Run one at a time</option></select></label>
+                    <label class="ica--profile-label"><span>Companion agents</span><select id="ica--companionExecutionMode" class="text_pole" title="Run companion agents in parallel or sequentially."><option value="parallel">Run together</option><option value="sequential">Run one at a time</option></select></label>
+                    <small class="ica--profile-help">One at a time follows each agent's Order value.</small>
+                    <label class="checkbox_label" title="Run companion agents at the same time as post-generation passes instead of after them."><input type="checkbox" id="ica--companionConcurrent" /><span>Run companions alongside post-generation passes</span></label>
+                </section>
+
+                <section class="ica--settings-group" aria-labelledby="ica--context-group-title">
+                    <div class="ica--settings-group-heading">
+                        <span class="ica--settings-group-icon"><i class="fa-solid fa-layer-group" aria-hidden="true"></i></span>
+                        <div><h4 id="ica--context-group-title">Context &amp; notifications</h4><p>Control helper prompts and how their work is shown while you chat.</p></div>
+                    </div>
+                    <label class="ica--profile-label ica--helper-prefill-label"><span>Helper prefill messages</span><textarea id="ica--helperPrefillMessages" class="text_pole ica--helper-prefill-field" rows="4" placeholder="[assistant] Start of helper response&#10;&#10;[system] Extra instruction"></textarea><small class="ica--profile-help">Use [system], [user], or [assistant] blocks. Text before a header is treated as [assistant].</small></label>
+                    <label class="checkbox_label" title="Keep enabled In-Chat Agents separate between Individual chats and Group chats."><input type="checkbox" id="ica--separateRecentChats" /><span>Keep individual and group chat switches separate</span></label>
+                    <label class="checkbox_label" title="Master switch for prompt pass toasts."><input type="checkbox" id="ica--promptTransformShowNotifications" /><span>Show prompt pass notifications</span></label>
+                    <label class="checkbox_label" title="View main LLM output before pre-generation intercept."><input type="checkbox" id="ica--postMainInterceptShowMessageFirst" /><span>Show main output before an intercept pass</span></label>
+                </section>
+
+                <section class="ica--settings-group" aria-labelledby="ica--pathfinder-group-title">
+                    <div class="ica--settings-group-heading">
+                        <span class="ica--settings-group-icon"><i class="fa-solid fa-route" aria-hidden="true"></i></span>
+                        <div><h4 id="ica--pathfinder-group-title">Pathfinder</h4><p>Keep the optional tool submodule available to the bundled Pathfinder agent.</p></div>
+                    </div>
+                    <label class="checkbox_label" title="Enable or disable the built-in Pathfinder submodule without disabling shared In-Chat Agents."><input type="checkbox" id="ica--pathfinderSubmoduleEnabled" /><span>Enable Pathfinder submodule</span></label>
+                    <p class="ica--profile-help">Detailed Pathfinder controls are in Extensions.</p>
+                    <button type="button" id="ica--pathfinderSettings" class="menu_button">Open Extensions</button>
+                </section>
+            </div>
+        </section>
+        </div>
+        </div>
+
+        <input type="file" id="ica--importFile" accept=".json" style="display:none" />
+    </div>
+</div>
+
+<div id="ica--bulkEditPopup" class="ica--bulk-edit-popup" style="display:none">
+    <div class="ica--bulk-edit-popup-content">
+        <strong>Bulk edit selected agents</strong>
+        <p class="ica--regex-note">Choose which properties to change. Leave a field at its default to skip it.</p>
+        <div class="ica--editor-row flex-container flexGap5">
+            <label class="flex1">Injection Role<select id="ica--bulkEdit-role" class="text_pole"><option value="" selected>Don't change</option><option value="0">System</option><option value="1">User</option><option value="2">Assistant</option></select></label>
+            <label class="flex1">Run timing<select id="ica--bulkEdit-phase" class="text_pole"><option value="" selected>Don't change</option><option value="pre">Before reply</option><option value="post">After reply</option><option value="both">Before and after</option></select></label>
+        </div>
+        <div class="ica--editor-row flex-container flexGap5">
+            <label class="flex1">How to change the reply<select id="ica--bulkEdit-promptMode" class="text_pole"><option value="" selected>Don't change</option><option value="rewrite">Rewrite</option><option value="append">Append</option></select></label>
+            <label class="flex1">Prompt Pass Enabled<select id="ica--bulkEdit-promptEnabled" class="text_pole"><option value="" selected>Don't change</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label>
+        </div>
+        <div class="ica--editor-row flex-container flexGap5">
+            <label class="flex1">Utility Post-Process Enabled<select id="ica--bulkEdit-ppEnabled" class="text_pole"><option value="" selected>Don't change</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label>
+            <label class="flex1">Scan World Info<select id="ica--bulkEdit-scan" class="text_pole"><option value="" selected>Don't change</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label>
+        </div>
+        <div class="ica--bulk-edit-popup-actions">
+            <button type="button" id="ica--bulkEditApply" class="menu_button menu_button_icon"><i class="fa-solid fa-check" aria-hidden="true"></i><span>Apply changes</span></button>
+            <button type="button" id="ica--bulkEditCancel" class="menu_button menu_button_icon"><i class="fa-solid fa-xmark" aria-hidden="true"></i><span>Cancel</span></button>
+        </div>
+    </div>
+</div>

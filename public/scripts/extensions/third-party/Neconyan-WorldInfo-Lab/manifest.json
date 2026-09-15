@@ -1,0 +1,23 @@
+{
+    "display_name": "World Info Lab",
+    "author": "SillyBunnyTeam",
+    "version": "0.3.0",
+    "description": "See why lorebook entries activate, save repeatable checks, check lorebook health, and safely edit many entries at once.",
+    "requires": [],
+    "optional": [],
+    "dependencies": [],
+    "minimum_client_version": "1.7.0",
+    "js": "index.js",
+    "css": "style.css",
+    "license": "AGPL-3.0",
+    "license_file": "LICENSE",
+    "homePage": "https://github.com/SillyBunnyTeam/SillyBunny-WorldInfo-Lab",
+    "loading_order": 100,
+    "auto_update": true,
+    "hooks": {
+        "activate": "init",
+        "enable": "init",
+        "disable": "deactivate",
+        "clean": "clean"
+    }
+}

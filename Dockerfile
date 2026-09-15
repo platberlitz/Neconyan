@@ -1,0 +1,53 @@
+FROM oven/bun:1.3.14-alpine
+
+# Arguments
+ARG APP_HOME=/home/bun/app
+
+# Install system dependencies
+# "Don't rely on the base image for tools; if you call it, you install it." ;)
+RUN apk add --no-cache gcompat tini git git-lfs nodejs npm su-exec shadow dos2unix
+
+# Create app directory and set ownership
+WORKDIR ${APP_HOME}
+RUN chown bun:bun ${APP_HOME}
+
+# Set NODE_ENV to production
+ENV NODE_ENV=production
+
+# Bundle app source and set ownership
+COPY --chown=bun:bun . ./
+
+RUN \
+  echo "*** Install Bun packages ***" && \
+  bun install --frozen-lockfile --production
+
+# Create config directory and link config.yaml. Added hardcoded dirs(constants.js?)
+# that must be present for Non-Root Mode and volumeless docker runs.
+RUN \
+  rm -f "config.yaml" || true && \
+  mkdir -p config data plugins public/scripts/extensions/third-party backups && \
+  chown -R bun:bun config data plugins public/scripts/extensions/third-party backups && \
+  ln -s "./config/config.yaml" "config.yaml"
+
+# Pre-compile public libraries
+RUN \
+  echo "*** Run Webpack ***" && \
+  bun "./docker/build-lib.js"
+
+# Set the entrypoint script and cleanup
+RUN \
+  echo "*** Cleanup ***" && \
+  mv "./docker/docker-entrypoint.sh" "./" && \
+  echo "*** Make docker-entrypoint.sh executable ***" && \
+  chmod +x "./docker-entrypoint.sh" && \
+  echo "*** Convert line endings to Unix format ***" && \
+  dos2unix "./docker-entrypoint.sh" && \
+  rm -rf "./docker"
+
+# Fix extension repos permissions
+RUN git config --global --add safe.directory "*"
+
+EXPOSE 4433
+
+# Ensure proper handling of kernel signals
+ENTRYPOINT ["tini", "--", "./docker-entrypoint.sh"]

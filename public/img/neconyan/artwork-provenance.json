@@ -1,0 +1,579 @@
+{
+  "generated_at": "2026-09-12",
+  "provider": "https://smolproxy.org/openai",
+  "coordinator": "gpt-5.5",
+  "image_model": "gpt-image-2.5-sunburst",
+  "command": "smol-image sunburst",
+  "processing": "Chroma green removed, transparent raster cutouts resized. Pixel sprite frames encoded as lossless animated WebP; derived rotations keep the generated mascot inside its frame.",
+  "sources": [
+    {
+      "path": "output/imagegen/neconyan-ui/cat-details-sunburst.png",
+      "sha256": "d3c74baf725e5f5e098c6f9127f4bed7359f309c19019ac3a00016c183a68f21",
+      "prompt": "Use case: illustration-story\nCreate a precisely aligned 3-column by 2-row sheet of SIX separate small illustrated UI decoration assets. Use the reference calico cat's rounded Japanese stationery style, dark cocoa outline, matte ivory/caramel/black patches and blush-pink inner ears. Canvas1024x1024. Each equal cell contains one complete isolated part, large green margins with no part touching a cell edge. No separators, labels, text, scenery, shadow, glow or gradient.\nTop left: just the calico cat HEAD, slightly tilted, eyes CLOSED asleep, with both ears. No neck or body.\nTop middle: only a cute upward-curled thick calico cat TAIL, cream base with caramel and black patches. Distinct single tail silhouette, no body.\nTop right: only THREE gently curved dark cocoa cat whisker strokes fanning leftward from one shared point at the right edge of the shape. No face, no dots, no framing shape. Slightly thick smooth strokes readable at32pixels wide.\nBottom left: only THREE gently curved dark cocoa whisker strokes fanning rightward from one shared point at the left edge, mirrored partner of top-right. No face, dots or framing shape.\nBottom middle: only a LEFT cat ear, a softly rounded triangular pointed cream ear with blush-pink inner triangle and caramel outer patch, dark cocoa outline, flat horizontal base. No face or body. Slight outward lean.\nBottom right: only the matching RIGHT cat ear, softly rounded triangular pointed ear with blush-pink interior, dark cocoa outer fur patch and a flat horizontal base. No face or body. Slight outward lean.\nBackground MUST be perfectly uniform solid chroma green #00ff00 outside each asset for clean removal. No green in any part. Do not draw a checkerboard. Keep parts clean, simple and pleasant at small sizes. Use the supplied illustration only as a style and palette reference.\n"
+    },
+    {
+      "path": "output/imagegen/neconyan-ui/cat-icons-sunburst.png",
+      "sha256": "b9d23e6039082c9c59aef67921c79a1390e04293a44b47903859dc4633d3b08a",
+      "prompt": "Use case: illustration-story\nReference: use the cat identity, asymmetrical calico markings and warm cream/peach/pink/black palette of the provided illustration. No text or lettering anywhere. No green in any subject. Background must be perfectly uniform solid chroma green #00ff00, no shadows or gradients.\nCreate a carefully aligned 2 by 2 sprite sheet of four separate cute polished stationery-style spot illustrations, one per equal square quadrant of a1024x1024 canvas. Every icon isolated with generous empty green margin, no dividers or labels. Keep every subject entirely within its cell. Bold warm cocoa outlines, flat matte colours, crisp small-scale readable silhouette. SAME round cream/caramel/black cat family throughout.\nTop left: only a cheerful calico cat HEAD looking forward, with two cute ears and tiny smiling mouth. Brand icon, no objects.\nTop right: only a friendly calico cat HEAD with a tiny peach bow tie directly beneath its chin. Character avatar placeholder.\nBottom left: only a friendly calico cat HEAD with a small blush-pink collar and heart-shaped tag beneath its chin. User persona avatar placeholder.\nBottom right: a small cream notepad with one peach folded page corner and a simple pink paw-print stamp, with a small calico cat peeking over its top edge. Note/comment icon, no lines of text.\n"
+    },
+    {
+      "path": "output/imagegen/neconyan-ui/cozy-library-sunburst.png",
+      "sha256": "d80231a8045845bdb184bb5bf19bceb8e663178acb761007973ae95ed5754406",
+      "prompt": "Use case: illustration-story\nAsset type: a small cute Neconyan UI illustration in the exact same illustrated family as the reference.\nThe reference is a STYLE AND CAT IDENTITY reference, not a scene to reproduce. Keep its warm hand-drawn cocoa outline, rounded calico anatomy, asymmetric ivory/black/caramel patches, pink inner ears and nose, subtle cheek blush, simple polished Japanese stationery style. Flat matte colours, minimal shading. Strong clean silhouette readable at 120 pixels wide.\nComposition: a single compact isolated vignette centred in the image, 16% empty margin all round. Nothing clipped. No text, letter-like marks, watermark, square sticker outline, ground plane, drop shadow, glow, environment or background gradients.\nBackground: completely uniform solid chroma green #00ff00 outside the vignette for clean background removal; no green in cat or objects. Do not draw a checkerboard.\nPrimary request: the same cute round calico cat sitting happily with its front paws resting on a small closed cream notebook above one apricot book. A little blush-pink ribbon bookmark sticks out. Cat has content closed smiling eyes, upright ears and its tail curled around the books. No speech bubble, heart or magnifying glass. No writing, symbols or fake text on the books. The entire cat and books fit within the vignette.\n"
+    },
+    {
+      "path": "output/imagegen/neconyan-ui/curious-search-sunburst.png",
+      "sha256": "607961b08e36fa6fdd5ffdf0285ff45a06511c0a5900467fddd32c653398dce7",
+      "prompt": "Use case: illustration-story\nAsset type: a small cute Neconyan UI illustration in the exact same illustrated family as the reference.\nThe reference is a STYLE AND CAT IDENTITY reference, not a scene to reproduce. Keep its warm hand-drawn cocoa outline, rounded calico anatomy, asymmetric ivory/black/caramel patches, pink inner ears and nose, subtle cheek blush, simple polished Japanese stationery style. Flat matte colours, minimal shading. Strong clean silhouette readable at 120 pixels wide.\nComposition: a single compact isolated vignette centred in the image, 16% empty margin all round. Nothing clipped. No text, letter-like marks, watermark, square sticker outline, ground plane, drop shadow, glow, environment or background gradients.\nBackground: completely uniform solid chroma green #00ff00 outside the vignette for clean background removal; no green in cat or objects. Do not draw a checkerboard.\nPrimary request: the same cute round calico cat looking curiously through a small peach-handled magnifying glass, with one paw holding its handle. The cat has big warm dark eyes and its head tilted gently to one side. Lens is uncoloured and clear, the same green background visible through the empty part. One tiny blush-pink sparkle beside its ear. No speech bubble or heart. The entire cat, paws, tail and glass fit within the vignette.\n"
+    },
+    {
+      "path": "output/imagegen/neconyan-ui/pixel-cat-frames-sunburst.png",
+      "sha256": "2e462fa9a8ad63ef4903c41749dd690fb27ae0f67f40112c5207efbe9d651b0b",
+      "prompt": "Use case: illustration-story\nReference: use the cat identity, asymmetrical calico markings and warm cream/peach/pink/black palette of the provided illustration. No text or lettering anywhere. No green in any subject. Background must be perfectly uniform solid chroma green #00ff00, no shadows or gradients.\nCreate a precisely aligned 3 by 3 sprite sheet of the SAME cute small calico cat in nine animation poses.1024x1024 canvas; each equal cell contains one complete isolated full-body sprite, centred with at least18% empty green margin. No dividers, frames or labels. All nine cats have the same scale, body proportions and markings. STYLE: genuine clean chunky pixel art, visible square pixels, limited cream/peach/brown/black/pink palette, no anti-aliasing, no gradients. Cat is rounded and irresistibly cute, small paws, pointed ears, curled tail, pink nose. No objects or scenery. Cat fully inside every cell.\nTop row, left to right: (1) sitting facing slightly right, open eyes, tail curved right; (2) exactly same sitting pose with both eyes peacefully closed for a blink; (3) sitting but compressed into a crouch ready to jump, eyes open.\nMiddle row, left to right: three sequential side-view running poses facing right, (4) front paw reaching forward and hind paw extended back; (5) paws tucked beneath body; (6) front paw tucked and hind paw reaching forward.\nBottom row, left to right: (7) side-view running with paws outstretched in a little leap; (8) a happy compact curled-ball pose suitable for spinning during a backflip; (9) sitting after landing, eyes happily closed, tail curled around paws.\n"
+    },
+    {
+      "path": "output/imagegen/neconyan-ui/sleepy-chat-sunburst.png",
+      "sha256": "3b8d531c60788275d046ade9cd57e40fab7df2fc4c68a92b40bd539cf0b8b95c",
+      "prompt": "Use case: illustration-story\nAsset type: small empty-chat illustration for Neconyan, a cute calico-themed chat app.\nPrimary request: one irresistibly cute round calico cat curled asleep with its chin and paws on a small plush cream speech bubble. Closed happy eyes, little pink nose, plump soft paws, little curved tail, asymmetrical black and caramel patches on ivory fur, subtle blush inside ears. A small peach heart is tucked beside its tail.\nStyle: polished Japanese stationery illustration, hand-drawn dark cocoa outlines, flat matte cream, apricot peach, caramel brown, ink black and tiny soft blush-pink accents. Very simple chunky readable silhouette, a few delicate fur strokes. Charming rather than corporate or realistic. Crisp silhouette remains readable at 120 pixels wide.\nComposition: one isolated compact vignette, horizontally balanced, centred with 16% clear margin on every side. All ears, paws and tail fully inside frame. No text, lettering, watermark, UI panel or square sticker border. No ground plane, shadows, glow, gradients or environment.\nBackground: perfectly uniform solid chroma green #00ff00 ONLY outside the vignette so the background can be cleanly removed. No green anywhere in the cat or objects. Do not draw a checkerboard. Preserve creamy-white fur and the warm dark outlines.\n"
+    },
+    {
+      "path": "output/imagegen/neconyan-ui/paw-prints-sunburst.png",
+      "sha256": "5eb9d7c68770ecdf650a9d49a487d95944bd3996663045b6c43bbda232d3bfb4",
+      "prompt": "Use case: illustration-story\nAsset type: four individual cute paw-print stamps for a calico-themed app background.\nCreate a precise2-by-2sheet on a1024x1024 canvas, one paw print per equal square cell, generous18%empty margin, no dividers or labels. Use the supplied calico illustration ONLY as a palette and softness reference. Do NOT draw any cat, face, ears, tail, limb, book, or object.\nEach subject is a single unmistakable CAT PAW PRINT seen as a stamp: four small soft oval toe beans arched above one large rounded heart-like central paw pad. Five separate filled shapes in each paw, all five visible, anatomically legible. Friendly slightly asymmetric hand-drawn contours, simple flat matte ink, no outlines, no gradients, no glow, no drop shadows, no hard rectangular border. Soft rounded cute Japanese stationery aesthetic. Remains clear at32pixels wide.\nTop left: warm ivory-cream paw print, leaning very slightly left.\nTop right: blush-pink paw print, leaning very slightly right.\nBottom left: soft caramel-peach paw print, leaning slightly right.\nBottom right: warm ink-charcoal paw print, leaning slightly left.\nKeep the four paws the same approximate scale and anatomy, with small natural contour variation. No extra scattered beans or confetti, no text, lettering or watermark.\nBackground outside all pads must be completely uniform solid chroma green #00ff00 for clean removal. No green within the prints. No checkerboard, no paper texture or environment. The green gaps between toe pads must remain open.\n"
+    },
+    {
+      "path": "output/imagegen/neconyan-kitty-clouds/kitty-clouds-sunburst.png",
+      "sha256": "76409036f802a87246493c66e5471234fd4407c670d49560dc8dfc54ce46caf4",
+      "prompt": "Use case: illustration-story\nAsset type: wide background artwork behind the entire Neconyan chat application.\nPrimary request: a cute, muted pastel pink and purple kitty-cloud background.\nScene and subject: soft clouds shaped like sleepy round cats, with tiny cat ears and simple peaceful faces, drifting through a quiet blush-pink and lilac sky.\nStyle: original soft storybook illustration, rounded shapes, gentle matte colour, very low contrast and sparse detail.\nComposition: wide 16:9 canvas, airy open centre, loosely scattered kitty clouds mainly around the outer edges. It must crop gracefully to a tall phone viewport.\nPalette and mood: muted pastel pink, dusty lilac, pale lavender and warm cream; cosy, sleepy and calm.\nConstraints: background artwork only, no UI, lettering, logos, borders or watermark. No sharp contrasts, saturated colours or busy patterns. The application will show the finished image at low opacity under its readable UI surfaces.\n",
+      "generated_at": "2026-09-13T00:36:28.632729+00:00",
+      "processing": "Converted to RGB WebP at quality 88; the application controls backdrop opacity in CSS."
+    }
+  ],
+  "outputs": [
+    {
+      "path": "default/content/user-default.png",
+      "size": [
+        512,
+        768
+      ],
+      "frames": 1,
+      "sha256": "bf89657f0d536f2804976bb6b5988d637c92a69766e2b9078608e954630a37d2"
+    },
+    {
+      "path": "public/img/No-Image-Placeholder.png",
+      "size": [
+        400,
+        600
+      ],
+      "frames": 1,
+      "sha256": "a98685ae5e224c2c9b6f3b3b2f799b5d0f115bad362c9cf07e6b99632164a919"
+    },
+    {
+      "path": "public/img/ai4.png",
+      "size": [
+        512,
+        768
+      ],
+      "frames": 1,
+      "sha256": "a8b8faaf028511f08017fd00a60bb9bd753cd6a3cc05d4999fc1255990bbb5dc"
+    },
+    {
+      "path": "public/img/apple-icon-114x114.png",
+      "size": [
+        114,
+        114
+      ],
+      "frames": 1,
+      "sha256": "95d45791a9500e5bfb435c8d793875a96a9ba6a9b0fa8ed6d7544d17995210c6"
+    },
+    {
+      "path": "public/img/apple-icon-144x144.png",
+      "size": [
+        144,
+        144
+      ],
+      "frames": 1,
+      "sha256": "6c9eb99015849238f6744c01ebb59e97ee45ff21236aadd4fee3494f6ee0f91b"
+    },
+    {
+      "path": "public/img/apple-icon-180x180.png",
+      "size": [
+        180,
+        180
+      ],
+      "frames": 1,
+      "sha256": "9d56a6b4f0375039238e3254f9651736c78ab59585cf81c3989817832c9dedd5"
+    },
+    {
+      "path": "public/img/apple-icon-192x192.png",
+      "size": [
+        192,
+        192
+      ],
+      "frames": 1,
+      "sha256": "29c804baa3a0dd4a72273262a814861c656e03f6da3ba55d2e28c192db1d2946"
+    },
+    {
+      "path": "public/img/apple-icon-512x512.png",
+      "size": [
+        512,
+        512
+      ],
+      "frames": 1,
+      "sha256": "14f5a86d72812d138699fe71b1e55368a4bea68d7a3ff717035751fa73d2e6e1"
+    },
+    {
+      "path": "public/img/apple-icon-57x57.png",
+      "size": [
+        57,
+        57
+      ],
+      "frames": 1,
+      "sha256": "1f1028ccb77110ef7f604f8fb2ff485c1abd957b445751ad64fb39c0698c9dd1"
+    },
+    {
+      "path": "public/img/apple-icon-72x72.png",
+      "size": [
+        72,
+        72
+      ],
+      "frames": 1,
+      "sha256": "aa5401531a2ae2aa1a61eb5d1a4c3ecef769bab3f14ba914eb9b24a4b8daa011"
+    },
+    {
+      "path": "public/img/icon-128x128.png",
+      "size": [
+        128,
+        128
+      ],
+      "frames": 1,
+      "sha256": "4e2e38ca45fdc93a038fb12e0b38538e67a5273615566f145cf4ba5904215249"
+    },
+    {
+      "path": "public/img/icon-16x16.png",
+      "size": [
+        16,
+        16
+      ],
+      "frames": 1,
+      "sha256": "3e872914690912be62e18f5915aaca5286d258afdc4981908170a7c7ce46ace4"
+    },
+    {
+      "path": "public/img/icon-24x24.png",
+      "size": [
+        24,
+        24
+      ],
+      "frames": 1,
+      "sha256": "fc40005a60140e3c3e6a9490adf35c24d96166d92d4e3291794a09239ca53a85"
+    },
+    {
+      "path": "public/img/icon-256x256.png",
+      "size": [
+        256,
+        256
+      ],
+      "frames": 1,
+      "sha256": "c1143579959637c03c08cfe00e638ebfc71f9bf3adec40e6dfd5b64b7bbf00d2"
+    },
+    {
+      "path": "public/img/icon-32x32.png",
+      "size": [
+        32,
+        32
+      ],
+      "frames": 1,
+      "sha256": "89cc610cf8cdbce1d6298b46aeba276564120eaa7ecf8de387f3dec0680c68c0"
+    },
+    {
+      "path": "public/img/icon-48x48.png",
+      "size": [
+        48,
+        48
+      ],
+      "frames": 1,
+      "sha256": "5d4c112696322dcd3615476ae2d0b8318fa967736cc20114caf039f42202e0fd"
+    },
+    {
+      "path": "public/img/icon-512x512.png",
+      "size": [
+        512,
+        512
+      ],
+      "frames": 1,
+      "sha256": "14f5a86d72812d138699fe71b1e55368a4bea68d7a3ff717035751fa73d2e6e1"
+    },
+    {
+      "path": "public/img/icon-64x64.png",
+      "size": [
+        64,
+        64
+      ],
+      "frames": 1,
+      "sha256": "688475b37545074eda3d098cf827d64638e08f3ca43863bb0bbc671b37a73115"
+    },
+    {
+      "path": "public/img/icon-96x96.png",
+      "size": [
+        96,
+        96
+      ],
+      "frames": 1,
+      "sha256": "e7bfe9eca3f716b597e425c1e8a38a58d3d09970d0628f4cb0f87f5b13f91c7c"
+    },
+    {
+      "path": "public/img/logo.png",
+      "size": [
+        512,
+        512
+      ],
+      "frames": 1,
+      "sha256": "14f5a86d72812d138699fe71b1e55368a4bea68d7a3ff717035751fa73d2e6e1"
+    },
+    {
+      "path": "public/img/neconyan/cat-head.webp",
+      "size": [
+        256,
+        212
+      ],
+      "frames": 1,
+      "sha256": "b449e7957d8d0b9407c7ac0ce2aa30a5bb00a3cd66eecaa29125d4c3742d53ce"
+    },
+    {
+      "path": "public/img/neconyan/cat-tail.webp",
+      "size": [
+        135,
+        256
+      ],
+      "frames": 1,
+      "sha256": "76058fa2a203eb7d55be42921e3a373ff2b0bc9384221e7085c69d416b9f30f6"
+    },
+    {
+      "path": "public/img/neconyan/cozy-library.webp",
+      "size": [
+        536,
+        515
+      ],
+      "frames": 1,
+      "sha256": "23e613cdb587916ebfb99f46b1696830afd43c27cd35c51e282e2070f3c7e27d"
+    },
+    {
+      "path": "public/img/neconyan/curious-search.webp",
+      "size": [
+        536,
+        510
+      ],
+      "frames": 1,
+      "sha256": "dc67eaed914395c4ccb0723dce65ffe4ab0c3ba4c8ef29be7aba9501f4cf9c67"
+    },
+    {
+      "path": "public/img/neconyan/ear-left.webp",
+      "size": [
+        192,
+        168
+      ],
+      "frames": 1,
+      "sha256": "47c769ad9297ca73f86781121b2d28164ad8e0358b62d25d3ea2da2f9e0d22f5"
+    },
+    {
+      "path": "public/img/neconyan/ear-right.webp",
+      "size": [
+        199,
+        168
+      ],
+      "frames": 1,
+      "sha256": "344704ac718083d5f47e922bb356550c78675296a5d08312a6c5503f46ff2576"
+    },
+    {
+      "path": "public/img/neconyan/sleepy-chat.webp",
+      "size": [
+        536,
+        436
+      ],
+      "frames": 1,
+      "sha256": "8648ffde01f0eb16caa50eac40acc2e83cc8064e14eb7e5add8149c217129ddc"
+    },
+    {
+      "path": "public/img/neconyan/whisker-left.webp",
+      "size": [
+        224,
+        162
+      ],
+      "frames": 1,
+      "sha256": "862e108fdd46d2983992f448b5c6b17d242d4cfa9b29c454ae6181cd50f5a9ea"
+    },
+    {
+      "path": "public/img/neconyan/whisker-right.webp",
+      "size": [
+        224,
+        162
+      ],
+      "frames": 1,
+      "sha256": "c1fb6ea5442c7e00cf098cc4379d1b0ce19b358d2def9ae98b59e54efdc1aa93"
+    },
+    {
+      "path": "public/img/neconyan-character.png",
+      "size": [
+        512,
+        512
+      ],
+      "frames": 1,
+      "sha256": "ec33c4c233e0652e3ba3fa7953221875838b30e5b43038f74e7e2479f9066a8d"
+    },
+    {
+      "path": "public/img/neconyan-icon-180.png",
+      "size": [
+        180,
+        180
+      ],
+      "frames": 1,
+      "sha256": "9d56a6b4f0375039238e3254f9651736c78ab59585cf81c3989817832c9dedd5"
+    },
+    {
+      "path": "public/img/neconyan-icon-192.png",
+      "size": [
+        192,
+        192
+      ],
+      "frames": 1,
+      "sha256": "29c804baa3a0dd4a72273262a814861c656e03f6da3ba55d2e28c192db1d2946"
+    },
+    {
+      "path": "public/img/neconyan-icon-512.png",
+      "size": [
+        512,
+        512
+      ],
+      "frames": 1,
+      "sha256": "14f5a86d72812d138699fe71b1e55368a4bea68d7a3ff717035751fa73d2e6e1"
+    },
+    {
+      "path": "public/img/neconyan-note.png",
+      "size": [
+        512,
+        512
+      ],
+      "frames": 1,
+      "sha256": "9667c46421cb29bf8b6f16edc009aff032c9496001f77d3049132c245e235191"
+    },
+    {
+      "path": "public/img/neconyan-persona.png",
+      "size": [
+        512,
+        512
+      ],
+      "frames": 1,
+      "sha256": "c57b5098fea916876e30cb33485326a901221d55fc5c2b28bd8560da84b144e7"
+    },
+    {
+      "path": "public/img/neconyan-pixel-cat-rest.webp",
+      "size": [
+        208,
+        192
+      ],
+      "frames": 1,
+      "sha256": "be9fe41840db1cdfb1c037387e2bae3cc2fb9fd8e3456bbddf23eaebc753fa5f"
+    },
+    {
+      "path": "public/img/neconyan-pixel-cat-running.webp",
+      "size": [
+        384,
+        192
+      ],
+      "frames": 4,
+      "sha256": "cc75b929c8bb8ea4cfadaad7475fec83dec56027fcd59d0a2a97370272848a60",
+      "loop_ms": 440
+    },
+    {
+      "path": "public/img/neconyan-pixel-cat.webp",
+      "size": [
+        208,
+        192
+      ],
+      "frames": 29,
+      "sha256": "beb682f86cae39a26796fa6561d01b87f984a7c04dfd6ea0d0b9ac0740b729fb",
+      "loop_ms": 4500
+    },
+    {
+      "path": "public/img/neconyan.png",
+      "size": [
+        512,
+        512
+      ],
+      "frames": 1,
+      "sha256": "14f5a86d72812d138699fe71b1e55368a4bea68d7a3ff717035751fa73d2e6e1"
+    },
+    {
+      "path": "public/img/quill.png",
+      "size": [
+        400,
+        600
+      ],
+      "frames": 1,
+      "sha256": "cf8cc1d51839dd3f7a9f63d9e58f2fe0c0a7f510ec5a3dfb365172b16b0bb992"
+    },
+    {
+      "path": "public/img/user-default.png",
+      "size": [
+        512,
+        768
+      ],
+      "frames": 1,
+      "sha256": "bf89657f0d536f2804976bb6b5988d637c92a69766e2b9078608e954630a37d2"
+    },
+    {
+      "path": "public/favicon.ico",
+      "size": [
+        64,
+        64
+      ],
+      "frames": 1,
+      "icon_sizes": [
+        [
+          16,
+          16
+        ],
+        [
+          32,
+          32
+        ],
+        [
+          48,
+          48
+        ],
+        [
+          64,
+          64
+        ]
+      ],
+      "sha256": "d2b87c276907192760024fc7c0ac6b038c9fce9ae9f4bbbfce08b73ce71bb884"
+    },
+    {
+      "path": "public/st-launcher.ico",
+      "size": [
+        256,
+        256
+      ],
+      "frames": 1,
+      "icon_sizes": [
+        [
+          16,
+          16
+        ],
+        [
+          24,
+          24
+        ],
+        [
+          32,
+          32
+        ],
+        [
+          48,
+          48
+        ],
+        [
+          64,
+          64
+        ],
+        [
+          128,
+          128
+        ],
+        [
+          256,
+          256
+        ]
+      ],
+      "sha256": "b5364bda7eacb79f585057175fc96d6cb149d2afcb87b0a63d9af3b85784be5b"
+    },
+    {
+      "path": "public/st.ico",
+      "size": [
+        256,
+        256
+      ],
+      "frames": 1,
+      "icon_sizes": [
+        [
+          16,
+          16
+        ],
+        [
+          24,
+          24
+        ],
+        [
+          32,
+          32
+        ],
+        [
+          48,
+          48
+        ],
+        [
+          64,
+          64
+        ],
+        [
+          128,
+          128
+        ],
+        [
+          256,
+          256
+        ]
+      ],
+      "sha256": "b5364bda7eacb79f585057175fc96d6cb149d2afcb87b0a63d9af3b85784be5b"
+    },
+    {
+      "path": "public/img/neconyan/paw-cream.webp",
+      "size": [
+        256,
+        241
+      ],
+      "frames": 1,
+      "background_opacity": 0.25,
+      "sha256": "4a622baf05522f8c9bb20f4b74d72b111fb6e576e5a5d747ffba5ebcc9aa1475"
+    },
+    {
+      "path": "public/img/neconyan/paw-pink.webp",
+      "size": [
+        256,
+        242
+      ],
+      "frames": 1,
+      "background_opacity": 0.25,
+      "sha256": "d2f13b5baeecd85073f8e7a10c60c5edd3552390998b670c3e342043f192d486"
+    },
+    {
+      "path": "public/img/neconyan/paw-peach.webp",
+      "size": [
+        256,
+        232
+      ],
+      "frames": 1,
+      "background_opacity": 0.25,
+      "sha256": "b101c9cc5a94d901bd4fb3eb914e4d973d10cb1ee569fa5a7e7c08e222783343"
+    },
+    {
+      "path": "public/img/neconyan/paw-ink.webp",
+      "size": [
+        256,
+        235
+      ],
+      "frames": 1,
+      "background_opacity": 0.25,
+      "sha256": "e835c84c10d0c6eaa4219fc4e84c47b63eb1707485425abebf4fa7b5d5fb6f38"
+    },
+    {
+      "path": "public/img/neconyan/kitty-clouds.webp",
+      "size": [
+        2048,
+        1152
+      ],
+      "frames": 1,
+      "sha256": "4889d839516762d50a906fda590ace53cbff79979cf859450de0bf5285a071f4"
+    }
+  ]
+}
