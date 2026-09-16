@@ -184,7 +184,8 @@ describe('Neconyan assistant catalog and installer', () => {
                 expect(source.data.description).toContain({ miso: 'tiger stripes', taro: 'blue-grey', nori: 'tuxedo' }[personality.id]);
                 expect(source.data.description).toContain('`Interviewer`:');
                 expect(source.data.mes_example).toContain('<START>');
-                expect(source.data.alternate_greetings).toHaveLength(3);
+                expect(source.data.alternate_greetings).toEqual([]);
+                expect(source.data.first_mes).not.toMatch(/\n|\*/);
                 expect(source.data.extensions.depth_prompt).toMatchObject({ depth: 4, role: 'system' });
                 expect(source.data.extensions.depth_prompt.prompt).toMatch(/^\[[\s\S]*'s persona:[\s\S]*\]$/);
                 expect(JSON.stringify(source.data)).not.toMatch(/NSFW|sexual|erotic|\bsex\b|\u2014/i);
