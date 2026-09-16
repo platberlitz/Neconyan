@@ -106,7 +106,7 @@ describe('Neconyan assistant catalog and installer', () => {
         fs.writeFileSync(chatPath, '{"mes":"Keep my chat"}\n');
         const catalog = await (await fetch(`${baseUrl}/api/characters/assistants`)).json();
         const variant = catalog.personalities.flatMap(item => item.variants).find(item => item.id === 'miso-male');
-        expect(variant).toMatchObject({ bundledVersion: 1, installed: [{ avatar: old.installed.avatar, version: 0, updateAvailable: true }] });
+        expect(variant).toMatchObject({ bundledVersion: 3, installed: [{ avatar: old.installed.avatar, version: 0, updateAvailable: true }] });
         const updates = await Promise.all([1, 2].map(async () => {
             const response = await requestJson('/api/characters/assistants/update-copy', { id: 'miso-male', avatar: old.installed.avatar });
             expect(response.status).toBe(200);
@@ -122,15 +122,15 @@ describe('Neconyan assistant catalog and installer', () => {
         expect(fs.readdirSync(directories.characters).filter(file => file.endsWith('.png'))).toHaveLength(2);
         expect(fs.readdirSync(path.join(directories.characters, 'Neconyan Assistants'))).toHaveLength(2);
         const revised = JSON.parse(readCard(fs.readFileSync(path.join(directories.characters, updates[0].avatar))));
-        expect(revised.data.extensions.neconyan_assistant).toMatchObject({ id: 'miso-male', version: 1 });
+        expect(revised.data.extensions.neconyan_assistant).toMatchObject({ id: 'miso-male', version: 3 });
         expect(revised.data.description).toContain('`Interviewer`:');
     });
 
-    test('keeps a newer installed card current after the bundled baseline returns to V1', async () => {
-        const installed = await legacyAssistant('miso-neutral', {}, 2);
+    test.each([1, 2, 3, 4])('offers updated artwork only for older installed cards (version %i)', async (version) => {
+        const installed = await legacyAssistant('miso-neutral', {}, version);
         const catalog = await (await fetch(`${baseUrl}/api/characters/assistants`)).json();
         const variant = catalog.personalities.flatMap(item => item.variants).find(item => item.id === 'miso-neutral');
-        expect(variant).toMatchObject({ bundledVersion: 1, installed: [{ avatar: installed.installed.avatar, version: 2, updateAvailable: false }] });
+        expect(variant).toMatchObject({ bundledVersion: 3, installed: [{ avatar: installed.installed.avatar, version, updateAvailable: version < 3 }] });
     });
 
     test('update-copy rejects wrong targets and isolates two profiles', async () => {
@@ -179,11 +179,13 @@ describe('Neconyan assistant catalog and installer', () => {
                 const source = JSON.parse(fs.readFileSync(path.join(repoRoot, 'default/content/assistants', variant.source), 'utf8'));
                 const packed = JSON.parse(readCard(fs.readFileSync(path.join(repoRoot, 'default/content/assistants', variant.card))));
                 expect(packed.data).toEqual(source.data);
-                expect(source.data.character_version).toBe('1.0');
+                expect(source.data.character_version).toBe('3.0');
+                expect(source.data.description).not.toContain('calico');
+                expect(source.data.description).toContain({ miso: 'tiger stripes', taro: 'blue-grey', nori: 'tuxedo' }[personality.id]);
                 expect(source.data.description).toContain('`Interviewer`:');
                 expect(source.data.mes_example).toContain('<START>');
                 expect(JSON.stringify(source.data)).not.toMatch(/NSFW|sexual|erotic|\bsex\b/i);
-                expect(source.data.extensions.neconyan_assistant).toMatchObject({ id: variant.id, gender: variant.gender, pronouns: variant.pronouns, version: 1 });
+                expect(source.data.extensions.neconyan_assistant).toMatchObject({ id: variant.id, gender: variant.gender, pronouns: variant.pronouns, version: 3 });
                 return source.data;
             });
             expect(new Set(variants.map(variant => variant.personality)).size).toBe(1);
@@ -200,7 +202,9 @@ describe('Neconyan assistant catalog and installer', () => {
         expect(payload.personalities.flatMap(personality => personality.variants)).toHaveLength(9);
         expect(JSON.stringify(payload)).not.toMatch(/card|expressions|source/);
 
-        const portrait = await fetch(`${baseUrl}/api/characters/assistants/miso-male/portrait`);
+        const portraitUrl = payload.personalities.flatMap(item => item.variants).find(item => item.id === 'miso-male').portrait;
+        expect(portraitUrl).toBe('/api/characters/assistants/miso-male/portrait?v=3');
+        const portrait = await fetch(`${baseUrl}${portraitUrl}`);
         expect(portrait.status).toBe(200);
         expect(portrait.headers.get('content-type')).toMatch(/^image\/png/);
         expect((await fetch(`${baseUrl}/api/characters/assistants/%2e%2e%2fmiso-male/portrait`)).status).toBe(404);

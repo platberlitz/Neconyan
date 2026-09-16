@@ -163,7 +163,7 @@ export function updateConversationTitleBadge(totalUnread = getTotalUnreadCount()
 
 export function updateConversationFaviconBadge(totalUnread = getTotalUnreadCount()) {
     const link = getFaviconLink();
-    const sourceHref = conversationState.originalFaviconHref || link.href;
+    const sourceHref = window.NeconyanFrontendIcon?.getSrc() || conversationState.originalFaviconHref || link.href;
     if (!sourceHref) {
         return;
     }

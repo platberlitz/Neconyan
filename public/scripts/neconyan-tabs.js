@@ -163,6 +163,9 @@ const NN_FRONTEND_ICONS = Object.freeze([
         description: 'Neconyan calico badge.',
         src: 'img/neconyan-icon-192.png',
     },
+    { id: 'miso', label: 'Miso', description: 'Orange-and-black tiger.', src: 'img/neconyan/assistant-icons/miso.png' },
+    { id: 'taro', label: 'Taro', description: 'Blue-grey cat.', src: 'img/neconyan/assistant-icons/taro.png' },
+    { id: 'nori', label: 'Nori', description: 'Black-and-white tuxedo cat.', src: 'img/neconyan/assistant-icons/nori.png' },
 ]);
 const NN_ACCOUNT_STORAGE_READY_MARKER = '__migrated';
 const NN_INLINE_DRAWER_CUSTOM_PERSISTENCE_SELECTOR = '.sb-openai-settings-drawer, .sb-openai-settings-subdrawer, [id$="prompt_manager_drawer"]';
@@ -14723,7 +14726,7 @@ function createFrontendIconSettingsGroup() {
     const title = createElement('strong', { text: 'Frontend Icon' });
     const description = createElement('p', {
         className: 'sb-theme-slider-caption',
-        text: 'Choose which Neconyan icon appears in the app chrome, splash screen, and Home panel.',
+        text: 'Choose the icon for your browser tab and system messages.',
     });
     const options = createElement('div', { className: 'sb-frontend-icon-options' });
 

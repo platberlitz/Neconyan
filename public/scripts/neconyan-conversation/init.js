@@ -53,6 +53,7 @@ export function init() {
     ensureConversationStylesheet();
     migrateConversationLocalStorage();
     sanitizeConversationUnreadCounts();
+    window.addEventListener('sb:frontend-icon-changed', updateConversationNotificationIndicators);
     eventSource.on(event_types.USER_MESSAGE_RENDERED, (messageId) => {
         if (!hasConversationRuntimeUsage()) {
             return;

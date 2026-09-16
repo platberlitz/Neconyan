@@ -1,0 +1,69 @@
+{
+  "version": 3,
+  "model": "gpt-image-2.5-sunburst",
+  "icons": [
+    {
+      "id": "miso",
+      "model": "gpt-image-2.5-sunburst",
+      "coordinator": "gpt-5.5",
+      "generatedAt": "2026-09-16T05:39:23.161933+00:00",
+      "prompt": "Create a square frontend icon showing ONLY the chibi assistant head from the reference. Preserve the same human anime face, hair, ears, markings, eyes and illustrated style. Miso has rich warm orange hair with several distinct irregular charcoal-black tiger stripes through the hair, rounded orange tiger ears with black edging and ivory inner fluff, and amber eyes. The tiger pattern is visibly striped, continuous and deliberate. The face, neck and hands remain natural human skin. Cream knitted layers with restrained charcoal and orange striped panels and a soft apricot scarf complete the welcoming outfit. Show the whole head and both ears, a cheerful confident smile, centred and large with 8 percent clear margin on all sides. The silhouette ends cleanly beneath the chin and hair. Head only, without neck, shoulders, torso, hands, props, badge or border. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+      "size": "1024x1024",
+      "quality": "high",
+      "rawSha256": "4f368cd2cf291d27bfcb953d23180586bc47f05277161f1a0b0a85598b8075aa",
+      "references": [
+        {
+          "file": ".local-runtime/assistant-art-v3/processed/tour-02-miso-characters.png",
+          "sha256": "bdd7eb9afa623579d316d730f17a1cd6094511a6594a2850899a24ea3c394871"
+        }
+      ],
+      "finalFile": "public/img/neconyan/assistant-icons/miso.png",
+      "finalSha256": "f1b9a4cd132355e0016f9806b1012f7bc0af56a5800be9b70b80b42c9b1f69b9",
+      "width": 192,
+      "height": 192,
+      "transparent": true
+    },
+    {
+      "id": "taro",
+      "model": "gpt-image-2.5-sunburst",
+      "coordinator": "gpt-5.5",
+      "generatedAt": "2026-09-16T05:39:25.630594+00:00",
+      "prompt": "Create a square frontend icon showing ONLY the chibi assistant head from the reference. Preserve the same human anime face, hair, ears, markings, eyes and illustrated style. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. Show the whole head and both ears, a cheerful confident smile, centred and large with 8 percent clear margin on all sides. The silhouette ends cleanly beneath the chin and hair. Head only, without neck, shoulders, torso, hands, props, badge or border. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+      "size": "1024x1024",
+      "quality": "high",
+      "rawSha256": "404875d3785f5b59b9686290d9dfefec28d3ffb52c33d355c84c09badb5a50e9",
+      "references": [
+        {
+          "file": ".local-runtime/assistant-art-v3/processed/tour-03-taro-modes.png",
+          "sha256": "797754e935ed85629feb084d34a51641f660e33ca54972fd3e37cb9f936043ff"
+        }
+      ],
+      "finalFile": "public/img/neconyan/assistant-icons/taro.png",
+      "finalSha256": "9445f30b6ac9d296f8a9879785546ff67e8153f4439a2b4c55a92352df190126",
+      "width": 192,
+      "height": 192,
+      "transparent": true
+    },
+    {
+      "id": "nori",
+      "model": "gpt-image-2.5-sunburst",
+      "coordinator": "gpt-5.5",
+      "generatedAt": "2026-09-16T05:39:25.559062+00:00",
+      "prompt": "Create a square frontend icon showing ONLY the chibi assistant head from the reference. Preserve the same human anime face, hair, ears, markings, eyes and illustrated style. Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit. Show the whole head and both ears, a cheerful confident smile, centred and large with 8 percent clear margin on all sides. The silhouette ends cleanly beneath the chin and hair. Head only, without neck, shoulders, torso, hands, props, badge or border. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+      "size": "1024x1024",
+      "quality": "high",
+      "rawSha256": "517fff0c76aa98e312e34a43cf05f4fe4fb661a0d54945e64f62a5a992ece98a",
+      "references": [
+        {
+          "file": ".local-runtime/assistant-art-v3/processed/tour-06-nori-extensions.png",
+          "sha256": "2cf25b4ffea490f9427a5132fac1077aa031975d53eb0aba57ad251c7cb12354"
+        }
+      ],
+      "finalFile": "public/img/neconyan/assistant-icons/nori.png",
+      "finalSha256": "45371577e51d1b031afb1d411a78fefb9160dbde6382d9a9cf8dfff6c046c649",
+      "width": 192,
+      "height": 192,
+      "transparent": true
+    }
+  ]
+}

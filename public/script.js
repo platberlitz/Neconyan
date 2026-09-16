@@ -551,6 +551,9 @@ const NECONYAN_FRONTEND_ICON_STORAGE_KEY = 'sb-frontend-icon';
 const NECONYAN_FRONTEND_ICON_DEFAULT = 'calico';
 const NECONYAN_FRONTEND_ICONS = Object.freeze({
     calico: 'img/neconyan-icon-192.png',
+    miso: 'img/neconyan/assistant-icons/miso.png',
+    taro: 'img/neconyan/assistant-icons/taro.png',
+    nori: 'img/neconyan/assistant-icons/nori.png',
 });
 let appliedNeconyanFrontendIconId = '';
 
@@ -567,7 +570,7 @@ function getStoredNeconyanFrontendIcon() {
 }
 
 export function getNeconyanFrontendIconSrc({ absolute = false } = {}) {
-    const src = NECONYAN_FRONTEND_ICONS[getStoredNeconyanFrontendIcon()];
+    const src = NECONYAN_FRONTEND_ICONS[appliedNeconyanFrontendIconId || getStoredNeconyanFrontendIcon()];
     return absolute ? `/${src}` : src;
 }
 
@@ -602,6 +605,9 @@ function applyNeconyanFrontendIcon(iconId = getStoredNeconyanFrontendIcon()) {
     }
 
     appliedNeconyanFrontendIconId = normalizedIconId;
+    if (!iconAlreadyApplied) {
+        window.dispatchEvent(new CustomEvent('sb:frontend-icon-changed'));
+    }
 }
 
 const neconyanFrontendIcon = Object.assign(window.NeconyanFrontendIcon || window.SillyBunnyFrontendIcon || {}, {

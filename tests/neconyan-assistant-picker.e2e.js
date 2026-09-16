@@ -9,7 +9,7 @@ test.use({ serviceWorkers: 'block' });
 test.setTimeout(180000);
 
 async function openHome(page) {
-    await page.locator('[data-neconyan-route="home"]').click();
+    await page.getByRole('button', { name: 'Home', exact: true }).click();
     await expect(page.locator('.neconyan-assistant-row')).toHaveCount(3);
     await expect(page.locator('.neconyan-assistant-row').first()).toBeVisible();
 }

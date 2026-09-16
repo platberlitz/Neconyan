@@ -164,7 +164,7 @@ async function assistantUiCatalog(request) {
             id: entry.id,
             gender: entry.gender,
             pronouns: entry.pronouns,
-            portrait: `/api/characters/assistants/${entry.id}/portrait`,
+            portrait: `/api/characters/assistants/${entry.id}/portrait?v=${entry.bundledVersion}`,
             bundledVersion: entry.bundledVersion,
             installed: installed.filter(record => record.id === entry.id),
         });

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-14T07:12:54.592015+00:00",
+  "generatedAt": "2026-09-16T05:25:52.467052+00:00",
   "provider": "Smolproxy",
   "model": "gpt-image-2.5-sunburst",
   "coordinator": "gpt-5.5",
@@ -10,106 +10,195 @@
     {
       "id": "tour-01-miso-connect",
       "speaker": "Miso",
-      "prompt": "Use case: illustration-story\nAsset type: one transparent tutorial character cutout for the Neconyan app.\nReference: the supplied portrait is the identity and clothing reference for Miso. Preserve the distinctive calico hair colours and markings, cat ears, eye colour, outfit and recognisable face. Transform the adult character into a cute super-deformed anime chibi, approximately three heads tall, full body including feet, oversized expressive head, small body. Friendly and expressive, clean confident linework, soft painted cel shading.\nPose: an open-mouthed friendly speaking smile, one hand offering a tiny cable, the other hand raised in an inviting gesture. The mouth should visibly be speaking to the user, not closed. One character only, centred, 8 percent margin around the whole silhouette. Keep hands simple and anatomically clear. No furniture or scene, no floor, no floating decorations, no backdrop panel, no cast shadow.\nTechnical matte: fill every background pixel with perfectly uniform vivid chroma green RGB(0,255,0). This green is a temporary extraction matte and will be removed to real alpha. Do not use green in the character, clothing or props. No green lighting or reflection. Solid flat green only outside the character, including between the arms and body. No checkerboard, no gradients, no scenery, no outlines shaped like a card.\nNo text, letters, speech bubbles or logos in the bitmap. The actual dialogue is rendered as accessible text by the application beside this speaking character.\n",
-      "promptFile": "output/imagegen/neconyan-tour-cutouts/prompts/tour-01-miso-connect.txt",
-      "rawFile": "output/imagegen/neconyan-tour-cutouts/raw/tour-01-miso-connect-sunburst.png",
+      "prompt": "Create one full-body chibi of the supplied adult assistant. The reference fixes the identity, face, hairstyle, markings, eye colour and clothing. Miso has rich warm orange hair with several distinct irregular charcoal-black tiger stripes through the hair, rounded orange tiger ears with black edging and ivory inner fluff, and amber eyes. The tiger pattern is visibly striped, continuous and deliberate. The face, neck and hands remain natural human skin. Cream knitted layers with restrained charcoal and orange striped panels and a soft apricot scarf complete the welcoming outfit. Transform this design into a cute super-deformed anime chibi, approximately three heads tall, with an oversized expressive head and a small body. Human face, skin and hands. Clean expressive linework and soft detailed cel shading. an open-mouthed friendly speaking smile, one hand offering a tiny cable, the other hand raised in an inviting gesture. The mouth should visibly be speaking to the user, not closed. One character only, centred, 8 percent margin around the whole silhouette. Keep hands simple and anatomically clear. No furniture or scene, no floor, no floating decorations, no backdrop panel, no cast shadow. Keep the complete character, including ears and feet, centred with 8 percent margin. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+      "promptFile": ".local-runtime/assistant-art-v3/prompts/tour-01-miso-connect.txt",
+      "rawFile": ".local-runtime/assistant-art-v3/raw/tour-01-miso-connect-sunburst.png",
       "finalFile": "public/img/neconyan/tour/tour-01-miso-connect.webp",
-      "rawSha256": "1b52c36f97cb26bc0ab12d03642136b7ca44f0a3810de5c0842d9a620451f2b1",
-      "finalSha256": "d2b6d017281b1c5d31a9b9e22781279b1590b195cbe30f27aa3ed94cc332a16e",
+      "rawSha256": "04d877ff4ea26d506d7b4c7fa85a72fd0519a5affea739ca7f82054485ce8121",
+      "finalSha256": "cc179d0ca8bd2b320e49e1d2c5a5029ea4551c4ee4275033fb496f1b75f4a0ee",
       "width": 512,
       "height": 768,
-      "transparent": true
+      "transparent": true,
+      "model": "gpt-image-2.5-sunburst",
+      "coordinator": "gpt-5.5",
+      "generatedAt": "2026-09-16T05:24:37.320886+00:00",
+      "size": "1024x1536",
+      "quality": "high",
+      "references": [
+        {
+          "file": ".local-runtime/assistant-art-v3/processed/miso-neutral.png",
+          "sha256": "92f5ffb5a4b9ea5f2935a1a5cf085e5bf9db1335686eee8ea1b5867dda7b183c"
+        }
+      ]
     },
     {
       "id": "tour-02-miso-characters",
       "speaker": "Miso",
-      "prompt": "Use case: illustration-story\nAsset type: one transparent tutorial character cutout for the Neconyan app.\nReference: the supplied portrait is the identity and clothing reference for Miso. Preserve the distinctive calico hair colours and markings, cat ears, eye colour, outfit and recognisable face. Transform the adult character into a cute super-deformed anime chibi, approximately three heads tall, full body including feet, oversized expressive head, small body. Friendly and expressive, clean confident linework, soft painted cel shading.\nPose: an open-mouthed cheerful speaking smile, waving hello enthusiastically with one hand, the other hand resting on the chest. The mouth should visibly be speaking to the user, not closed. One character only, centred, 8 percent margin around the whole silhouette. Keep hands simple and anatomically clear. No furniture or scene, no floor, no floating decorations, no backdrop panel, no cast shadow.\nTechnical matte: fill every background pixel with perfectly uniform vivid chroma green RGB(0,255,0). This green is a temporary extraction matte and will be removed to real alpha. Do not use green in the character, clothing or props. No green lighting or reflection. Solid flat green only outside the character, including between the arms and body. No checkerboard, no gradients, no scenery, no outlines shaped like a card.\nNo text, letters, speech bubbles or logos in the bitmap. The actual dialogue is rendered as accessible text by the application beside this speaking character.\n",
-      "promptFile": "output/imagegen/neconyan-tour-cutouts/prompts/tour-02-miso-characters.txt",
-      "rawFile": "output/imagegen/neconyan-tour-cutouts/raw/tour-02-miso-characters-sunburst.png",
+      "prompt": "Create one full-body chibi of the supplied adult assistant. The reference fixes the identity, face, hairstyle, markings, eye colour and clothing. Miso has rich warm orange hair with several distinct irregular charcoal-black tiger stripes through the hair, rounded orange tiger ears with black edging and ivory inner fluff, and amber eyes. The tiger pattern is visibly striped, continuous and deliberate. The face, neck and hands remain natural human skin. Cream knitted layers with restrained charcoal and orange striped panels and a soft apricot scarf complete the welcoming outfit. Transform this design into a cute super-deformed anime chibi, approximately three heads tall, with an oversized expressive head and a small body. Human face, skin and hands. Clean expressive linework and soft detailed cel shading. an open-mouthed cheerful speaking smile, waving hello enthusiastically with one hand, the other hand resting on the chest. The mouth should visibly be speaking to the user, not closed. One character only, centred, 8 percent margin around the whole silhouette. Keep hands simple and anatomically clear. No furniture or scene, no floor, no floating decorations, no backdrop panel, no cast shadow. Keep the complete character, including ears and feet, centred with 8 percent margin. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+      "promptFile": ".local-runtime/assistant-art-v3/prompts/tour-02-miso-characters.txt",
+      "rawFile": ".local-runtime/assistant-art-v3/raw/tour-02-miso-characters-sunburst.png",
       "finalFile": "public/img/neconyan/tour/tour-02-miso-characters.webp",
-      "rawSha256": "d154f53ce6a19c040be2414d6854bda7ab66ce845c6d2c19582880ff317b9448",
-      "finalSha256": "3c00bdaabb7d523c22edc75a9e32fb8d0b0d578c495d9bf5f34f0c57ce8faa1d",
+      "rawSha256": "5aaceb50b11722a314f2b47f934acd363a3f97a58d0ff200a7d33685fe69299e",
+      "finalSha256": "3dfa737fce099a64b66c38c59edaacef466d21b391cd2f657503a4d289c0cd9e",
       "width": 512,
       "height": 768,
-      "transparent": true
+      "transparent": true,
+      "model": "gpt-image-2.5-sunburst",
+      "coordinator": "gpt-5.5",
+      "generatedAt": "2026-09-16T05:24:35.680687+00:00",
+      "size": "1024x1536",
+      "quality": "high",
+      "references": [
+        {
+          "file": ".local-runtime/assistant-art-v3/processed/miso-neutral.png",
+          "sha256": "92f5ffb5a4b9ea5f2935a1a5cf085e5bf9db1335686eee8ea1b5867dda7b183c"
+        }
+      ]
     },
     {
       "id": "tour-03-taro-modes",
       "speaker": "Taro",
-      "prompt": "Use case: illustration-story\nAsset type: one transparent tutorial character cutout for the Neconyan app.\nReference: the supplied portrait is the identity and clothing reference for Taro. Preserve the distinctive calico hair colours and markings, cat ears, eye colour, outfit and recognisable face. Transform the adult character into a cute super-deformed anime chibi, approximately three heads tall, full body including feet, oversized expressive head, small body. Friendly and expressive, clean confident linework, soft painted cel shading.\nPose: an open-mouthed small dry smile while explaining, one index finger raised to make a precise point, the other arm folded loosely. The mouth should visibly be speaking to the user, not closed. One character only, centred, 8 percent margin around the whole silhouette. Keep hands simple and anatomically clear. No furniture or scene, no floor, no floating decorations, no backdrop panel, no cast shadow.\nTechnical matte: fill every background pixel with perfectly uniform vivid chroma green RGB(0,255,0). This green is a temporary extraction matte and will be removed to real alpha. Do not use green in the character, clothing or props. No green lighting or reflection. Solid flat green only outside the character, including between the arms and body. No checkerboard, no gradients, no scenery, no outlines shaped like a card.\nNo text, letters, speech bubbles or logos in the bitmap. The actual dialogue is rendered as accessible text by the application beside this speaking character.\n",
-      "promptFile": "output/imagegen/neconyan-tour-cutouts/prompts/tour-03-taro-modes.txt",
-      "rawFile": "output/imagegen/neconyan-tour-cutouts/raw/tour-03-taro-modes-sunburst.png",
+      "prompt": "Create one full-body chibi of the supplied adult assistant. The reference fixes the identity, face, hairstyle, markings, eye colour and clothing. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. Transform this design into a cute super-deformed anime chibi, approximately three heads tall, with an oversized expressive head and a small body. Human face, skin and hands. Clean expressive linework and soft detailed cel shading. an open-mouthed small dry smile while explaining, one index finger raised to make a precise point, the other arm folded loosely. The mouth should visibly be speaking to the user, not closed. One character only, centred, 8 percent margin around the whole silhouette. Keep hands simple and anatomically clear. No furniture or scene, no floor, no floating decorations, no backdrop panel, no cast shadow. Keep the complete character, including ears and feet, centred with 8 percent margin. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+      "promptFile": ".local-runtime/assistant-art-v3/prompts/tour-03-taro-modes.txt",
+      "rawFile": ".local-runtime/assistant-art-v3/raw/tour-03-taro-modes-sunburst.png",
       "finalFile": "public/img/neconyan/tour/tour-03-taro-modes.webp",
-      "rawSha256": "e4750583bf6fcb5315fd77dc30f39f1debd2782671b6dbd56fb17c74c56e6f3f",
-      "finalSha256": "ddf1589ffb20c70aeb0f756234d3eaaf034dcb627c3b15ecd9882c0e4ddeddb4",
+      "rawSha256": "22d7e0d997289703470b2471cebfe086368c289250460a7df07191cde2c1ef48",
+      "finalSha256": "dea047cf5c492b63cf8ed830cffc00f78afda72ac4bff134ddb10badfebb8b2b",
       "width": 512,
       "height": 768,
-      "transparent": true
+      "transparent": true,
+      "model": "gpt-image-2.5-sunburst",
+      "coordinator": "gpt-5.5",
+      "generatedAt": "2026-09-16T05:24:36.823132+00:00",
+      "size": "1024x1536",
+      "quality": "high",
+      "references": [
+        {
+          "file": ".local-runtime/assistant-art-v3/processed/taro-neutral.png",
+          "sha256": "660509669b5ded362ea9946dbfe7537e854aa4308e9e1e727dd7f2e89cd21f8f"
+        }
+      ]
     },
     {
       "id": "tour-04-nori-lorebooks",
       "speaker": "Nori",
-      "prompt": "Use case: illustration-story\nAsset type: one transparent tutorial character cutout for the Neconyan app.\nReference: the supplied portrait is the identity and clothing reference for Nori. Preserve the distinctive calico hair colours and markings, cat ears, eye colour, outfit and recognisable face. Transform the adult character into a cute super-deformed anime chibi, approximately three heads tall, full body including feet, oversized expressive head, small body. Friendly and expressive, clean confident linework, soft painted cel shading.\nPose: an open-mouthed delighted speaking expression, hugging a small closed notebook with a ticket bookmark and gesturing towards the viewer with the free hand. The mouth should visibly be speaking to the user, not closed. One character only, centred, 8 percent margin around the whole silhouette. Keep hands simple and anatomically clear. No furniture or scene, no floor, no floating decorations, no backdrop panel, no cast shadow.\nTechnical matte: fill every background pixel with perfectly uniform vivid chroma green RGB(0,255,0). This green is a temporary extraction matte and will be removed to real alpha. Do not use green in the character, clothing or props. No green lighting or reflection. Solid flat green only outside the character, including between the arms and body. No checkerboard, no gradients, no scenery, no outlines shaped like a card.\nNo text, letters, speech bubbles or logos in the bitmap. The actual dialogue is rendered as accessible text by the application beside this speaking character.\n",
-      "promptFile": "output/imagegen/neconyan-tour-cutouts/prompts/tour-04-nori-lorebooks.txt",
-      "rawFile": "output/imagegen/neconyan-tour-cutouts/raw/tour-04-nori-lorebooks-sunburst.png",
+      "prompt": "Create one full-body chibi of the supplied adult assistant. The reference fixes the identity, face, hairstyle, markings, eye colour and clothing. Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit. Transform this design into a cute super-deformed anime chibi, approximately three heads tall, with an oversized expressive head and a small body. Human face, skin and hands. Clean expressive linework and soft detailed cel shading. an open-mouthed delighted speaking expression, hugging a small closed notebook with a ticket bookmark and gesturing towards the viewer with the free hand. The mouth should visibly be speaking to the user, not closed. One character only, centred, 8 percent margin around the whole silhouette. Keep hands simple and anatomically clear. No furniture or scene, no floor, no floating decorations, no backdrop panel, no cast shadow. Keep the complete character, including ears and feet, centred with 8 percent margin. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+      "promptFile": ".local-runtime/assistant-art-v3/prompts/tour-04-nori-lorebooks.txt",
+      "rawFile": ".local-runtime/assistant-art-v3/raw/tour-04-nori-lorebooks-sunburst.png",
       "finalFile": "public/img/neconyan/tour/tour-04-nori-lorebooks.webp",
-      "rawSha256": "7ab1241127f062719397e015bfa1b5de6ee9067d4831f07be6fe4c3288122ec3",
-      "finalSha256": "44bdfc2b8ec16844b4535d949ff13b40f5f1178ab19c67aa85ac3014b6fd5740",
+      "rawSha256": "2b93c1fd0974662500551d36665b74e6c19ba73250e445eb7afb735d053986cb",
+      "finalSha256": "941ccbcf1aded2a4ab7754c24f1e32b50dd878d2f0ac92130a4538df11667df7",
       "width": 512,
       "height": 768,
-      "transparent": true
+      "transparent": true,
+      "model": "gpt-image-2.5-sunburst",
+      "coordinator": "gpt-5.5",
+      "generatedAt": "2026-09-16T05:25:09.319039+00:00",
+      "size": "1024x1536",
+      "quality": "high",
+      "references": [
+        {
+          "file": ".local-runtime/assistant-art-v3/processed/nori-neutral.png",
+          "sha256": "f7753dfde4b72d3facf797deff6588673f8c8b536ed18dc15722b6385797b53f"
+        }
+      ]
     },
     {
       "id": "tour-05-taro-agents",
       "speaker": "Taro",
-      "prompt": "Use case: illustration-story\nAsset type: one transparent tutorial character cutout for the Neconyan app.\nReference: the supplied portrait is the identity and clothing reference for Taro. Preserve the distinctive calico hair colours and markings, cat ears, eye colour, outfit and recognisable face. Transform the adult character into a cute super-deformed anime chibi, approximately three heads tall, full body including feet, oversized expressive head, small body. Friendly and expressive, clean confident linework, soft painted cel shading.\nPose: an open-mouthed confident speaking expression, holding a small clipboard against the chest and pointing outward with the other hand. The mouth should visibly be speaking to the user, not closed. One character only, centred, 8 percent margin around the whole silhouette. Keep hands simple and anatomically clear. No furniture or scene, no floor, no floating decorations, no backdrop panel, no cast shadow.\nTechnical matte: fill every background pixel with perfectly uniform vivid chroma green RGB(0,255,0). This green is a temporary extraction matte and will be removed to real alpha. Do not use green in the character, clothing or props. No green lighting or reflection. Solid flat green only outside the character, including between the arms and body. No checkerboard, no gradients, no scenery, no outlines shaped like a card.\nNo text, letters, speech bubbles or logos in the bitmap. The actual dialogue is rendered as accessible text by the application beside this speaking character.\n",
-      "promptFile": "output/imagegen/neconyan-tour-cutouts/prompts/tour-05-taro-agents.txt",
-      "rawFile": "output/imagegen/neconyan-tour-cutouts/raw/tour-05-taro-agents-sunburst.png",
+      "prompt": "Create one full-body chibi of the supplied adult assistant. The reference fixes the identity, face, hairstyle, markings, eye colour and clothing. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. Transform this design into a cute super-deformed anime chibi, approximately three heads tall, with an oversized expressive head and a small body. Human face, skin and hands. Clean expressive linework and soft detailed cel shading. an open-mouthed confident speaking expression, holding a small clipboard against the chest and pointing outward with the other hand. The mouth should visibly be speaking to the user, not closed. One character only, centred, 8 percent margin around the whole silhouette. Keep hands simple and anatomically clear. No furniture or scene, no floor, no floating decorations, no backdrop panel, no cast shadow. Keep the complete character, including ears and feet, centred with 8 percent margin. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+      "promptFile": ".local-runtime/assistant-art-v3/prompts/tour-05-taro-agents.txt",
+      "rawFile": ".local-runtime/assistant-art-v3/raw/tour-05-taro-agents-sunburst.png",
       "finalFile": "public/img/neconyan/tour/tour-05-taro-agents.webp",
-      "rawSha256": "3a35e6bff65340a9c6a078713c2d4a71b6b8130909362ed5663810490ae02614",
-      "finalSha256": "43e44261ed2d81b456ba76285d1db8d43cf31e1356421905d67cd6203fc24b31",
+      "rawSha256": "644ad6b7249e0921cc14efe1e2548b5707d111468b793710ba4d062df46be2ee",
+      "finalSha256": "74214379616dcc24f258f85fc72cd321de011fbeb0dba471cc40b5a33ab85c45",
       "width": 512,
       "height": 768,
-      "transparent": true
+      "transparent": true,
+      "model": "gpt-image-2.5-sunburst",
+      "coordinator": "gpt-5.5",
+      "generatedAt": "2026-09-16T05:25:17.955178+00:00",
+      "size": "1024x1536",
+      "quality": "high",
+      "references": [
+        {
+          "file": ".local-runtime/assistant-art-v3/processed/taro-neutral.png",
+          "sha256": "660509669b5ded362ea9946dbfe7537e854aa4308e9e1e727dd7f2e89cd21f8f"
+        }
+      ]
     },
     {
       "id": "tour-06-nori-extensions",
       "speaker": "Nori",
-      "prompt": "Use case: illustration-story\nAsset type: one transparent tutorial character cutout for the Neconyan app.\nReference: the supplied portrait is the identity and clothing reference for Nori. Preserve the distinctive calico hair colours and markings, cat ears, eye colour, outfit and recognisable face. Transform the adult character into a cute super-deformed anime chibi, approximately three heads tall, full body including feet, oversized expressive head, small body. Friendly and expressive, clean confident linework, soft painted cel shading.\nPose: an open-mouthed mischievous speaking smile, both hands extended in a theatrical presenting gesture. The mouth should visibly be speaking to the user, not closed. One character only, centred, 8 percent margin around the whole silhouette. Keep hands simple and anatomically clear. No furniture or scene, no floor, no floating decorations, no backdrop panel, no cast shadow.\nTechnical matte: fill every background pixel with perfectly uniform vivid chroma green RGB(0,255,0). This green is a temporary extraction matte and will be removed to real alpha. Do not use green in the character, clothing or props. No green lighting or reflection. Solid flat green only outside the character, including between the arms and body. No checkerboard, no gradients, no scenery, no outlines shaped like a card.\nNo text, letters, speech bubbles or logos in the bitmap. The actual dialogue is rendered as accessible text by the application beside this speaking character.\n",
-      "promptFile": "output/imagegen/neconyan-tour-cutouts/prompts/tour-06-nori-extensions.txt",
-      "rawFile": "output/imagegen/neconyan-tour-cutouts/raw/tour-06-nori-extensions-sunburst.png",
+      "prompt": "Create one full-body chibi of the supplied adult assistant. The reference fixes the identity, face, hairstyle, markings, eye colour and clothing. Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit. Transform this design into a cute super-deformed anime chibi, approximately three heads tall, with an oversized expressive head and a small body. Human face, skin and hands. Clean expressive linework and soft detailed cel shading. an open-mouthed mischievous speaking smile, both hands extended in a theatrical presenting gesture. The mouth should visibly be speaking to the user, not closed. One character only, centred, 8 percent margin around the whole silhouette. Keep hands simple and anatomically clear. No furniture or scene, no floor, no floating decorations, no backdrop panel, no cast shadow. Keep the complete character, including ears and feet, centred with 8 percent margin. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+      "promptFile": ".local-runtime/assistant-art-v3/prompts/tour-06-nori-extensions.txt",
+      "rawFile": ".local-runtime/assistant-art-v3/raw/tour-06-nori-extensions-sunburst.png",
       "finalFile": "public/img/neconyan/tour/tour-06-nori-extensions.webp",
-      "rawSha256": "06a1a2ed5596fae8ba482680a594fe2b9ea70e6405653965ea2daa5313901e6e",
-      "finalSha256": "a639e1c31a49395d4e02fb34683b42da3cfb662e8046f77042c406c6636e1268",
+      "rawSha256": "c750ba5015d154656061abd546d642f73c2699be196f3e2e60099afa92acd208",
+      "finalSha256": "5b1320f136baf6e735f5578177fadb21b6026b27a33890361f14ca0f97207c04",
       "width": 512,
       "height": 768,
-      "transparent": true
+      "transparent": true,
+      "model": "gpt-image-2.5-sunburst",
+      "coordinator": "gpt-5.5",
+      "generatedAt": "2026-09-16T05:25:14.741685+00:00",
+      "size": "1024x1536",
+      "quality": "high",
+      "references": [
+        {
+          "file": ".local-runtime/assistant-art-v3/processed/nori-neutral.png",
+          "sha256": "f7753dfde4b72d3facf797deff6588673f8c8b536ed18dc15722b6385797b53f"
+        }
+      ]
     },
     {
       "id": "tour-07-miso-home",
       "speaker": "Miso",
-      "prompt": "Use case: illustration-story\nAsset type: one transparent tutorial character cutout for the Neconyan app.\nReference: the supplied portrait is the identity and clothing reference for Miso. Preserve the distinctive calico hair colours and markings, cat ears, eye colour, outfit and recognisable face. Transform the adult character into a cute super-deformed anime chibi, approximately three heads tall, full body including feet, oversized expressive head, small body. Friendly and expressive, clean confident linework, soft painted cel shading.\nPose: an open-mouthed warm speaking smile, holding a little folded paper tent on one palm and giving a relaxed welcoming gesture with the other hand. The mouth should visibly be speaking to the user, not closed. One character only, centred, 8 percent margin around the whole silhouette. Keep hands simple and anatomically clear. No furniture or scene, no floor, no floating decorations, no backdrop panel, no cast shadow.\nTechnical matte: fill every background pixel with perfectly uniform vivid chroma green RGB(0,255,0). This green is a temporary extraction matte and will be removed to real alpha. Do not use green in the character, clothing or props. No green lighting or reflection. Solid flat green only outside the character, including between the arms and body. No checkerboard, no gradients, no scenery, no outlines shaped like a card.\nNo text, letters, speech bubbles or logos in the bitmap. The actual dialogue is rendered as accessible text by the application beside this speaking character.\n",
-      "promptFile": "output/imagegen/neconyan-tour-cutouts/prompts/tour-07-miso-home.txt",
-      "rawFile": "output/imagegen/neconyan-tour-cutouts/raw/tour-07-miso-home-sunburst.png",
+      "prompt": "Create one full-body chibi of the supplied adult assistant. The reference fixes the identity, face, hairstyle, markings, eye colour and clothing. Miso has rich warm orange hair with several distinct irregular charcoal-black tiger stripes through the hair, rounded orange tiger ears with black edging and ivory inner fluff, and amber eyes. The tiger pattern is visibly striped, continuous and deliberate. The face, neck and hands remain natural human skin. Cream knitted layers with restrained charcoal and orange striped panels and a soft apricot scarf complete the welcoming outfit. Transform this design into a cute super-deformed anime chibi, approximately three heads tall, with an oversized expressive head and a small body. Human face, skin and hands. Clean expressive linework and soft detailed cel shading. an open-mouthed warm speaking smile, holding a little folded paper tent on one palm and giving a relaxed welcoming gesture with the other hand. The mouth should visibly be speaking to the user, not closed. One character only, centred, 8 percent margin around the whole silhouette. Keep hands simple and anatomically clear. No furniture or scene, no floor, no floating decorations, no backdrop panel, no cast shadow. Keep the complete character, including ears and feet, centred with 8 percent margin. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+      "promptFile": ".local-runtime/assistant-art-v3/prompts/tour-07-miso-home.txt",
+      "rawFile": ".local-runtime/assistant-art-v3/raw/tour-07-miso-home-sunburst.png",
       "finalFile": "public/img/neconyan/tour/tour-07-miso-home.webp",
-      "rawSha256": "e5a7d9831093072ec866046dafb7b0dbe999be7b9a3e6557d8150f8ea255c17c",
-      "finalSha256": "87e5c953616ce1ac7fcd5abebc84159a0aebe2f73beca7c159dfb4e2afaa6193",
+      "rawSha256": "cadc084703839643ca0e29d9ed4ad5cb081b84e55edc6de96ea9826b52fe83ed",
+      "finalSha256": "ce8460118e21c4890d77222d42b854a21af1434e52703d5ac65ff0cf367fb118",
       "width": 512,
       "height": 768,
-      "transparent": true
+      "transparent": true,
+      "model": "gpt-image-2.5-sunburst",
+      "coordinator": "gpt-5.5",
+      "generatedAt": "2026-09-16T05:25:48.519922+00:00",
+      "size": "1024x1536",
+      "quality": "high",
+      "references": [
+        {
+          "file": ".local-runtime/assistant-art-v3/processed/miso-neutral.png",
+          "sha256": "92f5ffb5a4b9ea5f2935a1a5cf085e5bf9db1335686eee8ea1b5867dda7b183c"
+        }
+      ]
     },
     {
       "id": "tour-08-taro-sampling",
       "speaker": "Taro",
-      "prompt": "Use case: illustration-story\nAsset type: one transparent tutorial character cutout for the Neconyan app.\nReference: the supplied portrait is the identity and clothing reference for Taro. Preserve the distinctive calico hair colours and markings, cat ears, eye colour, outfit and recognisable face. Transform the adult character into a cute super-deformed anime chibi, approximately three heads tall, full body including feet, oversized expressive head, small body. Friendly and expressive, clean confident linework, soft painted cel shading.\nPose: an open-mouthed thoughtful speaking expression with a wry raised eyebrow, one hand holding a pencil, the other holding a small closed notebook. The mouth should visibly be speaking to the user, not closed. One character only, centred, 8 percent margin around the whole silhouette. Keep hands simple and anatomically clear. No furniture or scene, no floor, no floating decorations, no backdrop panel, no cast shadow.\nTechnical matte: fill every background pixel with perfectly uniform vivid chroma green RGB(0,255,0). This green is a temporary extraction matte and will be removed to real alpha. Do not use green in the character, clothing or props. No green lighting or reflection. Solid flat green only outside the character, including between the arms and body. No checkerboard, no gradients, no scenery, no outlines shaped like a card.\nNo text, letters, speech bubbles or logos in the bitmap. The actual dialogue is rendered as accessible text by the application beside this speaking character.\n",
-      "promptFile": "output/imagegen/neconyan-tour-cutouts/prompts/tour-08-taro-sampling.txt",
-      "rawFile": "output/imagegen/neconyan-tour-cutouts/raw/tour-08-taro-sampling-sunburst.png",
+      "prompt": "Create one full-body chibi of the supplied adult assistant. The reference fixes the identity, face, hairstyle, markings, eye colour and clothing. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. Transform this design into a cute super-deformed anime chibi, approximately three heads tall, with an oversized expressive head and a small body. Human face, skin and hands. Clean expressive linework and soft detailed cel shading. an open-mouthed thoughtful speaking expression with a wry raised eyebrow, one hand holding a pencil, the other holding a small closed notebook. The mouth should visibly be speaking to the user, not closed. One character only, centred, 8 percent margin around the whole silhouette. Keep hands simple and anatomically clear. No furniture or scene, no floor, no floating decorations, no backdrop panel, no cast shadow. Keep the complete character, including ears and feet, centred with 8 percent margin. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+      "promptFile": ".local-runtime/assistant-art-v3/prompts/tour-08-taro-sampling.txt",
+      "rawFile": ".local-runtime/assistant-art-v3/raw/tour-08-taro-sampling-sunburst.png",
       "finalFile": "public/img/neconyan/tour/tour-08-taro-sampling.webp",
-      "rawSha256": "3a79d94cdb20cb9785c5bcec4d9b2001c33b560ea281818cb55c262e66bd4cdd",
-      "finalSha256": "b8e6e83de1d30ca905814edf6b41faa1bc731b439aefa4c5f40af724b081253e",
+      "rawSha256": "9da3f4d8272739e58c7c103e9ce0c2c623f8a6e6ee68edd8dbf5006c5a4aecc2",
+      "finalSha256": "d728838d0c5488018904675245ed2a5a241fb9e4db6e5b52787c4118a234c277",
       "width": 512,
       "height": 768,
-      "transparent": true
+      "transparent": true,
+      "model": "gpt-image-2.5-sunburst",
+      "coordinator": "gpt-5.5",
+      "generatedAt": "2026-09-16T05:25:52.467052+00:00",
+      "size": "1024x1536",
+      "quality": "high",
+      "references": [
+        {
+          "file": ".local-runtime/assistant-art-v3/processed/taro-neutral.png",
+          "sha256": "660509669b5ded362ea9946dbfe7537e854aa4308e9e1e727dd7f2e89cd21f8f"
+        }
+      ]
     }
-  ]
+  ],
+  "version": 3
 }

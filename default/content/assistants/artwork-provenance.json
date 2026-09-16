@@ -18,63 +18,1047 @@
       "expressions": 28,
       "portrait": "miso-male/portrait.png",
       "card": "miso-male/card.json",
-      "bytes": 2698122
+      "bytes": 3285170,
+      "portraitSha256": "e713e2344e92e54f884ab11d6c9e1f6f5914e1badc2ee398097a73a7ad81537f",
+      "expressionSha256": {
+        "admiration": "cdd11b374098029352c234be8bd559c56f7f812d38239b8459c0878ab3408e66",
+        "amusement": "069bf6266beddaca299281771a70289ac0c42b06f383800ea266e01fe410d705",
+        "anger": "f57a2bb47f9ea9f32cd27cdddfd353d260b8442c343fda1620ebc44440b8ee29",
+        "annoyance": "8ac75d62dca359fbe099f34df0fb8b144e8a3b9ad612b9e299e6c985cfa974e1",
+        "approval": "dd11a64913265798975e023d7da75b12166f45a46be5e0b05d349c4ed83a1b3a",
+        "caring": "781b51df7589d3bd437f0a0f682bca6cb75141f203539673bced088a194fa9ec",
+        "confusion": "9a66f4f4784202f5dfbd1a4987aec120c7005ea2c0cfe61e85d90053d3d46054",
+        "curiosity": "a3c3161316fba5f6590a58e4aea0317d52d8949a48616898046cce73e293a578",
+        "desire": "45ca8006490ed3703e67e07de6ef7aa32644b357f23f5361fca06568021e92c0",
+        "disappointment": "8321a88388cf852eb0dae28eba118f706d7578cdc05e82bc46338774b4349b1c",
+        "disapproval": "85e1accd311faf7e9fc5035f7d4eff8d601fa4b1eb9f352cc65a2c837c3b0fa1",
+        "disgust": "7e5c175a55c85160bbbf8bf0868088bc0aabe0995106bbdc6ab48327c202f28e",
+        "embarrassment": "454a8ea5f1447bbc65ab474064037b8ae61ab614701556bbdf83a5250cc9aa07",
+        "excitement": "0888f97da3b130221174e27e4f8644b6bfacb59456d02ef62ff7f6907bc86d3f",
+        "fear": "0cebb34edeeac6b0c1c2f94886829a825490fc6d7f9ea2141aa87d2a7fdbc715",
+        "gratitude": "1497f07dec197028b82da872e107300ef2e1b7a46ec31c081a1166a5ddaf589a",
+        "grief": "da5224caedf0267815d85af91a0829f74493ed77ab7c1e4a80ac791db9528798",
+        "joy": "87233b691b67b63dc02490f305edefd29cb985f97d58032d213a3e67d3a0254a",
+        "love": "dd514b3fcfef70374c4af6301733794593a94507480951f832e53a38722d769b",
+        "nervousness": "6ab8cf1a729fb583ac8c0db4684dfde3f2aafa3fe763d92bc03b1b7aa15952eb",
+        "neutral": "accc695cc5224341bff5598caa130ed20792cfa5843c62c3ec702348f6c41d7b",
+        "optimism": "d89e479b5bbd860fcff9a90c67862e3849f92d4e6028559b38fbc2ac4790617d",
+        "pride": "5dda085318bcf2aad1d0375bcc811f3aedf73e1c4fb80304fc36af56308b6584",
+        "realization": "de26c63577a9bbd4a1b98db9950eee3d6e71c1d3cdf2547cd26233fb454901c4",
+        "relief": "e5b1aebd81c85f7b70aa4ad0bce2151b49558111acc0a261f84cff2bf784c1dd",
+        "remorse": "c2ef1afd8af59dfe6e22f26ed62d3d114b59f08470ad5b00cc17aaf5c88dab6c",
+        "sadness": "ebd00a0081b9d84bfaafc55258175c98b5ca8c770f13716a79d3039ae2718927",
+        "surprise": "64270cd070c783714d6d754dbf8ff9d6472723a7437775997f902188ad7850f2"
+      },
+      "generations": [
+        {
+          "id": "miso-male",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:24:44.698384+00:00",
+          "prompt": "Redesign this existing assistant portrait using the following exact approved appearance. Reference 1 fixes this variant's face, hair length and gender presentation. Reference 2 fixes the approved new colours, markings, ears and clothing. Apply reference 2's colour design to reference 1's individual identity. Miso has rich warm orange hair with several distinct irregular charcoal-black tiger stripes through the hair, rounded orange tiger ears with black edging and ivory inner fluff, and amber eyes. The tiger pattern is visibly striped, continuous and deliberate. The face, neck and hands remain natural human skin. Cream knitted layers with restrained charcoal and orange striped panels and a soft apricot scarf complete the welcoming outfit. The two tiger ears have broad rounded semicircular tips, like real tiger ears. Replace pointed triangular cat ears with these clearly round tiger ears. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Preserve this reference character's masculine adult presentation, face structure, eye shape, hairstyle silhouette, pose and welcoming neutral expression. Frame the head, shoulders and upper torso, facing the viewer. Leave at least 8 percent clear margin above and beside both ears. Fill the portrait with the subject at the same scale as the reference, with the torso extending naturally to the bottom. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1024x1536",
+          "quality": "high",
+          "rawSha256": "7c363286bf4b3d6139ae14121a8afdeed6737b63658f2254e76433fe0ff510da",
+          "references": [
+            {
+              "file": "default/content/assistants/miso-male/portrait.png",
+              "sha256": "5e2cd875066899a80ec28cc30623403e081926ec08152701e1ecb1b7399cfd27"
+            },
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/miso-neutral.png",
+              "sha256": "92f5ffb5a4b9ea5f2935a1a5cf085e5bf9db1335686eee8ea1b5867dda7b183c"
+            }
+          ]
+        },
+        {
+          "id": "miso-male-sheet-1",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:26:56.136477+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: admiration, amusement, anger, annoyance, approval, caring, confusion, curiosity, desire. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Miso has rich warm orange hair with several distinct irregular charcoal-black tiger stripes through the hair, rounded orange tiger ears with black edging and ivory inner fluff, and amber eyes. The tiger pattern is visibly striped, continuous and deliberate. The face, neck and hands remain natural human skin. Cream knitted layers with restrained charcoal and orange striped panels and a soft apricot scarf complete the welcoming outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "a3ac7e1c2187f58ad2455adb72838ac22ab96366a8531923e0ec949ac38c5e34",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/miso-male.png",
+              "sha256": "526ffd2e3604dcf38f11d4a43d7e81e7a87d80f662a7ebe299a135836c91c1e5"
+            }
+          ]
+        },
+        {
+          "id": "miso-male-sheet-2",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:27:03.619038+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: disappointment, disapproval, disgust, embarrassment, excitement, fear, gratitude, grief, joy. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Miso has rich warm orange hair with several distinct irregular charcoal-black tiger stripes through the hair, rounded orange tiger ears with black edging and ivory inner fluff, and amber eyes. The tiger pattern is visibly striped, continuous and deliberate. The face, neck and hands remain natural human skin. Cream knitted layers with restrained charcoal and orange striped panels and a soft apricot scarf complete the welcoming outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "0047a68231b0dc975d871d0a759e3a6745c16297d0a2463a2ce9337addb6530b",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/miso-male.png",
+              "sha256": "526ffd2e3604dcf38f11d4a43d7e81e7a87d80f662a7ebe299a135836c91c1e5"
+            }
+          ]
+        },
+        {
+          "id": "miso-male-sheet-3",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:26:54.929566+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: love, nervousness, optimism, pride, realization, relief, remorse, sadness, surprise. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Miso has rich warm orange hair with several distinct irregular charcoal-black tiger stripes through the hair, rounded orange tiger ears with black edging and ivory inner fluff, and amber eyes. The tiger pattern is visibly striped, continuous and deliberate. The face, neck and hands remain natural human skin. Cream knitted layers with restrained charcoal and orange striped panels and a soft apricot scarf complete the welcoming outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "6ec5cda24403ed2a97b1a88704631d0333596dd5f1f3365cfb8e45db649b7c11",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/miso-male.png",
+              "sha256": "526ffd2e3604dcf38f11d4a43d7e81e7a87d80f662a7ebe299a135836c91c1e5"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "miso-female",
       "expressions": 28,
       "portrait": "miso-female/portrait.png",
       "card": "miso-female/card.json",
-      "bytes": 3205344
+      "bytes": 3584816,
+      "portraitSha256": "928de9913c78d6da194ba503a8a65d3e3369bf8d9027666bdb4bc80b9a16ba0f",
+      "expressionSha256": {
+        "admiration": "401c63fd214ac493738986a9e348cdd127b2bb5520083ce2fb5a15147a548cae",
+        "amusement": "32128500033006a5429f8dcfb046679bf566d554b0cf20e52e3c2cd15a1ca533",
+        "anger": "b13c9183d3769608b7b54e46fded8887fbbcf40dfbba87c31ded2553f3894598",
+        "annoyance": "fc93527a7bcad3e079bdd3d382a0ef150110e32db6986b6f648abd0ddc9c2034",
+        "approval": "5baf3fe4ac064c59120fc2d7377c3e1e26ae1a9d9204dfe52e07d148e2e69177",
+        "caring": "0772c981b34a417e51a0a46dc48bbc6281a05f13fc79610c3f77396ae46d236b",
+        "confusion": "c266593d1e2cf6eecfad62d73d6f9a4378f18fb44b554291fa14399932431be8",
+        "curiosity": "a0c41874dc577d71d036a3f639008f6f7eb0a4a99fd9124f9da6d7134a03722c",
+        "desire": "852b1ce0f1e39c0528d0bddcd145987730f2e4e3378ffbeddf0232b157f12926",
+        "disappointment": "5ca1b01784f280f831c5f036a726ea5ca707747174eb93cdd9edcc7a5acb7ff3",
+        "disapproval": "bc11f04b36e10f40871088957b264b24b8c5b6caec1c2a9960eca489a69f1164",
+        "disgust": "9e763b62ae9585f0c62ffe807b3c0febf0f9b0f212b66302b5c2bde876d7d94e",
+        "embarrassment": "f967584162bdb512c793c5005c0b220a3a6c29543e3c7ac076ce5b2f2121e164",
+        "excitement": "0f5ca43773e01062bd06ac1f8ef1a455e2575bf1b0b3b7bb7e25ba00e7a6fd4e",
+        "fear": "fc99b4bf887ec8367d9840d36087ca3bd4dd25d018f1ef8f046a26f728c29509",
+        "gratitude": "b2d13110c6acd9584447e3df54d4357eab27b5fb3d22713f80d3bc6a64ee9015",
+        "grief": "b324b7ee8002c7b6a1186ae66298963aa29773890223886fbda569bae41a1e5c",
+        "joy": "97bdd39a664520da68482cf17df9a3e31f862cf19eaa1b1b2e545fba57d7a75c",
+        "love": "7ff86e27719e4a87af02c496f5e5f0f982877d32c4e0c5ca9e520c41d2558921",
+        "nervousness": "a031b73807143ea1ebdbd79ac720941d92fe7e241c660d602f18c26dadf82ec5",
+        "neutral": "1891d4ae6fbcab833d199d78a67c931aa53cf4ab58f27e89505dff9224d5f05b",
+        "optimism": "20ddbde001331903d335049ac7de6bf969ad3c1c2323aef7767cd7ea0609c3b0",
+        "pride": "97dd93a0e433a7208d997a2f5660f80ec2ed87f82b178949d58eafced477b61b",
+        "realization": "6d6c1a2711496fda7ec6032f3d19669458f10fa91ee7f9c1e509901af8000e33",
+        "relief": "ded07ea4fdd082bbc22337118c2f209fb52d7e88a4b70465f70b6c32f72b4eb6",
+        "remorse": "dc302583f2d334b056e28ff00d0f7116d7e525ead22c5fb340c9add5901ab4dd",
+        "sadness": "51044a388f8bbccfd06e7ef5b81e746afac032f41d00eec3283c07b1f1a6c59c",
+        "surprise": "c66f337d3793fcce15e8877b1220d98ce559250c766f086390acb49b79ae4e1d"
+      },
+      "generations": [
+        {
+          "id": "miso-female",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:24:44.674592+00:00",
+          "prompt": "Redesign this existing assistant portrait using the following exact approved appearance. Reference 1 fixes this variant's face, hair length and gender presentation. Reference 2 fixes the approved new colours, markings, ears and clothing. Apply reference 2's colour design to reference 1's individual identity. Miso has rich warm orange hair with several distinct irregular charcoal-black tiger stripes through the hair, rounded orange tiger ears with black edging and ivory inner fluff, and amber eyes. The tiger pattern is visibly striped, continuous and deliberate. The face, neck and hands remain natural human skin. Cream knitted layers with restrained charcoal and orange striped panels and a soft apricot scarf complete the welcoming outfit. The two tiger ears have broad rounded semicircular tips, like real tiger ears. Replace pointed triangular cat ears with these clearly round tiger ears. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Preserve this reference character's feminine adult presentation, face structure, eye shape, hairstyle silhouette, pose and welcoming neutral expression. Frame the head, shoulders and upper torso, facing the viewer. Leave at least 8 percent clear margin above and beside both ears. Fill the portrait with the subject at the same scale as the reference, with the torso extending naturally to the bottom. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1024x1536",
+          "quality": "high",
+          "rawSha256": "059a3b7688d1867403d6ff560c8a3a67072ef4c32b649898d00844150361cd43",
+          "references": [
+            {
+              "file": "default/content/assistants/miso-female/portrait.png",
+              "sha256": "170da4a48a3bff14562401be4708c653df096e8fea7e372d49454702eb4dc02e"
+            },
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/miso-neutral.png",
+              "sha256": "92f5ffb5a4b9ea5f2935a1a5cf085e5bf9db1335686eee8ea1b5867dda7b183c"
+            }
+          ]
+        },
+        {
+          "id": "miso-female-sheet-1",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:27:48.826727+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: admiration, amusement, anger, annoyance, approval, caring, confusion, curiosity, desire. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Miso has rich warm orange hair with several distinct irregular charcoal-black tiger stripes through the hair, rounded orange tiger ears with black edging and ivory inner fluff, and amber eyes. The tiger pattern is visibly striped, continuous and deliberate. The face, neck and hands remain natural human skin. Cream knitted layers with restrained charcoal and orange striped panels and a soft apricot scarf complete the welcoming outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "94fc4cdff3d94ab9d3e8a04603f7ed8b2400925dd930fbb9d7b25f4ffb0c80fe",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/miso-female.png",
+              "sha256": "eb6373e8c4a7f3cd49e9f236accbd783b5ad496e8c333e2ac710ca46e171eff7"
+            }
+          ]
+        },
+        {
+          "id": "miso-female-sheet-2",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:27:48.826539+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: disappointment, disapproval, disgust, embarrassment, excitement, fear, gratitude, grief, joy. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Miso has rich warm orange hair with several distinct irregular charcoal-black tiger stripes through the hair, rounded orange tiger ears with black edging and ivory inner fluff, and amber eyes. The tiger pattern is visibly striped, continuous and deliberate. The face, neck and hands remain natural human skin. Cream knitted layers with restrained charcoal and orange striped panels and a soft apricot scarf complete the welcoming outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "8232869a760bf849e02af74622c7a77be66b8a3d7d6dc257129efd5fc504946d",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/miso-female.png",
+              "sha256": "eb6373e8c4a7f3cd49e9f236accbd783b5ad496e8c333e2ac710ca46e171eff7"
+            }
+          ]
+        },
+        {
+          "id": "miso-female-sheet-3",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:27:54.969950+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: love, nervousness, optimism, pride, realization, relief, remorse, sadness, surprise. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Miso has rich warm orange hair with several distinct irregular charcoal-black tiger stripes through the hair, rounded orange tiger ears with black edging and ivory inner fluff, and amber eyes. The tiger pattern is visibly striped, continuous and deliberate. The face, neck and hands remain natural human skin. Cream knitted layers with restrained charcoal and orange striped panels and a soft apricot scarf complete the welcoming outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "cc3a6facf82f366753413f657e45cb6ed19aa703db3af1434e96e75670331632",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/miso-female.png",
+              "sha256": "eb6373e8c4a7f3cd49e9f236accbd783b5ad496e8c333e2ac710ca46e171eff7"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "miso-neutral",
       "expressions": 28,
       "portrait": "miso-neutral/portrait.png",
       "card": "miso-neutral/card.json",
-      "bytes": 2877368
+      "bytes": 3208966,
+      "portraitSha256": "5c3c8750057867881071173a4a405c6fb137aada2cfe615225b83939cc38e6fa",
+      "expressionSha256": {
+        "admiration": "071429404c4da61680bc64097945bfe46dc2995b917510c873d2fff47b6c5189",
+        "amusement": "51d9e681414a6f38d7d68ce75456df25013be196ef5d66d1d429aba87c874e96",
+        "anger": "81546fc88eff377dc1da4bd2c2e2a0944e74e3bffb691075c2a28b30c4fd3701",
+        "annoyance": "c9ae86170973259fb611e2aebd2e80c14ae26194d5c49ddac63b8ce08786dae4",
+        "approval": "a475d5600ef7a27a2eddea6bc5537db1c265cafdad32ac829824f888f6dd681a",
+        "caring": "2a58490b0aaee9c81cb59c36978b7c8ebbbfceb464d6cc2f2e1d12675a03e928",
+        "confusion": "dd79294c60813ec86750cd2ceb831d794887046cd6f6e7dd4a8b08f1f4ffd380",
+        "curiosity": "b6ab57a3c3520fe7569c6878d9809fc26bb462e50a552ce78b96243c62b129c8",
+        "desire": "ed5192d7070605a5963d594ec821ab09e908795ea0fe005bc587786beb5dd5ce",
+        "disappointment": "ded6883098573a72a169253734526a416c05df2ab6f1218b31086676c12da46a",
+        "disapproval": "f4c7fb28f2b8ea232c2d491d8a7ca9e217821bf172536c476c67f961a77abb45",
+        "disgust": "4446ccff0cc5737426c0a7fdcb72c186487a91dd7ffcca7b83d12ad397da648c",
+        "embarrassment": "b5db6d55b098191131965c5db494941b01d6e5e8fbc268f45fca416b132e030f",
+        "excitement": "b645ba422bbc9516d1a0ad3599ea23558c6f22eb358ff0f1edb49cc106b96bf6",
+        "fear": "139ee89821904c87410d7546f79a882d32a9780bcb9e5fb68de688b22dc00a8a",
+        "gratitude": "9c52e5ef0bd9fcb06a56bf92e2adc4a77221db2f7caecca8c31cfe4c903534c7",
+        "grief": "cd9033047e316f5e60beee9615c8be1087601031cb77a568a3aa077cd4b8eabc",
+        "joy": "866eda89f7a19fc861a79d19da7f99c8e6d4c72f5396313796be76fb5de5318a",
+        "love": "ca414d6455d831b05eaf1100aeaa5898b3fbe4889513a1f0144da048bc81e6b6",
+        "nervousness": "eb9f6cdec2929f03feec16dad1935ede85c307417a5af40f639b6f4ce90b54d5",
+        "neutral": "996f12e1713c69fa72e79732ec0ba803c3c815fd37dcb44f78ea99fec4f0dd4b",
+        "optimism": "f7c22ffce4f43aa5ee3debcbb4525b618c7060325e80c57d25f9a69ff9468887",
+        "pride": "46703d3ae29dfa4f623a74dd61544098ed752a0da748e39ae47ec06b16fb4d0d",
+        "realization": "7cc74da23401e67cf6f438e254539d3969cc8a42c3d2ae5acce56c002a04a4a1",
+        "relief": "918b7aeccb2e391755f07a631829287650bc6cce8027df6b206c1ef64a51511e",
+        "remorse": "870735cc1017d39bfbfb0bb22288caf24ccad833a7ac26c5deb4a7727ba83b05",
+        "sadness": "415c64cdba30541350ad667100a45597fa8c7257efa933f8869ef348f7b20d0b",
+        "surprise": "e4b71ae5b45b5a692d817f9690caf1ee1bfae294e10eeda9d77c4147045866bf"
+      },
+      "generations": [
+        {
+          "id": "miso-neutral",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:23:52.489623+00:00",
+          "prompt": "Redesign this existing assistant portrait using the following exact approved appearance. Miso has rich warm orange hair with several distinct irregular charcoal-black tiger stripes through the hair, rounded orange tiger ears with black edging and ivory inner fluff, and amber eyes. The tiger pattern is visibly striped, continuous and deliberate. The face, neck and hands remain natural human skin. Cream knitted layers with restrained charcoal and orange striped panels and a soft apricot scarf complete the welcoming outfit. The two tiger ears have broad rounded semicircular tips, like real tiger ears. Replace pointed triangular cat ears with these clearly round tiger ears. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Preserve this reference character's androgynous adult presentation, face structure, eye shape, hairstyle silhouette, pose and welcoming neutral expression. Frame the head, shoulders and upper torso, facing the viewer. Leave at least 8 percent clear margin above and beside both ears. Fill the portrait with the subject at the same scale as the reference, with the torso extending naturally to the bottom. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1024x1536",
+          "quality": "high",
+          "rawSha256": "1fc684795cadeed5f67eec4cb0c4cd11d8eb43e44487062f8c1df5c97a34c672",
+          "references": [
+            {
+              "file": "default/content/assistants/miso-neutral/portrait.png",
+              "sha256": "59a05f1f80b66980fc9a0e4fa91947d8890e18702be943ccbc242d96f32fa285"
+            }
+          ]
+        },
+        {
+          "id": "miso-neutral-sheet-1",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:28:36.707262+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: admiration, amusement, anger, annoyance, approval, caring, confusion, curiosity, desire. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Miso has rich warm orange hair with several distinct irregular charcoal-black tiger stripes through the hair, rounded orange tiger ears with black edging and ivory inner fluff, and amber eyes. The tiger pattern is visibly striped, continuous and deliberate. The face, neck and hands remain natural human skin. Cream knitted layers with restrained charcoal and orange striped panels and a soft apricot scarf complete the welcoming outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "b199e824f75450c1c1786447708c69adb0683e0c07226df0d0e84452bc48f965",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/miso-neutral.png",
+              "sha256": "92f5ffb5a4b9ea5f2935a1a5cf085e5bf9db1335686eee8ea1b5867dda7b183c"
+            }
+          ]
+        },
+        {
+          "id": "miso-neutral-sheet-2",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:28:43.163196+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: disappointment, disapproval, disgust, embarrassment, excitement, fear, gratitude, grief, joy. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Miso has rich warm orange hair with several distinct irregular charcoal-black tiger stripes through the hair, rounded orange tiger ears with black edging and ivory inner fluff, and amber eyes. The tiger pattern is visibly striped, continuous and deliberate. The face, neck and hands remain natural human skin. Cream knitted layers with restrained charcoal and orange striped panels and a soft apricot scarf complete the welcoming outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "306dc9dcca2923fa5ab546ef4aea07a064b6ceb8211549f70d724808b3c531cc",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/miso-neutral.png",
+              "sha256": "92f5ffb5a4b9ea5f2935a1a5cf085e5bf9db1335686eee8ea1b5867dda7b183c"
+            }
+          ]
+        },
+        {
+          "id": "miso-neutral-sheet-3",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:28:45.118029+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: love, nervousness, optimism, pride, realization, relief, remorse, sadness, surprise. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Miso has rich warm orange hair with several distinct irregular charcoal-black tiger stripes through the hair, rounded orange tiger ears with black edging and ivory inner fluff, and amber eyes. The tiger pattern is visibly striped, continuous and deliberate. The face, neck and hands remain natural human skin. Cream knitted layers with restrained charcoal and orange striped panels and a soft apricot scarf complete the welcoming outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "f1b340924c14614d4ffe819c9a43241e34785a6a4cc8884bc93fc6bf83c2e687",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/miso-neutral.png",
+              "sha256": "92f5ffb5a4b9ea5f2935a1a5cf085e5bf9db1335686eee8ea1b5867dda7b183c"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "taro-male",
       "expressions": 28,
       "portrait": "taro-male/portrait.png",
       "card": "taro-male/card.json",
-      "bytes": 2412406
+      "bytes": 2579540,
+      "portraitSha256": "f046b22802ffb6a79ac74baa570c77d691d7d49db4e896675cc5210b8a5761d1",
+      "expressionSha256": {
+        "admiration": "31d45be2bb83db6cf9cf52c65f3cf2b1fac1d79777e917657a603c83f4b97392",
+        "amusement": "ec01ecb20a46007fc3e70b950ef559dbc3c718d65c73cfe0100fb1f292c62a51",
+        "anger": "60a4774ae4d1463fca8229ba83563938fcd89f0a740996365280b5b5bb204f89",
+        "annoyance": "76e8ee53e075aca977917ce7dcd00eaf17d1b47f7212e9ffa330bce9c6727190",
+        "approval": "966fa84289e9c722c23df5b58338460b6d3767e05db91a04e35dd75655c934fc",
+        "caring": "95ecc306acbb7f81d60d99f400abbc0aa30cf6b0b44ae6c0f2e10b59a7a4a50b",
+        "confusion": "c379945ac22413cf2c4b6a74f07ff0d81235a37ea05b8452ff2da2a3fddea1eb",
+        "curiosity": "7371e977f8124634cd9dbeae6f5fff1bab2614c4e19f2457f4f692122bcfb2c7",
+        "desire": "897b6405a93da771166528afa32abc800cb443f899a8e4bc47abcbb4908d6093",
+        "disappointment": "e0838ccc7b412ef85a90b2ee7b8995a4eec959caa1fdfe2511c219545f2fa649",
+        "disapproval": "252278b49259c266ec3f61444eed6b7ac8d4836218f7f4a230181a9d8402478b",
+        "disgust": "d6c905ab38df82e40bcf13b180fa3b4c293ae3282b9c58cb94cecdc71d7e30b2",
+        "embarrassment": "55be0335111ea6a267a8ead06299b690cd44a511999af7e1fc88544593dd3345",
+        "excitement": "a37f1e95d1e1fbe5b93364efb1c2e59b1f4f043c619ece3eaee5f0071c249b37",
+        "fear": "ae523743f860b27ff3105b5230a66343526838b18bb7a6f96ef162041a847cba",
+        "gratitude": "1083648f2db12f8b5f7648a04e26d93320017d312eb6aafe1a66958abc173e34",
+        "grief": "40de60911ae4968f57814ff04f7b73a860cbc7a4c40452b6e28992526c229ad8",
+        "joy": "cae601bd038d7f9ed07429a853303075da199ff1892502dea41beff10b8263bf",
+        "love": "bf1fbe462b456c3cf28c4ad778e21086fd81b4907346f56743460e2a008ac0e6",
+        "nervousness": "82263fd1037388fdec8dc8ba704d75d93a54db24039cc2735b8ad3e88be3a3ea",
+        "neutral": "61092e76a1e4c61511e2b552df10f954750303c8535636c68ebc490dfbe36294",
+        "optimism": "932b3c8df6f77299e174a327934e81b1198927004dfd574f9baddf18d9d7f5e0",
+        "pride": "44b34f85b168ad93902f69db0e66724201dab8ed0d7b4b715dfc6a4c6b49df97",
+        "realization": "b2ba83ee4c29856b8932d3b3edb472ba83b797c6b430880ada280512facbbed8",
+        "relief": "f94af302694a50f98f92eee84c8836081d71939180b17b3bd7e3341f8286e71f",
+        "remorse": "d24cb9b5e34c8859c299bab0f362a8bdeea675745d572724be7ccdd57c1b1217",
+        "sadness": "bc503370a0bc5e1afcc4fec672668d31c709e0271c83d32a731d681bd3f42a63",
+        "surprise": "f7fa4cc97f62d2cc6600629bdc3ec244bf5e568efda667c3bc96ae4283524c46"
+      },
+      "generations": [
+        {
+          "id": "taro-male",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:24:44.335135+00:00",
+          "prompt": "Redesign this existing assistant portrait using the following exact approved appearance. Reference 1 fixes this variant's face, hair length and gender presentation. Reference 2 fixes the approved new colours, markings, ears and clothing. Apply reference 2's colour design to reference 1's individual identity. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Preserve this reference character's masculine adult presentation, face structure, eye shape, hairstyle silhouette, pose and welcoming neutral expression. Frame the head, shoulders and upper torso, facing the viewer. Leave at least 8 percent clear margin above and beside both ears. Fill the portrait with the subject at the same scale as the reference, with the torso extending naturally to the bottom. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1024x1536",
+          "quality": "high",
+          "rawSha256": "06a703673d4d3b9ff663145742aadecfb52fec00d10db2ebd022c8afe29c30fc",
+          "references": [
+            {
+              "file": "default/content/assistants/taro-male/portrait.png",
+              "sha256": "35fd44616a2415beb699738eb3055099112c01f8820f3c61ff75ed6db21f415f"
+            },
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/taro-neutral.png",
+              "sha256": "660509669b5ded362ea9946dbfe7537e854aa4308e9e1e727dd7f2e89cd21f8f"
+            }
+          ]
+        },
+        {
+          "id": "taro-male-sheet-1",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:29:24.386338+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: admiration, amusement, anger, annoyance, approval, caring, confusion, curiosity, desire. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "2a322be3faef3d64d50abc4d5e71960ff6e4de417903458492a4935072de78db",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/taro-male.png",
+              "sha256": "8a0f0691a6b2bbfe9f401c2bca76a938117713296e74c59ad29cddca716789cc"
+            }
+          ]
+        },
+        {
+          "id": "taro-male-sheet-2",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:29:33.926827+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: disappointment, disapproval, disgust, embarrassment, excitement, fear, gratitude, grief, joy. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "0e405328b1ce3ff8c0b56a41bdfdc463bd0875ab660ce886de8fd28c9a6b10b8",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/taro-male.png",
+              "sha256": "8a0f0691a6b2bbfe9f401c2bca76a938117713296e74c59ad29cddca716789cc"
+            }
+          ]
+        },
+        {
+          "id": "taro-male-sheet-3",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:29:30.306276+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: love, nervousness, optimism, pride, realization, relief, remorse, sadness, surprise. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "e4c02df8b7985da1e0fd704dcb632112678e31dc77adaccd98c51410d453a56c",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/taro-male.png",
+              "sha256": "8a0f0691a6b2bbfe9f401c2bca76a938117713296e74c59ad29cddca716789cc"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "taro-female",
       "expressions": 28,
       "portrait": "taro-female/portrait.png",
       "card": "taro-female/card.json",
-      "bytes": 2593920
+      "bytes": 2756598,
+      "portraitSha256": "aeb53c85cd21690f1829be23840f459d36adec2679a0a677c076a1b4d6482629",
+      "expressionSha256": {
+        "admiration": "3c74f2d3091ce0da1bc57bf9ce192af3d3318410a5f98fc77370eb6794c87e1d",
+        "amusement": "e4d320620e6f15cf87448f5f4c63b3a1c44217c136e933492f3e4a72129d939a",
+        "anger": "df0460bae2e2ac6456d4a2efb57e3c1860c6c7cb3377bf3e019746b41e83c41b",
+        "annoyance": "9cd40343340da619aea017168427d94fa0badd54457b418917e7520834732b4f",
+        "approval": "8e8925ab32227c05c5524f46132b1c79c555cb34138593ce7ec5bec2350ba29b",
+        "caring": "d9bbe9e8621c246aba6c653a81ad29e055bea768c30e2d2e2ef241c8297b8103",
+        "confusion": "e97553088088993cb5b09f54f99ed045ffe9328cbc7eb149c1f92efb09302d10",
+        "curiosity": "53018f1f8559c8e7e36e4ea67a54717cb1668da5f2bb5d92f3c374754ac429f2",
+        "desire": "f9bbfc1c2558b5d6c25d8450c038395070131ccd666bf1fff268983e13c6fb4d",
+        "disappointment": "5169638e44dcfe8b0abb9f8ad885445defb358519be04994fd19b8a6c1977425",
+        "disapproval": "b71ee18890830a0ae90047f34842679dc465c15a99ab3a50362a8de753dd6e0e",
+        "disgust": "7f53e35b69e4358aa040f7e2a129dbfc65fb1b8ab16fc191912f222591612961",
+        "embarrassment": "4037f48cb2776631a309105530350aa16b61281ce809b6fe353a6830affafd3c",
+        "excitement": "4543ef3903535d31f1ad967324085361444a079e39422fe488e73b0fc65c7f74",
+        "fear": "2bd6dc02f10e897c1dd8e67b55e005caf4bbed1bd4c6a891c00ba757eb015d49",
+        "gratitude": "af9e331b9b1126e6ff0db33edffd18d551c5793727c95085fd615132f0eccb14",
+        "grief": "d87bc586e652728761efae2889077464f2e6f3d68880d4fc345af3cc5196f0be",
+        "joy": "98f7969af7ebd265383a55161c625734a0b72e4313ff7745f2f3c0d61a2d1d75",
+        "love": "880f2e7c5eef6d2d06ac27779a06f16bee3bf91ae5393a28328576e52af597dc",
+        "nervousness": "9f94b5812f079149655a41530c323775053703d4f07bd48105339cf150856af5",
+        "neutral": "30ed35a4d9c2e728cc6967bbc1e96cb82c31b88d919d9202c87890df2c14c099",
+        "optimism": "20a8e1536978e679d7ddcf3ac78d67f96b97ebc60fd57034c3dc542cdfb023fa",
+        "pride": "aee885853e9b3230ca7e429d35825ed703fe74ae88453bad81200106af16162c",
+        "realization": "f40f4fed85030d9a413fbaf4916a3c8ab12abbd732c1dec65ced0c5901287823",
+        "relief": "b1a2d13c28c0ea164872d147c2dac16a5ba2765b3569c810e80d75bf03a766f4",
+        "remorse": "5dca6e211d59a7319f9f046b498105e8464e6828ba4db28eae3832def84b5e7d",
+        "sadness": "01255fd27bb32395893ed5432c2737eeddb7e072f27b8633b6865f7dd42b3069",
+        "surprise": "0c032b0f72c9051dfe955c47ec295489dfd7bf2380c32992deca197bb17f9cf0"
+      },
+      "generations": [
+        {
+          "id": "taro-female",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:25:21.073944+00:00",
+          "prompt": "Redesign this existing assistant portrait using the following exact approved appearance. Reference 1 fixes this variant's face, hair length and gender presentation. Reference 2 fixes the approved new colours, markings, ears and clothing. Apply reference 2's colour design to reference 1's individual identity. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Preserve this reference character's feminine adult presentation, face structure, eye shape, hairstyle silhouette, pose and welcoming neutral expression. Frame the head, shoulders and upper torso, facing the viewer. Leave at least 8 percent clear margin above and beside both ears. Fill the portrait with the subject at the same scale as the reference, with the torso extending naturally to the bottom. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1024x1536",
+          "quality": "high",
+          "rawSha256": "fae178a01c3364d82eabd4e433970e624eff904b1265f7122fdad655fb464e5c",
+          "references": [
+            {
+              "file": "default/content/assistants/taro-female/portrait.png",
+              "sha256": "9b0239de8028b76d73a07a3a83e2cb5ffe843a14b0a6831a8a3b318621c4281b"
+            },
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/taro-neutral.png",
+              "sha256": "660509669b5ded362ea9946dbfe7537e854aa4308e9e1e727dd7f2e89cd21f8f"
+            }
+          ]
+        },
+        {
+          "id": "taro-female-sheet-1",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:30:12.112735+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: admiration, amusement, anger, annoyance, approval, caring, confusion, curiosity, desire. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "4d1b317c7513edf8c21463449c469c33e8a11ef32956768744f0784c1d8476c2",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/taro-female.png",
+              "sha256": "04724823b8fee9396df95423fa0ca3122f2ab0bc170eb336e800d63821031f3b"
+            }
+          ]
+        },
+        {
+          "id": "taro-female-sheet-2",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:30:19.336019+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: disappointment, disapproval, disgust, embarrassment, excitement, fear, gratitude, grief, joy. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "15818ab479972181d87788980b6e4a365b1364699e825a4fafadda5aa98c6cec",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/taro-female.png",
+              "sha256": "04724823b8fee9396df95423fa0ca3122f2ab0bc170eb336e800d63821031f3b"
+            }
+          ]
+        },
+        {
+          "id": "taro-female-sheet-3",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:30:20.235898+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: love, nervousness, optimism, pride, realization, relief, remorse, sadness, surprise. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "a9ed68ab5d5bf6d59cf7b0fb079d3e365bd7698ddb00aab40fb23436b5f9523d",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/taro-female.png",
+              "sha256": "04724823b8fee9396df95423fa0ca3122f2ab0bc170eb336e800d63821031f3b"
+            }
+          ]
+        },
+        {
+          "id": "taro-female-confusion-repair",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:44:02.200943+00:00",
+          "prompt": "Create one expression portrait of the exact adult assistant in the reference. Preserve the individual face, hairstyle, ears, eye colour, clothing, gender presentation and detailed illustrated style. Show confusion clearly through the face and a small natural upper-body gesture. Desire means a hopeful yearning gaze. Frame from above the ears to the waist. The complete head, hair and both ear tips are fully visible with a generous 15 percent clear margin above the highest hair and ear. Keep the hair and gestures inside the side edges. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1024x1536",
+          "quality": "high",
+          "rawSha256": "f669cda7941163601941b314ce88e61c91f43a89d69ac4241e7f3b2d893f0011",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/taro-female.png",
+              "sha256": "04724823b8fee9396df95423fa0ca3122f2ab0bc170eb336e800d63821031f3b"
+            }
+          ]
+        },
+        {
+          "id": "taro-female-curiosity-repair",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:44:02.257780+00:00",
+          "prompt": "Create one expression portrait of the exact adult assistant in the reference. Preserve the individual face, hairstyle, ears, eye colour, clothing, gender presentation and detailed illustrated style. Show curiosity clearly through the face and a small natural upper-body gesture. Desire means a hopeful yearning gaze. Frame from above the ears to the waist. The complete head, hair and both ear tips are fully visible with a generous 15 percent clear margin above the highest hair and ear. Keep the hair and gestures inside the side edges. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1024x1536",
+          "quality": "high",
+          "rawSha256": "3afb7f6c3d3e5a6fca315b6502879f8ed35909b63b9e6e6bca0dda742dfc028a",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/taro-female.png",
+              "sha256": "04724823b8fee9396df95423fa0ca3122f2ab0bc170eb336e800d63821031f3b"
+            }
+          ]
+        },
+        {
+          "id": "taro-female-desire-repair",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:44:08.655000+00:00",
+          "prompt": "Create one expression portrait of the exact adult assistant in the reference. Preserve the individual face, hairstyle, ears, eye colour, clothing, gender presentation and detailed illustrated style. Show desire clearly through the face and a small natural upper-body gesture. Desire means a hopeful yearning gaze. Frame from above the ears to the waist. The complete head, hair and both ear tips are fully visible with a generous 15 percent clear margin above the highest hair and ear. Keep the hair and gestures inside the side edges. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1024x1536",
+          "quality": "high",
+          "rawSha256": "739c7df42374ac1f2ae66d03c605d7222b1074ccf0da2a1c50523723d3acdef1",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/taro-female.png",
+              "sha256": "04724823b8fee9396df95423fa0ca3122f2ab0bc170eb336e800d63821031f3b"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "taro-neutral",
       "expressions": 28,
       "portrait": "taro-neutral/portrait.png",
       "card": "taro-neutral/card.json",
-      "bytes": 2316660
+      "bytes": 2530330,
+      "portraitSha256": "1c1817bf6525ec8d0ad613d7b1631b9815a1b0c390a23f4bf48e655dd0e01375",
+      "expressionSha256": {
+        "admiration": "ef450624a98b424af5eb2a8669a8992b99b84b58ced9cc34d5afbdb95e66eb47",
+        "amusement": "8a1bee00440006cdd400b03eda6503bfe366c07b05e68353b91172fd10c581f4",
+        "anger": "e8d8cde3c77b5c2929f32c6128dd692ef1e75131a109ec0c85f9708ba6ec16ad",
+        "annoyance": "9fac61c2de0a81992314b383313ae67530fbd249fae895fa2cce48395355c471",
+        "approval": "31673e8796bb47d74d9866ed3a61c51f3b717602cba4dc2a917d2f8af68251c8",
+        "caring": "46df9751b5bc1429c6dc4e5d22820c55292a870773b117a0a7b0a3daf1a70cd0",
+        "confusion": "78702dd02d11007af19d233248823aa19be78b84c0ddbd0f97785dca50080d43",
+        "curiosity": "40f6579e5a67f092c7dc8ae610e00d9d20ce2811bbc1a8904de2aac5087882b9",
+        "desire": "74916d889b72d112c3a5fd2c04f8318205e19e043a37b52dde70b28ccddb14d4",
+        "disappointment": "1e49c42cc66d4675c6df6516293fedd6ea7a987fb06dbe228ea6bcab9060a32a",
+        "disapproval": "bddd1477e5693c5a1e59ddddda197774422fe29ec58e505b0fe97f5c5d32b2de",
+        "disgust": "6b6c99a40e7399f4b0caacf68b6cc47b693d5687ada68c1e59a8252f708c4d8b",
+        "embarrassment": "a2ed46dbaae20ccbf58420263e700e205b573b60b867b66288d7d5c45294eb46",
+        "excitement": "87f4aa4048b0082e0cce2f7239d542ef2d409620dc3562382e0caa6670896fa4",
+        "fear": "1f98ace71054299a7a6fd4b78d7c43254c21da78a0c8d985cbb0cbdcdbb5d1e3",
+        "gratitude": "f11b96dd87208b424ecba2808ce0a4469aaefec41fd3922ae7bc820fa738d9f4",
+        "grief": "4a9381d551bdc53495eb9875a7926e52e20c4beef2332be2e1ac7b21ba98acdf",
+        "joy": "c9d5a5dea78a5fe26dfe296c4e4d80c5743abc3073fcf065d20e3ecebc34b40f",
+        "love": "a2b1373f629824152ead0fded4ca9c15c19cd36d8959196e639591eeb44fbf33",
+        "nervousness": "ad5f31febc59bd92f7041161b070d3b8f9510b7c48ca70aa7f4db29016ab6120",
+        "neutral": "860d71ab048dd91859519f85f8082aee836fc572cfebbac2f3254d49f0a362fc",
+        "optimism": "2c6e5c56b3c053268f4f136a4798a2f7534862442c10b95051f12559c5d05f35",
+        "pride": "791b28f6c44caba72e84a4fac4cfaf2425c76402ab3be3908707680a0f0dd72a",
+        "realization": "a378821386a1ccbec770ed50fc307e2c7249c6b22bee61c5da70361e442ebc82",
+        "relief": "e094ef215f4d89d2d6824b3aacfbfd8a54894e755c26b1da11d658d02b015662",
+        "remorse": "4577e4660a738173911b6e734368348ac589b659fc69489857286e572388230f",
+        "sadness": "33c4c362307dccaaab70beee20eaf7fac3c90f73ee35bba7c97de80b3ba3bcf3",
+        "surprise": "439617ed8a9f1963a68b31c0e02296cf454388deae43b8eaadb3eea1c5774ab2"
+      },
+      "generations": [
+        {
+          "id": "taro-neutral",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:09:44.466943+00:00",
+          "prompt": "Redesign this existing assistant portrait using the following exact approved appearance. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Preserve this reference character's androgynous adult presentation, face structure, eye shape, hairstyle silhouette, pose and welcoming neutral expression. Frame the head, shoulders and upper torso, facing the viewer. Leave at least 8 percent clear margin above and beside both ears. Fill the portrait with the subject at the same scale as the reference, with the torso extending naturally to the bottom. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1024x1536",
+          "quality": "high",
+          "rawSha256": "b5de856d94051a6bc62b17c87b6925d2cf90ac54effe6811f7c68c622549109d",
+          "references": [
+            {
+              "file": "default/content/assistants/taro-neutral/portrait.png",
+              "sha256": "dfad807990f073add3235864c15854a0b285cdd68ab1c8e64ffaa7e5cd5935e5"
+            }
+          ]
+        },
+        {
+          "id": "taro-neutral-sheet-1",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:30:57.820575+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: admiration, amusement, anger, annoyance, approval, caring, confusion, curiosity, desire. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "94237f7fd4d4dd1cf42524b243444900ad44653f729af5ec7a700814a04d4aac",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/taro-neutral.png",
+              "sha256": "660509669b5ded362ea9946dbfe7537e854aa4308e9e1e727dd7f2e89cd21f8f"
+            }
+          ]
+        },
+        {
+          "id": "taro-neutral-sheet-2",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:31:09.157204+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: disappointment, disapproval, disgust, embarrassment, excitement, fear, gratitude, grief, joy. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "786be930e48648cb63578d0f0bc871164dae9575a6c4cf69fbf9599710972d10",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/taro-neutral.png",
+              "sha256": "660509669b5ded362ea9946dbfe7537e854aa4308e9e1e727dd7f2e89cd21f8f"
+            }
+          ]
+        },
+        {
+          "id": "taro-neutral-sheet-3",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:31:06.888917+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: love, nervousness, optimism, pride, realization, relief, remorse, sadness, surprise. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "bed61fc6a2dd251c7d3d033106443f720b35d78ed91efdc8ce00bf9dd347c87d",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/taro-neutral.png",
+              "sha256": "660509669b5ded362ea9946dbfe7537e854aa4308e9e1e727dd7f2e89cd21f8f"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "nori-male",
       "expressions": 28,
       "portrait": "nori-male/portrait.png",
       "card": "nori-male/card.json",
-      "bytes": 2174920
+      "bytes": 2055526,
+      "portraitSha256": "3ae7367b3612deb54dd27c78124862043be8feb4e6551f3232f74a5337c880d4",
+      "expressionSha256": {
+        "admiration": "827204d96c2ba4fabc2582060aafcbb211d59ba593bc56ea6a1532f74008b735",
+        "amusement": "52a41a0a09c7ab39fb50b8713f84b6c74e077ad6410025d3ff1ed7466e297794",
+        "anger": "9c52e3da5d3e32d1435e15b03b0927bef46a4a21dc3216b652c6adc81557ec04",
+        "annoyance": "f1b767a45f097c4c6d6279b0fab861ec93578ea3b65d93eddd0a9a1d34dfae92",
+        "approval": "33bb10af4e48282d167a46461bf0fc6c909690af5a8c66aebd6b02e2c3c50afc",
+        "caring": "142b44b8c7abd09718363a5b83964f0ab1ac342ad4275648ebc0ef6ec65101ce",
+        "confusion": "68d8acc4a772add7a1997ba524a310f86a303ae75e9e31afb0030350b507fdee",
+        "curiosity": "d123b46d9e427a43fa9d8fc26b007eff0951e5c6eb42ff2eb79846a7616bfa9b",
+        "desire": "30de885ee6c6960e18092f92b2f30131f9296ac93262f99a1dde304adcd39b57",
+        "disappointment": "b9b27daf6a26163aee8811d86b78d71e357c5a27698568a35535ab22f6222665",
+        "disapproval": "601dcdb3eed2a4183ad534f3fb9eb69636bd1d243b72bdf3757a526fd0c09f7c",
+        "disgust": "13e0c7836a3f16e515ec9104f3524e14fe44d7d4d1f20459c04020ea86897058",
+        "embarrassment": "62ade9c1fc3c5e7d31ce5657eb2768ba5fdd1a218a1060c79c8f42bffdde1ed9",
+        "excitement": "3643931ede8fe4e12299a7fc7c3dc59000c41422901e6644359d04dde480bd0f",
+        "fear": "365a91fcbd0e945b038ac69bda3560b1ce700eebe0dc367de8ec879c694441da",
+        "gratitude": "9c5bfa27748d0f3cc725a7f54c0eb77eef91f7a2e82b2db9a16bcb2639306f40",
+        "grief": "8a06bc262c586bef7d71747f32b45754defa810189952988e8b996ae009f36b4",
+        "joy": "464001398735b56271e47c8551f092fc6c3aac66e73d00df492f0ae1a589f4cd",
+        "love": "e6dee61e59895e8a3e2341a00ba5e259e83c9c9ddb84a5cb02ed4cf7af108365",
+        "nervousness": "22354ee27f97e7e3d20897eaafb0cfab102cd929ccb46d4ca38723a0cac9b0d0",
+        "neutral": "069b3f4052a83f2e7856d3c592d54f0add83e3d4eb073ab8ca1e7dfdae28840d",
+        "optimism": "7d2c08dea533720d7f34261d88b1de75c16ed948139d913b91919783165e356b",
+        "pride": "6c11b430bb28406655ae0007fd54bd422a9a578865a22bc10d4e4234a75b5b18",
+        "realization": "a78d6f7b1675744e1c5f039ddfbbee9241117bee7d10f55bedf454c8941304ba",
+        "relief": "4ecd728e9b68b69230ffcda6744090aae4d16847095f62c96d01ff19893bf8bd",
+        "remorse": "4bdf632b30d4f01290cbbec023bd96a28a4a52c519be7b1483b94c94116b85f6",
+        "sadness": "4075c6e7eea572c6f5946962031f1624e63b9820c7f4bcc1f0fbcbb8b5afc70a",
+        "surprise": "a18f66bd016d4c935ac1479e43c07f25f4c4b2bb3871c8c122e4438cf2d816b7"
+      },
+      "generations": [
+        {
+          "id": "nori-male",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:25:17.803134+00:00",
+          "prompt": "Redesign this existing assistant portrait using the following exact approved appearance. Reference 1 fixes this variant's face, hair length and gender presentation. Reference 2 fixes the approved new colours, markings, ears and clothing. Apply reference 2's colour design to reference 1's individual identity. Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Preserve this reference character's masculine adult presentation, face structure, eye shape, hairstyle silhouette, pose and welcoming neutral expression. Frame the head, shoulders and upper torso, facing the viewer. Leave at least 8 percent clear margin above and beside both ears. Fill the portrait with the subject at the same scale as the reference, with the torso extending naturally to the bottom. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1024x1536",
+          "quality": "high",
+          "rawSha256": "ff9d8f061d0690147e2d7029b70a26a782a6aa83874f26fbde309c9a71326369",
+          "references": [
+            {
+              "file": "default/content/assistants/nori-male/portrait.png",
+              "sha256": "a7d543ec0061c972d16cd4f8e1b62495bf9be2783cfe360394ed61c61c52ac17"
+            },
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/nori-neutral.png",
+              "sha256": "f7753dfde4b72d3facf797deff6588673f8c8b536ed18dc15722b6385797b53f"
+            }
+          ]
+        },
+        {
+          "id": "nori-male-sheet-1",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:31:43.623501+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: admiration, amusement, anger, annoyance, approval, caring, confusion, curiosity, desire. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "4a6a0b608997690453915d09c02c62e3e649d3751c5ebdf7ec33cfbb45be8778",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/nori-male.png",
+              "sha256": "fbc6ae79d82f2fa9195d7c5173b584a4ff20f3d7a6068bcd041bfe70ebf23245"
+            }
+          ]
+        },
+        {
+          "id": "nori-male-sheet-2",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:31:58.399394+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: disappointment, disapproval, disgust, embarrassment, excitement, fear, gratitude, grief, joy. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "a0cea44eb7e1327544f5936e050147d0a9606c2f82e910cf07cc9b20242f2175",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/nori-male.png",
+              "sha256": "fbc6ae79d82f2fa9195d7c5173b584a4ff20f3d7a6068bcd041bfe70ebf23245"
+            }
+          ]
+        },
+        {
+          "id": "nori-male-sheet-3",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:31:59.605748+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: love, nervousness, optimism, pride, realization, relief, remorse, sadness, surprise. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "c8bf5913582d11e6159f7545444478db8e6fb43c1687c6da65bd63bddd04f7da",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/nori-male.png",
+              "sha256": "fbc6ae79d82f2fa9195d7c5173b584a4ff20f3d7a6068bcd041bfe70ebf23245"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "nori-female",
       "expressions": 28,
       "portrait": "nori-female/portrait.png",
       "card": "nori-female/card.json",
-      "bytes": 2611576
+      "bytes": 2361986,
+      "portraitSha256": "ab6053b56b7b3440b88ddcd1003b053038e4a4885ff97c8e7db81126b6cf1e8b",
+      "expressionSha256": {
+        "admiration": "a9b5ad700e3bf3b0ffd4a7aece64325ae51f38816a49d432160d291733ef4094",
+        "amusement": "19dfc8aced966b93223d1637e2b3629b1e4daf5514dcfc805e40a53063d2cfa4",
+        "anger": "3fbd7fc87d2b9b57e8bcd6a27637566a11a355880102d28592191d6178e868a4",
+        "annoyance": "30491744409b961cbe9a0f3b840ad7093ced9c3fff389522a70aa493e6089aa1",
+        "approval": "21c1fc67853767393f9002b3236080ccf563dc3808b43ceb0ce1ba10666f5b56",
+        "caring": "4fb9d4aeda389d8323b08a35dfd605ec6bee143ca5b5701c38cee7a00916907d",
+        "confusion": "71b7ae02b39d195a07655c61dd38c228108cfbbdcca0e1a00ad1f7bf5d95f6c7",
+        "curiosity": "6228312210f68152d9a9120633bddd46ec62d06f4df8c25a3ac552ced547d926",
+        "desire": "85f2ca1fe6224ab75e100b8d6be681bfa4c06ae62bc3912393c82e5661a3c530",
+        "disappointment": "83d3b62069fa88e598b7157ff79822c02d20a34127c961bdf0c04a06505b05b4",
+        "disapproval": "ea6ca150054554756296b999842b07e77a5b92c79d80f9ea60b15da992f93ed9",
+        "disgust": "e6df430b1c5ebefec8c20c9406a9172d78c97ad566aa9bb34fdaa8edebe5ca79",
+        "embarrassment": "936a749104a0e5682920358cbf5d37d1cee57a256b4a9564bfdeb82896f00037",
+        "excitement": "6ec48f3fc08a038bb80bc3cd1a3fc6bbada036c8821f8a0ec39fc6d84c4b3a14",
+        "fear": "0237c258b536321585dd10d0461ca805aec8413c6d154b39cf039914a766abf8",
+        "gratitude": "b1e816e629dc98131709ac55f21272ef0b77858efc2be0eb4f44e7e3c8229110",
+        "grief": "8f8a0bfa49c5b459efe724a4e8c5c410b044359b1023faceaad70eb37f4f7215",
+        "joy": "d045b2c51b582c1c69a8b677dd41e9aa5b567702e6cc90e4b478878e3ecf39a6",
+        "love": "84963bdeb7c094794816d8e91e35b91d19990414f0423ef56301122c492309c1",
+        "nervousness": "2488a82be089469d293f40f416cedb5086cb5c1e99c3704161285fee000b8da2",
+        "neutral": "c6f105b960c9691d722f9963a9f1165e21bbf75be02185b7743966d78bba35b3",
+        "optimism": "e6e7cfbd371001028f7c52c07d1cce345ae9786bd161973b5f5baa14bf025262",
+        "pride": "9aa5e1e2f845e1761b47c5c66a7675280d4406afc0f2ba884bda702f065feb4a",
+        "realization": "40d571cdb15361c9668a2f7a18b934d20663db4f86196ad7cd85d1862af6fcc0",
+        "relief": "55dd9f8edbca60bb3f7676d748354ee50e80b5be24dff3c89c95ee5785445a62",
+        "remorse": "f9968ac3c986039bf1026dcb172e2a6503dfaad4ad7e7ef85d08ffa12499f174",
+        "sadness": "b45c874fa40f6d7cae5ad988cab4738f8407b9825a0b270d9872a6ff73c385b2",
+        "surprise": "080c4ab9d064e09fe7f88eff91232f8e86eedfd5e109d2b5e0c43c33117a3e95"
+      },
+      "generations": [
+        {
+          "id": "nori-female",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:25:19.774883+00:00",
+          "prompt": "Redesign this existing assistant portrait using the following exact approved appearance. Reference 1 fixes this variant's face, hair length and gender presentation. Reference 2 fixes the approved new colours, markings, ears and clothing. Apply reference 2's colour design to reference 1's individual identity. Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Preserve this reference character's feminine adult presentation, face structure, eye shape, hairstyle silhouette, pose and welcoming neutral expression. Frame the head, shoulders and upper torso, facing the viewer. Leave at least 8 percent clear margin above and beside both ears. Fill the portrait with the subject at the same scale as the reference, with the torso extending naturally to the bottom. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1024x1536",
+          "quality": "high",
+          "rawSha256": "02c583edd33bc7838159d6a541465ad9248b5014a84692715249cc9e2c015d54",
+          "references": [
+            {
+              "file": "default/content/assistants/nori-female/portrait.png",
+              "sha256": "2f146fbdaf60a22d5402a92f9b4975ecacc4c07ee711a097164f19f1f70495d2"
+            },
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/nori-neutral.png",
+              "sha256": "f7753dfde4b72d3facf797deff6588673f8c8b536ed18dc15722b6385797b53f"
+            }
+          ]
+        },
+        {
+          "id": "nori-female-sheet-1",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:32:31.162039+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: admiration, amusement, anger, annoyance, approval, caring, confusion, curiosity, desire. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "32fa0692698d3bb113bb75f9934c658eb0fb9c8bf9c00b48425c41e2bb9e293b",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/nori-female.png",
+              "sha256": "41426d2b612c9e6d6c98bdbccaf575f561467c47ec1f4a8f48d7baa9727ec960"
+            }
+          ]
+        },
+        {
+          "id": "nori-female-sheet-2",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:32:45.562487+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: disappointment, disapproval, disgust, embarrassment, excitement, fear, gratitude, grief, joy. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "d5fb915a0f88dd7076fb4051e1275b484e0e2e504ff12b0b6ca762d865ea6789",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/nori-female.png",
+              "sha256": "41426d2b612c9e6d6c98bdbccaf575f561467c47ec1f4a8f48d7baa9727ec960"
+            }
+          ]
+        },
+        {
+          "id": "nori-female-sheet-3",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:32:45.177835+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: love, nervousness, optimism, pride, realization, relief, remorse, sadness, surprise. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "048ad0b3cb2304a561321e8f32fdae520a716f43b048be834bb9c622a00f50e4",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/nori-female.png",
+              "sha256": "41426d2b612c9e6d6c98bdbccaf575f561467c47ec1f4a8f48d7baa9727ec960"
+            }
+          ]
+        },
+        {
+          "id": "nori-female-joy-repair",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:44:43.492586+00:00",
+          "prompt": "Create one expression portrait of the exact adult assistant in the reference. Preserve the individual face, hairstyle, ears, eye colour, clothing, gender presentation and detailed illustrated style. Show joy clearly through the face and a small natural upper-body gesture. Desire means a hopeful yearning gaze. Frame from above the ears to the waist. The complete head, hair and both ear tips are fully visible with a generous 15 percent clear margin above the highest hair and ear. Keep the hair and gestures inside the side edges. Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1024x1536",
+          "quality": "high",
+          "rawSha256": "3d1e98a2506cfbf993bcf56e50bf84375fa019bbd0668aa3e00f69cb0ca87744",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/nori-female.png",
+              "sha256": "41426d2b612c9e6d6c98bdbccaf575f561467c47ec1f4a8f48d7baa9727ec960"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "nori-neutral",
       "expressions": 28,
       "portrait": "nori-neutral/portrait.png",
       "card": "nori-neutral/card.json",
-      "bytes": 2181906
+      "bytes": 2030706,
+      "portraitSha256": "204273c03537a2c0556e907977d6f0c84a111881fcad083988769c2f7e7e6be9",
+      "expressionSha256": {
+        "admiration": "895008b04638c91b1880c412937957ef770c078ccbcf74f5525e33c821bd80b9",
+        "amusement": "c0a6778d7d95ea1a79dac6e79b3683e363271613ee593bb96a985d7f827e56ae",
+        "anger": "2b581fda3af01356e2700e9984d89dcacb8c35822b3ab71a474a4c0b4ae036a9",
+        "annoyance": "b2d88a122cd2169bc6a358a8d9d41df28c85502e4b4661e7115b1308b509698c",
+        "approval": "9e7870ce6cc4e761d26fc00cc7aa2f4a17a1433652005eb136d3a130c53f7e13",
+        "caring": "a0efd4e4816c3f8ff75c49d7707a2c6113c27a75b3bed558277f9677c1985928",
+        "confusion": "fe868f769edcbfc9b4f798d432e41a1df4a1adca9800add128f63724a465f2d3",
+        "curiosity": "2b97a6a1d65f414109d2e3c382e81926e7ffaa5fee6eeb83ef4ec14e42abb4cc",
+        "desire": "1ee26504521a19e3002cdd276fec07e5240647253eefe299a5401b20eddf157e",
+        "disappointment": "ae21403b162ddfd349e30a23fdc90615d49abd37dc14b067a5e70d83f92dd24b",
+        "disapproval": "6f332a50ddbe5afae2caa1dd495dabfc34e78668b1850b9fca90a8c6d3dcbe7b",
+        "disgust": "dd3976a13fff029d3aa6c8e0c02d1b8f58716ea22753a013242706c800797142",
+        "embarrassment": "3afa435fa83c7bce070c141a936699abb303c6aa04b1dd1631e9971aac2ecb5c",
+        "excitement": "73cbf364529d36c2c43c71ffe63aa950e26985beb6c11810c903f6f6619b9293",
+        "fear": "6f72ede4eec1b5394f402881ac9926b9dfa76ab60ae46d0bc7b8e8537e02ce88",
+        "gratitude": "aa55218efb674fa549f2ad982e7c5650c83bc2291d8bdb2a8765a6a300202477",
+        "grief": "4f981bddeee4395c4d864888f28433fd4973e973f32371bebaad2d4bd8f8831a",
+        "joy": "a01ef0737640fe3fdf5b049a1ebb10b496fcf28a3fa9cf770e5d845fc7789a0b",
+        "love": "1e4dda2983aa2cc8cb5866bc82d01f513072a6f22e04bb563a6bd9deae8a8712",
+        "nervousness": "eada2c0d4a550f0839c41c53fc99287a2e2536fcf86b5a87d0cce9e1e6f1455e",
+        "neutral": "708cdb2e91613a770a490af849aea23ca8efb3bc81db26b53f8d9b0b3addebf7",
+        "optimism": "024b68705a4114bb4bc6418c37053815e1b3bb392d3c5e413d157be97f900383",
+        "pride": "2c53308789570da6826a0eea51d5798584cbec22048e5d2c6c3c50ace5bd500b",
+        "realization": "d2fe6f1197f3593826f42dc77c949497d92448da14ee27a647c511178d10aa4a",
+        "relief": "f688175ea85d0134ad356758ab5d44b99bb4d01d4513d088824c9ae0e22d2204",
+        "remorse": "a211593921957e81a486035bfee6e328249e43231332dd342e15beeee3895bc7",
+        "sadness": "9e9f1cffb094bccd9b645947a73e27cfdfbe7302c71e397b34d8b3425a6c2718",
+        "surprise": "fc936b9229cdb31761f87cce7f82bf1e635bca16956e5425422a6946d07b5819"
+      },
+      "generations": [
+        {
+          "id": "nori-neutral",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:09:47.148238+00:00",
+          "prompt": "Redesign this existing assistant portrait using the following exact approved appearance. Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Preserve this reference character's androgynous adult presentation, face structure, eye shape, hairstyle silhouette, pose and welcoming neutral expression. Frame the head, shoulders and upper torso, facing the viewer. Leave at least 8 percent clear margin above and beside both ears. Fill the portrait with the subject at the same scale as the reference, with the torso extending naturally to the bottom. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1024x1536",
+          "quality": "high",
+          "rawSha256": "2551e178091e7436c3a485820d0f9bed7cb773336d38e6036690656d769adc89",
+          "references": [
+            {
+              "file": "default/content/assistants/nori-neutral/portrait.png",
+              "sha256": "e674a4546820839918e56db595adf0e26faf9f0ee03f384bd289fac60be51bb9"
+            }
+          ]
+        },
+        {
+          "id": "nori-neutral-sheet-1",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:33:16.369052+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: admiration, amusement, anger, annoyance, approval, caring, confusion, curiosity, desire. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "152d2cd24e93bff940c2c5b433f12e97ba001e47394528afd15edf42531f0aa6",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/nori-neutral.png",
+              "sha256": "f7753dfde4b72d3facf797deff6588673f8c8b536ed18dc15722b6385797b53f"
+            }
+          ]
+        },
+        {
+          "id": "nori-neutral-sheet-2",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:33:31.973065+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: disappointment, disapproval, disgust, embarrassment, excitement, fear, gratitude, grief, joy. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "8b085d41fc026fbeda1b2d4884691b6d816c6fc68e95a09cea8aaefde0a13776",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/nori-neutral.png",
+              "sha256": "f7753dfde4b72d3facf797deff6588673f8c8b536ed18dc15722b6385797b53f"
+            }
+          ]
+        },
+        {
+          "id": "nori-neutral-sheet-3",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:33:31.587897+00:00",
+          "prompt": "Create an exact 3-column by 3-row expression sheet of the SAME adult assistant in the supplied reference. Nine equal cells, each 512 pixels wide by 768 pixels high, for a total 1536 by 2304 image. Read the cells left to right, then top to bottom. The nine expressions in that exact order are: love, nervousness, optimism, pride, realization, relief, remorse, sadness, surprise. Make each emotion clearly recognisable through the eyebrows, eyes and mouth, with small natural upper-body gestures. Desire means a hopeful yearning gaze. Preserve the reference's EXACT face, age, gender presentation, hair, colour markings, ears, eyes, outfit and rendering style in every cell. Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit. Original adult anime character, human face and skin, human hands, expressive clean linework, soft detailed cel shading and gentle even lighting. Preserve a recognisable adult face and the refined illustrated style of the reference. The animal traits belong to the ears and hair; the face has ordinary human features. One character per portrait. Every cell is a complete head-and-upper-torso portrait at the same scale and eye height. Both ears, the entire hair silhouette and shoulders fit inside their own cell with 10 percent empty margin at the top and sides. Keep all gestures inside their cell. Align the cells to the exact equal grid; separate them only with the flat green matte. The sheet contains artwork only, with zero labels, numbers, writing, dividers or frames. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1536x2304",
+          "quality": "high",
+          "rawSha256": "ee61408d3f549683d15bb35192ff5828093b6a7e279562ddad00c9ff2dcc730e",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/nori-neutral.png",
+              "sha256": "f7753dfde4b72d3facf797deff6588673f8c8b536ed18dc15722b6385797b53f"
+            }
+          ]
+        },
+        {
+          "id": "nori-neutral-surprise-repair",
+          "model": "gpt-image-2.5-sunburst",
+          "coordinator": "gpt-5.5",
+          "generatedAt": "2026-09-16T05:44:39.117768+00:00",
+          "prompt": "Create one expression portrait of the exact adult assistant in the reference. Preserve the individual face, hairstyle, ears, eye colour, clothing, gender presentation and detailed illustrated style. Show surprise clearly through the face and a small natural upper-body gesture. Desire means a hopeful yearning gaze. Frame from above the ears to the waist. The complete head, hair and both ear tips are fully visible with a generous 15 percent clear margin above the highest hair and ear. Keep the hair and gestures inside the side edges. Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+          "size": "1024x1536",
+          "quality": "high",
+          "rawSha256": "cad4c33f64e9fb7f117c46065d2aeaaa9f49950c0ea0d56dae275aab14148dd6",
+          "references": [
+            {
+              "file": ".local-runtime/assistant-art-v3/processed/nori-neutral.png",
+              "sha256": "f7753dfde4b72d3facf797deff6588673f8c8b536ed18dc15722b6385797b53f"
+            }
+          ]
+        }
+      ]
     }
-  ]
+  ],
+  "version": 3,
+  "appearance": {
+    "miso": "Miso has rich warm orange hair with several distinct irregular charcoal-black tiger stripes through the hair, rounded orange tiger ears with black edging and ivory inner fluff, and amber eyes. The tiger pattern is visibly striped, continuous and deliberate. The face, neck and hands remain natural human skin. Cream knitted layers with restrained charcoal and orange striped panels and a soft apricot scarf complete the welcoming outfit.",
+    "taro": "Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit.",
+    "nori": "Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit."
+  },
+  "backgroundRemoval": "Green chroma matte, alpha extraction and green despill"
 }
