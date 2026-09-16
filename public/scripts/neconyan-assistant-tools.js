@@ -231,11 +231,14 @@ function createGuard(registration, invocationContext = {}) {
     return { signal, isCurrent, invocation, assert };
 }
 
-function runTool(registration, handler) {
+function runTool(registration, handler, askFirst) {
     return async (parameters, invocationContext) => {
         const guard = createGuard(registration, invocationContext);
         try {
             guard.assert();
+            if (askFirst && parameters?.userConfirmed !== true) {
+                return { status: 'needs_confirmation', reason: 'Nothing was changed. Ask the user in chat first, then call again with userConfirmed set to true once their next message confirms.', askFirst };
+            }
             return await handler(parameters, guard);
         } catch (error) {
             if (error?.code === 'ASSISTANT_CONTEXT_STALE' || error?.name === 'AbortError') {
@@ -646,9 +649,14 @@ async function createCharacter(input, guard) {
         fields[key] = value;
     }
     fields.name = name;
-    const avatarPrompt = own(input, 'avatarPrompt') ? requiredString(input, 'avatarPrompt') : '';
+    // An empty or null prompt means "no generated avatar": the server then uses the default Neconyan picture.
+    const avatarPrompt = typeof input.avatarPrompt === 'string' ? input.avatarPrompt.trim() : '';
     if (avatarPrompt.length > 10000) throw new Error('The avatar prompt is too long.');
-    if (!await confirmEdit({ resource: 'new character', target: name, field: 'Character and optional generated avatar', before: '', after: JSON.stringify({ ...fields, avatarPrompt }, null, 2) }, guard)) {
+    const characterNote = typeof input.characterNote === 'string' ? input.characterNote : '';
+    if (characterNote.length > 100000) throw new Error('The character note is too long.');
+    const alternateGreetings = input.alternateGreetings ?? [];
+    if (!Array.isArray(alternateGreetings) || alternateGreetings.length > 20 || alternateGreetings.some(greeting => typeof greeting !== 'string' || greeting.length > 100000)) throw new Error('alternateGreetings must be a list of up to 20 strings.');
+    if (!await confirmEdit({ resource: 'new character', target: name, field: 'Character and optional generated avatar', before: '', after: JSON.stringify({ ...fields, characterNote, alternateGreetings, avatarPrompt }, null, 2) }, guard)) {
         return { status: 'cancelled', reason: 'Character creation was declined.' };
     }
     let image = null;
@@ -669,6 +677,12 @@ async function createCharacter(input, guard) {
         guard.assert();
         const form = new FormData();
         for (const [key, value] of Object.entries(fields)) form.set(key === 'name' ? 'ch_name' : key, value);
+        if (characterNote) {
+            form.set('depth_prompt_prompt', characterNote);
+            form.set('depth_prompt_depth', '4');
+            form.set('depth_prompt_role', 'system');
+        }
+        for (const greeting of alternateGreetings) form.append('alternate_greetings', greeting);
         if (image) form.set('avatar', image, 'avatar.' + image.type.split('/')[1]);
         // Let the existing creation endpoint allocate a fresh filename; never overwrite a card.
         const headers = new Headers(getRequestHeaders());
@@ -740,13 +754,40 @@ async function editCharacter(input, guard) {
     });
 }
 
-function register(name, displayName, description, parameters, registration, action) {
+const CONFIRM_PROTOCOL = 'Before calling: describe the change in chat, end that message by asking whether to make the tool call now, and call only after the user\'s next message confirms. Set userConfirmed to true only then.';
+
+const ASK_FIRST = Object.freeze({
+    createCharacter: 'Ask the user in one compact round before creating a character: 1) Format: the recommended format (an Ali:Chat interview transcript as the description plus a PList stat sheet as the Character Note), or a format of their own? 2) Avatar: generate a picture with Quick Image Gen first from a prompt you draft, or use the default Neconyan picture? 3) Anything still missing: name, concept, appearance, personality, setting, relationship to {{user}}, how many greetings, anything to avoid. Then post a short summary (name, format, avatar choice, key traits, greeting count) and end the message by asking whether to make the tool call now. Call only after the user confirms.',
+    editCharacter: 'Ask the user first which character, which field and what the new text should be. Show the exact new text in chat, end the message by asking whether to make the tool call now, and call only after the user confirms.',
+    editLorebookEntry: 'Ask the user first which lorebook, which entry, which field (title or content) and what the new text should be. Show the exact new text in chat, end the message by asking whether to make the tool call now, and call only after the user confirms.',
+    editAgent: 'Ask the user first which agent, which field and what the new value should be. Show the exact new value in chat, end the message by asking whether to make the tool call now, and call only after the user confirms.',
+    editModelPreset: 'Ask the user first which API, which preset, which field and what the new value should be. Show the exact new value in chat, end the message by asking whether to make the tool call now, and call only after the user confirms.',
+});
+
+const CREATE_CHARACTER_GUIDE = [
+    'Create a new character after review. Existing cards are never replaced.',
+    'Recommended format, used only when the user agreed to it:',
+    'description = an Ali:Chat interview transcript with no headers, labels or brackets; each exchange is `Interviewer`: Question? on one line and `Name`: plain-text action "dialogue in double quotes" action on the next, with one blank line between exchanges and no asterisks. Cover Brief introduction?, Personality? and Appearance? (build, face, hair, eyes, hands, each garment with material and colour) plus 2 to 7 questions only this character would answer this way.',
+    'characterNote = a PList stat sheet: the whole list inside square brackets, first line Name\'s persona: then one category per line (persona, likes, dislikes, backstory, appearance, body, hands, wardrobe, abilities, relationships, quirks_and_tells), each ending with a semicolon; traits are 1 to 5 words separated by commas with descriptors in parentheses such as shy(blushes easily, mumbles), no sentences, no articles or connector words.',
+    'first_mes and alternateGreetings = third-person present-tense openings written only for {{char}}, never {{user}}\'s actions or words, grounded in a concrete place within the first two paragraphs, each with a clothing detail, a physical feature and a documented habit, each ending in a situation that needs the user\'s reply without announcing it. The recommended set is first_mes plus three alternates that differ in mood, place and time of day.',
+    'avatarPrompt: a Quick Image Gen prompt for the avatar; omit it or leave it empty to use the default Neconyan picture.',
+].join(' ');
+
+function register(name, displayName, description, parameters, registration, action, askFirst) {
+    if (askFirst) {
+        description = `${description} ${CONFIRM_PROTOCOL}`;
+        parameters = {
+            ...parameters,
+            required: [...(parameters.required ?? []), 'userConfirmed'],
+            properties: { ...parameters.properties, userConfirmed: { type: 'boolean', description: 'True only when the user\'s latest message confirmed this exact tool call.' } },
+        };
+    }
     ToolManager.registerFunctionTool({
         name,
         displayName,
         description,
         parameters,
-        action: runTool(registration, action),
+        action: runTool(registration, action, askFirst),
         shouldRegister: () => isRegistrationCurrent(registration),
         stealth: false,
     });
@@ -765,17 +806,23 @@ function registerAll(registration) {
     register(`${TOOL_PREFIX}ListLorebooks`, 'List lorebooks', 'List real lorebooks in the current profile.', { type: 'object', properties: {} }, registration, listLorebooks);
     register(`${TOOL_PREFIX}ListLorebookEntries`, 'List lorebook entries', 'List readable entries, including ordinary disabled entries.', { type: 'object', required: ['book'], properties: { book } }, registration, listLorebookEntries);
     register(`${TOOL_PREFIX}ReadLorebookEntry`, 'Read lorebook entry', 'Read one readable lorebook entry by exact UID.', { type: 'object', required: ['book', 'uid'], properties: { book, uid } }, registration, readLorebookEntry);
-    register(`${TOOL_PREFIX}EditLorebookEntry`, 'Edit lorebook entry', 'Edit exactly one lorebook title or content field after review.', { type: 'object', required: ['book', 'uid', 'field', 'value'], properties: { book, uid, field: field(editableLorebookFields), value: { type: 'string' }, expected: { type: 'object' } } }, registration, editLorebookEntry);
+    register(`${TOOL_PREFIX}EditLorebookEntry`, 'Edit lorebook entry', 'Edit exactly one lorebook title or content field after review.', { type: 'object', required: ['book', 'uid', 'field', 'value'], properties: { book, uid, field: field(editableLorebookFields), value: { type: 'string' }, expected: { type: 'object' } } }, registration, editLorebookEntry, ASK_FIRST.editLorebookEntry);
     register(`${TOOL_PREFIX}ListAgents`, 'List in-chat agents', 'List the current profile in-chat agents.', { type: 'object', properties: {} }, registration, listAgents);
     register(`${TOOL_PREFIX}ReadAgent`, 'Read in-chat agent', 'Read one in-chat agent by exact ID.', { type: 'object', required: ['id'], properties: { id: agentId } }, registration, readAgent);
-    register(`${TOOL_PREFIX}EditAgent`, 'Edit in-chat agent', 'Edit exactly one safe agent field after review.', { type: 'object', required: ['id', 'field', 'value'], properties: { id: agentId, field: field(editableAgentFields), value: {} } }, registration, editAgent);
+    register(`${TOOL_PREFIX}EditAgent`, 'Edit in-chat agent', 'Edit exactly one safe agent field after review.', { type: 'object', required: ['id', 'field', 'value'], properties: { id: agentId, field: field(editableAgentFields), value: {} } }, registration, editAgent, ASK_FIRST.editAgent);
     register(`${TOOL_PREFIX}ListModelPresets`, 'List model presets', 'List supported saved model presets without connection secrets.', { type: 'object', required: ['apiId'], properties: { apiId } }, registration, listPresets);
     register(`${TOOL_PREFIX}ReadModelPreset`, 'Read model preset', 'Read only safe editable fields from one model preset.', { type: 'object', required: ['apiId', 'name'], properties: { apiId, name: preset } }, registration, readPreset);
-    register(`${TOOL_PREFIX}EditModelPreset`, 'Edit model preset', 'Edit exactly one safe model preset field after review.', { type: 'object', required: ['apiId', 'name', 'field', 'value'], properties: { apiId, name: preset, field: { type: 'string' }, value: {} } }, registration, editPreset);
+    register(`${TOOL_PREFIX}EditModelPreset`, 'Edit model preset', 'Edit exactly one safe model preset field after review.', { type: 'object', required: ['apiId', 'name', 'field', 'value'], properties: { apiId, name: preset, field: { type: 'string' }, value: {} } }, registration, editPreset, ASK_FIRST.editModelPreset);
     register(`${TOOL_PREFIX}ListCharacters`, 'List characters', 'List known character records by safe fields.', { type: 'object', properties: {} }, registration, listCharacters);
-    register(`${TOOL_PREFIX}CreateCharacter`, 'Create character', 'Create a new character after review. Optionally generate its avatar with the configured Quick Image Gen provider. Existing cards are never replaced.', { type: 'object', required: ['character'], additionalProperties: false, properties: { character: { type: 'object', required: ['name'], additionalProperties: false, properties: Object.fromEntries(editableCharacterFields.map(key => [key, { type: 'string' }])) }, avatarPrompt: { type: 'string', description: 'Optional image prompt for the new character avatar.' } } }, registration, createCharacter);
+    register(`${TOOL_PREFIX}CreateCharacter`, 'Create character', CREATE_CHARACTER_GUIDE, { type: 'object', required: ['character'], additionalProperties: false, properties: {
+        character: { type: 'object', required: ['name'], additionalProperties: false, properties: Object.fromEntries(editableCharacterFields.map(key => [key, { type: 'string' }])) },
+        characterNote: { type: 'string', description: 'Character Note text (the PList in the recommended format). Stored at depth 4 with the system role.' },
+        alternateGreetings: { type: 'array', items: { type: 'string' }, description: 'Extra greetings after first_mes; the recommended format uses three.' },
+        avatarPrompt: { type: 'string', description: 'Quick Image Gen prompt for the avatar. Omit it or leave it empty to use the default Neconyan picture.' },
+    } }, registration, createCharacter, ASK_FIRST.createCharacter);
     register(`${TOOL_PREFIX}ReadCharacter`, 'Read character', 'Read one known character by exact avatar filename.', { type: 'object', required: ['avatar'], properties: { avatar } }, registration, readCharacter);
-    register(`${TOOL_PREFIX}EditCharacter`, 'Edit character', 'Edit exactly one safe character field after review.', { type: 'object', required: ['avatar', 'field', 'value'], properties: { avatar, field: field(editableCharacterFields), value: { type: 'string' } } }, registration, editCharacter);
+    // ponytail: the Character Note is not editable here because /api/characters/edit-attribute only writes flat fields; add a dedicated route if that is ever needed.
+    register(`${TOOL_PREFIX}EditCharacter`, 'Edit character', 'Edit exactly one safe character field after review.', { type: 'object', required: ['avatar', 'field', 'value'], properties: { avatar, field: field(editableCharacterFields), value: { type: 'string' } } }, registration, editCharacter, ASK_FIRST.editCharacter);
 }
 
 export function unregisterNeconyanAssistantTools() {

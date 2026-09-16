@@ -54,7 +54,7 @@ async function runtime({ assistant = 'miso-male', group = null } = {}) {
     globalThis.dispatchEvent = event => { context.events.push(event); };
     globalThis.fetch = jest.fn(async (url, options) => {
         if (url === '/api/characters/create') {
-            context.writes.push({ kind: 'create', payload: Object.fromEntries(options.body) });
+            context.writes.push({ kind: 'create', payload: Object.fromEntries(options.body), greetings: options.body.getAll('alternate_greetings') });
             return { ok: true, text: async () => 'New character.png' };
         }
         const payload = JSON.parse(options.body);
@@ -137,28 +137,65 @@ test('real ToolManager list/read actions keep exact names and omit inaccessible 
 
 test('character creation validates fields, honours review and uses fresh-file creation', async () => {
     const { invoke, context } = await runtime();
-    expect(await invoke('CreateCharacter', { character: { name: '../bad' } })).toMatchObject({ status: 'failure' });
+    expect(await invoke('CreateCharacter', { userConfirmed: true, character: { name: '../bad' } })).toMatchObject({ status: 'failure' });
     context.confirm = async () => 0;
-    expect(await invoke('CreateCharacter', { character: { name: 'New character' } })).toMatchObject({ status: 'cancelled' });
+    expect(await invoke('CreateCharacter', { userConfirmed: true, character: { name: 'New character' } })).toMatchObject({ status: 'cancelled' });
     expect(context.writes).toHaveLength(0);
     context.confirm = async () => 1;
-    expect(await invoke('CreateCharacter', { character: { name: 'New character', description: 'A kind friend', first_mes: 'Hello!' } })).toMatchObject({ status: 'success', committed: true, avatar: 'New character.png' });
+    expect(await invoke('CreateCharacter', { userConfirmed: true, character: { name: 'New character', description: 'A kind friend', first_mes: 'Hello!' } })).toMatchObject({ status: 'success', committed: true, avatar: 'New character.png' });
     expect(context.writes[0].payload).toEqual({ ch_name: 'New character', description: 'A kind friend', first_mes: 'Hello!' });
+});
+
+test('write tools refuse to act until the user confirmed the call in chat', async () => {
+    const { invoke, context, manager } = await runtime();
+    for (const [name, input] of [
+        ['CreateCharacter', { character: { name: 'New character' } }],
+        ['EditCharacter', { avatar: ' Card.png', field: 'description', value: 'Changed' }],
+        ['EditLorebookEntry', { book: ' Notes', uid: 0, field: 'content', value: 'Changed' }],
+        ['EditAgent', { id: 'agent', field: 'prompt', value: 'Changed' }],
+        ['EditModelPreset', { apiId: 'openai', name: ' Saved', field: 'temperature', value: 0.7 }],
+    ]) {
+        expect(await invoke(name, input)).toMatchObject({ status: 'needs_confirmation', askFirst: expect.stringContaining('tool call now') });
+        expect(await invoke(name, { ...input, userConfirmed: 'yes' })).toMatchObject({ status: 'needs_confirmation' });
+        const schema = manager.tools.map(tool => tool.toFunctionOpenAI().function).find(tool => tool.name === `Neconyan_Assistant_${name}`);
+        expect(schema.parameters.required).toContain('userConfirmed');
+        expect(schema.description).toContain('Set userConfirmed to true only then.');
+    }
+    expect(context.writes).toEqual([]);
+    expect(context.reviews).toEqual([]);
+    expect(await invoke('CreateCharacter', { character: { name: 'New character' } })).toMatchObject({ askFirst: expect.stringContaining('Quick Image Gen') });
+    const listAgents = manager.tools.map(tool => tool.toFunctionOpenAI().function).find(tool => tool.name === 'Neconyan_Assistant_ListAgents');
+    expect(listAgents.parameters.required ?? []).not.toContain('userConfirmed');
+});
+
+test('an empty or null avatar prompt creates the card without a generated avatar, and the note and greetings reach the form', async () => {
+    const { invoke, context } = await runtime();
+    globalThis[Symbol.for('sillybunny.extensionCapabilities')] = new Map();
+    expect(await invoke('CreateCharacter', { userConfirmed: true, character: { name: 'Blank prompt' }, avatarPrompt: '' })).toMatchObject({ status: 'success', generatedAvatar: false });
+    expect(await invoke('CreateCharacter', { userConfirmed: true, character: { name: 'Null prompt' }, avatarPrompt: null })).toMatchObject({ status: 'success', generatedAvatar: false });
+    expect(await invoke('CreateCharacter', { userConfirmed: true, character: { name: 'Spaces' }, avatarPrompt: '   ' })).toMatchObject({ status: 'success', generatedAvatar: false });
+    expect(context.writes).toHaveLength(3);
+    expect(context.writes.every(write => !('avatar' in write.payload))).toBe(true);
+    expect(await invoke('CreateCharacter', { userConfirmed: true, character: { name: 'Noted' }, characterNote: '[Noted\'s persona: kind;]', alternateGreetings: ['Second', 'Third'] })).toMatchObject({ status: 'success' });
+    expect(context.writes[3].payload).toMatchObject({ ch_name: 'Noted', depth_prompt_prompt: '[Noted\'s persona: kind;]', depth_prompt_depth: '4', depth_prompt_role: 'system' });
+    expect(context.writes[3].greetings).toEqual(['Second', 'Third']);
+    expect(context.writes[0].greetings).toEqual([]);
+    expect(await invoke('CreateCharacter', { userConfirmed: true, character: { name: 'Bad greetings' }, alternateGreetings: 'one' })).toMatchObject({ status: 'failure' });
 });
 
 test('four confirmed field edits preserve other fields and literal multiline review values', async () => {
     const { context, invoke, presetManager } = await runtime();
     const value = '<img src=x onerror=alert(1)> &\n' + 'Long exact text. '.repeat(50);
-    expect(await invoke('EditLorebookEntry', { book: ' Notes', uid: 0, field: 'content', value })).toMatchObject({ status: 'success', committed: true });
+    expect(await invoke('EditLorebookEntry', { userConfirmed: true, book: ' Notes', uid: 0, field: 'content', value })).toMatchObject({ status: 'success', committed: true });
     expect(context.books.get(' Notes').entries[0]).toMatchObject({ content: value, disable: true, unknown: 'keep' });
     const review = context.reviews[0];
     expect(review.children.filter(node => node.tagName === 'pre').map(node => node.textContent)).toEqual(['Old lore', value]);
-    expect(await invoke('EditAgent', { id: 'agent', field: 'prompt', value })).toMatchObject({ status: 'success', committed: true });
+    expect(await invoke('EditAgent', { userConfirmed: true, id: 'agent', field: 'prompt', value })).toMatchObject({ status: 'success', committed: true });
     expect(context.agents.get('agent').unknown).toEqual({ keep: true });
-    expect(await invoke('EditModelPreset', { apiId: 'openai', name: ' Saved', field: 'temperature', value: 0.7 })).toMatchObject({ status: 'success', committed: true });
+    expect(await invoke('EditModelPreset', { userConfirmed: true, apiId: 'openai', name: ' Saved', field: 'temperature', value: 0.7 })).toMatchObject({ status: 'success', committed: true });
     expect(presetManager.selectPreset).not.toHaveBeenCalled();
     expect(context.presets.get(' Saved').foreign).toEqual({ keep: true });
-    expect(await invoke('EditCharacter', { avatar: ' Card.png', field: 'description', value })).toMatchObject({ status: 'success', committed: true });
+    expect(await invoke('EditCharacter', { userConfirmed: true, avatar: ' Card.png', field: 'description', value })).toMatchObject({ status: 'success', committed: true });
     expect(context.characters[1].data.extensions).toEqual({ foreign: 'keep' });
 });
 
@@ -171,17 +208,17 @@ test('character creation uses Quick Image Gen output as the new avatar and rejec
     globalThis.fetch = jest.fn(async (url, options) => url === 'http://localhost/user/images/avatar.png'
         ? { ok: true, blob: async () => new Blob(['png fixture'], { type: 'image/png' }) }
         : createFetch(url, options));
-    expect(await invoke('CreateCharacter', { character: { name: 'New character' }, avatarPrompt: 'A smiling cat' })).toMatchObject({ status: 'success', generatedAvatar: true });
+    expect(await invoke('CreateCharacter', { userConfirmed: true, character: { name: 'New character' }, avatarPrompt: 'A smiling cat' })).toMatchObject({ status: 'success', generatedAvatar: true });
     expect(generateImage).toHaveBeenCalledWith('A smiling cat', '', expect.objectContaining({ characterName: 'New character' }));
     expect(context.writes[0].payload.avatar.type).toBe('image/png');
     generateImage.mockResolvedValue({ url: 'https://untrusted.example/avatar.png' });
-    expect(await invoke('CreateCharacter', { character: { name: 'Another character' }, avatarPrompt: 'A cat' })).toMatchObject({ status: 'failure' });
+    expect(await invoke('CreateCharacter', { userConfirmed: true, character: { name: 'Another character' }, avatarPrompt: 'A cat' })).toMatchObject({ status: 'failure' });
     expect(context.writes).toHaveLength(1);
 });
 
 test('declined, cancelled, stale and conflicting edits do not write', async () => {
     const { context, invoke } = await runtime();
-    const input = { id: 'agent', field: 'prompt', value: 'Changed' };
+    const input = { userConfirmed: true, id: 'agent', field: 'prompt', value: 'Changed' };
     context.confirm = async () => 0;
     expect(await invoke('EditAgent', input)).toMatchObject({ status: 'cancelled' });
     context.confirm = async () => { context.account = 'two'; return 1; };
@@ -196,21 +233,21 @@ test('declined, cancelled, stale and conflicting edits do not write', async () =
 test('a context change inside the native lorebook queue cancels the write', async () => {
     const { context, invoke } = await runtime();
     context.beforeLoreWrite = async () => { context.account = 'two'; };
-    expect(await invoke('EditLorebookEntry', { book: ' Notes', uid: 0, field: 'content', value: 'Changed' })).toMatchObject({ status: 'cancelled' });
+    expect(await invoke('EditLorebookEntry', { userConfirmed: true, book: ' Notes', uid: 0, field: 'content', value: 'Changed' })).toMatchObject({ status: 'cancelled' });
     expect(context.writes).toEqual([]);
 });
 
 test('dirty editors and failed character autosaves refuse edits', async () => {
     const { context, invoke } = await runtime();
     context.editorOpen = true;
-    expect(await invoke('EditAgent', { id: 'agent', field: 'prompt', value: 'Changed' })).toMatchObject({ status: 'failure' });
+    expect(await invoke('EditAgent', { userConfirmed: true, id: 'agent', field: 'prompt', value: 'Changed' })).toMatchObject({ status: 'failure' });
     context.editorOpen = false; context.dirtyPreset = true;
-    expect(await invoke('EditModelPreset', { apiId: 'openai', name: ' Saved', field: 'temperature', value: 0.5 })).toMatchObject({ status: 'failure' });
+    expect(await invoke('EditModelPreset', { userConfirmed: true, apiId: 'openai', name: ' Saved', field: 'temperature', value: 0.5 })).toMatchObject({ status: 'failure' });
     context.characterSave = false;
-    expect(await invoke('EditCharacter', { avatar: ' Card.png', field: 'description', value: 'Changed' })).toMatchObject({ status: 'failure' });
+    expect(await invoke('EditCharacter', { userConfirmed: true, avatar: ' Card.png', field: 'description', value: 'Changed' })).toMatchObject({ status: 'failure' });
     expect(context.writes).toEqual([]);
     context.agentGenerating = true;
-    expect(await invoke('EditAgent', { id: 'agent', field: 'prompt', value: 'Changed' })).toMatchObject({ status: 'failure' });
+    expect(await invoke('EditAgent', { userConfirmed: true, id: 'agent', field: 'prompt', value: 'Changed' })).toMatchObject({ status: 'failure' });
 });
 
 test('an entry with only a keyword keeps its raw empty title while its content is edited', async () => {
@@ -218,28 +255,28 @@ test('an entry with only a keyword keeps its raw empty title while its content i
     delete context.books.get(' Notes').entries[0].comment;
     context.books.get(' Notes').entries[0].key = ['Keyword'];
     expect(await invoke('ReadLorebookEntry', { book: ' Notes', uid: 0 })).toMatchObject({ entry: { title: '', label: 'Keyword' } });
-    expect(await invoke('EditLorebookEntry', { book: ' Notes', uid: 0, field: 'content', value: 'Changed' })).toMatchObject({ status: 'success' });
+    expect(await invoke('EditLorebookEntry', { userConfirmed: true, book: ' Notes', uid: 0, field: 'content', value: 'Changed' })).toMatchObject({ status: 'success' });
     expect(context.books.get(' Notes').entries[0].comment).toBeUndefined();
 });
 
 test('the visible target editor refreshes after a committed edit', async () => {
     const { context, invoke, refreshEditor } = await runtime();
     context.form = { getAttribute: () => 'editcharacter', getClientRects: () => [{}] };
-    expect(await invoke('EditCharacter', { avatar: 'miso.png', field: 'description', value: 'Updated Miso' })).toMatchObject({ status: 'success', committed: true });
+    expect(await invoke('EditCharacter', { userConfirmed: true, avatar: 'miso.png', field: 'description', value: 'Updated Miso' })).toMatchObject({ status: 'success', committed: true });
     expect(refreshEditor).toHaveBeenCalledWith(0, { switchMenu: false });
 });
 
 test('invalid character names and invalid numeric sampler values are rejected', async () => {
     const { context, invoke } = await runtime();
-    expect(await invoke('EditCharacter', { avatar: ' Card.png', field: 'name', value: ' ' })).toMatchObject({ status: 'failure' });
-    expect(await invoke('EditModelPreset', { apiId: 'openai', name: ' Saved', field: 'n', value: 1.5 })).toMatchObject({ status: 'failure' });
-    expect(await invoke('EditModelPreset', { apiId: 'textgenerationwebui', name: ' Saved', field: 'sampler_order', value: [0, null] })).toMatchObject({ status: 'failure' });
+    expect(await invoke('EditCharacter', { userConfirmed: true, avatar: ' Card.png', field: 'name', value: ' ' })).toMatchObject({ status: 'failure' });
+    expect(await invoke('EditModelPreset', { userConfirmed: true, apiId: 'openai', name: ' Saved', field: 'n', value: 1.5 })).toMatchObject({ status: 'failure' });
+    expect(await invoke('EditModelPreset', { userConfirmed: true, apiId: 'textgenerationwebui', name: ' Saved', field: 'sampler_order', value: [0, null] })).toMatchObject({ status: 'failure' });
     expect(context.writes).toEqual([]);
 });
 
 test('valid modern context limits remain editable and same-chat reload renews registration', async () => {
     const { context, tools, invoke } = await runtime();
-    expect(await invoke('EditModelPreset', { apiId: 'openai', name: ' Saved', field: 'openai_max_context', value: 32768 })).toMatchObject({ status: 'success' });
+    expect(await invoke('EditModelPreset', { userConfirmed: true, apiId: 'openai', name: ' Saved', field: 'openai_max_context', value: 32768 })).toMatchObject({ status: 'success' });
     context.generation++;
     tools.syncNeconyanAssistantTools();
     expect(await invoke('ListAgents')).toMatchObject({ status: 'success' });
@@ -248,7 +285,7 @@ test('valid modern context limits remain editable and same-chat reload renews re
 test('a committed character edit cannot refresh another account after the request completes', async () => {
     const { context, invoke, getOneCharacter } = await runtime();
     context.afterCharacterWrite = () => { context.account = 'two'; };
-    const result = await invoke('EditCharacter', { avatar: ' Card.png', field: 'description', value: 'Committed' });
+    const result = await invoke('EditCharacter', { userConfirmed: true, avatar: ' Card.png', field: 'description', value: 'Committed' });
     expect(result.committed).toBe(true);
     expect(getOneCharacter).toHaveBeenCalledTimes(2);
     expect(context.events).toEqual([]);

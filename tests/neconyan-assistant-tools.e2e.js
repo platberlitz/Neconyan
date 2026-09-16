@@ -19,6 +19,7 @@ async function invoke(page, name, input = {}) {
 }
 
 async function edit(page, name, input, before, after, { cancel = false } = {}) {
+    input = { userConfirmed: true, ...input };
     await page.evaluate(({ name, input }) => {
         window.assistantToolSettled = '';
         window.assistantToolResult = import('/scripts/tool-calling.js')
@@ -152,7 +153,7 @@ test.describe('Assistant update on touch screens', () => {
         try {
             const created = await api.post('/api/characters/create', { headers, data: {
                 ch_name: `Old assistant ${Date.now()}`, description: 'My edited assistant instructions', first_mes: 'My original greeting',
-                json_data: JSON.stringify({ data: { extensions: { neconyan_assistant: { id: variant.id, version: 1 }, foreign: 'keep old metadata' } } }),
+                json_data: JSON.stringify({ data: { extensions: { neconyan_assistant: { id: variant.id, version: 0 }, foreign: 'keep old metadata' } } }),
             } });
             expect(created.ok()).toBe(true);
             avatar = await created.text();

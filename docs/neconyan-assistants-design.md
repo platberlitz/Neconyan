@@ -1,6 +1,8 @@
 # Original Neconyan assistants
 
-Artwork bundle: version 3. Nine portraits, 252 transparent expressions, eight tutorial chibis and three selectable assistant-head icons share the identities below. The Home picker installs the chosen variant and opens its existing character chat. Older installed cards can use 'Install updated copy' to receive the new artwork.
+Bundle version: 1 (`manifest.json`, each card's `extensions.neconyan_assistant.version` and `character_version` all say 1; the number stays at 1 until the assistants ship publicly, and older test installs are deleted by hand). Nine portraits, 252 transparent expressions, eight tutorial chibis and three selectable assistant-head icons share the identities below. The Home picker installs the chosen variant and opens its existing character chat. Older installed cards can use 'Install updated copy' to receive the new artwork.
+
+Card text lives in `default/content/assistants/<id>/card.json`; the installer copies the matching `card.png`, so after editing any card run `node scripts/build-assistant-cards.js` to embed the JSON into the PNGs.
 
 The user requested three personalities, each with male, female and neutral variants. All nine use original anime designs with subtle cat traits. These replace no user-created character or image.
 
@@ -20,15 +22,19 @@ Each personality has a masculine male variant using he/him, a feminine female va
 
 The picker first presents the three personalities, then Male, Female and Neutral. It names both choices before starting a chat. Existing chats keep their original variant. Choosing another variant must not rewrite a saved card or chat.
 
-## Opening messages
+## Card format
 
-- Miso: “Meowlcome in. I’m Miso. What have you brought me?”
-- Taro: “Expected. Observed. Tell me what you wanted to happen, and then what happened instead.”
-- Nori: “I’m Nori. Show me what you’re working on.”
+Each card follows the Ali:Chat plus PList layout that the assistants also recommend to users:
 
-Every variant opens with the same greeting, plus two alternate greetings for a swipe, and its `creator_notes` mirrors the picker line from `manifest.json`. The personalities are meant to read as three distinct people rather than three manuals: Miso curious and hospitable, Taro precise and dryly funny, Nori enthusiastic and opinionated in the user's favour. Their `personality` field still carries the behavioural contract in full — the short answers, the protected drafts and the approval rules — and voice must never replace those facts.
+- `description` is a pure interview transcript: `` `Interviewer`: `` asks a two-to-five word question, `` `Name`: `` answers with plain-text actions and double-quoted dialogue, one blank line between exchanges, no headers, brackets or asterisks. The nine questions run Brief introduction, Pronouns (the only variant-specific answer besides one Appearance sentence), Personality, Appearance, a working-method question, a fault-line question about the assistant's own flaw, 'Can you change things in Neconyan?', 'Making a new character?' and a closing quirk.
+- The PList sits in the Character Note (`extensions.depth_prompt`, depth 4, role system): a bracketed keyword sheet headed `Name's persona:` with one `;`-terminated line per category (persona, likes, dislikes, backstory, appearance, body, hands, wardrobe, abilities, relationships, quirks_and_tells), no sentences, articles or connectors.
+- `first_mes` plus three `alternate_greetings` are third-person present-tense openings written only for the assistant: a concrete place in the first two paragraphs, one clothing detail, one physical feature, a documented habit, a change of mood across the scene, and an ending that needs the user's reply without announcing it. Greeting lines kept from the earlier cards: Miso 'Meowlcome in.', Taro 'Expected. Observed.', Nori 'Show me what you're working on.'
+- `personality` and `scenario` are short continuous prose and carry the behavioural contract: keep drafts, describe a change before making it, ask whether to make the tool call now and call only after the user's next message confirms, call something saved only when the tool says so, shorter directions for tired users, gender presentation changes nothing about competence.
+- `creator_notes` mirrors the picker line from `manifest.json`.
 
-The assistants can explain Neconyan and help with writing. Character prompts must not claim they can read local files, inspect hidden settings or change the app without a real tool. Use the existing assistant shortcut and chat APIs where possible.
+Writing rules for all card and tour copy: continuous sentences rather than clipped fragments, British spelling, no em dashes, no `not X but Y` contrasts, no stock beats (jaw work, breath catching, `a beat`), no clerical vocabulary (ledger, filing, audit, tally, column, record as a noun), and cat puns kept sparse: Miso the warmest (Meowlcome plus one more), Taro deadpan without pun words, Nori one or two playful ones. Puns never appear in the PList or in tool descriptions.
+
+The assistants can explain Neconyan and help with writing. Character prompts must not claim they can read local files, inspect hidden settings or change the app without a real tool. The write tools (create character, edit character, edit lorebook entry, edit agent, edit model preset) require `userConfirmed: true` and otherwise answer `needs_confirmation` with an ask-first checklist; creating a character with no avatar prompt uses the default Neconyan picture (`public/img/ai4.png`).
 
 ## Artwork production
 
