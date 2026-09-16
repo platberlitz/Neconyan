@@ -11,7 +11,7 @@ import { renderTemplateAsync } from './templates.js';
 import { syncNeconyanAssistantTools } from './neconyan-assistant-tools.js';
 
 import { accountStorage } from './util/AccountStorage.js';
-import { clamp, flashHighlight, isElementInViewport, sortMoments, timestampToMoment } from './utils.js';
+import { clamp, flashHighlight, getSortableDelay, isElementInViewport, sortMoments, timestampToMoment } from './utils.js';
 
 const assistantAvatarKey = 'assistant';
 const assistantVariantKey = 'neconyanAssistantVariant';
@@ -1575,8 +1575,119 @@ async function sendWelcomePanel(chats, expand, requestId, assistantPersonalities
 }
 
 const NECONYAN_RAIL_COLLAPSED_KEY = 'NeconyanWorkspaceRailCollapsed.v1';
+const NECONYAN_RAIL_ORDER_KEY = 'NeconyanWorkspaceRailOrder.v1';
+let neconyanRailOrder;
+const neconyanRailGroups = {};
 let neconyanRailRefreshId = 0;
 let neconyanRailRefreshTimer = 0;
+
+function normalizeNeconyanRailOrder(saved, defaults) {
+    return [...new Set([...(Array.isArray(saved) ? saved : []).filter(id => defaults.includes(id)), ...defaults])];
+}
+
+function saveNeconyanRailOrder() {
+    accountStorage.setItem(NECONYAN_RAIL_ORDER_KEY, JSON.stringify(neconyanRailOrder));
+}
+
+function applyNeconyanRailOrder() {
+    const enabled = neconyanRailOrder.enabled;
+    for (const [name, { host, buttons }] of Object.entries(neconyanRailGroups)) {
+        neconyanRailOrder[name] = normalizeNeconyanRailOrder(neconyanRailOrder[name], [...buttons.keys()]);
+        for (const id of neconyanRailOrder[name]) {
+            const button = buttons.get(id);
+            host.appendChild(button);
+            if (enabled) button.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown');
+            else button.removeAttribute('aria-keyshortcuts');
+        }
+        host.classList.toggle('neconyan-rail-reordering', enabled);
+        $(host).sortable('option', 'disabled', !enabled);
+    }
+    document.querySelectorAll('[data-sb-rail-reorder-input]').forEach(input => {
+        input.checked = enabled;
+        input.disabled = false;
+    });
+    document.querySelectorAll('[data-sb-rail-order-reset]').forEach(button => { button.disabled = false; });
+}
+
+function setNeconyanRailReordering(enabled) {
+    if (!neconyanRailOrder) return;
+    neconyanRailOrder.enabled = Boolean(enabled);
+    applyNeconyanRailOrder();
+    saveNeconyanRailOrder();
+}
+
+function resetNeconyanRailOrder() {
+    if (!neconyanRailOrder) return;
+    for (const name of Object.keys(neconyanRailGroups)) neconyanRailOrder[name] = [];
+    applyNeconyanRailOrder();
+    saveNeconyanRailOrder();
+}
+
+function initializeNeconyanRailOrder(rail) {
+    try {
+        neconyanRailOrder = JSON.parse(accountStorage.getItem(NECONYAN_RAIL_ORDER_KEY));
+    } catch { /* A malformed saved preference falls back to the default order. */ }
+    neconyanRailOrder = { ...neconyanRailOrder, enabled: neconyanRailOrder?.enabled === true };
+    const status = document.createElement('span');
+    status.className = 'sr-only';
+    status.setAttribute('role', 'status');
+    rail.appendChild(status);
+    for (const [name, selector] of Object.entries({ primary: '[data-neconyan-primary-nav]', advanced: '[data-neconyan-advanced-nav]', modes: '[data-neconyan-mode-nav]' })) {
+        const host = rail.querySelector(selector);
+        const buttons = new Map([...host.children].map(button => [button.dataset.neconyanRoute || button.dataset.neconyanChatMode, button]));
+        neconyanRailGroups[name] = { host, buttons };
+        let suppressClickUntil = 0;
+        const saveOrder = button => {
+            neconyanRailOrder[name] = [...host.children].map(child => child.dataset.neconyanRoute || child.dataset.neconyanChatMode);
+            saveNeconyanRailOrder();
+            const position = [...host.children].indexOf(button) + 1;
+            status.textContent = t`${button.getAttribute('aria-label')} moved to position ${position} of ${buttons.size}.`;
+        };
+        for (const button of buttons.values()) {
+            const grip = document.createElement('span');
+            grip.className = 'neconyan-rail-grip fa-solid fa-grip-vertical';
+            grip.setAttribute('aria-hidden', 'true');
+            grip.title = t`Drag to reorder`;
+            button.appendChild(grip);
+        }
+        // Capture before the buttons' native navigation listeners and Touch Punch's synthetic click.
+        host.addEventListener('click', event => {
+            if (event.target.closest('.neconyan-rail-grip') || Date.now() < suppressClickUntil) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            }
+        }, true);
+        host.addEventListener('keydown', event => {
+            if (!neconyanRailOrder.enabled || !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+            const button = event.target.closest('.neconyan-rail-button');
+            if (button?.parentElement !== host) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const sibling = event.key === 'ArrowUp' ? button.previousElementSibling : button.nextElementSibling;
+            if (!sibling) return;
+            if (event.key === 'ArrowUp') host.insertBefore(button, sibling);
+            else host.insertBefore(sibling, button);
+            button.focus({ preventScroll: true });
+            button.scrollIntoView({ block: 'nearest' });
+            saveOrder(button);
+        });
+        $(host).sortable({
+            items: '> .neconyan-rail-button', handle: '.neconyan-rail-grip', cancel: '',
+            axis: 'y', containment: 'parent', delay: getSortableDelay(),
+            disabled: true, tolerance: 'pointer',
+            placeholder: 'neconyan-rail-placeholder',
+            start: (_event, ui) => {
+                ui.placeholder.outerHeight(ui.item.outerHeight());
+                suppressClickUntil = Infinity;
+            },
+            stop: (_event, ui) => {
+                suppressClickUntil = Date.now() + 400;
+                saveOrder(ui.item[0]);
+            },
+        });
+    }
+    applyNeconyanRailOrder();
+}
 
 function isNeconyanRailCollapsed() {
     return accountStorage.getItem(NECONYAN_RAIL_COLLAPSED_KEY) === 'true';
@@ -1796,12 +1907,12 @@ function ensureNeconyanRail() {
             <nav class="neconyan-rail-nav" aria-label="Workspace">
                 <div class="neconyan-rail-section-label">Workspace</div>
                 <div data-neconyan-primary-nav></div>
-                <div class="neconyan-rail-section-label neconyan-rail-modes-label">Modes</div>
-                <div data-neconyan-mode-nav></div>
                 <section class="neconyan-rail-advanced" aria-labelledby="neconyan-rail-advanced-title">
                     <div id="neconyan-rail-advanced-title" class="neconyan-rail-section-heading"><span>Fine-tuning</span></div>
                     <div data-neconyan-advanced-nav></div>
                 </section>
+                <div class="neconyan-rail-section-label neconyan-rail-modes-label">Modes</div>
+                <div data-neconyan-mode-nav></div>
             </nav>
             <details class="neconyan-rail-tools">
                 <summary id="neconyan-rail-tools-title" class="neconyan-native-tools-summary" aria-controls="neconyan-rail-tools-list" aria-expanded="false"><span>Included tools</span><i class="fa-solid fa-chevron-down neconyan-native-tools-chevron" aria-hidden="true"></i></summary>
@@ -1879,6 +1990,7 @@ function ensureNeconyanRail() {
     });
 
     document.body.insertBefore(rail, document.getElementById('sheld') || document.body.firstChild);
+    initializeNeconyanRailOrder(rail);
     globalThis.NeconyanNativeTools?.mount?.();
     initializeNeconyanHome(rail);
     document.body.classList.add('neconyan-rail-ready');
@@ -1912,6 +2024,9 @@ export function concealWelcomeHome() {
 globalThis.NeconyanWelcome = {
     ...(globalThis.NeconyanWelcome ?? {}),
     concealHome: concealWelcomeHome,
+    isRailReordering: () => neconyanRailOrder?.enabled,
+    setRailReordering: setNeconyanRailReordering,
+    resetRailOrder: resetNeconyanRailOrder,
 };
 
 export function hideWelcomeHome() {

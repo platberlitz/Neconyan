@@ -54,6 +54,46 @@ function createWelcomeRuntime(overrides = {}) {
 }
 
 describe('Neconyan workspace rail behavior', () => {
+    test('restores only known unique destinations and appends newly added destinations', () => {
+        const context = vm.createContext({});
+        vm.runInContext(getWelcomeFunctionSource('normalizeNeconyanRailOrder'), context);
+        const defaults = ['home', 'characters', 'model', 'agents'];
+        expect(context.normalizeNeconyanRailOrder(['model', 'removed', 'model', 'home', 'story'], defaults))
+            .toEqual(['model', 'home', 'characters', 'agents']);
+        for (const invalid of [null, undefined, 'model', {}, 123]) {
+            expect(context.normalizeNeconyanRailOrder(invalid, defaults)).toEqual(defaults);
+        }
+    });
+
+    test('turning reordering off preserves orders and reset preserves the enabled setting', () => {
+        const state = { enabled: true, primary: ['model', 'home'], advanced: ['sampling', 'presets'], modes: ['story', 'roleplay'] };
+        const saved = [];
+        const context = vm.createContext({
+            neconyanRailOrder: state,
+            neconyanRailGroups: { primary: {}, advanced: {}, modes: {} },
+            applyNeconyanRailOrder() {}, saveNeconyanRailOrder: () => saved.push(structuredClone(state)),
+        });
+        vm.runInContext([getWelcomeFunctionSource('setNeconyanRailReordering'), getWelcomeFunctionSource('resetNeconyanRailOrder')].join('\n'), context);
+        context.setNeconyanRailReordering(false);
+        expect(saved[0]).toEqual({ ...state, enabled: false });
+        expect(state.primary).toEqual(['model', 'home']);
+        context.resetNeconyanRailOrder();
+        expect(state).toEqual({ enabled: false, primary: [], advanced: [], modes: [] });
+        context.setNeconyanRailReordering(true);
+        context.resetNeconyanRailOrder();
+        expect(state.enabled).toBe(true);
+    });
+
+    test('places Modes below Fine-tuning and mounts order settings in both outlets', () => {
+        const build = getWelcomeFunctionSource('ensureNeconyanRail');
+        expect(build.indexOf('data-neconyan-primary-nav')).toBeLessThan(build.indexOf('data-neconyan-advanced-nav'));
+        expect(build.indexOf('data-neconyan-advanced-nav')).toBeLessThan(build.indexOf('data-neconyan-mode-nav'));
+        expect(tabsSource).toContain('createRailOrderSettingsGroup(\'desktop\')');
+        expect(tabsSource).toContain('createRailOrderSettingsGroup(\'mobile\')');
+        expect(tabsSource).toContain('desktopBottomChatBarSettingsGroup,\n            desktopRailOrderSettingsGroup,');
+        expect(tabsSource).toContain('mobileBottomChatBarSettingsGroup,\n            mobileRailOrderSettingsGroup,');
+    });
+
     test('keeps the old avatar updater as the same callable function', () => {
         class Observer {}
         const context = {
@@ -79,7 +119,7 @@ describe('Neconyan workspace rail behavior', () => {
         expect(welcomeSource).toContain('[\'extensions\', \'Extensions\', \'fa-cubes\']');
         expect(welcomeSource).toContain('class="neconyan-rail-advanced"');
         expect(welcomeSource).not.toContain('neconyan-rail-advanced sb-advanced-only');
-        // The Advanced group opens with the same gap as the Modes label above it.
+        // Fine-tuning and Modes have matching heading gaps.
         expect(neconyanCss).toContain('body.neconyan .neconyan-rail-modes-label { margin-top: 14px; }');
         expect(neconyanCss).toContain('body.neconyan .neconyan-rail-advanced { margin-top: 14px; }');
         expect(welcomeSource).toContain('[\'presets\', \'Presets\', \'fa-sliders\']');

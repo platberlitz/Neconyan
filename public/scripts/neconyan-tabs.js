@@ -14541,6 +14541,34 @@ function createBottomChatBarSettingsGroup(mode = 'mobile') {
     return group;
 }
 
+function createRailOrderSettingsGroup(mode) {
+    const inputId = `sb-${mode}-rail-reorder-input`;
+    const group = createElement('section', { className: 'sb-theme-slider-group sb-compact-mode-group' });
+    const label = createElement('label', { className: 'sb-compact-mode-option', attrs: { for: inputId } });
+    const checkbox = createElement('input', {
+        id: inputId, className: 'sb-compact-mode-checkbox',
+        attrs: { type: 'checkbox', 'data-sb-rail-reorder-input': mode, 'aria-describedby': `${inputId}-hint` },
+    });
+    const enabled = globalThis.NeconyanWelcome?.isRailReordering?.();
+    checkbox.checked = enabled === true;
+    checkbox.disabled = enabled === undefined;
+    checkbox.addEventListener('change', () => globalThis.NeconyanWelcome?.setRailReordering?.(checkbox.checked));
+    const copy = createElement('span', { className: 'sb-compact-mode-copy' });
+    copy.append(
+        createElement('strong', { text: 'Reorder sidebar' }),
+        createElement('small', { id: `${inputId}-hint`, text: 'Drag the grips within Workspace, Fine-tuning or Modes. On phones, hold a grip first. With a row focused, use Alt + Up/Down. Turning this off keeps your order.' }),
+    );
+    const reset = createElement('button', {
+        className: 'menu_button widthNatural', text: 'Reset sidebar order',
+        attrs: { type: 'button', 'data-sb-rail-order-reset': mode },
+    });
+    reset.disabled = enabled === undefined;
+    reset.addEventListener('click', () => globalThis.NeconyanWelcome?.resetRailOrder?.());
+    label.append(checkbox, copy);
+    group.append(label, reset);
+    return group;
+}
+
 function createMobileNavChoice({ id, type = 'radio', name = '', value = '', label, icon, onChange }) {
     const choice = createElement('label', {
         className: 'sb-mobile-nav-choice',
@@ -14974,6 +15002,8 @@ function injectThemePicker() {
     const mobileCompactModeSettingsGroup = createCompactModeSettingsGroup('mobile');
     const desktopBottomChatBarSettingsGroup = createBottomChatBarSettingsGroup('desktop');
     const mobileBottomChatBarSettingsGroup = createBottomChatBarSettingsGroup('mobile');
+    const desktopRailOrderSettingsGroup = createRailOrderSettingsGroup('desktop');
+    const mobileRailOrderSettingsGroup = createRailOrderSettingsGroup('mobile');
     const paperTextureSettingsGroup = createPaperTextureSettingsGroup();
     const frontendIconSettingsGroup = createFrontendIconSettingsGroup();
     const shortcutSettingsGroup = createShortcutSettingsGroup();
@@ -15020,6 +15050,7 @@ function injectThemePicker() {
             desktopButtonSliderGroup,
             desktopCompactModeSettingsGroup,
             desktopBottomChatBarSettingsGroup,
+            desktopRailOrderSettingsGroup,
             desktopQuickActionSettingsGroup,
         );
     }
@@ -15031,6 +15062,7 @@ function injectThemePicker() {
             mobileButtonSliderGroup,
             mobileCompactModeSettingsGroup,
             mobileBottomChatBarSettingsGroup,
+            mobileRailOrderSettingsGroup,
             paperTextureSettingsGroup,
             mobileQuickActionSettingsGroup,
         );
@@ -15045,6 +15077,7 @@ function injectThemePicker() {
             desktopButtonSliderGroup,
             desktopCompactModeSettingsGroup,
             desktopBottomChatBarSettingsGroup,
+            desktopRailOrderSettingsGroup,
             desktopQuickActionSettingsGroup,
         );
     }
@@ -15056,6 +15089,7 @@ function injectThemePicker() {
             mobileButtonSliderGroup,
             mobileCompactModeSettingsGroup,
             mobileBottomChatBarSettingsGroup,
+            mobileRailOrderSettingsGroup,
             mobileQuickActionSettingsGroup,
         );
     }

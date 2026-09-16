@@ -164,9 +164,14 @@ body.neconyan :is(.neconyan-rail-section-label, .neconyan-rail-section-heading) 
 body.neconyan .neconyan-rail-section-heading { display: flex; align-items: center; margin-right: 0; }
 body.neconyan .neconyan-rail-button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 body.neconyan .neconyan-rail-modes-label { margin-top: 14px; }
-/* The Advanced group is a sibling section of the same weight as Modes, so it opens with the same
-   gap above its heading instead of butting against the Modes list. */
 body.neconyan .neconyan-rail-advanced { margin-top: 14px; }
+body.neconyan .neconyan-rail-grip { display: none; }
+body.neconyan .neconyan-rail-reordering .neconyan-rail-grip {
+    display: flex; align-items: center; justify-content: center; flex: 0 0 44px; height: 44px;
+    margin: -7px -10px -7px auto; cursor: grab; touch-action: none;
+}
+body.neconyan #neconyan-workspace-rail .neconyan-rail-placeholder { border: 1px dashed var(--neco-ginger); }
+body.neconyan [data-sb-rail-order-reset] { min-height: 44px; }
 body.neconyan .neconyan-mode-button[aria-pressed='true'] { color: var(--neco-ink); background: var(--neco-raised); border-color: var(--neco-ginger); }
 body.neconyan [data-neconyan-recent-list] .neconyan-rail-button { flex-wrap: wrap; gap: 2px 8px; margin-bottom: 4px; }
 body.neconyan [data-neconyan-recent-list] .neconyan-rail-button span { flex: 1; }
