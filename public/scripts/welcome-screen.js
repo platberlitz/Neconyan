@@ -20,7 +20,6 @@ const pinnedChatsKey = 'pinnedChats';
 const tutorialStatusKey = 'NeconyanTutorialStatus.v1';
 const tutorialIndexKey = 'NeconyanTutorialIndex.v1';
 const tutorialHiddenKey = 'NeconyanTutorialHidden.v1';
-const welcomeDeckViewKey = 'WelcomePage_DeckView';
 const welcomePanelModeKey = 'WelcomePage_PanelMode';
 
 let activeTutorialPanel = null;
@@ -40,6 +39,7 @@ const WELCOME_TUTORIAL_STEPS = Object.freeze([
     { speaker: 'Nori', image: 'img/neconyan/tour/tour-06-nori-extensions.webp?v=20260916-assistants', title: 'Find your extra tools', body: 'Included tools came with Neconyan and each has its own settings page, while Extensions is the drawer you install into and where you pin the ones you actually reach for.', hint: 'Start with a tool that solves a problem you already have; I say this as somebody with too many notebooks, one working pen, and a train ticket that has been a bookmark since it expired. I would tell you I installed all of these myself, but that is a lie, and you would catch it anyway.', actions: [{ label: 'Open extensions', type: 'open-tab', value: 'right:extensions' }] },
     { speaker: 'Miso', image: 'img/neconyan/tour/tour-07-miso-home.webp?v=20260916-assistants', title: 'Make yourself at home', body: 'Come in properly and put your cup down! Appearance holds the theme, the font, the text size and how the chat sits on the page, so keep what you like, move what gets in your way, and know that none of it is permanent.', hint: 'I have left the little cat running, though it will not mind a rest; Reduced Motion quiets the decorations if you would rather have a still desk. And if you pick a colour I have never seen, I will want the whole story of how you chose it.', actions: [{ label: 'Open appearance', type: 'open-tab', value: 'right:settings' }] },
     { speaker: 'Taro', image: 'img/neconyan/tour/tour-08-taro-sampling.webp?v=20260916-assistants', title: 'Find it, then fine-tune it', body: 'Change one setting, then look at what happened before you change the next. Search finds a control by name, and Sampling shows which settings your provider and model will actually accept.', hint: 'Turning every slider at once is a poor experiment, however satisfying, because you learn nothing about which one helped. Your saved sampler values stay put when you switch models.', actions: [{ label: 'Search settings', type: 'open-global-search' }, { label: 'Open sampling', type: 'open-tab', value: 'left:sampling' }] },
+    { speaker: 'Miso, Taro and Nori', title: 'We’re here to help!', body: 'You can replay the tour any time from Home → Home layout, and if you have any questions, come chat with any of us. We’re here to help!', ending: true, actions: [] },
 ]);
 
 const WELCOME_PANEL_MODES = Object.freeze({
@@ -311,10 +311,6 @@ function fetchAssistantCatalog({ retry = false } = {}) {
     return assistantCatalogPromise;
 }
 
-function isWelcomeDeckView(view) { return view === 'tour'; }
-
-function getInitialDeckView() { return 'tour'; }
-
 function isWelcomePanelMode(mode) {
     return Object.values(WELCOME_PANEL_MODES).includes(mode);
 }
@@ -326,7 +322,7 @@ function getWelcomePanelMode() {
 
 function getWelcomeUiPreference(key) {
     const accountValue = accountStorage.getItem(key);
-    if (accountValue !== null || key === tutorialStatusKey || key === tutorialIndexKey) {
+    if (accountValue !== null || key === tutorialStatusKey || key === tutorialIndexKey || key === tutorialHiddenKey) {
         return accountValue;
     }
 
@@ -347,7 +343,7 @@ function getWelcomeUiPreference(key) {
 function setWelcomeUiPreference(key, value) {
     const stringValue = String(value);
     accountStorage.setItem(key, stringValue);
-    if (key === tutorialStatusKey || key === tutorialIndexKey) return;
+    if (key === tutorialStatusKey || key === tutorialIndexKey || key === tutorialHiddenKey) return;
 
     try {
         globalThis.localStorage?.setItem(key, stringValue);
@@ -370,21 +366,8 @@ function restoreWelcomeUiPreference(key, value) {
     setWelcomeUiPreference(key, value);
 }
 
-function buildTutorialSteps(activeIndex = 0) {
-    return WELCOME_TUTORIAL_STEPS.map((step, index) => ({
-        ...step,
-        actions: step.actions.map(action => ({ ...action })),
-        stepNumber: index + 1,
-        active: index === activeIndex,
-    }));
-}
-
 function buildWelcomeTemplateData(chats, assistantPersonalities = null) {
-    const activeDeckView = getInitialDeckView();
     const welcomePanelMode = getWelcomePanelMode();
-    const tutorialStatus = getWelcomeUiPreference(tutorialStatusKey) || '';
-    const storedTutorialIndex = Number.parseInt(getWelcomeUiPreference(tutorialIndexKey) || '0', 10) || 0;
-    const tutorialIndex = clamp(storedTutorialIndex, 0, WELCOME_TUTORIAL_STEPS.length - 1);
     const conversationStage = document.getElementById('sb_conversation_stage');
     const hasActiveConversation = document.getElementById('sheld')?.dataset.sbConversationMode === 'on'
         && conversationStage instanceof HTMLElement
@@ -407,16 +390,11 @@ function buildWelcomeTemplateData(chats, assistantPersonalities = null) {
         hasActiveChat,
         version: displayVersion,
         more: chats.length > getRecentChatsSettings().collapsedDisplayed,
-        activeDeckView,
         welcomePanelMode,
         welcomePanelFull: welcomePanelMode === WELCOME_PANEL_MODES.full,
         welcomePanelCompact: welcomePanelMode === WELCOME_PANEL_MODES.compact,
         welcomePanelListOnly: welcomePanelMode === WELCOME_PANEL_MODES.list,
         separateAgentRecentChats: shouldSeparateAgentRecentChats(),
-        tutorialExpanded: !['completed', 'skipped'].includes(tutorialStatus),
-        tutorialHidden: getWelcomeUiPreference(tutorialHiddenKey) === 'true',
-        tutorialIndex,
-        tutorialSteps: buildTutorialSteps(tutorialIndex),
     };
 }
 
@@ -538,23 +516,6 @@ function setRecentChatFilter(root, filter) {
     updateRecentChatFilterView(root);
 }
 
-function handleLinearNavigation(event, buttons, activeButton, activate) {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) || buttons.length === 0) {
-        return;
-    }
-
-    event.preventDefault();
-    const currentIndex = Math.max(0, buttons.indexOf(activeButton));
-    const nextIndex = event.key === 'Home'
-        ? 0
-        : event.key === 'End'
-            ? buttons.length - 1
-            : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
-    const nextButton = buttons[nextIndex];
-    nextButton.focus();
-    activate(nextButton);
-}
-
 function openShellTab(route) {
     // Neconyan: accept historical launcher routes while opening relocated
     // World Info in the Characters panel instead of the old left shell.
@@ -650,34 +611,6 @@ function clearConversationWelcomeOpeningSuppressionAfterRender() {
     requestAnimationFrame(() => requestAnimationFrame(clearSuppression));
 }
 
-function setWelcomeDeckView(root, view, { persist = true } = {}) {
-    if (!(root instanceof HTMLElement)) {
-        return;
-    }
-
-    const safeView = isWelcomeDeckView(view) ? view : getInitialDeckView();
-
-    root.dataset.activeDeckView = safeView;
-
-    root.querySelectorAll('.welcomeDeckTab').forEach((button) => {
-        const active = button.getAttribute('data-deck-target') === safeView;
-        button.classList.toggle('is-active', active);
-        button.setAttribute('aria-selected', String(active));
-        button.setAttribute('tabindex', active ? '0' : '-1');
-    });
-
-    root.querySelectorAll('.welcomeDeckPanel').forEach((panel) => {
-        const active = panel.getAttribute('data-deck-panel') === safeView;
-        panel.classList.toggle('is-active', active);
-        panel.toggleAttribute('hidden', !active);
-        panel.setAttribute('aria-hidden', String(!active));
-    });
-
-    if (persist) {
-        setWelcomeUiPreference(welcomeDeckViewKey, safeView);
-    }
-}
-
 function setWelcomePanelMode(root, mode, { persist = true } = {}) {
     if (!(root instanceof HTMLElement)) {
         return;
@@ -730,48 +663,12 @@ function setTutorialUiState(panel, index, expanded, { persist = true } = {}) {
         return;
     }
 
-    const steps = Array.from(panel.querySelectorAll('.welcomeTourStep'));
-    const progressButtons = Array.from(panel.querySelectorAll('.welcomeTourProgressButton'));
-    const safeIndex = Math.max(0, Math.min(index, steps.length - 1));
-    const nextButton = panel.querySelector('.tutorialNext');
-    const previousButton = panel.querySelector('.tutorialPrev');
-    const nextLabel = nextButton?.querySelector('span');
-    bindTourImageFallbacks(panel);
-
+    const safeIndex = clamp(Number.parseInt(index, 10) || 0, 0, WELCOME_TUTORIAL_STEPS.length - 1);
     panel.dataset.tutorialIndex = String(safeIndex);
     panel.dataset.tutorialExpanded = String(expanded);
-    panel.classList.toggle('tutorialCollapsed', !expanded);
-    panel.closest('details')?.toggleAttribute('open', Boolean(expanded));
     if (persist) {
         setWelcomeUiPreference(tutorialIndexKey, String(safeIndex));
     }
-
-    steps.forEach((step, stepIndex) => {
-        const active = stepIndex === safeIndex;
-        step.classList.toggle('is-active', active);
-        step.toggleAttribute('hidden', !active);
-        step.setAttribute('aria-hidden', String(!active));
-    });
-
-    progressButtons.forEach((button, buttonIndex) => {
-        const active = buttonIndex === safeIndex;
-        button.classList.toggle('is-active', active);
-        button.setAttribute('aria-pressed', String(active));
-        if (active) {
-            button.setAttribute('aria-current', 'step');
-        } else {
-            button.removeAttribute('aria-current');
-        }
-    });
-
-    if (previousButton instanceof HTMLButtonElement) {
-        previousButton.disabled = safeIndex === 0;
-    }
-
-    if (nextLabel) {
-        nextLabel.textContent = safeIndex >= steps.length - 1 ? 'Finish tour' : 'Next';
-    }
-
     syncTutorialCoachmark(panel);
 }
 
@@ -787,57 +684,61 @@ function syncTutorialCoachmark(panel) {
         return;
     }
 
-    const steps = panel.querySelectorAll('.welcomeTourStep');
     const index = Number.parseInt(panel.dataset.tutorialIndex || '0', 10) || 0;
-    const count = steps.length;
-    coachmark.querySelector('[data-tour-coach-step]')?.replaceChildren(document.createTextNode(`Step ${index + 1} of ${count}`));
-    const activeStep = panel.querySelector('.welcomeTourStep.is-active');
-    const title = activeStep?.querySelector('.welcomeTourStepHeader strong')?.textContent?.trim() || 'Next step';
-    const body = activeStep?.querySelector('.neconyan-tour-dialogue')?.textContent?.trim() || '';
-    const hint = activeStep?.querySelector('.neconyan-tour-hint, .welcomeTourHint')?.textContent?.trim() || '';
-    coachmark.querySelector('[data-tour-coach-title]')?.replaceChildren(document.createTextNode(title));
-    coachmark.querySelector('[data-tour-coach-body]')?.replaceChildren(document.createTextNode(body || hint));
-    coachmark.querySelector('[data-tour-coach-speaker]').textContent = activeStep?.querySelector('.neconyan-tour-speaker')?.textContent || '';
-    const portrait = coachmark.querySelector('[data-tour-image]');
-    const sourcePortrait = activeStep?.querySelector('[data-tour-image]');
-    if (portrait && sourcePortrait) {
-        portrait.hidden = false;
-        portrait.nextElementSibling.hidden = true;
-        portrait.src = sourcePortrait.src;
-        portrait.alt = sourcePortrait.alt;
+    const count = WELCOME_TUTORIAL_STEPS.length;
+    const step = WELCOME_TUTORIAL_STEPS[index];
+    coachmark.classList.toggle('neconyan-tour-ending', Boolean(step.ending));
+    coachmark.querySelector('[data-tour-coach-step]').textContent = t`Step ${index + 1} of ${count}`;
+    coachmark.querySelector('[data-tour-coach-title]').textContent = t([step.title]);
+    coachmark.querySelector('[data-tour-coach-body]').textContent = t([step.body]);
+    coachmark.querySelector('[data-tour-coach-speaker]').textContent = step.speaker;
+    const portraits = coachmark.querySelector('[data-tour-portraits]');
+    portraits.replaceChildren();
+    for (const guide of step.ending ? [WELCOME_TUTORIAL_STEPS[1], WELCOME_TUTORIAL_STEPS[2], WELCOME_TUTORIAL_STEPS[5]] : [step]) {
+        const figure = document.createElement('figure');
+        figure.innerHTML = '<div class="neconyan-tour-step-visual"><img width="512" height="768" data-tour-image><span class="neconyan-tour-image-fallback" hidden aria-hidden="true">🐾</span></div><figcaption></figcaption>';
+        const image = figure.querySelector('img');
+        image.src = guide.image;
+        image.alt = t`${guide.speaker} speaking`;
+        figure.querySelector('figcaption').textContent = step.ending ? guide.speaker : '';
+        portraits.append(figure);
     }
+    bindTourImageFallbacks(coachmark);
+    coachmark.querySelector('[data-tour-paw-stamp]').hidden = !step.ending;
     const actionHost = coachmark.querySelector('[data-tour-coach-actions]');
     if (actionHost instanceof HTMLElement) {
         actionHost.replaceChildren();
-        activeStep?.querySelectorAll('.welcomeActionButton').forEach((original) => {
-            if (!(original instanceof HTMLButtonElement)) {
-                return;
-            }
-            const action = original.cloneNode(true);
-            if (!(action instanceof HTMLButtonElement)) {
-                return;
-            }
-            action.classList.remove('welcomeActionButton');
-            action.addEventListener('click', () => original.click());
+        step.actions.forEach((definition) => {
+            const action = document.createElement('button');
+            action.type = 'button';
+            action.className = 'menu_button';
+            action.textContent = t([definition.label]);
+            action.dataset.action = definition.type;
+            action.dataset.actionValue = definition.value || '';
+            if (definition.type === 'open-global-search') action.dataset.sbUniversalSearchTrigger = 'true';
+            action.addEventListener('click', async () => {
+                try {
+                    await handleWelcomeAction(action);
+                } catch (error) {
+                    console.error('Tour action failed:', error);
+                    toastr.error(t`Could not open that view. Try again.`);
+                }
+            });
             actionHost.append(action);
         });
     }
     const next = coachmark.querySelector('[data-tour-coach-next]');
     if (next instanceof HTMLButtonElement) {
-        next.textContent = index >= count - 1 ? 'Finish' : 'Next';
+        next.textContent = index >= count - 1 ? t`Finish` : t`Next`;
     }
     const back = coachmark.querySelector('[data-tour-coach-back]');
     if (back instanceof HTMLButtonElement) {
         back.disabled = index === 0;
     }
+    coachmark.querySelector('[data-tour-content]').scrollTop = 0;
 }
 
-function showTutorialCoachmark(panel) {
-    if (!(panel instanceof HTMLElement)) {
-        return;
-    }
-
-    activeTutorialPanel = panel;
+function showTutorialCoachmark() {
     let coachmark = document.getElementById('neconyan-tour-coachmark');
     if (!(coachmark instanceof HTMLElement)) {
         coachmark = document.createElement('aside');
@@ -848,11 +749,11 @@ function showTutorialCoachmark(panel) {
         coachmark.innerHTML = `
             <strong>Neconyan tour</strong>
             <span data-tour-coach-step aria-live="polite"></span>
-            <div class="neconyan-tour-coach-dialogue">
-                <div class="neconyan-tour-step-visual"><img width="512" height="768" data-tour-image alt=""><span class="neconyan-tour-image-fallback" hidden>🐾</span></div>
-                <div class="neconyan-tour-step-copy"><span class="neconyan-tour-speaker" data-tour-coach-speaker></span><strong data-tour-coach-title></strong><p data-tour-coach-body aria-live="polite"></p></div>
+            <div data-tour-content><div class="neconyan-tour-coach-dialogue">
+                <div data-tour-portraits></div>
+                <div class="neconyan-tour-step-copy"><span class="neconyan-tour-speaker" data-tour-coach-speaker></span><strong data-tour-coach-title></strong><p data-tour-coach-body aria-live="polite"></p><i class="fa-solid fa-paw" data-tour-paw-stamp hidden aria-hidden="true"></i></div>
             </div>
-            <div data-tour-coach-actions></div>
+            <div data-tour-coach-actions></div></div>
             <div class="neconyan-tour-coachmark-actions">
                 <button type="button" class="menu_button menu_button_icon" data-tour-coach-home>Home</button>
                 <button type="button" class="menu_button menu_button_icon" data-tour-coach-back>Back</button>
@@ -871,7 +772,7 @@ function showTutorialCoachmark(panel) {
         coachmark.querySelector('[data-tour-coach-next]')?.addEventListener('click', () => {
             if (!activeTutorialPanel) return;
             const index = Number.parseInt(activeTutorialPanel.dataset.tutorialIndex || '0', 10) || 0;
-            const lastIndex = activeTutorialPanel.querySelectorAll('.welcomeTourStep').length - 1;
+            const lastIndex = WELCOME_TUTORIAL_STEPS.length - 1;
             if (index >= lastIndex) {
                 dismissTutorial(activeTutorialPanel, 'completed');
                 return;
@@ -884,11 +785,17 @@ function showTutorialCoachmark(panel) {
             }
         });
         document.body.append(coachmark);
-        bindTourImageFallbacks(coachmark);
     }
-
+    activeTutorialPanel = coachmark;
     document.body.classList.add('neconyan-tour-active');
-    syncTutorialCoachmark(panel);
+    setTutorialUiState(coachmark, getWelcomeUiPreference(tutorialIndexKey) || 0, true, { persist: false });
+}
+
+function resumeTutorial() {
+    const status = getWelcomeUiPreference(tutorialStatusKey);
+    if (status !== null && !['completed', 'skipped'].includes(status) && getWelcomeUiPreference(tutorialHiddenKey) !== 'true') {
+        showTutorialCoachmark();
+    }
 }
 
 async function activateNeconyanModeFromWelcome(mode) {
@@ -912,7 +819,7 @@ async function dismissTutorial(panel, status) {
     const previousStatus = getWelcomeUiPreference(tutorialStatusKey);
     const previousIndex = getWelcomeUiPreference(tutorialIndexKey);
     const previousExpanded = panel.dataset.tutorialExpanded !== 'false';
-    const controls = [...panel.querySelectorAll('button'), ...document.querySelectorAll('#neconyan-tour-coachmark button')].map(button => [button, button.disabled]);
+    const controls = [...panel.querySelectorAll('button')].map(button => [button, button.disabled]);
     panel.dataset.tutorialSaving = 'true';
     controls.forEach(([button]) => { button.disabled = true; });
     if (status) {
@@ -947,34 +854,6 @@ async function dismissTutorial(panel, status) {
     return true;
 }
 
-// Neconyan: hiding the tour is a durable Home preference, not a tutorial status change - the
-// progress a user made stays put and Home layout offers the tour back under one label.
-function setTutorialHidden(welcomePanel, hidden) {
-    const panel = welcomePanel instanceof HTMLElement ? welcomePanel : document.querySelector('.welcomePanel');
-    const homeBlock = panel?.querySelector('.welcomeAdvancedHome');
-    const shouldHide = Boolean(hidden);
-
-    setWelcomeUiPreference(tutorialHiddenKey, shouldHide ? 'true' : '');
-
-    if (homeBlock instanceof HTMLElement) {
-        homeBlock.toggleAttribute('hidden', shouldHide);
-    }
-
-    panel?.querySelector('[data-action="reopen-tutorial"]')?.toggleAttribute('hidden', !shouldHide);
-
-    if (shouldHide) {
-        homeBlock?.removeAttribute('open');
-        removeTutorialCoachmark();
-        return;
-    }
-
-    const tutorialPanel = panel?.querySelector('.welcomeTourPanel');
-    if (tutorialPanel instanceof HTMLElement) {
-        setTutorialUiState(tutorialPanel, Number.parseInt(tutorialPanel.dataset.tutorialIndex || '0', 10) || 0, true);
-    }
-    homeBlock?.querySelector('summary')?.focus?.({ preventScroll: true });
-}
-
 /* The archive extension owns the drawer, so reuse its launcher button for every entry point. */
 function openNeconyanChatArchive() {
     const launcher = document.getElementById('sbca_drawer_button');
@@ -989,9 +868,6 @@ function openNeconyanChatArchive() {
 async function handleWelcomeAction(button) {
     const action = button.dataset.action || '';
     const value = button.dataset.actionValue || '';
-    const welcomePanel = button.closest('.welcomePanel') || document.querySelector('.welcomePanel');
-    const tutorialPanel = button.closest('.welcomeTourPanel')
-        || (['replay-tutorial', 'skip-tutorial', 'hide-tutorial', 'reopen-tutorial'].includes(action) ? welcomePanel?.querySelector('.welcomeTourPanel') : null);
     switch (action) {
         case 'resume-chat':
             globalThis.NeconyanShell?.closeWorkspace?.();
@@ -1001,53 +877,39 @@ async function handleWelcomeAction(button) {
         case 'open-tab':
             openShellTab(value);
             focusWelcomeControl(value);
-            showTutorialCoachmark(tutorialPanel);
             break;
         case 'open-temporary-chat':
-            if (await openNeconyanTemporaryChat()) showTutorialCoachmark(tutorialPanel);
+            await openNeconyanTemporaryChat();
             break;
         case 'open-roleplay':
-            if (await openRoleplayWorkspaceFromWelcome()) showTutorialCoachmark(tutorialPanel);
+            await openRoleplayWorkspaceFromWelcome();
             break;
         case 'open-conversation': {
-            const activated = await activateNeconyanModeFromWelcome('conversation');
-            if (activated) showTutorialCoachmark(tutorialPanel);
+            await activateNeconyanModeFromWelcome('conversation');
             break;
         }
         case 'open-meower':
         case 'open-story': {
-            const activated = await activateNeconyanModeFromWelcome(action === 'open-meower' ? 'meower' : 'story');
-            if (activated) showTutorialCoachmark(tutorialPanel);
+            await activateNeconyanModeFromWelcome(action === 'open-meower' ? 'meower' : 'story');
             break;
         }
         case 'open-characters-menu':
         case 'open-import-characters':
             globalThis.NeconyanShell?.openCharacters?.();
-            showTutorialCoachmark(tutorialPanel);
             break;
         case 'open-global-search':
             globalThis.NeconyanShell?.openGlobalSearch?.({ focusInput: true });
-            showTutorialCoachmark(tutorialPanel);
             break;
         case 'open-chat-archive':
             openNeconyanChatArchive();
             break;
         case 'replay-tutorial':
-            setWelcomeUiPreference(tutorialStatusKey, '');
-            welcomePanel?.querySelector('.welcomeAdvancedHome')?.setAttribute('open', '');
-            if (tutorialPanel instanceof HTMLElement) {
-                setTutorialUiState(tutorialPanel, 0, true);
-                showTutorialCoachmark(tutorialPanel);
-            }
-            break;
-        case 'hide-tutorial':
-            setTutorialHidden(welcomePanel, true);
-            break;
-        case 'reopen-tutorial':
-            setTutorialHidden(welcomePanel, false);
-            break;
-        case 'skip-tutorial':
-            if (tutorialPanel instanceof HTMLElement) await dismissTutorial(tutorialPanel, 'skipped');
+            if (activeTutorialPanel?.dataset.tutorialSaving === 'true') break;
+            setWelcomeUiPreference(tutorialStatusKey, 'pending');
+            setWelcomeUiPreference(tutorialHiddenKey, '');
+            setWelcomeUiPreference(tutorialIndexKey, '0');
+            showTutorialCoachmark();
+            activeTutorialPanel.querySelector('[data-tour-coach-next]')?.focus();
             break;
     }
 }
@@ -1307,7 +1169,7 @@ async function sendWelcomePanel(chats, expand, requestId, assistantPersonalities
             return;
         }
         const templateData = buildWelcomeTemplateData(chats, assistantPersonalities);
-        const template = await renderTemplateAsync('/scripts/templates/welcomePanelOnboarding.html?v=20260913g', templateData, true, true, true);
+        const template = await renderTemplateAsync('/scripts/templates/welcomePanelOnboarding.html?v=20260916-tour', templateData, true, true, true);
         if (requestId !== welcomeRequestId) {
             return;
         }
@@ -1339,64 +1201,7 @@ async function sendWelcomePanel(chats, expand, requestId, assistantPersonalities
                 });
             });
 
-            const tutorialPanel = root.querySelector('.welcomeTourPanel');
             setWelcomePanelMode(root, root.dataset.homePanelMode || getWelcomePanelMode(), { persist: false });
-            setWelcomeDeckView(root, root.dataset.activeDeckView || getInitialDeckView(), { persist: false });
-            root.querySelectorAll('.welcomeDeckTab').forEach((button) => {
-                const activateDeckTab = () => {
-                    const targetView = button.getAttribute('data-deck-target') || '';
-                    setWelcomeDeckView(root, targetView);
-
-                    if (targetView === 'tour' && tutorialPanel instanceof HTMLElement) {
-                        setWelcomeUiPreference(tutorialStatusKey, '');
-                        const currentIndex = Number.parseInt(tutorialPanel.dataset.tutorialIndex || '0', 10) || 0;
-                        setTutorialUiState(tutorialPanel, currentIndex, true);
-                    }
-                };
-                button.addEventListener('click', activateDeckTab);
-                button.addEventListener('keydown', (event) => {
-                    const tabs = Array.from(root.querySelectorAll('.welcomeDeckTab'));
-                    handleLinearNavigation(event, tabs, button, nextButton => nextButton.click());
-                });
-            });
-
-            if (tutorialPanel instanceof HTMLElement) {
-                setTutorialUiState(
-                    tutorialPanel,
-                    Number.parseInt(tutorialPanel.dataset.tutorialIndex || '0', 10) || 0,
-                    tutorialPanel.dataset.tutorialExpanded !== 'false',
-                    { persist: false },
-                );
-
-                tutorialPanel.querySelectorAll('.welcomeTourProgressButton').forEach((button) => {
-                    const activateTutorialStep = () => {
-                        const targetIndex = Number.parseInt(button.getAttribute('data-step-target') || '0', 10) || 0;
-                        setTutorialUiState(tutorialPanel, targetIndex, true);
-                    };
-                    button.addEventListener('click', activateTutorialStep);
-                    button.addEventListener('keydown', (event) => {
-                        const buttons = Array.from(tutorialPanel.querySelectorAll('.welcomeTourProgressButton'));
-                        handleLinearNavigation(event, buttons, button, nextButton => nextButton.click());
-                    });
-                });
-
-                tutorialPanel.querySelector('.tutorialPrev')?.addEventListener('click', () => {
-                    const currentIndex = Number.parseInt(tutorialPanel.dataset.tutorialIndex || '0', 10) || 0;
-                    setTutorialUiState(tutorialPanel, currentIndex - 1, true);
-                });
-
-                tutorialPanel.querySelector('.tutorialNext')?.addEventListener('click', () => {
-                    const currentIndex = Number.parseInt(tutorialPanel.dataset.tutorialIndex || '0', 10) || 0;
-                    const lastIndex = tutorialPanel.querySelectorAll('.welcomeTourStep').length - 1;
-
-                    if (currentIndex >= lastIndex) {
-                        dismissTutorial(tutorialPanel, 'completed');
-                        return;
-                    }
-
-                    setTutorialUiState(tutorialPanel, currentIndex + 1, true);
-                });
-            }
         });
         fragment.querySelectorAll('.welcomeActionButton').forEach((button) => {
             if (button.dataset.action === 'open-global-search') button.dataset.sbUniversalSearchTrigger = 'true';
@@ -1558,9 +1363,6 @@ async function sendWelcomePanel(chats, expand, requestId, assistantPersonalities
             }
         });
         document.body.classList.add('neconyan-home-visible');
-        if (activeTutorialPanel) {
-            showTutorialCoachmark(welcomeHost.querySelector('.welcomeTourPanel'));
-        }
         window.NeconyanFrontendIcon?.apply?.();
         if (expand) {
             welcomeHost.querySelectorAll('button.showMoreChats').forEach((button) => {
@@ -2032,7 +1834,6 @@ globalThis.NeconyanWelcome = {
 export function hideWelcomeHome() {
     concealWelcomeHome();
     document.querySelector('.welcomePanel')?.remove();
-    removeTutorialCoachmark();
 }
 
 function focusActiveComposer() {
@@ -2631,6 +2432,7 @@ export function initWelcomeScreen() {
     ensureNeconyanRail();
     window.addEventListener('sb:conversation-workspace-state-changed', concealWelcomeHome);
     eventSource.on(event_types.APP_READY, async () => {
+        resumeTutorial();
         if (getCurrentChatId() === undefined && chat.length === 0) {
             await openWelcomeScreen({ force: true });
         }

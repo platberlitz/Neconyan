@@ -37,7 +37,7 @@ test.afterEach(() => {
     for (const key of ['errors', 'modelRequests', 'googleFontRequests', 'badAssets', 'unexpected']) expect(safety[key], key).toEqual([]);
 });
 
-async function mockNativeSettings(page, { tone = 'dark', resetTerminal = false, mainFont, tutorialStatus = 'skipped', homePanelMode } = {}) {
+async function mockNativeSettings(page, { tone = 'dark', resetTerminal = false, mainFont, tutorialStatus = 'skipped', homePanelMode, firstRun = false } = {}) {
     let envelopePromise, settings;
     const state = { saves: 0, reads: 0, lastSaved: null, failSaves: false };
     await page.route('**/api/settings/get', async route => {
@@ -45,7 +45,9 @@ async function mockNativeSettings(page, { tone = 'dark', resetTerminal = false, 
         const envelope = await (envelopePromise ??= route.fetch().then(response => response.json()));
         if (!settings) {
             settings = JSON.parse(envelope.settings);
+            settings.firstRun = firstRun;
             settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': tutorialStatus, 'NeconyanTutorialIndex.v1': '0' };
+            delete settings.accountStorage['NeconyanTutorialHidden.v1'];
             if (homePanelMode) settings.accountStorage.WelcomePage_PanelMode = homePanelMode;
             const { name, ...theme } = JSON.parse(readFileSync(new URL(`../default/content/themes/Neconyan Calico${tone === 'dark' ? ' Dark' : ''}.json`, import.meta.url), 'utf8'));
             Object.assign(settings.power_user, theme, { theme: name, google_font: '' });
@@ -395,46 +397,91 @@ test.describe('Sidebar sizing', () => {
     });
 });
 
-test('first-run tour is visible, recovers from a failed Skip, and remembers completion', async ({ page }, info) => {
-    const settings = await mockNativeSettings(page, { tutorialStatus: '', homePanelMode: 'list' });
-    await page.addInitScript(() => {
-        localStorage.setItem('NeconyanTutorialStatus.v1', 'skipped');
-        localStorage.setItem('WelcomePage_PanelMode', 'list');
-    });
-    await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
-    const tour = page.locator('.welcomeTourPanel');
-    await expect(tour).toHaveAttribute('data-tutorial-expanded', 'true', { timeout: 60000 });
-    await expect(page.locator('.welcomePanel')).toHaveClass(/welcomePanel--listOnly/);
-    const skip = tour.locator('.neconyan-tour-heading .tutorialSkip');
-    for (const width of [1280, 1024, 768, 390, 320]) {
-        await page.setViewportSize({ width, height: 900 });
-        await expect(skip).toBeInViewport();
-        await expect(tour.locator('.welcomeTourStep.is-active')).toBeInViewport();
-        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-        await page.screenshot({ path: info.outputPath(`first-run-${width}.png`) });
+test.describe('side-only first-run tour', () => {
+    test.use({ hasTouch: true });
+    for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 }]) {
+        test(`resumes, replays and remembers completion at ${viewport.width}px`, async ({ page }, info) => {
+            const settings = await mockNativeSettings(page, { tutorialStatus: 'pending', homePanelMode: 'list', firstRun: true });
+            await page.addInitScript(() => {
+                localStorage.setItem('NeconyanTutorialStatus.v1', 'skipped');
+                localStorage.setItem('NeconyanTutorialHidden.v1', 'true');
+                localStorage.setItem('WelcomePage_PanelMode', 'list');
+            });
+            await page.setViewportSize(viewport);
+            await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
+            const tour = page.locator('#neconyan-tour-coachmark');
+            await expect(tour).toHaveAttribute('data-tutorial-expanded', 'true', { timeout: 60000 });
+            await expect(page.locator('.welcomeTourPanel, .welcomeAdvancedHome')).toHaveCount(0);
+            await expect(page.locator('.welcomePanel')).toHaveClass(/welcomePanel--listOnly/);
+            const skip = tour.locator('[data-tour-coach-skip]');
+            const next = tour.locator('[data-tour-coach-next]');
+            await expect(skip).toBeInViewport();
+            await page.screenshot({ path: info.outputPath('first-run.png') });
+            await tour.getByRole('button', { name: 'Open connections', exact: true }).tap();
+            await expect(page.locator('#left-nav-panel')).toHaveClass(/openDrawer/);
+            await expect(tour).toBeVisible();
+            await tour.locator('[data-tour-coach-home]').tap();
+            await next.tap();
+            await next.tap();
+            await expect.poll(() => settings.lastSaved?.accountStorage['NeconyanTutorialIndex.v1']).toBe('2');
+            await safety.navigate(() => page.reload({ waitUntil: 'domcontentloaded' }));
+            await expect(tour).toHaveAttribute('data-tutorial-index', '2', { timeout: 60000 });
+            settings.failSaves = true;
+            await skip.tap();
+            await expect(tour).not.toHaveAttribute('data-tutorial-saving', 'true');
+            await expect(tour).toHaveAttribute('data-tutorial-expanded', 'true');
+            await expect(tour).toHaveAttribute('data-tutorial-index', '2');
+            settings.failSaves = false;
+            await skip.tap();
+            await expect(tour).toHaveCount(0);
+            expect(settings.lastSaved.accountStorage['NeconyanTutorialStatus.v1']).toBe('skipped');
+            await safety.navigate(() => page.reload({ waitUntil: 'domcontentloaded' }));
+            await expect(page.locator('.welcomePanel')).toBeVisible({ timeout: 60000 });
+            await expect(tour).toHaveCount(0);
+            await page.getByText('Home layout', { exact: true }).click();
+            for (const mode of ['full', 'compact', 'list']) {
+                await page.locator(`[data-welcome-panel-mode-target="${mode}"]`).tap();
+                await page.getByRole('button', { name: 'Replay First paws tour', exact: true }).tap();
+                await expect(tour).toHaveAttribute('data-tutorial-index', '0');
+                await skip.tap();
+                await expect(tour).toHaveCount(0);
+            }
+            await page.getByRole('button', { name: 'Replay First paws tour', exact: true }).tap();
+            for (let step = 0; step < 9; step++) {
+                await expect(tour).toHaveAttribute('data-tutorial-index', String(step));
+                await expect(tour.locator('[data-tour-coach-title]')).not.toBeEmpty();
+                await expect.poll(() => tour.locator('[data-tour-image]').evaluateAll(images => images.every(image => image.complete && image.naturalWidth > 0))).toBe(true);
+                const geometry = await tour.evaluate(element => {
+                    const box = element.getBoundingClientRect();
+                    return { x: box.x, right: box.right, width: box.width, height: box.height, overflow: element.scrollWidth > element.clientWidth,
+                        controls: [...element.querySelectorAll('button')].map(button => button.getBoundingClientRect().height) };
+                });
+                expect(geometry.width).toBe(Math.min(560, viewport.width - 24));
+                expect(geometry.height).toBeLessThanOrEqual(viewport.height / 2 + 1);
+                expect(geometry.x).toBeGreaterThanOrEqual(12);
+                expect(geometry.right).toBeLessThanOrEqual(viewport.width - 12);
+                expect(geometry.overflow).toBe(false);
+                expect(geometry.controls.every(height => height >= 44)).toBe(true);
+                await expect(next).toBeInViewport();
+                if (step < 8) await next.tap();
+            }
+            await expect(tour.locator('[data-tour-image]')).toHaveCount(3);
+            await expect(tour.locator('figcaption')).toHaveText(['Miso', 'Taro', 'Nori']);
+            await expect(tour.locator('[data-tour-coach-body]')).toContainText('Home → Home layout');
+            await expect(tour.locator('[data-tour-paw-stamp]')).toBeVisible();
+            await expect.poll(() => settings.lastSaved?.accountStorage['NeconyanTutorialIndex.v1']).toBe('8');
+            expect(settings.lastSaved.accountStorage['NeconyanTutorialStatus.v1']).toBe('pending');
+            await page.screenshot({ path: info.outputPath('ending.png') });
+            await safety.navigate(() => page.reload({ waitUntil: 'domcontentloaded' }));
+            await expect(tour).toHaveAttribute('data-tutorial-index', '8', { timeout: 60000 });
+            await next.tap();
+            await expect(tour).toHaveCount(0);
+            expect(settings.lastSaved.accountStorage['NeconyanTutorialStatus.v1']).toBe('completed');
+            await safety.navigate(() => page.reload({ waitUntil: 'domcontentloaded' }));
+            await expect(page.locator('.welcomePanel')).toBeVisible({ timeout: 60000 });
+            await expect(tour).toHaveCount(0);
+        });
     }
-    settings.failSaves = true;
-    await skip.click();
-    await expect(tour).not.toHaveAttribute('data-tutorial-saving', 'true');
-    await expect(tour).toHaveAttribute('data-tutorial-expanded', 'true');
-    await expect(tour).toHaveAttribute('data-tutorial-index', '0');
-    settings.failSaves = false;
-    await skip.click();
-    await expect(tour).toHaveAttribute('data-tutorial-expanded', 'false');
-    expect(settings.lastSaved.accountStorage['NeconyanTutorialStatus.v1']).toBe('skipped');
-    await safety.navigate(() => page.reload({ waitUntil: 'domcontentloaded' }));
-    await expect(tour).toHaveAttribute('data-tutorial-expanded', 'false', { timeout: 60000 });
-    await page.getByText('Home layout', { exact: true }).click();
-    await page.getByRole('button', { name: 'Full home', exact: true }).click();
-    await page.locator('.neconyan-home-help > summary').click();
-    await tour.getByRole('button', { name: 'Start again', exact: true }).click();
-    await expect(tour).toHaveAttribute('data-tutorial-expanded', 'true');
-    for (let step = 0; step < 8; step++) {
-        await expect(tour).toHaveAttribute('data-tutorial-index', String(step));
-        await page.locator('[data-tour-coach-next]').click();
-    }
-    await expect(tour).toHaveAttribute('data-tutorial-expanded', 'false');
-    expect(settings.lastSaved.accountStorage['NeconyanTutorialStatus.v1']).toBe('completed');
 });
 
 test('Extensions separates third-party panels and reveals hidden built-in search targets', async ({ page }) => {

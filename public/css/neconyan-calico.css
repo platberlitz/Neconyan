@@ -657,3 +657,5 @@ body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_header :is
     display: inline !important;
     white-space: normal;
 }
+body.neconyan #neconyan-tour-coachmark [data-tour-paw-stamp] { position: absolute; right: 10px; bottom: 10px; font-size: 28px; color: var(--neco-ginger); transform: rotate(-18deg); pointer-events: none; }
+body.neconyan #neconyan-tour-coachmark [data-tour-paw-stamp][hidden] { display: none; }

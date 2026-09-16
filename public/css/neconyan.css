@@ -414,28 +414,12 @@ body.neconyan .recentChat .chatActions { pointer-events: none; }
 body.neconyan .recentChat .chatActions button { pointer-events: auto; }
 body.neconyan :is(.welcomeRecentTabs, .welcomeRecentTab, .welcomeShortcut) { border-radius: 5px; box-shadow: none; background: transparent; }
 body.neconyan .welcomeRecentTab.active { background: var(--neco-raised); color: var(--neco-ink); }
-body.neconyan .welcomeAdvancedHome { order: initial; }
-body.neconyan .welcomeAdvancedHome[hidden] { display: none !important; }
-body.neconyan .welcomeAdvancedHome > summary {
-    position: relative; min-height: 44px; padding: 10px 76px 10px 0;
-    border: 0; background: transparent; color: var(--neco-muted);
-}
-/* Centred with insets and margin, never translate: the shared .menu_button hover/active rules
-   own `transform`, and a centring transform here made the button jump on hover and press. */
-body.neconyan .welcomeAdvancedHome > summary > .tutorialHide {
-    position: absolute; right: 0; top: 0; bottom: 0;
-    height: 32px; min-height: 32px; margin: auto 0; padding: 4px 12px; font-size: 12px;
-    transform: none; transition: none;
-}
-body.neconyan .welcomeAdvancedHome > summary > .tutorialHide:is(:hover, :active) {
-    transform: none; transition: none;
-}
-body.neconyan .welcomeAdvancedHome > summary small { display: none; }
 body.neconyan .welcomeShortcuts { justify-content: flex-start; flex-wrap: wrap; gap: 8px; }
 body.neconyan #neconyan-tour-coachmark {
     position: fixed; right: max(20px, env(safe-area-inset-right)); bottom: max(20px, env(safe-area-inset-bottom));
     z-index: calc(var(--sb-z-modal-content, 3100) + 10); display: grid; gap: 10px;
-    width: min(360px, calc(100vw - 32px)); max-height: 45dvh; overflow: auto; padding: 18px;
+    width: min(560px, calc(100vw - 24px)); max-height: 50dvh; overflow: auto; padding: 18px;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
     border: 1px solid var(--neco-border); border-radius: 8px; background: var(--neco-surface); color: var(--neco-ink);
     box-shadow: 0 8px 32px color-mix(in oklch, var(--neco-charcoal) 25%, transparent); text-shadow: none;
 }
@@ -444,6 +428,9 @@ body.neconyan #neconyan-tour-coachmark p { margin: 0; font-size: 14px; line-heig
 body.neconyan :is(#neconyan-tour-coachmark [data-tour-coach-actions], .neconyan-tour-coachmark-actions) { display: flex; flex-wrap: wrap; gap: 6px; }
 body.neconyan #neconyan-tour-coachmark button { min-height: 44px; margin: 0; padding: 8px 12px; }
 body.neconyan #neconyan-tour-coachmark [data-tour-coach-next] { margin-left: auto; border-color: var(--neco-ginger); }
+body.neconyan #neconyan-tour-coachmark [data-tour-content] { min-height: 0; overflow: auto; overscroll-behavior: contain; }
+body.neconyan #neconyan-tour-coachmark [data-tour-coach-actions]:not(:empty) { padding-top: 10px; }
+body.neconyan #neconyan-tour-coachmark button:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: -3px; }
 
 @media (min-width: 769px) {
     body.neconyan :is(.sb-shell-nav, .sb-settings-tabs-nav) { flex-wrap: wrap; overflow-x: hidden; }
@@ -531,8 +518,6 @@ body.neconyan #neconyan-tour-coachmark [data-tour-coach-next] { margin-left: aut
         max-width: 44px !important; max-height: 44px !important; max-inline-size: 44px !important; max-block-size: 44px !important; flex: 0 0 44px;
     }
     body.neconyan :is(.sb-shell-tab, .sb-character-shell-tab, .sb-settings-tab-btn) { min-height: 44px; }
-    body.neconyan #neconyan-tour-coachmark { right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); padding: 14px; }
-    body.neconyan.neconyan-tour-active .drawer-content .scrollableInner { padding-bottom: 260px; }
 }
 
 body.neconyan .neconyan-included-tool-page {
@@ -2825,15 +2810,18 @@ body.neconyan #neconyan-lorebook-library .neconyan-legacy-book-picker[hidden],
 body.neconyan #neconyan-lorebook-library[data-view='book'] .world_popup_action_group--select { display: none !important; }
 
 body.neconyan #right-nav-panel #rm_characters_block { background: var(--neco-surface); }
-body.neconyan .welcomeTourStep.is-active { display: grid; grid-template-columns: 112px minmax(0, 1fr); align-items: start; gap: 12px; }
-body.neconyan .welcomeTourStep.is-active .welcomeTourActions { grid-column: 1 / -1; }
 body.neconyan .neconyan-tour-step-copy { padding: 12px 14px; border: 1px solid var(--neco-border); border-radius: 16px 16px 16px 4px; background: var(--neco-raised); }
 body.neconyan .neconyan-tour-step-copy p { margin: 8px 0 0; }
 body.neconyan .neconyan-tour-step-copy .neconyan-tour-speaker { margin: 0 0 6px; }
-body.neconyan #neconyan-tour-coachmark { width: min(520px, calc(100vw - 24px)); }
 body.neconyan .neconyan-tour-coach-dialogue { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: start; gap: 8px; }
 body.neconyan .neconyan-tour-coach-dialogue .neconyan-tour-step-copy { padding: 8px 10px; font-size: 13px; }
 body.neconyan .neconyan-tour-step-visual :is(img, span)[hidden] { display: none; }
+body.neconyan #neconyan-tour-coachmark [data-tour-portraits] { display: flex; justify-content: center; gap: 8px; }
+body.neconyan #neconyan-tour-coachmark figure { margin: 0; width: 64px; min-width: 0; text-align: center; }
+body.neconyan #neconyan-tour-coachmark figcaption { font-size: 12px; }
+body.neconyan #neconyan-tour-coachmark .neconyan-tour-speaker { display: block; }
+body.neconyan #neconyan-tour-coachmark.neconyan-tour-ending .neconyan-tour-coach-dialogue { grid-template-columns: minmax(0, 1fr); }
+body.neconyan #neconyan-tour-coachmark.neconyan-tour-ending .neconyan-tour-step-copy { position: relative; padding-right: 48px; }
 body.neconyan #right-nav-panel #neconyan-character-library { padding: 8px 12px; border-radius: 0; }
 body.neconyan #right-nav-panel #neconyan-character-library #charListFixedTop {
     display: grid;
@@ -2867,9 +2855,6 @@ body.neconyan .sb-shell-tab[data-sb-tab='included-tool'],
 body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] :is(.sb-shell-nav-wrapper, .sb-shell-subtitle) { display: none !important; }
 body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell-main { grid-column: 1 / -1; }
 @media (max-width: 768px) {
-    body.neconyan .welcomeTourStep.is-active { grid-template-columns: 64px minmax(0, 1fr); gap: 8px; }
-    body.neconyan .neconyan-tour-step-copy { padding: 10px; }
-    body.neconyan .neconyan-tour-coach-dialogue { grid-template-columns: 44px minmax(0, 1fr); }
     /* Phones: the list is what matters, so the chrome above it is two 44px rows.
        Row 1: the search field. Row 2: one horizontally scrolling line of labelled
        tools: Create, Import, Filter and organise, Grid, Bulk edit, then the page

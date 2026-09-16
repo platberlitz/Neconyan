@@ -259,28 +259,41 @@ describe('Neconyan Home', () => {
         expect(calico).toContain('prefers-reduced-motion: reduce');
     });
 
-    test('hides the First paws tour durably and offers it back from Home layout', () => {
+    test('offers side-tour replay from every Home layout without an embedded tour', () => {
         const render = Handlebars.compile(read('scripts/templates/welcomePanelOnboarding.html'));
-        const visible = render({ welcomePanelMode: 'full', tutorialExpanded: true });
-        expect(visible).toContain('data-action="hide-tutorial"');
-        expect(visible).toMatch(/class="welcomeAdvancedHome[^"]*"[^>]*\sopen(?:\s|>)/);
-        expect(visible).not.toMatch(/class="welcomeAdvancedHome[^"]*"[^>]*\shidden/);
-        expect(visible).toContain('data-action="reopen-tutorial" hidden');
+        for (const mode of ['full', 'compact', 'list']) {
+            const html = render({ welcomePanelMode: mode, welcomePanelCompact: mode === 'compact', welcomePanelListOnly: mode === 'list', tutorialHidden: true });
+            expect(html).toContain('data-action="replay-tutorial">Replay First paws tour</button>');
+            expect(html).not.toContain('welcomeTourPanel');
+            expect(html).not.toContain('welcomeAdvancedHome');
+        }
+    });
 
-        const hidden = render({ welcomePanelMode: 'full', tutorialHidden: true });
-        expect(hidden).toMatch(/class="welcomeAdvancedHome[^"]*"[^>]*\shidden(?:\s|>)/);
-        expect(hidden).not.toContain('data-action="reopen-tutorial" hidden');
-
-        const source = read('scripts/welcome-screen.js');
-        expect(source).toContain("const tutorialHiddenKey = 'NeconyanTutorialHidden.v1';");
-        expect(source).toContain("tutorialHidden: getWelcomeUiPreference(tutorialHiddenKey) === 'true',");
-        expect(source).toContain('function setTutorialHidden(welcomePanel, hidden)');
-        expect(source).toContain("setWelcomeUiPreference(tutorialHiddenKey, shouldHide ? 'true' : '');");
-        expect(source).toContain("case 'hide-tutorial':");
-        expect(source).toContain("case 'reopen-tutorial':");
-        // The Home layout entry appears only while the tour is hidden.
-        expect(source).toContain("panel?.querySelector('[data-action=\"reopen-tutorial\"]')?.toggleAttribute('hidden', !shouldHide);");
-        expect(read('css/neconyan.css')).toContain('body.neconyan .welcomeAdvancedHome[hidden] { display: none !important; }');
+    test('new accounts start pending, unfinished tours resume and dismissals stay closed', () => {
+        const defaults = JSON.parse(readFileSync(new URL('../default/content/settings.json', import.meta.url), 'utf8'));
+        const values = new Map(Object.entries(defaults.accountStorage));
+        let opens = 0;
+        const context = vm.createContext({
+            tutorialStatusKey: 'NeconyanTutorialStatus.v1', tutorialHiddenKey: 'NeconyanTutorialHidden.v1',
+            getWelcomeUiPreference: key => values.get(key) ?? null,
+            showTutorialCoachmark: () => { opens++; },
+        });
+        vm.runInContext(read('scripts/welcome-screen.js').match(/^function resumeTutorial\(\) {[\s\S]*?^}/m)[0], context);
+        context.resumeTutorial();
+        expect(opens).toBe(1);
+        for (const status of ['', 'pending']) {
+            values.set('NeconyanTutorialStatus.v1', status);
+            context.resumeTutorial();
+        }
+        expect(opens).toBe(3);
+        for (const status of ['completed', 'skipped', null]) {
+            values.set('NeconyanTutorialStatus.v1', status);
+            context.resumeTutorial();
+        }
+        values.set('NeconyanTutorialStatus.v1', 'pending');
+        values.set('NeconyanTutorialHidden.v1', 'true');
+        context.resumeTutorial();
+        expect(opens).toBe(3);
     });
 });
 
@@ -310,23 +323,46 @@ describe('assistant shortcuts without shipped characters', () => {
         await context.openPermanentAssistantChat();
         expect(calls).toEqual([['select', 0], ['new', { deleteCurrentChat: false }]]);
     });
-    test('starts Home without creating or importing a character', async () => {
-        const handlers = new Map();
-        let homeOpened = false;
-        let toolsSynced = false;
-        const context = vm.createContext({
-            PinnedChatsManager: { init() {} }, ensureNeconyanRail() {},
-            window: { addEventListener() {} }, concealWelcomeHome() {},
-            eventSource: { on: (key, handler) => handlers.set(key, handler), makeFirst() {} },
-            event_types: { APP_READY: 'ready' }, getCurrentChatId: () => undefined, chat: [],
-            openWelcomeScreen: async () => { homeOpened = true; }, scheduleNeconyanRailRefresh() {},
-            syncNeconyanAssistantTools: () => { toolsSynced = true; },
+    for (const activeChat of [false, true]) {
+        test(`resumes the tour independently of an active chat: ${activeChat}`, async () => {
+            const handlers = new Map();
+            let homeOpened = false;
+            let toolsSynced = false;
+            let tourResumed = false;
+            const context = vm.createContext({
+                PinnedChatsManager: { init() {} }, ensureNeconyanRail() {},
+                window: { addEventListener() {} }, concealWelcomeHome() {},
+                eventSource: { on: (key, handler) => handlers.set(key, handler), makeFirst() {} },
+                event_types: { APP_READY: 'ready' }, getCurrentChatId: () => activeChat ? 'existing' : undefined, chat: [],
+                openWelcomeScreen: async () => { homeOpened = true; }, scheduleNeconyanRailRefresh() {},
+                syncNeconyanAssistantTools: () => { toolsSynced = true; },
+                resumeTutorial: () => { tourResumed = true; },
+            });
+            vm.runInContext(extract('initWelcomeScreen'), context);
+            context.initWelcomeScreen();
+            await handlers.get('ready')();
+            expect(homeOpened).toBe(!activeChat);
+            expect(toolsSynced).toBe(true);
+            expect(tourResumed).toBe(true);
         });
-        vm.runInContext(extract('initWelcomeScreen'), context);
-        context.initWelcomeScreen();
-        await handlers.get('ready')();
-        expect(homeOpened).toBe(true);
-        expect(toolsSynced).toBe(true);
+    }
+
+    test('tour destinations use the existing actions without depending on Home elements', async () => {
+        const calls = [];
+        const context = vm.createContext({
+            openShellTab: route => calls.push(route), focusWelcomeControl() {},
+            openNeconyanTemporaryChat: async () => calls.push('temporary'),
+            openRoleplayWorkspaceFromWelcome: async () => calls.push('roleplay'),
+            activateNeconyanModeFromWelcome: async mode => calls.push(mode),
+            NeconyanShell: { openCharacters: () => calls.push('characters'), openGlobalSearch: () => calls.push('search') },
+        });
+        const source = read('scripts/welcome-screen.js');
+        vm.runInContext(source.match(/const WELCOME_TUTORIAL_STEPS = Object.freeze\(\[[\s\S]*?\n\]\);/)[0] + '\n' + extract('handleWelcomeAction'), context);
+        const actions = vm.runInContext('WELCOME_TUTORIAL_STEPS.flatMap(step => step.actions)', context);
+        for (const action of actions) {
+            await context.handleWelcomeAction({ dataset: { action: action.type, actionValue: action.value } });
+        }
+        expect(calls).toEqual(['left:api', 'characters', 'temporary', 'roleplay', 'conversation', 'meower', 'story', 'characters:world-info', 'left:agents', 'left:presets', 'right:extensions', 'right:settings', 'search', 'left:sampling']);
     });
 
     test('an unacknowledged assistant shortcut is restored durably before reporting failure', async () => {

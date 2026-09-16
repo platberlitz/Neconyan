@@ -3348,3 +3348,9 @@ body.neconyan #sheld .sb-conversation-settings-nav {
 }
 body.neconyan #sheld .sb-conversation-settings-nav::-webkit-scrollbar { display: none; }
 body.neconyan #sheld .sb-conversation-settings-nav button { flex: 0 0 auto; white-space: nowrap; }
+@media (max-width: 768px) {
+    body.neconyan #neconyan-tour-coachmark.neconyan-tour-coachmark { right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); padding: 14px; }
+    body.neconyan.neconyan-tour-active .drawer-content .scrollableInner { padding-bottom: calc(50dvh + 24px); }
+    body.neconyan #neconyan-tour-coachmark .neconyan-tour-coach-dialogue { grid-template-columns: 44px minmax(0, 1fr); }
+    body.neconyan #neconyan-tour-coachmark:not(.neconyan-tour-ending) figure { width: 44px; }
+}

@@ -185,13 +185,14 @@ describe('Neconyan workspace rail behavior', () => {
         expect(panel.dataset.tutorialExpanded).toBe('false');
     });
 
-    test('another account does not inherit a skipped tutorial from device storage', () => {
+    test('another account does not inherit a skipped or hidden tutorial from device storage', () => {
         const context = vm.createContext({
-            accountStorage: { getItem: () => null }, tutorialStatusKey: 'status', tutorialIndexKey: 'index',
+            accountStorage: { getItem: () => null }, tutorialStatusKey: 'status', tutorialIndexKey: 'index', tutorialHiddenKey: 'hidden',
             localStorage: { getItem: () => 'skipped' },
         });
         vm.runInContext(getWelcomeFunctionSource('getWelcomeUiPreference'), context);
         expect(context.getWelcomeUiPreference('status')).toBeNull();
+        expect(context.getWelcomeUiPreference('hidden')).toBeNull();
     });
 
     test('Story accepts chats without an avatar and aborts stale or busy transitions', async () => {

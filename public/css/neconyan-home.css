@@ -33,36 +33,13 @@ body.neconyan .neconyan-home .recentChat .chatActions { display: flex; flex-wrap
 body.neconyan .neconyan-home .recentChat .chatActions button { display: inline-flex; gap: 6px; min-height: 36px; height: auto; max-height: none; width: auto; max-width: none; padding: 6px 8px; font-size: 12px; }
 body.neconyan .neconyan-home .recentChat .chatActions .deleteChat { color: var(--neco-muted); }
 body.neconyan .neconyan-home .recentChat .chatActions .deleteChat:hover { color: var(--SmartThemeQuoteColor); }
-body.neconyan .neconyan-home-help { order: initial; padding: 16px 20px; background: var(--neco-surface); border: 1px solid var(--neco-border); border-radius: 20px; }
-.neconyan-tour-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; }
-body.neconyan .neconyan-home .welcomeTourPanel { padding: 0; border: 0; background: none; border-radius: 0; }
-body.neconyan .neconyan-home .welcomeTourProgress { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; list-style: none; margin: 12px 0 20px; padding: 0; border: 0; }
-body.neconyan .neconyan-home .welcomeTourProgress li { margin: 0; padding: 0; }
-body.neconyan .neconyan-home .welcomeTourProgressButton { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; padding: 8px; border: 1px solid var(--neco-border); border-radius: 12px; background: none; color: var(--neco-muted); text-align: center; }
-body.neconyan .neconyan-home .welcomeTourProgressLabel { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-body.neconyan .neconyan-home .tutorialReplay,
-body.neconyan .neconyan-home .tutorialCollapsed :is(.welcomeTourProgress, .welcomeTourSteps, .welcomeTourNav, .tutorialSkip) { display: none; }
-body.neconyan .neconyan-home .tutorialCollapsed .tutorialReplay { display: inline-flex; }
-@media (max-width: 600px) {
-    body.neconyan .neconyan-home .welcomeTourProgress { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
-body.neconyan .neconyan-home .welcomeTourProgressButton.is-active { background: var(--neco-raised); color: var(--neco-ink); }
-body.neconyan .neconyan-home .welcomeTourProgressNumber { display: inline; background: none; color: inherit; font-size: calc(var(--mainFontSize) * 1.25); width: 16px; min-width: 16px; border: 0; border-radius: 0; }
-body.neconyan .neconyan-home .welcomeTourSteps { display: block; }
-body.neconyan .neconyan-home .welcomeTourStep { border: 0; border-radius: 0; background: none; padding: 0; }
-.neconyan-home .welcomeTourStep h3 { font-size: 16px; margin: 0 0 8px; }
-.neconyan-home .welcomeTourStep p { max-width: 65ch; font-size: 14px; line-height: 1.6; margin: 8px 0; }
-.neconyan-tour-hint { color: var(--neco-muted); }
-body.neconyan .neconyan-home :is(.welcomeTourActions, .welcomeTourNav) { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 8px; padding: 12px 0 0; }
-.neconyan-home :is(.welcomeTourActions, .welcomeTourNav) button { min-height: 44px; }
 .neconyan-home-footer { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding-top: 16px; border-top: 1px solid var(--neco-border); }
 .neconyan-home-footer > button { align-self: flex-start; min-height: 44px; display: inline-flex; align-items: center; gap: 8px; }
 .neconyan-home-layout { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .neconyan-home-layout button { min-height: 44px; }
 .neconyan-home :is(button, summary):focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 3px; }
 body.neconyan .neconyan-home [hidden] { display: none !important; }
-body.neconyan .neconyan-home.welcomePanel--listOnly > :is(.welcomeHero, .welcomeAdvancedHome) { display: none; }
-body.neconyan .neconyan-home.welcomePanel--listOnly > .welcomeAdvancedHome[open] { display: block; }
+body.neconyan .neconyan-home.welcomePanel--listOnly > .welcomeHero { display: none; }
 body.neconyan .neconyan-home.welcomePanel--compact .neconyan-home-cat img { width: 90px; height: auto; }
 @media (prefers-reduced-motion: reduce) { .neconyan-cat-toggle { display: none; } }
 @media (max-width: 768px) {
@@ -75,7 +52,6 @@ body.neconyan .neconyan-home.welcomePanel--compact .neconyan-home-cat img { widt
 }
 
 body.neconyan .neconyan-home button { border-radius: 6px !important; box-shadow: none !important; }
-body.neconyan .neconyan-home .welcomeTourStep h3 { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 
 body.neconyan .neconyan-home .showMoreChats.rotated { transform: none; }
 
@@ -102,7 +78,6 @@ body.neconyan .neconyan-assistant-picker h2 { color: var(--neco-ink); }
 
 body.neconyan .neconyan-home-actions { gap: 16px; }
 body.neconyan .neconyan-home-actions > button,
-body.neconyan .neconyan-home .welcomeTourProgressButton,
 body.neconyan .neconyan-home .showMoreChats,
 body.neconyan .neconyan-home-footer > button {
     border-radius: 18px !important;
