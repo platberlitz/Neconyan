@@ -2466,7 +2466,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         padding-inline-end: var(--sb-character-scroll-gutter, 8px);
     }
 
-    #right-nav-panel.openDrawer #rm_print_characters_block:not(.group_overlay_mode_select) > :is(.character_select, .group_select, .bogus_folder_select):not(.inline_avatar) {
+    #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) {
         display: grid !important;
         grid-template-columns: var(--sb-character-list-avatar-size) minmax(0, 1fr) !important;
         align-items: center !important;
@@ -2493,11 +2493,11 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         color: var(--color-primary, var(--sb-accent)) !important;
     }
 
-    #right-nav-panel.openDrawer #rm_print_characters_block:not(.group_overlay_mode_select) > :is(.character_select, .group_select, .bogus_folder_select):not(.inline_avatar) {
+    #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) {
         min-height: calc(var(--sb-character-list-avatar-size) + 46px);
     }
 
-    #right-nav-panel.openDrawer #rm_print_characters_block:not(.group_overlay_mode_select) > :is(.character_select, .group_select, .bogus_folder_select):not(.inline_avatar) > :is(.avatar, .missing-avatar) {
+    #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.avatar, .missing-avatar) {
         grid-column: 1;
         grid-row: 1 / -1;
         align-self: center !important;
@@ -2514,7 +2514,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         overflow: hidden;
     }
 
-    #right-nav-panel.openDrawer #rm_print_characters_block:not(.group_overlay_mode_select) > :is(.character_select, .group_select, .bogus_folder_select):not(.inline_avatar) > :is(.character_select_container, .group_select_container) {
+    #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.character_select_container, .group_select_container) {
         grid-column: 2;
         grid-row: 1 / -1;
         display: grid !important;
@@ -2526,7 +2526,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         overflow: hidden;
     }
 
-    #right-nav-panel.openDrawer #rm_print_characters_block:not(.group_overlay_mode_select) > :is(.character_select, .group_select, .bogus_folder_select):not(.inline_avatar) .tags_inline {
+    #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) .tags_inline {
         display: flex !important;
         grid-column: 1;
         grid-row: auto;
@@ -2540,14 +2540,14 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         align-items: flex-start;
     }
 
-    #right-nav-panel.openDrawer #rm_print_characters_block:not(.group_overlay_mode_select) > :is(.character_select, .group_select, .bogus_folder_select):not(.inline_avatar) .tags_inline .tag {
+    #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) .tags_inline .tag {
         min-height: calc(var(--mainFontSize) * 1.45);
         line-height: 1.25;
         max-width: 100%;
         padding-block: 2px;
     }
 
-    #right-nav-panel.openDrawer #rm_print_characters_block:not(.group_overlay_mode_select) > :is(.character_select, .group_select, .bogus_folder_select):not(.inline_avatar) .tags_inline .tag_name {
+    #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) .tags_inline .tag_name {
         max-width: min(58vw, 16rem);
     }
 
@@ -2712,7 +2712,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         gap: 8px;
     }
 
-    body.charListGrid #right-nav-panel.openDrawer #rm_print_characters_block:not(.group_overlay_mode_select) > :is(.character_select, .group_select, .bogus_folder_select):not(.inline_avatar) {
+    body.charListGrid #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) {
         display: flex !important;
         flex-direction: column !important;
         align-items: center !important;
@@ -2721,7 +2721,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         padding: 10px 8px;
     }
 
-    body.charListGrid #right-nav-panel.openDrawer #rm_print_characters_block:not(.group_overlay_mode_select) > :is(.character_select, .group_select, .bogus_folder_select):not(.inline_avatar) > :is(.avatar, .missing-avatar) {
+    body.charListGrid #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.avatar, .missing-avatar) {
         width: 64px !important;
         min-width: 64px !important;
         max-width: 64px !important;

@@ -54,11 +54,12 @@ describe('mobile character drawer entity row css', () => {
     test('lets tag-heavy rows grow instead of shrinking inside the scroller', () => {
         const entityRowRules = getRuleBodies(
             mobileShellCss,
-            '#right-nav-panel.openDrawer #rm_print_characters_block:not(.group_overlay_mode_select) > :is(.character_select, .group_select, .bogus_folder_select):not(.inline_avatar)',
+            '#right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar)',
         ).join('\n');
 
         expect(entityRowRules).toContain('flex: 0 0 auto;');
         expect(entityRowRules).toContain('overflow: hidden;');
+        expect(mobileShellCss).not.toContain('#rm_print_characters_block:not(.group_overlay_mode_select) > :is(.character_select, .group_select, .bogus_folder_select)');
     });
 
     test('keeps bulk-edit rows from shrinking inside the scroller', () => {
