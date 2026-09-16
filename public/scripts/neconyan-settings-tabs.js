@@ -97,6 +97,7 @@ import { accountStorage } from './util/AccountStorage.js';
 
         /* Style for account and cache drawers when placed inside the content block */
         #sb-account-settings-drawer #account_controls,
+        #sb-account-settings-drawer #passkey_controls,
         #sb-cache-settings-drawer #user-settings-utility-actions {
             background: none !important;
             border: none !important;
@@ -639,7 +640,18 @@ import { accountStorage } from './util/AccountStorage.js';
             `;
             accountControls.parentNode.insertBefore(accountDrawer, accountControls);
             accountDrawer.querySelector('.inline-drawer-content').appendChild(accountControls);
+            const passkeyControls = document.getElementById('passkey_controls');
+            if (passkeyControls) {
+                accountDrawer.querySelector('.inline-drawer-content').appendChild(passkeyControls);
+            }
             col1.appendChild(accountDrawer);
+        } else if (document.getElementById('sb-account-settings-drawer')) {
+            // Late-arriving passkey section still belongs in the account drawer.
+            const passkeyControls = document.getElementById('passkey_controls');
+            const accountDrawer = document.getElementById('sb-account-settings-drawer');
+            if (passkeyControls && accountDrawer && !accountDrawer.contains(passkeyControls)) {
+                accountDrawer.querySelector('.inline-drawer-content').appendChild(passkeyControls);
+            }
         }
 
         // Create Cache Utilities drawer in Col 2

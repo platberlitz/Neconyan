@@ -1061,23 +1061,24 @@ export function requireLoginMiddleware(request, response, next) {
  * @param {import('express').Response} response Response object
  */
 export async function loginPageMiddleware(request, response) {
-    if (!ENABLE_ACCOUNTS) {
-        console.log('User accounts are disabled. Redirecting to index page.');
+    const basicAuthMode = globalThis.COMMAND_LINE_ARGS.listen && globalThis.COMMAND_LINE_ARGS.basicAuthMode;
+
+    if (ENABLE_ACCOUNTS && (!basicAuthMode || request.session?.basicAuthToken)) {
+        try {
+            const autoLogin = await tryAutoLogin(request, basicAuthMode);
+
+            if (autoLogin) {
+                return response.redirect('/');
+            }
+        } catch (error) {
+            console.error('Error during auto-login:', error);
+        }
+    } else if (!ENABLE_ACCOUNTS && !basicAuthMode) {
+        console.log('User accounts are disabled and Basic auth is off. Redirecting to index page.');
         return response.redirect('/');
     }
 
-    try {
-        const { basicAuthMode } = globalThis.COMMAND_LINE_ARGS;
-        const autoLogin = await tryAutoLogin(request, basicAuthMode);
-
-        if (autoLogin) {
-            return response.redirect('/');
-        }
-    } catch (error) {
-        console.error('Error during auto-login:', error);
-    }
-
-    response.set('Cache-Control', 'no-cache');
+    response.set('Cache-Control', 'no-store');
     return response.sendFile('login.html', { root: path.join(serverDirectory, 'public') });
 }
 

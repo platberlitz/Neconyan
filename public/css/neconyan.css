@@ -2940,3 +2940,15 @@ body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell
     }
     body.neconyan #left-nav-panel .sb-model-native-nav-wrapper .sb-shell-tab { flex: 0 0 auto; width: auto; white-space: nowrap; }
 }
+
+/* Neconyan: passkey manager in Settings > User Settings. */
+#passkey_controls { gap: 8px; }
+#passkey_controls h4 { margin: 0; }
+.passkey-note { color: var(--neco-muted); }
+#passkeyList { gap: 6px; }
+.passkey-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 6px 10px; background: var(--neco-surface); border: 1px solid var(--neco-border); border-radius: 6px; }
+.passkey-info { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.passkey-info small { color: var(--neco-muted); overflow-wrap: anywhere; }
+#user-settings-block #passkey_controls .passkey-remove { flex-shrink: 0; width: max-content; white-space: nowrap; }
+.passkey-form { gap: 8px; flex-direction: column; align-items: stretch; }
+#passkey_controls input, #passkey_controls button { min-height: 44px; }

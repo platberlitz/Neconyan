@@ -54,6 +54,7 @@ import { getFrontendAssetMiddleware, redirectLegacyFrontendAsset, setPublicAsset
 import getResponseCompressionMiddleware from './middleware/response-compression.js';
 import basicAuthMiddleware from './middleware/basicAuth.js';
 import requireHttpsMiddleware from './middleware/requireHttps.js';
+import authRouter, { setAuthRouterBasicAuthMode } from './endpoints/auth.js';
 import { createSession, destroySession, validateCredentials, isSessionAuthEnabled } from './middleware/sessionAuth.js';
 import getWhitelistMiddleware from './middleware/whitelist.js';
 import accessLoggerMiddleware, { getAccessLogPath, migrateAccessLog } from './middleware/accessLogWriter.js';
@@ -110,12 +111,14 @@ http.globalAgent = new http.Agent({ keepAlive: cliArgs.enableKeepAlive });
 https.globalAgent = new https.Agent({ keepAlive: cliArgs.enableKeepAlive });
 
 const app = express();
+app.set('trust proxy', 'loopback');
 app.use(helmet({
     contentSecurityPolicy: false,
 }));
 app.use(getResponseCompressionMiddleware());
 app.use(responseTime());
 
+app.use('/api/auth', express.json({ limit: '32kb' }), express.urlencoded({ extended: false, limit: '32kb' }));
 app.use(express.json({ limit: '500mb' }));
 app.use(express.urlencoded({ extended: true, limit: '500mb' }));
 
@@ -196,7 +199,10 @@ if (isBunRuntime()) {
 }
 
 if (cliArgs.listen && cliArgs.basicAuthMode) {
+    setAuthRouterBasicAuthMode(true);
     app.use(basicAuthMiddleware);
+} else {
+    setAuthRouterBasicAuthMode(false);
 }
 
 if (cliArgs.whitelistMode) {
@@ -276,6 +282,7 @@ app.post('/api/cookies/clear', express.json(), (request, response) => {
     let expirationAttempts = 0;
 
     if (request.session) {
+        if (request.session.basicAuthToken) destroySession(request.session.basicAuthToken);
         request.sessionOptions.overwrite = false;
         request.session.handle = null;
         request.session.csrfToken = null;
@@ -460,6 +467,11 @@ app.use(express.static(path.join(serverDirectory, 'public'), { setHeaders: setPu
 
 // Public API
 app.use('/api/users', usersPublicRouter);
+
+// Browser sign-in: status, password sign-in and passkeys. POSTs here are still
+// covered by the global CSRF protection above; passkey management enforces a
+// valid browser session token inside the router.
+app.use('/api/auth', authRouter);
 
 // Everything below this line requires authentication
 app.use(requireLoginMiddleware);

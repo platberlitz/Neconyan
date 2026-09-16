@@ -13,6 +13,9 @@ export let accountsEnabled = false;
 // Extend the session every 10 minutes
 const SESSION_EXTEND_INTERVAL = 10 * 60 * 1000;
 
+// Browser authentication (workspace sign-in) status, when available.
+let browserAuthStatus = null;
+
 /**
  * Enable or disable user account controls in the UI.
  * @param {boolean} isEnabled User account controls enabled
@@ -22,13 +25,261 @@ export async function setUserControls(isEnabled) {
     accountsEnabled = isEnabled;
 
     if (!isEnabled) {
-        $('#logout_button').hide();
         $('#admin_button').hide();
+        $('#logout_button').hide();
+    } else {
+        $('#logout_button').show();
+        await getCurrentUser();
+    }
+
+    await initBrowserAuthControls();
+}
+
+/**
+ * Loads the browser authentication status and shows the controls that depend
+ * on it: the logout button for workspace sign-ins and the passkey manager.
+ * @returns {Promise<void>}
+ */
+async function initBrowserAuthControls() {
+    try {
+        const response = await fetch('/api/auth/status', {
+            cache: 'no-store',
+        });
+
+        if (response.ok) {
+            browserAuthStatus = await response.json();
+        }
+    } catch {
+        browserAuthStatus = null;
+    }
+
+    if (!browserAuthStatus?.basicAuthMode) {
         return;
     }
 
-    $('#logout_button').show();
-    await getCurrentUser();
+    if (browserAuthStatus.browserSession) {
+        $('#logout_button').show();
+
+        if (browserAuthStatus.passkeysEnabled) {
+            $('#passkey_controls').show();
+            const supported = 'PublicKeyCredential' in window && !!navigator.credentials?.create;
+            $('#passkeyAddButton').prop('disabled', !supported);
+            $('#passkeySupport').toggle(!supported);
+            await renderPasskeys();
+        }
+    }
+}
+
+/**
+ * Decodes a base64url string into the byte array the WebAuthn API expects.
+ * @param {string} value Base64url string
+ * @returns {Uint8Array} Decoded bytes
+ */
+function base64urlToBuffer(value) {
+    const padding = '='.repeat((4 - (String(value).length % 4)) % 4);
+    const base64 = String(value).replace(/-/g, '+').replace(/_/g, '/') + padding;
+    const raw = atob(base64);
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) {
+        bytes[i] = raw.charCodeAt(i);
+    }
+    return bytes;
+}
+
+/**
+ * Encodes bytes into a base64url string for the server.
+ * @param {Uint8Array} bytes Raw bytes
+ * @returns {string} Base64url string
+ */
+function bufferToBase64url(bytes) {
+    const base64 = btoa(String.fromCharCode(...bytes));
+    return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * Renders the enrolled passkeys into the settings list.
+ * @returns {Promise<void>}
+ */
+async function renderPasskeys() {
+    const listBlock = $('#passkeyList');
+    listBlock.empty();
+
+    try {
+        const response = await fetch('/api/auth/passkeys', {
+            headers: getRequestHeaders({ omitContentType: true }),
+        });
+
+        if (!response.ok) {
+            throw new Error('Could not load passkeys. Refresh to try again.');
+        }
+
+        const data = await response.json();
+
+        if (!Array.isArray(data.passkeys) || data.passkeys.length === 0) {
+            listBlock.append($('<small></small>').text('No passkeys yet. Enrol one below.'));
+            return;
+        }
+
+        for (const passkey of data.passkeys) {
+            const row = $('<div></div>').addClass('passkey-row');
+            const info = $('<div></div>').addClass('passkey-info');
+            info.append($('<strong></strong>').text(passkey.label || 'Passkey'));
+            const usedText = passkey.lastUsedAt
+                ? `Added ${new Date(passkey.createdAt).toLocaleDateString()}, last used ${new Date(passkey.lastUsedAt).toLocaleDateString()}`
+                : `Added ${new Date(passkey.createdAt).toLocaleDateString()}, never used`;
+            info.append($('<small></small>').text(usedText));
+            row.append(info);
+            row.append($('<button type="button"></button>')
+                .addClass('menu_button passkey-remove')
+                .attr('data-passkey-id', passkey.id)
+                .attr('aria-label', `Remove ${passkey.label || 'passkey'}`)
+                .text('Remove'));
+            listBlock.append(row);
+        }
+    } catch (error) {
+        console.error('Could not load passkeys:', error);
+        listBlock.text('Could not load passkeys. Refresh to try again.');
+    }
+}
+
+/**
+ * Enrols a new passkey for the workspace sign-in after a password reconfirm.
+ * @returns {Promise<void>}
+ */
+async function addPasskey() {
+    const label = String($('#passkeyLabel').val() || '').trim();
+    const password = String($('#passkeyPassword').val() || '');
+
+    if (!label) {
+        toastr.warning('Give the passkey a short name first.');
+        return;
+    }
+
+    if (!password) {
+        toastr.warning('Type your password to confirm it is you.');
+        return;
+    }
+
+    const button = $('#passkeyAddButton').prop('disabled', true);
+
+    try {
+        const optionsResponse = await fetch('/api/auth/passkeys/register-options', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ label, password }),
+        });
+        const optionsData = await optionsResponse.json().catch(() => ({}));
+
+        if (!optionsResponse.ok) {
+            toastr.error(optionsData.error || 'Could not start passkey enrolment.');
+            return;
+        }
+
+        const options = optionsData.options;
+        const credential = await navigator.credentials.create({
+            publicKey: {
+                challenge: base64urlToBuffer(options.challenge),
+                rp: { id: options.rp.id, name: options.rp.name },
+                user: {
+                    id: base64urlToBuffer(options.user.id),
+                    name: options.user.name,
+                    displayName: options.user.displayName,
+                },
+                pubKeyCredParams: options.pubKeyCredParams,
+                timeout: options.timeout,
+                excludeCredentials: (options.excludeCredentials ?? []).map(entry => ({
+                    type: 'public-key',
+                    id: base64urlToBuffer(entry.id),
+                    transports: entry.transports,
+                })),
+                authenticatorSelection: options.authenticatorSelection,
+                attestation: options.attestation,
+            },
+        });
+
+        if (!credential) {
+            toastr.error('No passkey was created.');
+            return;
+        }
+
+        const verifyResponse = await fetch('/api/auth/passkeys/register-verify', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({
+                challengeId: optionsData.challengeId,
+                response: {
+                    id: credential.id,
+                    rawId: bufferToBase64url(new Uint8Array(credential.rawId)),
+                    type: credential.type,
+                    authenticatorAttachment: credential.authenticatorAttachment,
+                    clientExtensionResults: credential.getClientExtensionResults?.() ?? {},
+                    response: {
+                        clientDataJSON: bufferToBase64url(new Uint8Array(credential.response.clientDataJSON)),
+                        attestationObject: bufferToBase64url(new Uint8Array(credential.response.attestationObject)),
+                        transports: credential.response.getTransports?.() ?? [],
+                    },
+                },
+            }),
+        });
+        const verifyData = await verifyResponse.json().catch(() => ({}));
+
+        if (!verifyResponse.ok) {
+            toastr.error(verifyData.error || 'The passkey could not be saved.');
+            return;
+        }
+
+        $('#passkeyLabel').val('');
+        $('#passkeyPassword').val('');
+        toastr.success('Passkey saved. You can sign in with it from the login page.');
+        await renderPasskeys();
+    } catch (error) {
+        if (error?.name === 'NotAllowedError') {
+            toastr.info('Passkey enrolment was cancelled.');
+            return;
+        }
+        console.error('Passkey enrolment failed:', error);
+        toastr.error(error.message || 'The passkey could not be saved.');
+    } finally {
+        $('#passkeyPassword').val('');
+        button.prop('disabled', false);
+    }
+}
+
+/**
+ * Removes an enrolled passkey after a password reconfirm.
+ * @param {string} id Passkey credential id
+ * @returns {Promise<void>}
+ */
+async function removePasskey(id) {
+    const password = String($('#passkeyPassword').val() || '');
+
+    if (!password) {
+        toastr.warning('Type your password to confirm removal.');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/auth/passkeys/remove', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ id, password }),
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            toastr.error(data.error || 'The passkey could not be removed.');
+            return;
+        }
+
+        $('#passkeyPassword').val('');
+        toastr.success('Passkey removed from this server. Your password manager may still keep a copy.');
+        await renderPasskeys();
+    } catch (error) {
+        console.error('Passkey removal failed:', error);
+        toastr.error(error.message || 'The passkey could not be removed.');
+    } finally {
+        $('#passkeyPassword').val('');
+    }
 }
 
 /**
@@ -868,19 +1119,27 @@ async function openAdminPanel() {
  * @returns {Promise<void>}
  */
 async function logout() {
-    await fetch('/api/users/logout', {
-        method: 'POST',
-        headers: getRequestHeaders({ omitContentType: true }),
-    });
+    let signedOut = false;
 
-    // On an explicit logout stop auto login
-    // to allow user to change username even
-    // when auto auth (such as authelia or basic)
-    // would be valid
-    const urlParams = new URLSearchParams(window.location.search);
-    urlParams.set('noauto', 'true');
+    try {
+        const response = await fetch('/api/users/logout', {
+            method: 'POST',
+            headers: getRequestHeaders({ omitContentType: true }),
+        });
+        signedOut = response.ok;
+    } catch (error) {
+        console.error('Logout request failed:', error);
+    }
 
-    window.location.search = urlParams.toString();
+    if (!signedOut) {
+        toastr.error('Logging out failed. Try again.');
+        return;
+    }
+
+    // On an explicit logout stop auto login (when accounts are enabled) so the
+    // account picker appears instead of silently signing back in. With plain
+    // workspace sign-in the login page is the correct destination.
+    window.location.href = accountsEnabled ? '/login?noauto=true' : '/login';
 }
 
 /**
@@ -934,6 +1193,12 @@ jQuery(() => {
     });
     $('#account_button').on('click', () => {
         openUserProfile();
+    });
+    $('#passkeyAddButton').on('click', () => {
+        addPasskey();
+    });
+    $('#passkeyList').on('click', '.passkey-remove', function () {
+        removePasskey(String($(this).attr('data-passkey-id') || ''));
     });
     setInterval(async () => {
         if (currentUser) {

@@ -5,10 +5,28 @@ import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import storage from 'node-persist';
 
 import { getConfigValue } from '../util.js';
-import { getAllUserHandles, toKey, getPasswordHash } from '../users.js';
+import { toKey, getPasswordHash } from '../users.js';
 
-const SESSION_DURATION_MS = getConfigValue('sessionAuth.durationMinutes', 480, 'number') * 60 * 1000;
+export const SESSION_DURATION_MS = getConfigValue('sessionAuth.durationMinutes', 480, 'number') * 60 * 1000;
 const SESSION_AUTH_ENABLED = getConfigValue('sessionAuth.enabled', false, 'boolean');
+
+// How long a sign-in lasts when 'Remember this device for 30 days' is ticked.
+export const REMEMBER_AUTH_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Applies the cookie lifetime for a browser sign-in. Own properties are set on
+ * sessionOptions so they shadow the defaults inherited from the cookie-session
+ * configuration; when the cookie is serialised, a numeric maxAge overrides any
+ * expires value, and a null maxAge produces a browser-session cookie.
+ * @param {import('express').Request} request
+ * @param {number|null} rememberMs Absolute lifetime in milliseconds, or null for a browser-session cookie
+ */
+export function applySessionCookieOptions(request, rememberMs) {
+    const options = request.sessionOptions;
+    if (!options) return;
+    options.maxAge = null;
+    options.expires = rememberMs == null ? undefined : new Date(Date.now() + rememberMs);
+}
 
 /** @type {Map<string, {username: string, expires: number}>} */
 const sessions = new Map();
@@ -48,7 +66,7 @@ export function credentialVersion(username, passwordHash) {
 /**
  * Creates a new session for the given username.
  * @param {string} username
- * @param {{durationMs?: number, credentialVersion?: string}} [options]
+ * @param {{durationMs?: number, credentialVersion?: string, remember?: boolean}} [options]
  * @returns {string} Session token
  */
 export function createSession(username, options = {}) {
@@ -58,8 +76,14 @@ export function createSession(username, options = {}) {
         username,
         expires: Date.now() + (options.durationMs || SESSION_DURATION_MS),
         ...(options.credentialVersion ? { credentialVersion: options.credentialVersion } : {}),
+        ...(typeof options.remember === 'boolean' ? { remember: options.remember } : {}),
     });
-    persistSessions();
+    try {
+        persistSessions();
+    } catch (error) {
+        sessions.delete(sessionKey(token));
+        throw error;
+    }
     return token;
 }
 
@@ -76,7 +100,7 @@ export function validateSession(token) {
     if (!session) {
         return null;
     }
-    if (Date.now() > session.expires) {
+    if (Date.now() >= session.expires) {
         sessions.delete(key);
         persistSessions();
         return null;
@@ -110,6 +134,8 @@ export function isSessionAuthEnabled() {
  * @returns {Promise<boolean>}
  */
 export async function validateCredentials(username, password) {
+    if (typeof username !== 'string' || !username || username.length > 320
+        || typeof password !== 'string' || !password || password.length > 4096) return false;
     const perUserAuth = getConfigValue('perUserBasicAuth', false, 'boolean');
     const enableAccounts = getConfigValue('enableUserAccounts', false, 'boolean');
     const usePerUserAuth = perUserAuth && enableAccounts;
@@ -117,17 +143,47 @@ export async function validateCredentials(username, password) {
     if (!usePerUserAuth) {
         const configUsername = getConfigValue('basicAuthUser.username');
         const configPassword = getConfigValue('basicAuthUser.password');
-        return username === configUsername && password === configPassword;
+        return username === configUsername && typeof configPassword === 'string' && !!configPassword
+            && crypto.timingSafeEqual(crypto.createHash('sha256').update(password).digest(), crypto.createHash('sha256').update(configPassword).digest());
     }
 
-    const userHandles = await getAllUserHandles();
-    for (const userHandle of userHandles) {
-        if (username === userHandle) {
-            const user = await storage.getItem(toKey(userHandle));
-            if (user && user.enabled && user.password && user.password === getPasswordHash(password, user.salt)) {
-                return true;
-            }
-        }
+    const user = await storage.getItem(toKey(username));
+    return !!(user?.enabled && user.password && user.password === getPasswordHash(password, user.salt));
+}
+
+/**
+ * Computes the credential fingerprint a remembered browser session must match.
+ * Returns null when the identity no longer has a usable password.
+ * @param {string} username
+ * @returns {Promise<string|null>}
+ */
+export async function getSessionCredentialVersion(username) {
+    const perUserAuth = getConfigValue('perUserBasicAuth', false, 'boolean');
+    const enableAccounts = getConfigValue('enableUserAccounts', false, 'boolean');
+
+    if (perUserAuth && enableAccounts) {
+        const user = await storage.getItem(toKey(username));
+        if (!user?.enabled || !user.password) return null;
+        return credentialVersion(username, user.password);
     }
-    return false;
+
+    const configuredUsername = getConfigValue('basicAuthUser.username');
+    const password = getConfigValue('basicAuthUser.password');
+    if (username !== configuredUsername || typeof password !== 'string' || !password) return null;
+    return credentialVersion(username, password);
+}
+
+/** Validate browser tokens against the current credentials and keep every cookie rewrite within its original lifetime. */
+export async function validateBrowserSession(request) {
+    const token = request.session?.basicAuthToken;
+    if (!token) return null;
+    const session = validateSession(token);
+    const version = session ? await getSessionCredentialVersion(session.username) : null;
+    if (!version || session.credentialVersion !== version) {
+        destroySession(token);
+        request.session = {};
+        return null;
+    }
+    applySessionCookieOptions(request, session.remember === false ? null : session.expires - Date.now());
+    return session;
 }

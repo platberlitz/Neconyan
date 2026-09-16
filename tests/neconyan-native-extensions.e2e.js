@@ -1072,13 +1072,16 @@ test('saved theme fonts remain local when an explicit font override is cleared',
     await expectLoadedFont(page, 'Nunito');
 });
 
-test('the login document loads local Fredoka One for account controls', async ({ page }, info) => {
+test('the login document loads local Nunito controls and Fredoka One headings', async ({ page }, info) => {
     await page.setViewportSize({ width: 390, height: 900 });
+    await page.route('**/api/auth/status', route => route.fulfill({ json: { accountsEnabled: true, basicAuthMode: false, browserSession: false, passkeysEnabled: false } }));
     await page.route('**/api/users/list', route => route.fulfill({ json: [{ handle: 'font-check', name: 'Font check', password: true, avatar: '/img/user-default.png' }] }));
     await safety.navigate(() => page.goto('/login.html', { waitUntil: 'domcontentloaded' }));
     await expect(page.locator('#normalLoginPrompt')).toBeVisible();
     await expectLoadedFont(page, 'Fredoka One');
-    await expect(page.locator('body')).toHaveCSS('font-family', /Fredoka One/);
-    await expect(page.locator('button').first()).toHaveCSS('font-family', /Fredoka One/);
+    await expectLoadedFont(page, 'Nunito');
+    await expect(page.locator('body')).toHaveCSS('font-family', /Nunito/);
+    await expect(page.locator('#userList button').first()).toHaveCSS('font-family', /Nunito/);
+    await expect(page.locator('#normalLoginPrompt')).toHaveCSS('font-family', /Fredoka One/);
     await page.screenshot({ path: info.outputPath('login-fredoka.png') });
 });

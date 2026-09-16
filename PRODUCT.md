@@ -15,7 +15,7 @@ Neconyan is a self-hosted web app for chatting with AI characters. It grew out o
 - Roleplay and conversation with LLM characters, with the model of your choice (connection profiles cover hosted and local APIs).
 - Four modes: Roleplay (classic chat), Conversation (a messenger-style DM view with a Pals rail), Meower (a social timeline), Story Mode (long-form writing).
 - Included tools that ship in the box: Agents (In-Chat Agents: helpers that run before or after a reply), Mewmory (long-term memory with its own model roles), Chat Archive, LoreStitch (lorebook tools), BotSearcher (find cards on public sites), Quick Image Gen, Guided Generations, Input History, Prose Polisher.
-- Work survives the phone: signing in is remembered for 30 days, and a reply keeps generating on the server when Safari kills the tab, then lands in the chat when you reopen it (single-character chats; agents that run after a reply are not replayed).
+- Work survives the phone: ticking 'Remember this device for 30 days' on the sign-in page keeps you signed in, and a reply keeps generating on the server when Safari kills the tab, then lands in the chat when you reopen it (single-character chats; agents that run after a reply are not replayed).
 
 ## Brand and tone
 

@@ -1,4 +1,4 @@
-const NN_SW_CACHE_VERSION = 'neconyan-cache-v20260916i';
+const NN_SW_CACHE_VERSION = 'neconyan-cache-v20260916k';
 const NN_CACHE_PREFIX = 'neconyan-cache-';
 const NN_STATIC_CACHE = `${NN_SW_CACHE_VERSION}-static`;
 const NN_SHELL_CACHE = `${NN_SW_CACHE_VERSION}-shell`;
@@ -44,7 +44,9 @@ function isCacheableResponse(response) {
 }
 
 async function putCache(cache, request, response) {
-    if (!isCacheableResponse(response)) {
+    // Never cache responses that followed a redirect (e.g. a sign-in page that
+    // landed under another URL) or that the server marked as non-storable.
+    if (!isCacheableResponse(response) || response.redirected || (response.headers.get('Cache-Control') || '').includes('no-store')) {
         return;
     }
 
@@ -167,6 +169,9 @@ self.addEventListener('fetch', (event) => {
     }
 
     const url = new URL(request.url);
+
+    // Documents must reach the server so an offline cache cannot undo logout.
+    if (request.mode === 'navigate' || url.pathname === '/' || url.pathname.endsWith('.html')) return;
 
     if (!isSameOrigin(url)) {
         return;

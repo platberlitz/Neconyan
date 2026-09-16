@@ -50,6 +50,21 @@ async function getUserList() {
 }
 
 /**
+ * Gets the browser authentication status from the server.
+ * @returns {Promise<{authenticated: boolean, browserSession: boolean, accountsEnabled: boolean, basicAuthMode: boolean}>} Status
+ */
+async function getAuthStatus() {
+    const response = await fetch('/api/auth/status', {
+        cache: 'no-store',
+        credentials: 'same-origin',
+    });
+    if (!response.ok) {
+        throw new Error('Could not load the sign-in page. Refresh to try again.');
+    }
+    return response.json();
+}
+
+/**
  * Requests a recovery code for the user.
  * @param {string} handle User handle
  * @returns {Promise<void>}
@@ -141,6 +156,137 @@ async function performLogin(handle, password) {
         console.error('Error logging in:', error);
         displayError(String(error));
     }
+}
+
+/**
+ * Signs in to the shared workspace login with a username and password.
+ * @param {string} username Workspace username
+ * @param {string} password Workspace password
+ * @param {boolean} remember Remember this device for 30 days
+ * @returns {Promise<void>}
+ */
+async function performWorkspaceLogin(username, password, remember) {
+    const button = $('#workspaceLoginButton').prop('disabled', true);
+    try {
+        const response = await fetch('/api/auth/browser/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken,
+            },
+            body: JSON.stringify({ username, password, remember }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            return displayError(data.error || 'That name or password did not match.');
+        }
+        redirectToHome();
+    } catch (error) {
+        console.error('Workspace login failed:', error);
+        displayError('Could not reach the server. Refresh to try again.');
+    } finally {
+        button.prop('disabled', false);
+    }
+}
+
+/**
+ * Signs in with a passkey bound to the shared workspace login.
+ * @param {boolean} remember Remember this device for 30 days
+ * @returns {Promise<void>}
+ */
+async function performPasskeyLogin(remember) {
+    const button = $('#passkeyLoginButton').prop('disabled', true);
+    try {
+        const optionsResponse = await fetch('/api/auth/passkeys/login-options', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken,
+            },
+            body: JSON.stringify({ remember }),
+        });
+        const optionsData = await optionsResponse.json().catch(() => ({}));
+        if (!optionsResponse.ok) {
+            return displayError(optionsData.error || 'Could not start the passkey sign-in.');
+        }
+
+        const options = optionsData.options;
+        const credential = await navigator.credentials.get({
+            publicKey: {
+                challenge: base64urlToBuffer(options.challenge),
+                rpId: options.rpId,
+                userVerification: options.userVerification || 'preferred',
+                timeout: options.timeout || 60000,
+            },
+        });
+        if (!credential) {
+            return displayError('No passkey was chosen.');
+        }
+
+        const verifyResponse = await fetch('/api/auth/passkeys/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken,
+            },
+            body: JSON.stringify({
+                challengeId: optionsData.challengeId,
+                remember,
+                response: {
+                    id: credential.id,
+                    rawId: bufferToBase64url(new Uint8Array(credential.rawId)),
+                    type: credential.type,
+                    authenticatorAttachment: credential.authenticatorAttachment,
+                    clientExtensionResults: credential.getClientExtensionResults?.() ?? {},
+                    response: {
+                        clientDataJSON: bufferToBase64url(new Uint8Array(credential.response.clientDataJSON)),
+                        authenticatorData: bufferToBase64url(new Uint8Array(credential.response.authenticatorData)),
+                        signature: bufferToBase64url(new Uint8Array(credential.response.signature)),
+                        userHandle: credential.response.userHandle ? bufferToBase64url(new Uint8Array(credential.response.userHandle)) : null,
+                    },
+                },
+            }),
+        });
+        const verifyData = await verifyResponse.json().catch(() => ({}));
+        if (!verifyResponse.ok) {
+            return displayError(verifyData.error || 'The passkey did not verify.');
+        }
+        redirectToHome();
+    } catch (error) {
+        if (error?.name === 'NotAllowedError') {
+            return displayError('Sign-in was cancelled or timed out.');
+        }
+        console.error('Passkey sign-in failed:', error);
+        displayError(error.message || 'The passkey did not verify.');
+    } finally {
+        button.prop('disabled', false);
+    }
+}
+
+/**
+ * Decodes a base64url string into the byte array the WebAuthn API expects.
+ * @param {string} value Base64url string
+ * @returns {Uint8Array} Decoded bytes
+ */
+function base64urlToBuffer(value) {
+    const padding = '='.repeat((4 - (String(value).length % 4)) % 4);
+    const base64 = String(value).replace(/-/g, '+').replace(/_/g, '/') + padding;
+    const raw = atob(base64);
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) {
+        bytes[i] = raw.charCodeAt(i);
+    }
+    return bytes;
+}
+
+/**
+ * Encodes bytes into a base64url string for the server.
+ * @param {Uint8Array} bytes Raw bytes
+ * @returns {string} Base64url string
+ */
+function bufferToBase64url(bytes) {
+    let base64 = btoa(String.fromCharCode(...bytes));
+    return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 /**
@@ -274,20 +420,58 @@ function configureDiscreetLogin() {
 (async function () {
     try {
         csrfToken = await getCsrfToken();
-        const userList = await getUserList();
+        const status = await getAuthStatus();
+        if (status.basicAuthMode && status.browserSession && !status.accountsEnabled) return redirectToHome();
+        const passkeysSupported = 'PublicKeyCredential' in window && !!navigator.credentials?.get;
 
-        if (discreetLogin) {
-            configureDiscreetLogin();
+        if (status.basicAuthMode && !status.browserSession) {
+            $('#workspaceLoginBlock').show();
+            $('#rememberBlock').show();
+            if (passkeysSupported && status.passkeysEnabled) {
+                $('#passkeyLoginBlock').show();
+                $('#loginDivider').show();
+            }
+        }
+
+        if (status.accountsEnabled && (!status.basicAuthMode || status.browserSession)) {
+            const userList = await getUserList();
+            $('#userSelectBlock').show();
+            if (discreetLogin) {
+                configureDiscreetLogin();
+            } else {
+                configureNormalLogin(userList);
+            }
         } else {
-            configureNormalLogin(userList);
+            $('#userSelectBlock').hide();
         }
     } catch (error) {
         displayError(error.message || 'Could not connect. Refresh to try again.');
     }
     document.getElementById('shadow_popup').style.opacity = '';
     $('#cancelRecovery').on('click', onCancelRecoveryClick);
+    $('#workspaceLoginForm').on('submit', (evt) => {
+        evt.preventDefault();
+        const username = String($('#workspaceUsername').val() || '').trim();
+        const password = String($('#workspacePassword').val() || '');
+        if (!username) {
+            return displayError('Type your username first.');
+        }
+        if (!password) {
+            return displayError('Type your password first.');
+        }
+        displayError('');
+        return performWorkspaceLogin(username, password, $('#rememberDevice').is(':checked'));
+    });
+    $('#passkeyLoginButton').on('click', () => {
+        displayError('');
+        return performPasskeyLogin($('#rememberDevice').is(':checked'));
+    });
     $(document).on('keydown', (evt) => {
         if (evt.key === 'Enter' && document.activeElement.tagName === 'INPUT') {
+            const id = document.activeElement.id;
+            if (id === 'workspaceUsername' || id === 'workspacePassword' || id === 'rememberDevice') {
+                return;
+            }
             if ($('#passwordRecoveryBlock').is(':visible')) {
                 $('#sendRecovery').trigger('click');
             } else {
