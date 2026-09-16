@@ -1297,7 +1297,7 @@
         display: none;
     }
 
-    body.waifuMode #sheld {
+    body.waifuMode:not(.ripplestyle) #sheld {
         height: 40vh;
         height: 40dvh;
         top: 60vh;

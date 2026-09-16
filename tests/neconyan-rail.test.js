@@ -54,6 +54,29 @@ function createWelcomeRuntime(overrides = {}) {
 }
 
 describe('Neconyan workspace rail behavior', () => {
+    test('Fine-tuning waits for loaded controls and sends disabled tools to Manage extensions', async () => {
+        class HTMLElement {}
+        const element = new HTMLElement();
+        const actions = [];
+        let enabled = true;
+        const runtime = vm.createContext({ HTMLElement, closeMobileNav: () => actions.push('close'),
+            findExtension: () => ({ enabled }),
+            waitForNeconyanNativeReady: async selector => { actions.push(selector); await Promise.resolve(); return element; },
+            revealSearchMatch: (side, match) => actions.push([side, match.tabId, match.element]),
+            openNeconyanNativeManage: () => actions.push('manage'),
+        });
+        vm.runInContext(tabsSource.match(/^async function openExtensionSettings\([\s\S]*?^}/m)[0], runtime);
+        await runtime.openExtensionSettings('regex');
+        await runtime.openExtensionSettings('expressions');
+        expect(actions).toEqual(['close', '#open_regex_editor', ['right', 'extensions', element],
+            'close', '#expression_api', ['right', 'extensions', element]]);
+        actions.length = 0;
+        enabled = false;
+        await runtime.openExtensionSettings('expressions');
+        expect(actions).toEqual(['close', 'manage']);
+        expect(await runtime.openExtensionSettings('unknown')).toBe(false);
+    });
+
     test('restores only known unique destinations and appends newly added destinations', () => {
         const context = vm.createContext({});
         vm.runInContext(getWelcomeFunctionSource('normalizeNeconyanRailOrder'), context);

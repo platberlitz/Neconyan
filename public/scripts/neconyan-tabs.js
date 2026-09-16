@@ -15935,6 +15935,22 @@ function revealSettingsCategoryFor(target) {
     }
 }
 
+async function openExtensionSettings(id) {
+    const selector = { regex: '#open_regex_editor', expressions: '#expression_api' }[id];
+    if (!selector) return false;
+    closeMobileNav();
+    const extension = findExtension(id);
+    const element = extension?.enabled && await waitForNeconyanNativeReady(selector, 4000);
+    if (!(element instanceof HTMLElement)) {
+        globalThis.toastr?.info?.(extension?.enabled
+            ? 'These settings have not loaded. Check Manage extensions.'
+            : 'Enable this tool in Manage extensions, then reload.', 'Extensions');
+        return openNeconyanNativeManage();
+    }
+    revealSearchMatch('right', { tabId: 'extensions', element });
+    return true;
+}
+
 function revealSearchMatch(shellKey, match) {
     closeAllDropdowns({ except: shellKey });
 
@@ -19050,6 +19066,7 @@ function initAll() {
 
     const neconyanShell = /** @type {any} */ (globalThis.NeconyanShell || globalThis.SillyBunnyShell || {});
     globalThis.NeconyanShell = Object.assign(neconyanShell, {
+        openExtensionSettings,
         openTab(shellKey, tabId) {
             if (shellKey === 'characters') {
                 openCharacterPanelTab(tabId);

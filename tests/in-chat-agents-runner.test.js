@@ -246,6 +246,7 @@ describe('in-chat agent post-processing runner', () => {
             generateQuietPrompt,
             generateRaw,
             getCurrentChatId: jest.fn(() => currentChatId),
+            getChatGeneration: jest.fn(() => 0),
             setAgentGenerationContextProvider: jest.fn(),
             itemizedPrompts,
             normalizeContentText: jest.fn(value => String(value ?? '')),

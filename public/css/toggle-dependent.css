@@ -388,7 +388,7 @@ body.waifuMode #top-bar {
     border: 1px solid var(--SmartThemeBorderColor);
 }
 
-body.waifuMode #sheld {
+body.waifuMode:not(.ripplestyle) #sheld {
     height: 40vh;
     height: 40dvh;
     top: calc(100% - 40vh);

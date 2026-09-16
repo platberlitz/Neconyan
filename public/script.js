@@ -13,6 +13,7 @@ import {
 } from './lib.js';
 
 import { favsToHotswap, getMessageTimeStamp, dragElement, isMobile, initRossMods } from './scripts/RossAscends-mods.js';
+import { readMessageExpression, writeMessageExpression, renderMessageExpression } from './scripts/expression-history.js';
 import { userStatsHandler, statMesProcess, initStats } from './scripts/stats.js';
 import {
     generateKoboldWithStreaming,
@@ -5647,7 +5648,7 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
         messageElement[0].style.setProperty('--mes-avatar-original-url', originalAvatarCssUrl);
     }
 
-    messageElement.find('.avatar img').attr({
+    messageElement.find('.avatar img:not(.neconyan-expression-avatar)').attr({
         src: viewportAvatarImg,
         'data-thumbnail-src': viewportThumbnailSrc,
         'data-original-src': originalAvatarImg,
@@ -5689,10 +5690,15 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
 
     updateMessageItemizedPromptButton(mes, { messageId, messageElement });
 
-    messageElement.find('.avatar img').on('error', function () {
+    messageElement.find('.avatar img:not(.neconyan-expression-avatar)').off('load error').on('load', function () {
+        $(this).show().siblings('.missing-avatar').remove();
+    }).on('error', function () {
         $(this).hide();
-        $(this).parent().html('<div class="missing-avatar fa-solid fa-user-slash"></div>');
+        if (!$(this).siblings('.missing-avatar').length) {
+            $(this).parent().append('<div class="missing-avatar fa-solid fa-user-slash"></div>');
+        }
     });
+    renderMessageExpression(messageElement[0], mes, getMessageExpressionAvatar(mes));
 
     appendMediaToMessage(mes, messageElement, adjustMediaScroll);
     messageElement.find('.mes_text').html(messageHTML);
@@ -7227,6 +7233,7 @@ class StreamingProcessor {
 
         if (Array.isArray(this.swipes) && this.swipes.length > 0) {
             const swipeInfoExtra = structuredClone(message.extra ?? {});
+            delete swipeInfoExtra.neconyanExpression;
             delete swipeInfoExtra.token_count;
             delete swipeInfoExtra.reasoning;
             delete swipeInfoExtra.reasoning_duration;
@@ -11299,6 +11306,7 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
 
     if (Array.isArray(swipes) && swipes.length > 0) {
         const swipeInfoExtra = structuredClone(item.extra ?? {});
+        delete swipeInfoExtra.neconyanExpression;
         delete swipeInfoExtra.token_count;
         delete swipeInfoExtra.reasoning;
         delete swipeInfoExtra.reasoning_duration;
@@ -12374,6 +12382,66 @@ export function parseAvatarSource(rawSrc) {
 
     return { type: null, file: rawSrc, original: rawSrc };
 }
+
+export function getMessageExpressionAvatar(message) {
+    if (!message || message.is_user || message.is_system || message.extra?.type === system_message_types.NARRATOR) return null;
+    const forced = message.force_avatar ? parseAvatarSource(message.force_avatar) : null;
+    if (forced && forced.type !== 'avatar') return null;
+    const avatar = message.original_avatar || forced?.file || (!selected_group && characters[this_chid]?.avatar);
+    if (!avatar || (forced && forced.file !== avatar)) return null;
+    return characters.some(character => character.avatar === avatar) ? avatar : null;
+}
+
+const expressionRequests = new WeakMap();
+const unsavedExpressions = new WeakSet();
+
+export function captureExpressionTarget(message) {
+    const avatar = getMessageExpressionAvatar(message);
+    const index = chat.indexOf(message);
+    if (!avatar || index < 0) return null;
+    const target = {
+        message, index, avatar, text: message.mes, name: message.name,
+        swipe: message.swipe_id ?? 0, generation: getChatGeneration(), chatId: getCurrentChatId(),
+    };
+    expressionRequests.set(message, target);
+    return target;
+}
+
+export function isExpressionTargetCurrent(target) {
+    return !!target && expressionRequests.get(target.message) === target
+        && getChatGeneration() === target.generation && getCurrentChatId() === target.chatId
+        && chat[target.index] === target.message && (target.message.swipe_id ?? 0) === target.swipe
+        && target.message.mes === target.text && target.message.name === target.name
+        && getMessageExpressionAvatar(target.message) === target.avatar;
+}
+
+export function getSavedMessageExpression(message) {
+    return readMessageExpression(message, getMessageExpressionAvatar(message));
+}
+
+export async function recordMessageExpression(target, src) {
+    if (!isExpressionTargetCurrent(target)) return false;
+    ensureSwipes(target.message);
+    if (writeMessageExpression(target.message, target.avatar, src)) unsavedExpressions.add(target.message);
+    renderMessageExpression(document.querySelector(`#chat .mes[mesid="${target.index}"]`), target.message, target.avatar);
+    if (unsavedExpressions.has(target.message)) {
+        try {
+            await saveChatConditional({ throwOnError: true });
+            unsavedExpressions.delete(target.message);
+        } catch (error) {
+            toastr.error('Could not save this expression. Select it again to retry.', 'Character Expressions');
+            throw error;
+        }
+    }
+    return true;
+}
+
+document.addEventListener('sb:chat-style-updated', () => {
+    document.querySelectorAll('#chat .mes[mesid]').forEach(row => {
+        const message = chat[Number(row.getAttribute('mesid'))];
+        renderMessageExpression(row, message, getMessageExpressionAvatar(message));
+    });
+});
 
 function isThumbnailAvatarSource(rawSrc) {
     try {
@@ -16931,6 +16999,7 @@ export async function swipe(event, direction, { source, repeated, message = chat
      */
     function clearMessageData(message) {
         if (message.extra && typeof message.extra === 'object') {
+            delete message.extra.neconyanExpression;
             delete message.extra.memory;
             delete message.extra.display_text;
             delete message.extra.media;

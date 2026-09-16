@@ -303,6 +303,11 @@ body.neconyan :is(#sheld, #chat, #form_sheld, #sb-bottom-chat-bar) {
     border: 0; border-radius: 0; background: var(--neco-canvas); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 body.neconyan #sheld { min-width: 0; overflow: hidden; }
+/* Keep the floating holders measurable for the expression worker's mode detection. */
+body.ripplestyle :is(#expression-wrapper, #visual-novel-wrapper) { visibility: hidden; pointer-events: none; }
+#chat .neconyan-expression-avatar { display: none; }
+body.ripplestyle #chat .mes .mesAvatarWrapper .avatar.has-expression > :not(.neconyan-expression-avatar) { display: none; }
+body.ripplestyle #chat .mes .mesAvatarWrapper .avatar.has-expression > .neconyan-expression-avatar { display: block; object-fit: contain; mask-image: none; -webkit-mask-image: none; }
 body.neconyan.flatchat:not(.sbterm) #chat { padding: 24px max(24px, calc((100% - 820px) / 2)); text-shadow: none; }
 body.neconyan.flatchat:not(.sbterm) #chat .mes { width: 100%; max-width: 100%; margin: 0 auto 24px; padding: 12px 0; gap: 12px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 body.neconyan.flatchat:not(.sbterm) #chat .mes::before { display: none; }

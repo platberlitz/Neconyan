@@ -112,6 +112,7 @@ beforeEach(async () => {
         substituteParamsExtended: value => String(value ?? ''),
         generateQuietPrompt: (...args) => context.generateRaw(...args),
         getCurrentChatId: () => context.chatId,
+        getChatGeneration: () => 0,
         getRequestHeaders: () => ({}),
         saveSettings: async () => true,
         itemizedPrompts: [],

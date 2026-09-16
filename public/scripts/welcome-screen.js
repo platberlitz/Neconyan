@@ -2,7 +2,7 @@ import { initializeNeconyanHome, NECONYAN_WHISKERS } from './neconyan-home.js';
 import { characters, chat, deleteCharacterChatByName, displayVersion, doNewChat, event_types, eventSource, flushCharacterSaveDebounced, getCharacters, getChatGeneration, getCurrentChatId, getRequestHeaders, getThumbnailUrl, is_send_press, newAssistantChat, openCharacterChat, printCharactersDebounced, renameGroupOrCharacterChat, saveSettings, saveSettingsDebounced, selectCharacterById, setActiveCharacter, setActiveGroup, system_avatar, this_chid } from '../script.js';
 import { deleteGroupChatByName, getGroupAvatar, groups, is_group_generating, openGroupById, openGroupChat } from './group-chats.js';
 import { extension_settings } from './extensions.js';
-import { t } from './i18n.js';
+import { t, translate } from './i18n.js';
 import { getCurrentUserHandle } from './user.js';
 
 import { isIOSWebKitPlatform } from './mobile-send-button.js';
@@ -1605,6 +1605,10 @@ function activateNeconyanRailRoute(route) {
         case 'formatting':
             shell?.openTab?.('left', 'advanced-formatting');
             break;
+        case 'regex':
+        case 'expressions':
+            void shell?.openExtensionSettings?.(route);
+            break;
         case 'agents':
             shell?.openTab?.('left', 'agents');
             break;
@@ -1774,6 +1778,8 @@ function ensureNeconyanRail() {
         ['presets', 'Presets', 'fa-sliders'],
         ['sampling', 'Sampling', 'fa-wave-square'],
         ['formatting', 'Formatting', 'fa-text-height'],
+        ['regex', translate('Regexes', 'ext_regex_title'), 'fa-code'],
+        ['expressions', t`Character Expressions`, 'fa-masks-theater'],
         ['persona', 'Persona', 'fa-face-smile'],
         ['background', 'Background', 'fa-panorama'],
     ];

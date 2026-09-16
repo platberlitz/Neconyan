@@ -27,7 +27,7 @@ describe('Android avatar resource budget', () => {
 
         const avatarImageAttrs = sourceBetween(
             scriptSource,
-            'messageElement.find(\'.avatar img\').attr({',
+            'messageElement.find(\'.avatar img:not(.neconyan-expression-avatar)\').attr({',
             'messageElement.find(\'.ch_name .name_text\').text(mes.name);',
         );
 

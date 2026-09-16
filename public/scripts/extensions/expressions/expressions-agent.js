@@ -338,15 +338,17 @@ export async function syncExpressionsAgentProfile() {
  * @param {string[]} [allowedExpressions] - Optional list of valid expression labels.
  * @returns {Promise<string|null>} The classified expression label, or null if not ready.
  */
-export async function getAgentExpressionLabel(context, allowedExpressions) {
+export async function getAgentExpressionLabel(context, allowedExpressions, target = null) {
     const ctx = context || getContext();
-    const message = getLatestAssistantMessage(ctx);
+    const message = target?.message ?? getLatestAssistantMessage(ctx);
     if (!message?.extra?.inChatAgentCompanionResults) return null;
 
     const agent = await getExpressionsAgent();
     if (!agent?.id) return null;
 
-    const result = message.extra.inChatAgentCompanionResults[agent.id];
+    if (target && (ctx.chat[target.index] !== message || (message.swipe_id ?? 0) !== target.swipe || message.mes !== target.text)) return null;
+    const extra = Array.isArray(message.swipe_info) ? message.swipe_info[message.swipe_id ?? 0]?.extra : message.extra;
+    const result = extra?.inChatAgentCompanionResults?.[agent.id];
     if (!result || result.status !== 'done' || typeof result.content !== 'string') {
         return null;
     }
