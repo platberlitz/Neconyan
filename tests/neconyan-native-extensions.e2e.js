@@ -399,8 +399,10 @@ test.describe('Sidebar sizing', () => {
 
 test.describe('side-only first-run tour', () => {
     test.use({ hasTouch: true });
+    const paragraphs = [...readFileSync(new URL('../public/scripts/welcome-screen.js', import.meta.url), 'utf8').matchAll(/body: '([^']*)', hint: '([^']*)'/g)].map(match => match.slice(1));
     for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 }]) {
         test(`resumes, replays and remembers completion at ${viewport.width}px`, async ({ page }, info) => {
+            expect(paragraphs).toHaveLength(8);
             const settings = await mockNativeSettings(page, { tutorialStatus: 'pending', homePanelMode: 'list', firstRun: true });
             await page.addInitScript(() => {
                 localStorage.setItem('NeconyanTutorialStatus.v1', 'skipped');
@@ -450,6 +452,18 @@ test.describe('side-only first-run tour', () => {
             for (let step = 0; step < 9; step++) {
                 await expect(tour).toHaveAttribute('data-tutorial-index', String(step));
                 await expect(tour.locator('[data-tour-coach-title]')).not.toBeEmpty();
+                const content = tour.locator('[data-tour-content]');
+                await expect.poll(() => content.evaluate(element => element.scrollTop)).toBe(0);
+                if (step < 8) {
+                    await expect(tour.locator('.neconyan-tour-step-copy p:visible')).toHaveText(paragraphs[step]);
+                    const hint = tour.locator('[data-tour-coach-hint]');
+                    await expect(hint).toHaveCSS('margin-top', '8px');
+                    await content.evaluate(element => { element.scrollTop = element.scrollHeight; });
+                    expect(await hint.evaluate(element => element.getBoundingClientRect().bottom <= element.closest('[data-tour-content]').getBoundingClientRect().bottom + 1)).toBe(true);
+                    if (step === 0) await page.screenshot({ path: info.outputPath('second-paragraph.png') });
+                } else {
+                    await expect(tour.locator('[data-tour-coach-hint]')).toBeHidden();
+                }
                 await expect.poll(() => tour.locator('[data-tour-image]').evaluateAll(images => images.every(image => image.complete && image.naturalWidth > 0))).toBe(true);
                 const geometry = await tour.evaluate(element => {
                     const box = element.getBoundingClientRect();

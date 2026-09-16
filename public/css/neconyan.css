@@ -425,6 +425,7 @@ body.neconyan #neconyan-tour-coachmark {
 }
 body.neconyan #neconyan-tour-coachmark [data-tour-coach-step] { color: var(--neco-ginger); font-size: 12px; }
 body.neconyan #neconyan-tour-coachmark p { margin: 0; font-size: 14px; line-height: 1.5; }
+body.neconyan #neconyan-tour-coachmark p + p { margin-top: 8px; }
 body.neconyan :is(#neconyan-tour-coachmark [data-tour-coach-actions], .neconyan-tour-coachmark-actions) { display: flex; flex-wrap: wrap; gap: 6px; }
 body.neconyan #neconyan-tour-coachmark button { min-height: 44px; margin: 0; padding: 8px 12px; }
 body.neconyan #neconyan-tour-coachmark [data-tour-coach-next] { margin-left: auto; border-color: var(--neco-ginger); }

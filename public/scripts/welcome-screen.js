@@ -691,6 +691,9 @@ function syncTutorialCoachmark(panel) {
     coachmark.querySelector('[data-tour-coach-step]').textContent = t`Step ${index + 1} of ${count}`;
     coachmark.querySelector('[data-tour-coach-title]').textContent = t([step.title]);
     coachmark.querySelector('[data-tour-coach-body]').textContent = t([step.body]);
+    const hint = coachmark.querySelector('[data-tour-coach-hint]');
+    hint.textContent = step.hint ? t([step.hint]) : '';
+    hint.hidden = !step.hint;
     coachmark.querySelector('[data-tour-coach-speaker]').textContent = step.speaker;
     const portraits = coachmark.querySelector('[data-tour-portraits]');
     portraits.replaceChildren();
@@ -751,7 +754,7 @@ function showTutorialCoachmark() {
             <span data-tour-coach-step aria-live="polite"></span>
             <div data-tour-content><div class="neconyan-tour-coach-dialogue">
                 <div data-tour-portraits></div>
-                <div class="neconyan-tour-step-copy"><span class="neconyan-tour-speaker" data-tour-coach-speaker></span><strong data-tour-coach-title></strong><p data-tour-coach-body aria-live="polite"></p><i class="fa-solid fa-paw" data-tour-paw-stamp hidden aria-hidden="true"></i></div>
+                <div class="neconyan-tour-step-copy"><span class="neconyan-tour-speaker" data-tour-coach-speaker></span><strong data-tour-coach-title></strong><p data-tour-coach-body aria-live="polite"></p><p data-tour-coach-hint aria-live="polite" hidden></p><i class="fa-solid fa-paw" data-tour-paw-stamp hidden aria-hidden="true"></i></div>
             </div>
             <div data-tour-coach-actions></div></div>
             <div class="neconyan-tour-coachmark-actions">
