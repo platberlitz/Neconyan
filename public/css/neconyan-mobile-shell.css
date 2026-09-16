@@ -2964,7 +2964,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         --sb-composer-right-rail-width: calc(var(--sb-composer-action-size) + var(--sb-composer-send-width) + 4px);
         gap: 0 clamp(8px, 2vw, 10px) !important;
         min-height: calc(var(--sb-mobile-composer-input-height) + 3px) !important;
-        padding: 5px 4px !important;
+        padding: 6px 4px !important;
     }
 
     :root[data-sb-compact-mode='true'] #nonQRFormItems {
@@ -3284,7 +3284,11 @@ body.neconyan #sb-bottom-chat-select { padding-block: 6px; line-height: 1.25; }
 
 /* Rounded, paw-friendly corners for every bottom bar control. */
 body.neconyan #sb-bottom-chat-bar button { border-radius: 12px; }
-body.neconyan #send_form :is(#gg-action-button-container button, .stih--buttons button) { border-radius: 12px; }
+body.neconyan #send_form :is(#gg-action-button-container button, .stih--buttons button, #options_button, #send_but, #leftSendForm button, #rightSendForm button, #leftSendForm > div, #rightSendForm > div) {
+    border-radius: 12px;
+    border: 1px solid var(--neco-border);
+    background: var(--neco-raised);
+}
 
 /* Phones drop the duplicate Import button: the Import section in the same sheet still opens the picker. */
 body.neconyan #right-nav-panel .neconyan-character-library-footer .sb-character-library-primary-actions > #character_import_button { display: none; }
@@ -3297,7 +3301,7 @@ body.neconyan :is(.ica--category-chips, .world_info_view_filters) {
     touch-action: pan-x;
     overscroll-behavior-x: contain;
 }
-body.neconyan #send_textarea:focus-visible { outline-offset: -3px; }
+body.neconyan #send_textarea:is(:focus, :focus-visible) { outline: none; }
 body.neconyan #right-nav-panel.openDrawer.sb-character-editor-fullscreen #sb_character_commit_bar { position: static; }
 body.neconyan :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header {
     flex-basis: auto;

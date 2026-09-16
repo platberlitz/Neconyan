@@ -73,4 +73,10 @@ describe('SillyBunny accent color profiles', () => {
         expect(themeCssSource).toContain('@media screen and (max-width: 768px)');
         expect(themeCssSource).toContain('.sb-accent-profiles-list {\n        grid-template-columns: 1fr;\n    }');
     });
+
+    test('preserves light text contrast on dark theme accent palettes', () => {
+        expect(powerUserSource).toContain('const blurChannels = parseColorChannels(power_user.blur_tint_color);');
+        expect(powerUserSource).toContain('const isLightSurface = blurChannels ? getRelativeLuminanceFromChannels(blurChannels) > 0.36 : false;');
+        expect(powerUserSource).toContain('document.documentElement.style.setProperty(\'--sb-on-accent\', isLightSurface ? primaryButtonTextColor : solidAccentTextColor);');
+    });
 });

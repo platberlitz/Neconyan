@@ -123,7 +123,7 @@
         "border_color": "rgba(92, 80, 69, 1)",
         "custom_css": "",
         "waifuMode": false,
-        "movingUI": false,
+        "movingUI": true,
         "movingUIState": {},
         "movingUIPreset": "Default",
         "noShadows": false,

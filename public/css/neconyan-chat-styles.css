@@ -1540,7 +1540,7 @@ body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .
         padding: 0 0 var(--moonlit-sb-ripple-left-bottom-gap) 0 !important;
         position: -webkit-sticky;
         position: sticky !important;
-        top: 0 !important;
+        top: -16px !important;
         z-index: 2;
         width: var(--moonlit-sb-ripple-avatar-mobile-width) !important;
     }

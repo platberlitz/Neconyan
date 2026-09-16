@@ -78,7 +78,8 @@ body.neconyan {
     --sb-fixed-surface-bg: var(--neco-surface);
     --sb-composer-input-bg: transparent;
     --sb-topbar-surface-bg: var(--neco-canvas);
-    --sb-chatbar-surface-bg: var(--neco-canvas);
+    --sb-chatbar-surface-bg: var(--neco-surface);
+    --sb-composer-surface-bg: var(--neco-surface);
     --sb-button-bg: var(--neco-surface);
     --sb-button-hover: var(--neco-raised);
     --sb-card-bg: var(--neco-surface);
@@ -309,8 +310,9 @@ body.neconyan.flatchat:not(.sbterm) #chat .mes :is(.mes_text, .mes_reasoning) { 
 body.neconyan.flatchat:not(.sbterm) #chat .mes .name_text { font-weight: 600; font-size: 13px; }
 body.neconyan.flatchat:not(.sbterm) #chat .mes :is(.mes_button, .extraMesButtons > div) { border-radius: 5px; box-shadow: none; background: transparent; }
 body.neconyan #form_sheld { width: 100%; max-width: 860px; margin: 0 auto; padding: 0 24px max(18px, env(safe-area-inset-bottom)); }
+body.neconyan :is(#send_form, #sb-bottom-chat-bar) { background: var(--neco-surface); }
 body.neconyan #sb-bottom-chat-bar { padding-inline: 0; }
-body.neconyan #send_form { padding: 6px; border: 1px solid var(--neco-border); border-radius: 10px; background: var(--neco-surface); box-shadow: none; }
+body.neconyan #send_form { padding: 6px; border: 1px solid var(--neco-border); border-radius: 10px; box-shadow: none; }
 body.neconyan #nonQRFormItems { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 body.neconyan #send_textarea {
     max-height: min(35dvh, 360px);
@@ -321,8 +323,9 @@ body.neconyan #send_textarea {
         --sb-composer-right-rail-width: var(--sb-composer-action-size);
     }
 }
-body.neconyan :is(#leftSendForm, #rightSendForm) > div { border-radius: 6px; border-color: transparent; background: transparent; box-shadow: none; }
-body.neconyan :is(#send_but, #sb_conversation_send) { border-radius: 6px !important; background: var(--neco-ginger) !important; color: var(--neco-on-accent) !important; box-shadow: none; }
+body.neconyan :is(#leftSendForm, #rightSendForm) > :is(div, button),
+body.neconyan #options_button { border-radius: 12px; border: 1px solid var(--neco-border); background: var(--neco-raised); box-shadow: none; }
+body.neconyan :is(#send_but, #sb_conversation_send) { border-radius: 12px !important; background: var(--neco-ginger) !important; color: var(--neco-on-accent) !important; box-shadow: none; }
 body.neconyan :is(#send_form:focus-within, .sb-conversation-composer:focus-within) { border-color: var(--neco-ginger); box-shadow: none; }
 body.neconyan #send_form:focus-within :is(#nonQRFormItems, #send_textarea) { background: transparent; box-shadow: none; }
 

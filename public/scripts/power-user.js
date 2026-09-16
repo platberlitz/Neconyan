@@ -453,7 +453,7 @@ export const power_user = {
     google_font: '',
 
     waifuMode: false,
-    movingUI: false,
+    movingUI: true,
     movingUIState: {},
     movingUIPreset: '',
     noShadows: false,
@@ -1578,13 +1578,17 @@ function applyAccentContrastPalette() {
     }
 
     const accentChannels = mixColorChannels(quoteChannels, bodyChannels, 0.62);
-    const primaryButtonTextColor = getContrastAwareInk([
-        mixColorChannels(accentChannels, [255, 255, 255], 0.88),
-        mixColorChannels(accentChannels, [255, 255, 255], 0.82),
-    ]);
+    const blurChannels = parseColorChannels(power_user.blur_tint_color);
+    const isLightSurface = blurChannels ? getRelativeLuminanceFromChannels(blurChannels) > 0.36 : false;
+    const primaryButtonTextColor = isLightSurface
+        ? getContrastAwareInk([
+            mixColorChannels(accentChannels, [255, 255, 255], 0.88),
+            mixColorChannels(accentChannels, [255, 255, 255], 0.82),
+        ])
+        : getContrastAwareInk([accentChannels]);
     const solidAccentTextColor = getContrastAwareInk([accentChannels]);
 
-    document.documentElement.style.setProperty('--sb-on-accent', primaryButtonTextColor);
+    document.documentElement.style.setProperty('--sb-on-accent', isLightSurface ? primaryButtonTextColor : solidAccentTextColor);
     document.documentElement.style.setProperty('--sb-on-solid-accent', solidAccentTextColor);
 }
 

@@ -118,7 +118,7 @@ body.neconyan :is(#sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner) { back
     border-color: transparent;
 }
 
-:root[data-neconyan-palette='calico'] body.neconyan :is(
+body.neconyan :is(
     #neconyan-workspace-rail button,
     #sb-mobile-nav .sb-nav-item,
     .sb-shell-tab,
@@ -127,8 +127,23 @@ body.neconyan :is(#sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner) { back
     .sb-settings-tab-btn,
     #send_but,
     #options_button,
-    .neconyan-chat-row-actions .neconyan-labelled-control
-) { border-radius: 12px; }
+    .neconyan-chat-row-actions .neconyan-labelled-control,
+    #leftSendForm button,
+    #rightSendForm button,
+    #leftSendForm > div,
+    #rightSendForm > div,
+    #send_form .mes_stop
+) { border-radius: 12px !important; }
+
+body.neconyan #send_form :is(#options_button, #leftSendForm button, #rightSendForm button, #leftSendForm > div:not(#send_but), #rightSendForm > div:not(#send_but)) {
+    border: 1px solid var(--neco-border);
+    background: var(--neco-raised);
+}
+
+body.neconyan #send_textarea:is(:focus, :focus-visible) {
+    outline: none !important;
+    box-shadow: inset 0 0 0 2px var(--neco-ginger) !important;
+}
 
 body.neconyan .neconyan-home .neconyan-cat-control,
 body.neconyan .neconyan-cat-control {
@@ -285,8 +300,11 @@ body.neconyan::before {
     background: url('../img/neconyan/kitty-clouds.webp?v=20260913g') 50% 50% / cover no-repeat;
     opacity: .67;
 }
-body.neconyan:not(.sbterm) :is(#sheld, #form_sheld, #sb-bottom-chat-bar, #neconyan-home-host) {
+body.neconyan:not(.sbterm) :is(#sheld, #form_sheld, #neconyan-home-host) {
     background-color: transparent !important;
+}
+body.neconyan:not(.sbterm) :is(#send_form, #sb-bottom-chat-bar) {
+    background-color: var(--neco-surface) !important;
 }
 body.neconyan:not(.sbterm) :is(#chat, #sb_conversation_stage) {
     background-color: transparent !important;

@@ -454,7 +454,9 @@ body.waifuMode .zoomed_avatar {
 /* movingUI*/
 
 body.movingUI .drag-grabber {
-    display: inline;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 body.movingUI #sheld,
