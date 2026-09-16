@@ -11,6 +11,7 @@ import { renderTemplateAsync } from './templates.js';
 import { syncNeconyanAssistantTools } from './neconyan-assistant-tools.js';
 
 import { accountStorage } from './util/AccountStorage.js';
+import { getAssistantGender, getAssistantTourSrc, setAssistantGender } from './neconyan-assistant-art.js';
 import { clamp, flashHighlight, getSortableDelay, isElementInViewport, sortMoments, timestampToMoment } from './utils.js';
 
 const assistantAvatarKey = 'assistant';
@@ -377,8 +378,8 @@ function buildWelcomeTemplateData(chats, assistantPersonalities = null) {
     const pickerPersonalities = Array.isArray(assistantPersonalities)
         ? assistantPersonalities.map(personality => ({
             ...personality,
-            variants: personality.variants.map(variant => ({ ...variant, label: assistantGenderLabel(variant.gender), selected: variant.id === assistantVariant })),
-            initialPortrait: personality.variants.find(variant => variant.id === assistantVariant)?.portrait || personality.variants[0]?.portrait || '',
+            variants: personality.variants.map(variant => ({ ...variant, label: assistantGenderLabel(variant.gender), selected: variant.gender === getAssistantGender(personality.id) })),
+            initialPortrait: personality.variants.find(variant => variant.gender === getAssistantGender(personality.id))?.portrait || '',
         }))
         : assistantPersonalities;
 
@@ -701,7 +702,8 @@ function syncTutorialCoachmark(panel) {
         const figure = document.createElement('figure');
         figure.innerHTML = '<div class="neconyan-tour-step-visual"><img width="512" height="768" data-tour-image><span class="neconyan-tour-image-fallback" hidden aria-hidden="true">🐾</span></div><figcaption></figcaption>';
         const image = figure.querySelector('img');
-        image.src = guide.image;
+        image.dataset.assistantTourImage = guide.image;
+        image.src = getAssistantTourSrc(guide.image);
         image.alt = t`${guide.speaker} speaking`;
         figure.querySelector('figcaption').textContent = step.ending ? guide.speaker : '';
         portraits.append(figure);
@@ -740,6 +742,12 @@ function syncTutorialCoachmark(panel) {
     }
     coachmark.querySelector('[data-tour-content]').scrollTop = 0;
 }
+
+window.addEventListener('neconyan:assistant-gender-changed', () => {
+    document.querySelectorAll('img[data-assistant-tour-image]').forEach(image => {
+        image.src = getAssistantTourSrc(image.dataset.assistantTourImage);
+    });
+});
 
 function showTutorialCoachmark() {
     let coachmark = document.getElementById('neconyan-tour-coachmark');
@@ -1142,6 +1150,7 @@ function initializeAssistantPicker(root) {
     setAssistantPickerBusy(picker, assistantSelectionPending);
     picker.querySelectorAll('.neconyan-assistant-row').forEach(row => {
         row.querySelectorAll('input[data-assistant-variant]').forEach(input => input.addEventListener('change', () => {
+            setAssistantGender(row.dataset.assistantPersonality, input.dataset.gender);
             updateAssistantPickerRow(row);
             setAssistantPickerStatus(picker, `${row.dataset.assistantName || 'Assistant'} is ready to open.`);
         }));

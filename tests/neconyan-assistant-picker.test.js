@@ -2,6 +2,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import express from 'express';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
+import extract from 'png-chunks-extract';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -179,6 +181,19 @@ describe('Neconyan assistant catalog and installer', () => {
                 const source = JSON.parse(fs.readFileSync(path.join(repoRoot, 'default/content/assistants', variant.source), 'utf8'));
                 const packed = JSON.parse(readCard(fs.readFileSync(path.join(repoRoot, 'default/content/assistants', variant.card))));
                 expect(packed.data).toEqual(source.data);
+                const pixels = file => Buffer.concat(extract(fs.readFileSync(path.join(repoRoot, 'default/content/assistants', file))).filter(chunk => chunk.name === 'IDAT').map(chunk => Buffer.from(chunk.data)));
+                expect(pixels(variant.card).equals(pixels(variant.portrait))).toBe(true);
+                const appearance = { miso: ['chubby', 'gentle', 'light warm peach'], taro: ['severe', 'extremely attractive', 'light brown'], nori: ['lanky', 'smug', 'dark brown'] }[personality.id];
+                for (const detail of appearance) {
+                    expect(source.data.description.toLowerCase()).toContain(detail);
+                    expect(source.data.extensions.depth_prompt.prompt.toLowerCase()).toContain(detail);
+                }
+                const tidbits = { miso: ['belly', 'rub'], taro: ['chain-smoking', 'husky'], nori: ['expensive tastes', 'persistently broke'] }[personality.id];
+                for (const detail of tidbits) {
+                    expect(source.data.description).toContain(detail);
+                    expect(source.data.personality).toContain(detail);
+                    expect(source.data.extensions.depth_prompt.prompt).toContain(detail);
+                }
                 expect(source.data.character_version).toBe('1.0');
                 expect(source.data.description).not.toContain('calico');
                 expect(source.data.description).toContain({ miso: 'tiger stripes', taro: 'blue-grey', nori: 'tuxedo' }[personality.id]);
@@ -207,7 +222,8 @@ describe('Neconyan assistant catalog and installer', () => {
         expect(JSON.stringify(payload)).not.toMatch(/card|expressions|source/);
 
         const portraitUrl = payload.personalities.flatMap(item => item.variants).find(item => item.id === 'miso-male').portrait;
-        expect(portraitUrl).toBe('/api/characters/assistants/miso-male/portrait?v=1');
+        const hash = createHash('sha256').update(fs.readFileSync(path.join(repoRoot, 'default/content/assistants/miso-male/portrait.png'))).digest('hex').slice(0, 12);
+        expect(portraitUrl).toBe(`/api/characters/assistants/miso-male/portrait?v=${hash}`);
         const portrait = await fetch(`${baseUrl}${portraitUrl}`);
         expect(portrait.status).toBe(200);
         expect(portrait.headers.get('content-type')).toMatch(/^image\/png/);

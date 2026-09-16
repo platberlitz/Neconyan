@@ -313,6 +313,7 @@ import { initBulkEdit } from './scripts/bulk-edit.js';
 import { getContext } from './scripts/st-context.js';
 import { extractReasoningFromData, extractReasoningSignatureFromData, initReasoning, parseReasoningInSwipes, PromptReasoning, ReasoningHandler, removeReasoningFromString, updateReasoningUI } from './scripts/reasoning.js';
 import { accountStorage } from './scripts/util/AccountStorage.js';
+import { getAssistantIconSrc } from './scripts/neconyan-assistant-art.js';
 import { initWelcomeScreen, openPermanentAssistantChat, openPermanentAssistantCard, getPermanentAssistantAvatar } from './scripts/welcome-screen.js';
 import { initDataMaid } from './scripts/data-maid.js';
 import { initMewmory, prepareMewmoryGeneration, validateMewmoryGeneration } from './scripts/mewmory/index.js';
@@ -549,16 +550,11 @@ let characterMenuEntityView = 'characters';
 export const default_avatar = 'img/ai4.png';
 const NECONYAN_FRONTEND_ICON_STORAGE_KEY = 'sb-frontend-icon';
 const NECONYAN_FRONTEND_ICON_DEFAULT = 'calico';
-const NECONYAN_FRONTEND_ICONS = Object.freeze({
-    calico: 'img/neconyan-icon-192.png',
-    miso: 'img/neconyan/assistant-icons/miso.png',
-    taro: 'img/neconyan/assistant-icons/taro.png',
-    nori: 'img/neconyan/assistant-icons/nori.png',
-});
+const NECONYAN_FRONTEND_ICONS = ['calico', 'miso', 'taro', 'nori'];
 let appliedNeconyanFrontendIconId = '';
 
 function normalizeNeconyanFrontendIcon(iconId) {
-    return Object.hasOwn(NECONYAN_FRONTEND_ICONS, String(iconId)) ? String(iconId) : NECONYAN_FRONTEND_ICON_DEFAULT;
+    return NECONYAN_FRONTEND_ICONS.includes(String(iconId)) ? String(iconId) : NECONYAN_FRONTEND_ICON_DEFAULT;
 }
 
 function getStoredNeconyanFrontendIcon() {
@@ -570,7 +566,7 @@ function getStoredNeconyanFrontendIcon() {
 }
 
 export function getNeconyanFrontendIconSrc({ absolute = false } = {}) {
-    const src = NECONYAN_FRONTEND_ICONS[appliedNeconyanFrontendIconId || getStoredNeconyanFrontendIcon()];
+    const src = getAssistantIconSrc(appliedNeconyanFrontendIconId || getStoredNeconyanFrontendIcon());
     return absolute ? `/${src}` : src;
 }
 
@@ -584,9 +580,9 @@ export let CLIENT_VERSION = 'Neconyan:1.0.0'; // For Horde header
 
 function applyNeconyanFrontendIcon(iconId = getStoredNeconyanFrontendIcon()) {
     const normalizedIconId = normalizeNeconyanFrontendIcon(iconId);
-    const src = NECONYAN_FRONTEND_ICONS[normalizedIconId];
+    const src = getAssistantIconSrc(normalizedIconId);
     const absoluteSrc = `/${src}`;
-    const iconAlreadyApplied = appliedNeconyanFrontendIconId === normalizedIconId;
+    const iconAlreadyApplied = appliedNeconyanFrontendIconId === normalizedIconId && system_avatar === src;
     system_avatar = src;
 
     document.documentElement.dataset.sbFrontendIcon = normalizedIconId;
@@ -595,6 +591,10 @@ function applyNeconyanFrontendIcon(iconId = getStoredNeconyanFrontendIcon()) {
         if (image.getAttribute('src') !== absoluteSrc) {
             image.setAttribute('src', absoluteSrc);
         }
+    }
+
+    for (const image of document.querySelectorAll('img[data-assistant-icon]')) {
+        image.setAttribute('src', getAssistantIconSrc(image.dataset.assistantIcon));
     }
 
     if (!iconAlreadyApplied) {
@@ -617,6 +617,7 @@ const neconyanFrontendIcon = Object.assign(window.NeconyanFrontendIcon || window
 });
 window.NeconyanFrontendIcon = neconyanFrontendIcon;
 window.SillyBunnyFrontendIcon = neconyanFrontendIcon;
+window.addEventListener('neconyan:assistant-gender-changed', () => applyNeconyanFrontendIcon());
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => applyNeconyanFrontendIcon(), { once: true });
@@ -12919,6 +12920,7 @@ export async function getSettings(initLoaderHandle = null) {
         }
 
         accountStorage.init(settings?.accountStorage);
+        applyNeconyanFrontendIcon();
         await setUserControls(data.enable_accounts);
         setRequestCompressionConfig(data.request_compression);
 

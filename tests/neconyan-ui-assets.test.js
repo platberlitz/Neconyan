@@ -8,11 +8,11 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const readJson = file => JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
 
 describe('Neconyan generated UI artwork', () => {
-    test('ships three distinct Sunburst assistant head icons', () => {
+    test('ships nine distinct Sunburst assistant head icons covering every gender', () => {
         const provenance = readJson('public/img/neconyan/assistant-icons/artwork-provenance.json');
         expect(provenance.model).toBe('gpt-image-2.5-sunburst');
-        expect(provenance.icons.map(item => item.id)).toEqual(['miso', 'taro', 'nori']);
-        expect(new Set(provenance.icons.map(item => item.finalSha256)).size).toBe(3);
+        expect(provenance.icons.map(item => item.id)).toEqual(['miso', 'taro', 'nori'].flatMap(id => ['male', 'female', 'neutral'].map(gender => `${id}-${gender}`)));
+        expect(new Set(provenance.icons.map(item => item.finalSha256)).size).toBe(9);
         for (const item of provenance.icons) {
             const bytes = fs.readFileSync(path.join(root, item.finalFile));
             expect(bytes.readUInt32BE(16)).toBe(192);
@@ -36,9 +36,15 @@ describe('Neconyan generated UI artwork', () => {
         }
     });
 
-    test('ships eight local tour illustrations with DOM copy metadata', () => {
+    test('ships all eight tour scenes in three distinct gender variants', () => {
         const provenance = readJson('public/img/neconyan/tour/artwork-provenance.json');
-        expect(provenance.tour).toHaveLength(8);
+        expect(provenance.tour).toHaveLength(24);
+        expect(new Set(provenance.tour.map(item => item.finalSha256)).size).toBe(24);
+        const scenes = [...new Set(provenance.tour.map(item => item.scene))];
+        expect(scenes).toHaveLength(8);
+        for (const scene of scenes) {
+            expect(provenance.tour.filter(item => item.scene === scene).map(item => item.gender)).toEqual(['male', 'female', 'neutral']);
+        }
         expect(new Set(provenance.tour.map(item => item.speaker))).toEqual(new Set(['Miso', 'Taro', 'Nori']));
         for (const item of provenance.tour) {
             expect(item.finalFile).toMatch(/^public\/img\/neconyan\/tour\/tour-\d{2}-.+\.webp$/);

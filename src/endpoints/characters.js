@@ -1,5 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { promises as fsPromises } from 'node:fs';
 import { Buffer } from 'node:buffer';
 import os from 'node:os';
@@ -116,6 +117,7 @@ function loadAssistantManifest() {
                     bundledVersion: assistantManifestVersion,
                     cardPath: resolveAsset(variant.card),
                     portraitPath: resolveAsset(variant.portrait),
+                    portraitVersion: createHash('sha256').update(fs.readFileSync(resolveAsset(variant.portrait))).digest('hex').slice(0, 12),
                     expressionsPath: resolveAsset(variant.expressions),
                 }));
             }
@@ -164,7 +166,7 @@ async function assistantUiCatalog(request) {
             id: entry.id,
             gender: entry.gender,
             pronouns: entry.pronouns,
-            portrait: `/api/characters/assistants/${entry.id}/portrait?v=${entry.bundledVersion}`,
+            portrait: `/api/characters/assistants/${entry.id}/portrait?v=${entry.portraitVersion}`,
             bundledVersion: entry.bundledVersion,
             installed: installed.filter(record => record.id === entry.id),
         });

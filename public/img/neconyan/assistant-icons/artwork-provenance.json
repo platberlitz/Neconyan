@@ -1,66 +1,210 @@
 {
-  "version": 3,
+  "version": 4,
   "model": "gpt-image-2.5-sunburst",
   "icons": [
     {
-      "id": "miso",
+      "id": "miso-male",
       "model": "gpt-image-2.5-sunburst",
       "coordinator": "gpt-5.5",
-      "generatedAt": "2026-09-16T05:39:23.161933+00:00",
-      "prompt": "Create a square frontend icon showing ONLY the chibi assistant head from the reference. Preserve the same human anime face, hair, ears, markings, eyes and illustrated style. Miso has rich warm orange hair with several distinct irregular charcoal-black tiger stripes through the hair, rounded orange tiger ears with black edging and ivory inner fluff, and amber eyes. The tiger pattern is visibly striped, continuous and deliberate. The face, neck and hands remain natural human skin. Cream knitted layers with restrained charcoal and orange striped panels and a soft apricot scarf complete the welcoming outfit. Show the whole head and both ears, a cheerful confident smile, centred and large with 8 percent clear margin on all sides. The silhouette ends cleanly beneath the chin and hair. Head only, without neck, shoulders, torso, hands, props, badge or border. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+      "generatedAt": "2026-09-16T11:02:00.812320+00:00",
+      "prompt": "Create a square frontend icon showing ONLY the human chibi head of the exact assistant in the reference. Preserve the same face, gender presentation, skin colour, hairstyle, ears, hair markings and eye colour. Miso has a GENTLE FRIENDLY face with full soft cheeks, kind amber eyes and a warm smile. Miso is visibly CHUBBY: a rounded face, soft rounded shoulders, full upper arms and a pleasantly plump torso and belly clearly expressed by the clothing silhouette. The figure is an unmistakable adult. Warm orange hair has bold irregular charcoal-black tiger stripes, and broad ROUND tiger ears have semicircular tips, black edging and ivory inner fluff. Preserve the existing light warm peach human skin colour from the Miso reference on the face, neck and hands. The outfit is cream knit layers with orange and charcoal striped panels and an apricot scarf. A visibly masculine adult man with masculine facial proportions and brow shape, a compact swept-back or tousled hairstyle, and a male clothing silhouette. Preserve the assistant's specified face character and body build, especially Miso's chubbiness and Nori's lankiness. A gentle, friendly warm smile, soft full cheeks and kind welcoming eyes. Use a lively head tilt. Make the gender presentation visibly distinct at 32 pixels. Show the whole head and both ears, large and centred with 8 percent clear margin on all sides. The silhouette ends cleanly beneath the chin and hair: a head-only icon, free of neck, shoulders, hands, props or badges. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.\nOriginal adult human anime assistant with human facial anatomy and human hands. Animal traits are confined to the ears and hair markings. Redraw in punchy Studio Trigger anime keyframe style with exaggerated expressive graphic shapes. Use VERY THICK SOLID BLACK OUTLINES, around 12 to 18 pixels on major contours at 1024px width, with expressive line-weight variation. Simplify hair into bold coarse locks and clothing into large flat shapes. Render colour as completely flat fills with only two or three hard-edged cel-shaded tones. Make the bold contours and flat graphic shadows immediately obvious even in a tiny thumbnail. Use solid clean colours and neutral lighting. Trigger anime style, flat cel-shading, very thick black outlines, dynamic posing",
       "size": "1024x1024",
       "quality": "high",
-      "rawSha256": "4f368cd2cf291d27bfcb953d23180586bc47f05277161f1a0b0a85598b8075aa",
+      "rawSha256": "d7ca16e6a8e1911656c950f0cc9b9f530b39add5f5d0ed7b2916044f2082a81f",
       "references": [
         {
-          "file": ".local-runtime/assistant-art-v3/processed/tour-02-miso-characters.png",
-          "sha256": "bdd7eb9afa623579d316d730f17a1cd6094511a6594a2850899a24ea3c394871"
+          "file": ".local-runtime/assistant-art-v4/approved/processed/tour-02-miso-characters-male.png",
+          "sha256": "f9cc367a4806eb74032bf2dba5a3bf205fda42d3cd6cafa1c1c769fa1d417c20"
         }
       ],
-      "finalFile": "public/img/neconyan/assistant-icons/miso.png",
-      "finalSha256": "f1b9a4cd132355e0016f9806b1012f7bc0af56a5800be9b70b80b42c9b1f69b9",
+      "personality": "miso",
+      "gender": "male",
+      "finalFile": "public/img/neconyan/assistant-icons/miso-male.png",
+      "finalSha256": "7e5d7282bf9de56b106e07713239bdc32262a43deead6266896e58564d9d172a",
       "width": 192,
       "height": 192,
       "transparent": true
     },
     {
-      "id": "taro",
+      "id": "miso-female",
       "model": "gpt-image-2.5-sunburst",
       "coordinator": "gpt-5.5",
-      "generatedAt": "2026-09-16T05:39:25.630594+00:00",
-      "prompt": "Create a square frontend icon showing ONLY the chibi assistant head from the reference. Preserve the same human anime face, hair, ears, markings, eyes and illustrated style. Taro has solid smoky blue-grey hair with subtle silver highlights, matching blue-grey cat ears with pale silver inner fluff, and grey-green eyes. The hair and ears have a coherent cool blue-grey cat palette. A slate-grey utility jacket with darker charcoal collar and pockets, a light grey shirt and small copper stitching details complete the practical outfit. Show the whole head and both ears, a cheerful confident smile, centred and large with 8 percent clear margin on all sides. The silhouette ends cleanly beneath the chin and hair. Head only, without neck, shoulders, torso, hands, props, badge or border. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+      "generatedAt": "2026-09-16T11:02:00.141311+00:00",
+      "prompt": "Create a square frontend icon showing ONLY the human chibi head of the exact assistant in the reference. Preserve the same face, gender presentation, skin colour, hairstyle, ears, hair markings and eye colour. Miso has a GENTLE FRIENDLY face with full soft cheeks, kind amber eyes and a warm smile. Miso is visibly CHUBBY: a rounded face, soft rounded shoulders, full upper arms and a pleasantly plump torso and belly clearly expressed by the clothing silhouette. The figure is an unmistakable adult. Warm orange hair has bold irregular charcoal-black tiger stripes, and broad ROUND tiger ears have semicircular tips, black edging and ivory inner fluff. Preserve the existing light warm peach human skin colour from the Miso reference on the face, neck and hands. The outfit is cream knit layers with orange and charcoal striped panels and an apricot scarf. A visibly feminine adult woman with a feminine adult face, defined upper lashes, a distinct feminine hairstyle and a recognisably feminine clothing silhouette. Preserve the assistant's specified face character and body build, especially Miso's chubbiness and Nori's lankiness. Make the feminine presentation clearly readable in a small thumbnail through the face AND silhouette. A gentle, friendly warm smile, soft full cheeks and kind welcoming eyes. Use a lively head tilt. Make the gender presentation visibly distinct at 32 pixels. Show the whole head and both ears, large and centred with 8 percent clear margin on all sides. The silhouette ends cleanly beneath the chin and hair: a head-only icon, free of neck, shoulders, hands, props or badges. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.\nOriginal adult human anime assistant with human facial anatomy and human hands. Animal traits are confined to the ears and hair markings. Redraw in punchy Studio Trigger anime keyframe style with exaggerated expressive graphic shapes. Use VERY THICK SOLID BLACK OUTLINES, around 12 to 18 pixels on major contours at 1024px width, with expressive line-weight variation. Simplify hair into bold coarse locks and clothing into large flat shapes. Render colour as completely flat fills with only two or three hard-edged cel-shaded tones. Make the bold contours and flat graphic shadows immediately obvious even in a tiny thumbnail. Use solid clean colours and neutral lighting. Trigger anime style, flat cel-shading, very thick black outlines, dynamic posing",
       "size": "1024x1024",
       "quality": "high",
-      "rawSha256": "404875d3785f5b59b9686290d9dfefec28d3ffb52c33d355c84c09badb5a50e9",
+      "rawSha256": "fd11247a85a08158d90167235f84d5a351d55215ebbe05c16fc73b6d29989534",
       "references": [
         {
-          "file": ".local-runtime/assistant-art-v3/processed/tour-03-taro-modes.png",
-          "sha256": "797754e935ed85629feb084d34a51641f660e33ca54972fd3e37cb9f936043ff"
+          "file": ".local-runtime/assistant-art-v4/approved/processed/tour-02-miso-characters-female.png",
+          "sha256": "7cad985ba17556d8a1e86493d588f7c3f48acfc0c881c8872b788d10540754ca"
         }
       ],
-      "finalFile": "public/img/neconyan/assistant-icons/taro.png",
-      "finalSha256": "9445f30b6ac9d296f8a9879785546ff67e8153f4439a2b4c55a92352df190126",
+      "personality": "miso",
+      "gender": "female",
+      "finalFile": "public/img/neconyan/assistant-icons/miso-female.png",
+      "finalSha256": "309b2e9fb479f10f5a8bf4cadee5be28d93b8f0abe69ee1fe8459d020b762023",
       "width": 192,
       "height": 192,
       "transparent": true
     },
     {
-      "id": "nori",
+      "id": "miso-neutral",
       "model": "gpt-image-2.5-sunburst",
       "coordinator": "gpt-5.5",
-      "generatedAt": "2026-09-16T05:39:25.559062+00:00",
-      "prompt": "Create a square frontend icon showing ONLY the chibi assistant head from the reference. Preserve the same human anime face, hair, ears, markings, eyes and illustrated style. Nori has a black-and-white tuxedo cat palette: rich charcoal-black hair with one clean ivory-white forelock, black cat ears with white inner fluff, and hazel eyes. The hair is predominantly black with the distinctive white front lock. A black overshirt with an ivory collar and white chest panel, plus a small silver crescent pin, completes the creative outfit. Show the whole head and both ears, a cheerful confident smile, centred and large with 8 percent clear margin on all sides. The silhouette ends cleanly beneath the chin and hair. Head only, without neck, shoulders, torso, hands, props, badge or border. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.",
+      "generatedAt": "2026-09-16T11:02:00.624385+00:00",
+      "prompt": "Create a square frontend icon showing ONLY the human chibi head of the exact assistant in the reference. Preserve the same face, gender presentation, skin colour, hairstyle, ears, hair markings and eye colour. Miso has a GENTLE FRIENDLY face with full soft cheeks, kind amber eyes and a warm smile. Miso is visibly CHUBBY: a rounded face, soft rounded shoulders, full upper arms and a pleasantly plump torso and belly clearly expressed by the clothing silhouette. The figure is an unmistakable adult. Warm orange hair has bold irregular charcoal-black tiger stripes, and broad ROUND tiger ears have semicircular tips, black edging and ivory inner fluff. Preserve the existing light warm peach human skin colour from the Miso reference on the face, neck and hands. The outfit is cream knit layers with orange and charcoal striped panels and an apricot scarf. A deliberately androgynous adult using they/them, with balanced facial proportions, a layered medium-length hairstyle and a relaxed gender-neutral clothing silhouette. Preserve the assistant's specified face character and body build, especially Miso's chubbiness and Nori's lankiness. Make this genuinely androgynous and distinct from the male and female variants. A gentle, friendly warm smile, soft full cheeks and kind welcoming eyes. Use a lively head tilt. Make the gender presentation visibly distinct at 32 pixels. Show the whole head and both ears, large and centred with 8 percent clear margin on all sides. The silhouette ends cleanly beneath the chin and hair: a head-only icon, free of neck, shoulders, hands, props or badges. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.\nOriginal adult human anime assistant with human facial anatomy and human hands. Animal traits are confined to the ears and hair markings. Redraw in punchy Studio Trigger anime keyframe style with exaggerated expressive graphic shapes. Use VERY THICK SOLID BLACK OUTLINES, around 12 to 18 pixels on major contours at 1024px width, with expressive line-weight variation. Simplify hair into bold coarse locks and clothing into large flat shapes. Render colour as completely flat fills with only two or three hard-edged cel-shaded tones. Make the bold contours and flat graphic shadows immediately obvious even in a tiny thumbnail. Use solid clean colours and neutral lighting. Trigger anime style, flat cel-shading, very thick black outlines, dynamic posing",
       "size": "1024x1024",
       "quality": "high",
-      "rawSha256": "517fff0c76aa98e312e34a43cf05f4fe4fb661a0d54945e64f62a5a992ece98a",
+      "rawSha256": "c2a5af7f0472a108f25ad9490bdccc8c1f5872069b9aab40c9f0923d0af3facd",
       "references": [
         {
-          "file": ".local-runtime/assistant-art-v3/processed/tour-06-nori-extensions.png",
-          "sha256": "2cf25b4ffea490f9427a5132fac1077aa031975d53eb0aba57ad251c7cb12354"
+          "file": ".local-runtime/assistant-art-v4/approved/processed/tour-02-miso-characters-neutral.png",
+          "sha256": "5e07fcc40dc9e97ada1954f89d8bfe84079651e3462ea3096caf48cc43017cce"
         }
       ],
-      "finalFile": "public/img/neconyan/assistant-icons/nori.png",
-      "finalSha256": "45371577e51d1b031afb1d411a78fefb9160dbde6382d9a9cf8dfff6c046c649",
+      "personality": "miso",
+      "gender": "neutral",
+      "finalFile": "public/img/neconyan/assistant-icons/miso-neutral.png",
+      "finalSha256": "27a5eb63b4a17687746d18e89d60b65eba68d3a5b1dcaf57ca0eb6e8af8d85d0",
+      "width": 192,
+      "height": 192,
+      "transparent": true
+    },
+    {
+      "id": "taro-male",
+      "model": "gpt-image-2.5-sunburst",
+      "coordinator": "gpt-5.5",
+      "generatedAt": "2026-09-16T11:02:53.726606+00:00",
+      "prompt": "Create a square frontend icon showing ONLY the human chibi head of the exact assistant in the reference. Preserve the same face, gender presentation, skin colour, hairstyle, ears, hair markings and eye colour. Taro has a SEVERE, EXTREMELY ATTRACTIVE adult face: striking elegant proportions, sharply sculpted cheekbones, a beautifully defined jaw, intense narrow grey-green eyes, strong precise eyebrows and a composed stern mouth. The face is exceptionally beautiful and arresting, with a cool intimidating gaze. Smoky blue-grey hair has silver highlights, with matching blue-grey cat ears and pale inner fluff. All exposed human skin is warm LIGHT BROWN, including the face, neck and hands, with a caramel-brown midtone around #BB8058. Keep this visibly brown skin consistent under flat neutral lighting. The outfit is a slate-grey utility jacket with charcoal collar and pockets, small copper stitching details, and a light grey shirt. A visibly masculine adult man with masculine facial proportions and brow shape, a compact swept-back or tousled hairstyle, and a male clothing silhouette. Preserve the assistant's specified face character and body build, especially Miso's chubbiness and Nori's lankiness. A severe, composed and intensely attractive face, focused narrow eyes and a stern closed mouth. Use a lively head tilt. Make the gender presentation visibly distinct at 32 pixels. Show the whole head and both ears, large and centred with 8 percent clear margin on all sides. The silhouette ends cleanly beneath the chin and hair: a head-only icon, free of neck, shoulders, hands, props or badges. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.\nOriginal adult human anime assistant with human facial anatomy and human hands. Animal traits are confined to the ears and hair markings. Redraw in punchy Studio Trigger anime keyframe style with exaggerated expressive graphic shapes. Use VERY THICK SOLID BLACK OUTLINES, around 12 to 18 pixels on major contours at 1024px width, with expressive line-weight variation. Simplify hair into bold coarse locks and clothing into large flat shapes. Render colour as completely flat fills with only two or three hard-edged cel-shaded tones. Make the bold contours and flat graphic shadows immediately obvious even in a tiny thumbnail. Use solid clean colours and neutral lighting. Trigger anime style, flat cel-shading, very thick black outlines, dynamic posing",
+      "size": "1024x1024",
+      "quality": "high",
+      "rawSha256": "dfacd372627fbdf7e254072c57fab330761d75f3b83e5bdc9885adeb62fb0edf",
+      "references": [
+        {
+          "file": ".local-runtime/assistant-art-v4/approved/processed/tour-03-taro-modes-male.png",
+          "sha256": "9e38ec2d834b5292e9b2970aafccfe11159b2398a11797c10a680b11b616642d"
+        }
+      ],
+      "personality": "taro",
+      "gender": "male",
+      "finalFile": "public/img/neconyan/assistant-icons/taro-male.png",
+      "finalSha256": "1447367c37b7e6262ea7e7738c05e9093fdb7da7058fc4fb576092fe9f66be7a",
+      "width": 192,
+      "height": 192,
+      "transparent": true
+    },
+    {
+      "id": "taro-female",
+      "model": "gpt-image-2.5-sunburst",
+      "coordinator": "gpt-5.5",
+      "generatedAt": "2026-09-16T11:02:48.943324+00:00",
+      "prompt": "Create a square frontend icon showing ONLY the human chibi head of the exact assistant in the reference. Preserve the same face, gender presentation, skin colour, hairstyle, ears, hair markings and eye colour. Taro has a SEVERE, EXTREMELY ATTRACTIVE adult face: striking elegant proportions, sharply sculpted cheekbones, a beautifully defined jaw, intense narrow grey-green eyes, strong precise eyebrows and a composed stern mouth. The face is exceptionally beautiful and arresting, with a cool intimidating gaze. Smoky blue-grey hair has silver highlights, with matching blue-grey cat ears and pale inner fluff. All exposed human skin is warm LIGHT BROWN, including the face, neck and hands, with a caramel-brown midtone around #BB8058. Keep this visibly brown skin consistent under flat neutral lighting. The outfit is a slate-grey utility jacket with charcoal collar and pockets, small copper stitching details, and a light grey shirt. A visibly feminine adult woman with a feminine adult face, defined upper lashes, a distinct feminine hairstyle and a recognisably feminine clothing silhouette. Preserve the assistant's specified face character and body build, especially Miso's chubbiness and Nori's lankiness. Make the feminine presentation clearly readable in a small thumbnail through the face AND silhouette. A severe, composed and intensely attractive face, focused narrow eyes and a stern closed mouth. Use a lively head tilt. Make the gender presentation visibly distinct at 32 pixels. Show the whole head and both ears, large and centred with 8 percent clear margin on all sides. The silhouette ends cleanly beneath the chin and hair: a head-only icon, free of neck, shoulders, hands, props or badges. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.\nOriginal adult human anime assistant with human facial anatomy and human hands. Animal traits are confined to the ears and hair markings. Redraw in punchy Studio Trigger anime keyframe style with exaggerated expressive graphic shapes. Use VERY THICK SOLID BLACK OUTLINES, around 12 to 18 pixels on major contours at 1024px width, with expressive line-weight variation. Simplify hair into bold coarse locks and clothing into large flat shapes. Render colour as completely flat fills with only two or three hard-edged cel-shaded tones. Make the bold contours and flat graphic shadows immediately obvious even in a tiny thumbnail. Use solid clean colours and neutral lighting. Trigger anime style, flat cel-shading, very thick black outlines, dynamic posing",
+      "size": "1024x1024",
+      "quality": "high",
+      "rawSha256": "fd1b770c99eb47744c96dddec36fccc4c89d16a9482e1eaf9f11ff39d3964377",
+      "references": [
+        {
+          "file": ".local-runtime/assistant-art-v4/approved/processed/tour-03-taro-modes-female.png",
+          "sha256": "9f06328a417c1e9f4f9b4dfe37442aab1d6f5e8808302d62e31e3bd5837a0527"
+        }
+      ],
+      "personality": "taro",
+      "gender": "female",
+      "finalFile": "public/img/neconyan/assistant-icons/taro-female.png",
+      "finalSha256": "bc56c20ecb66dd2c3dc95e87af6f1a161492731a38038d8e26368ba864ee85f1",
+      "width": 192,
+      "height": 192,
+      "transparent": true
+    },
+    {
+      "id": "taro-neutral",
+      "model": "gpt-image-2.5-sunburst",
+      "coordinator": "gpt-5.5",
+      "generatedAt": "2026-09-16T11:02:50.350765+00:00",
+      "prompt": "Create a square frontend icon showing ONLY the human chibi head of the exact assistant in the reference. Preserve the same face, gender presentation, skin colour, hairstyle, ears, hair markings and eye colour. Taro has a SEVERE, EXTREMELY ATTRACTIVE adult face: striking elegant proportions, sharply sculpted cheekbones, a beautifully defined jaw, intense narrow grey-green eyes, strong precise eyebrows and a composed stern mouth. The face is exceptionally beautiful and arresting, with a cool intimidating gaze. Smoky blue-grey hair has silver highlights, with matching blue-grey cat ears and pale inner fluff. All exposed human skin is warm LIGHT BROWN, including the face, neck and hands, with a caramel-brown midtone around #BB8058. Keep this visibly brown skin consistent under flat neutral lighting. The outfit is a slate-grey utility jacket with charcoal collar and pockets, small copper stitching details, and a light grey shirt. A deliberately androgynous adult using they/them, with balanced facial proportions, a layered medium-length hairstyle and a relaxed gender-neutral clothing silhouette. Preserve the assistant's specified face character and body build, especially Miso's chubbiness and Nori's lankiness. Make this genuinely androgynous and distinct from the male and female variants. A severe, composed and intensely attractive face, focused narrow eyes and a stern closed mouth. Use a lively head tilt. Make the gender presentation visibly distinct at 32 pixels. Show the whole head and both ears, large and centred with 8 percent clear margin on all sides. The silhouette ends cleanly beneath the chin and hair: a head-only icon, free of neck, shoulders, hands, props or badges. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.\nOriginal adult human anime assistant with human facial anatomy and human hands. Animal traits are confined to the ears and hair markings. Redraw in punchy Studio Trigger anime keyframe style with exaggerated expressive graphic shapes. Use VERY THICK SOLID BLACK OUTLINES, around 12 to 18 pixels on major contours at 1024px width, with expressive line-weight variation. Simplify hair into bold coarse locks and clothing into large flat shapes. Render colour as completely flat fills with only two or three hard-edged cel-shaded tones. Make the bold contours and flat graphic shadows immediately obvious even in a tiny thumbnail. Use solid clean colours and neutral lighting. Trigger anime style, flat cel-shading, very thick black outlines, dynamic posing",
+      "size": "1024x1024",
+      "quality": "high",
+      "rawSha256": "5d37e2eb98cdf1622b329c8b2e550fde1bd293e2afc7f865ad0be35a2a399ab5",
+      "references": [
+        {
+          "file": ".local-runtime/assistant-art-v4/approved/processed/tour-03-taro-modes-neutral.png",
+          "sha256": "32b349028eaad2f016d96681a6d7369f8c6353658c7db67f71b7b468123a243a"
+        }
+      ],
+      "personality": "taro",
+      "gender": "neutral",
+      "finalFile": "public/img/neconyan/assistant-icons/taro-neutral.png",
+      "finalSha256": "fbba11485f4165ced0fd85eacf729cf4517f8d283b461f1f79b5a0e29bed8933",
+      "width": 192,
+      "height": 192,
+      "transparent": true
+    },
+    {
+      "id": "nori-male",
+      "model": "gpt-image-2.5-sunburst",
+      "coordinator": "gpt-5.5",
+      "generatedAt": "2026-09-16T11:03:39.739483+00:00",
+      "prompt": "Create a square frontend icon showing ONLY the human chibi head of the exact assistant in the reference. Preserve the same face, gender presentation, skin colour, hairstyle, ears, hair markings and eye colour. Nori is a BRATTY, LANKY, SMUG adult: a long slender torso, narrow shoulders, slim waist, elongated slender limbs and a wiry angular silhouette. The face has a shamelessly self-satisfied lopsided smirk, half-lidded hazel eyes, one high arched eyebrow and a lifted chin, with playful teasing confidence. Charcoal-black hair has a prominent ivory-white forelock, with black cat ears and white inner fluff. All exposed human skin is rich DARK BROWN, including the face, neck and hands, with a deep warm brown midtone around #70442F. Keep the skin distinctly dark brown even in the lit areas. The outfit is a black overshirt with an ivory collar and white chest panel, with a small silver crescent detail. A visibly masculine adult man with masculine facial proportions and brow shape, a compact swept-back or tousled hairstyle, and a male clothing silhouette. Preserve the assistant's specified face character and body build, especially Miso's chubbiness and Nori's lankiness. An exaggerated smug bratty grin, one corner of the mouth raised high, half-lidded knowing eyes, one arched eyebrow and a cocky lifted chin. Use a lively head tilt. Make the gender presentation visibly distinct at 32 pixels. Show the whole head and both ears, large and centred with 8 percent clear margin on all sides. The silhouette ends cleanly beneath the chin and hair: a head-only icon, free of neck, shoulders, hands, props or badges. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.\nOriginal adult human anime assistant with human facial anatomy and human hands. Animal traits are confined to the ears and hair markings. Redraw in punchy Studio Trigger anime keyframe style with exaggerated expressive graphic shapes. Use VERY THICK SOLID BLACK OUTLINES, around 12 to 18 pixels on major contours at 1024px width, with expressive line-weight variation. Simplify hair into bold coarse locks and clothing into large flat shapes. Render colour as completely flat fills with only two or three hard-edged cel-shaded tones. Make the bold contours and flat graphic shadows immediately obvious even in a tiny thumbnail. Use solid clean colours and neutral lighting. Trigger anime style, flat cel-shading, very thick black outlines, dynamic posing",
+      "size": "1024x1024",
+      "quality": "high",
+      "rawSha256": "ed7f724d61ac2920350aa32ca8adf227afaecf42387b972710051074f5a31e7a",
+      "references": [
+        {
+          "file": ".local-runtime/assistant-art-v4/approved/processed/tour-06-nori-extensions-male.png",
+          "sha256": "1465edd383190ecde6d247b0ae40788410f1c58de0a06554fe2eec5d4edea777"
+        }
+      ],
+      "personality": "nori",
+      "gender": "male",
+      "finalFile": "public/img/neconyan/assistant-icons/nori-male.png",
+      "finalSha256": "5a5b2e35698ce391f13adcc4bb88c682aabff3f75e78d15d87d8eae0809947b4",
+      "width": 192,
+      "height": 192,
+      "transparent": true
+    },
+    {
+      "id": "nori-female",
+      "model": "gpt-image-2.5-sunburst",
+      "coordinator": "gpt-5.5",
+      "generatedAt": "2026-09-16T11:03:42.976527+00:00",
+      "prompt": "Create a square frontend icon showing ONLY the human chibi head of the exact assistant in the reference. Preserve the same face, gender presentation, skin colour, hairstyle, ears, hair markings and eye colour. Nori is a BRATTY, LANKY, SMUG adult: a long slender torso, narrow shoulders, slim waist, elongated slender limbs and a wiry angular silhouette. The face has a shamelessly self-satisfied lopsided smirk, half-lidded hazel eyes, one high arched eyebrow and a lifted chin, with playful teasing confidence. Charcoal-black hair has a prominent ivory-white forelock, with black cat ears and white inner fluff. All exposed human skin is rich DARK BROWN, including the face, neck and hands, with a deep warm brown midtone around #70442F. Keep the skin distinctly dark brown even in the lit areas. The outfit is a black overshirt with an ivory collar and white chest panel, with a small silver crescent detail. A visibly feminine adult woman with a feminine adult face, defined upper lashes, a distinct feminine hairstyle and a recognisably feminine clothing silhouette. Preserve the assistant's specified face character and body build, especially Miso's chubbiness and Nori's lankiness. Make the feminine presentation clearly readable in a small thumbnail through the face AND silhouette. An exaggerated smug bratty grin, one corner of the mouth raised high, half-lidded knowing eyes, one arched eyebrow and a cocky lifted chin. Use a lively head tilt. Make the gender presentation visibly distinct at 32 pixels. Show the whole head and both ears, large and centred with 8 percent clear margin on all sides. The silhouette ends cleanly beneath the chin and hair: a head-only icon, free of neck, shoulders, hands, props or badges. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.\nOriginal adult human anime assistant with human facial anatomy and human hands. Animal traits are confined to the ears and hair markings. Redraw in punchy Studio Trigger anime keyframe style with exaggerated expressive graphic shapes. Use VERY THICK SOLID BLACK OUTLINES, around 12 to 18 pixels on major contours at 1024px width, with expressive line-weight variation. Simplify hair into bold coarse locks and clothing into large flat shapes. Render colour as completely flat fills with only two or three hard-edged cel-shaded tones. Make the bold contours and flat graphic shadows immediately obvious even in a tiny thumbnail. Use solid clean colours and neutral lighting. Trigger anime style, flat cel-shading, very thick black outlines, dynamic posing",
+      "size": "1024x1024",
+      "quality": "high",
+      "rawSha256": "a0dc9fa52ef518b7bcde1f879ed9fd4996c3dce564817cd29474a476b4792a8b",
+      "references": [
+        {
+          "file": ".local-runtime/assistant-art-v4/approved/processed/tour-06-nori-extensions-female.png",
+          "sha256": "3f550482c5a58d3e5bfca99b556acae1e89ae1fcde9bf30ae8c6189758622eda"
+        }
+      ],
+      "personality": "nori",
+      "gender": "female",
+      "finalFile": "public/img/neconyan/assistant-icons/nori-female.png",
+      "finalSha256": "defc5e82ce5ca381a47ad9ea69c4c76002e19964675da9b4927517c1ee543eaf",
+      "width": 192,
+      "height": 192,
+      "transparent": true
+    },
+    {
+      "id": "nori-neutral",
+      "model": "gpt-image-2.5-sunburst",
+      "coordinator": "gpt-5.5",
+      "generatedAt": "2026-09-16T11:03:43.100513+00:00",
+      "prompt": "Create a square frontend icon showing ONLY the human chibi head of the exact assistant in the reference. Preserve the same face, gender presentation, skin colour, hairstyle, ears, hair markings and eye colour. Nori is a BRATTY, LANKY, SMUG adult: a long slender torso, narrow shoulders, slim waist, elongated slender limbs and a wiry angular silhouette. The face has a shamelessly self-satisfied lopsided smirk, half-lidded hazel eyes, one high arched eyebrow and a lifted chin, with playful teasing confidence. Charcoal-black hair has a prominent ivory-white forelock, with black cat ears and white inner fluff. All exposed human skin is rich DARK BROWN, including the face, neck and hands, with a deep warm brown midtone around #70442F. Keep the skin distinctly dark brown even in the lit areas. The outfit is a black overshirt with an ivory collar and white chest panel, with a small silver crescent detail. A deliberately androgynous adult using they/them, with balanced facial proportions, a layered medium-length hairstyle and a relaxed gender-neutral clothing silhouette. Preserve the assistant's specified face character and body build, especially Miso's chubbiness and Nori's lankiness. Make this genuinely androgynous and distinct from the male and female variants. An exaggerated smug bratty grin, one corner of the mouth raised high, half-lidded knowing eyes, one arched eyebrow and a cocky lifted chin. Use a lively head tilt. Make the gender presentation visibly distinct at 32 pixels. Show the whole head and both ears, large and centred with 8 percent clear margin on all sides. The silhouette ends cleanly beneath the chin and hair: a head-only icon, free of neck, shoulders, hands, props or badges. The entire empty background is perfectly uniform vivid chroma green RGB(0,255,0), including gaps between the arms and body. This is a temporary extraction matte. Use natural neutral lighting on the subject and reserve vivid green exclusively for the background. Clean flat matte, clean silhouette, no cast shadow, no checkerboard, no text, no watermark.\nOriginal adult human anime assistant with human facial anatomy and human hands. Animal traits are confined to the ears and hair markings. Redraw in punchy Studio Trigger anime keyframe style with exaggerated expressive graphic shapes. Use VERY THICK SOLID BLACK OUTLINES, around 12 to 18 pixels on major contours at 1024px width, with expressive line-weight variation. Simplify hair into bold coarse locks and clothing into large flat shapes. Render colour as completely flat fills with only two or three hard-edged cel-shaded tones. Make the bold contours and flat graphic shadows immediately obvious even in a tiny thumbnail. Use solid clean colours and neutral lighting. Trigger anime style, flat cel-shading, very thick black outlines, dynamic posing",
+      "size": "1024x1024",
+      "quality": "high",
+      "rawSha256": "2b274b9c4cd91dedb6762594eb61322a4c34983da13d65f001b2b0e4cbeebd4a",
+      "references": [
+        {
+          "file": ".local-runtime/assistant-art-v4/approved/processed/tour-06-nori-extensions-neutral.png",
+          "sha256": "21e6e9b0effe9a106dace36c833659171ad9b36a4ad4c8c7e9ee6f5d7d9379db"
+        }
+      ],
+      "personality": "nori",
+      "gender": "neutral",
+      "finalFile": "public/img/neconyan/assistant-icons/nori-neutral.png",
+      "finalSha256": "217dd8f349a1ad56053bf943aa499d69f244c84b5ec9cbf047a5487961b4abd6",
       "width": 192,
       "height": 192,
       "transparent": true

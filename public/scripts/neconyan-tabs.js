@@ -30,6 +30,7 @@ import { is_group_generating } from './group-chats.js';
 import { eventSource, event_types } from './events.js';
 import { extensionNames, findExtension, getExtensionManifest, getExtensionType } from './extensions.js';
 import { getCurrentUserHandle } from './user.js';
+import { getAssistantIconSrc } from './neconyan-assistant-art.js';
 import {
     mountNeconyanCharacterWorkspace,
     mountNeconyanLorebookWorkspace,
@@ -163,9 +164,9 @@ const NN_FRONTEND_ICONS = Object.freeze([
         description: 'Neconyan calico badge.',
         src: 'img/neconyan-icon-192.png',
     },
-    { id: 'miso', label: 'Miso', description: 'Orange-and-black tiger.', src: 'img/neconyan/assistant-icons/miso.png' },
-    { id: 'taro', label: 'Taro', description: 'Blue-grey cat.', src: 'img/neconyan/assistant-icons/taro.png' },
-    { id: 'nori', label: 'Nori', description: 'Black-and-white tuxedo cat.', src: 'img/neconyan/assistant-icons/nori.png' },
+    { id: 'miso', label: 'Miso', description: 'Orange-and-black tiger.' },
+    { id: 'taro', label: 'Taro', description: 'Blue-grey cat.' },
+    { id: 'nori', label: 'Nori', description: 'Black-and-white tuxedo cat.' },
 ]);
 const NN_ACCOUNT_STORAGE_READY_MARKER = '__migrated';
 const NN_INLINE_DRAWER_CUSTOM_PERSISTENCE_SELECTOR = '.sb-openai-settings-drawer, .sb-openai-settings-subdrawer, [id$="prompt_manager_drawer"]';
@@ -1493,7 +1494,7 @@ function getFrontendIconConfig(iconId = nnState.frontendIcon) {
 }
 
 function getFrontendIconSrc(iconId = nnState.frontendIcon, { absolute = true } = {}) {
-    const src = getFrontendIconConfig(iconId).src;
+    const src = getAssistantIconSrc(getFrontendIconConfig(iconId).id);
     return absolute ? `/${src}` : src;
 }
 
@@ -14771,7 +14772,8 @@ function createFrontendIconSettingsGroup() {
         const preview = createElement('img', {
             className: 'sb-frontend-icon-preview',
             attrs: {
-                src: icon.src,
+                src: getFrontendIconSrc(icon.id),
+                'data-assistant-icon': icon.id,
                 alt: '',
                 loading: 'lazy',
             },
