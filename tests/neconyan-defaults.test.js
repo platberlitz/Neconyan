@@ -345,7 +345,7 @@ describe('Meower prompt defaults', () => {
         expect(settings).toEqual(originalSettings);
     });
 
-    test('uses bundled M PLUS Rounded 1c for body text and Fredoka One for headings without changing saved Google font state', () => {
+    test('uses bundled Fredoka for body text and Fredoka One for headings without changing saved Google font state', () => {
         const index = readSource('public', 'index.html');
         const login = readSource('public', 'login.html');
         const style = readSource('public', 'style.css');
@@ -358,12 +358,12 @@ describe('Meower prompt defaults', () => {
         expect(index).toContain('webfonts/FredokaOne/stylesheet.css?v=20260913g');
         expect(index).toContain('webfonts/FredokaOne/FredokaOne-Regular.ttf?v=20260913g');
         expect((index.match(/webfonts\/FredokaOne\/FredokaOne-Regular\.ttf/g) || [])).toHaveLength(1);
-        expect(index).toContain('Default (Fredoka One + M PLUS Rounded 1c)');
+        expect(index).toContain('Default (Fredoka One + Fredoka)');
         expect(index).toContain('<option value="Nunito">Nunito</option>');
         expect(index).toContain('<option value="Fredoka One">Fredoka One</option>');
         expect(login).toContain('webfonts/FredokaOne/stylesheet.css?v=20260913g');
-        expect(style).toContain("--mainFontFamily: 'M PLUS Rounded 1c', 'Nunito', 'Figtree'");
-        expect(neconyanCss).toContain("--mainFontFamily: 'M PLUS Rounded 1c', 'Nunito', 'Figtree'");
+        expect(style).toContain("--mainFontFamily: 'Fredoka', 'Nunito', 'Figtree'");
+        expect(neconyanCss).toContain("--mainFontFamily: 'Fredoka', 'Nunito', 'Figtree'");
         expect(neconyanCss).toContain("--sb-font-display: 'Fredoka One', var(--mainFontFamily);");
         // The picked-font override must carry :has(body.neconyan) or the (0,2,1) default above outranks it.
         expect(neconyanCss).toContain(":root[style*='--mainFontFamily']:has(body.neconyan) { --sb-font-display: var(--mainFontFamily); }");
@@ -373,13 +373,11 @@ describe('Meower prompt defaults', () => {
         expect(nunito).toContain('font-display: swap;');
         expect(nunito).toContain('Nunito[wght].woff2?v=20260913g');
         expect(nunito).toContain('Nunito-Italic[wght].woff2?v=20260913g');
-        expect(index).toContain('webfonts/MPLUSRounded1c/MPLUSRounded1c-Latin-500.woff2?v=20260916b');
-        expect((index.match(/webfonts\/MPLUSRounded1c\/MPLUSRounded1c-Latin-500\.woff2/g) || [])).toHaveLength(1);
-        expect(neconyanCss).toContain("font-family: 'M PLUS Rounded 1c';");
-        expect(neconyanCss).toContain("url('/webfonts/MPLUSRounded1c/MPLUSRounded1c-Latin-500.woff2?v=20260916b')");
-        expect(neconyanCss).toContain("url('/webfonts/MPLUSRounded1c/MPLUSRounded1c-Latin-700.woff2?v=20260916b')");
-        expect(neconyanCss).toContain('font-weight: 500;');
-        expect(neconyanCss).toContain('font-weight: 700;');
+        expect(index).toContain('webfonts/Fredoka/Fredoka[wght].woff2?v=20260916c');
+        expect((index.match(/webfonts\/Fredoka\/Fredoka\[wght\]\.woff2/g) || [])).toHaveLength(1);
+        expect(neconyanCss).toContain("font-family: 'Fredoka';");
+        expect(neconyanCss).toContain("url('/webfonts/Fredoka/Fredoka[wght].woff2?v=20260916c')");
+        expect(neconyanCss).toContain('font-weight: 300 700;');
         expect(powerUserSource).toContain("'Fredoka One': '/webfonts/FredokaOne/stylesheet.css?v=20260913g'");
         expect(powerUserSource).toContain("Nunito: '/webfonts/Nunito/stylesheet.css?v=20260913g'");
         expect(powerUserSource).toContain("Figtree: '/webfonts/Figtree/stylesheet.css?v=20260422b'");
