@@ -95,7 +95,7 @@ import { setLastConversationPreview } from './typing.js';
 const CONVERSATION_STYLESHEET_HREF = 'css/neconyan-conversation.css?v=20260913g';
 const CONVERSATION_STYLESHEET_ID = 'sb-conversation-css';
 
-function ensureConversationStylesheet() {
+export function ensureConversationStylesheet() {
     if (conversationState.conversationCssLoaded) {
         return;
     }

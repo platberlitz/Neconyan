@@ -1,5 +1,5 @@
 /**
- * Prompt Editor UI - UI component for editing pipeline prompts in Pathfinder settings
+ * Prompt Editor UI - UI component for editing pipeline prompts in Pawthfinder settings
  */
 
 import { getAllPrompts, getPrompt, savePrompt, isPromptModified, getAllPipelines } from './prompt-store.js';

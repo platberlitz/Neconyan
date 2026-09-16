@@ -158,7 +158,7 @@ export function deletePipeline(pipelineId) {
     return deleted;
 }
 
-// Pathfinder settings persist through the Pathfinder agent record, not
+// Pawthfinder settings persist through the Pawthfinder agent record, not
 // extension_settings — without this hook, edits made outside the settings
 // panel (e.g. the standalone prompt editor) were lost on reload.
 let persistHook = null;

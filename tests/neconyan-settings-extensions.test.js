@@ -198,7 +198,7 @@ describe('Neconyan settings and extension controllers', () => {
         expect(source).toContain("resetThirdParty: () => state.setScope('third-party')");
         expect(source).toContain("state.setScope('built-in')");
         expect(cssSource).toContain('grid-template-columns: minmax(180px, 200px) minmax(0, 1fr);');
-        expect(cssSource).toContain('grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);');
+        expect(cssSource).toContain('body.neconyan .sb-extensions-layout {\n    grid-template-columns: minmax(0, 1fr);\n}');
         expect(cssSource).toContain('body.neconyan .sb-extensions-layout [hidden]');
     });
 

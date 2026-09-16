@@ -22,7 +22,7 @@ function clearRetrievalPrompt(setExtensionPrompt, key, extensionPromptTypes, ext
 
 function throwIfAborted(signal) {
     if (signal?.aborted) {
-        throw signal.reason ?? new Error('Pathfinder retrieval cancelled.');
+        throw signal.reason ?? new Error('Pawthfinder retrieval cancelled.');
     }
 }
 
@@ -79,7 +79,7 @@ async function runPipelineRetrieval(books, chatMessages, signal) {
     logPipelineComplete(pipelineId, result.selectedEntries?.length ?? 0, result.stageResults);
 
     if (!result.success) {
-        console.warn('[Pathfinder] Pipeline retrieval failed:', result.error);
+        console.warn('[Pawthfinder] Pipeline retrieval failed:', result.error);
     }
 
     return {
@@ -192,7 +192,7 @@ export async function runSidecarRetrieval(setExtensionPrompt, extensionPromptTyp
     const timeoutMs = Math.max(1, Math.min(60, Number.isFinite(seconds) ? seconds : 8)) * 1000;
     const timeoutId = setTimeout(() => {
         if (isCurrent()) {
-            globalThis.toastr?.warning?.('Pathfinder is processing lore for this reply...', 'Please wait');
+            globalThis.toastr?.warning?.('Pawthfinder is processing lore for this reply...', 'Please wait');
         }
     }, timeoutMs);
 
@@ -213,7 +213,7 @@ export async function runSidecarRetrieval(setExtensionPrompt, extensionPromptTyp
         return result;
     } catch (err) {
         if (!isAbortLikeError(err, signal)) {
-            console.warn('[Pathfinder] Retrieval failed:', err);
+            console.warn('[Pawthfinder] Retrieval failed:', err);
         }
         return { success: false };
     } finally {

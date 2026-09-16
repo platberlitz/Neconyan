@@ -17,6 +17,8 @@
     overflow: hidden;
     flex: 1 1 min(100%, 260px);
 }
+/* An empty quick-reply slot must not claim room and push the guided buttons onto a new row. */
+.gg-qr-container:empty { display: none; }
 
 .gg-regular-buttons-container {
     display: flex;

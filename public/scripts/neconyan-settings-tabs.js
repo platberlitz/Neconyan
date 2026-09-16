@@ -1267,6 +1267,33 @@ import { accountStorage } from './util/AccountStorage.js';
             pinnedKeys: new Set(),
         };
 
+        const ensureUnitPin = (unit, info) => {
+            const header = unit.querySelector('.inline-drawer-toggle');
+            if (!(header instanceof HTMLElement)) return;
+            let pin = header.querySelector(':scope > .sb-extension-unit-pin');
+            if (!pin) {
+                pin = document.createElement('button');
+                pin.type = 'button';
+                pin.className = 'sb-extension-pin sb-extension-unit-pin';
+                pin.innerHTML = '<i class="fa-solid fa-thumbtack" aria-hidden="true"></i>';
+                pin.addEventListener('click', event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const key = pin.dataset.extensionId;
+                    if (state.pinnedKeys.has(key)) state.pinnedKeys.delete(key); else state.pinnedKeys.add(key);
+                    writePinnedExtensionKeys(state.pinnedKeys);
+                    refresh();
+                });
+                header.appendChild(pin);
+            }
+            const pinned = state.pinnedKeys.has(info.key);
+            pin.dataset.extensionId = info.key;
+            pin.setAttribute('aria-pressed', String(pinned));
+            const label = `${pinned ? 'Unpin' : 'Pin'} ${info.name}`;
+            pin.setAttribute('aria-label', label);
+            pin.title = label;
+        };
+
         const refresh = () => {
             const units = [...getExtensionSettingsUnits(firstHost), ...getExtensionSettingsUnits(secondHost), ...state.mountedUnits];
             state.pinnedKeys = readPinnedExtensionKeys();
@@ -1363,10 +1390,19 @@ import { accountStorage } from './util/AccountStorage.js';
                         ? `No settings are available for ${selected.name}.`
                         : 'No built-in extension settings are available.';
 
-            // Phones list every matching extension panel on one scrollable page instead of a picker.
-            const phoneLayout = typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 768px)').matches;
-            const shownUnits = new Set(phoneLayout ? filtered.flatMap(info => info.units) : (selected?.units || []));
-            empty.hidden = phoneLayout ? shownUnits.size > 0 : Boolean(selected?.units.length);
+            // Every matching extension panel stays on one scrollable page at every width, pinned
+            // groups first, as on phones. `order` sequences the stacked panels without moving
+            // them out of their extension hosts.
+            const shownUnits = new Set(filtered.flatMap(info => info.units));
+            empty.hidden = shownUnits.size > 0;
+            let panelOrder = 0;
+            for (const info of filtered) {
+                for (const unit of info.units) {
+                    panelOrder += 1;
+                    ensureUnitPin(unit, info);
+                    if (!state.mountedUnits.has(unit)) unit.style.order = String(panelOrder);
+                }
+            }
             for (const unit of units) {
                 unit.hidden = !state.mountedUnits.has(unit) && !shownUnits.has(unit);
             }
@@ -1404,8 +1440,7 @@ import { accountStorage } from './util/AccountStorage.js';
             }
             state.selectedKey = target.key;
             refresh();
-            const button = Array.from(list.querySelectorAll('.sb-extension-master-item')).find(item => item.dataset.extensionId === target.key);
-            button?.focus({ preventScroll: true });
+            target.units.find(unit => unit.isConnected)?.scrollIntoView({ block: 'center' });
             return true;
         };
         for (const [value, button] of scopeButtons) {

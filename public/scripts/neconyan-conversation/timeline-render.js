@@ -834,7 +834,7 @@ export function buildPartnerOptions(selectedNames, emptyText = 'Enable more char
             <div class="sb-conversation-partner-option" data-char-name="${escapeHtmlAttribute(charName.toLowerCase())}">
                 <label class="sb-conversation-partner-pick">
                     <input type="checkbox" class="sb-conversation-partner-checkbox" value="${escapeHtmlAttribute(charAvatar)}"${checked} />
-                    <img class="sb-conversation-partner-avatar" src="${escapeHtmlAttribute(thumbUrl)}" alt="${escapeHtmlAttribute(charName)}" loading="lazy" />
+                    <img class="sb-conversation-partner-avatar" src="${escapeHtmlAttribute(thumbUrl)}" alt="${escapeHtmlAttribute(charName)}" width="24" height="24" loading="lazy" />
                     <span class="sb-conversation-partner-name">${escapeHtmlText(charName)}</span>
                 </label>
             </div>
@@ -1836,7 +1836,7 @@ export function ensureConversationChrome() {
             </div>
             <div id="${CHROME_IDS.railFooter}" class="sb-conversation-rail-footer">
                 <div class="sb-conversation-rail-footer-avatar" data-sb-conversation-action="open-persona-picker" role="button" tabindex="0" title="Switch persona" aria-label="Switch persona">
-                    <img id="sb_conv_footer_persona_avatar" alt="" loading="lazy" />
+                    <img id="sb_conv_footer_persona_avatar" alt="" width="34" height="34" loading="lazy" />
                     <span class="sb-conversation-status-dot sb-conversation-rail-footer-dot" data-status="online" aria-hidden="true"></span>
                     <div id="${CHROME_IDS.personaPicker}" class="sb-conversation-persona-picker" role="listbox" aria-label="Choose persona" hidden></div>
                 </div>

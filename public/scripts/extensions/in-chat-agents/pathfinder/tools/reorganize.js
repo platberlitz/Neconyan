@@ -27,7 +27,7 @@ async function reorganizeAction(args, options = {}) {
     const targetBook = resolveTargetBook(bookName, writableBooks);
     if (!targetBook) {
         logToolCallError(TOOL_NAMES.REORGANIZE, 'No writable lorebooks');
-        return 'No Pathfinder-enabled lorebooks available.';
+        return 'No Pawthfinder-enabled lorebooks available.';
     }
 
     try {
@@ -60,13 +60,13 @@ async function reorganizeAction(args, options = {}) {
 }
 
 async function reorganizeFormatter(args) {
-    return '🔀 Pathfinder: Reorganizing lorebook...';
+    return '🔀 Pawthfinder: Reorganizing lorebook...';
 }
 
 export function getDefinition() {
     return {
         name: TOOL_NAMES.REORGANIZE,
-        displayName: 'Pathfinder Reorganize',
+        displayName: 'Pawthfinder Reorganize',
         description: COMPACT_DESCRIPTION,
         parameters: {
             type: 'object',

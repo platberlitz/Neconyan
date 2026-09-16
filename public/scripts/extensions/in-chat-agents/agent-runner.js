@@ -349,7 +349,7 @@ export function cancelAgentGeneration() {
     clearInitialGenerationToast();
     clearPathfinderRetrievalToast();
     abortActiveAgentRequests('Agent generation cancelled by user.');
-    abortActivePathfinderRetrieval('Pathfinder retrieval cancelled by user.');
+    abortActivePathfinderRetrieval('Pawthfinder retrieval cancelled by user.');
     clearPathfinderExtensionPrompts();
 
     const stopped = wasActive || activeManualAgentRun ? stopGeneration() : false;
@@ -378,7 +378,7 @@ function isAbortSignalTriggered(error, signal = null) {
     return Boolean(signal?.aborted || error?.name === 'AbortError');
 }
 
-function abortActivePathfinderRetrieval(reason = 'Pathfinder retrieval cancelled.') {
+function abortActivePathfinderRetrieval(reason = 'Pawthfinder retrieval cancelled.') {
     const error = reason instanceof Error ? reason : new Error(String(reason));
     pathfinderRetrievalRun?.controller.abort(error);
     pathfinderRetrievalRun = null;
@@ -407,7 +407,7 @@ function showPathfinderRetrievalToast() {
         return;
     }
 
-    activePathfinderRetrievalToast = toastr.info('Pathfinder is processing lore for this reply...', 'Please wait', { timeOut: 0, extendedTimeOut: 0 });
+    activePathfinderRetrievalToast = toastr.info('Pawthfinder is processing lore for this reply...', 'Please wait', { timeOut: 0, extendedTimeOut: 0 });
 }
 
 function clearPathfinderRetrievalToast() {
@@ -559,6 +559,7 @@ function enqueueManualAgentRun(agentId, target) {
 
 function isPathfinderToolAgent(agent) {
     return agent?.sourceTemplateId === 'tpl-pathfinder' ||
+        agent?.name === 'Pawthfinder' ||
         agent?.name === 'Pathfinder' ||
         (agent?.category === 'tool' && agent?.tools?.some(tool => tool.name?.startsWith('Pathfinder_')));
 }
@@ -606,7 +607,7 @@ function syncPathfinderRuntimeSettings(agent = getPathfinderRuntimeAgent()) {
     const pipelines = hydratePrompts ? (agent.settings.pipelines ?? {}) : currentRuntimeSettings.pipelines;
 
     // Replace, not merge: merging can never clear a key, so switching
-    // Pathfinder agents would inherit the previous agent's lorebooks
+    // Pawthfinder agents would inherit the previous agent's lorebooks
     // and permissions.
     const nextRuntimeSettings = agent?.settings
         ? {
@@ -695,7 +696,7 @@ export async function syncPathfinderAgentLorebooksForCurrentChat(agent = getPath
     syncToolAgentRegistrations();
     notifyAgentGenerationStateChanged();
 
-    console.info('[Pathfinder] Synced enabled lorebooks to the current chat context.', {
+    console.info('[Pawthfinder] Synced enabled lorebooks to the current chat context.', {
         lorebooks: saved.settings.enabledLorebooks,
     });
     return true;
@@ -3691,7 +3692,7 @@ function clearPathfinderExtensionPrompts() {
 export function deactivatePathfinderRuntime() {
     invalidateToolApprovals();
     clearPathfinderRetrievalToast();
-    abortActivePathfinderRetrieval('Pathfinder disabled.');
+    abortActivePathfinderRetrieval('Pawthfinder disabled.');
     clearPathfinderExtensionPrompts();
     toolRecursionDepth = 0;
     pendingToolSync = true;
@@ -3863,7 +3864,7 @@ function onGenerationStopped(generationContext) {
     clearPathfinderRetrievalToast();
     clearInitialGenerationToast();
     takePendingPreGenerationInterceptRuns();
-    abortActivePathfinderRetrieval('Pathfinder retrieval cancelled because generation stopped.');
+    abortActivePathfinderRetrieval('Pawthfinder retrieval cancelled because generation stopped.');
     clearPathfinderExtensionPrompts();
     notifyAgentGenerationStateChanged();
 }
@@ -3974,7 +3975,7 @@ async function onGenerationAfterCommands(generationType, options, dryRun) {
         } else if (shouldAutoSummarize() && isPathfinderSummarizeToolEnabled(pathfinderAgent)) {
             setExtensionPrompt(
                 PATHFINDER_AUTO_SUMMARY_PROMPT_KEY,
-                'Pathfinder memory summary is due. If the recent conversation contains a meaningful scene, event, state change, or resolved arc, call Pathfinder_Summarize with a concise title, useful content, significance, and arc when applicable. If nothing important happened, do not call it.',
+                'Pawthfinder memory summary is due. If the recent conversation contains a meaningful scene, event, state change, or resolved arc, call Pathfinder_Summarize with a concise title, useful content, significance, and arc when applicable. If nothing important happened, do not call it.',
                 extension_prompt_types.IN_PROMPT,
                 4,
                 false,
@@ -5178,7 +5179,7 @@ function onChatCompletionSettingsReady(data) {
 
 /**
  * Handles WORLDINFO_ENTRIES_LOADED for tool-category agents.
- * Pathfinder now leaves native World Info activation intact and de-dupes its
+ * Pawthfinder now leaves native World Info activation intact and de-dupes its
  * own injected retrieval context against naturally activated entries instead.
  * @param {object} data World info data with globalLore, characterLore, etc.
  */
@@ -5228,7 +5229,7 @@ function onChatChangedToolSync() {
                     await syncPathfinderAgentLorebooksForCurrentChat(pathfinderAgent, { persist: true });
                 }
             } catch (error) {
-                console.warn('[Pathfinder] Failed to save agent', error);
+                console.warn('[Pawthfinder] Failed to save agent', error);
             } finally {
                 if (revision === pathfinderChatSyncRevision) syncToolAgentRegistrations();
             }

@@ -3,7 +3,7 @@
     <div id="pf--status-banner" class="pf--status-banner pf--status-disabled" role="status" aria-live="polite">
         <div class="pf--status-icon" aria-hidden="true"><i class="fa-solid fa-circle-xmark"></i></div>
         <div class="pf--status-text">
-            <strong>Pathfinder is not configured</strong>
+            <strong>Pawthfinder is not configured</strong>
             <span>Select at least one lorebook below to get started</span>
         </div>
     </div>
@@ -17,9 +17,9 @@
         <div class="pf--master-toggle">
             <label class="checkbox_label">
                 <input type="checkbox" id="pf--master-enable" />
-                <span>Enable Pathfinder for this chat</span>
+                <span>Enable Pawthfinder for this chat</span>
             </label>
-            <div class="pf--setting-help">Saving settings will not change this switch. Turn it off only when you want Pathfinder inactive.</div>
+            <div class="pf--setting-help">Saving settings will not change this switch. Turn it off only when you want Pawthfinder inactive.</div>
         </div>
     </div>
 
@@ -28,15 +28,15 @@
         <div class="pf--quickstart-header">
             <div class="pf--quickstart-title">
                 <i class="fa-solid fa-route"></i>
-                <strong>What is Pathfinder?</strong>
+                <strong>What is Pawthfinder?</strong>
             </div>
-            <button type="button" id="pf--quickstart-dismiss" class="pf--quickstart-close" aria-label="Hide Pathfinder explanation" title="Hide Pathfinder explanation">
+            <button type="button" id="pf--quickstart-dismiss" class="pf--quickstart-close" aria-label="Hide Pawthfinder explanation" title="Hide Pawthfinder explanation">
                 <i class="fa-solid fa-xmark"></i>
             </button>
         </div>
         <div class="pf--quickstart-body">
-            <p>Pathfinder gives the AI <b>intelligent access to your lorebooks</b>. Instead of relying on keywords, it uses AI to predict which lore entries are relevant to the current scene.</p>
-            <p><b>Two ways to use Pathfinder:</b></p>
+            <p>Pawthfinder gives the AI <b>intelligent access to your lorebooks</b>. Instead of relying on keywords, it uses AI to predict which lore entries are relevant to the current scene.</p>
+            <p><b>Two ways to use Pawthfinder:</b></p>
             <ol>
                 <li><b>Tool Mode:</b> The AI can actively browse and search your lorebook using tools (requires tool-calling API)</li>
                 <li><b>Pipeline Mode:</b> Automatically predicts and injects relevant lore before each message (works with any API)</li>
@@ -54,7 +54,7 @@
         </button>
         <div class="pf--section-body" id="pf--lorebook-body">
             <div class="pf--section-desc">
-                Choose which lorebooks Pathfinder can access.
+                Choose which lorebooks Pawthfinder can access.
             </div>
             <div id="pf--lorebook-list" class="pf--lorebook-list">
                 <div class="pf--empty-state">
@@ -73,7 +73,7 @@
                     <input type="checkbox" id="pf--auto-use-attached" data-pf-setting="autoUseAttachedLorebook" />
                     <span>Automatically use attached character/chat lorebooks</span>
                 </label>
-                <div class="pf--setting-help">When enabled, Pathfinder auto-selects lorebooks attached to the active character card or chat.</div>
+                <div class="pf--setting-help">When enabled, Pawthfinder auto-selects lorebooks attached to the active character card or chat.</div>
             </div>
             <div class="pf--setting-group pf--lorebook-toggle">
                 <label class="checkbox_label">
@@ -96,7 +96,7 @@
         <button type="button" class="pf--section-header pf--collapsible-header" aria-expanded="true" aria-controls="pf--mode-body">
             <i class="fa-solid fa-chevron-down pf--chevron"></i>
             <span class="pf--step-badge">2</span>
-            <strong>Choose How Pathfinder Works</strong>
+            <strong>Choose How Pawthfinder Works</strong>
         </button>
 
         <div class="pf--section-body" id="pf--mode-body">
@@ -191,7 +191,7 @@
                 <div class="pf--setting-group">
                     <label class="pf--setting-label" for="pf--retrieval-timeout">Retrieval Timeout</label>
                     <input type="number" id="pf--retrieval-timeout" class="text_pole" min="1" max="60" value="8" data-pf-setting="retrievalTimeoutSeconds" />
-                    <div class="pf--setting-help">Seconds before Pathfinder shows a slow-retrieval warning. Generation still waits unless cancelled.</div>
+                    <div class="pf--setting-help">Seconds before Pawthfinder shows a slow-retrieval warning. Generation still waits unless cancelled.</div>
                 </div>
             </div>
 
@@ -208,7 +208,7 @@
                     <input type="checkbox" id="pf--dedupe-natural-activation" data-pf-setting="dedupeNaturalActivation" />
                     <span>Skip entries already activated by World Info</span>
                 </label>
-                <div class="pf--setting-help">Keeps keyword/constant lore active naturally, then removes those entries from Pathfinder's injected context.</div>
+                <div class="pf--setting-help">Keeps keyword/constant lore active naturally, then removes those entries from Pawthfinder's injected context.</div>
             </div>
         </div>
     </div>
@@ -238,7 +238,7 @@
                 <div class="pf--setting-group">
                     <label class="pf--setting-label" for="pf--prompt-max-tokens">Max Tokens</label>
                     <input type="number" id="pf--prompt-max-tokens" class="text_pole" min="100" max="200000" value="64000" />
-                    <div class="pf--setting-help">Maximum tokens Pathfinder can receive from this pipeline stage.</div>
+                    <div class="pf--setting-help">Maximum tokens Pawthfinder can receive from this pipeline stage.</div>
                 </div>
                 <div class="pf--setting-group">
                     <label class="pf--setting-label" for="pf--prompt-user">User Prompt Template</label>
@@ -273,7 +273,7 @@
                     <input type="checkbox" id="pf--enable-summarize-tool" data-tool="Pathfinder_Summarize" />
                     <span>Allow summary memory tool</span>
                 </label>
-                <div class="pf--setting-help">Lets Pathfinder write scene/event summaries into enabled lorebooks with the Summarize tool.</div>
+                <div class="pf--setting-help">Lets Pawthfinder write scene/event summaries into enabled lorebooks with the Summarize tool.</div>
             </div>
             <div class="pf--setting-row">
                 <div class="pf--setting-group">
@@ -286,7 +286,7 @@
                 <div class="pf--setting-group">
                     <label class="pf--setting-label" for="pf--auto-summary-interval">Summary Interval</label>
                     <input type="number" id="pf--auto-summary-interval" class="text_pole" min="2" max="200" value="20" data-pf-setting="autoSummaryInterval" />
-                    <div class="pf--setting-help">Messages before Pathfinder should consider writing a memory summary.</div>
+                    <div class="pf--setting-help">Messages before Pawthfinder should consider writing a memory summary.</div>
                 </div>
             </div>
             <div class="pf--setting-group pf--summary-editor">
@@ -294,8 +294,8 @@
                     <label class="pf--setting-label" for="pf--summary-content">Latest memory summary</label>
                     <span id="pf--summary-injection-indicator" class="pf--summary-indicator pf--summary-indicator-missing" role="status" aria-live="polite">No summary</span>
                 </div>
-                <textarea id="pf--summary-content" class="text_pole" rows="7" placeholder="When Pathfinder creates a memory summary, it will appear here for review and editing."></textarea>
-                <div class="pf--summary-meta" id="pf--summary-meta" aria-live="polite">No Pathfinder summary has been created yet.</div>
+                <textarea id="pf--summary-content" class="text_pole" rows="7" placeholder="When Pawthfinder creates a memory summary, it will appear here for review and editing."></textarea>
+                <div class="pf--summary-meta" id="pf--summary-meta" aria-live="polite">No Pawthfinder summary has been created yet.</div>
                 <div class="pf--summary-actions">
                     <button type="button" id="pf--summary-create" class="menu_button menu_button_icon">
                         <i class="fa-solid fa-wand-magic-sparkles"></i>
@@ -359,7 +359,7 @@
             <strong>Diagnostics</strong>
         </button>
         <div class="pf--section-body pf--diagnostics-panel" id="pf--diagnostics-body" style="display: none;">
-            <div id="pf--diagnostics-output" class="pf--diagnostics-output" role="status" aria-live="polite" tabindex="0">Click "Run Diagnostics" to check your Pathfinder configuration.</div>
+            <div id="pf--diagnostics-output" class="pf--diagnostics-output" role="status" aria-live="polite" tabindex="0">Click "Run Diagnostics" to check your Pawthfinder configuration.</div>
             <div class="pf--diagnostics-actions">
                 <button type="button" id="pf--run-diagnostics" class="menu_button menu_button_icon">
                     <i class="fa-solid fa-stethoscope"></i>
@@ -380,7 +380,7 @@
             <span class="pf--badge">Detailed</span>
         </button>
         <div class="pf--section-body" id="pf--retrieval-log-body" style="display: none;">
-            <div class="pf--section-desc">Shows what Pathfinder actually selected or injected, including selected lore entries, stage results, and the prompt payload Pathfinder added before generation.</div>
+            <div class="pf--section-desc">Shows what Pawthfinder actually selected or injected, including selected lore entries, stage results, and the prompt payload Pawthfinder added before generation.</div>
             <div class="pf--log-mode-row">
                 <label class="pf--log-mode-control" for="pf--log-mode">
                     <span>Log detail</span>
@@ -400,7 +400,7 @@
                     <span>Clear Log</span>
                 </button>
             </div>
-            <div id="pf--retrieval-log-output" class="pf--retrieval-log-output" role="log" aria-live="polite" tabindex="0">No Pathfinder retrieval activity recorded yet.</div>
+            <div id="pf--retrieval-log-output" class="pf--retrieval-log-output" role="log" aria-live="polite" tabindex="0">No Pawthfinder retrieval activity recorded yet.</div>
         </div>
     </div>
 </div>

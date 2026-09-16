@@ -31,7 +31,7 @@ async function notebookAction(args) {
     const books = getActiveTunnelVisionBooks();
     if (books.length === 0 && action !== 'read') {
         logToolCallError(TOOL_NAMES.NOTEBOOK, 'No active lorebooks');
-        return 'No Pathfinder-enabled lorebooks active. Notebook is still available for reading.';
+        return 'No Pawthfinder-enabled lorebooks active. Notebook is still available for reading.';
     }
 
     const notebook = getNotebookData();
@@ -95,7 +95,7 @@ async function notebookAction(args) {
 }
 
 async function notebookFormatter(args) {
-    return `📓 Pathfinder: ${args.action === 'write' ? 'Writing to' : args.action === 'delete' ? 'Deleting from' : 'Reading'} notebook...`;
+    return `📓 Pawthfinder: ${args.action === 'write' ? 'Writing to' : args.action === 'delete' ? 'Deleting from' : 'Reading'} notebook...`;
 }
 
 export function resetNotebookWriteGuard() {
@@ -106,13 +106,13 @@ export function buildNotebookPrompt() {
     const notebook = getNotebookData();
     if (!notebook || !notebook.entries?.length) return '';
     const lines = notebook.entries.map(e => `- **${e.key}**: ${e.content}`).join('\n');
-    return `📓 **Pathfinder Notebook** (private AI notes):\n${lines}`;
+    return `📓 **Pawthfinder Notebook** (private AI notes):\n${lines}`;
 }
 
 export function getDefinition() {
     return {
         name: TOOL_NAMES.NOTEBOOK,
-        displayName: 'Pathfinder Notebook',
+        displayName: 'Pawthfinder Notebook',
         description: COMPACT_DESCRIPTION,
         parameters: {
             type: 'object',

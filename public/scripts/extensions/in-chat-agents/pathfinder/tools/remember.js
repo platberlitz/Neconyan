@@ -45,7 +45,7 @@ async function rememberAction(args, options = {}) {
 
     if (!targetBook) {
         logToolCallError(TOOL_NAMES.REMEMBER, 'No writable lorebooks');
-        return 'No Pathfinder-enabled lorebooks available for writing. Enable at least one lorebook.';
+        return 'No Pawthfinder-enabled lorebooks available for writing. Enable at least one lorebook.';
     }
 
     if (settings.dedupDetection && canReadBook(targetBook)) {
@@ -64,7 +64,7 @@ async function rememberAction(args, options = {}) {
                 }
             }
         } catch (err) {
-            console.warn('[Pathfinder] Dedup check failed:', err);
+            console.warn('[Pawthfinder] Dedup check failed:', err);
         }
     }
 
@@ -79,13 +79,13 @@ async function rememberAction(args, options = {}) {
 }
 
 async function rememberFormatter(args) {
-    return `💾 Pathfinder: Creating memory "${args.title || 'untitled'}"...`;
+    return `💾 Pawthfinder: Creating memory "${args.title || 'untitled'}"...`;
 }
 
 export function getDefinition() {
     return {
         name: TOOL_NAMES.REMEMBER,
-        displayName: 'Pathfinder Remember',
+        displayName: 'Pawthfinder Remember',
         description: COMPACT_DESCRIPTION,
         parameters: {
             type: 'object',

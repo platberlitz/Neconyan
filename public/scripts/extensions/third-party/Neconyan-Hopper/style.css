@@ -265,6 +265,16 @@ body:has(> #sheld[data-sbtw-mode='on']) :is(
     }
 }
 
+/* No rail rendered (no persona or nobody left to suggest): a reserved empty column would
+ * leave the timeline short on the right, so let it take the whole width. */
+.sbtw-shell:not(:has(> .sbtw-rail)) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+        'nav'
+        'main';
+    justify-content: stretch;
+}
+
 @media (max-width: 620px) {
     .sbtw-shell .sbtw-nav {
         justify-content: space-around;

@@ -4093,7 +4093,7 @@ describe('in-chat agent post-processing runner', () => {
         const generationPromise = eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
         await Promise.resolve();
 
-        expect(globalThis.toastr.info).toHaveBeenCalledWith('Pathfinder is processing lore for this reply...', 'Please wait', { timeOut: 0, extendedTimeOut: 0 });
+        expect(globalThis.toastr.info).toHaveBeenCalledWith('Pawthfinder is processing lore for this reply...', 'Please wait', { timeOut: 0, extendedTimeOut: 0 });
         expect(globalThis.toastr.clear).not.toHaveBeenCalled();
 
         resolveRetrieval();

@@ -62,16 +62,16 @@ export function initCommands(registerSlashCommand) {
 
     registerCommand(buildCommand({
         name: 'pf-remember',
-        helpString: 'Force Pathfinder to save something to memory.',
+        helpString: 'Force Pawthfinder to save something to memory.',
         argumentDescription: 'Content to remember',
         callback: async (_, content) => {
             if (!isPathfinderSubmoduleEnabled()) {
-                return 'Pathfinder is disabled.';
+                return 'Pawthfinder is disabled.';
             }
             content = String(content || '').trim();
             if (!content) return 'Nothing to remember.';
             const books = getWritableBooks();
-            if (books.length === 0) return 'No writable Pathfinder-enabled lorebooks.';
+            if (books.length === 0) return 'No writable Pawthfinder-enabled lorebooks.';
             const bookName = books[0];
             try {
                 const result = await createEntry(bookName, content.slice(0, 50), content);
@@ -84,11 +84,11 @@ export function initCommands(registerSlashCommand) {
 
     registerCommand(buildCommand({
         name: 'pf-search',
-        helpString: 'Force Pathfinder to search the waypoint map.',
+        helpString: 'Force Pawthfinder to search the waypoint map.',
         argumentDescription: 'Search query',
         callback: async (_, query) => {
             if (!isPathfinderSubmoduleEnabled()) {
-                return 'Pathfinder is disabled.';
+                return 'Pawthfinder is disabled.';
             }
             query = String(query || '').trim();
             if (!query) return 'No search query.';

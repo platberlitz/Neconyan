@@ -85,7 +85,7 @@ export async function createSummaryMemoryEntry(args = {}, options = {}) {
     const targetBook = resolveTargetBook(bookName, writableBooks);
     if (!targetBook) {
         logToolCallError(TOOL_NAMES.SUMMARIZE, 'No writable lorebooks');
-        throw new Error('No Pathfinder-enabled lorebooks available for writing.');
+        throw new Error('No Pawthfinder-enabled lorebooks available for writing.');
     }
 
     const summaryTitle = `[Summary] ${title}${arc ? `: ${arc}` : ''}`;
@@ -154,13 +154,13 @@ async function summarizeAction(args, options = {}) {
 }
 
 async function summarizeFormatter(args) {
-    return `📝 Pathfinder: Writing summary "${args.title || 'untitled'}"...`;
+    return `📝 Pawthfinder: Writing summary "${args.title || 'untitled'}"...`;
 }
 
 export function getDefinition() {
     return {
         name: TOOL_NAMES.SUMMARIZE,
-        displayName: 'Pathfinder Summarize',
+        displayName: 'Pawthfinder Summarize',
         description: COMPACT_DESCRIPTION,
         parameters: {
             type: 'object',

@@ -61,6 +61,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/auto-eng
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/chrome.js', () => ({
     disableConversationModeForCurrentCharacter: jest.fn(),
+    ensureConversationStylesheet: jest.fn(),
     getDefaultConversationAvatar: () => '',
     selectConversationThread,
 }));

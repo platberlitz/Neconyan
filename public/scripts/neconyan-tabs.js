@@ -513,9 +513,9 @@ const NECONYAN_NATIVE_TOOL_DEFINITIONS = Object.freeze([
     { id: 'third-party/Neconyan-Deep-Swipe', label: 'Deep Swipe', icon: 'fa-arrows-up-down', actions: ['settings'] },
     { id: 'third-party/Neconyan-Story-Mode', label: 'Story Mode', icon: 'fa-book-open', actions: ['open', 'settings'], open: 'story-mode' },
     { id: 'third-party/Neconyan-Hopper', label: 'Meower', icon: 'fa-paw', actions: ['open', 'settings'], open: 'meower' },
-    // Pathfinder is a settings section inside In-Chat Agents rather than its own
+    // Pawthfinder is a settings section inside In-Chat Agents rather than its own
     // extension, so it is presented here and resolved by its settings unit.
-    { id: 'pathfinder', label: 'Pathfinder', icon: 'fa-diamond-turn-right', actions: ['settings'], unitOnly: true },
+    { id: 'pathfinder', label: 'Pawthfinder', icon: 'fa-diamond-turn-right', actions: ['settings'], unitOnly: true },
 ]);
 
 const NECONYAN_NATIVE_TOOL_ACTION_LABELS = Object.freeze({

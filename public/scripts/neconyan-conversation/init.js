@@ -11,7 +11,7 @@ import {
     triggerGroupAsideDM,
     triggerRoleplayDM,
 } from './auto-engine.js';
-import { disableConversationModeForCurrentCharacter, getDefaultConversationAvatar, selectConversationThread } from './chrome.js';
+import { disableConversationModeForCurrentCharacter, ensureConversationStylesheet, getDefaultConversationAvatar, selectConversationThread } from './chrome.js';
 import { GROUP_ASIDE_RANDOM_CHANCE } from './constants.js';
 import { getConversationGroupById, getConversationPersonaId, getRoleplayCurrentCharacter, getRoleplayGroupById, migrateConversationLocalStorage } from './context.js';
 import { loadCurrentPanelSettings } from './interface.js';
@@ -48,6 +48,9 @@ export function init() {
     }
 
     conversationState.initialized = true;
+    // Warm the stylesheet at boot so the first open cannot paint the unstyled workspace,
+    // where card art rendered at its natural resolution for a frame.
+    ensureConversationStylesheet();
     migrateConversationLocalStorage();
     sanitizeConversationUnreadCounts();
     eventSource.on(event_types.USER_MESSAGE_RENDERED, (messageId) => {

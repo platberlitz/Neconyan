@@ -2195,7 +2195,7 @@
   },
   {
     "id": "tpl-pathfinder",
-    "name": "Pathfinder",
+    "name": "Pawthfinder",
     "description": "Automatic agentic lorebook retrieval. Lets a model actively browse, search, and modify your lorebook using function tools.",
     "icon": "fa-route",
     "category": "tool",
@@ -2238,7 +2238,7 @@
     "tools": [
       {
         "name": "Pathfinder_Search",
-        "displayName": "Pathfinder Search",
+        "displayName": "Pawthfinder Search",
         "description": "Navigate the lorebook waypoint map and retrieve relevant entries for the current scene. Call without a node_id to see the top-level waypoint map. Call with a node_id to drill into a specific waypoint and see its sub-waypoints or retrieve entries. Use this tool whenever you need context about characters, locations, world rules, or recent events.",
         "parameters": {
           "type": "object",
@@ -2257,7 +2257,7 @@
       },
       {
         "name": "Pathfinder_Remember",
-        "displayName": "Pathfinder Remember",
+        "displayName": "Pawthfinder Remember",
         "description": "Create a new lorebook entry to remember information for future reference. Use this when new facts, character developments, world details, or important information emerge that should be preserved beyond this conversation.",
         "parameters": {
           "type": "object",
@@ -2288,7 +2288,7 @@
       },
       {
         "name": "Pathfinder_Update",
-        "displayName": "Pathfinder Update",
+        "displayName": "Pawthfinder Update",
         "description": "Edit an existing lorebook entry when information changes. Use this when a character's status changes, relationships evolve, or facts need correction.",
         "parameters": {
           "type": "object",
@@ -2322,7 +2322,7 @@
       },
       {
         "name": "Pathfinder_Forget",
-        "displayName": "Pathfinder Forget",
+        "displayName": "Pawthfinder Forget",
         "description": "Disable or delete a lorebook entry that is no longer relevant. Use this when a character dies, a location is destroyed, or a fact is proven false.",
         "parameters": {
           "type": "object",
@@ -2352,7 +2352,7 @@
       },
       {
         "name": "Pathfinder_Summarize",
-        "displayName": "Pathfinder Summarize",
+        "displayName": "Pawthfinder Summarize",
         "description": "Create a scene or event summary with significance level and optional narrative arc. Use this when important events happen: battles, confessions, discoveries, or turning points.",
         "parameters": {
           "type": "object",
@@ -2397,7 +2397,7 @@
       },
       {
         "name": "Pathfinder_Reorganize",
-        "displayName": "Pathfinder Reorganize",
+        "displayName": "Pawthfinder Reorganize",
         "description": "Move entries between waypoints or create new waypoints to reorganize the lorebook structure.",
         "parameters": {
           "type": "object",
@@ -2447,7 +2447,7 @@
       },
       {
         "name": "Pathfinder_MergeSplit",
-        "displayName": "Pathfinder Merge/Split",
+        "displayName": "Pawthfinder Merge/Split",
         "description": "Merge related entries together or split a long entry into two. Use merge when two entries cover the same topic. Use split when one entry covers too many topics.",
         "parameters": {
           "type": "object",
@@ -2509,7 +2509,7 @@
       },
       {
         "name": "Pathfinder_Notebook",
-        "displayName": "Pathfinder Notebook",
+        "displayName": "Pawthfinder Notebook",
         "description": "Write to or read from a private AI scratchpad for plans, follow-ups, and narrative threads. This is NOT a permanent lorebook entry — use it for temporary notes that persist across turns but don't need to be in the lorebook.",
         "parameters": {
           "type": "object",

@@ -119,7 +119,7 @@ Respond ONLY with the waypoint structure. Do not add commentary.`;
             // The metadata fallback covers ALL entries, so appending it per
             // failed chunk would duplicate the whole category tree. Discard
             // the partial LLM tree and fall back once.
-            console.warn(`[Pathfinder] LLM tree build chunk ${i} failed; falling back to metadata categorization:`, err);
+            console.warn(`[Pawthfinder] LLM tree build chunk ${i} failed; falling back to metadata categorization:`, err);
             return await buildTreeFromMetadata(bookName, bookData);
         }
     }

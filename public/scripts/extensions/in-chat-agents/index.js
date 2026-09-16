@@ -287,7 +287,7 @@ async function finishAgentLibraryInitialization() {
     if (isPathfinderSubmoduleEnabled()) {
         const migratedPathfinderToolCount = await migratePathfinderAgentToolsFromTemplate();
         if (migratedPathfinderToolCount > 0) {
-            toastr.success(`Updated ${migratedPathfinderToolCount} Pathfinder agent(s) with default tool toggles.`);
+            toastr.success(`Updated ${migratedPathfinderToolCount} Pawthfinder agent(s) with default tool toggles.`);
         }
     }
 
@@ -1880,6 +1880,11 @@ async function migratePathfinderAgentToolsFromTemplate() {
 
     for (const agent of getAgents()) {
         const template = findTemplateForAgent(agent);
+        // The bundled agent shipped as Pawthfinder's former name; carry saved agents over.
+        if (template?.id === 'tpl-pathfinder' && template.name && agent?.name !== template.name && (agent?.name === 'Pathfinder' || agent?.name === 'Pawthfinder')) {
+            agent.name = template.name;
+            await saveAgent(agent);
+        }
         if (!shouldMigratePathfinderAgentTools(agent, template)) {
             continue;
         }
@@ -3323,7 +3328,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
     const originalAgentState = JSON.stringify(agent);
     if (!agent) return;
 
-    // Check if this is a Pathfinder agent - open special settings panel
+    // Check if this is a Pawthfinder agent - open special settings panel
     if (isPathfinderAgent(agent)) {
         await openPathfinderEditor(agent);
         return;
@@ -5706,7 +5711,7 @@ async function openPromptTransformHistoryPopup(messageIndex) {
     }).show();
 }
 
-// ===================== Pathfinder Editor =====================
+// ===================== Pawthfinder Editor =====================
 
 function getPathfinderSettingsAgent() {
     return getAgents().find(isPathfinderAgent) ?? null;
@@ -5733,7 +5738,7 @@ function ensurePathfinderExtensionsHost() {
         host.innerHTML = `
             <div class="inline-drawer">
                 <div class="inline-drawer-toggle inline-drawer-header">
-                    <b><i class="fa-solid fa-route"></i> Pathfinder</b>
+                    <b><i class="fa-solid fa-route"></i> Pawthfinder</b>
                     <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
                 </div>
                 <div class="inline-drawer-content pf--extensions-body" style="display:none"></div>
@@ -5753,7 +5758,7 @@ async function mountPathfinderSettingsInExtensions(agent = getPathfinderSettings
 
     const host = ensurePathfinderExtensionsHost();
     if (!host) {
-        console.warn('[Pathfinder] Could not mount settings in Extensions drawer because #extensions_settings was not found.');
+        console.warn('[Pawthfinder] Could not mount settings in Extensions drawer because #extensions_settings was not found.');
         return null;
     }
 
@@ -5768,7 +5773,7 @@ async function mountPathfinderSettingsInExtensions(agent = getPathfinderSettings
     body.innerHTML = '';
 
     if (!agent) {
-        body.innerHTML = '<div class="pf--extensions-empty">Pathfinder agent is not available. Reload In-Chat Agents or restore the bundled Pathfinder template.</div>';
+        body.innerHTML = '<div class="pf--extensions-empty">Pawthfinder agent is not available. Reload In-Chat Agents or restore the bundled Pawthfinder template.</div>';
         return host;
     }
 
@@ -5776,7 +5781,7 @@ async function mountPathfinderSettingsInExtensions(agent = getPathfinderSettings
     const settingsPanel = await openPathfinderSettings(agent).catch(error => {
         if (mountRevision === pathfinderExtensionsMountRevision) {
             body.setAttribute('aria-busy', 'false');
-            body.innerHTML = '<div class="pf--extensions-empty">Could not load Pathfinder settings.</div>';
+            body.innerHTML = '<div class="pf--extensions-empty">Could not load Pawthfinder settings.</div>';
         }
         throw error;
     });
@@ -5787,7 +5792,7 @@ async function mountPathfinderSettingsInExtensions(agent = getPathfinderSettings
     body.setAttribute('aria-busy', 'false');
 
     if (!settingsPanel) {
-        body.innerHTML = '<div class="pf--extensions-empty">Could not load Pathfinder settings.</div>';
+        body.innerHTML = '<div class="pf--extensions-empty">Could not load Pawthfinder settings.</div>';
         return host;
     }
 
@@ -5807,7 +5812,7 @@ function schedulePathfinderExtensionsMount(agent) {
 
     pathfinderExtensionsMountPromise = mountPathfinderSettingsInExtensions(agent)
         .catch(error => {
-            console.warn('[Pathfinder] Failed to mount settings in Extensions drawer:', error);
+            console.warn('[Pawthfinder] Failed to mount settings in Extensions drawer:', error);
             return null;
         });
 
@@ -5874,12 +5879,12 @@ function openPathfinderExtensionsDrawer(host) {
 }
 
 /**
- * Opens the Pathfinder-specific settings editor
- * @param {Object} agent - The Pathfinder agent
+ * Opens the Pawthfinder-specific settings editor
+ * @param {Object} agent - The Pawthfinder agent
  */
 async function openPathfinderEditor(agent) {
     if (!isPathfinderSubmoduleEnabled()) {
-        toastr.warning('Pathfinder is disabled in In-Chat Agents settings.');
+        toastr.warning('Pawthfinder is disabled in In-Chat Agents settings.');
         return;
     }
 
@@ -5889,7 +5894,7 @@ async function openPathfinderEditor(agent) {
             ? (pathfinderExtensionsMountPromise ?? schedulePathfinderExtensionsMount(agent))
             : schedulePathfinderExtensionsMount(agent));
         openPathfinderExtensionsDrawer(host ?? existingHost);
-        toastr.info('Pathfinder settings are in the Extensions drawer.');
+        toastr.info('Pawthfinder settings are in the Extensions drawer.');
         return;
     }
 
@@ -6384,7 +6389,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         try {
             initPathfinder(getContext());
         } catch (err) {
-            console.warn('[InChatAgents] Pathfinder initialization failed:', err);
+            console.warn('[InChatAgents] Pawthfinder initialization failed:', err);
         }
     }
 
@@ -6719,15 +6724,15 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
             try {
                 const migratedPathfinderToolCount = await migratePathfinderAgentToolsFromTemplate();
                 if (migratedPathfinderToolCount > 0) {
-                    toastr.success(`Updated ${migratedPathfinderToolCount} Pathfinder agent(s) with default tool toggles.`);
+                    toastr.success(`Updated ${migratedPathfinderToolCount} Pawthfinder agent(s) with default tool toggles.`);
                 }
                 initPathfinder(getContext());
                 schedulePathfinderExtensionsMount();
                 syncToolAgentRegistrations();
-                toastr.info('Pathfinder submodule enabled.');
+                toastr.info('Pawthfinder submodule enabled.');
             } catch (err) {
-                console.warn('[InChatAgents] Failed to enable Pathfinder submodule:', err);
-                toastr.error('Could not enable Pathfinder.');
+                console.warn('[InChatAgents] Failed to enable Pawthfinder submodule:', err);
+                toastr.error('Could not enable Pawthfinder.');
             }
             return;
         }
@@ -6735,7 +6740,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         teardownPathfinder();
         deactivatePathfinderRuntime();
         removePathfinderExtensionsHost();
-        toastr.info('Pathfinder submodule disabled.');
+        toastr.info('Pawthfinder submodule disabled.');
     });
     $('#ica--appendAgentsExecutionMode').on('change', function () {
         setGlobalSettings({ appendAgentsExecutionMode: this.value });

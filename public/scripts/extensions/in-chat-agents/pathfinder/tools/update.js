@@ -34,7 +34,7 @@ async function updateAction(args, options = {}) {
     const targetBook = resolveTargetBook(bookName, writableBooks);
     if (!targetBook) {
         logToolCallError(TOOL_NAMES.UPDATE, 'No writable lorebooks');
-        return 'No Pathfinder-enabled lorebooks available for writing.';
+        return 'No Pawthfinder-enabled lorebooks available for writing.';
     }
 
     try {
@@ -48,13 +48,13 @@ async function updateAction(args, options = {}) {
 }
 
 async function updateFormatter(args) {
-    return `✏️ Pathfinder: Updating entry UID:${args.uid}...`;
+    return `✏️ Pawthfinder: Updating entry UID:${args.uid}...`;
 }
 
 export function getDefinition() {
     return {
         name: TOOL_NAMES.UPDATE,
-        displayName: 'Pathfinder Update',
+        displayName: 'Pawthfinder Update',
         description: COMPACT_DESCRIPTION,
         parameters: {
             type: 'object',

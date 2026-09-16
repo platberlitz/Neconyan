@@ -52,7 +52,7 @@ export async function confirmToolCall(displayName, args, signal = null) {
     const Popup = ctx?.Popup;
     const popupType = ctx?.POPUP_TYPE;
     if (typeof Popup !== 'function' || !popupType) {
-        console.warn('[Pathfinder] Tool confirmation is enabled but no popup API is available; declining the call.');
+        console.warn('[Pawthfinder] Tool confirmation is enabled but no popup API is available; declining the call.');
         return false;
     }
 
@@ -78,7 +78,7 @@ export async function confirmToolCall(displayName, args, signal = null) {
         const result = await Promise.race([popup.show(), cancelled]);
         return !signal?.aborted && result === (ctx.POPUP_RESULT?.AFFIRMATIVE ?? 1);
     } catch (err) {
-        console.warn('[Pathfinder] Tool confirmation dialog failed; declining the call.', err);
+        console.warn('[Pawthfinder] Tool confirmation dialog failed; declining the call.', err);
         return false;
     } finally {
         signal?.removeEventListener('abort', onAbort);

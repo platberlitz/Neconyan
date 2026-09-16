@@ -4,7 +4,7 @@ import { getSettings, getTree, getAllEntryUids, isEntryEligible, isLorebookEnabl
 
 const CHAT_LOREBOOK_METADATA_KEY = 'world_info';
 
-const PATHFINDER_LOG_PREFIX = '[Pathfinder]';
+const PATHFINDER_LOG_PREFIX = '[Pawthfinder]';
 
 export const TOOL_NAMES = {
     SEARCH: 'Pathfinder_Search',
@@ -272,7 +272,7 @@ export async function getEntryContent(bookName, uid) {
         }
         console.warn(`${PATHFINDER_LOG_PREFIX} Entry ${uid} was not found in lorebook "${bookName}".`);
     } catch (err) {
-        console.warn(`[Pathfinder] Failed to get entry ${uid} from ${bookName}:`, err);
+        console.warn(`[Pawthfinder] Failed to get entry ${uid} from ${bookName}:`, err);
     }
 
     return null;
@@ -317,7 +317,7 @@ export async function getAllEntriesWithContent(bookName) {
                 decorators: entry.decorators || [],
             }));
     } catch (err) {
-        console.warn(`[Pathfinder] Failed to get entries from ${bookName}:`, err);
+        console.warn(`[Pawthfinder] Failed to get entries from ${bookName}:`, err);
         return [];
     }
 }

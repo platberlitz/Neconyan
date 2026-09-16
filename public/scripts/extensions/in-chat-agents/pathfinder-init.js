@@ -81,7 +81,7 @@ export function initPathfinder(context) {
             }).catch(error => console.warn(error));
         }
     } else {
-        console.error(`[Pathfinder] Missing context APIs for lorebook writes: ${missingEntryManagerAPIs.join(', ')}`);
+        console.error(`[Pawthfinder] Missing context APIs for lorebook writes: ${missingEntryManagerAPIs.join(', ')}`);
     }
 
     if (context?.eventSource && context?.eventTypes) {
@@ -92,7 +92,7 @@ export function initPathfinder(context) {
         initCommands(context.registerSlashCommand);
     }
 
-    console.info('[Pathfinder] Initialized with 8 tools and predictive pipeline system.');
+    console.info('[Pawthfinder] Initialized with 8 tools and predictive pipeline system.');
 }
 
 export function teardownPathfinder() {
@@ -104,11 +104,11 @@ export function teardownPathfinder() {
     deinitAutoSummary();
     removeCommands();
     // Stale trees would survive a disable/enable cycle and shadow any
-    // lorebook edits made while Pathfinder was off.
+    // lorebook edits made while Pawthfinder was off.
     clearAllTrees();
     initialized = false;
     initializationRevision++;
-    console.info('[Pathfinder] Disabled and unregistered.');
+    console.info('[Pawthfinder] Disabled and unregistered.');
 }
 
 export async function buildPathfinderTree(bookName, bookData, useLLM = false, llmGenerate = null) {

@@ -54,7 +54,7 @@ Pressing **Select** allows several agents to be changed together. The bulk contr
 
 **View main LLM output before pre-generation intercept** is an advanced display option related to intercept processing. It is mainly useful while testing or debugging intercept behavior and can remain disabled for ordinary use.
 
-**Enable Pathfinder submodule** enables or disables Pathfinder-related functionality without disabling the rest of ICA.
+**Enable Pawthfinder submodule** enables or disables Pawthfinder-related functionality without disabling the rest of ICA.
 
 **Reset Bundled Agents to Defaults** restores bundled agents to their original template configuration. It does not reset custom agents. Export any bundled agent you have substantially customized before using this command.
 

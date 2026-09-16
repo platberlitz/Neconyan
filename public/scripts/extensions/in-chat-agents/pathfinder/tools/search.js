@@ -73,7 +73,7 @@ async function searchAction(args) {
 
     if (books.length === 0) {
         logToolCallError(TOOL_NAMES.SEARCH, 'No readable lorebooks');
-        return 'No Pathfinder-enabled lorebooks are available. Enable at least one lorebook in Pathfinder settings.';
+        return 'No Pawthfinder-enabled lorebooks are available. Enable at least one lorebook in Pawthfinder settings.';
     }
 
     if (!nodeId) {
@@ -84,7 +84,7 @@ async function searchAction(args) {
             results.push(`=== ${bookName} ===\n${getTreeOverview(tree, bookName, s.searchMode)}`);
         }
         const bookList = getBookListWithDescriptions();
-        const output = `📊 Pathfinder Waypoint Map\n\n${bookList}\n\n${results.join('\n\n')}\n\nCall this tool again with a specific node_id to drill deeper into a waypoint.`;
+        const output = `📊 Pawthfinder Waypoint Map\n\n${bookList}\n\n${results.join('\n\n')}\n\nCall this tool again with a specific node_id to drill deeper into a waypoint.`;
         logToolCallCompleted(TOOL_NAMES.SEARCH, output);
         return output;
     }
@@ -153,13 +153,13 @@ function findEntrySafe(entries, uid) {
 }
 
 async function searchFormatter(args) {
-    return '🔍 Pathfinder: Searching lorebook waypoints...';
+    return '🔍 Pawthfinder: Searching lorebook waypoints...';
 }
 
 export function getDefinition() {
     return {
         name: TOOL_NAMES.SEARCH,
-        displayName: 'Pathfinder Search',
+        displayName: 'Pawthfinder Search',
         description: COMPACT_DESCRIPTION,
         parameters: {
             type: 'object',

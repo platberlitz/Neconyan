@@ -1,5 +1,5 @@
 /**
- * Pathfinder Settings UI - Idiot-proof settings panel for Pathfinder
+ * Pawthfinder Settings UI - Idiot-proof settings panel for Pawthfinder
  */
 
 import { renderExtensionTemplateAsync, getContext } from '../../extensions.js';
@@ -30,7 +30,7 @@ import { sidecarGenerate } from './pathfinder/llm-sidecar.js';
 import { createSeparateSummaryMemoryEntry, createSummaryMemoryEntry, deriveSummaryLorebookTitle } from './pathfinder/tools/summarize.js';
 
 const MODULE_NAME = 'in-chat-agents';
-const PATHFINDER_LOG_PREFIX = '[Pathfinder]';
+const PATHFINDER_LOG_PREFIX = '[Pawthfinder]';
 const PATHFINDER_LOG_MODE_KEY = 'pathfinder-retrieval-log-mode';
 const PATHFINDER_QUICKSTART_DISMISSED_KEY = 'pathfinder-quickstart-dismissed';
 const PATHFINDER_COLLAPSED_SECTIONS_KEY = 'pathfinder-collapsed-sections';
@@ -117,7 +117,7 @@ function getCollapsedSectionStates() {
         const parsed = JSON.parse(rawValue);
         return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
     } catch (err) {
-        console.warn(`${PATHFINDER_LOG_PREFIX} Failed to read Pathfinder collapsed section preferences.`, err);
+        console.warn(`${PATHFINDER_LOG_PREFIX} Failed to read Pawthfinder collapsed section preferences.`, err);
         return {};
     }
 }
@@ -226,12 +226,12 @@ function upsertLorebook(lorebooksByName, name, data = {}) {
 }
 
 /**
- * Opens the Pathfinder settings panel
- * @param {Object} agent - The Pathfinder agent object
+ * Opens the Pawthfinder settings panel
+ * @param {Object} agent - The Pawthfinder agent object
  */
 export async function openPathfinderSettings(agent) {
     if (!isPathfinderSubmoduleEnabled()) {
-        toastr.warning('Pathfinder is disabled in In-Chat Agents settings.');
+        toastr.warning('Pawthfinder is disabled in In-Chat Agents settings.');
         return null;
     }
 
@@ -240,7 +240,7 @@ export async function openPathfinderSettings(agent) {
     const html = await renderExtensionTemplateAsync(MODULE_NAME, 'pathfinder-settings');
     if (openRevision !== settingsOpenRevision || !isPathfinderSubmoduleEnabled()) return null;
     if (!html) {
-        toastr.error('Could not load Pathfinder settings.');
+        toastr.error('Could not load Pawthfinder settings.');
         return null;
     }
 
@@ -602,7 +602,7 @@ function renderSummaryMemoryEditor() {
     indicator.removeClass('pf--summary-indicator-missing pf--summary-indicator-not-injected pf--summary-indicator-injected');
     if (!hasSummary) {
         indicator.addClass('pf--summary-indicator-missing').text('No summary');
-        meta.text('No Pathfinder summary has been created yet.');
+        meta.text('No Pawthfinder summary has been created yet.');
         return;
     }
 
@@ -706,13 +706,13 @@ async function createManualSummaryMemory() {
     const agentId = currentAgent.id;
     const agent = getAgentById(agentId) ?? currentAgent;
     const targetBook = resolveTargetBook(agent.settings?.selectedLorebook, getWritableBooks());
-    if (!targetBook) throw new Error('No Pathfinder-enabled lorebooks available for writing.');
+    if (!targetBook) throw new Error('No Pawthfinder-enabled lorebooks available for writing.');
     const recentChat = getRecentChatForSummary();
     if (!recentChat) {
         throw new Error('No recent chat messages are available to summarize.');
     }
 
-    const prompt = `Summarize the recent roleplay/chat into durable Pathfinder memory.
+    const prompt = `Summarize the recent roleplay/chat into durable Pawthfinder memory.
 
 Return only a compact JSON object with this shape:
 {"title":"short event title","content":"5-8 sentence useful memory summary","significance":"low|medium|high|critical","arc":"optional arc name"}
@@ -836,7 +836,7 @@ function bindEvents() {
         try {
             const current = assertSummarySource(draft.source);
             if (current.bookName && !getWritableBooks().includes(current.bookName)) {
-                throw new Error('No Pathfinder-enabled lorebooks available for writing.');
+                throw new Error('No Pawthfinder-enabled lorebooks available for writing.');
             }
             await saveSummaryMemoryContent(draft.content);
             if (settingsSession !== session) return;
@@ -979,7 +979,7 @@ function bindEvents() {
         } catch (err) {
             if (settingsSession !== session) return;
             output.text('Error running diagnostics: ' + err.message);
-            console.warn(`${PATHFINDER_LOG_PREFIX} Pathfinder diagnostics failed.`, err);
+            console.warn(`${PATHFINDER_LOG_PREFIX} Pawthfinder diagnostics failed.`, err);
         }
     });
 
@@ -987,14 +987,14 @@ function bindEvents() {
         const text = settingsEl.find('#pf--diagnostics-output').text() || '';
         try {
             await navigator.clipboard.writeText(text);
-            toastr.success('Pathfinder diagnostics copied.');
+            toastr.success('Pawthfinder diagnostics copied.');
         } catch {
             const textarea = $('<textarea>').val(text).css({ position: 'fixed', left: '-9999px', top: '0' });
             $('body').append(textarea);
             textarea[0].select();
             document.execCommand('copy');
             textarea.remove();
-            toastr.success('Pathfinder diagnostics copied.');
+            toastr.success('Pawthfinder diagnostics copied.');
         }
     });
 
@@ -1029,17 +1029,17 @@ function updateStatusBanner() {
     const usesTools = s.sidecarEnabled || isPathfinderToolEnabledForAgent(agent, 'Pathfinder_Summarize');
     const enabledTools = ALL_TOOL_NAMES.filter(name => (s.sidecarEnabled || name === 'Pathfinder_Summarize') && isPathfinderToolEnabledForAgent(agent, name));
     const registered = (ToolManager?.tools ?? []).map(tool => tool.toFunctionOpenAI?.()?.function?.name);
-    let title = 'Pathfinder is not configured';
+    let title = 'Pawthfinder is not configured';
     let message = 'Select at least one lorebook below to get started';
     let ready = false;
 
     if (!areAgentsGloballyEnabled() || !isPathfinderSubmoduleEnabled() || !isAgentEnabledForCurrentScope(agent)) {
-        title = 'Pathfinder is disabled';
+        title = 'Pawthfinder is disabled';
         message = !areAgentsGloballyEnabled()
             ? 'In-Chat Agents disabled.'
             : !isPathfinderSubmoduleEnabled()
-                ? 'Pathfinder is disabled in In-Chat Agents settings.'
-                : 'Enable Pathfinder above to use the current setup';
+                ? 'Pawthfinder is disabled in In-Chat Agents settings.'
+                : 'Enable Pawthfinder above to use the current setup';
     } else if (books.length > 0) {
         title = 'Lorebooks selected';
         message = 'Enable Tool Mode or Pipeline Mode above';
@@ -1048,7 +1048,7 @@ function updateStatusBanner() {
             message = 'No readable lorebooks';
         } else if (usesTools || s.pipelineEnabled) {
             if (getPathfinderRuntimeAgent()?.id !== agent.id) {
-                message = 'Tool mode is enabled, but the Pathfinder tool agent is not active right now. Enable Pathfinder as a tool agent, then reopen settings or reload agents.';
+                message = 'Tool mode is enabled, but the Pawthfinder tool agent is not active right now. Enable Pawthfinder as a tool agent, then reopen settings or reload agents.';
             } else if (s.pipelineEnabled && s.connectionProfile && !listConnectionProfiles().some(profile => profile.id === s.connectionProfile)) {
                 message = `Missing profile (${s.connectionProfile})`;
             } else if (online_status === 'no_connection' && (usesTools || !s.connectionProfile)) {
@@ -1056,12 +1056,12 @@ function updateStatusBanner() {
             } else if (usesTools && !ToolManager?.isToolCallingSupported?.()) {
                 message = 'Tool calling is not supported for the current API/settings. Enable "Function Calling" in OpenAI settings and ensure the current model supports tools.';
             } else if (usesTools && enabledTools.length === 0) {
-                message = 'Tool mode is enabled, but every Pathfinder tool toggle is off. Re-enable at least one Pathfinder tool in Tool Settings.';
+                message = 'Tool mode is enabled, but every Pawthfinder tool toggle is off. Re-enable at least one Pawthfinder tool in Tool Settings.';
             } else if (usesTools && enabledTools.some(name => !registered.includes(name))) {
                 message = 'Tools are configured but not registered with ToolManager. Try reloading the extension or switching API sources.';
             } else {
                 ready = true;
-                title = 'Pathfinder is ready';
+                title = 'Pawthfinder is ready';
                 message = `${readableBooks.length} lorebook(s) available`;
             }
         }
@@ -1092,12 +1092,12 @@ function renderRetrievalLog() {
     );
 
     if (items.length === 0) {
-        output.text('No Pathfinder retrieval activity recorded yet.');
+        output.text('No Pawthfinder retrieval activity recorded yet.');
         return;
     }
 
     const text = formatRetrievalLog(items);
-    output.text(text || 'No Pathfinder retrieval activity recorded yet.');
+    output.text(text || 'No Pawthfinder retrieval activity recorded yet.');
 }
 
 function formatTime(timestamp) {
@@ -1135,7 +1135,7 @@ function formatRetrievalMode(mode) {
     switch (mode) {
         case 'pipeline': return 'Pipeline retrieval';
         case 'tool-retrieval': return 'Tool/legacy retrieval';
-        default: return 'Pathfinder retrieval';
+        default: return 'Pawthfinder retrieval';
     }
 }
 
@@ -1298,7 +1298,7 @@ function formatRetrievalLog(items) {
     if (latestDetail) {
         sections.push(formatRetrievalDetail(latestDetail, { detailed }));
     } else {
-        sections.push('No completed retrieval summary yet. Refresh after Pathfinder runs, or check pipeline/tool activity below.');
+        sections.push('No completed retrieval summary yet. Refresh after Pawthfinder runs, or check pipeline/tool activity below.');
     }
 
     const pipelineSummary = formatPipelineSummary(items);
@@ -1447,7 +1447,7 @@ function updateAgentSettings(keys = []) {
 
     const run = saveAgent(agentId, { update: agent => {
         if (settingsSession !== session || session.contextRevision !== contextRevision) return null;
-        if (!agent) throw new Error('Pathfinder agent is not available. Reload In-Chat Agents or restore the bundled Pathfinder template.');
+        if (!agent) throw new Error('Pawthfinder agent is not available. Reload In-Chat Agents or restore the bundled Pawthfinder template.');
         agent.settings = { ...agent.settings, ...changes };
         if (changes.toolStates) {
             agent.tools = (agent.tools ?? []).map(tool => Object.hasOwn(changes.toolStates, tool.name)
@@ -1474,7 +1474,7 @@ function updateAgentSettings(keys = []) {
             }
             syncToolAgentRegistrations();
         } catch (err) {
-            console.warn('[Pathfinder] Could not refresh tool registrations after saving.', err);
+            console.warn('[Pawthfinder] Could not refresh tool registrations after saving.', err);
         }
         if (settingsSession !== session) return;
         if (revision === session.revision) {
@@ -1592,10 +1592,11 @@ function clearPromptStatus() {
 }
 
 /**
- * Check if an agent is Pathfinder
+ * Check if an agent is Pawthfinder
  */
 export function isPathfinderAgent(agent) {
     return agent?.sourceTemplateId === 'tpl-pathfinder' ||
+           agent?.name === 'Pawthfinder' ||
            agent?.name === 'Pathfinder' ||
            (agent?.category === 'tool' && agent?.tools?.some(t => t.name?.startsWith('Pathfinder_')));
 }

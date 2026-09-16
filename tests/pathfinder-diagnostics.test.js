@@ -24,7 +24,7 @@ await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agen
 const { clearAllTrees, getSettings, getTree, replaceSettings, saveTree } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/tree-store.js');
 const { runDiagnostics } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/diagnostics.js');
 
-describe('Pathfinder diagnostics', () => {
+describe('Pawthfinder diagnostics', () => {
     let manager;
     let load;
     let save;
@@ -55,7 +55,7 @@ describe('Pathfinder diagnostics', () => {
         const results = await runDiagnostics();
         expect(refreshRegistrations).toHaveBeenCalledTimes(1);
         expect(results['Tool Registration'].ok).toBe(true);
-        expect(results['Tool Registration'].message).toContain('All 3 enabled Pathfinder tool(s) registered and active.');
+        expect(results['Tool Registration'].message).toContain('All 3 enabled Pawthfinder tool(s) registered and active.');
         expect(results['Tool Registration'].message).toContain('Recursion: 0/5.');
     });
 
@@ -63,7 +63,7 @@ describe('Pathfinder diagnostics', () => {
         runtimeAgent = null;
         const results = await runDiagnostics();
         expect(results['Tool Registration'].ok).toBe(false);
-        expect(results['Tool Registration'].message).toContain('Pathfinder tool agent is not active');
+        expect(results['Tool Registration'].message).toContain('Pawthfinder tool agent is not active');
     });
 
     test('uses enabled tools from the active agent when no canonical tool state is configured', async () => {
@@ -72,7 +72,7 @@ describe('Pathfinder diagnostics', () => {
         manager.tools = new Map(manager.tools.map(tool => [tool.toFunctionOpenAI().function.name, tool]));
         const results = await runDiagnostics();
         expect(results['Tool Registration'].ok).toBe(true);
-        expect(results['Tool Registration'].message).toContain('All 1 enabled Pathfinder tool(s)');
+        expect(results['Tool Registration'].message).toContain('All 1 enabled Pawthfinder tool(s)');
         expect(results['Tool Registration'].message).toContain('Enabled: Pathfinder_Summarize.');
     });
 
@@ -91,7 +91,7 @@ describe('Pathfinder diagnostics', () => {
         const results = await runDiagnostics();
         expect(getSettings()).not.toBe(oldSettings);
         expect(results['Lorebooks'].message).toContain('New Book');
-        expect(results['Tool Mode'].message).toBe('Disabled - AI cannot call Pathfinder tools');
+        expect(results['Tool Mode'].message).toBe('Disabled - AI cannot call Pawthfinder tools');
         expect(results['Pipeline Mode'].message).toContain('Enabled (default pipeline)');
         expect(results['Tool Registration'].message).toContain('Tool mode disabled');
     });

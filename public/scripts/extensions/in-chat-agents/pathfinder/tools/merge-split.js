@@ -27,7 +27,7 @@ async function mergeSplitAction(args, options = {}) {
     const targetBook = resolveTargetBook(bookName, writableBooks);
     if (!targetBook) {
         logToolCallError(TOOL_NAMES.MERGE_SPLIT, 'No writable lorebooks');
-        return 'No Pathfinder-enabled lorebooks available.';
+        return 'No Pawthfinder-enabled lorebooks available.';
     }
 
     try {
@@ -65,13 +65,13 @@ async function mergeSplitAction(args, options = {}) {
 }
 
 async function mergeSplitFormatter(args) {
-    return `✂️ Pathfinder: ${args.action === 'merge' ? 'Merging' : 'Splitting'} entries...`;
+    return `✂️ Pawthfinder: ${args.action === 'merge' ? 'Merging' : 'Splitting'} entries...`;
 }
 
 export function getDefinition() {
     return {
         name: TOOL_NAMES.MERGE_SPLIT,
-        displayName: 'Pathfinder Merge/Split',
+        displayName: 'Pawthfinder Merge/Split',
         description: COMPACT_DESCRIPTION,
         parameters: {
             type: 'object',

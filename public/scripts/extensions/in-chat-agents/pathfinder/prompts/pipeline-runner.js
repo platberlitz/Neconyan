@@ -9,7 +9,7 @@ import { getReadableBooks } from '../pathfinder-tool-bridge.js';
 import { logPipelineStageStart, logPipelineStageComplete, logPipelineError } from '../activity-feed.js';
 import { isAbortLikeError } from '../../../../util/abort-error.js';
 
-const PATHFINDER_LOG_PREFIX = '[Pathfinder]';
+const PATHFINDER_LOG_PREFIX = '[Pawthfinder]';
 const DEFAULT_PIPELINE_MAX_TOKENS = 64000;
 
 function throwIfAborted(signal) {
@@ -17,7 +17,7 @@ function throwIfAborted(signal) {
         return;
     }
 
-    throw signal.reason ?? new Error('Pathfinder pipeline cancelled.');
+    throw signal.reason ?? new Error('Pawthfinder pipeline cancelled.');
 }
 
 /**
@@ -402,7 +402,7 @@ function parseOutput(response, format, entriesByName) {
                     });
                     reasoning = [
                         reasoning,
-                        `Pathfinder warning: model returned ${entries.length} candidate(s), but none matched the ${entriesByName.size} loaded lorebook entry names.`,
+                        `Pawthfinder warning: model returned ${entries.length} candidate(s), but none matched the ${entriesByName.size} loaded lorebook entry names.`,
                     ].filter(Boolean).join('\n\n');
                 }
 

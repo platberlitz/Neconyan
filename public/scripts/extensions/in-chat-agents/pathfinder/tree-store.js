@@ -69,7 +69,7 @@ export function setSettings(newSettings) {
 
 /**
  * Replace the settings wholesale instead of merging over the previous
- * object. setSettings can never clear a key, so switching Pathfinder
+ * object. setSettings can never clear a key, so switching Pawthfinder
  * agents would leak the previous agent's lorebooks and permissions.
  */
 export function replaceSettings(newSettings) {
@@ -91,7 +91,7 @@ export function getRuntimeNodeId(bookName, localId) {
     return ids.get(localId);
 }
 
-// Lets the WORLDINFO_UPDATED handler distinguish Pathfinder's own saves
+// Lets the WORLDINFO_UPDATED handler distinguish Pawthfinder's own saves
 // (cache refreshed after commit) from external edits (tree must be invalidated).
 // Relies on the host emitting the event within the awaited save.
 let selfWriteDepth = 0;

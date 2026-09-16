@@ -108,7 +108,7 @@ export async function runDiagnostics() {
     try {
         syncToolAgentRegistrations();
     } catch (error) {
-        console.warn('[Pathfinder] Diagnostics could not refresh tool registrations before checks.', error);
+        console.warn('[Pawthfinder] Diagnostics could not refresh tool registrations before checks.', error);
     }
     const s = getSettings();
 
@@ -133,8 +133,8 @@ export async function runDiagnostics() {
     results['Tool Mode'] = {
         ok: true,
         message: s.sidecarEnabled
-            ? 'Enabled - AI can use Pathfinder tools'
-            : 'Disabled - AI cannot call Pathfinder tools',
+            ? 'Enabled - AI can use Pawthfinder tools'
+            : 'Disabled - AI cannot call Pawthfinder tools',
     };
 
     // Check trees built
@@ -174,28 +174,28 @@ export async function runDiagnostics() {
             if (isToolCallingSupported) {
                 results['Tool Registration'] = {
                     ok: true,
-                    message: `All ${enabledPathfinderToolNames.length} enabled Pathfinder tool(s) registered and active. ${registrationDetail.registeredText}${registrationDetail.recursionText}`,
+                    message: `All ${enabledPathfinderToolNames.length} enabled Pawthfinder tool(s) registered and active. ${registrationDetail.registeredText}${registrationDetail.recursionText}`,
                 };
             } else {
                 results['Tool Registration'] = {
                     ok: false,
-                    message: `${registeredTools.length} Pathfinder tool(s) registered, but tool calling is not supported for the current API/settings. ${registrationDetail.registeredText} Enable "Function Calling" in OpenAI settings and ensure the current model supports tools.`,
+                    message: `${registeredTools.length} Pawthfinder tool(s) registered, but tool calling is not supported for the current API/settings. ${registrationDetail.registeredText} Enable "Function Calling" in OpenAI settings and ensure the current model supports tools.`,
                 };
             }
         } else if (!pathfinderAgent) {
             results['Tool Registration'] = {
                 ok: false,
-                message: 'Tool mode is enabled, but the Pathfinder tool agent is not active right now. Enable Pathfinder as a tool agent, then reopen settings or reload agents.',
+                message: 'Tool mode is enabled, but the Pawthfinder tool agent is not active right now. Enable Pawthfinder as a tool agent, then reopen settings or reload agents.',
             };
         } else if (enabledPathfinderToolNames.length === 0) {
-            console.debug('[Pathfinder] Diagnostics found no enabled Pathfinder tools.', {
+            console.debug('[Pawthfinder] Diagnostics found no enabled Pawthfinder tools.', {
                 agentTools: pathfinderAgent?.tools ?? [],
                 registeredTools,
                 sidecarEnabled: s.sidecarEnabled,
             });
             results['Tool Registration'] = {
                 ok: false,
-                message: 'Tool mode is enabled, but every Pathfinder tool toggle is off. Re-enable at least one Pathfinder tool in Tool Settings.',
+                message: 'Tool mode is enabled, but every Pawthfinder tool toggle is off. Re-enable at least one Pawthfinder tool in Tool Settings.',
             };
         } else if (registeredTools.length === 0) {
             results['Tool Registration'] = {
@@ -207,13 +207,13 @@ export async function runDiagnostics() {
         } else {
             results['Tool Registration'] = {
                 ok: false,
-                message: `Partial: ${registeredTools.length}/${enabledPathfinderToolNames.length} enabled Pathfinder tools registered. Missing: ${formatNameList(registrationDetail.missingTools)}. ${registrationDetail.registeredText}${registrationDetail.recursionText}`,
+                message: `Partial: ${registeredTools.length}/${enabledPathfinderToolNames.length} enabled Pawthfinder tools registered. Missing: ${formatNameList(registrationDetail.missingTools)}. ${registrationDetail.registeredText}${registrationDetail.recursionText}`,
             };
         }
     } else {
         results['Tool Registration'] = {
             ok: true,
-            message: 'Tool mode disabled - skipped. Tool agents are not required unless you want Pathfinder tools.',
+            message: 'Tool mode disabled - skipped. Tool agents are not required unless you want Pawthfinder tools.',
         };
     }
 
@@ -241,7 +241,7 @@ export async function runDiagnostics() {
         ok: true,
         message: s.autoSyncLorebooksOnChatChange === false
             ? `Disabled. Contextual lorebooks detected: ${formatNameList(contextualBooks)}.`
-            : `Enabled. Pathfinder will reset selected lorebooks to current chat context (${formatNameList(contextualBooks)}).`,
+            : `Enabled. Pawthfinder will reset selected lorebooks to current chat context (${formatNameList(contextualBooks)}).`,
     };
 
     const lastPipelineDetail = getFeedItems().find(item => item?.type === 'pathfinder_retrieval_detail' && item.mode === 'pipeline');
@@ -249,7 +249,7 @@ export async function runDiagnostics() {
     results['World Info Dedupe'] = {
         ok: true,
         message: s.dedupeNaturalActivation === false
-            ? 'Disabled. Pathfinder may inject entries that World Info also activates naturally.'
+            ? 'Disabled. Pawthfinder may inject entries that World Info also activates naturally.'
             : `Enabled. Last pipeline skipped ${skippedNaturalCount} naturally activated entr${skippedNaturalCount === 1 ? 'y' : 'ies'}.`,
     };
 

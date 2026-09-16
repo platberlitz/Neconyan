@@ -587,7 +587,7 @@ export function toggleConversationGroupPicker({ sourceAvatar = '', sourceGroupId
             rows.push(`
                 <label class="sb-conversation-add-dm-option sb-conversation-group-member-option">
                     <input type="checkbox" class="sb-conversation-group-member-checkbox" value="${escapeHtmlAttribute(character.avatar)}"${checked}${disabled} />
-                    <img src="${escapeHtmlAttribute(thumb)}" alt="" class="sb-conversation-group-member-avatar" loading="lazy" />
+                    <img src="${escapeHtmlAttribute(thumb)}" alt="" class="sb-conversation-group-member-avatar" width="24" height="24" loading="lazy" />
                     <span class="sb-conversation-group-member-name">${escapeHtmlText(name)}</span>
                 </label>
             `);

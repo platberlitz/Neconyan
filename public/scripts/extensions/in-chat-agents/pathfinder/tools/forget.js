@@ -44,8 +44,8 @@ async function forgetAction(args, options = {}) {
     if (!targetBook) {
         logToolCallError(TOOL_NAMES.FORGET, hardDelete ? 'No deletable lorebooks' : 'No writable lorebooks');
         return hardDelete
-            ? 'No Pathfinder-enabled lorebooks allow deletion.'
-            : 'No Pathfinder-enabled lorebooks allow disabling entries.';
+            ? 'No Pawthfinder-enabled lorebooks allow deletion.'
+            : 'No Pawthfinder-enabled lorebooks allow disabling entries.';
     }
 
     try {
@@ -59,13 +59,13 @@ async function forgetAction(args, options = {}) {
 }
 
 async function forgetFormatter(args) {
-    return `🗑️ Pathfinder: Forgetting entry UID:${args.uid}...`;
+    return `🗑️ Pawthfinder: Forgetting entry UID:${args.uid}...`;
 }
 
 export function getDefinition() {
     return {
         name: TOOL_NAMES.FORGET,
-        displayName: 'Pathfinder Forget',
+        displayName: 'Pawthfinder Forget',
         description: COMPACT_DESCRIPTION,
         parameters: {
             type: 'object',

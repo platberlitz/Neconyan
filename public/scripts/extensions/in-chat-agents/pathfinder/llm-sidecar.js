@@ -12,7 +12,7 @@ function notifySidecarIssue(message, level = 'warning') {
         return;
     }
     lastSidecarIssueToastAt = now;
-    globalThis.toastr?.[level]?.(message, 'Pathfinder sidecar');
+    globalThis.toastr?.[level]?.(message, 'Pawthfinder sidecar');
 }
 
 /**
@@ -56,13 +56,13 @@ export async function sidecarGenerateWithProfile(prompt, systemPrompt = '', prof
             }), signal);
             signal?.throwIfAborted();
             const text = typeof result === 'string' ? result : extractProfileResponseText(result);
-            if (!text.trim()) throw new Error('Sidecar generation failed; Pathfinder retrieval was skipped.');
+            if (!text.trim()) throw new Error('Sidecar generation failed; Pawthfinder retrieval was skipped.');
             return text;
         } catch (err) {
             if (isAbortLikeError(err, signal)) {
                 throw err;
             }
-            console.warn(`[Pathfinder] Sidecar via profile "${profileId}" failed:`, err);
+            console.warn(`[Pawthfinder] Sidecar via profile "${profileId}" failed:`, err);
             notifySidecarIssue('Connection profile request failed; falling back to the main model.');
         }
     }
@@ -76,14 +76,14 @@ export async function sidecarGenerateWithProfile(prompt, systemPrompt = '', prof
             cacheScope: 'auxiliary',
         }), signal);
         signal?.throwIfAborted();
-        if (!result.trim()) throw new Error('Sidecar generation failed; Pathfinder retrieval was skipped.');
+        if (!result.trim()) throw new Error('Sidecar generation failed; Pawthfinder retrieval was skipped.');
         return result;
     } catch (err) {
         if (isAbortLikeError(err, signal)) {
             throw err;
         }
-        console.warn('[Pathfinder] Sidecar via main model failed:', err);
-        notifySidecarIssue('Sidecar generation failed; Pathfinder retrieval was skipped.', 'error');
+        console.warn('[Pawthfinder] Sidecar via main model failed:', err);
+        notifySidecarIssue('Sidecar generation failed; Pawthfinder retrieval was skipped.', 'error');
         throw err;
     }
 }

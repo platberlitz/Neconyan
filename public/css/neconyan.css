@@ -1,5 +1,9 @@
-:root:has(body.neconyan) { --mainFontFamily: 'Nunito', 'Figtree', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', sans-serif; --sb-font-display: 'Fredoka One', var(--mainFontFamily); }
-/* Body text reads in Nunito; headings and the brand slots keep the rounded Fredoka One display face.
+/* Default body face. Latin subset only; other scripts fall through to Noto Sans. */
+@font-face { font-family: 'M PLUS Rounded 1c'; font-style: normal; font-weight: 500; font-display: swap; src: url('/webfonts/MPLUSRounded1c/MPLUSRounded1c-Latin-500.woff2?v=20260916b') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'M PLUS Rounded 1c'; font-style: normal; font-weight: 700; font-display: swap; src: url('/webfonts/MPLUSRounded1c/MPLUSRounded1c-Latin-700.woff2?v=20260916b') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+:root:has(body.neconyan) { --mainFontFamily: 'M PLUS Rounded 1c', 'Nunito', 'Figtree', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', sans-serif; --sb-font-display: 'Fredoka One', var(--mainFontFamily); }
+/* Body text reads in M PLUS Rounded 1c; headings and the brand slots keep the rounded Fredoka One display face.
    A font chosen in the Google Font drawer (or an imported theme) lands inline on :root and then applies everywhere, as before. */
 :root[style*='--mainFontFamily']:has(body.neconyan) { --sb-font-display: var(--mainFontFamily); }
 body.neconyan:not(.sbterm) :is(h1, h2, h3, h4, h5, h6, .sb-topbar-brand, .neconyan-rail-brand) { font-family: var(--sb-font-display); }
@@ -1190,8 +1194,10 @@ body.neconyan .sb-extensions-layout {
 body.neconyan .sb-settings-layout {
     grid-template-columns: minmax(180px, 200px) minmax(0, 1fr);
 }
+/* Extension panels stack in one list at every width; the master row above them is a
+   search/filter header. Pinning lives on each panel header (see .sb-extension-unit-pin). */
 body.neconyan .sb-extensions-layout {
-    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
 }
 body.neconyan :is(.sb-settings-nav-column, .sb-settings-detail, .sb-extensions-master, .sb-extension-detail) {
     min-width: 0;
@@ -1231,7 +1237,8 @@ body.neconyan .sb-extension-master-item[aria-current='true'] {
     background: var(--neco-raised);
 }
 body.neconyan .sb-settings-category-select,
-body.neconyan .sb-extensions-select {
+body.neconyan .sb-extensions-select,
+body.neconyan .sb-extensions-list {
     display: none;
     width: 100%;
     min-width: 0;
@@ -1260,6 +1267,12 @@ body.neconyan .sb-extension-pin {
 body.neconyan .sb-extension-pin[aria-pressed='true'] { color: var(--neco-ginger); border-color: var(--neco-ginger); }
 body.neconyan .sb-extension-pin[aria-pressed='true'] i { transform: rotate(-22deg); }
 body.neconyan .sb-extension-pin:disabled { opacity: .5; }
+body.neconyan .sb-extension-unit-pin {
+    margin-left: 6px;
+    min-width: 34px;
+    min-height: 34px;
+    flex: 0 0 auto;
+}
 body.neconyan .sb-settings-search {
     display: flex;
     align-items: center;
@@ -1326,13 +1339,6 @@ body.neconyan .sb-extensions-search {
     min-width: 0;
     min-height: 44px;
     width: 100%;
-}
-body.neconyan .sb-extensions-list {
-    display: grid;
-    gap: 4px;
-    min-width: 0;
-    max-height: calc(100dvh - var(--sb-topbar-layout-offset) - 120px);
-    overflow-y: auto;
 }
 body.neconyan .sb-extension-master-item {
     border: 1px solid transparent;
@@ -1401,7 +1407,7 @@ body.neconyan .sb-extensions-scope-button:focus-visible {
 }
 body.neconyan #rm_extensions_block .extensions_block {
     display: grid;
-    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 20px;
 }
 body.neconyan #rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p {
@@ -1417,7 +1423,7 @@ body.neconyan #rm_extensions_block .extensions_block > .sb-extensions-layout > .
     grid-row: 2;
 }
 body.neconyan #rm_extensions_block .extensions_block > :is(#extensions_settings, #extensions_settings2) > .extension_container {
-    grid-column: 2;
+    grid-column: 1;
     min-width: 0;
 }
 
@@ -1432,15 +1438,7 @@ body.neconyan #rm_extensions_block .extensions_block > :is(#extensions_settings,
         position: static;
         width: 100%;
     }
-    /* Phones: settings categories are labelled tabs in one scrolling row (one tap, no dropdown).
-       Extensions list every panel on the page instead, so neither the master list nor the
-       picker dropdown is needed. */
-    body.neconyan .sb-extensions-list,
-    body.neconyan .sb-settings-category-select,
-    body.neconyan .sb-extensions-select,
-    body.neconyan .sb-extension-mobile-pin {
-        display: none !important;
-    }
+    /* Phones: settings categories are labelled tabs in one scrolling row (one tap, no dropdown). */
     body.neconyan .sb-settings-tabs-nav {
         display: flex;
         flex-direction: row;
@@ -1500,30 +1498,24 @@ body.neconyan #rm_extensions_block :is(#extensions_details, #third_party_extensi
     text-align: left;
 }
 @media (min-width: 769px) and (max-width: 1100px) {
-    body.neconyan .sb-settings-layout,
-    body.neconyan .sb-extensions-layout {
+    body.neconyan .sb-settings-layout {
         grid-template-columns: minmax(0, 1fr);
+        gap: 14px;
+    }
+    body.neconyan .sb-extensions-layout {
         gap: 14px;
     }
     body.neconyan :is(.sb-settings-nav-column, .sb-extensions-master) {
         position: static;
         width: 100%;
     }
-    body.neconyan .sb-settings-tabs-nav,
-    body.neconyan .sb-extensions-list {
+    body.neconyan .sb-settings-tabs-nav {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
         gap: 4px;
     }
-    body.neconyan .sb-settings-tab-btn,
-    body.neconyan .sb-extension-master-item {
+    body.neconyan .sb-settings-tab-btn {
         width: auto;
-    }
-    body.neconyan #rm_extensions_block .extensions_block {
-        grid-template-columns: minmax(0, 1fr);
-    }
-    body.neconyan #rm_extensions_block .extensions_block > :is(#extensions_settings, #extensions_settings2) > .extension_container {
-        grid-column: 1;
     }
 }
 body.neconyan .sb-settings-search #settingsSearch {
@@ -1873,7 +1865,11 @@ body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar i
         font-size: 13px;
         line-height: 1.3;
     }
+}
 
+/* Real desktop keeps the category navigator beside the settings content (the 769-1100 tablet
+   block above owns the stacked layout; see the settings-layout rule there). */
+@media (min-width: 1101px) {
     body.neconyan .sb-settings-layout {
         grid-template-columns: var(--neco-workspace-nav-width) minmax(0, 1fr);
         align-items: stretch;

@@ -182,6 +182,10 @@ export function renderConversationParticipantStack(container, participants, {
         const fallbackImage = document.createElement('img');
         fallbackImage.alt = '';
         fallbackImage.loading = 'lazy';
+        // Intrinsic size so the avatar cannot paint at the card's natural resolution before the
+        // conversation stylesheet loads.
+        fallbackImage.width = 44;
+        fallbackImage.height = 44;
         fallbackImage.src = default_user_avatar;
         fallbackItem.appendChild(fallbackImage);
         container.appendChild(fallbackItem);
@@ -222,6 +226,8 @@ export function renderConversationParticipantStack(container, participants, {
         const image = document.createElement('img');
         image.alt = '';
         image.loading = index > 0 ? 'lazy' : 'eager';
+        image.width = 44;
+        image.height = 44;
         image.src = getThumbnailUrl('avatar', participant.avatar) || default_user_avatar;
         avatarItem.appendChild(image);
 
