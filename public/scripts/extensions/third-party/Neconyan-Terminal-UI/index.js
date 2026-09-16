@@ -6,8 +6,12 @@ const STATUS_DETAILS_ID = 'sbterm-status-details';
 const BOTTOM_BAR_VISIBILITY_KEY = 'sb-bottom-chat-bar-visible';
 const COMMAND_NAME = 'sbterm';
 const HOME_COMMAND_NAME = 'home';
-const HOME_VISIBLE_CLASS = 'sbterm-home-visible';
-const CAT_ART = '<img src="/img/neconyan/cat-head.webp" alt="" aria-hidden="true" draggable="false">';
+const CAT_ART = `<svg class="sbterm-kitty" viewBox="0 0 32 28" width="32" height="28" aria-hidden="true" focusable="false" shape-rendering="crispEdges">
+    <path class="sbterm-kitty-outline" d="M4 2h4v2h2v2h12V4h2V2h4v12h2v8h-2v2h-4v2H8v-2H4v-2H2v-8h2Z"/>
+    <path class="sbterm-kitty-face" d="M6 6h2v2h4v2h8V8h4V6h2v10h2v4h-2v2h-4v2H10v-2H6v-2H4v-4h2Z"/>
+    <path class="sbterm-kitty-marking" d="M6 6h2v2h4v6H6Zm14 4h4V8h2v10h-6Z"/>
+    <path class="sbterm-kitty-outline" d="M9 15h2v3H9Zm12 0h2v3h-2Zm-6 3h2v2h-2Zm-2 3h2v1h2v-1h2v2h-6ZM0 18h6v2H0Zm26 0h6v2h-6Z"/>
+</svg>`;
 
 const PALETTES = [
     ['phosphor-green', 'Phosphor Green'],
@@ -57,43 +61,6 @@ const PALETTE_IDS = PALETTES.map(([id]) => id);
 // forcing them true made the two densities near-identical.
 const DEFAULTS = { version: 4, enabled: false, palette: 'inherit', crt: false, minimal: false, topbarVisible: null, avatarVisible: true, avatarTint: false, chatTopbarVisible: null, bottomBarVisible: null };
 
-/* The Moonlit Echoes theme extension restyles the same surfaces this reskin
-   owns and the two fight; while Terminal UI is on, its stylesheets are turned
-   off in place and their prior state is restored afterwards. */
-const MOONLIT_STYLE_IDS = [
-    'MoonlitEchosTheme-style',
-    'MoonlitEchosTheme-extension',
-    'MoonlitEchosTheme-chat-styles',
-    'dynamic-theme-styles',
-    'moonlit-raw-css',
-    'moonlit-disable-chat-surface-reset',
-    'third-party_SillyBunny-MoonlitEchoesTheme-css',
-];
-let moonlitObserver = null;
-const moonlitStates = new Map();
-
-function syncMoonlitSuppression(enabled) {
-    if (typeof document === 'undefined') return;
-    if (!enabled) {
-        moonlitObserver?.disconnect();
-        moonlitObserver = null;
-        for (const [sheet, disabled] of moonlitStates) sheet.disabled = disabled;
-        moonlitStates.clear();
-        return;
-    }
-
-    for (const id of MOONLIT_STYLE_IDS) {
-        const sheet = document.getElementById(id);
-        if (!sheet || !('disabled' in sheet)) continue;
-        if (!moonlitStates.has(sheet)) moonlitStates.set(sheet, sheet.disabled);
-        sheet.disabled = true;
-    }
-    if (!moonlitObserver && typeof MutationObserver !== 'undefined' && document.head) {
-        moonlitObserver = new MutationObserver(() => syncMoonlitSuppression(true));
-        moonlitObserver.observe(document.head, { childList: true });
-    }
-}
-
 const SHELL_DESTINATIONS = {
     workspace: ['left'],
     presets: ['left', 'presets'],
@@ -121,8 +88,8 @@ const destinationLabel = destination => destination.replace(/^open-/, '').replac
 
 const COMMAND_OPTIONS = [
     ['status', 'Show the current terminal and connection status'],
-    ['on', 'Enable Terminal UI'],
-    ['off', 'Disable Terminal UI without disabling the extension'],
+    ['on', 'Enable Termeownal UI'],
+    ['off', 'Disable Termeownal UI without disabling the extension'],
     ['ui terminal', 'Use command-first terminal density'],
     ['ui full', 'Show the complete host chrome'],
     ['crt on', 'Enable the optional CRT overlay'],
@@ -137,9 +104,11 @@ const COMMAND_OPTIONS = [
     ['chat-tools', 'Open recent chat tools'],
     ['open-chats', 'Open recent chats'],
     ['appearance', 'Open appearance settings'],
-    ['home', 'Return to the terminal Home'],
+    ['home', 'Open Neconyan Home'],
     ['conversation', 'Open Conversation Mode'],
     ['roleplay', 'Return to Roleplay Mode'],
+    ['meower', 'Open Meower'],
+    ['story', 'Open Story Mode'],
 ];
 
 /* Top-level /open-* aliases for every page destination. The native /api and
@@ -160,8 +129,8 @@ const TOGGLE_CONFIG = {
 };
 
 const COMMAND_GLOSSARY = [
-    ['/sbterm', 'Configure Terminal UI'],
-    ['/home', 'Return to Terminal Home'],
+    ['/sbterm', 'Configure Termeownal UI'],
+    ['/home', 'Open Neconyan Home'],
     ...Object.keys(SHELL_DESTINATIONS)
         .filter(destination => destination !== 'api')
         .map(destination => [`/${openCommandName(destination)}`, `Open ${destinationLabel(destination)}`]),
@@ -173,9 +142,11 @@ const COMMAND_GLOSSARY = [
     ['/open-homepage', 'Reveal Neconyan Home'],
     ['/open-conversation', 'Open Conversation Mode'],
     ['/open-roleplay', 'Return to Roleplay Mode'],
+    ['/open-meower', 'Open Meower'],
+    ['/open-story', 'Open Story Mode'],
     ['/hide-top-navbar', 'Hide the navigation top bar'],
     ['/show-top-navbar', 'Show the navigation top bar'],
-    ['/hide-home', 'Replace native Home with Terminal Home'],
+    ['/hide-home', 'Close Home and return to the current mode'],
     ['/hide-avatar', 'Hide chat avatars'],
     ['/show-avatar', 'Show chat avatars'],
     ['/show-chat-topbar', 'Show the chat tool bar'],
@@ -195,12 +166,7 @@ let autocompleteObserver = null;
 let conversationAutocomplete = null;
 let conversationAutocompleteInput = null;
 let conversationAutocompletePendingInput = null;
-let composerResizeObserver = null;
 let eventBindings = [];
-let nativeHomeClick = false;
-let chatTopbarObserver = null;
-let chatTopbarObserverTarget = null;
-let capturedHostNodes = [];
 let bottomBarState = null;
 let renderSequence = 0;
 let tokenSequence = 0;
@@ -282,10 +248,6 @@ function save() {
     ctx()?.saveSettingsDebounced?.();
 }
 
-function hideHome() {
-    if (typeof document !== 'undefined') document.body?.classList.remove(HOME_VISIBLE_CLASS);
-}
-
 function restoreBottomBar() {
     if (!bottomBarState) return;
     let hidden = bottomBarState.hidden;
@@ -339,8 +301,6 @@ function apply() {
     document.body.classList.toggle('sbterm-bottom-bar-hidden', enabled && !bottomBarVisible);
 
     syncBottomBar(enabled, bottomBarVisible);
-    syncChatTopbar(terminal);
-    syncMoonlitSuppression(enabled);
 
     if (enabled) {
         document.body.dataset.sbtermPalette = settings.palette;
@@ -365,7 +325,6 @@ function updateSettings(patch) {
         }
     }
     if (changed) {
-        if ('enabled' in patch || 'minimal' in patch) hideHome();
         if ('enabled' in patch) {
             // ponytail: /sbterm off (and the settings drawer) must be fully
             // reversible: drop the injected UI, hand host bars back, rebuild
@@ -436,7 +395,7 @@ function renderDrawer() {
     toggle.id = 'sbterm-settings-toggle';
     const icon = el('div', 'inline-drawer-icon fa-solid fa-circle-chevron-down down');
     icon.id = 'sbterm-settings-icon';
-    toggle.append(el('b', undefined, 'Terminal UI'), icon);
+    toggle.append(el('b', undefined, 'Termeownal UI'), icon);
 
     const content = el('div', 'inline-drawer-content sbterm-settings-content');
     content.id = 'sbterm-settings-content';
@@ -444,7 +403,7 @@ function renderDrawer() {
     // out of the density default — same thing the matching slash command does.
     const densityDefault = !settings.minimal;
     content.append(
-        checkboxRow('sbterm-enabled', 'Enable Terminal UI', settings.enabled, value => updateSettings({ enabled: value })),
+        checkboxRow('sbterm-enabled', 'Enable Termeownal UI', settings.enabled, value => updateSettings({ enabled: value })),
         selectRow('sbterm-density', 'Interface', [['terminal', 'Terminal'], ['full', 'Full chrome']], settings.minimal ? 'terminal' : 'full', value => updateSettings({ minimal: value === 'terminal' })),
         selectRow('sbterm-palette', 'Palette', PALETTES, settings.palette, value => updateSettings({ palette: value })),
         checkboxRow('sbterm-crt', 'CRT overlay (optional)', settings.crt, value => updateSettings({ crt: value })),
@@ -516,9 +475,8 @@ function ensureStatusline() {
     mascot.innerHTML = CAT_ART;
 
     const copy = el('div', 'sbterm-banner-copy');
-    copy.appendChild(el('strong', 'sbterm-banner-title', 'neconyan terminal'));
+    copy.appendChild(el('strong', 'sbterm-banner-title', 'Termeownal UI'));
 
-    const statusRow = el('div', 'sbterm-status-row');
     const status = el('span', 'sbterm-statusline');
     status.id = STATUS_ID;
     status.setAttribute('role', 'status');
@@ -529,27 +487,25 @@ function ensureStatusline() {
     details.type = 'button';
     details.setAttribute('aria-label', 'Show full terminal status');
     details.setAttribute('aria-describedby', STATUS_ID);
-    statusRow.append(status, details);
-    copy.appendChild(statusRow);
-    banner.append(mascot, copy);
+    copy.appendChild(status);
+    banner.append(mascot, copy, details);
     brand.appendChild(banner);
     return status;
 }
 
 function ensureFormMascot() {
     if (typeof document === 'undefined') return null;
-    const form = document.querySelector('#form_sheld');
+    const form = document.querySelector('#neconyan-home-host .neconyan-home-intro');
     if (!form) return null;
     if (!document.querySelector('.sbterm-mascot-form')) {
         const mascot = el('span', 'sbterm-mascot sbterm-mascot-form');
         mascot.setAttribute('aria-hidden', 'true');
         mascot.innerHTML = CAT_ART;
-        form.prepend?.(mascot);
+        form.querySelector('.neconyan-home-cat')?.appendChild(mascot);
     }
     if (!document.querySelector('.sbterm-command-glossary')) {
-        const glossary = el('section', 'sbterm-command-glossary');
-        glossary.tabIndex = 0;
-        const heading = el('h2', 'sbterm-command-glossary-title', 'Commands');
+        const glossary = el('details', 'sbterm-command-glossary');
+        const heading = el('summary', 'sbterm-command-glossary-title', 'Termeownal commands');
         heading.id = 'sbterm-command-glossary-title';
         glossary.setAttribute('aria-labelledby', heading.id);
         const list = el('ul', 'sbterm-command-glossary-list');
@@ -567,89 +523,19 @@ function ensureFormMascot() {
     return form;
 }
 
-const CHAT_TOPBAR_ID = 'sbterm-chat-topbar';
-
-function ensureChatTopbar() {
-    if (typeof document === 'undefined') return null;
-    const form = document.querySelector('#form_sheld');
-    if (!form) return null;
-    let topbar = document.getElementById(CHAT_TOPBAR_ID);
-    if (!topbar) {
-        topbar = el('div', 'sbterm-chat-topbar');
-        topbar.id = CHAT_TOPBAR_ID;
-        form.insertBefore?.(topbar, form.firstChild);
-    }
-
-    // ponytail: host extensions (Guided Generations, Quick Replies) build their
-    // bars inside #send_form whenever they want; a live observer re-captures
-    // them whenever they appear, so nothing is missed after a 30s window.
-    const capture = selector => {
-        const node = document.querySelector(selector);
-        if (!node || node.parentElement === topbar) return;
-        const record = { node, parent: node.parentElement, sibling: node.nextSibling };
-        const previous = capturedHostNodes.findIndex(item => item.node === node);
-        if (previous === -1) capturedHostNodes.push(record);
-        else capturedHostNodes[previous] = record;
-        topbar.appendChild(node);
-    };
-
-    const target = document.getElementById('send_form') ?? form;
-    if (chatTopbarObserverTarget !== target) {
-        chatTopbarObserver?.disconnect();
-        chatTopbarObserver = null;
-        chatTopbarObserverTarget = target;
-    }
-    if (!chatTopbarObserver && typeof MutationObserver !== 'undefined') {
-        chatTopbarObserver = new MutationObserver(() => {
-            capture('#qr--bar');
-            capture('#gg-action-button-container');
-        });
-        chatTopbarObserver.observe(target, { childList: true, subtree: true });
-    }
-    capture('#qr--bar');
-    capture('#gg-action-button-container');
-    return topbar;
-}
-
-function restoreHostNodes() {
-    const topbar = document.getElementById(CHAT_TOPBAR_ID);
-    for (const record of capturedHostNodes.splice(0)) {
-        const { node, parent, sibling } = record;
-        if (!node || !parent || parent.isConnected === false || (topbar && node.parentElement !== topbar)) continue;
-        if (typeof parent.insertBefore === 'function') {
-            parent.insertBefore(node, sibling?.parentNode === parent ? sibling : null);
-        } else {
-            parent.appendChild(node);
-        }
-    }
-}
-
-function syncChatTopbar(enabled) {
-    if (enabled) {
-        ensureChatTopbar();
-        return;
-    }
-    chatTopbarObserver?.disconnect();
-    chatTopbarObserver = null;
-    chatTopbarObserverTarget = null;
-    restoreHostNodes();
-    document.getElementById(CHAT_TOPBAR_ID)?.remove();
-}
-
 function teardownDom() {
     if (typeof document === 'undefined') return;
-    syncChatTopbar(false);
+    domController?.abort();
+    domController = null;
+    renderSequence++;
+    tokenSequence++;
     conversationObserver?.disconnect();
     conversationObserver = null;
     autocompleteObserver?.disconnect();
     autocompleteObserver = null;
     conversationAutocomplete?.hide?.();
-    composerResizeObserver?.disconnect();
-    composerResizeObserver = null;
     autocompleteAlignQueued = false;
     restoreBottomBar();
-    clearHomeAutocompleteAlignment();
-    document.querySelector?.('#form_sheld')?.style?.removeProperty?.('--sbterm-composer-row-width');
     document.getElementById(BANNER_ID)?.remove();
     document.querySelector('.sbterm-mascot-form')?.remove();
     document.querySelector('.sbterm-command-glossary')?.remove();
@@ -657,32 +543,13 @@ function teardownDom() {
 
 function rebuildDom() {
     if (!active || !getSettings().enabled) return;
+    bindDomEvents();
     ensureStatusline();
     ensureFormMascot();
-    syncChatTopbar(getSettings().minimal);
     bindMainCommandInput();
-    observeComposerRow();
     observeConversationTimeline();
     observeAutocomplete();
     void ensureConversationAutocomplete();
-}
-
-function alignChatBars() {
-    if (typeof document === 'undefined') return;
-    const form = document.querySelector?.('#form_sheld');
-    const rect = document.getElementById('nonQRFormItems')?.getBoundingClientRect?.();
-    if (!form?.style || !rect) return;
-    form.style.setProperty('--sbterm-composer-row-width', `${rect.width}px`);
-}
-
-function observeComposerRow() {
-    composerResizeObserver?.disconnect();
-    composerResizeObserver = null;
-    alignChatBars();
-    const row = typeof document === 'undefined' ? null : document.getElementById('nonQRFormItems');
-    if (!active || !getSettings().enabled || !row || typeof ResizeObserver === 'undefined') return;
-    composerResizeObserver = new ResizeObserver(alignChatBars);
-    composerResizeObserver.observe(row);
 }
 
 function cleanStatusPart(value, fallback = '-') {
@@ -807,7 +674,7 @@ async function renderStatusline() {
     const conversationMode = isConversationMode();
     const conversation = conversationMode ? await conversationStatus(context) : null;
     const connection = scopedConversationConnection(context, conversation?.profile) ?? await connectionSummary(context);
-    if (!active || sequence !== renderSequence) {
+    if (!active || !getSettings().enabled || sequence !== renderSequence) {
         return lastStatusText;
     }
 
@@ -847,7 +714,7 @@ async function countPromptTokens(prompt, context) {
 }
 
 async function recordPromptTokens(generateData, dryRun) {
-    if (!active || dryRun || isConversationMode()) {
+    if (!active || !getSettings().enabled || dryRun || isConversationMode()) {
         return;
     }
 
@@ -855,6 +722,7 @@ async function recordPromptTokens(generateData, dryRun) {
     if (!context) return;
     const sequence = ++tokenSequence;
     const connection = await connectionSummary(context);
+    if (!active || !getSettings().enabled || sequence !== tokenSequence) return;
     const identity = statusIdentity(context, connection.text);
 
     try {
@@ -869,7 +737,7 @@ async function recordPromptTokens(generateData, dryRun) {
             lastPromptIdentity = '';
             void renderStatusline();
         }
-        console.warn('Terminal UI could not count the assembled prompt', error);
+        console.warn('Termeownal UI could not count the assembled prompt', error);
     }
 }
 
@@ -883,9 +751,9 @@ function invalidatePromptTokens() {
 function notify(message, severity = 'info') {
     const toast = globalThis.toastr?.[severity];
     if (typeof toast === 'function') {
-        toast.call(globalThis.toastr, message, 'Terminal UI');
+        toast.call(globalThis.toastr, message, 'Termeownal UI');
     } else if (severity === 'warning' || severity === 'error') {
-        console.warn(`Terminal UI: ${message}`);
+        console.warn(`Termeownal UI: ${message}`);
     }
 }
 
@@ -922,73 +790,20 @@ async function openAppearance() {
     return true;
 }
 
-async function openConversation() {
-    const conversation = await import('/scripts/neconyan-conversation.js');
-    const context = ctx();
-    const avatar = context?.characters?.[context.characterId]?.avatar;
-    if (avatar && await conversation.openConversationWorkspaceForAvatar?.(avatar)) {
-        return true;
-    }
-    return Boolean(await conversation.openConversationWorkspaceFromWelcome?.());
-}
-
-async function closeConversationWorkspace() {
-    if (!isConversationMode()) return true;
-    globalThis.dispatchEvent?.(new Event('sb:close-conversation-workspace'));
-    await nextFrame();
-    await nextFrame();
-    return !isConversationMode();
-}
-
 async function showHomepage() {
-    if (!await closeConversationWorkspace()) return false;
-    const home = document.getElementById('sb-home-toggle');
-    if (!home) return false;
-
-    if (!document.querySelector('.welcomePanel')) {
-        const closeCurrentChat = ctx()?.closeCurrentChat;
-        if (typeof closeCurrentChat !== 'function' || !await closeCurrentChat()) return false;
-    }
-
-    if (!document.querySelector('.welcomePanel')) return false;
-    document.body?.classList.add(HOME_VISIBLE_CLASS);
-    nativeHomeClick = true;
-    try {
-        home.click();
-    } finally {
-        nativeHomeClick = false;
-    }
-    return true;
+    await globalThis.NeconyanShell?.showHome?.();
+    if (getSettings().enabled) ensureFormMascot();
+    return document.body.classList.contains('neconyan-home-visible');
 }
 
 async function showTerminalHome() {
-    if (!await closeConversationWorkspace()) return false;
-    if (!document.querySelector('.welcomePanel')) {
-        const closeCurrentChat = ctx()?.closeCurrentChat;
-        if (typeof closeCurrentChat !== 'function' || !await closeCurrentChat()) return false;
-    }
-
-    if (!document.querySelector('.welcomePanel')) return false;
-    hideHome();
-    return true;
+    return showHomepage();
 }
 
 async function openChats() {
-    // With a chat open, reaching the Home recents list would close it — and
-    // the host then loads the Assistant welcome chat. Use the host's
-    // non-destructive Recent Chats panel instead.
-    if (!document.querySelector('.welcomePanel')) {
-        const shell = globalThis.NeconyanShell;
-        if (typeof shell?.openChatTools !== 'function') return false;
-        shell.openChatTools();
-        return true;
-    }
-    if (!await showHomepage()) return false;
-    const showMore = document.querySelector('.showMoreChats');
-    if (showMore && !showMore.classList.contains('rotated')) showMore.click();
-    const recentChats = document.querySelector('.welcomeRecentShell');
-    recentChats?.scrollIntoView({ block: 'start' });
-    return Boolean(recentChats);
+    const launcher = document.getElementById('sbca_drawer_button');
+    launcher?.click();
+    return Boolean(launcher);
 }
 
 async function openDestination(destination) {
@@ -1018,12 +833,10 @@ async function openDestination(destination) {
         case 'open-homepage':
             return showHomepage();
         case 'conversation':
-            return openConversation();
-        case 'roleplay': {
-            const closed = await closeConversationWorkspace();
-            if (closed) document.getElementById('send_textarea')?.focus?.();
-            return closed;
-        }
+        case 'roleplay':
+        case 'meower':
+        case 'story':
+            return Boolean(await shell?.activateMode?.(destination));
         default:
             return false;
     }
@@ -1031,7 +844,7 @@ async function openDestination(destination) {
 
 async function runSbtermCommand(_named, unnamed) {
     if (!active) {
-        return 'Terminal UI is disabled.';
+        return 'Termeownal UI is disabled.';
     }
 
     const input = String(unnamed ?? '').trim();
@@ -1043,7 +856,7 @@ async function runSbtermCommand(_named, unnamed) {
 
     if (input === 'on' || input === 'off') {
         updateSettings({ enabled: input === 'on' });
-        notify(`Terminal UI ${input === 'on' ? 'enabled' : 'disabled'}.`, 'success');
+        notify(`Termeownal UI ${input === 'on' ? 'enabled' : 'disabled'}.`, 'success');
         return input;
     }
 
@@ -1089,7 +902,7 @@ async function runSbtermCommand(_named, unnamed) {
 }
 
 async function runHomeCommand() {
-    if (!active) return 'Terminal UI is disabled.';
+    if (!active) return 'Termeownal UI is disabled.';
     const opened = await showTerminalHome();
     if (!opened) notify('Home is unavailable.', 'warning');
     return opened ? 'home' : 'home unavailable';
@@ -1121,7 +934,7 @@ function registerCommand() {
     if (!parser || !SlashCommand || !SlashCommandArgument || !ARGUMENT_TYPE) return false;
 
     if (parser.commands?.[COMMAND_NAME]) {
-        console.error(`Terminal UI could not register /${COMMAND_NAME}: name collision`);
+        console.error(`Termeownal UI could not register /${COMMAND_NAME}: name collision`);
         return false;
     }
 
@@ -1131,7 +944,7 @@ function registerCommand() {
     const command = SlashCommand.fromProps({
         name: COMMAND_NAME,
         callback: runSbtermCommand,
-        helpString: 'Navigate Terminal UI, change its density or palette, and inspect the live statusline. Existing chat commands such as /api, /model, /preset, /theme, and /chat-manager remain unchanged.',
+        helpString: 'Navigate Termeownal UI, change its density or palette, and inspect the live statusline. Existing chat commands such as /api, /model, /preset, /theme, and /chat-manager remain unchanged.',
         returns: 'the selected action or current status',
         unnamedArgumentList: [SlashCommandArgument.fromProps({
             description: 'action or destination',
@@ -1149,7 +962,7 @@ function registerCommand() {
     } catch (error) {
         if (parser.commands?.[COMMAND_NAME] === command) delete parser.commands[COMMAND_NAME];
         registeredCommand = null;
-        console.error(`Terminal UI could not register /${COMMAND_NAME}`, error);
+        console.error(`Termeownal UI could not register /${COMMAND_NAME}`, error);
         return false;
     }
 }
@@ -1162,14 +975,14 @@ function registerHomeCommand() {
     if (!parser || !SlashCommand) return false;
 
     if (parser.commands?.[HOME_COMMAND_NAME]) {
-        console.error(`Terminal UI could not register /${HOME_COMMAND_NAME}: name collision`);
+        console.error(`Termeownal UI could not register /${HOME_COMMAND_NAME}: name collision`);
         return false;
     }
 
     const command = SlashCommand.fromProps({
         name: HOME_COMMAND_NAME,
         callback: runHomeCommand,
-        helpString: 'Return to the terminal Home screen; use /open-homepage to reveal the Neconyan Home page.',
+        helpString: 'Open Neconyan Home without closing your chat or losing your draft.',
         returns: 'home or home unavailable',
     });
 
@@ -1181,7 +994,7 @@ function registerHomeCommand() {
     } catch (error) {
         if (parser.commands?.[HOME_COMMAND_NAME] === command) delete parser.commands[HOME_COMMAND_NAME];
         registeredHomeCommand = null;
-        console.error(`Terminal UI could not register /${HOME_COMMAND_NAME}`, error);
+        console.error(`Termeownal UI could not register /${HOME_COMMAND_NAME}`, error);
         return false;
     }
 }
@@ -1194,7 +1007,7 @@ function registerCommands() {
 
 function runDestinationCommand(destination) {
     return async () => {
-        if (!active) return 'Terminal UI is disabled.';
+        if (!active) return 'Termeownal UI is disabled.';
         const opened = await openDestination(destination);
         if (!opened) notify(`Could not open ${destination}.`, 'warning');
         return opened ? destination : `${destination} unavailable`;
@@ -1203,11 +1016,10 @@ function runDestinationCommand(destination) {
 
 function runToggleCommand(name) {
     return async () => {
-        if (!active) return 'Terminal UI is disabled.';
+        if (!active) return 'Termeownal UI is disabled.';
         if (name === 'hide-home') {
-            const opened = await showTerminalHome();
-            notify(opened ? 'Terminal Home shown.' : 'Home is unavailable.', opened ? 'success' : 'warning');
-            return opened ? 'home' : 'home unavailable';
+            globalThis.NeconyanWelcome?.concealHome?.();
+            return 'Home hidden.';
         }
         const config = TOGGLE_CONFIG[name];
         updateSettings(config.patch);
@@ -1227,7 +1039,7 @@ function registerTopLevelCommands() {
         if (parser.commands?.[name]) {
             // /api is expected to collide — the host owns it and /open-api is the
             // alias. Anything else colliding is a command the user will find dead.
-            if (name !== 'api') console.warn(`Terminal UI skipped /${name}: a command with that name already exists`);
+            if (name !== 'api') console.warn(`Termeownal UI skipped /${name}: a command with that name already exists`);
             return;
         }
         try {
@@ -1235,7 +1047,7 @@ function registerTopLevelCommands() {
             parser.addCommandObject(command);
             registeredTopLevel.push({ name, command });
         } catch (error) {
-            console.error(`Terminal UI could not register /${name}`, error);
+            console.error(`Termeownal UI could not register /${name}`, error);
         }
     };
 
@@ -1246,13 +1058,13 @@ function registerTopLevelCommands() {
     for (const name of ['search', 'chat-tools', 'open-chats', 'appearance', 'open-homepage']) {
         register(name, runDestinationCommand(name), `Open the ${destinationLabel(name)} panel.`);
     }
-    for (const destination of ['conversation', 'roleplay']) {
+    for (const destination of ['conversation', 'roleplay', 'meower', 'story']) {
         register(`open-${destination}`, runDestinationCommand(destination), `Open ${destinationLabel(destination)} mode.`);
     }
     for (const name of TOGGLE_COMMANDS) {
         register(name, runToggleCommand(name), name === 'hide-home'
-            ? 'Replace the native Home page with Terminal Home.'
-            : `Toggle Terminal UI: ${name.replaceAll('-', ' ')}.`);
+            ? 'Hide Home and return to the current workspace.'
+            : `Toggle Termeownal UI: ${name.replaceAll('-', ' ')}.`);
     }
 }
 
@@ -1260,7 +1072,7 @@ function isOwnedCommand(input) {
     const command = String(input ?? '').trim();
     const name = command.match(/^\/([^\s|]+)/)?.[1]?.toLowerCase();
     const topLevel = registeredTopLevel.find(item => item.name === name);
-    return active && (
+    return active && getSettings().enabled && (
         (registeredCommand && commandParser?.commands?.[COMMAND_NAME] === registeredCommand && /^\/sbterm(?:\s|$)/.test(command)) ||
         (registeredHomeCommand && commandParser?.commands?.[HOME_COMMAND_NAME] === registeredHomeCommand && /^\/home\s*$/.test(command)) ||
         (topLevel && commandParser?.commands?.[name] === topLevel.command)
@@ -1269,7 +1081,7 @@ function isOwnedCommand(input) {
 
 function isRegisteredConversationCommand(command, input) {
     const name = String(command ?? '').trim().match(/^\/([^\s|]+)/)?.[1]?.toLowerCase();
-    return active && input?.id === 'sb_conversation_input' && name && !CONVERSATION_COMMANDS.has(name) && Boolean(ctx()?.SlashCommandParser?.commands?.[name]);
+    return active && getSettings().enabled && input?.id === 'sb_conversation_input' && name && !CONVERSATION_COMMANDS.has(name) && Boolean(ctx()?.SlashCommandParser?.commands?.[name]);
 }
 
 /* The host creates a *permanent* Assistant chat whenever a composer submit
@@ -1278,7 +1090,7 @@ function isRegisteredConversationCommand(command, input) {
    Home is exactly that state, so every command typed there would spawn an
    Assistant chat. Run any registered command ourselves inside that window. */
 function isAssistantTrapCommand(command, input) {
-    if (!active || input?.id !== 'send_textarea') return false;
+    if (!active || !getSettings().enabled || input?.id !== 'send_textarea') return false;
     const name = String(command ?? '').trim().match(/^\/([^\s|]+)/)?.[1]?.toLowerCase();
     if (!name) return false;
     const context = ctx();
@@ -1315,7 +1127,7 @@ function executeOwnedCommand(event, input) {
     }
     clearCommandInput(input);
     const recover = (error, message) => {
-        if (error) console.error('Terminal UI could not execute the command', error);
+        if (error) console.error('Termeownal UI could not execute the command', error);
         const restored = input.value === '';
         if (restored) {
             input.value = command;
@@ -1355,12 +1167,6 @@ function onDocumentClick(event) {
         }
         if (event.target?.closest?.('.sbterm-mascot-button')) {
             void openQuickAccess();
-            return;
-        }
-        if (!nativeHomeClick && document.body?.classList.contains('sbterm-minimal') && event.target?.closest?.('#sb-home-toggle')) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            void showHomepage();
             return;
         }
     }
@@ -1450,15 +1256,12 @@ async function ensureConversationAutocomplete() {
         if (!autocomplete) return;
         const shouldActivate = autocomplete.checkIfActivate.bind(autocomplete);
         autocomplete.checkIfActivate = () => active && getSettings().enabled && isConversationMode() && input.isConnected && shouldActivate();
-        if (!active || !getSettings().enabled || !isConversationMode() || !input.isConnected) {
-            autocomplete.hide?.();
-            return;
-        }
         conversationAutocomplete?.hide?.();
         conversationAutocomplete = autocomplete;
         conversationAutocompleteInput = input;
+        if (!active || !getSettings().enabled || !isConversationMode() || !input.isConnected) autocomplete.hide?.();
     } catch (error) {
-        console.error('Terminal UI could not enable Conversation slash previews', error);
+        console.error('Termeownal UI could not enable Conversation slash previews', error);
     } finally {
         if (conversationAutocompletePendingInput === input) conversationAutocompletePendingInput = null;
     }
@@ -1466,52 +1269,13 @@ async function ensureConversationAutocomplete() {
 
 let autocompleteAlignQueued = false;
 
-function alignHomeAutocomplete() {
-    if (typeof document === 'undefined') return;
-    const wraps = document.querySelectorAll?.('.autoComplete-wrap:not(.isFloating), .autoComplete-detailsWrap.full:not(.isFloating)') ?? [];
-    const input = !isConversationMode() && !document.body?.classList.contains(HOME_VISIBLE_CLASS)
-        ? document.querySelector?.('#sheld:has(#chat .welcomePanel) #send_textarea')
-        : null;
-    if (!input) {
-        for (const wrap of wraps) {
-            wrap.style?.removeProperty?.('--sbterm-autocomplete-left');
-            wrap.style?.removeProperty?.('--sbterm-autocomplete-right');
-        }
-        return;
-    }
-    if (!wraps.length) return;
-
-    const rect = input.getBoundingClientRect?.();
-    const viewportLeft = globalThis.visualViewport?.offsetLeft ?? 0;
-    const viewportWidth = globalThis.visualViewport?.width ?? globalThis.innerWidth ?? document.documentElement?.clientWidth ?? rect?.right ?? 0;
-    for (const wrap of wraps) {
-        if (rect) {
-            wrap.style?.setProperty?.('--sbterm-autocomplete-left', `${Math.max(0, rect.left - viewportLeft)}px`);
-            wrap.style?.setProperty?.('--sbterm-autocomplete-right', `${Math.max(0, viewportLeft + viewportWidth - rect.right)}px`);
-        } else {
-            wrap.style?.removeProperty?.('--sbterm-autocomplete-left');
-            wrap.style?.removeProperty?.('--sbterm-autocomplete-right');
-        }
-    }
-}
-
-function clearHomeAutocompleteAlignment() {
-    if (typeof document === 'undefined') return;
-    for (const wrap of document.querySelectorAll?.('.autoComplete-wrap:not(.isFloating), .autoComplete-detailsWrap.full:not(.isFloating)') ?? []) {
-        wrap.style?.removeProperty?.('--sbterm-autocomplete-left');
-        wrap.style?.removeProperty?.('--sbterm-autocomplete-right');
-    }
-}
-
 function queueAlignHomeAutocomplete() {
     if (autocompleteAlignQueued) return;
     autocompleteAlignQueued = true;
-    // ponytail: the host appends autocomplete to <body>, so the observer must
-    // watch body, but the callback is now a cheap once-per-frame no-op unless
-    // the terminal Home is actually on screen (audit P2 perf finding).
     const align = () => {
         autocompleteAlignQueued = false;
-        alignHomeAutocomplete();
+        if (!active || !getSettings().enabled) return;
+        ensureFormMascot();
         void ensureConversationAutocomplete();
     };
     if (typeof globalThis.requestAnimationFrame === 'function') {
@@ -1526,8 +1290,8 @@ function observeAutocomplete() {
     autocompleteObserver = null;
     if (!active || !getSettings().enabled || typeof MutationObserver === 'undefined' || !document.body) return;
     autocompleteObserver = new MutationObserver(queueAlignHomeAutocomplete);
-    autocompleteObserver.observe(document.body, { childList: true, subtree: true });
-    alignHomeAutocomplete();
+    const workspace = document.getElementById('sheld');
+    if (workspace) autocompleteObserver.observe(workspace, { childList: true, subtree: true });
     void ensureConversationAutocomplete();
 }
 
@@ -1546,10 +1310,6 @@ function bindDomEvents() {
     document.addEventListener('keydown', onCommandKeydown, options);
     bindMainCommandInput();
     globalThis.addEventListener?.('sb:conversation-workspace-state-changed', queueConversationStatusRefresh, { signal: domController.signal });
-    globalThis.addEventListener?.('resize', alignHomeAutocomplete, { signal: domController.signal });
-    globalThis.addEventListener?.('resize', alignChatBars, { signal: domController.signal });
-    globalThis.visualViewport?.addEventListener?.('resize', alignHomeAutocomplete, { signal: domController.signal });
-    globalThis.visualViewport?.addEventListener?.('scroll', alignHomeAutocomplete, { signal: domController.signal });
     observeAutocomplete();
 }
 
@@ -1579,7 +1339,6 @@ function bindHostEvents() {
     };
     const invalidate = () => invalidatePromptTokens();
     const chatChanged = () => {
-        if (getSettings().enabled) hideHome();
         invalidatePromptTokens();
     };
 
@@ -1605,8 +1364,6 @@ function unbindEvents() {
     conversationObserver = null;
     autocompleteObserver?.disconnect();
     autocompleteObserver = null;
-    composerResizeObserver?.disconnect();
-    composerResizeObserver = null;
 }
 
 function init() {
@@ -1621,10 +1378,8 @@ function init() {
 
     active = true;
     const { changed } = ensureSettings();
-    if (getSettings().enabled) hideHome();
     if (changed) save();
     bindHostEvents();
-    bindDomEvents();
     registerCommands();
     renderDrawer();
     if (getSettings().enabled) rebuildDom();
@@ -1639,12 +1394,11 @@ function deactivate() {
     unregisterCommands();
     unbindEvents();
     teardownDom();
-    syncMoonlitSuppression(false);
 
     if (typeof document !== 'undefined') {
         document.getElementById(DRAWER_ID)?.remove();
         document.getElementById(BANNER_ID)?.remove();
-        document.body?.classList.remove('sbterm', 'sbterm-minimal', 'sbterm-crt', HOME_VISIBLE_CLASS, 'sbterm-topbar-hidden', 'sbterm-avatar-hidden', 'sbterm-avatar-tinted', 'sbterm-chat-topbar-hidden', 'sbterm-bottom-bar-hidden');
+        document.body?.classList.remove('sbterm', 'sbterm-minimal', 'sbterm-crt', 'sbterm-topbar-hidden', 'sbterm-avatar-hidden', 'sbterm-avatar-tinted', 'sbterm-chat-topbar-hidden', 'sbterm-bottom-bar-hidden');
         if (document.body) delete document.body.dataset.sbtermPalette;
     }
 }

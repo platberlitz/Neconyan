@@ -71,7 +71,7 @@ describe('Neconyan workspace rail behavior', () => {
         const definitions = tabsSource.match(/const NECONYAN_NATIVE_TOOL_DEFINITIONS = Object\.freeze\(\[[\s\S]*?\n\]\);/)[0];
         const labels = Array.from(definitions.matchAll(/label: '([^']+)'/g)).map(match => match[1]);
         expect(labels).toEqual([
-            'Preset Tools', 'Chat Completion Tabs', 'Dialogue Colors', 'Terminal UI', 'BotSearcher',
+            'Preset Tools', 'Chat Completion Tabs', 'Dialogue Colors', 'Termeownal UI', 'BotSearcher',
             'Prompt Tags', 'Regex Agent Themes', 'Macro Enhanced', 'World Info Lab', 'Prompting Lab',
             'Debugger', 'Chat Archive', 'Lorebook Distiller', 'Card & Lorebook Time Machine',
             'Deep Swipe', 'Story Mode', 'Meower',         'Pawthfinder',
@@ -86,8 +86,8 @@ describe('Neconyan workspace rail behavior', () => {
         expect(welcomeSource).toContain('[\'background\', \'Background\', \'fa-panorama\']');
         expect(tabsSource).toContain('[\'right\', \'extensions\', \'Extensions\', \'fa-cubes\']');
         expect(tabsSource).toContain('data-neconyan-native-tool-list');
-        expect(tabsSource).toContain("id: 'sb-topbar-clock'");
-        expect(tabsSource).toContain("id: 'sb-topbar-edit-card'");
+        expect(tabsSource).toContain('id: \'sb-topbar-clock\'');
+        expect(tabsSource).toContain('id: \'sb-topbar-edit-card\'');
         expect(tabsSource).toContain('syncTopbarEditCardButton');
         expect(tabsSource).toContain('event_types.EXTENSION_SETTINGS_LOADED');
         expect(tabsSource).toContain('event_types.EXTENSION_DISABLED');

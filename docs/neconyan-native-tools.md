@@ -10,7 +10,7 @@ Story Mode, Meower and the tools below ship with Neconyan. Open **Extensions →
 - **Dialogue Colors**, **Prompt Tags**, **Macro Enhanced**, **Deep Swipe**, and **Regex Agent Themes** keep their controls in chat, Agents or Extensions, where their work happens.
 - **Preset Tools** and **Chat Completion Tabs** assist with model and prompt setup. **Prompting Lab**, **World Info Lab**, and **Lorebook Distiller** support character, prompt and lorebook work.
 - **Chat Archive** and **Card & Lorebook Time Machine** keep their chat, card and lorebook recovery controls. **Debugger** is an optional diagnostic tool.
-- **Terminal UI** is optional. Enable it in Manage extensions, then use its own settings switch. New settings inherit Neconyan's current palette; saved palettes remain yours. Turning it off restores the ordinary workspace.
+- **Termeownal UI** is optional. Enable it in Manage extensions, then use its own settings switch. Its pixel kitty follows the selected palette, and its commands open Neconyan's Home and chat modes. New settings inherit Neconyan's current palette; saved palettes remain yours. Turning it off restores the ordinary workspace.
 
 Meower and Story Mode switch views without clearing the chat draft. Generated Neconyan cat artwork appears in their controls and empty states. Dark mode keeps its black sidebar, and light mode keeps light content surfaces.
 
@@ -31,7 +31,7 @@ These are the source revisions used for the native integration. Neconyan adds lo
 | Preset Tools | 1.5.4 | SillyBunny | Not declared in source metadata | [5a6d0733](https://github.com/SillyBunnyTeam/SillyBunny/tree/5a6d0733fddbfde6dc55b9e81d804d824b7a61ba) |
 | Chat Completion Tabs | 1.0.0 | Rivelle | Not declared in source metadata | [5a6d0733](https://github.com/SillyBunnyTeam/SillyBunny/tree/5a6d0733fddbfde6dc55b9e81d804d824b7a61ba) |
 | Dialogue Colors | 6.1.3 | platberlitz | Not declared in source metadata | [5af56565](https://github.com/platberlitz/sillytavern-character-colors/tree/5af565658bc223a74e99d025670db6835dd83682) |
-| Terminal UI | 2.4.0 | platberlitz | AGPL-3.0 | [16d1540c](https://github.com/SillyBunnyTeam/SillyBunny-Terminal-UI/tree/16d1540c6b88d97a9519725d89b04e1f7164bd1a) |
+| Termeownal UI | 2.4.0 | platberlitz | AGPL-3.0 | [16d1540c](https://github.com/SillyBunnyTeam/SillyBunny-Terminal-UI/tree/16d1540c6b88d97a9519725d89b04e1f7164bd1a) |
 | BotSearcher | 0.9.0 | platberlitz | AGPL-3.0 | [2e175ff4](https://github.com/SillyBunnyTeam/SillyBunny-BotSearcher/tree/2e175ff439f884fc0bb662ff9930212237053780) |
 | Prompt Tags | 1.0.0 | platberlitz | MIT | [20a0ef20](https://github.com/platberlitz/SillyBunny-PromptTags/tree/20a0ef20c4ed9d2c81a5e4a893501462a6f39183) |
 | Regex Agent Themes | 1.0.1 | platberlitz | AGPL-3.0 | [3c8e708f](https://github.com/SillyBunnyTeam/SillyBunny-Regex-Agent-Themes/tree/3c8e708f8c86e77a92f23526c738e87c82df98c9) |

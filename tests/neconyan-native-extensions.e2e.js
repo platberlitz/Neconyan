@@ -118,7 +118,7 @@ async function expectLoadedFont(page, name, style = 'normal') {
     expect(loaded).toBe(true);
 }
 
-    test('Included tools stay closed until opened and keep eighteen keyboard-accessible disclosures', async ({ page }) => {
+test('Included tools stay closed until opened and keep eighteen keyboard-accessible disclosures', async ({ page }) => {
     await mockNativeSettings(page);
     await page.setViewportSize({ width: 1280, height: 1000 });
     await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
@@ -801,7 +801,7 @@ test.describe('native import report', () => {
 });
 
 
-test.describe('native Terminal UI', () => {
+test.describe('native Termeownal UI', () => {
     test.use({ viewport: { width: 390, height: 1000 }, isMobile: true, hasTouch: true });
     test('keeps a fresh Terminal inactive and lets its settings enable and disable it', async ({ page }, info) => {
         page.setDefaultTimeout(20000);
@@ -827,11 +827,11 @@ test.describe('native Terminal UI', () => {
         } else {
             await page.locator('dialog.popup:visible .popup-button-ok').click();
         }
-        // Terminal UI is an Included Tool, so its settings live on the tool page rather
+        // Termeownal UI is an Included Tool, so its settings live on the tool page rather
         // than the Built-in Extensions list. The rail is hidden at this mobile width, so
         // open the same tool page the Included Tools buttons use.
         await page.evaluate(() => {
-            const definition = window.NeconyanNativeTools.getDefinitions().find(tool => tool.label === 'Terminal UI');
+            const definition = window.NeconyanNativeTools.getDefinitions().find(tool => tool.label === 'Termeownal UI');
             window.NeconyanNativeTools.openSettings(definition);
         });
         await expect(page.locator('#user-settings-block')).toHaveAttribute('data-sb-active-tab', 'included-tool');
@@ -842,8 +842,8 @@ test.describe('native Terminal UI', () => {
             await expect(page.locator('#sbterm-palette')).toHaveValue('inherit');
             await enable.check();
             await expect(page.locator('body')).toHaveClass(/(?:^| )sbterm(?: |$)/);
-            await expect(page.locator('.sbterm-mascot img').first()).toHaveAttribute('src', '/img/neconyan/cat-head.webp');
-            await expect(page.locator('.sbterm-banner-title')).toHaveText('neconyan terminal');
+            await expect(page.locator('.sbterm-mascot .sbterm-kitty').first()).toHaveAttribute('viewBox', '0 0 32 28');
+            await expect(page.locator('.sbterm-banner-title')).toHaveText('Termeownal UI');
             await page.screenshot({ path: info.outputPath('native-terminal.png') });
         } finally {
             if (await enable.count()) await enable.uncheck();
@@ -857,6 +857,121 @@ test.describe('native Terminal UI', () => {
         expect(errors).toEqual([]);
     });
 });
+
+for (const width of [393, 1280]) {
+    test.describe(`Terminal compatibility at ${width}px`, () => {
+        test.use({ viewport: { width, height: width === 393 ? 852 : 900 }, isMobile: width === 393, hasTouch: width === 393 });
+        for (const tone of ['dark', 'light']) {
+            test(`native Termeownal UI preserves navigation, drafts and ${tone} theme colours`, async ({ page }, info) => {
+                await page.route('**/api/chats/save', route => route.fulfill({ json: { result: 'ok' } }));
+                await mockNativeSettings(page, { resetTerminal: true, tone });
+                await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
+                await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
+                const command = action => page.evaluate(async action => {
+                    const parser = window.SillyTavern.getContext().SlashCommandParser;
+                    return parser.commands.sbterm.callback({}, action);
+                }, action);
+                await page.addStyleTag({ url: '/scripts/extensions/third-party/Neconyan-Terminal-UI/style.css' });
+                await page.evaluate(async () => {
+                    const terminal = await import('/scripts/extensions/third-party/Neconyan-Terminal-UI/index.js');
+                    terminal.activate();
+                });
+                await command('on');
+                await command('ui terminal');
+                await expect(page.locator('#sbterm-banner .sbterm-kitty')).toBeVisible();
+                await expect(page.locator('#neconyan-home-host .sbterm-kitty')).toBeVisible();
+                await expect(page.locator('#sb-topbar-title')).toBeHidden();
+                const header = await page.locator('#sbterm-banner').boundingBox();
+                expect(header.y).toBeGreaterThanOrEqual(0);
+                await page.locator('.sbterm-command-glossary > summary').click();
+                await expect(page.locator('.sbterm-command-glossary-list')).toBeVisible();
+                if (width === 393) {
+                    await page.locator('#sb-hamburger').tap();
+                    await expect(page.locator('body')).toHaveClass(/neconyan-rail-drawer-open/);
+                    await page.locator('#sb-hamburger').tap();
+                }
+                const paletteIds = await page.locator('#sbterm-palette option').evaluateAll(options => options.map(option => option.value));
+                expect(paletteIds).toHaveLength(37);
+                for (const palette of paletteIds) {
+                    await command(`palette ${palette}`);
+                    const colours = await page.evaluate(() => {
+                        const body = getComputedStyle(document.body);
+                        const sample = document.createElement('span');
+                        document.body.append(sample);
+                        const colour = name => { sample.style.color = `var(${name})`; return getComputedStyle(sample).color; };
+                        const result = {
+                            ink: colour('--neco-ink'), terminal: colour('--sbterm-fg'),
+                            accent: colour('--sbterm-accent'),
+                            marking: getComputedStyle(document.querySelector('#sbterm-banner .sbterm-kitty-marking')).fill,
+                            scheme: body.colorScheme,
+                        };
+                        sample.remove();
+                        return result;
+                    });
+                    expect(colours.ink).toBe(colours.terminal);
+                    expect(colours.marking).toBe(colours.accent);
+                    if (palette === 'paper-tape') expect(colours.scheme).toBe('light');
+                }
+                await command('palette inherit');
+                await page.evaluate(() => window.toastr.clear());
+                await expect(page.locator('#toast-container .toast')).toHaveCount(0);
+                await page.screenshot({ path: info.outputPath(`terminal-home-${tone}-${width}.png`) });
+                await openMisoChat(page);
+                await command('roleplay');
+                await page.locator('#send_textarea').fill('Roleplay draft preserved by Terminal.');
+                await command('home');
+                await expect(page.locator('body')).toHaveClass(/neconyan-home-visible/);
+                await expect(page.locator('#send_textarea')).toHaveValue('Roleplay draft preserved by Terminal.');
+                await command('conversation');
+                await expect(page.locator('#sb_conversation_stage')).toBeVisible();
+                await page.locator('#sb_conversation_input').fill('Conversation draft preserved by Terminal.');
+                for (const mode of ['home', 'story', 'meower', 'roleplay', 'conversation']) {
+                    expect(await command(mode)).toBe(mode);
+                    await expect(page.locator('#send_textarea')).toHaveValue('Roleplay draft preserved by Terminal.');
+                    await expect(page.locator('#sb_conversation_input'), `Conversation draft after ${mode}`).toHaveValue('Conversation draft preserved by Terminal.');
+                }
+                await command('roleplay');
+                await expect(page.locator('#options_button')).toBeVisible();
+                await expect(page.locator('#extensionsMenuButton')).toBeVisible();
+                await expect(page.locator('#qig-input-btn')).toBeVisible();
+                await expect(page.locator('#send_but')).toBeVisible();
+                await page.locator('#send_textarea').focus();
+                await expect(page.locator('#send_textarea')).toHaveCSS('outline-style', 'solid');
+                const geometry = await page.evaluate(() => ({
+                    viewport: window.innerWidth,
+                    document: document.documentElement.scrollWidth,
+                    send: document.getElementById('send_but').getBoundingClientRect().toJSON(),
+                    input: document.getElementById('send_textarea').getBoundingClientRect().toJSON(),
+                }));
+                expect(geometry.document).toBeLessThanOrEqual(geometry.viewport);
+                expect(geometry.send.right).toBeLessThanOrEqual(width);
+                expect(geometry.input.width).toBeGreaterThan(100);
+                await page.evaluate(() => window.toastr.clear());
+                await expect(page.locator('#toast-container .toast')).toHaveCount(0);
+                await page.screenshot({ path: info.outputPath(`terminal-chat-${tone}-${width}.png`) });
+                await page.locator('#send_textarea').fill('/sbterm palette terminal-amber');
+                await page.locator('#send_but').click();
+                await expect(page.locator('body')).toHaveAttribute('data-sbterm-palette', 'terminal-amber');
+                await expect(page.locator('#send_textarea')).toHaveValue('');
+                await command('open-chats');
+                await expect(page.locator('.popup:visible')).toBeVisible();
+                await page.evaluate(async () => (await import('/scripts/extensions/neconyan-chats-archive/src/ui.js')).closeArchive());
+                await command('crt on');
+                await page.emulateMedia({ reducedMotion: 'reduce' });
+                expect(await page.evaluate(() => getComputedStyle(document.body, '::after').animationName)).toBe('none');
+                await command('crt off');
+                await command('off');
+                await expect(page.locator('.sbterm-kitty')).toHaveCount(0);
+                await expect(page.locator('body')).not.toHaveClass(/(?:^| )sbterm(?: |$)/);
+                await command('on');
+                await expect(page.locator('#sbterm-banner')).toHaveCount(1);
+                await command('ui full');
+                await expect(page.locator('#sbterm-banner .sbterm-kitty')).toBeVisible();
+                await command('off');
+            });
+        }
+    });
+}
 
 test.describe('Conversation and native view transitions', () => {
     test.use({ viewport: { width: 320, height: 1000 }, isMobile: true, hasTouch: true });

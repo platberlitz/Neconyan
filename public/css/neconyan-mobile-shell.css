@@ -1,6 +1,20 @@
 /* Neconyan mobile shell foundation: final sheet contract for modal drawers.
  * Keep this at the end of the shell sheet so it beats older mobile drawer rules. */
 @media screen and (max-width: 768px) {
+    body.neconyan.sbterm {
+        --sb-topbar-primary-height: max(44px, calc(var(--sb-topbar-primary-height-base) * var(--sb-topbar-scale-active)));
+    }
+
+    html body.neconyan.sbterm #top-bar #sbterm-banner {
+        gap: 4px;
+    }
+
+    html body.neconyan.sbterm #neconyan-home-host .sbterm-command-glossary-row {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0;
+        padding-block: 4px;
+    }
+
     /* Neconyan: Android Firefox ignores user-scalable=no in the viewport
        meta, allowing pinch-zoom to drift the visual viewport away from the
        layout viewport. pan-y permits vertical touch scrolling but blocks

@@ -499,7 +499,7 @@ const NECONYAN_NATIVE_TOOL_DEFINITIONS = Object.freeze([
     { id: 'third-party/Neconyan-Preset-Tools', label: 'Preset Tools', icon: 'fa-sliders', actions: ['open', 'settings'], open: 'presets' },
     { id: 'third-party/ChatCompletionTabs', label: 'Chat Completion Tabs', icon: 'fa-table-columns', actions: ['open', 'settings'], open: 'presets' },
     { id: 'third-party/sillytavern-character-colors', label: 'Dialogue Colors', icon: 'fa-palette', actions: ['settings'] },
-    { id: 'third-party/Neconyan-Terminal-UI', label: 'Terminal UI', icon: 'fa-terminal', actions: ['settings'] },
+    { id: 'third-party/Neconyan-Terminal-UI', label: 'Termeownal UI', icon: 'fa-terminal', actions: ['settings'] },
     { id: 'third-party/Neconyan-BotSearcher', label: 'BotSearcher', icon: 'fa-binoculars', actions: ['open', 'settings'], open: 'botsearcher' },
     { id: 'third-party/Neconyan-PromptTags', label: 'Prompt Tags', icon: 'fa-tags', actions: ['settings'] },
     { id: 'third-party/Neconyan-Regex-Agent-Themes', label: 'Regex Agent Themes', icon: 'fa-brush', actions: ['settings'] },

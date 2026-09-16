@@ -530,34 +530,42 @@ body.sbterm[data-sbterm-palette='night-orchid'] {
 /* Inherit: tokens follow the active host theme; host vars are never
    remapped in this mode (see §2 guard), which avoids a var() cycle. */
 body.sbterm[data-sbterm-palette='inherit'] {
-    --sbterm-bg: var(--color-background, #101014);
-    --sbterm-bg-alt: var(--color-surface, #18181f);
-    --sbterm-fg: var(--SmartThemeBodyColor, var(--color-text, #dddddd));
-    --sbterm-fg-dim: var(--color-text-secondary, #999999);
-    --sbterm-accent: var(--sb-accent, var(--SmartThemeQuoteColor, #73ff9b));
-    --sbterm-accent2: var(--SmartThemeEmColor, #8ff0d8);
+    --sbterm-bg: var(--neco-canvas);
+    --sbterm-bg-alt: var(--neco-surface);
+    --sbterm-fg: var(--neco-ink);
+    --sbterm-fg-dim: var(--neco-muted);
+    --sbterm-accent: var(--neco-ginger);
+    --sbterm-accent2: var(--SmartThemeEmColor, var(--neco-ginger));
     --sbterm-ok: var(--color-success, #73ff9b);
     --sbterm-warn: var(--color-warning, #ffe082);
     --sbterm-err: var(--color-danger, #ff6b6b);
-    --sbterm-border: var(--SmartThemeBorderColor, var(--color-border, #444444));
+    --sbterm-border: var(--neco-border);
     --sbterm-glow: color-mix(in srgb, var(--sbterm-accent) 15%, transparent);
-    --sbterm-selected-fg: var(--sb-on-accent, var(--color-on-primary, var(--sbterm-bg)));
+    --sbterm-selected-fg: var(--neco-on-accent);
 }
 
-body.sbterm {
+html:root body.neconyan.sbterm {
     color-scheme: dark;
 }
 
-body.sbterm:is([data-sbterm-palette='gameboy-dmg'], [data-sbterm-palette='chrome-98'], [data-sbterm-palette='paper-tape'], [data-sbterm-palette='biometric-lab'], [data-sbterm-palette='newsprint']) {
+html:root body.neconyan.sbterm:is([data-sbterm-palette='gameboy-dmg'], [data-sbterm-palette='chrome-98'], [data-sbterm-palette='paper-tape'], [data-sbterm-palette='biometric-lab'], [data-sbterm-palette='newsprint']),
+html:root[data-sb-surface-tone='light'] body.neconyan.sbterm[data-sbterm-palette='inherit'] {
     color-scheme: light;
 }
 
-body.sbterm[data-sbterm-palette='inherit'] {
-    color-scheme: normal;
-}
-
 /* 2. Host variable remap */
-body.sbterm:not([data-sbterm-palette='inherit']) {
+html:root body.neconyan.sbterm:not([data-sbterm-palette='inherit']) {
+    --neco-canvas: var(--sbterm-bg);
+    --neco-surface: var(--sbterm-bg-alt);
+    --neco-raised: var(--sbterm-bg-alt);
+    --neco-rail: var(--sbterm-bg-alt);
+    --neco-ink: var(--sbterm-fg);
+    --neco-muted: var(--sbterm-fg-dim);
+    --neco-ginger: var(--sbterm-accent);
+    --neco-ginger-hover: var(--sbterm-accent2);
+    --neco-border: var(--sbterm-border);
+    --neco-user: var(--sbterm-bg-alt);
+    --neco-on-accent: var(--sbterm-selected-fg);
     --SmartThemeBodyColor: var(--sbterm-fg);
     --SmartThemeEmColor: var(--sbterm-accent2);
     --SmartThemeUnderlineColor: var(--sbterm-accent2);
@@ -874,41 +882,12 @@ body.sbterm #top-bar #sb-topbar-inner {
     color: var(--sbterm-fg);
 }
 
-/* /hide-topbar: collapse the neconyan nav groups, keep the statusline. */
-body.sbterm.sbterm-topbar-hidden #top-bar #sb-topbar-inner {
-    grid-template-columns: minmax(0, 1fr) !important;
-}
-
-body.sbterm.sbterm-topbar-hidden #sb-topbar-inner > .sb-topbar-group {
+body.sbterm.sbterm-topbar-hidden #sb-topbar-inner > .sb-topbar-group > :not(#sb-hamburger):not(#sb-topbar-extension-slot) {
     display: none !important;
-}
-
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sb-topbar-title {
-    display: none !important;
-}
-
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sb-topbar-brand {
-    min-inline-size: 0;
-    display: flex !important;
-    align-items: stretch;
-    inline-size: 100%;
-    max-inline-size: none;
-}
-
-body.sbterm:not(.sbterm-minimal):not(:has(#chat .welcomePanel)) #sbterm-banner,
-body.sbterm:not(.sbterm-minimal).sbterm-home-visible #sbterm-banner {
-    display: none !important;
-}
-
-body.sbterm .sbterm-status-row {
-    min-inline-size: 0;
-    inline-size: 100%;
-    display: flex;
-    align-items: center;
-    gap: 0.75ch;
 }
 
 body.sbterm #sbterm-statusline {
+    display: block;
     flex: 1 1 auto;
     min-inline-size: 0;
     inline-size: auto;
@@ -943,21 +922,6 @@ body.sbterm .sbterm-status-details {
     cursor: pointer;
 }
 
-/* This is an inline text control on a dense status line inside a FIXED-height
-   top bar. Given a 44px min-height with the blanket touch-target rule it made
-   the status row 44px, the banner 63px, and the 54px bar clipped the title off
-   the top. The target lives in a centered overlay instead: same 44px of
-   tappable area, no effect on the row's height. */
-body.sbterm .sbterm-status-details::after {
-    content: '';
-    position: absolute;
-    inset-block-start: 50%;
-    inset-inline-start: 50%;
-    inline-size: var(--sb-mobile-touch-target, 44px);
-    block-size: var(--sb-mobile-touch-target, 44px);
-    transform: translate(-50%, -50%);
-}
-
 body.sbterm .sbterm-status-details:is(:hover, :focus-visible) {
     color: var(--sbterm-accent);
 }
@@ -978,9 +942,6 @@ body.sbterm .sbterm-banner-copy {
     text-align: center;
 }
 
-body.sbterm:not(.sbterm-minimal) :is(.sbterm-mascot, .sbterm-banner-title) {
-    display: none;
-}
 
 body.sbterm .sb-proxy-button,
 body.sbterm .sb-bottom-chat-btn,
@@ -1101,111 +1062,11 @@ body.sbterm:is(.flatchat, .bubblechat) #chat .mes:not(.smallSysMes) {
     gap: 10px !important;
 }
 
-body.sbterm #sbterm-chat-topbar {
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0 0.75rem;
-    margin-block-end: 4px;
-    border: 0;
-    border-block-start: 1px solid color-mix(in oklch, var(--sbterm-border) 45%, transparent);
-    background: transparent;
-}
-
-/* Match the composer width while each toolbar keeps its own intrinsic height.
-   The bottom bar keeps the host's own row structure and collapse mechanic
-   (persona / chat select / nav+collapse on top, management row below). */
-body.sbterm :is(#sbterm-chat-topbar, #sb-bottom-chat-bar) {
-    inline-size: var(--sbterm-composer-row-width, 100%) !important;
-    min-inline-size: var(--sbterm-composer-row-width, 100%) !important;
-    max-inline-size: var(--sbterm-composer-row-width, 100%) !important;
-    box-sizing: border-box;
-    margin-inline: auto !important;
-}
-
-body.sbterm #sbterm-chat-topbar {
-    block-size: auto !important;
-    min-block-size: 44px !important;
-    max-block-size: none !important;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-}
-
-body.sbterm #sbterm-chat-topbar #qr--bar {
-    flex: 1 1 auto;
-    inline-size: auto;
-    min-inline-size: 0;
-    justify-content: flex-start;
-}
-
-body.sbterm #sbterm-chat-topbar .gg-action-buttons-container {
-    display: contents;
-}
-
-body.sbterm #sbterm-chat-topbar .gg-regular-buttons-container,
-body.sbterm #sbterm-chat-topbar #qr--bar > .qr--buttons {
-    flex-wrap: nowrap;
-}
-
-body.sbterm #sbterm-chat-topbar .gg-qr-container {
-    display: contents;
-}
-
-body.sbterm #sbterm-chat-topbar .stih--buttons {
-    order: -1;
-    gap: 3px;
-    margin-inline: 0;
-}
-
-body.sbterm #sbterm-chat-topbar .gg-regular-buttons-container {
-    order: 2;
-    margin-inline-start: auto;
-}
-
-body.sbterm #sbterm-chat-topbar :is(.stih--button, .gg-action-button) {
-    inline-size: 34px !important;
-    min-inline-size: 34px !important;
-    max-inline-size: 34px !important;
-    block-size: 34px !important;
-    min-block-size: 34px !important;
-    max-block-size: 34px !important;
-    flex-basis: 34px !important;
-    padding: 0 !important;
-    font-size: calc(var(--mainFontSize, 15px) * 0.83) !important;
-}
-
-body.sbterm #sbterm-chat-topbar .stih--button {
-    opacity: 0.8;
-}
-
-body.sbterm #sbterm-chat-topbar .qr--button {
-    margin-block: 0;
-    padding: 1px 9px;
-    font-size: calc(var(--mainFontSize, 15px) * 0.77);
-    line-height: 1.6;
-}
-
-body.sbterm #sbterm-chat-topbar:empty {
-    display: none;
-}
-body.sbterm.sbterm-chat-topbar-hidden #sbterm-chat-topbar {
-    display: none !important;
-}
-
-/* Full chrome never builds #sbterm-chat-topbar — the Quick Replies and Guided
-   Generations bars stay where the host puts them — so the toggle has to reach
-   them directly or it is a dead checkbox in the default interface. */
+/* Keep both densities on the native composer rows. */
 body.sbterm.sbterm-chat-topbar-hidden :is(#qr--bar, #gg-action-button-container) {
     display: none !important;
 }
 body.sbterm.sbterm-bottom-bar-hidden #sb-bottom-chat-bar {
-    display: none !important;
-}
-
-/* Composer toolbars are useful in a chat, but distort the centered terminal
-   welcome grid when there is no conversation yet. */
-body.sbterm #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) :is(#sbterm-chat-topbar, #sb-bottom-chat-bar) {
     display: none !important;
 }
 
@@ -1342,19 +1203,6 @@ body.sbterm #form_sheld {
     border-block-start: 1px solid var(--sbterm-border) !important;
 }
 
-/* Only where the composer is laid out as the terminal prompt grid (minimal
-   density and the terminal Home). In Full chrome the host lays the composer
-   out itself and the glyph wrapped onto an orphan line below the input. */
-body.sbterm.sbterm-minimal #nonQRFormItems::before,
-body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #nonQRFormItems::before {
-    content: '> ' / '';
-    align-self: center;
-    padding-inline: 7px 2px;
-    color: var(--sbterm-accent);
-    font-weight: 800;
-    white-space: nowrap;
-}
-
 body.sbterm #send_textarea {
     background-color: transparent !important;
     color: var(--sbterm-fg) !important;
@@ -1362,21 +1210,6 @@ body.sbterm #send_textarea {
     font-family: var(--monoFontFamily);
     caret-color: var(--sbterm-accent);
     caret-shape: block;
-}
-
-/* The host caps this strip at 35% width and clips the overflow with
-   scrollbar-width: none, so a composer icon gets silently sliced with no hint
-   that anything scrolls.
-   max-content was the wrong tool: it sizes from the icon glyphs and ignores the
-   44px min-width on the buttons, so the strip computed NARROWER than its own
-   contents. Drop the cap and stop the strip shrinking instead; the textarea
-   still takes everything left over. */
-body.sbterm :is(#leftSendForm, #rightSendForm) {
-    max-inline-size: none !important;
-    flex: 0 0 auto !important;
-    /* Safe now that the strip always fits its buttons: the host's overflow-y
-       clip is what sliced the glyph, not a genuine overflow. */
-    overflow: visible !important;
 }
 
 /* These sit at font-size 16px with line-height 16px, and Font Awesome draws
@@ -1409,7 +1242,7 @@ body.sbterm #form_sheld.isExecutingCommandsFromChatInput {
 /* Both chat bars read as quiet terminal strips — hairline separators and
    monochrome glyphs — instead of the host's bordered chip grids. */
 body.sbterm #sb-bottom-chat-bar {
-    background: transparent !important;
+    background: var(--sbterm-bg-alt) !important;
     border: 0 !important;
     border-block-start: 1px solid color-mix(in oklch, var(--sbterm-border) 45%, transparent) !important;
     color: var(--sbterm-fg) !important;
@@ -1914,151 +1747,21 @@ body.sbterm #toast-container .toast-close-button {
 }
 
 /* 11. Strict terminal density */
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) {
+body.sbterm.sbterm-minimal {
     --sbterm-prose-width: 78ch;
-    /* ponytail: banner is two lines; grow the host's fixed topbar row so it isn't clipped */
-    --sb-topbar-primary-height: max(
-        calc(var(--sb-topbar-primary-height-base) * var(--sb-topbar-scale-active)),
-        var(--sb-topbar-primary-min-height),
-        3rem
-    );
 }
 
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #top-bar {
+body.sbterm.sbterm-minimal #top-bar {
     background-color: var(--sbterm-bg) !important;
     border-block-end: 0;
 }
 
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sb-topbar-stack {
-    inline-size: 100%;
-    max-inline-size: none;
-}
-
-/* ponytail: re-anchor #sheld to the taller top bar, same idiom as host #charlib-embedded-container */
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sheld {
-    --topBarBlockSize: max(var(--sb-host-topbar-block-size), var(--sb-topbar-layout-offset));
-}
-
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #top-bar #sb-topbar-inner {
-    min-block-size: 0;
-}
-
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sb-topbar-brand {
-    align-items: flex-start;
-    /* The host clips this box, which would eat the status button's touch
-       overlay. The title and statusline each own their ellipsis, so nothing
-       here depends on the clip. */
-    overflow: visible;
-}
-
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sbterm-banner {
-    position: relative;
-    min-inline-size: 0;
-    inline-size: 100%;
-    max-inline-size: none;
-    box-sizing: border-box;
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: start;
-    gap: 1ch;
-    margin-inline: auto;
-    padding-block: 0;
-    padding-inline: clamp(6px, 1vw, 12px);
-}
-
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sbterm-banner::after {
-    content: none;
-}
-
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-mascot {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0;
-    inline-size: 2.75rem;
-    block-size: 2.75rem;
-    aspect-ratio: 1;
-    color: var(--sbterm-accent2);
-    filter: drop-shadow(0 0 6px var(--sbterm-glow));
-}
-
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-mascot-button {
-    flex: 0 0 auto;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    cursor: pointer;
-}
-
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-mascot-button:is(:hover, :focus-visible) {
-    color: var(--sbterm-accent);
-}
-
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-mascot-button:focus-visible {
-    outline: 1px solid var(--sbterm-accent);
-    outline-offset: 3px;
-}
-
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-mascot img {
-    block-size: 100%;
-    inline-size: auto;
-    overflow: visible;
-}
-
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-banner-copy {
-    min-inline-size: 0;
-    inline-size: 100%;
-    text-align: start;
-}
-
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-banner-copy::after {
-    content: '';
-    display: block;
-    margin-block-start: 0.2rem;
-    border-block-end: 1px solid color-mix(in oklch, var(--sbterm-border) 68%, transparent);
-}
-
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-banner-title {
-    display: block;
-    color: var(--sbterm-accent);
-    font-size: calc(var(--mainFontSize, 15px) * 0.83);
-    font-weight: 750;
-    letter-spacing: 0.04em;
-    line-height: 1.2;
-    text-align: center;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sbterm-statusline {
-    inline-size: 100%;
-    padding: 1px 0 0;
-    color: var(--sbterm-fg-dim);
-    font-size: calc(var(--mainFontSize, 15px) * 0.87);
-    font-weight: 450;
-    letter-spacing: 0;
-    line-height: 1.35;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sbterm-statusline[data-state='generating'],
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sbterm-statusline[data-state='command'] {
-    color: var(--sbterm-accent2);
-}
-
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sbterm-statusline[data-state='disconnected'] {
-    color: var(--sbterm-err);
-}
-
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sheld {
+body.sbterm.sbterm-minimal #sheld {
     border: 0;
     background-color: var(--sbterm-bg) !important;
 }
 
-:is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #chat {
+body.sbterm.sbterm-minimal #chat {
     padding-block: 10px 18px;
 }
 
@@ -2086,97 +1789,19 @@ body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel) #sheld {
     background-color: var(--sbterm-bg) !important;
 }
 
-body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #form_sheld {
-    position: absolute !important;
-    inset: auto !important;
-    inset-block-start: 60% !important;
-    inset-inline-start: 50% !important;
-    margin: 0 !important;
-    inline-size: min(calc(100% - 2rem), 72ch) !important;
-    max-inline-size: none !important;
-    block-size: auto;
-    max-block-size: calc(80% - 2rem);
-    overflow: visible;
-    padding: 0 !important;
-    display: grid !important;
-    grid-template-columns: 4.5rem minmax(0, 1fr) !important;
-    grid-template-rows: auto minmax(0, 1fr);
-    grid-template-areas:
-        'mascot prompt'
-        'mascot guide' !important;
-    column-gap: 1.25rem;
-    align-items: start;
-    transform: translate(-50%, -50%) !important;
-}
-
-body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #send_form {
-    grid-area: prompt;
-    padding: 0 !important;
-    overflow: visible;
-}
-
-body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #form_sheld::before {
-    content: none;
-}
-
-body.sbterm .sbterm-mascot-form {
-    display: none;
-}
-
-body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) .sbterm-mascot-form {
-    grid-area: mascot;
-    align-self: start;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    margin-block-start: 0.1rem;
-    inline-size: 4.5rem;
-    block-size: 3.5rem;
-    color: var(--sbterm-accent2);
-    filter: drop-shadow(0 0 7px var(--sbterm-glow));
-}
-
-body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) .sbterm-mascot-form img {
-    block-size: 100%;
-    inline-size: auto;
-}
-
-body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #form_sheld::after {
-    content: none;
-}
-
 body.sbterm .sbterm-command-glossary {
-    display: none;
-}
-
-body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) .sbterm-command-glossary {
-    display: block;
-    grid-area: guide;
-    justify-self: stretch;
-    align-self: start;
     margin-block-start: 1rem;
-    padding-inline-end: 0.75rem;
+    grid-column: 1 / -1;
     color: var(--sbterm-fg-dim);
-    font-size: calc(var(--mainFontSize, 15px) * 0.83);
-    font-weight: 450;
+    font-size: 0.9rem;
     line-height: 1.4;
-    min-block-size: 0;
-    max-block-size: min(50dvh, 28rem);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-gutter: stable;
 }
 
 body.sbterm .sbterm-command-glossary-title {
-    position: absolute;
-    inline-size: 1px;
-    block-size: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
+    min-block-size: 44px;
+    padding-block: 12px;
+    color: var(--sbterm-fg);
+    cursor: pointer;
 }
 
 body.sbterm .sbterm-command-glossary-list {
@@ -2389,42 +2014,6 @@ body.sbterm.sbterm-minimal #form_sheld {
 body.sbterm.sbterm-minimal #send_form {
     padding: 0 !important;
     overflow: visible;
-}
-
-/* Desktop-pointer only: the host's phone composer is its own named-area grid
-   ('tools input action' with button rails); imposing this grid there collapses
-   the rails, stranding the options/wand row and floating send over the input. */
-@media not ((any-pointer: coarse) or (pointer: coarse) or (hover: none) or (max-width: 1000px)) {
-    body.sbterm.sbterm-minimal #nonQRFormItems {
-        grid-template-columns: max-content minmax(0, 1fr) max-content !important;
-        grid-template-areas: 'prompt input action' !important;
-        gap: 0 0.75ch !important;
-        min-block-size: 0 !important;
-        padding: 0 !important;
-    }
-
-    body.sbterm.sbterm-minimal #leftSendForm {
-        display: none !important;
-    }
-}
-
-body.sbterm.sbterm-minimal #nonQRFormItems::before {
-    content: '> ' / '';
-    grid-area: prompt;
-    align-self: start;
-    /* ponytail: match #send_textarea font metrics so the '> ' and the first
-       text line share one baseline */
-    font-family: var(--monoFontFamily);
-    line-height: 1.5;
-    padding: 0.35rem 0 0 !important;
-}
-
-/* #qig-input-btn (Quick Image Gen's palette button) stays: it is a primary
-   control the host relocates into the send rail, not composer clutter. */
-body.sbterm.sbterm-minimal #send_form > #gg-action-button-container,
-body.sbterm.sbterm-minimal #rightSendForm > :not(#send_but):not(#mes_stop):not(#stscript_continue):not(#stscript_pause):not(#stscript_stop):not(#qig-input-btn),
-body.sbterm.sbterm-minimal .stih--standalone {
-    display: none !important;
 }
 
 body.sbterm.sbterm-minimal #send_textarea {
@@ -2656,57 +2245,6 @@ body.sbterm.sbterm-minimal .recentChat .avatar {
         pointer-events: auto !important;
     }
 
-    body.sbterm.sbterm-minimal #sb_conversation_pals_toggle,
-    body.sbterm.sbterm-minimal .sb-conversation-header-actions,
-    body.sbterm.sbterm-minimal .sb-conversation-composer-actions {
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 120ms ease-out;
-    }
-
-    body.sbterm.sbterm-minimal #sb_conversation_header:is(:hover, :focus-within) :is(#sb_conversation_pals_toggle, .sb-conversation-header-actions),
-    body.sbterm.sbterm-minimal .sb-conversation-composer:is(:hover, :focus-within) .sb-conversation-composer-actions {
-        opacity: 1;
-        pointer-events: auto;
-    }
-
-    body.sbterm.sbterm-minimal #sheld[data-sb-conversation-mode='on'] {
-        grid-template-columns: minmax(0, 1fr);
-        grid-template-areas:
-            'header'
-            'stage';
-    }
-
-    body.sbterm.sbterm-minimal #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_toggle,
-    body.sbterm.sbterm-minimal #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_rail .sb-conversation-rail-close {
-        display: inline-flex !important;
-    }
-
-    body.sbterm.sbterm-minimal #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_rail {
-        position: absolute;
-        inset-block: 0;
-        inset-inline-start: 0;
-        z-index: 82;
-        inline-size: min(36vw, 360px);
-        display: flex;
-        visibility: hidden;
-        pointer-events: none;
-        transform: translateX(calc(-100% - 12px));
-        transition:
-            transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
-            visibility 0s linear 180ms;
-    }
-
-    body.sbterm.sbterm-minimal #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_rail[data-open='true'] {
-        visibility: visible;
-        pointer-events: auto;
-        transform: translateX(0);
-        transition-delay: 0s;
-    }
-
-    body.sbterm.sbterm-minimal:dir(rtl) #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_rail:not([data-open='true']) {
-        transform: translateX(calc(100% + 12px));
-    }
 }
 
 /* 13. Touch and narrow layouts */
@@ -2864,62 +2402,6 @@ body.sbterm.sbterm-minimal .recentChat .avatar {
     }
 }
 
-@media (max-width: 700px) {
-    :is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sbterm-banner {
-        grid-template-columns: minmax(0, 1fr);
-        padding-block: 7px;
-    }
-
-    :is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-banner-title,
-    :is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-mascot {
-        display: none;
-    }
-
-    :is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) #sbterm-statusline {
-        padding-inline: 0;
-    }
-
-    /* The host's fixed top-bar row clips the banner's bottom hairline into a
-       stray sliver on phones; the divider is decoration, drop it. */
-    :is(body.sbterm.sbterm-minimal, body.sbterm:not(.sbterm-home-visible):has(#chat .welcomePanel)) .sbterm-banner-copy::after {
-        content: none;
-    }
-
-    /* One column on phones, with the mascot restacked onto its own row above
-       the prompt instead of the desktop layout's left-hand column. */
-    body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #form_sheld {
-        grid-template-columns: minmax(0, 1fr) !important;
-        grid-template-rows: auto auto minmax(0, 1fr);
-        grid-template-areas:
-            'mascot'
-            'prompt'
-            'guide' !important;
-        row-gap: 0.5rem;
-    }
-
-    body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) .sbterm-mascot-form {
-        grid-area: mascot;
-        justify-self: center;
-        align-self: center;
-        margin-block-start: 0;
-        inline-size: 4.5rem;
-        block-size: 3.5rem;
-    }
-
-    body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) .sbterm-command-glossary-list {
-        grid-template-columns: minmax(0, 1fr);
-    }
-
-    body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) .sbterm-command-glossary-row {
-        grid-template-columns: minmax(0, 1fr);
-        gap: 0;
-    }
-
-    body.sbterm:not(.sbterm-home-visible) #sheld:not([data-sbtw-mode='on']):has(#chat .welcomePanel) #form_sheld::before {
-        display: none;
-    }
-}
-
 /* 15. Boot splash */
 /* Keep the generated Neconyan loading cat and its reduced-motion variant. */
 body.sbterm #preloader {
@@ -2954,8 +2436,97 @@ body.sbterm #load-spinner {
 /* Conversation Mode and Hopper (data-sbtw-mode) each take over #sheld with a shell of
    their own: the prompt, its mascot and the command glossary step aside, and the Terminal
    Home layout above is switched off for #sheld while they are up. */
-body.sbterm:has(#sheld:is([data-sb-conversation-mode='on'], [data-sbtw-mode='on'])) :is(#form_sheld, #send_form, .sbterm-command-glossary, .sbterm-mascot-form) {
+body.sbterm:has(#sheld:is([data-sb-conversation-mode='on'], [data-sbtw-mode='on'])) :is(#form_sheld, #send_form) {
     display: none !important;
+}
+
+/* Native shell surfaces share the chosen palette, including the rail's local tokens. */
+html:root body.neconyan.sbterm:not([data-sbterm-palette='inherit']) :is(#neconyan-workspace-rail, #sb-mobile-nav-content) {
+    --neco-rail: var(--sbterm-bg-alt);
+    --neco-ink: var(--sbterm-fg);
+    --neco-muted: var(--sbterm-fg-dim);
+    --neco-ginger: var(--sbterm-accent);
+    --neco-border: var(--sbterm-border);
+    --neco-on-accent: var(--sbterm-selected-fg);
+    background: var(--sbterm-bg-alt);
+    color: var(--sbterm-fg);
+}
+
+html body.neconyan.sbterm #neconyan-home-host {
+    background: var(--sbterm-bg);
+    color: var(--sbterm-fg);
+}
+
+html body.neconyan.sbterm .neconyan-cat-panel::before,
+html body.neconyan.sbterm .neconyan-cat-panel::after,
+html body.neconyan.sbterm #neconyan-home-host .neconyan-home-cat > :not(.sbterm-mascot-form) {
+    display: none;
+}
+
+html body.neconyan.sbterm #neconyan-home-host .sbterm-mascot-form {
+    display: inline-flex;
+    inline-size: 128px;
+    block-size: 112px;
+    filter: none;
+}
+
+body.sbterm .sbterm-kitty {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+}
+
+body.sbterm .sbterm-kitty-outline { fill: var(--sbterm-fg); }
+body.sbterm .sbterm-kitty-face { fill: var(--sbterm-bg); }
+body.sbterm .sbterm-kitty-marking { fill: var(--sbterm-accent); }
+
+html body.neconyan.sbterm #top-bar #sb-topbar-inner #sb-topbar-title { display: none !important; }
+
+html body.neconyan.sbterm #top-bar .sb-topbar-brand {
+    display: flex;
+    min-inline-size: 0;
+    align-items: center;
+    overflow: visible;
+}
+
+html body.neconyan.sbterm #top-bar #sbterm-banner {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    align-items: center;
+    gap: 8px;
+    inline-size: 100%;
+    padding: 0;
+}
+
+html body.neconyan.sbterm #sbterm-banner :is(.sbterm-mascot-button, .sbterm-status-details) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 44px;
+    block-size: 44px;
+    padding: 6px;
+    border: 0;
+    background: transparent;
+    filter: none;
+    cursor: pointer;
+}
+
+html body.neconyan.sbterm #sbterm-banner .sbterm-banner-title {
+    display: block;
+    color: var(--sbterm-fg);
+    font: 600 0.85rem/1.2 var(--monoFontFamily);
+    text-align: start;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+html body.neconyan.sbterm #sbterm-banner .sbterm-banner-copy::after { content: none; }
+html body.neconyan.sbterm #sbterm-banner #sbterm-statusline { padding: 0; text-align: start; }
+
+html body.neconyan.sbterm #form_sheld #send_textarea:focus-visible {
+    outline: 2px solid var(--sbterm-accent) !important;
+    outline-offset: -2px;
 }
 
 /* 14. Optional CRT overlay */

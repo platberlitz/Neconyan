@@ -1,8 +1,8 @@
 {
-    "display_name": "Terminal UI",
+    "display_name": "Termeownal UI",
     "author": "platberlitz",
     "version": "2.4.0",
-    "description": "A command-first terminal interface included with Neconyan, with native slash autocomplete, keyboard-revealed controls, live diagnostics, 37 palettes, and a touch-safe mobile fallback.",
+    "description": "Neconyan's command-first interface with a theme-aware pixel kitty, native navigation, slash autocomplete, live status, 37 palettes and touch-friendly controls.",
     "requires": [],
     "optional": [],
     "dependencies": [],
