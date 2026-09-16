@@ -19314,6 +19314,8 @@ jQuery(async function () {
             '#avatar-and-name-block',
             '#shadow_popup',
             '.popup',
+            // Dialogue Colors mounts confirmations outside their settings drawer.
+            '.dc-dialog-backdrop',
             '#world_popup',
             '.ui-widget',
             '.text_pole',

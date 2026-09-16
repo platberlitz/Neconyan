@@ -1133,6 +1133,58 @@ test('saved theme fonts remain local when an explicit font override is cleared',
     await expectLoadedFont(page, 'Nunito');
 });
 
+for (const width of [393, 1280]) {
+    for (const fullscreen of [false, true]) {
+        test.describe(`Dialogue Colors confirmation ${width}px fullscreen=${fullscreen}`, () => {
+            test.use({ viewport: { width, height: width === 393 ? 852 : 900 }, hasTouch: width === 393, isMobile: width === 393 });
+            test('one press cancels or deletes without closing settings', async ({ page }) => {
+                await mockNativeSettings(page);
+                await page.addInitScript(() => window.addEventListener('neconyan:ready', () => { window.confirmationTestReady = true; }));
+                await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
+                await page.waitForFunction(() => window.confirmationTestReady);
+                await page.waitForFunction(() => !!window.NeconyanExtensions?.focusUnit);
+                await page.evaluate(() => window.NeconyanExtensions.focusUnit('Dialogue Colors'));
+                const press = locator => width === 393 ? locator.tap() : locator.click();
+                const panel = page.locator('#user-settings-block');
+                if (fullscreen) await press(page.locator('#dc-fullscreen-toggle'));
+                for (const flow of ['row', 'bulk', 'clear']) {
+                    if (fullscreen) await press(page.locator('#dc-tab-characters'));
+                    const name = `Confirm check ${flow}`;
+                    await page.locator('#dc-add-name').fill(name);
+                    await press(page.locator('#dc-add-btn'));
+                    for (const decision of ['cancel', 'confirm']) {
+                        if (flow === 'row') {
+                            if (decision === 'cancel') await press(page.locator('.dc-more').first());
+                            await press(page.locator('.dc-del').first());
+                        } else if (flow === 'bulk') {
+                            if (decision === 'cancel') await press(page.locator('#dc-select-visible'));
+                            await page.locator('#dc-bulk-action-select').selectOption('delete');
+                            await press(page.locator('#dc-bulk-apply-action'));
+                        } else {
+                            if (fullscreen) await press(page.locator('#dc-tab-process'));
+                            await press(page.locator('#dc-clear'));
+                        }
+                        const button = page.locator(`.dc-dialog [data-dialog-value="${decision}"]`);
+                        const bounds = await button.boundingBox();
+                        expect(bounds.height).toBeGreaterThanOrEqual(width === 393 ? 44 : 36);
+                        expect(bounds.x).toBeGreaterThanOrEqual(0);
+                        expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+                        await press(button);
+                        await expect(page.locator('.dc-dialog')).toHaveCount(0);
+                        await expect(panel).toBeVisible();
+                        await expect(panel).toHaveClass(/openDrawer/);
+                        await expect.poll(() => page.evaluate(async name => {
+                            const { characterColors } = await import('/scripts/extensions/third-party/sillytavern-character-colors/src/state.js');
+                            return !!characterColors[name.toLowerCase()];
+                        }, name)).toBe(decision === 'cancel');
+                        await expect(page.locator('#toast-container .toast-warning, #toast-container .toast-error')).toHaveCount(0);
+                    }
+                }
+            });
+        });
+    }
+}
+
 test('the login document loads local Nunito controls and Fredoka One headings', async ({ page }, info) => {
     await page.setViewportSize({ width: 390, height: 900 });
     await page.route('**/api/auth/status', route => route.fulfill({ json: { accountsEnabled: true, basicAuthMode: false, browserSession: false, passkeysEnabled: false } }));
