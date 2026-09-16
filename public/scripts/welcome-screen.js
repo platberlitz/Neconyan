@@ -32,13 +32,13 @@ const AGENT_MESSAGE_EXTRA_KEY = 'inChatAgents';
 const AGENT_PROMPT_TRANSFORM_HISTORY_KEY = 'inChatAgentTransformHistory';
 
 const WELCOME_TUTORIAL_STEPS = Object.freeze([
-    { speaker: 'Miso', image: 'img/neconyan/tour/tour-01-miso-connect.webp?v=20260916-assistants', title: 'First paws: connect a model', body: 'Meowlcome in! Before anything else, something has to answer you when you talk, and this is the part that still feels like magic to me, I get excited every single time. Connections keeps your provider, its address or key and the model together in one saved setup, so choose them, check the connection, and then save it while it still works.', hint: 'Take your time finding the key; I once waited forty minutes for a train that was on the other platform, so I am in no position to hurry anyone. And if it connects on the first try, tell me, I want to cheer.', actions: [{ label: 'Open connections', type: 'open-tab', value: 'left:api' }] },
-    { speaker: 'Miso', image: 'img/neconyan/tour/tour-02-miso-characters.webp?v=20260916-assistants', title: 'Meet your chat pal', body: 'Now, who are we meeting? This is my favourite part, honestly! Create a character or import one, then choose Open chat, and if a line on the card reads wrong later, Edit card is where you change what is written on it.', hint: 'Taro, Nori and I can draft a card or suggest an edit when your model supports tools, but we ask first and you approve every change; nothing is saved until you say so. I will still be excited about it, but I will wait for the yes.', actions: [{ label: 'Open characters', type: 'open-characters-menu' }, { label: 'Try a temporary chat', type: 'open-temporary-chat' }] },
-    { speaker: 'Taro', image: 'img/neconyan/tour/tour-03-taro-modes.webp?v=20260916-assistants', title: 'Four ways to chat', body: 'Four workspaces, each with one job: Roleplay is the usual chat, Conversation adds a timeline and optional check-ins, Meower is a social feed, and Story Mode gives you a manuscript with chapters.', hint: 'Switch whenever you like, because your draft survives the move; I expected it to, and then I checked, which is the order I prefer, and the order matters fur-midable. Ignore the last word, the rest stands.', actions: [{ label: 'Use Roleplay', type: 'open-roleplay' }, { label: 'Open Conversation', type: 'open-conversation' }, { label: 'Open Meower', type: 'open-meower' }, { label: 'Open Story Mode', type: 'open-story' }] },
+    { speaker: 'Miso', image: 'img/neconyan/tour/tour-01-miso-connect.webp?v=20260916-assistants', title: 'First paws: connect a model', body: 'Meowlcome~! Before anything else, you need something, that LLM thing, to connect to Neconyan before you can get to talk. This still feels like magic to me, I get so excited every single time!\nCheck **Connections** to select a provider and paste your key in after deciding on the backend.', hint: 'Take your time finding the key! I once waited forty minutes waiting for the train at the other side, so… hehe. Tell me if it connects, I wanna cheer!', actions: [{ label: 'Open connections', type: 'open-tab', value: 'left:api' }] },
+    { speaker: 'Miso', image: 'img/neconyan/tour/tour-02-miso-characters.webp?v=20260916-assistants', title: 'Meet your chat pal', body: 'Now, who are we meeting? This is my favourite part, honestly! Create a character or import one, then choose Open chat, and if a line on the card reads wrong later, Edit card is where you change what is written on it.', hint: 'Taro, Nori and I can draft a card or suggest an edit when your model supports tools, but we ask first and you approve every change; nothing is saved until you say so. I will still be excited about it, but I will wait until you say the magic word yes!', actions: [{ label: 'Open characters', type: 'open-characters-menu' }, { label: 'Try a temporary chat', type: 'open-temporary-chat' }] },
+    { speaker: 'Taro', image: 'img/neconyan/tour/tour-03-taro-modes.webp?v=20260916-assistants', title: 'Four ways to chat', body: 'Four workspaces, each with one job: Roleplay is the usual chat, Conversation is reminiscent of Signal and Telegram, Meower is a social media, and Story Mode gives you a co-writing interface.', hint: 'Switch whenever you like, because your draft survives the move; I expected it to, and then I checked, which is the order I prefer, and the order matters purr me. … Tell me that was funny.', actions: [{ label: 'Use Roleplay', type: 'open-roleplay' }, { label: 'Open Conversation', type: 'open-conversation' }, { label: 'Open Meower', type: 'open-meower' }, { label: 'Open Story Mode', type: 'open-story' }] },
     { speaker: 'Nori', image: 'img/neconyan/tour/tour-04-nori-lorebooks.webp?v=20260916-assistants', title: 'A purrfect place for every detail', body: 'That side character with the terrible secret deserves an address, so make a lorebook, then add entries with the keywords that should pull them into a scene; folders are how you find them again once the pile grows.', hint: 'Back to library keeps your draft, and deleting a folder drops its books into Unfiled rather than the bin, so the character is out of my paper pile but still in the story. I would claim I invented libraries, but I am lying; the pile was here first.', actions: [{ label: 'Open lorebooks', type: 'open-tab', value: 'characters:world-info' }] },
-    { speaker: 'Taro', image: 'img/neconyan/tour/tour-05-taro-agents.webp?v=20260916-assistants', title: 'Give Agents a paw', body: 'One agent, one job, and a clear moment for it: before the reply, after it, or in a side panel. Save setup keeps the agents, their switches and their connections together under one name, and Load brings the whole set back.', hint: 'Deleting a setup leaves your agents where they are. Agent setups carry your helpers, while model presets carry the settings for your replies, and I would rather you knew the difference before something breaks than after, because unlearning it later is paw-sitive. That was the lamp talking. The difference still stands.', actions: [{ label: 'Open agents', type: 'open-tab', value: 'left:agents' }, { label: 'Model presets', type: 'open-tab', value: 'left:presets' }] },
-    { speaker: 'Nori', image: 'img/neconyan/tour/tour-06-nori-extensions.webp?v=20260916-assistants', title: 'Find your extra tools', body: 'Included tools came with Neconyan and each has its own settings page, while Extensions is the drawer you install into and where you pin the ones you actually reach for.', hint: 'Start with a tool that solves a problem you already have; I say this as somebody with too many notebooks, one working pen, and a train ticket that has been a bookmark since it expired. I would tell you I installed all of these myself, but that is a lie, and you would catch it anyway.', actions: [{ label: 'Open extensions', type: 'open-tab', value: 'right:extensions' }] },
-    { speaker: 'Miso', image: 'img/neconyan/tour/tour-07-miso-home.webp?v=20260916-assistants', title: 'Make yourself at home', body: 'Come in properly and put your cup down! Appearance holds the theme, the font, the text size and how the chat sits on the page, so keep what you like, move what gets in your way, and know that none of it is permanent.', hint: 'I have left the little cat running, though it will not mind a rest; Reduced Motion quiets the decorations if you would rather have a still desk. And if you pick a colour I have never seen, I will want the whole story of how you chose it.', actions: [{ label: 'Open appearance', type: 'open-tab', value: 'right:settings' }] },
+    { speaker: 'Taro', image: 'img/neconyan/tour/tour-05-taro-agents.webp?v=20260916-assistants', title: 'Give Agents a paw', body: 'Each agent has a job you specify, or pick a built-in one created by our maker. I’m paw-sitive this will improve your roleplaying and writing experience. Check for any agents you might like, transfer the trackers to Companion if you so wish… just make sure to leave me some fish.', hint: '… Okay, I can explain better. They can change your reply or run alongside the generation as extra context. Happy, hmm?', actions: [{ label: 'Open agents', type: 'open-tab', value: 'left:agents' }, { label: 'Model presets', type: 'open-tab', value: 'left:presets' }] },
+    { speaker: 'Nori', image: 'img/neconyan/tour/tour-06-nori-extensions.webp?v=20260916-assistants', title: 'Find your extra tools', body: 'Neconyan has its own included tools and extensions. You can see ‘em in the sidebar, no problem. The third-party extensions you install are in Extensions. Wow, who’da thunk?', hint: 'Make sure to check first if any of the bundled tools fit your purpose before scouring around for others. I’m territorial, you know… hehe, kidding!', actions: [{ label: 'Open extensions', type: 'open-tab', value: 'right:extensions' }] },
+    { speaker: 'Miso', image: 'img/neconyan/tour/tour-07-miso-home.webp?v=20260916-assistants', title: 'Make yourself at home', body: 'Come in properly and put your cup down!\nCheck the Appearance for ways to, well, you guessed it, change the look of Neconyan. Don’t worry, you can change it any time!\nIf you want the kitty and the ears to stop moving, make sure to check Reduced Motion.', hint: 'What’s your favourite colour? Mine’s orange! Maybe we can match~?', actions: [{ label: 'Open appearance', type: 'open-tab', value: 'right:settings' }] },
     { speaker: 'Taro', image: 'img/neconyan/tour/tour-08-taro-sampling.webp?v=20260916-assistants', title: 'Find it, then fine-tune it', body: 'Change one setting, then look at what happened before you change the next. Search finds a control by name, and Sampling shows which settings your provider and model will actually accept.', hint: 'Turning every slider at once is a poor experiment, however satisfying, because you learn nothing about which one helped. Your saved sampler values stay put when you switch models.', actions: [{ label: 'Search settings', type: 'open-global-search' }, { label: 'Open sampling', type: 'open-tab', value: 'left:sampling' }] },
     { speaker: 'Miso, Taro and Nori', title: 'We’re here to help!', body: 'You can replay the tour any time from Home → Home layout, and if you have any questions, come chat with any of us. We’re purr-eaty much available 24/7!', ending: true, actions: [] },
 ]);
@@ -679,6 +679,39 @@ function removeTutorialCoachmark() {
     document.body.classList.remove('neconyan-tour-active');
 }
 
+function buildTourParagraph(text) {
+    const paragraph = document.createElement('p');
+    String(t([text])).split('**').forEach((segment, index) => {
+        if (!segment) return;
+        if (index % 2 === 1) {
+            const strong = document.createElement('strong');
+            strong.textContent = segment;
+            paragraph.append(strong);
+        } else {
+            paragraph.append(document.createTextNode(segment));
+        }
+    });
+    return paragraph;
+}
+
+function renderTourCopy(host, text) {
+    if (!(host instanceof HTMLElement)) return;
+    host.parentElement?.querySelectorAll('[data-tour-extra-copy]').forEach(node => node.remove());
+    const paragraphs = String(text ?? '').split('\n').filter(line => line.trim());
+    if (!paragraphs.length) {
+        host.replaceChildren();
+        return;
+    }
+    host.replaceChildren(...buildTourParagraph(paragraphs[0]).childNodes);
+    let anchor = host;
+    for (const line of paragraphs.slice(1)) {
+        const extra = buildTourParagraph(line);
+        extra.dataset.tourExtraCopy = '';
+        anchor.after(extra);
+        anchor = extra;
+    }
+}
+
 function syncTutorialCoachmark(panel) {
     const coachmark = document.getElementById('neconyan-tour-coachmark');
     if (!(coachmark instanceof HTMLElement) || activeTutorialPanel !== panel) {
@@ -691,7 +724,7 @@ function syncTutorialCoachmark(panel) {
     coachmark.classList.toggle('neconyan-tour-ending', Boolean(step.ending));
     coachmark.querySelector('[data-tour-coach-step]').textContent = t`Step ${index + 1} of ${count}`;
     coachmark.querySelector('[data-tour-coach-title]').textContent = t([step.title]);
-    coachmark.querySelector('[data-tour-coach-body]').textContent = t([step.body]);
+    renderTourCopy(coachmark.querySelector('[data-tour-coach-body]'), step.body);
     const hint = coachmark.querySelector('[data-tour-coach-hint]');
     hint.textContent = step.hint ? t([step.hint]) : '';
     hint.hidden = !step.hint;

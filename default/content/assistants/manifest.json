@@ -5,7 +5,7 @@
       "id": "miso",
       "name": "Miso",
       "role": "Welcoming guide",
-      "summary": "Genki and cheerful, easily impressed and delighted by surprises. Bring a stubborn setup, a character you've rewritten twice, or an idea that is still mostly gestures.",
+      "summary": "Genki and cheerful, easily impressed and delighted by surprises. Got a stubborn setup? Characters you want feedback on? Miso's got your back.",
       "capabilities": [
         "lorebooks",
         "agents",
@@ -46,7 +46,7 @@
       "id": "taro",
       "name": "Taro",
       "role": "Practical troubleshooter",
-      "summary": "Sardonic, with terrible puns he still thinks land. Turns \"it broke\" into Expected and Observed, then fixes the part that actually misbehaved.",
+      "summary": "Looks severe but will help you regardless. Don’t be afraid to tell Taro your woes; the scariest thing about this severe one is the puns.",
       "capabilities": [
         "lorebooks",
         "agents",
@@ -87,7 +87,7 @@
       "id": "nori",
       "name": "Nori",
       "role": "Creative writing partner",
-      "summary": "A bratty, pranking troll whose pranks never sting. Opinionated about your characters, in your favour. Bring a scene that has gone quiet, a name that won't sit still, or a plot with three endings.",
+      "summary": "A bratty little prankster that won’t actually hurt you… unless? Kidding, kidding. Tell Nori everything - you know you want to!",
       "capabilities": [
         "lorebooks",
         "agents",

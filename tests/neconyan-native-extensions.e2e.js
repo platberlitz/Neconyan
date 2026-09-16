@@ -455,7 +455,11 @@ test.describe('side-only first-run tour', () => {
                 const content = tour.locator('[data-tour-content]');
                 await expect.poll(() => content.evaluate(element => element.scrollTop)).toBe(0);
                 if (step < 8) {
-                    await expect(tour.locator('.neconyan-tour-step-copy p:visible')).toHaveText(paragraphs[step]);
+                    const expectedCopy = [...paragraphs[step][0].split('\\n'), paragraphs[step][1]].map(text => text.replace(/\*\*/g, ''));
+                    await expect(tour.locator('.neconyan-tour-step-copy p:visible')).toHaveText(expectedCopy);
+                    if (step === 0) {
+                        await expect(tour.locator('.neconyan-tour-step-copy p strong')).toHaveText('Connections');
+                    }
                     const hint = tour.locator('[data-tour-coach-hint]');
                     await expect(hint).toHaveCSS('margin-top', '8px');
                     await content.evaluate(element => { element.scrollTop = element.scrollHeight; });
