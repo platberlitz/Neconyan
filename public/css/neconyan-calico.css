@@ -48,6 +48,14 @@
     --neco-action-gradient: linear-gradient(105deg, #fff4de, #f1d2b3 45%, var(--neco-pink) 72%, #df985c);
 }
 
+/* A picked accent keeps the Calico dressing and flows into the ginger tokens instead of replacing them. */
+:root[data-neconyan-palette='calico'][data-neconyan-accent='custom'] body.neconyan {
+    --neco-ginger: var(--SmartThemeQuoteColor);
+    --neco-ginger-hover: var(--SmartThemeUnderlineColor);
+    --neco-on-accent: var(--neco-accent-ink, var(--neco-charcoal));
+    --neco-action-gradient: var(--neco-accent-gradient);
+}
+
 :root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan #neconyan-workspace-rail,
 :root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan #sb-mobile-nav-content {
     --neco-rail: #343735;

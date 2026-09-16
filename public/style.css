@@ -2364,12 +2364,9 @@ body[data-stscript-style] .hljs.language-stscript {
             width: 2.25em;
             font-size: 0.8em;
             text-align: center;
-            /* opacity: 0.6; */
             white-space: nowrap;
             font-family: var(--monoFontFamily);
             line-height: calc(1.2em / 0.8);
-            /* &:before { content: "["; }
-            &:after { content: "]"; } */
         }
 
         >.specs {
@@ -2607,7 +2604,6 @@ body[data-stscript-style] .hljs.language-stscript {
         >.name {
             font-family: var(--monoFontFamily);
             white-space: nowrap;
-            /* color: var(--ac-color-text); */
         }
 
         >.body {
@@ -4107,8 +4103,6 @@ grammarly-extension {
 
 .wide_dialogue_popup {
     /* FIXME: Chrome 129 broke max-height for aspect-ratio sized elements */
-    /* aspect-ratio: 1 / 1; */
-    /* width: unset !important; */
     min-width: var(--sheldWidth);
 }
 
@@ -4244,7 +4238,6 @@ grammarly-extension {
 }
 
 .menu_button.fa-fw {
-    /* Font Awesome icons that are a menu button and should be fixed width need a slight fix. 1.25em is their default, but we need to account for button spacing. */
     min-width: calc(1.25em + 12px);
 }
 
@@ -4697,7 +4690,6 @@ input[type='checkbox'].del_checkbox {
 .range-block-counter {
     margin-left: 5px;
     /*previously needed to avoid firefox scrollbar overlap, no longer necessary?*/
-    /* margin-right: 15px; */
     font-size: calc(var(--mainFontSize) * 0.95);
     color: var(--SmartThemeBodyColor);
     flex: 1;
@@ -4925,10 +4917,6 @@ input[type="range"]::-webkit-slider-thumb {
     block-size: 28px;
     flex: 0 0 28px;
     text-align: center;
-    /*
-    border-radius: 100%;
-    box-shadow: 0 0 3px black;
-    */
     transition: all var(--animation-duration-2x);
 }
 

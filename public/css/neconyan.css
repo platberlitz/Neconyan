@@ -23,9 +23,11 @@ body.neconyan {
     --neco-ginger-hover: var(--SmartThemeUnderlineColor, oklch(81% 0.096 59));
     --neco-border: var(--SmartThemeBorderColor, oklch(34% 0.015 55));
     --neco-user: var(--SmartThemeUserMesBlurTintColor, oklch(29% 0.024 51));
-    --neco-on-accent: var(--neco-canvas);
+    --neco-on-accent: var(--neco-accent-ink, var(--neco-canvas));
     --neco-cream: oklch(91% 0.023 77);
     --neco-charcoal: oklch(18.5% 0.008 55);
+    --neco-accent-gradient: linear-gradient(105deg, color-mix(in srgb, var(--neco-ginger) 14%, var(--neco-cream)), color-mix(in srgb, var(--neco-ginger) 40%, var(--neco-cream)) 55%, color-mix(in srgb, var(--neco-ginger) 72%, var(--neco-cream)));
+    --neco-action-gradient: var(--neco-accent-gradient);
     --neco-sidebar-width: 244px;
     --neco-sidebar-offset: 0px;
     --neco-workspace-nav-width: 208px;
@@ -52,7 +54,6 @@ body.neconyan {
     text-shadow: none;
 }
 :root[data-sb-surface-tone='light'] body.neconyan { color-scheme: light; }
-:root[data-neconyan-calico-tone='light'] body.neconyan { --neco-on-accent: var(--neco-surface); }
 body.neconyan {
     --sb-accent: var(--neco-ginger);
     --sb-accent-soft: var(--neco-user);
@@ -317,6 +318,8 @@ body.neconyan #nonQRFormItems { padding: 0; border: 0; border-radius: 0; backgro
 body.neconyan #send_textarea {
     max-height: min(35dvh, 360px);
     padding: 12px; background: transparent; color: var(--neco-ink); border: 0; border-radius: 5px; box-shadow: none; font-size: 14px; line-height: 1.5;
+    /* style.css clips the top 5px to hide its STscript progress border; with border: 0 that clip only cuts the focus ring. */
+    clip-path: none;
 }
 @media (max-width: 768px) {
     body.neconyan #send_form.no-connection #nonQRFormItems {

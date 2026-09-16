@@ -74,9 +74,14 @@ describe('SillyBunny accent color profiles', () => {
         expect(themeCssSource).toContain('.sb-accent-profiles-list {\n        grid-template-columns: 1fr;\n    }');
     });
 
-    test('preserves light text contrast on dark theme accent palettes', () => {
-        expect(powerUserSource).toContain('const blurChannels = parseColorChannels(power_user.blur_tint_color);');
-        expect(powerUserSource).toContain('const isLightSurface = blurChannels ? getRelativeLuminanceFromChannels(blurChannels) > 0.36 : false;');
-        expect(powerUserSource).toContain('document.documentElement.style.setProperty(\'--sb-on-accent\', isLightSurface ? primaryButtonTextColor : solidAccentTextColor);');
+    test('picks the accent ink against the pure accent and feeds it to the Neconyan tokens', () => {
+        const neconyanCssSource = readSource('public', 'css', 'neconyan.css');
+        const calicoCssSource = readSource('public', 'css', 'neconyan-calico.css');
+
+        expect(powerUserSource).toContain('const accentInk = getContrastAwareInk([quoteChannels]);');
+        expect(powerUserSource).toContain('document.documentElement.style.setProperty(\'--neco-accent-ink\', accentInk);');
+        expect(neconyanCssSource).toContain('--neco-on-accent: var(--neco-accent-ink, var(--neco-canvas));');
+        expect(neconyanCssSource).toContain('--neco-action-gradient: var(--neco-accent-gradient);');
+        expect(calicoCssSource).toContain(':root[data-neconyan-palette=\'calico\'][data-neconyan-accent=\'custom\'] body.neconyan {');
     });
 });

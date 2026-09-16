@@ -258,16 +258,26 @@ describe('Neconyan Calico defaults', () => {
     });
 
     test('keeps Calico identity in sync across accent edits and a reload-equivalent state', () => {
+        // An accent pick keeps the Calico dressing (paw prints, gradients) and only flags the accent as custom.
         const accentRuntime = createPaletteRuntime();
         accentRuntime.context.applyAccentColors('rgba(4, 5, 6, 1)', 'rgba(7, 8, 9, 1)');
-        expect(accentRuntime.context.document.documentElement.dataset.neconyanPalette).toBe('custom');
+        expect(accentRuntime.context.document.documentElement.dataset.neconyanPalette).toBe('calico');
+        expect(accentRuntime.context.document.documentElement.dataset.neconyanAccent).toBe('custom');
 
         const directRuntime = createPaletteRuntime({ quote_text_color: 'rgba(4, 5, 6, 1)' });
         directRuntime.context.applyThemeColor('quote');
-        expect(directRuntime.context.document.documentElement.dataset.neconyanPalette).toBe('custom');
+        expect(directRuntime.context.document.documentElement.dataset.neconyanPalette).toBe('calico');
+        expect(directRuntime.context.document.documentElement.dataset.neconyanAccent).toBe('custom');
         directRuntime.context.power_user.quote_text_color = calicoDarkTheme.quote_text_color;
         directRuntime.context.applyThemeColor('quote');
         expect(directRuntime.context.document.documentElement.dataset.neconyanPalette).toBe('calico');
+        expect(directRuntime.context.document.documentElement.dataset.neconyanAccent).toBe('theme');
+
+        // Any other colour edit still leaves Calico entirely.
+        const surfaceRuntime = createPaletteRuntime({ blur_tint_color: 'rgba(4, 5, 6, 1)' });
+        surfaceRuntime.context.syncNeconyanPaletteAttribute();
+        expect(surfaceRuntime.context.document.documentElement.dataset.neconyanPalette).toBe('custom');
+        expect(surfaceRuntime.context.document.documentElement.dataset.neconyanAccent).toBe('custom');
 
         const reloadRuntime = createPaletteRuntime(JSON.parse(JSON.stringify(directRuntime.context.power_user)));
         reloadRuntime.context.syncNeconyanPaletteAttribute();
@@ -278,6 +288,7 @@ describe('Neconyan Calico defaults', () => {
         lightRuntime.context.syncNeconyanPaletteAttribute();
         expect(lightRuntime.context.document.documentElement.dataset.neconyanPalette).toBe('calico');
         expect(lightRuntime.context.document.documentElement.dataset.neconyanCalicoTone).toBe('light');
+        expect(lightRuntime.context.document.documentElement.dataset.neconyanAccent).toBe('theme');
     });
 
     test('marks manually edited Calico colours and CSS as custom', () => {

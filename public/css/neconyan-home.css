@@ -12,9 +12,8 @@ body.neconyan .neconyan-home-intro > p { margin: 0; max-width: 60ch; color: var(
 body.neconyan .neconyan-home-actions > button { display: flex; align-items: center; gap: 14px; min-height: 48px; width: 100%; margin: 0; padding: 12px 16px; border: 1px solid var(--neco-border); border-radius: 6px; background: transparent; color: var(--neco-ink); text-align: left; font: inherit; font-size: 14px; }
 .neconyan-home-actions > button > span { flex: 1; }
 .neconyan-home-actions > button > i.fa-arrow-right { opacity: .65; font-size: 12px; }
-body.neconyan .neconyan-home-actions > .neconyan-home-primary { color: var(--neco-on-accent); background: var(--neco-ginger); border-color: var(--neco-ginger); font-weight: 600; }
+body.neconyan .neconyan-home-actions > .neconyan-home-primary { font-weight: 600; }
 body.neconyan .neconyan-home-actions > button:hover { background: var(--neco-raised); }
-body.neconyan .neconyan-home-actions > .neconyan-home-primary:hover { background: var(--neco-ginger-hover); }
 .neconyan-home h2 { margin: 0; font-size: 18px; line-height: 1.4; font-weight: 600; }
 .neconyan-recent-heading { display: flex; flex-direction: column; gap: 12px; margin-bottom: 8px; }
 .neconyan-home summary { cursor: pointer; min-height: 44px; padding: 12px 0; color: var(--neco-muted); font-size: 13px; }
@@ -122,9 +121,11 @@ body.neconyan .neconyan-home-actions > button:focus-visible {
     transform: translateY(-1px);
 }
 
-body.neconyan .neconyan-home-actions > .neconyan-home-primary {
+body.neconyan .neconyan-home-actions > .neconyan-home-primary,
+body.neconyan .neconyan-home-actions > .neconyan-home-primary:is(:hover, :focus-visible) {
     background: var(--neco-action-gradient);
-    box-shadow: 0 10px 20px color-mix(in srgb, var(--neco-ginger) 24%, transparent);
+    color: var(--neco-charcoal);
+    border-color: transparent;
 }
 
 body.neconyan .neconyan-assistant-picker {

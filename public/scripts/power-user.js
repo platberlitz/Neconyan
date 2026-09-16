@@ -340,7 +340,7 @@ const CHAT_STYLE_BODY_CLASSES = Object.freeze({
 
 const LEGACY_CHAT_STYLE_BODY_CLASSES = Object.freeze([]);
 const NATIVE_CHAT_STYLE_STYLESHEET_ID = 'sillybunny-native-chat-styles';
-const NATIVE_CHAT_STYLE_STYLESHEET_HREF = 'css/neconyan-chat-styles.css?v=20260606a';
+const NATIVE_CHAT_STYLE_STYLESHEET_HREF = 'css/neconyan-chat-styles.css?v=20260916d';
 
 function ensureNativeChatStyleStylesheet() {
     if (document.getElementById(NATIVE_CHAT_STYLE_STYLESHEET_ID)) {
@@ -1548,13 +1548,6 @@ function getContrastRatioFromLuminance(firstLuminance, secondLuminance) {
     return (lighter + 0.05) / (darker + 0.05);
 }
 
-function mixColorChannels(firstChannels, secondChannels, firstWeight = 1) {
-    const secondWeight = 1 - firstWeight;
-    return [0, 1, 2].map(index => Math.round(
-        (firstChannels[index] * firstWeight) + (secondChannels[index] * secondWeight),
-    ));
-}
-
 function getContrastAwareInk(backgroundChannelsList) {
     const darkInkChannels = [0, 0, 0];
     const lightInkChannels = [255, 255, 255];
@@ -1572,24 +1565,16 @@ function getContrastAwareInk(backgroundChannelsList) {
 
 function applyAccentContrastPalette() {
     const quoteChannels = parseColorChannels(power_user.quote_text_color);
-    const bodyChannels = parseColorChannels(power_user.main_text_color);
-    if (!quoteChannels || !bodyChannels) {
+    if (!quoteChannels) {
         return;
     }
 
-    const accentChannels = mixColorChannels(quoteChannels, bodyChannels, 0.62);
-    const blurChannels = parseColorChannels(power_user.blur_tint_color);
-    const isLightSurface = blurChannels ? getRelativeLuminanceFromChannels(blurChannels) > 0.36 : false;
-    const primaryButtonTextColor = isLightSurface
-        ? getContrastAwareInk([
-            mixColorChannels(accentChannels, [255, 255, 255], 0.88),
-            mixColorChannels(accentChannels, [255, 255, 255], 0.82),
-        ])
-        : getContrastAwareInk([accentChannels]);
-    const solidAccentTextColor = getContrastAwareInk([accentChannels]);
-
-    document.documentElement.style.setProperty('--sb-on-accent', isLightSurface ? primaryButtonTextColor : solidAccentTextColor);
-    document.documentElement.style.setProperty('--sb-on-solid-accent', solidAccentTextColor);
+    // Ink for text sitting on the solid accent (#send_but, primary buttons). body.neconyan
+    // reads --neco-accent-ink; the --sb-* names stay for the non-Neconyan stylesheets.
+    const accentInk = getContrastAwareInk([quoteChannels]);
+    document.documentElement.style.setProperty('--neco-accent-ink', accentInk);
+    document.documentElement.style.setProperty('--sb-on-accent', accentInk);
+    document.documentElement.style.setProperty('--sb-on-solid-accent', accentInk);
 }
 
 function applyLandingContrastPalette() {
@@ -1675,20 +1660,26 @@ function getLegacyThemeValueKeys(theme) {
     ].filter(key => Object.hasOwn(theme, key));
 }
 
-function themeValuesMatch(theme, values) {
-    const keys = getLegacyThemeValueKeys(theme);
+function themeValuesMatch(theme, values, ignoredKeys = []) {
+    const keys = getLegacyThemeValueKeys(theme).filter(key => !ignoredKeys.includes(key));
     return keys.length > 0 && keys.every(key => themeValuesEqual(values?.[key], theme[key]));
 }
 
 function syncNeconyanPaletteAttribute() {
+    // Accent picks change only these two keys; a Calico theme with a custom accent stays Calico
+    // (paw prints, gradients) and flags data-neconyan-accent='custom' so the CSS recolours from it.
+    const accentKeys = ['quote_text_color', 'underline_text_color'];
     const activeThemeName = String(power_user.theme ?? '');
     const isDarkCalico = activeThemeName === NECONYAN_DARK_THEME_NAME
-        && themeValuesMatch(NECONYAN_CALICO_DARK_THEME_FALLBACK, power_user);
+        && themeValuesMatch(NECONYAN_CALICO_DARK_THEME_FALLBACK, power_user, accentKeys);
     const isLightCalico = activeThemeName === NECONYAN_THEME_NAME
-        && themeValuesMatch(NECONYAN_CALICO_THEME_FALLBACK, power_user);
+        && themeValuesMatch(NECONYAN_CALICO_THEME_FALLBACK, power_user, accentKeys);
     const isCalico = isDarkCalico || isLightCalico;
+    const calicoFallback = isDarkCalico ? NECONYAN_CALICO_DARK_THEME_FALLBACK : NECONYAN_CALICO_THEME_FALLBACK;
+    const isThemeAccent = isCalico && accentKeys.every(key => themeValuesEqual(power_user[key], calicoFallback[key]));
     document.documentElement.dataset.neconyanPalette = isCalico ? 'calico' : 'custom';
     document.documentElement.dataset.neconyanCalicoTone = isDarkCalico ? 'dark' : isLightCalico ? 'light' : 'custom';
+    document.documentElement.dataset.neconyanAccent = isThemeAccent ? 'theme' : 'custom';
 }
 
 function markNeconyanPaletteCustom() {

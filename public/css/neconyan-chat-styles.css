@@ -1561,6 +1561,8 @@ body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .
 
     body.ripplestyle #chat .mes:not(.smallSysMes) .mesAvatarWrapper .avatar {
         overflow: hidden !important;
+        /* The wrapper is the sticky element on phones; a nested sticky avatar would sit 16px lower (the #chat padding). */
+        position: static;
     }
 
     body.ripplestyle #chat .mes:not(.smallSysMes) .mesAvatarWrapper .avatar > img {
