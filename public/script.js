@@ -130,6 +130,7 @@ import {
     selected_custom_endpoint_preset,
     initOpenAI,
     reconnectOpenAi,
+    readChatCompletionStream,
 } from './scripts/openai.js';
 import {
     extractOocBlocksForDisplay,
@@ -333,7 +334,7 @@ import { compressRequest, setRequestCompressionConfig } from './scripts/request-
 import { canJumpToSwipeForMessage, canOpenSwipePickerForMessage, initSwipePicker } from './scripts/swipe-picker.js';
 import { bindIOSFastTapSendButton, isIOSWebKitPlatform } from './scripts/mobile-send-button.js';
 import { formatMobileStreamingPreview, getMobileStreamingBottomPinBehavior, getStreamingUpdateInterval, isAndroidStreamingPlatform, shouldReduceStreamingDomWork, shouldUsePlainTextStreamingPreview } from './scripts/mobile-streaming.js';
-import { fetchResumable } from './scripts/resumable-generation.js';
+import { fetchResumable, setGenerationContext, listRecoverableGenerations, openHeldGeneration, discardGeneration } from './scripts/resumable-generation.js';
 import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse } from './scripts/generation-request-controls.js';
 import {
     CHAT_RENDER_LIFECYCLE_ROLLOUT_KEY,
@@ -1220,6 +1221,7 @@ async function firstLoadInit() {
         addDOMPurifyHooks();
         // Neconyan: card script detection - see #94.
         eventSource.on(event_types.CHAT_CHANGED, forgetAllCardScripts);
+        eventSource.on(event_types.CHAT_CHANGED, () => { recoverHeldGenerations().catch(error => console.warn('Held generation recovery failed', error)); });
         configureCardScriptRuntime({
             getPowerUser: () => power_user,
             executeSlashCommandsWithOptions,
@@ -9360,6 +9362,11 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
 
             console.debug(`pushed prompt bits to itemizedPrompts array. Length is now: ${itemizedPrompts.length}`);
 
+            const recoveryContext = buildRecoveryContext(type, {
+                streaming: isStreamingEnabled() && type !== 'quiet',
+                skip: isAuxiliaryGeneration || Boolean(quiet_prompt) || (type === 'regenerate' && preserveLastMessage),
+            });
+
             if (isStreamingEnabled() && type !== 'quiet') {
                 let startedSuccessorGeneration = false;
                 try {
@@ -9375,7 +9382,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
 
                     const shouldBufferOutput = await shouldBufferMainGenerationOutput({ type, isStreaming: true });
                     if (!isCurrent()) return;
-                    activeStreamingProcessor.generator = await sendStreamingRequest(type, generate_data, { jsonSchema, cacheScope: generate_data.cacheScope, signal, ...requestControls });
+                    activeStreamingProcessor.generator = await sendStreamingRequest(type, generate_data, { jsonSchema, cacheScope: generate_data.cacheScope, signal, recoveryContext, ...requestControls });
                     if (!isCurrent()) return;
 
                     hideSwipeButtons();
@@ -9517,7 +9524,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                     }
                 }
             } else {
-                return await sendGenerationRequest(type, generate_data, { jsonSchema, cacheScope: generate_data.cacheScope, signal, ...requestControls });
+                return await sendGenerationRequest(type, generate_data, { jsonSchema, cacheScope: generate_data.cacheScope, signal, recoveryContext, ...requestControls });
             }
         }
 
@@ -10318,6 +10325,7 @@ function setInContextMessages(msgInContextCount, type, preserveLastMessage = fal
 export async function sendGenerationRequest(type, data, options = {}) {
     const signal = options.signal ?? abortController.signal;
     if (main_api === 'openai') {
+        setGenerationContext(signal, options.recoveryContext ?? null);
         return await sendOpenAIRequest(type, data.prompt, signal, options);
     }
 
@@ -10326,6 +10334,7 @@ export async function sendGenerationRequest(type, data, options = {}) {
         return await generateHorde(data.prompt, data, signal, true);
     }
 
+    setGenerationContext(signal, options.recoveryContext ?? null);
     const response = await fetchResumable(getGenerateUrl(main_api), {
         method: 'POST',
         headers: getRequestHeaders(),
@@ -10358,6 +10367,7 @@ export async function sendStreamingRequest(type, data, options = {}) {
     }
     switch (main_api) {
         case 'openai':
+            setGenerationContext(streamingProcessor.requestAbortController.signal, options.recoveryContext ?? null);
             return await sendOpenAIRequest(type, data.prompt, streamingProcessor.requestAbortController.signal, options);
         case 'textgenerationwebui':
             return await generateTextGenWithStreaming(data, streamingProcessor.requestAbortController.signal);
@@ -10368,6 +10378,131 @@ export async function sendStreamingRequest(type, data, options = {}) {
         default:
             throw new Error('Streaming is enabled, but the current API does not support streaming.');
     }
+}
+
+/**
+ * Describes a main-chat generation so the server can hold the reply for later
+ * if this tab goes away. Returns null when the reply cannot be replayed safely.
+ * ponytail: single-character chats only, and streaming only for chat completions;
+ * add groups and text-completion streaming when they are asked for.
+ * @param {string} type Generation type
+ * @param {{streaming: boolean, skip: boolean}} options
+ * @returns {object|null}
+ */
+function buildRecoveryContext(type, { streaming, skip }) {
+    const kind = type || 'normal';
+    if (skip || selected_group || this_chid === undefined || !characters[this_chid]) return null;
+    if (!['normal', 'regenerate', 'swipe', 'continue'].includes(kind)) return null;
+    if (streaming && main_api !== 'openai') return null;
+    const last = chat[chat.length - 1];
+    return {
+        v: 1,
+        chatId: getCurrentChatId(),
+        characterAvatar: characters[this_chid].avatar,
+        type: kind,
+        chatLength: chat.length,
+        lastSendDate: last?.send_date ?? null,
+        lastIsUser: Boolean(last?.is_user),
+        name2,
+        api: main_api,
+        source: oai_settings.chat_completion_source,
+        streaming,
+        startedAt: generation_started?.getTime?.() ?? Date.now(),
+    };
+}
+
+/**
+ * Pulls replies the server finished while this chat was closed and appends them.
+ * Runs on every chat change; does nothing when there is nothing held.
+ */
+export async function recoverHeldGenerations() {
+    if (selected_group || this_chid === undefined || !characters[this_chid]) return;
+    const headers = getRequestHeaders();
+    const jobs = await listRecoverableGenerations(headers).catch(() => []);
+    const chatId = getCurrentChatId();
+    const avatar = characters[this_chid].avatar;
+    for (const job of jobs) {
+        const ctx = job.context;
+        if (!ctx || ctx.v !== 1 || ctx.chatId !== chatId || ctx.characterAvatar !== avatar) continue;
+        if (job.attached || job.status === 'running') continue;
+        if (chatId !== getCurrentChatId()) return;
+        await applyHeldGeneration(job, headers);
+    }
+}
+
+async function applyHeldGeneration(job, headers) {
+    const ctx = job.context;
+    const discard = () => discardGeneration(job.id, headers);
+    const sameStart = (message) => message?.gen_started && new Date(message.gen_started).getTime() === ctx.startedAt;
+    if (chat.slice(-2).some(sameStart)) return discard();
+
+    const anchor = chat[ctx.chatLength - 1];
+    const anchorMatches = anchor && (anchor.send_date ?? null) === ctx.lastSendDate && Boolean(anchor.is_user) === ctx.lastIsUser;
+    let applyType;
+    if (ctx.type === 'regenerate' && chat.length === ctx.chatLength + 1 && anchorMatches && !chat[chat.length - 1].is_user) {
+        applyType = 'swipe';
+    } else if (chat.length === ctx.chatLength && anchorMatches) {
+        applyType = ctx.type === 'regenerate' ? 'normal' : ctx.type;
+    } else {
+        console.warn('Held reply no longer matches this chat; dropping it', job.id, ctx);
+        toastr.warning(t`A reply that finished in the background no longer matched the chat and was dropped.`);
+        return discard();
+    }
+
+    if (job.status === 'failed') {
+        toastr.error(t`A reply that ran in the background failed.`);
+        return discard();
+    }
+
+    toastr.info(t`Restoring a reply that finished in the background...`);
+    const response = await openHeldGeneration(job.id, headers);
+    let getMessage = '';
+    let reasoning = '';
+    let imageUrls = [];
+    let reasoningSignature = null;
+    let swipes = [];
+    let title = '';
+    if (ctx.streaming) {
+        let last = null;
+        for await (const value of readChatCompletionStream(response, { chatCompletionSource: ctx.source })()) {
+            last = value;
+        }
+        getMessage = last?.text ?? '';
+        reasoning = last?.state?.reasoning ?? '';
+        imageUrls = last?.state?.images ?? [];
+        reasoningSignature = last?.state?.signature || null;
+    } else {
+        const data = await response.json();
+        if (data?.error) {
+            toastr.error(t`A reply that ran in the background failed.`);
+            return discard();
+        }
+        getMessage = extractMessageFromData(data, ctx.api);
+        title = extractTitleFromData(data);
+        reasoning = extractReasoningFromData(data);
+        imageUrls = extractImagesFromData(data);
+        reasoningSignature = extractReasoningSignatureFromData(data);
+        swipes = extractMultiSwipes(data, applyType);
+    }
+
+    const isContinue = applyType === 'continue';
+    getMessage = cleanUpMessage({ getMessage, isImpersonate: false, isContinue });
+    reasoning = getRegexedString(reasoning, regex_placement.REASONING);
+    if (!getMessage.trim()) {
+        toastr.warning(t`A reply that finished in the background had no text to restore.`);
+        return discard();
+    }
+
+    generation_started = new Date(ctx.startedAt);
+    if (applyType === 'swipe') {
+        const target = chat[chat.length - 1];
+        target.swipes = Array.isArray(target.swipes) ? target.swipes : [target.mes];
+        target.swipe_id = target.swipes.length;
+    }
+    await saveReply({ type: applyType, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature });
+    await saveChatConditional();
+    await discard();
+    playMessageSound();
 }
 
 /**

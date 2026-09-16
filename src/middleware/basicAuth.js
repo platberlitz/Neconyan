@@ -9,13 +9,14 @@ import storage from 'node-persist';
 import { RateLimiterMemory, RateLimiterRes } from 'rate-limiter-flexible';
 import { getAllUserHandles, toKey, getPasswordHash } from '../users.js';
 import { getConfigValue, safeReadFileSync } from '../util.js';
-import { validateSession, isSessionAuthEnabled } from './sessionAuth.js';
+import { createSession, credentialVersion, destroySession, validateSession, isSessionAuthEnabled } from './sessionAuth.js';
 import { getIpAddress, retryAfter } from '../express-common.js';
 
 const PER_USER_BASIC_AUTH = !!getConfigValue('perUserBasicAuth', false, 'boolean');
 const ENABLE_ACCOUNTS = !!getConfigValue('enableUserAccounts', false, 'boolean');
 const PREFER_REAL_IP_HEADER = !!getConfigValue('rateLimiting.preferRealIpHeader', false, 'boolean');
 const BASIC_AUTH_ATTEMPTS = getConfigValue('rateLimiting.basicAuthMaxAttempts', 5, 'number');
+const REMEMBER_AUTH_MS = 30 * 24 * 60 * 60 * 1000;
 
 const basicAuthLimiter = new RateLimiterMemory({
     points: BASIC_AUTH_ATTEMPTS > 0 ? BASIC_AUTH_ATTEMPTS : Number.MAX_SAFE_INTEGER,
@@ -47,6 +48,34 @@ const basicAuthMiddleware = async function (request, response, callback) {
     }
 
     const authHeader = request.headers.authorization;
+
+    // Safari may discard HTTP Basic credentials with the tab. Keep an opaque, signed,
+    // HTTP-only session cookie; the corresponding hashed token is stored on the server.
+    const remember = (username, version) => {
+        if (!request.session) return;
+        if (request.session.basicAuthToken) destroySession(request.session.basicAuthToken);
+        request.session.basicAuthToken = createSession(username, { durationMs: REMEMBER_AUTH_MS, credentialVersion: version });
+        request.sessionOptions.expires = new Date(Date.now() + REMEMBER_AUTH_MS);
+        delete request.sessionOptions.maxAge;
+    };
+    if (request.session?.basicAuthToken) {
+        try {
+            const session = validateSession(request.session.basicAuthToken);
+            let version;
+            if (PER_USER_BASIC_AUTH && ENABLE_ACCOUNTS && session) {
+                const user = await storage.getItem(toKey(session.username));
+                if (user?.enabled && user.password) version = credentialVersion(session.username, user.password);
+            } else {
+                version = credentialVersion(getConfigValue('basicAuthUser.username'), getConfigValue('basicAuthUser.password'));
+            }
+            if (session?.credentialVersion === version && version) return callback();
+            destroySession(request.session.basicAuthToken);
+            delete request.session.basicAuthToken;
+        } catch (error) {
+            console.error('Could not validate the remembered login:', error.message);
+            return response.sendStatus(503);
+        }
+    }
 
     // Check for session-based Bearer token authentication first
     if (authHeader && isSessionAuthEnabled()) {
@@ -93,6 +122,7 @@ const basicAuthMiddleware = async function (request, response, callback) {
 
         if (!usePerUserAuth && username === basicAuthUserName && password === basicAuthUserPassword) {
             await basicAuthLimiter.delete(ip);
+            remember(username, credentialVersion(username, password));
             return callback();
         } else if (usePerUserAuth) {
             const userHandles = await getAllUserHandles();
@@ -101,6 +131,7 @@ const basicAuthMiddleware = async function (request, response, callback) {
                     const user = await storage.getItem(toKey(userHandle));
                     if (user && user.enabled && (user.password && user.password === getPasswordHash(password, user.salt))) {
                         await basicAuthLimiter.delete(ip);
+                        remember(username, credentialVersion(username, user.password));
                         return callback();
                     }
                 }

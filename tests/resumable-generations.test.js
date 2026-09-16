@@ -651,4 +651,70 @@ describe('resumable generation routes', () => {
             await expect(reader.text()).resolves.toBe('first-second-done');
         }
     });
+
+    const encodeContext = (context) => Buffer.from(JSON.stringify(context), 'utf8').toString('base64');
+
+    test('list shows only jobs that carried a context, with attach state, and discard drops them', async () => {
+        const context = { v: 1, chatId: 'chat-1', type: 'normal', name2: 'Néko' };
+        const heldId = 'route-list-held';
+        const original = await fetch(`${baseUrl}/generate`, {
+            method: 'POST',
+            headers: { 'X-Generation-Id': heldId, 'X-Generation-Context': encodeContext(context) },
+        });
+        const reader = original.body.getReader();
+        await reader.read();
+        const plain = await fetch(`${baseUrl}/generate`, { method: 'POST', headers: { 'X-Generation-Id': 'route-list-plain' } });
+        const plainReader = plain.body.getReader();
+        await plainReader.read();
+        pendingHandlers.get('route-list-plain')();
+        while (!(await plainReader.read()).done) { /* drain */ }
+
+        let listed = await (await postJson('/api/resumable-generations/list', {})).json();
+        let job = listed.jobs.find(entry => entry.id === heldId);
+        expect(listed.jobs.map(entry => entry.id)).not.toContain('route-list-plain');
+        expect(job).toMatchObject({ id: heldId, status: 'running', attached: true, context, statusCode: 201 });
+
+        await reader.cancel();
+        pendingHandlers.get(heldId)();
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        listed = await (await postJson('/api/resumable-generations/list', {})).json();
+        job = listed.jobs.find(entry => entry.id === heldId);
+        expect(job).toMatchObject({ status: 'finished', attached: false, size: 'first-second-done'.length });
+        expect(typeof job.finishedAt).toBe('number');
+
+        // A context-bearing reply outlives the short retention window.
+        testExports.sweepGenerations(job.finishedAt + testExports.FINISHED_RETENTION_MS + 1);
+        expect(testExports.generations.has(`route-tester:${heldId}`)).toBe(true);
+        expect(testExports.generations.has('route-tester:route-list-plain')).toBe(false);
+
+        expect((await postJson('/api/resumable-generations/discard', { id: heldId })).status).toBe(204);
+        expect((await postJson('/api/resumable-generations/discard', { id: heldId })).status).toBe(404);
+        listed = await (await postJson('/api/resumable-generations/list', {})).json();
+        expect(listed.jobs.map(entry => entry.id)).not.toContain(heldId);
+    });
+
+    test('cancel forgets the context and malformed or oversized contexts are ignored', async () => {
+        const cancelledId = 'route-list-cancelled';
+        const original = await fetch(`${baseUrl}/generate`, {
+            method: 'POST',
+            headers: { 'X-Generation-Id': cancelledId, 'X-Generation-Context': encodeContext({ v: 1 }) },
+        });
+        const cancelledReader = original.body.getReader();
+        await cancelledReader.read();
+        await postJson('/api/resumable-generations/cancel', { id: cancelledId });
+        while (!(await cancelledReader.read()).done) { /* drain */ }
+
+        for (const [id, raw] of [['route-ctx-bad', 'not base64 json'], ['route-ctx-big', encodeContext({ pad: 'x'.repeat(9000) })], ['route-ctx-array', encodeContext([1, 2])]]) {
+            const response = await fetch(`${baseUrl}/generate`, { method: 'POST', headers: { 'X-Generation-Id': id, 'X-Generation-Context': raw } });
+            const reader = response.body.getReader();
+            await reader.read();
+            expect(testExports.generations.get(`route-tester:${id}`).context).toBeNull();
+            pendingHandlers.get(id)();
+            while (!(await reader.read()).done) { /* drain */ }
+        }
+
+        const listed = await (await postJson('/api/resumable-generations/list', {})).json();
+        expect(listed.jobs.map(entry => entry.id)).toEqual(expect.not.arrayContaining([cancelledId, 'route-ctx-bad', 'route-ctx-big', 'route-ctx-array']));
+    });
 });

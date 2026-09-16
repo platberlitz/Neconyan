@@ -26,7 +26,7 @@
 :root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan {
     --neco-canvas: #f6f2e8;
     --neco-surface: #fffaf0;
-    --neco-rail: #343735;
+    --neco-rail: #fffaf0;
     --neco-raised: #ebe1d0;
     --neco-ink: #303331;
     --neco-muted: #504c45;
@@ -50,6 +50,7 @@
 
 :root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan #neconyan-workspace-rail,
 :root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan #sb-mobile-nav-content {
+    --neco-rail: #343735;
     --neco-ink: #fff3d9;
     --neco-muted: #d6cbbb;
     --neco-border: #615f54;

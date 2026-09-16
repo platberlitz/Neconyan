@@ -1,5 +1,6 @@
 import { registerDebugFunction } from './power-user.js';
 import { updateSecretDisplay } from './secrets.js';
+import { localizeControls } from './ui-localization.js';
 
 const storageKey = 'language';
 const overrideLanguage = getStoredLanguage();
@@ -85,6 +86,9 @@ const observer = new MutationObserver(mutations => {
                 node.querySelectorAll('[data-i18n]').forEach(element => {
                     translateElement(element);
                 });
+                localizeControls(node, localeData || {});
+            } else if (node.nodeType === Node.TEXT_NODE && node.parentElement) {
+                localizeControls(node.parentElement, localeData || {});
             }
         });
         if (mutation.attributeName === 'data-i18n' && mutation.target instanceof Element) {
@@ -162,7 +166,18 @@ async function getLocaleData(language) {
         return response.json();
     });
 
-    return data;
+    if (language === 'en') return data;
+    const readSupplement = async name => {
+        const response = await fetch(`./locales/neconyan/${name}.json`);
+        return response.ok ? response.json() : {};
+    };
+    const [source, supplement] = await Promise.all([readSupplement('en'), readSupplement(language)]);
+    const combined = { ...data, ...supplement };
+    // Older translations use symbolic keys; new labelled controls use the English caption.
+    for (const [key, english] of Object.entries(source)) {
+        if (combined[key] && !Object.hasOwn(combined, english)) combined[english] = combined[key];
+    }
+    return combined;
 }
 
 /**
@@ -287,6 +302,7 @@ export function applyLocale(root = document) {
     $root.find('[data-i18n]').each(function () {
         translateElement(this);
     });
+    localizeControls($root.get(0), localeData);
 
     if (root !== document) {
         return $root.get(0).body.innerHTML;

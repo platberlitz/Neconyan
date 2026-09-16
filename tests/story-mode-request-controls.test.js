@@ -172,20 +172,21 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
     context.parseChatCompletionLogprobs = () => null;
 
     load(context, 'scripts/utils.js', ['escapeRegex', 'trimSpaces']);
-    load(context, 'scripts/openai.js', ['chat_completion_sources', 'reasoning_effort_types', 'verbosity_levels', 'getReasoningEffort', 'getVerbosity', 'shouldRequestReasoning', 'getChatCompletionModel', 'getChatCompletionSamplerMetadata', 'createGenerationParameters', 'sendOpenAIRequest', 'getStreamingReply']);
+    load(context, 'scripts/openai.js', ['chat_completion_sources', 'reasoning_effort_types', 'verbosity_levels', 'getReasoningEffort', 'getVerbosity', 'shouldRequestReasoning', 'getChatCompletionModel', 'getChatCompletionSamplerMetadata', 'createGenerationParameters', 'sendOpenAIRequest', 'readChatCompletionStream', 'getStreamingReply']);
     load(context, 'scripts/sse-stream.js', ['EventSourceStream']);
     context.getEventSourceStream = vm.runInContext('() => new EventSourceStream()', context);
     context.appendAutoAppendReasoningInstruction = messages => messages;
     load(context, 'scripts/reasoning.js', ['ReasoningType', 'ReasoningState', 'PromptReasoning', 'ReasoningHandler', 'parseReasoningFromString', 'extractReasoningFromData']);
     context.getReasoningParseTemplates = () => [context.power_user.reasoning];
     vm.runInContext('ReasoningHandler.prototype.updateDom = () => {};', context);
-    load(context, 'script.js', ['Generate', 'StreamingProcessor', 'sendGenerationRequest', 'sendStreamingRequest', 'getGenerateUrl', 'saveReply', 'getNextMessageId', 'getBiasStrings', 'processCommands', 'extractMessageFromData', 'normalizeContentText', 'stringifyUnknown', 'shouldBufferMainGenerationOutput', 'applyMainGenerationOutputInterceptors', 'unblockGeneration', 'clearStreamingProcessorIfCurrent', 'shouldAutoContinue', 'triggerAutoContinue', 'syncMesToSwipe', 'stopGeneration', 'generateRaw', 'generateRawData', 'generateQuietPrompt', 'TempResponseLength', 'addChatsPreamble', 'addChatsSeparator', 'consumePendingGeneratedMessageExtra']);
+    load(context, 'script.js', ['Generate', 'buildRecoveryContext', 'StreamingProcessor', 'sendGenerationRequest', 'sendStreamingRequest', 'getGenerateUrl', 'saveReply', 'getNextMessageId', 'getBiasStrings', 'processCommands', 'extractMessageFromData', 'normalizeContentText', 'stringifyUnknown', 'shouldBufferMainGenerationOutput', 'applyMainGenerationOutputInterceptors', 'unblockGeneration', 'clearStreamingProcessorIfCurrent', 'shouldAutoContinue', 'triggerAutoContinue', 'syncMesToSwipe', 'stopGeneration', 'generateRaw', 'generateRawData', 'generateQuietPrompt', 'TempResponseLength', 'addChatsPreamble', 'addChatsSeparator', 'consumePendingGeneratedMessageExtra']);
     context.removeReasoningFromString = text => context.parseReasoningFromString(text)?.content ?? text;
 
     const requests = [];
     context.reply = 'New prose. ';
     context.reasoning = '';
     context.chunks = [];
+    context.setGenerationContext = jest.fn();
     context.fetchResumable = jest.fn(async (url, init) => {
         const body = JSON.parse(init.body);
         requests.push({ url, body, signal: init.signal });

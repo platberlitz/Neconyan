@@ -16,6 +16,8 @@ import { color, Cache, getConfigValue, ensureDirectory, normalizeZipEntryPath, r
 import { ENTITY_DATE_ADDED_FILE, importEntityDateAdded } from '../entity-date-added.js';
 import { ENTITY_LAST_CHAT_FILE, importEntityLastChat } from '../entity-last-chat.js';
 import { isNativeExtension } from '../neconyan-native-extensions.js';
+import { destroySession } from '../middleware/sessionAuth.js';
+import { importProgress } from '../import-progress.js';
 
 // Neconyan divergence: private user export/import keeps fork-owned account data and metadata compatible across releases.
 const RESET_CACHE = new Cache(5 * 60 * 1000);
@@ -227,14 +229,16 @@ async function copyDirectoryTree(sourceDirectory, destinationDirectory, {
     return copiedFiles;
 }
 
-async function copyAllowedFolderContents(sourceRoot, targetRoot) {
+async function copyAllowedFolderContents(sourceRoot, targetRoot, progress = () => {}) {
     let copiedEntries = 0;
     let importedEntityDateAdded;
     let importedEntityLastChat;
     const protectedRoots = new Set([await getStableRealPath(targetRoot)]);
     const visitedDirectories = new Set();
 
+    let checked = 0;
     for (const relativePath of IMPORTABLE_RELATIVE_PATHS) {
+        progress(checked++, IMPORTABLE_RELATIVE_PATHS.length, 'Copying data sections');
         const sourcePath = path.join(sourceRoot, relativePath);
         if (!(await pathExists(sourcePath))) {
             continue;
@@ -437,7 +441,7 @@ async function syncThirdPartyExtension(sourcePath, targetPath, protectedRoots) {
     }
 }
 
-async function syncThirdPartyExtensions(sourceRoot, targetExtensionsRoot) {
+async function syncThirdPartyExtensions(sourceRoot, targetExtensionsRoot, progress = () => {}) {
     const sourceExtensionsRoot = path.join(sourceRoot, USER_DIRECTORY_TEMPLATE.extensions);
     const sourceExtensionsRealPath = await getStableRealPath(sourceExtensionsRoot);
     const targetExtensionsRealPath = await getStableRealPath(targetExtensionsRoot);
@@ -465,6 +469,7 @@ async function syncThirdPartyExtensions(sourceRoot, targetExtensionsRoot) {
     const results = [];
 
     for (const dirent of extensionDirectories) {
+        progress(results.length, extensionDirectories.length, 'Syncing extensions');
         const sourcePath = path.join(sourceExtensionsRoot, dirent.name);
         const targetPath = path.join(targetExtensionsRoot, dirent.name);
         const result = await syncThirdPartyExtension(sourcePath, targetPath, protectedRoots);
@@ -572,7 +577,8 @@ async function detectZipImportBase(zipFilePath) {
     });
 }
 
-async function importZipContents(zipFilePath, targetRoot) {
+async function importZipContents(zipFilePath, targetRoot, progress = () => {}) {
+    progress(0, 0, 'Checking archive');
     const basePath = await detectZipImportBase(zipFilePath);
 
     return await new Promise((resolve, reject) => {
@@ -583,6 +589,7 @@ async function importZipContents(zipFilePath, targetRoot) {
             }
 
             let importedFiles = 0;
+            let checked = 0;
             let importedEntityDateAdded;
             let importedEntityLastChat;
             let completed = false;
@@ -624,6 +631,7 @@ async function importZipContents(zipFilePath, targetRoot) {
 
             zipfile.readEntry();
             zipfile.on('entry', entry => {
+                progress(checked++, zipfile.entryCount, 'Importing archive entries');
                 const normalizedEntry = normalizeZipEntryPath(entry.fileName);
                 if (!normalizedEntry || normalizedEntry.startsWith('__MACOSX/')) {
                     zipfile.readEntry();
@@ -695,6 +703,7 @@ router.post('/logout', async (request, response) => {
             return response.sendStatus(500);
         }
 
+        if (request.session.basicAuthToken) destroySession(request.session.basicAuthToken);
         request.session.handle = null;
         request.session.csrfToken = null;
         request.session.version = null;
@@ -846,6 +855,7 @@ router.post('/backup', async (request, response) => {
 });
 
 router.post('/import-sillytavern/folder', async (request, response) => {
+    const progress = importProgress(request, response);
     try {
         const sourceRoot = await resolveSillyTavernFolderImportRoot(request.body?.sourcePath);
         const targetRoot = path.resolve(request.user.directories.root);
@@ -855,21 +865,23 @@ router.post('/import-sillytavern/folder', async (request, response) => {
         }
 
         recoverFileWritesInDirectorySync(request.user.directories.characters);
-        const copiedEntries = await copyAllowedFolderContents(sourceRoot, targetRoot);
+        const copiedEntries = await copyAllowedFolderContents(sourceRoot, targetRoot, progress.report);
+        progress.report(99, 100, 'Finishing import');
         await checkForNewContent([request.user.directories]);
 
-        return response.json({
+        return progress.finish({
             message: `Imported ${copiedEntries} data sections from ${sourceRoot}. Reloading is recommended.`,
             sourceRoot,
             copiedEntries,
         });
     } catch (error) {
         console.error('SillyTavern folder import failed:', error);
-        return response.status(400).json({ error: error.message || 'Failed to import that SillyTavern folder.' });
+        return progress.fail(error.message || 'Failed to import that SillyTavern folder.');
     }
 });
 
 router.post('/import-sillytavern/extensions', async (request, response) => {
+    const progress = importProgress(request, response);
     try {
         const sourceRoot = await resolveSillyTavernFolderImportRoot(request.body?.sourcePath);
         const targetRoot = path.resolve(request.user.directories.root);
@@ -878,18 +890,20 @@ router.post('/import-sillytavern/extensions', async (request, response) => {
             return response.status(400).json({ error: 'That folder is already the current Neconyan account.' });
         }
 
-        const syncReport = await syncThirdPartyExtensions(sourceRoot, path.resolve(request.user.directories.extensions));
+        const syncReport = await syncThirdPartyExtensions(sourceRoot, path.resolve(request.user.directories.extensions), progress.report);
+        progress.report(99, 100, 'Finishing import');
         await checkForNewContent([request.user.directories]);
 
-        return response.json(syncReport);
+        return progress.finish(syncReport);
     } catch (error) {
         console.error('SillyTavern extension sync failed:', error);
-        return response.status(400).json({ error: error.message || 'Failed to sync third-party extensions from that SillyTavern folder.' });
+        return progress.fail(error.message || 'Failed to sync third-party extensions from that SillyTavern folder.');
     }
 });
 
 router.post('/import-sillytavern/zip', async (request, response) => {
     const uploadedZipPath = request.file?.path;
+    const progress = importProgress(request, response);
 
     try {
         if (!uploadedZipPath) {
@@ -897,16 +911,17 @@ router.post('/import-sillytavern/zip', async (request, response) => {
         }
 
         recoverFileWritesInDirectorySync(request.user.directories.characters);
-        const importedFiles = await importZipContents(uploadedZipPath, request.user.directories.root);
+        const importedFiles = await importZipContents(uploadedZipPath, request.user.directories.root, progress.report);
+        progress.report(99, 100, 'Finishing import');
         await checkForNewContent([request.user.directories]);
 
-        return response.json({
+        return progress.finish({
             message: `Imported ${importedFiles} files from the SillyTavern backup ZIP. Reloading is recommended.`,
             importedFiles,
         });
     } catch (error) {
         console.error('SillyTavern ZIP import failed:', error);
-        return response.status(400).json({ error: error.message || 'Failed to import that SillyTavern backup ZIP.' });
+        return progress.fail(error.message || 'Failed to import that SillyTavern backup ZIP.');
     } finally {
         if (uploadedZipPath) {
             await fsPromises.rm(uploadedZipPath, { force: true }).catch(() => { });

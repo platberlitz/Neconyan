@@ -5938,7 +5938,7 @@ function syncTopbarIconsOnlyLayout() {
 // one of those pages yields in icons-only mode; non-cluster actions such as Search remain visible.
 function syncTopbarIconsOnlyDedupe() {
     const clusterButtons = document.querySelectorAll('.sb-topbar-page-button[data-sb-topbar-page]');
-    const claimedByClusters = new Set(Array.from(clusterButtons, button => button.dataset.sbTopbarPage));
+    const claimedByClusters = new Set(Array.from(clusterButtons).filter(isActuallyVisible).map(button => button.dataset.sbTopbarPage));
     const iconsOnly = isTopbarIconsOnlyActive();
 
     for (const side of NN_SHORTCUT_SLOTS) {
@@ -12022,7 +12022,7 @@ async function requestServerAdmin(endpoint, body = {}, { signal } = {}) {
     return data;
 }
 
-async function requestUserPrivateAction(endpoint, { body = {}, useFormData = false } = {}) {
+async function requestUserPrivateAction(endpoint, { body = {}, useFormData = false, onProgress = null } = {}) {
     const buildRequest = async () => {
         const requestHeaders = await waitForAuthorizedRequestHeaders();
         const headers = useFormData
@@ -12034,6 +12034,7 @@ async function requestUserPrivateAction(endpoint, { body = {}, useFormData = fal
             })()
             : requestHeaders;
 
+        if (onProgress) headers.Accept = 'application/x-ndjson';
         return {
             method: 'POST',
             headers,
@@ -12042,6 +12043,11 @@ async function requestUserPrivateAction(endpoint, { body = {}, useFormData = fal
     };
 
     const response = await fetchWithCsrfRetry(endpoint, buildRequest, { refreshCsrfToken });
+
+    if (response.ok && onProgress && response.headers.get('content-type')?.includes('application/x-ndjson')) {
+        const { readImportProgress } = await import('./import-progress.js');
+        return readImportProgress(response, onProgress);
+    }
 
     const text = await response.text();
     let data = null;
@@ -13543,7 +13549,22 @@ function updateSillyTavernImportInteractivity() {
 
 function setSillyTavernImportBusy(isBusy) {
     getImporterState().busy = Boolean(isBusy);
+    const refs = getImporterRefs();
+    if (isBusy && refs?.progress) {
+        refs.progress.hidden = false;
+        refs.progress.removeAttribute('value');
+        refs.progressLabel.textContent = 'Preparing import…';
+    }
     updateSillyTavernImportInteractivity();
+}
+
+function showImportProgress({ percent, phase }) {
+    const refs = getImporterRefs();
+    if (!refs?.progress) return;
+    refs.progress.hidden = false;
+    if (percent === null) refs.progress.removeAttribute('value');
+    else refs.progress.value = percent;
+    refs.progressLabel.textContent = `${phase}${percent === null ? '' : `: ${percent}%`}`;
 }
 
 function getExtensionSyncStatusTone(status) {
@@ -13762,6 +13783,7 @@ async function handleSillyTavernFolderImport() {
     try {
         const result = await requestUserPrivateAction('/api/users/import-sillytavern/folder', {
             body: { sourcePath },
+            onProgress: showImportProgress,
         });
 
         setServerAdminMessage(refs.note, result?.message || 'Folder import finished. Reloading…', 'good');
@@ -13805,6 +13827,7 @@ async function handleSillyTavernExtensionSync() {
     try {
         const result = await requestUserPrivateAction('/api/users/import-sillytavern/extensions', {
             body: { sourcePath },
+            onProgress: showImportProgress,
         });
         const warningCount = Number(result?.warningCount ?? 0) || 0;
         const failedCount = Number(result?.failedCount ?? 0) || 0;
@@ -13862,6 +13885,7 @@ async function handleSillyTavernZipImport(file) {
         const result = await requestUserPrivateAction('/api/users/import-sillytavern/zip', {
             body: formData,
             useFormData: true,
+            onProgress: showImportProgress,
         });
 
         setServerAdminMessage(refs.note, result?.message || 'Backup ZIP imported. Reloading…', 'good');
@@ -13985,10 +14009,16 @@ function injectSillyTavernImportCard() {
     report.hidden = true;
 
     grid.append(folderPane, zipPane);
-    card.append(header, hintRow, grid, note, report);
+    const progressLabel = createElement('div', { id: 'sb-import-progress-label', attrs: { role: 'status', 'aria-live': 'polite' } });
+    const progress = createElement('progress', { attrs: { max: '100', 'aria-labelledby': 'sb-import-progress-label' } });
+    progress.hidden = true;
+    progress.style.width = '100%';
+    card.append(header, hintRow, grid, progressLabel, progress, note, report);
     cardHost.prepend(card);
 
     getImporterState().refs = {
+        progress,
+        progressLabel,
         card,
         pathInput,
         folderButton,
@@ -18089,8 +18119,8 @@ function buildBottomChatBar() {
     });
     const deleteBtn = createBottomChatButton({ icon: 'fa-trash', title: 'Delete chat' }, () => { void handleDeleteChat(); });
 
-    navCluster.append(topBtn, bottomBtn, regenerateBtn);
-    managementCluster.append(chatManagerBtn, newBtn, massDeleteBtn, autoNameBtn, renameBtn, searchToggleBtn, hideBtn, deleteBtn);
+    navCluster.append(topBtn, bottomBtn);
+    managementCluster.append(regenerateBtn, chatManagerBtn, newBtn, massDeleteBtn, autoNameBtn, renameBtn, searchToggleBtn, hideBtn, deleteBtn);
     secondaryRow.append(managementCluster);
     container.append(personaBubble, chatSelect, search.field, navCluster, collapseToggleBtn, secondaryRow);
 

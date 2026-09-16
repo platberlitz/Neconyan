@@ -74,6 +74,8 @@ function createPaletteRuntime(powerUserOverrides = {}, useDarkTheme = true) {
         ...powerUserOverrides,
     };
     const context = vm.createContext({
+        accessibleTheme: theme => theme,
+        applyGoogleFont: () => undefined,
         power_user: powerUser,
         themes: [{ name: calicoTheme.name, main_text_color: 'user-edited value' }, calicoDarkTheme],
         NECONYAN_THEME_NAME: calicoTheme.name,
@@ -345,7 +347,7 @@ describe('Meower prompt defaults', () => {
         expect(index).toContain('webfonts/FredokaOne/stylesheet.css?v=20260913g');
         expect(index).toContain('webfonts/FredokaOne/FredokaOne-Regular.ttf?v=20260913g');
         expect((index.match(/webfonts\/FredokaOne\/FredokaOne-Regular\.ttf/g) || [])).toHaveLength(1);
-        expect(index).toContain('Default (Nunito)');
+        expect(index).toContain('Default (Nunito + Fredoka One)');
         expect(index).toContain('<option value="Nunito">Nunito</option>');
         expect(index).toContain('<option value="Fredoka One">Fredoka One</option>');
         expect(login).toContain('webfonts/FredokaOne/stylesheet.css?v=20260913g');

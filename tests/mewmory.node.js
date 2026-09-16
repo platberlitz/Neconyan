@@ -23,6 +23,36 @@ const { mutateState, normalizeLocator, readState, renameChatMemory, renameCharac
 const { getCounter } = await import('../src/mewmory/tokens.js');
 const { inspectState, restoreRecords } = await import('../src/endpoints/mewmory.js');
 const { createMewmoryProvider } = await import('./mewmory-provider.js');
+const { readConfig, publicConfig } = await import('../src/mewmory/models.js');
+
+test('connection profiles resolve server-side and retain local-only permissions', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mewmory-profiles-'));
+    const provider = await createMewmoryProvider();
+    const directories = { root };
+    try {
+        writeJson(path.join(root, 'settings.json'), { extension_settings: { connectionManager: { profiles: [
+            { id: 'local', name: 'Local facts', api: 'custom', 'api-url': provider.url, model: 'extractor' },
+            { id: 'remote', name: 'Remote facts', api: 'openai', model: 'gpt-4o' },
+        ] } } });
+        const config = defaultConfig();
+        Object.assign(config.roles.extractor, { enabled: true, profileId: 'local' });
+        saveConfig(directories, config);
+        assert.equal(publicConfig(directories).profiles.length, 2);
+        const saved = readConfig(directories);
+        assert.equal(saved.roles.extractor.model, 'extractor');
+        const result = await callJsonRole(directories, saved, 'extractor', 'Extract facts.', { sources: [], existing: [] });
+        assert.deepEqual(result.value.records, []);
+        assert.equal(provider.calls.at(-1).model, 'extractor');
+        saved.roles.extractor.profileId = 'remote';
+        assert.throws(() => saveConfig(directories, saved), /not allowed/);
+        writeJson(path.join(root, 'settings.json'), {});
+        assert.throws(() => readConfig(directories), /no longer exists/);
+        assert.equal(publicConfig(directories).roles.extractor.profileId, 'local');
+    } finally {
+        await new Promise(resolve => provider.server.close(resolve));
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
 
 const fixture = JSON.parse(fs.readFileSync(new URL('./fixtures/mewmory-gift.json', import.meta.url), 'utf8'));
 const locator = { avatar: 'Mara.png', chat: 'Gift', group: false };

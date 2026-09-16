@@ -1659,7 +1659,7 @@ function composer() {
     ]);
 }
 
-// Search folds behind a magnifier in the tab row. A live query keeps the row open, so a filter is never invisible.
+// Search sits beside New timeline. A live query keeps the search field visible.
 let searchOpen = false;
 
 function toggleSearch(open) {
@@ -1686,11 +1686,6 @@ function timelineView() {
         tabButton('Latest', 'latest'),
         tabButton('Following', 'following'),
         tabButton('Trending', 'trending'),
-        el('button', {
-            className: `sbtw-tab sbtw-tab-search${showSearch ? ' sbtw-tab-on' : ''}`,
-            attrs: { type: 'button', title: 'Search this timeline', 'aria-label': 'Search this timeline', 'aria-expanded': String(showSearch), 'data-focus-key': 'timeline-search-toggle' },
-            on: { click: () => toggleSearch(!showSearch) },
-        }, [icon('fa-magnifying-glass'), el('span', { text: 'Search' })]),
     ]);
     const results = el('div', { className: 'sbtw-timeline-results' });
     const resultStatus = el('span', {
@@ -2868,6 +2863,11 @@ function sessionBar() {
     return el('div', { className: 'sbtw-session-bar' }, [
         select,
         button('New timeline', 'sbtw-btn sbtw-btn-quiet', () => { void createTimeline(); }, { iconName: 'fa-plus' }),
+        el('button', {
+            className: 'sbtw-btn sbtw-btn-quiet',
+            attrs: { type: 'button', 'aria-label': 'Search this timeline', 'aria-expanded': String(searchOpen || Boolean(state.timelineSearch)), 'data-focus-key': 'timeline-search-toggle' },
+            on: { click: () => { state.view = 'timeline'; toggleSearch(!(searchOpen || Boolean(state.timelineSearch))); } },
+        }, [icon('fa-magnifying-glass'), el('span', { text: 'Search' })]),
     ]);
 }
 

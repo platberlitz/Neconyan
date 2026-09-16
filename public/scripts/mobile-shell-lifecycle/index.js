@@ -790,6 +790,8 @@ const MOBILE_DOCUMENT_PAN_HORIZONTAL_SCROLL_SELECTOR = [
     '#sb-persona-picker',
     '.group_speaker_list',
     '.ica--agent-tabs',
+    '.ica--category-chips',
+    '.world_info_view_filters',
     '.ica--editor-tabs',
     '.sb-conversation-settings-nav',
     '.ica--template-pill-row',

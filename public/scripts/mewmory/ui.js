@@ -29,7 +29,7 @@ function button(label, handler, { primary = false, disabled = false } = {}) {
 }
 
 function field(label, value, onChange, { type = 'text', multiline = false, options = null, key = label, hint = '', disabled = false } = {}) {
-    const wrapper = node('label', 'mewmory-field');
+    const wrapper = node('div', 'mewmory-field');
     const control = node(options ? 'select' : multiline ? 'textarea' : 'input', 'text_pole');
     control.id = 'mewmory-field-' + key;
     if (options) {
@@ -46,7 +46,9 @@ function field(label, value, onChange, { type = 'text', multiline = false, optio
     control.value = value ?? '';
     control.disabled = disabled;
     control.addEventListener(options ? 'change' : 'input', () => onChange(type === 'number' ? Number(control.value) : control.value));
-    wrapper.append(node('span', '', label), control);
+    const caption = node('label', '', label);
+    caption.htmlFor = control.id;
+    wrapper.append(caption, control);
     if (hint) wrapper.append(node('small', 'mewmory-caption', hint));
     return wrapper;
 }
@@ -500,10 +502,20 @@ function renderSettings(root) {
     const roleForm = node('fieldset', 'mewmory-role');
     roleForm.append(node('legend', '', roles[ui.role]), check('Enable this role', role.enabled, value => { role.enabled = value; }));
     const fields = node('div', 'mewmory-fields');
-    fields.append(
+    const profiles = (mewmory.config.profiles || []).filter(profile => ui.role !== 'embedding' || profile.embeddings);
+    fields.append(field('Connection profile', role.profileId || '', value => {
+        role.profileId = value;
+        const profile = profiles.find(profile => profile.id === value);
+        if (profile) role.model = profile.model;
+        render();
+    }, { options: [['', 'Manual endpoint'], ...profiles.map(profile => [profile.id, profile.name])], key: 'profile-' + ui.role,
+        hint: 'Uses the saved profile’s model and server-side credentials. Embeddings need an OpenAI-compatible profile.' }));
+    if (!role.profileId) fields.append(
         field('OpenAI-compatible endpoint', role.endpoint, value => { role.endpoint = value; }, { hint: 'For example: http://127.0.0.1:8000/v1', key: 'endpoint-' + ui.role }),
         field('Model', role.model, value => { role.model = value; }, { key: 'model-' + ui.role }),
         field('API key', role.apiKey || '', value => { role.apiKey = value; }, { type: 'password', hint: role.hasKey ? 'A key is saved. Leave blank to keep it.' : 'Stored in the server’s protected credentials.', key: 'api-key-' + ui.role }),
+    );
+    fields.append(
         field('Model revision, optional', role.modelRevision, value => { role.modelRevision = value; }, { key: 'revision-' + ui.role }),
         field('Context limit, tokens', role.contextTokens, value => { role.contextTokens = value; }, { type: 'number', key: 'context-' + ui.role }),
         field('Output limit, tokens', role.maxOutputTokens, value => { role.maxOutputTokens = value; }, { type: 'number', disabled: ui.role === 'embedding', key: 'output-' + ui.role }),
@@ -716,7 +728,7 @@ function render() {
             renderSource(page);
         }
     }
-    if (focusId) {
+    if (focusId && !(active instanceof HTMLSelectElement)) {
         const target = document.getElementById(focusId);
         target?.focus({ preventScroll: true });
         if (selection && target?.setSelectionRange) target.setSelectionRange(...selection);

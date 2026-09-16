@@ -407,6 +407,8 @@ describe('mobile shell lifecycle wiring', () => {
         for (const [rootSelector, railSelector] of [
             ['#sheld', '.group_speaker_list'],
             ['#left-nav-panel', '.ica--agent-tabs'],
+            ['#left-nav-panel', '.ica--category-chips'],
+            ['#right-nav-panel', '.world_info_view_filters'],
             ['.popup', '.ica--editor-tabs'],
             ['#sheld', '.sb-conversation-settings-nav'],
             ['.popup', '.ica--template-pill-row'],

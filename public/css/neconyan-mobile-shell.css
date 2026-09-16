@@ -2964,7 +2964,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         --sb-composer-right-rail-width: calc(var(--sb-composer-action-size) + var(--sb-composer-send-width) + 4px);
         gap: 0 clamp(8px, 2vw, 10px) !important;
         min-height: calc(var(--sb-mobile-composer-input-height) + 3px) !important;
-        padding: 1px 4px !important;
+        padding: 5px 4px !important;
     }
 
     :root[data-sb-compact-mode='true'] #nonQRFormItems {
@@ -2985,7 +2985,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
 
     #send_form:focus-within #send_textarea {
         --sb-composer-input-state-bg: color-mix(in srgb, var(--color-primary, var(--sb-accent)) 8%, var(--sb-composer-input-bg));
-        --sb-composer-input-state-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sb-focus-ring) 32%, transparent);
+        --sb-composer-input-state-shadow: inset 0 0 0 2px var(--sb-focus-ring);
     }
 
     #leftSendForm,
@@ -3291,6 +3291,27 @@ body.neconyan #right-nav-panel .neconyan-character-library-footer .sb-character-
 
 /* Conversation: the desktop 24px row gap read as a cavern between messages on phones. */
 body.neconyan #sheld .sb-conversation-timeline { gap: 10px; }
+
+/* Keep touch rails usable from either their buttons or the space between them. */
+body.neconyan :is(.ica--category-chips, .world_info_view_filters) {
+    touch-action: pan-x;
+    overscroll-behavior-x: contain;
+}
+body.neconyan #send_textarea:focus-visible { outline-offset: -3px; }
+body.neconyan #right-nav-panel.openDrawer.sb-character-editor-fullscreen #sb_character_commit_bar { position: static; }
+body.neconyan :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header {
+    flex-basis: auto;
+    height: auto;
+    flex-direction: column;
+    align-items: flex-start;
+}
+body.neconyan :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header .sb-shell-description {
+    display: block;
+    margin: 2px 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--neco-muted);
+}
 
 /* Conversation DM settings: phones get the section buttons as a scrolling row, not the dropdown. */
 body.neconyan #sheld .sb-conversation-settings-mobile-select { display: none; }

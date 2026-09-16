@@ -12,9 +12,17 @@ import express from 'express';
  */
 
 export const RESUMABLE_GENERATION_HEADER = 'x-generation-id';
+/**
+ * Optional base64(JSON) describing which chat and message slot the reply belongs to. Jobs that
+ * carry one are listed by POST /list so a page that was killed mid-reply can find and apply it.
+ */
+export const RESUMABLE_GENERATION_CONTEXT_HEADER = 'x-generation-context';
 const GENERATION_ID_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
+const MAX_CONTEXT_BYTES = 8 * 1024;
 /** A finished reply waits this long for the page to come back for it. */
 const FINISHED_RETENTION_MS = 15 * 60 * 1000;
+/** A finished reply that knows which chat it belongs to waits this long instead. */
+const CONTEXT_RETENTION_MS = 24 * 60 * 60 * 1000;
 /** A reply still running after this long is cancelled, attached client or not. */
 const MAX_LIFETIME_MS = 60 * 60 * 1000;
 const MAX_GENERATIONS = 200;
@@ -94,6 +102,10 @@ export class ResumableGeneration {
         this.contentType = null;
         this.cancelled = false;
         this.overflowed = false;
+        /** @type {Record<string, unknown>|null} Chat/message slot the reply belongs to, if the client said */
+        this.context = null;
+        /** Whether the original request's response is still open */
+        this.attached = false;
         /** @type {Buffer[]} */
         this.chunks = [];
         this.size = 0;
@@ -255,6 +267,8 @@ export class ResumableGeneration {
             return false;
         }
         this.cancelled = true;
+        // A reply the user stopped on purpose must not come back as a recovered message.
+        this.context = null;
         const hooks = [...this.cancelHooks];
         this.cancelHooks.clear();
         for (const hook of hooks) {
@@ -358,8 +372,9 @@ function trimRegistry(handle) {
  */
 function sweepGenerations(now = Date.now()) {
     for (const generation of generations.values()) {
+        const retention = generation.context ? CONTEXT_RETENTION_MS : FINISHED_RETENTION_MS;
         const expired = generation.done
-            ? now - generation.finishedAt > FINISHED_RETENTION_MS
+            ? now - generation.finishedAt > retention
             : now - generation.createdAt > MAX_LIFETIME_MS;
         if (expired) {
             generation.forceDiscard();
@@ -423,6 +438,10 @@ export function getResumableGeneration(request) {
 function attachResponse(response, generation) {
     const write = response.write;
     const end = response.end;
+    generation.attached = true;
+    response.on('close', () => {
+        generation.attached = false;
+    });
 
     response.write = function (chunk, encoding, callback) {
         if (typeof encoding === 'function') {
@@ -487,9 +506,30 @@ export function resumableGenerationMiddleware(request, response, next) {
     if (!generation) {
         return next();
     }
+    generation.context = parseContextHeader(request.get?.(RESUMABLE_GENERATION_CONTEXT_HEADER));
     request.resumableGeneration = generation;
     attachResponse(response, generation);
     return next();
+}
+
+/**
+ * @param {unknown} raw Header value: base64 of a UTF-8 JSON object
+ * @returns {Record<string, unknown>|null} The object, or null when absent, oversized or malformed
+ */
+function parseContextHeader(raw) {
+    if (typeof raw !== 'string' || !raw) {
+        return null;
+    }
+    try {
+        const decoded = Buffer.from(raw, 'base64');
+        if (!decoded.length || decoded.length > MAX_CONTEXT_BYTES) {
+            return null;
+        }
+        const parsed = JSON.parse(decoded.toString('utf8'));
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+        return null;
+    }
 }
 
 /**
@@ -585,8 +625,45 @@ router.post('/cancel', (request, response) => {
     return response.sendStatus(204);
 });
 
+/**
+ * Every reply this profile owns that still knows which chat it belongs to. Cancelled replies
+ * dropped their context, so they never show up here.
+ */
+router.post('/list', (request, response) => {
+    const prefix = `${getProfileHandle(request)}:`;
+    const jobs = [];
+    for (const [key, generation] of generations) {
+        if (!key.startsWith(prefix) || !generation.context) {
+            continue;
+        }
+        jobs.push({
+            id: key.slice(prefix.length),
+            status: !generation.done ? 'running' : (generation.statusCode ?? 200) >= 400 ? 'failed' : 'finished',
+            attached: generation.attached || generation.subscribers.size > 0,
+            context: generation.context,
+            createdAt: generation.createdAt,
+            finishedAt: generation.finishedAt,
+            size: generation.size,
+            statusCode: generation.statusCode,
+            contentType: generation.contentType,
+        });
+    }
+    response.setHeader('Cache-Control', 'no-store');
+    return response.json({ jobs });
+});
+
+router.post('/discard', (request, response) => {
+    const generation = findGeneration(request);
+    if (!generation) {
+        return response.sendStatus(404);
+    }
+    generation.forceDiscard();
+    return response.sendStatus(204);
+});
+
 export const testExports = {
     FINISHED_RETENTION_MS,
+    CONTEXT_RETENTION_MS,
     MAX_LIFETIME_MS,
     MAX_GENERATIONS,
     MAX_GENERATIONS_PER_PROFILE,

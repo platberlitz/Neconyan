@@ -3,8 +3,8 @@ import { afterEach, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
-const originals = { document: globalThis.document, fetch: globalThis.fetch, CustomEvent: globalThis.CustomEvent, dispatchEvent: globalThis.dispatchEvent, getComputedStyle: globalThis.getComputedStyle };
-afterEach(() => { Object.assign(globalThis, originals); jest.resetModules(); });
+const originals = { document: globalThis.document, fetch: globalThis.fetch, CustomEvent: globalThis.CustomEvent, dispatchEvent: globalThis.dispatchEvent, getComputedStyle: globalThis.getComputedStyle, location: globalThis.location };
+afterEach(() => { Object.assign(globalThis, originals); delete globalThis[Symbol.for('sillybunny.extensionCapabilities')]; jest.resetModules(); });
 
 async function runtime({ assistant = 'miso-male', group = null } = {}) {
     jest.resetModules();
@@ -53,6 +53,10 @@ async function runtime({ assistant = 'miso-male', group = null } = {}) {
     globalThis.CustomEvent = class { constructor(type, options) { this.type = type; this.detail = options?.detail; } };
     globalThis.dispatchEvent = event => { context.events.push(event); };
     globalThis.fetch = jest.fn(async (url, options) => {
+        if (url === '/api/characters/create') {
+            context.writes.push({ kind: 'create', payload: Object.fromEntries(options.body) });
+            return { ok: true, text: async () => 'New character.png' };
+        }
         const payload = JSON.parse(options.body);
         if (url !== '/api/characters/edit-attribute') throw new Error(`Unexpected request: ${url}`);
         const character = context.characters.find(item => item.avatar === payload.avatar_url);
@@ -108,7 +112,7 @@ async function runtime({ assistant = 'miso-male', group = null } = {}) {
 test('only supported active individual-chat assistant metadata registers tools', async () => {
     for (const options of [{}, { assistant: 'ordinary' }, { group: 'group' }]) {
         const { manager } = await runtime(options);
-        expect(manager.tools.length).toBe(Object.keys(options).length ? 0 : 13);
+        expect(manager.tools.length).toBe(Object.keys(options).length ? 0 : 14);
     }
 });
 
@@ -131,6 +135,17 @@ test('real ToolManager list/read actions keep exact names and omit inaccessible 
     expect(await invoke('ReadCharacter', { avatar: ' Card.png' })).toMatchObject({ character: { description: 'Old card' } });
 });
 
+test('character creation validates fields, honours review and uses fresh-file creation', async () => {
+    const { invoke, context } = await runtime();
+    expect(await invoke('CreateCharacter', { character: { name: '../bad' } })).toMatchObject({ status: 'failure' });
+    context.confirm = async () => 0;
+    expect(await invoke('CreateCharacter', { character: { name: 'New character' } })).toMatchObject({ status: 'cancelled' });
+    expect(context.writes).toHaveLength(0);
+    context.confirm = async () => 1;
+    expect(await invoke('CreateCharacter', { character: { name: 'New character', description: 'A kind friend', first_mes: 'Hello!' } })).toMatchObject({ status: 'success', committed: true, avatar: 'New character.png' });
+    expect(context.writes[0].payload).toEqual({ ch_name: 'New character', description: 'A kind friend', first_mes: 'Hello!' });
+});
+
 test('four confirmed field edits preserve other fields and literal multiline review values', async () => {
     const { context, invoke, presetManager } = await runtime();
     const value = '<img src=x onerror=alert(1)> &\n' + 'Long exact text. '.repeat(50);
@@ -145,6 +160,23 @@ test('four confirmed field edits preserve other fields and literal multiline rev
     expect(context.presets.get(' Saved').foreign).toEqual({ keep: true });
     expect(await invoke('EditCharacter', { avatar: ' Card.png', field: 'description', value })).toMatchObject({ status: 'success', committed: true });
     expect(context.characters[1].data.extensions).toEqual({ foreign: 'keep' });
+});
+
+test('character creation uses Quick Image Gen output as the new avatar and rejects remote output', async () => {
+    const { context, invoke } = await runtime();
+    globalThis.location = { href: 'http://localhost/', origin: 'http://localhost' };
+    const generateImage = jest.fn(async () => ({ url: '/user/images/avatar.png' }));
+    globalThis[Symbol.for('sillybunny.extensionCapabilities')] = new Map([['quick-image-gen', { generateImage }]]);
+    const createFetch = globalThis.fetch;
+    globalThis.fetch = jest.fn(async (url, options) => url === 'http://localhost/user/images/avatar.png'
+        ? { ok: true, blob: async () => new Blob(['png fixture'], { type: 'image/png' }) }
+        : createFetch(url, options));
+    expect(await invoke('CreateCharacter', { character: { name: 'New character' }, avatarPrompt: 'A smiling cat' })).toMatchObject({ status: 'success', generatedAvatar: true });
+    expect(generateImage).toHaveBeenCalledWith('A smiling cat', '', expect.objectContaining({ characterName: 'New character' }));
+    expect(context.writes[0].payload.avatar.type).toBe('image/png');
+    generateImage.mockResolvedValue({ url: 'https://untrusted.example/avatar.png' });
+    expect(await invoke('CreateCharacter', { character: { name: 'Another character' }, avatarPrompt: 'A cat' })).toMatchObject({ status: 'failure' });
+    expect(context.writes).toHaveLength(1);
 });
 
 test('declined, cancelled, stale and conflicting edits do not write', async () => {

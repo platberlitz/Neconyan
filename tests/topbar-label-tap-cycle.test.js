@@ -345,7 +345,7 @@ describe('icons only top bar', () => {
 
         const dedupeSource = getFunctionSource('syncTopbarIconsOnlyDedupe');
         expect(dedupeSource).not.toContain('style.setProperty(\'display\'');
-        expect(dedupeSource).toContain('const claimedByClusters = new Set(Array.from(clusterButtons, button => button.dataset.sbTopbarPage));');
+        expect(dedupeSource).toContain('const claimedByClusters = new Set(Array.from(clusterButtons).filter(isActuallyVisible).map(button => button.dataset.sbTopbarPage));');
         expect(dedupeSource).toContain("'sb-topbar-shortcut-duplicate'");
         expect(dedupeSource).toContain('iconsOnly && claimedByClusters.has(getShortcutTarget(side))');
         expect(normalizedTabsSource).not.toContain('sb-topbar-page-duplicate');

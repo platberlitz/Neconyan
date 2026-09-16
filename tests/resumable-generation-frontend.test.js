@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 
-const { fetchResumable, reconnectStaleGenerations } = await import('../public/scripts/resumable-generation.js');
+const { fetchResumable, reconnectStaleGenerations, setGenerationContext, listRecoverableGenerations, openHeldGeneration } = await import('../public/scripts/resumable-generation.js');
 const customRequestSource = readFileSync(new URL('../public/scripts/custom-request.js', import.meta.url), 'utf8');
 
 const RESUME_URL = '/api/resumable-generations/resume';
@@ -193,8 +193,70 @@ test('routes Horde generation requests through fetchResumable', () => {
     expect(hordeSource).not.toContain('fetch(\'/api/horde/generate-text\'');
 });
 
-test('cancels in-flight generations on pagehide for browsers without beforeunload', () => {
+test('leaving the page keeps the reply running on the server', () => {
     const source = readFileSync(new URL('../public/scripts/resumable-generation.js', import.meta.url), 'utf8');
-    expect(source).toContain('window.addEventListener(\'beforeunload\', cancelActiveGenerations)');
-    expect(source).toContain('window.addEventListener(\'pagehide\', cancelActiveGenerations)');
+    expect(source).not.toContain('window.addEventListener(\'beforeunload\'');
+    expect(source).not.toContain('window.addEventListener(\'pagehide\'');
+});
+
+describe('held generation context', () => {
+    const DISCARD_URL = '/api/resumable-generations/discard';
+    const LIST_URL = '/api/resumable-generations/list';
+
+    test('tags the request with the encoded context and discards the job once the body is read', async () => {
+        fetchMock.mockImplementation(async (url) => {
+            if (url === DISCARD_URL) return new Response(null, { status: 204 });
+            return new Response(bodyFrom(['data: a\n\n']), { status: 200 });
+        });
+        const controller = new AbortController();
+        const context = { v: 1, chatId: 'chat', type: 'normal', name2: 'Néko' };
+        setGenerationContext(controller.signal, context);
+
+        const response = await fetchResumable('/generate', { method: 'POST', headers: { 'X-CSRF-Token': 'csrf' }, body: '{}', signal: controller.signal });
+        await response.text();
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        const init = fetchMock.mock.calls[0][1];
+        const decoded = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(init.headers['X-Generation-Context']), c => c.charCodeAt(0))));
+        expect(decoded).toEqual(context);
+        const discardCalls = callsTo(DISCARD_URL);
+        expect(discardCalls).toHaveLength(1);
+        expect(JSON.parse(discardCalls[0][1].body)).toEqual({ id: init.headers['X-Generation-Id'] });
+        expect(discardCalls[0][1].headers['X-CSRF-Token']).toBe('csrf');
+    });
+
+    test('sends no context header and no discard when none was set', async () => {
+        fetchMock.mockResolvedValueOnce(new Response(bodyFrom(['x']), { status: 200 }));
+        const response = await fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}' });
+        await response.text();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(fetchMock.mock.calls[0][1].headers['X-Generation-Context']).toBeUndefined();
+        expect(callsTo(DISCARD_URL)).toHaveLength(0);
+    });
+
+    test('lists held jobs minus the ones this tab is still streaming', async () => {
+        fetchMock.mockImplementation(async (_url, init) => new Response(bodyFrom(['data: a\n\n'], { hang: true, signal: init.signal }), { status: 200 }));
+        const controller = new AbortController();
+        const response = await fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}', signal: controller.signal });
+        const liveId = fetchMock.mock.calls[0][1].headers['X-Generation-Id'];
+        fetchMock.mockImplementation(async (url) => {
+            if (url === LIST_URL) {
+                return Response.json({ jobs: [{ id: 'held', status: 'finished' }, { id: liveId, status: 'running' }] });
+            }
+            return new Response(null, { status: 204 });
+        });
+
+        const jobs = await listRecoverableGenerations({ 'X-CSRF-Token': 'csrf' });
+        expect(jobs.map(job => job.id)).toEqual(['held']);
+        controller.abort();
+        await response.text().catch(() => {});
+    });
+
+    test('opens a held job from byte zero with the original status restored', async () => {
+        fetchMock.mockResolvedValueOnce(resumeResponse(['{"choices":[]}'], { status: 200, contentType: 'application/json' }));
+        const response = await openHeldGeneration('held', { 'X-CSRF-Token': 'csrf' });
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ id: 'held', offset: 0 });
+        expect(response.headers.get('content-type')).toBe('application/json');
+        await expect(response.json()).resolves.toEqual({ choices: [] });
+    });
 });

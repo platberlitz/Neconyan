@@ -1,4 +1,5 @@
 import { Fuse, Handlebars } from '../lib.js';
+import { accessibleTheme } from './theme-contrast.js';
 
 import {
     saveSettingsDebounced,
@@ -2387,16 +2388,17 @@ function isMediaDisplayReloadNeeded() {
 
 function applyTheme(name) {
     const themeOverride = arguments[1]?.theme;
-    const theme = themeOverride && typeof themeOverride === 'object'
+    const originalTheme = themeOverride && typeof themeOverride === 'object'
         ? themeOverride
         : themes.find(x => x.name == name)
             ?? (name === NECONYAN_THEME_NAME
                 ? NECONYAN_CALICO_THEME_FALLBACK
                 : name === NECONYAN_DARK_THEME_NAME ? NECONYAN_CALICO_DARK_THEME_FALLBACK : null);
 
-    if (!theme) {
+    if (!originalTheme) {
         return;
     }
+    const theme = accessibleTheme(originalTheme);
 
     for (const { key, selector, type } of THEME_COLOR_PROPERTIES) {
         if (theme[key] !== undefined) {
@@ -2430,6 +2432,8 @@ function applyTheme(name) {
 
     power_user.theme = theme.name;
     syncNeconyanPaletteAttribute();
+    // Imported theme variables must not replace the font selected in Google Font.
+    applyGoogleFont();
 
     console.log('theme applied: ' + name);
 }
@@ -2577,6 +2581,7 @@ export async function loadPowerUserSettings(settings, data) {
             delete settings.power_user.auto_sort_tags;
         }
         Object.assign(power_user, settings.power_user);
+        Object.assign(power_user, accessibleTheme({ ...power_user, name: power_user.theme }));
     }
 
     if (!hasAccentProfileSeedVersion) {

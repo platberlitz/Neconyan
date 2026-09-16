@@ -438,6 +438,9 @@ app.get('/callback/:source?', (request, response) => {
 
 // Host login page
 app.get('/login', loginPageMiddleware);
+app.get('/docs/in-chat-agents-glossary.md', (_request, response) => {
+    response.type('text/plain').sendFile(path.join(serverDirectory, 'docs/in-chat-agents-glossary.md'));
+});
 
 // Host frontend assets
 const webpackMiddleware = getWebpackServeMiddleware();

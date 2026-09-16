@@ -9,6 +9,8 @@ body.neconyan {
     --neco-canvas: var(--SmartThemeBlurTintColor, oklch(18.5% 0.008 55));
     --neco-surface: var(--SmartThemeChatTintColor, oklch(24.5% 0.012 55));
     --neco-rail: color-mix(in oklch, var(--neco-canvas) 65%, var(--neco-surface));
+    --neco-panel-gradient: var(--neco-surface);
+    --neco-canvas-gradient: var(--neco-canvas);
     --sb-composer-surface-bg: var(--neco-surface);
     --neco-raised: color-mix(in oklch, var(--neco-surface) 88%, var(--SmartThemeBodyColor));
     --neco-ink: var(--SmartThemeBodyColor, oklch(91% 0.023 77));
@@ -47,13 +49,15 @@ body.neconyan {
 }
 :root[data-sb-surface-tone='light'] body.neconyan { color-scheme: light; }
 :root[data-neconyan-calico-tone='light'] body.neconyan { --neco-on-accent: var(--neco-surface); }
-:root[data-neconyan-palette='calico'][data-sb-theme='calico'] body.neconyan {
+body.neconyan {
     --sb-accent: var(--neco-ginger);
     --sb-accent-soft: var(--neco-user);
     --sb-accent-ink: var(--neco-ginger);
     --sb-on-accent: var(--neco-on-accent);
     --sb-on-solid-accent: var(--neco-on-accent);
     --sb-muted-fg: var(--neco-muted);
+    --sb-shell-text: var(--neco-ink);
+    --sb-shell-text-secondary: var(--neco-muted);
     --color-primary: var(--neco-ginger);
     --color-background: var(--neco-canvas);
     --color-surface: var(--neco-surface);
@@ -61,7 +65,7 @@ body.neconyan {
     --color-surface-hover: var(--neco-raised);
     --sb-shell-surface: var(--neco-rail);
     --sb-shell-main-bg: var(--neco-rail);
-    --sb-shell-nav-bg: var(--neco-rail);
+    --sb-shell-nav-bg: var(--neco-surface);
     --sb-shell-header-bg: var(--neco-rail);
     --sb-shell-header-glow: transparent;
     --sb-shell-tab-active-bg: var(--neco-raised);
@@ -805,7 +809,7 @@ body.neconyan .neconyan-chat-row-actions .neconyan-current-chat-export[aria-hidd
 body.neconyan :is(.sb-topbar-pages, .sb-topbar-cluster-divider) {
     display: none !important;
 }
-body.neconyan #sb-topbar-inner :is(#sb-shortcut-right, #sb-advanced-toggle, #sb-topbar-extension-slot, #sb-topbar-quick-actions) {
+body.neconyan #sb-topbar-inner :is(#sb-shortcut-left, #sb-shortcut-right, #sb-topbar-extension-slot, #sb-topbar-quick-actions) {
     display: inline-flex !important;
     visibility: visible !important;
 }
@@ -1904,7 +1908,7 @@ body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar i
         flex: 0 0 52px;
         align-items: center;
         min-height: 52px !important;
-        height: 52px;
+        height: auto;
         padding: 4px 56px 4px 12px !important;
         position: relative;
     }

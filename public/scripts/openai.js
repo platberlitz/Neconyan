@@ -5959,42 +5959,7 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
         throw new Error(`Got response status ${response.status}`);
     }
     if (stream) {
-        const eventStream = getEventSourceStream();
-        response.body.pipeThrough(eventStream);
-        const reader = eventStream.readable.getReader();
-        return async function* streamData() {
-            let text = '';
-            const swipes = [];
-            const toolCalls = [];
-            const state = { reasoning: '', reasoning_tokens: 0, images: [], signature: '', toolSignatures: {} };
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) return;
-                const rawData = value.data;
-                if (rawData === '[DONE]') return;
-                tryParseStreamingError(response, rawData);
-                const parsed = JSON.parse(rawData);
-                if (isGenerationLengthFinish(parsed)) {
-                    state.finishReason = 'length';
-                }
-
-                if (parsed.usage?.completion_tokens_details?.reasoning_tokens) {
-                    state.reasoning_tokens = parsed.usage.completion_tokens_details.reasoning_tokens;
-                }
-
-                if (canMultiSwipe && Array.isArray(parsed?.choices) && parsed?.choices?.[0]?.index > 0) {
-                    const swipeIndex = parsed.choices[0].index - 1;
-                    // FIXME: state.reasoning should be an array to support multi-swipe
-                    swipes[swipeIndex] = (swipes[swipeIndex] || '') + getStreamingReply(parsed, state, { overrideShowThoughts: false });
-                } else {
-                    text += getStreamingReply(parsed, state);
-                }
-
-                ToolManager.parseToolCalls(toolCalls, parsed, state.toolSignatures);
-
-                yield { text, swipes: swipes, logprobs: parseChatCompletionLogprobs(parsed), toolCalls: toolCalls, state: state };
-            }
-        };
+        return readChatCompletionStream(response, { canMultiSwipe });
     } else {
         const data = await response.json();
 
@@ -6020,6 +5985,54 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
 
         return data;
     }
+}
+
+/**
+ * Reads a chat completions SSE body into a generator of partial replies.
+ * Shared by live streaming and by replaying a held generation after a reconnect.
+ * @param {Response} response Fetch response with a text/event-stream body
+ * @param {object} [options]
+ * @param {boolean} [options.canMultiSwipe] Whether extra choices should be treated as swipes
+ * @param {string?} [options.chatCompletionSource] Source override (defaults to the current setting)
+ * @returns {() => AsyncGenerator<{text: string, swipes: string[], logprobs: any, toolCalls: any[], state: object}>}
+ */
+export function readChatCompletionStream(response, { canMultiSwipe = false, chatCompletionSource = null } = {}) {
+    const eventStream = getEventSourceStream();
+    response.body.pipeThrough(eventStream);
+    const reader = eventStream.readable.getReader();
+    return async function* streamData() {
+        let text = '';
+        const swipes = [];
+        const toolCalls = [];
+        const state = { reasoning: '', reasoning_tokens: 0, images: [], signature: '', toolSignatures: {} };
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) return;
+            const rawData = value.data;
+            if (rawData === '[DONE]') return;
+            tryParseStreamingError(response, rawData);
+            const parsed = JSON.parse(rawData);
+            if (isGenerationLengthFinish(parsed)) {
+                state.finishReason = 'length';
+            }
+
+            if (parsed.usage?.completion_tokens_details?.reasoning_tokens) {
+                state.reasoning_tokens = parsed.usage.completion_tokens_details.reasoning_tokens;
+            }
+
+            if (canMultiSwipe && Array.isArray(parsed?.choices) && parsed?.choices?.[0]?.index > 0) {
+                const swipeIndex = parsed.choices[0].index - 1;
+                // FIXME: state.reasoning should be an array to support multi-swipe
+                swipes[swipeIndex] = (swipes[swipeIndex] || '') + getStreamingReply(parsed, state, { chatCompletionSource, overrideShowThoughts: false });
+            } else {
+                text += getStreamingReply(parsed, state, { chatCompletionSource });
+            }
+
+            ToolManager.parseToolCalls(toolCalls, parsed, state.toolSignatures);
+
+            yield { text, swipes: swipes, logprobs: parseChatCompletionLogprobs(parsed), toolCalls: toolCalls, state: state };
+        }
+    };
 }
 
 /**

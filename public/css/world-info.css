@@ -1573,6 +1573,18 @@ body.neconyan #WorldInfo.sb-shell-embedded-content #world_popup_entries_list .wo
 }
 
 @container sb-world-info (max-width: 760px) {
+    #WorldInfo.sb-shell-embedded-content #world_info_pagination .paginationjs {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) minmax(88px, auto);
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+    }
+    #WorldInfo.sb-shell-embedded-content #world_info_pagination .paginationjs-nav { white-space: nowrap; }
+    #WorldInfo.sb-shell-embedded-content #world_info_pagination .paginationjs-pages ul { display: flex; gap: 4px; margin: 0; }
+    #WorldInfo.sb-shell-embedded-content #world_info_pagination .paginationjs-pages li { flex: 1; }
+    #WorldInfo.sb-shell-embedded-content #world_info_pagination .paginationjs-pages a { display: grid; place-items: center; min-height: 44px; }
+    #WorldInfo.sb-shell-embedded-content #world_info_pagination select { width: 100%; min-width: 0; margin: 0; min-height: 44px; }
     body.neconyan #WorldInfo.sb-shell-embedded-content #world_popup_primary_actions,
     body.neconyan #WorldInfo.sb-shell-embedded-content #world_popup_toolbar {
         gap: 6px;
@@ -1598,6 +1610,11 @@ body.neconyan #WorldInfo.sb-shell-embedded-content #world_popup_entries_list .wo
     body.neconyan #WorldInfo.sb-shell-embedded-content .world_popup_action_group--filters > #world_info_sort_order {
         min-width: 116px;
         width: 100%;
+    }
+
+    body.neconyan #WorldInfo.sb-shell-embedded-content .world_popup_action_group--filters > #world_info_pagination {
+        grid-column: 1 / -1;
+        min-width: 0;
     }
 
     body.neconyan #WorldInfo.sb-shell-embedded-content .world_info_view_filters {
