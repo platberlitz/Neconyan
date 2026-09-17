@@ -11,7 +11,7 @@ import { setConfigFilePath } from '../src/util.js';
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const {
     continueState, eligibleRecords, forkState, hash, newState, putRecord, recordEligible,
-    sourceAt, syncSources, undoRecord, validateRecord,
+    ROLE_NAMES, sourceAt, syncSources, undoRecord, validateRecord,
 } = await import('../src/mewmory/core.js');
 const { activeReferences, assembleContext } = await import('../src/mewmory/context.js');
 const { callJsonRole, defaultConfig, embed, isLocalEndpoint, validateEndpoint, saveConfig } = await import('../src/mewmory/models.js');
@@ -35,6 +35,9 @@ test('connection profiles resolve server-side and retain local-only permissions'
             { id: 'remote', name: 'Remote facts', api: 'openai', model: 'gpt-4o' },
         ] } } });
         const config = defaultConfig();
+        assert.equal(config.localOnly, false, 'remote model requests are allowed by default');
+        assert.ok(ROLE_NAMES.every(name => config.roles[name].allowRemote));
+        assert.ok(ROLE_NAMES.every(name => config.roles[name].maxOutputTokens === (name === 'embedding' ? 0 : 16000)));
         Object.assign(config.roles.extractor, { enabled: true, profileId: 'local' });
         saveConfig(directories, config);
         assert.equal(publicConfig(directories).profiles.length, 2);
@@ -45,10 +48,17 @@ test('connection profiles resolve server-side and retain local-only permissions'
         assert.equal(provider.calls.at(-1).model, 'extractor');
         assert.equal(result.usage.tokenizer, 'gpt-3.5-turbo');
         saved.roles.extractor.profileId = 'remote';
+        saved.localOnly = true;
         assert.throws(() => saveConfig(directories, saved), /not allowed/);
+        saved.localOnly = false;
+        saved.roles.extractor.allowRemote = false;
+        assert.throws(() => saveConfig(directories, saved), /not allowed/);
+        saved.roles.extractor.allowRemote = true;
+        saveConfig(directories, saved);
+        assert.equal(readConfig(directories).roles.extractor.profileId, 'remote');
         writeJson(path.join(root, 'settings.json'), {});
         assert.throws(() => readConfig(directories), /no longer exists/);
-        assert.equal(publicConfig(directories).roles.extractor.profileId, 'local');
+        assert.equal(publicConfig(directories).roles.extractor.profileId, 'remote');
     } finally {
         await new Promise(resolve => provider.server.close(resolve));
         fs.rmSync(root, { recursive: true, force: true });

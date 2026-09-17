@@ -14,12 +14,12 @@ const ROLE_LABELS = { extractor: 'Facts and events', pawspective: 'Pawspective i
 
 export function defaultConfig() {
     return {
-        revision: 0, localOnly: true, autoUpdate: true, historyWindow: 30000,
+        revision: 0, localOnly: false, autoUpdate: true, historyWindow: 30000,
         memoryTokens: 6000, batchMessages: 12, candidateLimit: 24,
         writerTokenizer: 'auto', excludeHistory: true,
         roles: Object.fromEntries(ROLE_NAMES.map(name => [name, {
-            enabled: false, profileId: '', endpoint: '', model: '', modelOverride: '', modelRevision: '', allowRemote: false,
-            contextTokens: 32768, maxOutputTokens: name === 'embedding' ? 0 : 4096,
+            enabled: false, profileId: '', endpoint: '', model: '', modelOverride: '', modelRevision: '', allowRemote: true,
+            contextTokens: 32768, maxOutputTokens: name === 'embedding' ? 0 : 16000,
             timeoutMs: 60000, tokenizer: 'auto', allowedData: [...SOURCE_TYPES],
             queryPrefix: '', documentPrefix: '',
         }])),
