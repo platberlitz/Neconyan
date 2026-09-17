@@ -262,6 +262,21 @@ let toolRecursionDepth = 0;
 const processedPostProcessingRuns = new WeakMap();
 const processedPostProcessingRunsByIndex = new Map();
 const postProcessingInFlightKeys = new Set();
+const postProcessingTargets = new WeakMap();
+
+export function getAgentPostProcessingTarget(message) {
+    return postProcessingTargets.get(message);
+}
+
+function setPostProcessingText(message, text, target = null) {
+    if (target) {
+        // Only this automatic pass may advance the text accepted by concurrent Companions.
+        // An intervening manual edit invalidates it permanently, even if a later pass finishes.
+        target.valid &&= target.text === message.mes;
+        target.text = text;
+    }
+    message.mes = text;
+}
 const stoppedStreamingMessageIndexes = new Set();
 let stoppedGenerationRunId = -1;
 
@@ -3428,7 +3443,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
 
         const changed = nextMessageText !== currentMessageText;
         if (changed && applyToMessage) {
-            message.mes = nextMessageText;
+            setPostProcessingText(message, nextMessageText, options.postProcessingTarget);
             await syncPromptTransformMessageStateAsync(message, messageIndex);
         }
 
@@ -3499,7 +3514,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
     }
 }
 
-async function runPromptTransformAppendBatch(agents, message, generationType, messageTextOverride = null, messageIndex = null, { applyToMessage = true, cancelRevision = null, runtimeAgents = [] } = {}) {
+async function runPromptTransformAppendBatch(agents, message, generationType, messageTextOverride = null, messageIndex = null, { applyToMessage = true, cancelRevision = null, runtimeAgents = [], postProcessingTarget = null } = {}) {
     const currentMessageText = unwrapAssistantResponseWrapper(
         messageTextOverride !== null ? messageTextOverride : message?.mes,
     );
@@ -3589,7 +3604,7 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
 
     const consolidated = consolidateAppendPromptTransformOutputs(currentMessageText, agents, results);
     if (consolidated.changed && applyToMessage) {
-        message.mes = consolidated.text;
+        setPostProcessingText(message, consolidated.text, postProcessingTarget);
         await syncPromptTransformMessageStateAsync(message, messageIndex);
     }
 
@@ -4022,6 +4037,8 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
     }
 
     postProcessingInFlightKeys.add(inFlightKey);
+    const postProcessingTarget = { text: message.mes, valid: true };
+    postProcessingTargets.set(message, postProcessingTarget);
     try {
         syncAssistantMessageTextToSwipe(message);
 
@@ -4041,7 +4058,7 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
 
         const cleanedAuxiliaryEchoes = companionRuntime?.stripAuxiliaryTrackerEchoes?.(message.mes, undefined, activeAgents);
         if (typeof cleanedAuxiliaryEchoes === 'string' && cleanedAuxiliaryEchoes !== normalizeContentText(message.mes)) {
-            message.mes = cleanedAuxiliaryEchoes;
+            setPostProcessingText(message, cleanedAuxiliaryEchoes, postProcessingTarget);
             await syncPromptTransformMessageStateAsync(message, messageIndex);
             await refreshMessageAfterMutation(messageIndex, message, { deferBackup: true });
             chatStateChanged = true;
@@ -4077,7 +4094,7 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
         const promptRuns = [];
         let currentPromptTransformText = unwrapAssistantResponseWrapper(message.mes);
         if (currentPromptTransformText !== normalizeContentText(message.mes)) {
-            message.mes = currentPromptTransformText;
+            setPostProcessingText(message, currentPromptTransformText, postProcessingTarget);
             await syncPromptTransformMessageStateAsync(message, messageIndex);
             chatStateChanged = true;
             messageDisplayChanged = true;
@@ -4097,6 +4114,7 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
                 generationType,
                 currentPromptTransformText,
                 messageIndex,
+                { postProcessingTarget },
             );
             promptRuns.push(...batchResult.results);
             currentPromptTransformText = batchResult.nextMessageText;
@@ -4116,7 +4134,7 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
             await flushAppendBatch();
 
             try {
-                const result = await runPromptTransformAgent(agent, message, generationType, currentPromptTransformText, messageIndex);
+                const result = await runPromptTransformAgent(agent, message, generationType, currentPromptTransformText, messageIndex, { postProcessingTarget });
                 promptRuns.push(result);
                 currentPromptTransformText = result.nextMessageText;
 
@@ -4185,7 +4203,7 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
 
                     const appendedText = substituteParams(postProcess.appendText);
                     if (appendedText.trim()) {
-                        message.mes += appendedText;
+                        setPostProcessingText(message, message.mes + appendedText, postProcessingTarget);
                         chatStateChanged = true;
                         messageDisplayChanged = true;
                     }
@@ -4218,6 +4236,7 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
             }
         }
     } finally {
+        if (postProcessingTargets.get(message) === postProcessingTarget) postProcessingTargets.delete(message);
         postProcessingInFlightKeys.delete(inFlightKey);
     }
 }

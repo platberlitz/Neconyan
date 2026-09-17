@@ -35,6 +35,7 @@ import {
     deleteAgentExtraValue,
     getAgentExtraValue,
     getAgentGenerationCancelRevision,
+    getAgentPostProcessingTarget,
     registerCompanionRuntime,
     requestPromptTransform,
     runCompanionOutputPostPasses,
@@ -611,6 +612,43 @@ function restoreCompanionResult(message, agentId, previousResult) {
     } else {
         deleteCompanionResult(message, agentId);
     }
+}
+
+const companionRuns = new WeakMap();
+
+function beginCompanionRun(message, agent, content = '') {
+    const chatId = getCurrentChatId();
+    const generation = getChatGeneration();
+    let runs = companionRuns.get(message);
+    if (!runs) companionRuns.set(message, runs = new Map());
+    const swipe = message.swipe_id ?? 0;
+    const key = `${swipe}:${agent.id}`;
+    const stored = getCompanionResults(message)[agent.id];
+    const previousResult = stored?.status === 'pending'
+        ? runs.get(key)?.previousResult ?? null
+        : stored ? structuredClone(stored) : null;
+    const run = {
+        previousResult,
+        isCurrent: () => runs.get(key) === run && (message.swipe_id ?? 0) === swipe,
+        async finish(messageIndex) {
+            if (runs.get(key) !== run) return;
+            runs.delete(key);
+            // Clean the original swipe only; an old request must never restore over its successor.
+            const target = (message.swipe_id ?? 0) === swipe ? message
+                : message.swipe_info?.[swipe] === run.swipeInfo
+                    ? { ...message, swipe_id: swipe, extra: {} } : null;
+            if (!target || getCompanionResults(target)[agent.id]?.status !== 'pending') return;
+            restoreCompanionResult(target, agent.id, previousResult);
+            if (chat[messageIndex] === message && getCurrentChatId() === chatId && getChatGeneration() === generation) {
+                if (target === message) await emitCompanionResultsUpdated(messageIndex, agent.id);
+                saveChatDebounced({ deferBackup: false });
+            }
+        },
+    };
+    runs.set(key, run);
+    setCompanionResult(message, agent, { status: 'pending', content, error: '', tokenUsage: null });
+    run.swipeInfo = message.swipe_info?.[swipe];
+    return run;
 }
 
 async function emitCompanionResultsUpdated(messageIndex, agentId = '') {
@@ -1530,14 +1568,16 @@ function captureCompanionTarget(messageIndex) {
     const generation = getChatGeneration();
     const swipe = message?.swipe_id ?? 0;
     const text = message?.mes;
+    const postProcessingTarget = getAgentPostProcessingTarget(message);
     const name = message?.name;
     const avatar = message?.original_avatar;
     return () => !!message && chat[messageIndex] === message && getCurrentChatId() === chatId
         && getChatGeneration() === generation && (message.swipe_id ?? 0) === swipe
-        && message.mes === text && message.name === name && message.original_avatar === avatar;
+        && (postProcessingTarget ? postProcessingTarget.valid && message.mes === postProcessingTarget.text : message.mes === text)
+        && message.name === name && message.original_avatar === avatar;
 }
 
-async function runSingleCompanionAgent(agent, messageIndex, generationType, cancelRevision, { repair = false, extraContextSections = [], allowUserMessage = false, previousContent = null, previousResult = null } = {}) {
+async function runSingleCompanionAgent(agent, messageIndex, generationType, cancelRevision, { repair = false, extraContextSections = [], allowUserMessage = false, previousContent = null, previousResult = null, run = null } = {}) {
     const message = chat[messageIndex];
     if (!isValidCompanionTargetMessage(message, { allowUserMessage })) {
         return { agentId: agent.id, changed: false, result: null };
@@ -1545,10 +1585,11 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
 
     const companion = getCompanionConfig(agent);
     const previous = previousContent ?? getCompanionResultContent(message, agent.id);
-    const isTargetCurrent = captureCompanionTarget(messageIndex);
+    const isMessageCurrent = captureCompanionTarget(messageIndex);
+    const isTargetCurrent = () => isMessageCurrent() && (!run || run.isCurrent());
 
     try {
-        if (getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+        if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
             throw new DOMException('Companion run cancelled.', 'AbortError');
         }
 
@@ -1611,6 +1652,7 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
     }
 
     await emitCompanionResultsUpdated(messageIndex, agent.id);
+    if (!isTargetCurrent()) return { agentId: agent.id, changed: false, result: null };
     const result = getCompanionResults(message)[agent.id];
     const changed = result?.status === 'done' && previous !== getCompanionResultContent(message, agent.id);
     return { agentId: agent.id, changed, result };
@@ -1672,10 +1714,12 @@ async function buildBatchPromptPayload(agents, messageIndex, generationType, { e
     return { promptMessages, taskPayloads };
 }
 
-async function cancelCompanionAgentResults(message, agents, messageIndex, profileId = '') {
+async function cancelCompanionAgentResults(message, agents, messageIndex, profileId = '', runs = null) {
     const isTargetCurrent = captureCompanionTarget(messageIndex);
     for (const agent of agents) {
         if (!isTargetCurrent()) return;
+        if (runs && !runs.get(agent.id)?.isCurrent()) continue;
+        if (getCompanionResults(message)[agent.id]?.status !== 'pending') continue;
         if (!isAgentRuntimeAllowed(agent)) continue;
         setCompanionResult(message, agent, {
             status: 'cancelled',
@@ -1690,9 +1734,10 @@ async function cancelCompanionAgentResults(message, agents, messageIndex, profil
     }
 }
 
-async function runBatchCompanionAgents(agents, messageIndex, generationType, cancelRevision, { allowUserMessage = false, previousContents = null, extraContextSectionsByAgentId = null } = {}) {
+async function runBatchCompanionAgents(agents, messageIndex, generationType, cancelRevision, { allowUserMessage = false, previousContents = null, extraContextSectionsByAgentId = null, runs = null } = {}) {
     const isTargetCurrent = captureCompanionTarget(messageIndex);
-    agents = agents.filter(isAgentRuntimeAllowed);
+    const isAgentCurrent = agent => !runs || runs.get(agent.id)?.isCurrent();
+    agents = agents.filter(agent => isAgentRuntimeAllowed(agent) && isAgentCurrent(agent));
     if (!agents.length) return [];
     const message = chat[messageIndex];
     if (!isValidCompanionTargetMessage(message, { allowUserMessage })) {
@@ -1701,7 +1746,7 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
 
     const previousMap = previousContents ?? new Map(agents.map(agent => [agent.id, getCompanionResultContent(message, agent.id)]));
     const getResults = () => agents.map(agent => {
-        if (!isTargetCurrent()) return { agentId: agent.id, changed: false, result: null };
+        if (!isTargetCurrent() || !isAgentCurrent(agent)) return { agentId: agent.id, changed: false, result: null };
         const result = getCompanionResults(message)[agent.id];
         const changed = result?.status === 'done' && previousMap.get(agent.id) !== getCompanionResultContent(message, agent.id);
         return { agentId: agent.id, changed, result };
@@ -1709,7 +1754,7 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
 
     try {
         if (getAgentGenerationCancelRevision() !== cancelRevision) {
-            await cancelCompanionAgentResults(message, agents, messageIndex);
+            await cancelCompanionAgentResults(message, agents, messageIndex, '', runs);
             return getResults();
         }
 
@@ -1721,7 +1766,7 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
         if (!isTargetCurrent()) return getResults();
 
         if (getAgentGenerationCancelRevision() !== cancelRevision) {
-            await cancelCompanionAgentResults(message, agents, messageIndex, response.profileId);
+            await cancelCompanionAgentResults(message, agents, messageIndex, response.profileId, runs);
             return getResults();
         }
 
@@ -1731,7 +1776,7 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
         const missingAgents = [];
         for (const agent of agents) {
             if (!isTargetCurrent()) return getResults();
-            if (!isAgentRuntimeAllowed(agent)) continue;
+            if (!isAgentRuntimeAllowed(agent) || !isAgentCurrent(agent)) continue;
             if (!parsed.has(agent.id)) {
                 missingAgents.push(agent);
                 continue;
@@ -1740,14 +1785,14 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
             const rawContent = capResultContent(parsed.get(agent.id));
             const outputTokens = await countCompanionTokens({ role: 'assistant', content: rawContent });
             if (!isTargetCurrent()) return getResults();
-            if (!isAgentRuntimeAllowed(agent)) continue;
+            if (!isAgentRuntimeAllowed(agent) || !isAgentCurrent(agent)) continue;
             const content = await applyCompanionOutputPostPassesToContent(agent, rawContent, messageIndex, cancelRevision);
             if (!isTargetCurrent()) return getResults();
             if (getAgentGenerationCancelRevision() !== cancelRevision) {
-                await cancelCompanionAgentResults(message, agents, messageIndex, response.profileId);
+                await cancelCompanionAgentResults(message, agents, messageIndex, response.profileId, runs);
                 return getResults();
             }
-            if (!isAgentRuntimeAllowed(agent)) continue;
+            if (!isAgentRuntimeAllowed(agent) || !isAgentCurrent(agent)) continue;
             setCompanionResult(message, agent, {
                 status: 'done',
                 content,
@@ -1766,11 +1811,12 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
         for (const agent of missingAgents) {
             if (!isTargetCurrent()) return getResults();
             if (getAgentGenerationCancelRevision() !== cancelRevision) {
-                await cancelCompanionAgentResults(message, agents, messageIndex, response.profileId);
+                await cancelCompanionAgentResults(message, agents, messageIndex, response.profileId, runs);
                 return getResults();
             }
 
             await runSingleCompanionAgent(agent, messageIndex, generationType, cancelRevision, {
+                run: runs?.get(agent.id),
                 allowUserMessage,
                 previousContent: previousMap.get(agent.id),
                 extraContextSections: extraContextSectionsByAgentId?.get(agent.id) ?? [],
@@ -1779,7 +1825,7 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
     } catch (error) {
         if (!isTargetCurrent()) return getResults();
         if (getAgentGenerationCancelRevision() !== cancelRevision) {
-            await cancelCompanionAgentResults(message, agents, messageIndex);
+            await cancelCompanionAgentResults(message, agents, messageIndex, '', runs);
             return getResults();
         }
 
@@ -1789,11 +1835,12 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
         for (const agent of agents) {
             if (!isTargetCurrent()) return getResults();
             if (getAgentGenerationCancelRevision() !== cancelRevision) {
-                await cancelCompanionAgentResults(message, agents, messageIndex);
+                await cancelCompanionAgentResults(message, agents, messageIndex, '', runs);
                 return getResults();
             }
 
             await runSingleCompanionAgent(agent, messageIndex, generationType, cancelRevision, {
+                run: runs?.get(agent.id),
                 allowUserMessage,
                 previousContent: previousMap.get(agent.id),
                 extraContextSections: extraContextSectionsByAgentId?.get(agent.id) ?? [],
@@ -1804,13 +1851,14 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
     return getResults();
 }
 
-async function runCompanionUnit(unit, messageIndex, generationType, cancelRevision, { allowUserMessage = false, previousContents = null, extraContextSectionsByAgentId = null } = {}) {
+async function runCompanionUnit(unit, messageIndex, generationType, cancelRevision, { allowUserMessage = false, previousContents = null, extraContextSectionsByAgentId = null, runs = null } = {}) {
     if (unit.type === 'batch') {
-        return await runBatchCompanionAgents(unit.agents, messageIndex, generationType, cancelRevision, { allowUserMessage, previousContents, extraContextSectionsByAgentId });
+        return await runBatchCompanionAgents(unit.agents, messageIndex, generationType, cancelRevision, { allowUserMessage, previousContents, extraContextSectionsByAgentId, runs });
     }
 
     const previousContent = previousContents?.get(unit.agent.id) ?? null;
     const single = await runSingleCompanionAgent(unit.agent, messageIndex, generationType, cancelRevision, {
+        run: runs?.get(unit.agent.id),
         allowUserMessage,
         previousContent,
         extraContextSections: extraContextSectionsByAgentId?.get(unit.agent.id) ?? [],
@@ -1860,7 +1908,7 @@ function getRunnableCompanionAgents(activeAgents = [], { manual = false, message
     });
 }
 
-async function runCompanionUnits(units, messageIndex, generationType, cancelRevision, { allowUserMessage = false, previousContents = null, extraContextSectionsByAgentId = null } = {}) {
+async function runCompanionUnits(units, messageIndex, generationType, cancelRevision, { allowUserMessage = false, previousContents = null, extraContextSectionsByAgentId = null, runs = null } = {}) {
     const isTargetCurrent = captureCompanionTarget(messageIndex);
     const executionMode = getGlobalSettings().companionExecutionMode === 'sequential' ? 'sequential' : 'parallel';
     const results = [];
@@ -1868,10 +1916,10 @@ async function runCompanionUnits(units, messageIndex, generationType, cancelRevi
     if (executionMode === 'sequential') {
         for (const unit of units) {
             if (!isTargetCurrent()) break;
-            results.push(...(await runCompanionUnit(unit, messageIndex, generationType, cancelRevision, { allowUserMessage, previousContents, extraContextSectionsByAgentId })));
+            results.push(...(await runCompanionUnit(unit, messageIndex, generationType, cancelRevision, { allowUserMessage, previousContents, extraContextSectionsByAgentId, runs })));
         }
     } else {
-        const unitResults = await Promise.all(units.map(unit => runCompanionUnit(unit, messageIndex, generationType, cancelRevision, { allowUserMessage, previousContents, extraContextSectionsByAgentId })));
+        const unitResults = await Promise.all(units.map(unit => runCompanionUnit(unit, messageIndex, generationType, cancelRevision, { allowUserMessage, previousContents, extraContextSectionsByAgentId, runs })));
         results.push(...unitResults.flat());
     }
 
@@ -1891,34 +1939,22 @@ async function runCompanionAgentSet(agents, messageIndex, generationType, cancel
     }
 
     const previousContents = new Map(agents.map(agent => [agent.id, getCompanionResultContent(message, agent.id)]));
-    const previousResults = new Map(agents.map(agent => [agent.id, getCompanionResults(message)[agent.id]]));
-    const pendingAgentIds = new Set();
+    const runs = new Map();
     const extraContextSectionsByAgentId = buildCompanionExtraContextSectionsByAgentId(agents, messageIndex, contextSourceAgents.filter(isAgentRuntimeAllowed));
     try {
         for (const agent of agents) {
             if (!isTargetCurrent()) return [];
             if (!isAgentRuntimeAllowed(agent)) continue;
-            setCompanionResult(message, agent, {
-                status: 'pending',
-                content: '',
-                error: '',
-                tokenUsage: null,
-            });
-            pendingAgentIds.add(agent.id);
+            runs.set(agent.id, beginCompanionRun(message, agent));
             await emitCompanionResultsUpdated(messageIndex, agent.id);
         }
 
         if (!isTargetCurrent()) return [];
         const units = partitionCompanionRuns(agents, messageIndex, extraContextSectionsByAgentId);
-        return await runCompanionUnits(units, messageIndex, generationType, cancelRevision, { allowUserMessage, previousContents, extraContextSectionsByAgentId });
+        return await runCompanionUnits(units, messageIndex, generationType, cancelRevision, { allowUserMessage, previousContents, extraContextSectionsByAgentId, runs });
     } finally {
         // Skipped runs leave only a pending placeholder; keep the previous note intact.
-        for (const agentId of pendingAgentIds) {
-            if (!isTargetCurrent()) break;
-            if (getCompanionResults(message)[agentId]?.status !== 'pending') continue;
-            restoreCompanionResult(message, agentId, previousResults.get(agentId));
-            await emitCompanionResultsUpdated(messageIndex, agentId);
-        }
+        for (const run of runs.values()) await run.finish(messageIndex);
     }
 }
 
@@ -2112,16 +2148,6 @@ export async function runCompanionAgentOnMessage(agentId, messageIndex, { cancel
 
     const storedResult = getCompanionResults(message)[agent.id];
     const previousResult = storedResult && typeof storedResult === 'object' ? structuredClone(storedResult) : null;
-    const originalSwipe = message.swipe_id ?? 0;
-    const originalText = message.mes;
-    const abandonResult = () => {
-        // Restore only a detached, unchanged message, never a newly selected swipe.
-        if (!chat.includes(message) && (message.swipe_id ?? 0) === originalSwipe && message.mes === originalText) {
-            restoreCompanionResult(message, agent.id, previousResult);
-            return previousResult ?? undefined;
-        }
-        return null;
-    };
     const previousContent = getCompanionResultContent(message, agent.id);
     if (repair && agent.category === 'tracker') {
         const existingPayload = normalizeCompanionTrackerRepairPayload(agent, previousContent).payload;
@@ -2144,46 +2170,35 @@ export async function runCompanionAgentOnMessage(agentId, messageIndex, { cancel
     const runnable = getRunnableCompanionAgents(getEnabledAgents(), { manual: true, messageIndex });
     const agentByReferenceId = buildCompanionReferenceMap(runnable);
     const linkedContextSections = getCompanionLinkedContextSections(agent, messageIndex, runnable, agentByReferenceId);
-    setCompanionResult(message, agent, {
-        status: 'pending',
-        content: capResultContent(repair ? previousContent : pendingContent),
-        error: '',
-        tokenUsage: null,
-    });
-    await emitCompanionResultsUpdated(messageIndex, agent.id);
-    if (!isTargetCurrent()) return abandonResult();
-    if (!isTargetCurrent() || !isAgentRuntimeAllowed(agent)) {
-        restoreCompanionResult(message, agent.id, previousResult);
-        if (isTargetCurrent()) await emitCompanionResultsUpdated(messageIndex, agent.id);
-        return previousResult;
-    }
-    const { changed, result } = await runSingleCompanionAgent(agent, messageIndex, 'normal', cancelRevision, {
-        repair,
-        extraContextSections: [
-            ...linkedContextSections,
-            ...(repair && previousContent ? [{ title: 'Current companion agent note', content: previousContent }] : []),
-            ...extraContextSections,
-        ],
-        allowUserMessage,
-        previousContent,
-        previousResult,
-    });
+    const run = beginCompanionRun(message, agent, capResultContent(repair ? previousContent : pendingContent));
+    try {
+        await emitCompanionResultsUpdated(messageIndex, agent.id);
+        if (!isTargetCurrent() || !run.isCurrent()) return null;
+        if (!isAgentRuntimeAllowed(agent)) return run.previousResult;
+        const { changed, result } = await runSingleCompanionAgent(agent, messageIndex, 'normal', cancelRevision, {
+            repair,
+            extraContextSections: [
+                ...linkedContextSections,
+                ...(repair && previousContent ? [{ title: 'Current companion agent note', content: previousContent }] : []),
+                ...extraContextSections,
+            ],
+            allowUserMessage,
+            previousContent,
+            previousResult: run.previousResult,
+            run,
+        });
 
-    if (!isTargetCurrent()) return abandonResult();
-    if (result === null && getCompanionResults(message)[agent.id]?.status === 'pending') {
-        restoreCompanionResult(message, agent.id, previousResult);
-        if (isTargetCurrent()) await emitCompanionResultsUpdated(messageIndex, agent.id);
-        return previousResult;
-    }
-    if (!isTargetCurrent()) return result;
+        if (!isTargetCurrent() || !run.isCurrent()) return !chat.includes(message) ? run.previousResult ?? undefined : null;
+        if (result === null) return run.previousResult;
+        if (changed) {
+            await runCompanionDependencyCascade(messageIndex, [agentId], 'normal', cancelRevision, new Set([agentId]));
+        }
 
-    if (changed) {
-        await runCompanionDependencyCascade(messageIndex, [agentId], 'normal', cancelRevision, new Set([agentId]));
+        if (isTargetCurrent() && run.isCurrent()) saveChatDebounced({ deferBackup: false });
+        return result;
+    } finally {
+        await run.finish(messageIndex);
     }
-
-    if (!isTargetCurrent()) return result;
-    saveChatDebounced({ deferBackup: false });
-    return result;
 }
 
 export async function runTrackerCompanionsOnMessage(messageIndex, { cancelRevision = getAgentGenerationCancelRevision() } = {}) {

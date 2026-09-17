@@ -2997,27 +2997,158 @@ describe('in-chat agent post-processing runner', () => {
         expect(plainMessages[1].content).not.toContain('[Your previous notes]');
     });
 
-    test('runs the companion stage concurrently with post passes when enabled', async () => {
+    test.each([
+        ['rewrite', 'post-first'], ['rewrite', 'companions-first'],
+        ['append', 'post-first'], ['rewrite', 'manual-edit'],
+    ])('settles parallel companions alongside a %s post pass (%s)', async (mode, completionOrder) => {
         globalSettings.companionConcurrentWithPostGen = true;
-        const companionAgent = createCompanionAgent();
-        enabledAgents = [companionAgent];
+        const companions = ['companion-a', 'companion-b'].map(id => ({
+            ...createCompanionAgent({ id }),
+            connectionProfile: id,
+        }));
+        const transformer = {
+            ...createCompanionOutputTransformAgent({
+                conditions: { runOnCompanionOutputs: false },
+                postProcess: { promptTransformMode: mode },
+            }),
+            connectionProfile: 'post-pass',
+        };
+        enabledAgents = [...companions, transformer];
+        const responses = new Map();
+        connectionManagerRequestService = {
+            sendRequest: jest.fn(profile => new Promise(resolve => responses.set(profile, resolve))),
+        };
         chat.push(
             { mes: 'Can you continue?', name: 'User', is_user: true, is_system: false, extra: {} },
             { mes: 'Assistant reply', name: 'Assistant', is_user: false, is_system: false, extra: {} },
         );
-        const runCompanionStage = jest.fn(async () => []);
-
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
         const { initAgentRunner, registerCompanionRuntime } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
-        registerCompanionRuntime({ runCompanionStage });
+        registerCompanionRuntime(companionRunner);
         initAgentRunner();
 
-        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 1, 'normal');
+        const running = eventSource.emit(eventTypes.MESSAGE_RECEIVED, 1, 'normal');
+        await waitFor(() => responses.size === 3);
+        expect(responses.size).toBe(3);
 
-        expect(runCompanionStage).toHaveBeenCalledTimes(1);
-        expect(runCompanionStage).toHaveBeenCalledWith(expect.objectContaining({
-            messageIndex: 1,
-            activeAgents: [companionAgent],
-        }));
+        let companionsFinishedFirst = false;
+        if (completionOrder === 'manual-edit') chat[1].mes = 'Manually edited reply';
+        if (completionOrder !== 'companions-first') {
+            responses.get('post-pass')({ content: 'Rewritten reply' });
+            await waitFor(() => chat[1].mes.includes('Rewritten reply'));
+        }
+        for (const agent of companions) responses.get(agent.id)({ content: `${agent.id} note` });
+        if (completionOrder === 'companions-first') {
+            await waitFor(() => companions.every(agent => companionRunner.getCompanionResults(chat[1])[agent.id]?.status === 'done'));
+            companionsFinishedFirst = companions.every(agent => companionRunner.getCompanionResults(chat[1])[agent.id]?.status === 'done');
+            responses.get('post-pass')({ content: 'Rewritten reply' });
+        }
+        await running;
+
+        expect(chat[1].mes).toContain('Rewritten reply');
+        await new Promise(resolve => setTimeout(resolve, 5));
+        expect(connectionManagerRequestService.sendRequest).toHaveBeenCalledTimes(3);
+        expect(companionsFinishedFirst).toBe(completionOrder === 'companions-first');
+        for (const agent of companions) {
+            const completed = expect.objectContaining({ status: 'done', content: `${agent.id} note` });
+            expect(companionRunner.getCompanionResults(chat[1])[agent.id]).toEqual(completionOrder === 'manual-edit'
+                ? undefined : completed);
+        }
+    });
+
+    test.each(['parallel', 'sequential'])('starts %s companions when synchronous post-processing changes the reply', async (mode) => {
+        globalSettings.companionConcurrentWithPostGen = true;
+        globalSettings.companionExecutionMode = mode;
+        useAppendPostAgent();
+        const companions = ['a', 'b', 'c'].map(id => createCompanionAgent({ id }));
+        enabledAgents.push(...companions);
+        generateQuietPrompt.mockResolvedValue('Companion note');
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const { initAgentRunner, registerCompanionRuntime } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        registerCompanionRuntime(companionRunner);
+        initAgentRunner();
+        chat.push({ mes: '<assistant_response>Reply</assistant_response>', name: 'Assistant', is_user: false, extra: {} });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await new Promise(resolve => setTimeout(resolve, 5));
+
+        expect(chat[0].mes).toBe('Reply\n[post processed]');
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(3);
+        expect(Object.values(companionRunner.getCompanionResults(chat[0])).map(result => result.status)).toEqual(['done', 'done', 'done']);
+    });
+
+    test.each(['manual', 'parallel', 'batch'])('keeps a newer regeneration when an older %s run settles', async (mode) => {
+        const agent = createCompanionAgent({ id: 'a', companion: { batch: mode === 'batch', batchAgentIds: ['b'] } });
+        enabledAgents = [agent, createCompanionAgent({ id: 'b' })];
+        const responses = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => responses.push(resolve)));
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        chat.push({ mes: 'Reply', name: 'Assistant', is_user: false, extra: {} });
+        companionRunner.setCompanionResult(chat[0], agent, { status: 'done', content: 'Previous note' });
+        const previous = structuredClone(companionRunner.getCompanionResults(chat[0]).a);
+
+        const oldRun = mode === 'manual' ? companionRunner.runCompanionAgentOnMessage('a', 0) : companionRunner.runCompanionsOnMessage(0);
+        const oldRequestCount = mode === 'parallel' ? 2 : 1;
+        await waitFor(() => responses.length === oldRequestCount);
+        expect(responses).toHaveLength(oldRequestCount);
+        const newRun = companionRunner.runCompanionAgentOnMessage('a', 0);
+        await waitFor(() => responses.length === oldRequestCount + 1);
+        expect(responses).toHaveLength(oldRequestCount + 1);
+        responses[0](mode === 'batch' ? '<<<companion:a>>>Old A<<<end:a>>>\n<<<companion:b>>>B note<<<end:b>>>' : 'Old A');
+        if (mode === 'parallel') responses[1]('B note');
+        await oldRun;
+        expect(companionRunner.getCompanionResults(chat[0]).a.status).toBe('pending');
+        const completedB = expect.objectContaining({ status: 'done', content: 'B note' });
+        expect(companionRunner.getCompanionResults(chat[0]).b).toEqual(mode === 'manual'
+            ? undefined : completedB);
+
+        // Invalidate the successor too: its rollback must reach the saved note, not the old placeholder.
+        chat[0].mes = 'Edited reply';
+        responses[oldRequestCount]('New A');
+        await newRun;
+        expect(companionRunner.getCompanionResults(chat[0]).a).toEqual(previous);
+    });
+
+    test('does not overwrite a completed regeneration with an older response', async () => {
+        enabledAgents = [createCompanionAgent({ id: 'a' })];
+        const responses = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => responses.push(resolve)));
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        chat.push({ mes: 'Reply', name: 'Assistant', is_user: false, extra: {} });
+        const oldRun = companionRunner.runCompanionsOnMessage(0);
+        await waitFor(() => responses.length === 1);
+        const newRun = companionRunner.runCompanionAgentOnMessage('a', 0);
+        await waitFor(() => responses.length === 2);
+        responses[1]('Newest note');
+        await newRun;
+        responses[0]('Old note');
+        await oldRun;
+        expect(companionRunner.getCompanionResults(chat[0]).a).toMatchObject({ status: 'done', content: 'Newest note' });
+    });
+
+    test.each(['manual', 'parallel', 'batch'])('cleans an abandoned %s run on its original swipe only', async (mode) => {
+        enabledAgents = [
+            createCompanionAgent({ id: 'a', companion: { batch: mode === 'batch', batchAgentIds: ['b'] } }),
+            createCompanionAgent({ id: 'b' }),
+        ];
+        const responses = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => responses.push(resolve)));
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        chat.push({ mes: 'Reply', name: 'Assistant', is_user: false, extra: {} });
+        companionRunner.setCompanionResult(chat[0], enabledAgents[0], { status: 'done', content: 'Original note' });
+        const previous = structuredClone(companionRunner.getCompanionResults(chat[0]).a);
+        const running = mode === 'manual' ? companionRunner.runCompanionAgentOnMessage('a', 0) : companionRunner.runCompanionsOnMessage(0);
+        await waitFor(() => responses.length === (mode === 'parallel' ? 2 : 1));
+        chat[0].swipes.push('Other reply');
+        chat[0].swipe_info.push({ extra: {} });
+        switchToSwipe(chat[0], 1);
+        companionRunner.setCompanionResult(chat[0], enabledAgents[0], { status: 'done', content: 'Other swipe note' });
+        for (const resolve of responses) resolve('Old response');
+        await running;
+        expect(companionRunner.getCompanionResults(chat[0]).a.content).toBe('Other swipe note');
+        switchToSwipe(chat[0], 0);
+        expect(companionRunner.getCompanionResults(chat[0]).a).toEqual(previous);
+        expect(companionRunner.getCompanionResults(chat[0]).b).toBeUndefined();
     });
 
     test('batches only explicitly selected compatible companions', async () => {

@@ -74,6 +74,7 @@ describe('exact expression history', () => {
             const request = new Promise(resolve => { release = resolve; });
             const write = jest.fn();
             const runtime = vm.createContext({ chat: [message], getChatGeneration: () => 1, getCurrentChatId: () => 'chat',
+                getAgentPostProcessingTarget: () => undefined,
                 isValidCompanionTargetMessage: () => true, isAgentRuntimeAllowed: () => true, getCompanionConfig: () => ({ maxTokens: 100 }),
                 getCompanionResultContent: () => '', getCompanionResults: () => ({}), getAgentGenerationCancelRevision: () => 0,
                 buildCompanionPromptMessages: async () => [], buildBatchPromptPayload: async () => ({ promptMessages: [], taskPayloads: [] }),
