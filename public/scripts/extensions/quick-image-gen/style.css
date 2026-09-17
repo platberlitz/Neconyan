@@ -78,10 +78,10 @@
 #qig-settings input:not([type="checkbox"]):focus,
 #qig-settings select:focus,
 #qig-settings textarea:focus {
-    outline: 2px solid transparent;
-    outline-offset: 1px;
+    outline: 2px solid var(--qig-accent);
+    outline-offset: -2px;
     border-color: var(--qig-accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--qig-accent) 38%, transparent);
+    box-shadow: none;
 }
 
 #qig-settings hr {
@@ -1361,10 +1361,10 @@
 .qig-wizard input:not([type="checkbox"]):focus,
 .qig-wizard select:focus,
 .qig-wizard textarea:focus {
-    outline: 2px solid transparent;
-    outline-offset: 1px;
+    outline: 2px solid var(--SmartThemeQuoteColor);
+    outline-offset: -2px;
     border-color: var(--SmartThemeQuoteColor);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--SmartThemeQuoteColor) 38%, transparent);
+    box-shadow: none;
 }
 
 .qig-popup button:focus-visible {

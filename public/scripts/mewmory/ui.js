@@ -200,7 +200,7 @@ function renderRecord(record, root, { editable = true } = {}) {
         const correction = field('Correction', '', action => {
             if (action) void act(() => changeMewmory('record/action', { id: record.id, action }));
         }, { options: corrections, key: 'correction-' + record.id });
-        actions.append(button('Edit', () => openEditor(record)), correction,
+        actions.append(correction, button('Edit', () => openEditor(record)),
             button('Undo correction', () => act(() => changeMewmory('record/action', { id: record.id, action: 'undo' }))));
         article.append(actions);
     }
@@ -787,7 +787,7 @@ export async function mountMewmory(root) {
         const style = document.createElement('link');
         style.id = 'mewmory-css';
         style.rel = 'stylesheet';
-        style.href = 'css/mewmory.css?v=20260915a';
+        style.href = 'css/mewmory.css?v=20260917e';
         document.head.append(style);
     }
     if (ui.root !== root) {

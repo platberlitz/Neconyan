@@ -70,7 +70,9 @@
 .mewmory-source-links button { font-size: .85em !important; }
 .mewmory-interview { display: flex; flex-direction: column; gap: .5rem; }
 .mewmory-interview p + strong { margin-top: .65rem; }
-.mewmory-actions select { width: auto !important; flex: 1 1 10rem; }
+.mewmory-record > .mewmory-actions { align-items: end; }
+.mewmory-record > .mewmory-actions > .mewmory-field { flex: 1 1 10rem; }
+.mewmory-record > .mewmory-actions :is(select, button) { margin: 0; }
 
 @media (max-width: 600px) {
     .mewmory-fields { grid-template-columns: minmax(0, 1fr); }

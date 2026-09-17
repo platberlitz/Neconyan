@@ -96,9 +96,20 @@ body.neconyan :is(.menu_button, .sb-proxy-button, .sb-shell-tab, .sb-character-s
 body.neconyan :is(button, a, input, textarea, select, summary, [tabindex]):focus-visible {
     outline: 2px solid var(--neco-ginger); outline-offset: 2px;
 }
+/* Field rings stay inside clipped panels, including extension sheets loaded after the theme. */
+body.neconyan :is(input, textarea, select):focus-visible:not([type='checkbox'], [type='radio'], [type='range']),
+body.neconyan :is(#mewmory-workspace, #neconyan-lorebook-tools, #promptTags-drawer, #sbwil-settings, #sbwil-page, #rat_drawer, #dc-ext, #dc-harmony-popup, #dc-context-menu) :is(input, textarea, select):focus-visible:not([type='checkbox'], [type='radio'], [type='range']) {
+    outline-offset: -2px;
+}
 body.neconyan :is(input, textarea)::placeholder { color: var(--neco-muted); opacity: 1; }
 body.neconyan :is(input[type='text'], input[type='number'], input[type='url'], input[type='password'], textarea, select) {
     border-radius: 6px; box-shadow: none;
+}
+body.neconyan #open_chat_expressions .expression_override_controls {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; margin-block: 6px;
+}
+body.neconyan #open_chat_expressions .expression_override_controls > :is(input, button) {
+    width: 100%; min-width: 0; height: auto; margin: 0;
 }
 body.neconyan :is(#top-bar, #sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner) {
     background: var(--neco-panel-gradient); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;

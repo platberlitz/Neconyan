@@ -125,9 +125,9 @@
                 </div>
                 <label for="expression_override" data-i18n="Sprite Folder Override">Sprite Folder Override</label>
                 <small><span data-i18n="Use a forward slash to specify a subfolder. Example: _space">Use a forward slash to specify a subfolder. Example: </span><tt>Bob/formal</tt></small>
-                <div class="flex-container flexnowrap">
+                <div class="expression_override_controls flex-container flexnowrap">
                     <input id="expression_override" type="text" class="text_pole" placeholder="Override folder name" />
-                    <input id="expression_override_button" class="menu_button" type="submit" value="Submit" />
+                    <button id="expression_override_button" class="menu_button" type="button" data-i18n="Submit">Submit</button>
                 </div>
                 <div class="expression_buttons flex-container spaceEvenly">
                     <div id="expressions_generate_missing_sprites" class="menu_button" role="button" tabindex="0" title="Generate all missing sprites in this set with Quick Image Gen" data-i18n="[title]Generate all missing sprites in this set with Quick Image Gen">
@@ -142,10 +142,6 @@
                         <i class="fa-solid fa-broom"></i>
                         <span data-i18n="Redo crop/cleanup">Redo crop/cleanup</span>
                     </div>
-                    <div id="expressions_stop_sprite_generation" class="menu_button" role="button" tabindex="0" title="Stop the current Quick Image Gen sprite generation" data-i18n="[title]Stop the current Quick Image Gen sprite generation">
-                        <i class="fa-solid fa-stop"></i>
-                        <span data-i18n="Stop generation">Stop generation</span>
-                    </div>
                     <div id="expression_upload_pack_button" class="menu_button">
                         <i class="fa-solid fa-file-zipper"></i>
                         <span data-i18n="Upload sprite pack (ZIP)">Upload sprite pack (ZIP)</span>
@@ -157,6 +153,10 @@
                     <div id="expression_override_cleanup_button" class="menu_button">
                         <i class="fa-solid fa-trash-can"></i>
                         <span data-i18n="Remove all image overrides">Remove all image overrides</span>
+                    </div>
+                    <div id="expressions_stop_sprite_generation" class="menu_button" role="button" tabindex="0" title="Stop the current Quick Image Gen sprite generation" data-i18n="[title]Stop the current Quick Image Gen sprite generation">
+                        <i class="fa-solid fa-stop"></i>
+                        <span data-i18n="Stop generation">Stop generation</span>
                     </div>
                 </div>
                 <p class="hint">
