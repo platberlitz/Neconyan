@@ -78,53 +78,6 @@ function resolveContainedAssistantPath(root, filePath) {
 }
 
 /**
- * True when two PNGs decode to identical pixels. Decoding through Jimp ignores the
- * PNG text chunks, so this detects card/portrait artwork drifting apart without
- * being confused by embedded metadata.
- * @param {string} firstPath
- * @param {string} secondPath
- * @returns {Promise<boolean>}
- */
-async function hasIdenticalAssistantPixels(firstPath, secondPath) {
-    const [first, second] = await Promise.all([Jimp.read(firstPath), Jimp.read(secondPath)]);
-    return first.bitmap.width === second.bitmap.width
-        && first.bitmap.height === second.bitmap.height
-        && Buffer.compare(Buffer.from(first.bitmap.data), Buffer.from(second.bitmap.data)) === 0;
-}
-
-// Neconyan: card.png and portrait.png must decode from the same artwork source. A rebuild
-// that updates only one of them would otherwise install with the wrong avatar, so the
-// bundled catalog is pruned at load time whenever the two disagree.
-const bundledAssistantPixelsMatch = await loadBundledAssistantPixelMatches();
-
-/**
- * @returns {Promise<(pair: string[]) => boolean>}
- */
-async function loadBundledAssistantPixelMatches() {
-    const matches = new Map();
-    try {
-        const manifest = JSON.parse(fs.readFileSync(path.join(ASSISTANT_MANIFEST_ROOT, 'manifest.json'), 'utf8'));
-        for (const personality of Array.isArray(manifest.personalities) ? manifest.personalities : []) {
-            for (const variant of Array.isArray(personality?.variants) ? personality.variants : []) {
-                if (!variant || typeof variant.card !== 'string' || typeof variant.portrait !== 'string') continue;
-                const resolveAsset = value => path.resolve(ASSISTANT_MANIFEST_ROOT, value);
-                matches.set(resolveAsset(variant.card), resolveAsset(variant.portrait));
-            }
-        }
-        for (const [cardPath, portraitPath] of matches) {
-            matches.set(cardPath, await hasIdenticalAssistantPixels(cardPath, portraitPath));
-        }
-    } catch (error) {
-        console.error('Failed to verify bundled assistant artwork.', error);
-        return () => true;
-    }
-    return (cardPath, portraitPath) => {
-        const known = matches.get(cardPath);
-        return typeof known === 'boolean' ? known : true;
-    };
-}
-
-/**
  * The manifest is bundled application data. Keep the public API driven by this
  * allow-list so request values can never become filesystem paths.
  */
@@ -150,12 +103,6 @@ function loadAssistantManifest() {
                     const card = tryParse(read(fs.readFileSync(resolveAsset(variant.card))));
                     const metadata = card?.data?.extensions?.neconyan_assistant;
                     if (metadata?.id !== variant.id || Number(metadata.version) !== assistantManifestVersion) continue;
-                    // Neconyan: card.png and portrait.png are embedded from the same source. Detect a
-                    // half-applied rebuild here so a mismatched card cannot silently half-install.
-                    if (!bundledAssistantPixelsMatch(resolveAsset(variant.card), resolveAsset(variant.portrait))) {
-                        console.error(`Bundled assistant ${variant.id} has mismatched card/portrait artwork.`);
-                        continue;
-                    }
                 } catch {
                     continue;
                 }
