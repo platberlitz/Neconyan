@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { imageSize } from 'image-size';
+import { Jimp, JimpMime } from '../src/jimp.js';
 
 import { setConfigFilePath } from '../src/util.js';
 
@@ -49,7 +50,7 @@ async function fetchWithFileSupport(input, init) {
 // A real 8x8 PNG. The cached-thumbnail branch of generateThumbnail measures the file with
 // image-size, so those cases need parseable bytes rather than an arbitrary marker.
 const PNG_FIXTURE = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIAQMAAAD+wSzIAAAABlBMVEX///+/v7+jQ3Y5AAAADklEQVQI12P4AIX8EAgALgAD/aNpbtEAAAAASUVORK5CYII=', 'base64');
-const THUMBNAIL_MARKER = 'cached-thumbnail-bytes';
+const THUMBNAIL_MARKER = PNG_FIXTURE;
 const SECRET_MARKER = 'secret-outside-the-folder';
 
 describe('thumbnail file name resolution', () => {
@@ -147,8 +148,45 @@ describe('thumbnail file name resolution', () => {
         const response = await requestThumbnail('type=avatar&file=Mara%2520Rodriguez.png');
 
         expect(response.status).toBe(200);
-        expect(await response.text()).toBe(THUMBNAIL_MARKER);
+        expect(Buffer.from(await response.arrayBuffer())).toEqual(THUMBNAIL_MARKER);
         expect(errorSpy).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        'desktop',
+        'mobile',
+    ])('refreshes an existing %s thumbnail after the original is replaced', async (preset) => {
+        const file = 'Nori (Male).png';
+        writeCharacter(file);
+        setThumbnailRuntimeSettings({ enabled: true, format: 'png', quality: 100 });
+        setThumbnailMobileRuntimeSettings({ enabled: true, format: 'png', quality: 100 });
+        setThumbnailDimensions({ ...originalThumbnailDimensions, avatar: [6, 8] });
+        setThumbnailMobileDimensions({ ...originalMobileThumbnailDimensions, avatar: [3, 4] });
+        const url = `${baseUrl}/thumbnail?type=avatar&file=${encodeURIComponent(file)}&preset=${preset}`;
+        const initial = await fetch(url);
+        expect(initial.status).toBe(200);
+        const oldBytes = Buffer.from(await initial.arrayBuffer());
+        const replacement = new Jimp({ width: 8, height: 8, color: 0xff0000ff });
+        const originalPath = path.join(directories.characters, file);
+        fs.writeFileSync(originalPath, await replacement.getBuffer(JimpMime.png));
+        const updated = new Date(Date.now() + 2000);
+        fs.utimesSync(originalPath, updated, updated);
+
+        const response = await fetch(url, { headers: { 'If-None-Match': initial.headers.get('etag'), 'Cache-Control': 'max-age=0' } });
+        expect(response.status).toBe(200);
+        const bytes = Buffer.from(await response.arrayBuffer());
+        expect(bytes).not.toEqual(oldBytes);
+        expect((await Jimp.read(bytes)).getPixelColor(0, 0)).toBe(0xff0000ff);
+
+        // The regenerated image is reused on the next request.
+        const folder = preset === 'mobile' ? directories.thumbnailsAvatarMobile : directories.thumbnailsAvatar;
+        const cachedPath = path.join(folder, file);
+        const cachedStat = fs.statSync(cachedPath);
+        const past = new Date(cachedStat.ctimeMs - 1000);
+        fs.utimesSync(originalPath, past, past);
+        const unchanged = await fetch(url, { headers: { 'If-None-Match': response.headers.get('etag'), 'Cache-Control': 'max-age=0' } });
+        expect(unchanged.status).toBe(304);
+        expect(fs.statSync(cachedPath).ctimeMs).toBe(cachedStat.ctimeMs);
     });
 
     test.each([
@@ -201,7 +239,7 @@ describe('thumbnail file name resolution', () => {
         const response = await requestThumbnail('type=avatar&file=Mara%20Rodriguez.png');
 
         expect(response.status).toBe(200);
-        expect(await response.text()).toBe(THUMBNAIL_MARKER);
+        expect(Buffer.from(await response.arrayBuffer())).toEqual(THUMBNAIL_MARKER);
     });
 
     test('still serves plain names', async () => {
@@ -211,7 +249,7 @@ describe('thumbnail file name resolution', () => {
         const response = await requestThumbnail('type=avatar&file=Alice.png');
 
         expect(response.status).toBe(200);
-        expect(await response.text()).toBe(THUMBNAIL_MARKER);
+        expect(Buffer.from(await response.arrayBuffer())).toEqual(THUMBNAIL_MARKER);
     });
 
     describePosix('POSIX file names', () => {
@@ -223,7 +261,7 @@ describe('thumbnail file name resolution', () => {
             const response = await requestThumbnail(`type=avatar&file=${encodeURIComponent(file)}`);
 
             expect(response.status).toBe(200);
-            expect(await response.text()).toBe(THUMBNAIL_MARKER);
+            expect(Buffer.from(await response.arrayBuffer())).toEqual(THUMBNAIL_MARKER);
 
             invalidateThumbnail(directories, 'avatar', file);
             expect(fs.existsSync(path.join(directories.thumbnailsAvatar, file))).toBe(false);
@@ -265,7 +303,7 @@ describe('thumbnail file name resolution', () => {
         const response = await requestThumbnail('type=avatar&file=50%25%20Off.png');
 
         expect(response.status).toBe(200);
-        expect(await response.text()).toBe(THUMBNAIL_MARKER);
+        expect(Buffer.from(await response.arrayBuffer())).toEqual(THUMBNAIL_MARKER);
     });
 
     test('generateThumbnail resolves an over-encoded name to the file on disk', async () => {

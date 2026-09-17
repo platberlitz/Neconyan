@@ -422,13 +422,11 @@ publicRouter.get('/', async function (request, response) {
         const pathToCachedFile = resolveDirectChildPath(thumbnailFolder, file);
         if (!pathToCachedFile) return response.sendStatus(403);
 
-        // Try to generate thumbnail if it doesn't exist
-        if (!fs.existsSync(pathToCachedFile)) {
-            const thumbResult = await generateThumbnail(request.user.directories, type, file, false, null, effectivePreset);
-            // If generation failed (path is null), serve the original file
-            if (!thumbResult.path) {
-                return serveOriginal();
-            }
+        // Check freshness even when a cached desktop or mobile thumbnail exists.
+        const thumbResult = await generateThumbnail(request.user.directories, type, file, false, null, effectivePreset);
+        // If generation failed (path is null), serve the original file
+        if (!thumbResult.path) {
+            return serveOriginal();
         }
 
         if (fs.existsSync(pathToCachedFile)) {
