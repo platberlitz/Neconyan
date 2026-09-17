@@ -1327,6 +1327,8 @@ export function cancelStatusCheck(reason = 'Manually cancelled status check') {
     abortStatusCheck?.abort(new AbortReason(reason));
     abortStatusCheck = new AbortController();
     setOnlineStatus('no_connection');
+    // Neconyan: an aborted check must never leave Connect disabled with Cancel showing.
+    stopStatusLoading();
 }
 
 export function displayOnlineStatus() {

@@ -307,7 +307,7 @@ export function normalizeCustomEndpointPreset(preset) {
 
     return {
         name,
-        url: String(preset?.url ?? ''),
+        url: String(preset?.url ?? '').trim().replace(/\/+$/, ''), // Neconyan: a trailing slash would produce '//chat/completions'
         key: secretId ? '' : String(preset?.key ?? ''), // Don't persist plaintext key if secretId exists
         model: String(preset?.model ?? ''),
         secretId,

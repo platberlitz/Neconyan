@@ -33,7 +33,7 @@ const CONNECTION_COMMANDS = Object.freeze({
         'stop-strings', 'start-reply-with', 'reasoning-template',
         'request-reasoning', 'reasoning-effort', 'verbosity', 'enable-web-search',
         'request-images', 'request-image-resolution', 'request-image-aspect-ratio',
-        'custom-reasoning-preset', 'custom-reasoning-param-format',
+        'custom-reasoning-param-format',
         'custom-reasoning-param-name', 'custom-reasoning-enabled-value',
         'custom-reasoning-disabled-value', 'prompt-post-processing', 'regex-preset',
     ]),

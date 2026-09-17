@@ -45,7 +45,7 @@ import {
 } from './PromptManager.js';
 
 import { forceCharacterEditorTokenize, getCustomStoppingStrings, persona_description_positions, power_user } from './power-user.js';
-import { rotateSecret, SECRET_KEYS, secret_state, writeSecret } from './secrets.js';
+import { deleteSecret, rotateSecret, SECRET_KEYS, secret_state, writeSecret } from './secrets.js';
 
 import { getEventSourceStream } from './sse-stream.js';
 import { fetchResumable } from './resumable-generation.js';
@@ -82,6 +82,7 @@ import { renderTemplateAsync } from './templates.js';
 import { SlashCommandEnumValue } from './slash-commands/SlashCommandEnumValue.js';
 import { callGenericPopup, Popup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
 import { t } from './i18n.js';
+import { extension_settings } from './extensions.js';
 import { ToolManager } from './tool-calling.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { COMETAPI_IGNORE_PATTERNS, IGNORE_SYMBOL, MEDIA_DISPLAY, MEDIA_TYPE } from './constants.js';
@@ -369,13 +370,6 @@ export const reasoning_tag_styles = {
     think: 'think',
     thinking: 'thinking',
     thought: 'thought',
-};
-
-export const custom_reasoning_preset_types = {
-    OPENAI: 'openai',
-    GLM_5_1: 'glm_5_1',
-    KIMI_K2: 'kimi_k2',
-    CUSTOM: 'custom',
 };
 
 export const custom_reasoning_param_formats = {
@@ -673,7 +667,6 @@ const default_settings = {
     auto_append_reasoning_tag_style: reasoning_tag_styles.think,
     reasoning_effort: reasoning_effort_types.none,
     verbosity: verbosity_levels.auto,
-    custom_reasoning_preset: custom_reasoning_preset_types.OPENAI,
     custom_reasoning_param_name: 'reasoning_effort',
     custom_reasoning_param_format: custom_reasoning_param_formats.OPENAI,
     custom_reasoning_enabled_value: 'enabled',
@@ -694,27 +687,6 @@ const default_settings = {
 };
 
 const oai_settings = structuredClone(default_settings);
-
-const CUSTOM_REASONING_PRESETS = {
-    [custom_reasoning_preset_types.OPENAI]: {
-        paramName: 'reasoning_effort',
-        format: custom_reasoning_param_formats.OPENAI,
-        enabledValue: 'enabled',
-        disabledValue: 'disabled',
-    },
-    [custom_reasoning_preset_types.GLM_5_1]: {
-        paramName: 'thinking',
-        format: custom_reasoning_param_formats.THINKING_OBJECT,
-        enabledValue: 'enabled',
-        disabledValue: 'disabled',
-    },
-    [custom_reasoning_preset_types.KIMI_K2]: {
-        paramName: 'thinking',
-        format: custom_reasoning_param_formats.THINKING_OBJECT,
-        enabledValue: 'enabled',
-        disabledValue: 'disabled',
-    },
-};
 
 export let proxies = [
     {
@@ -2338,10 +2310,6 @@ function appendAutoAppendReasoningInstruction(messages, settings = oai_settings,
         content: instruction,
     });
     return nextMessages;
-}
-
-function getCustomReasoningPresetConfig(preset = custom_reasoning_preset_types.OPENAI) {
-    return CUSTOM_REASONING_PRESETS[preset] ?? CUSTOM_REASONING_PRESETS[custom_reasoning_preset_types.OPENAI];
 }
 
 function ensureModelFavoritesStore(settings = oai_settings) {
@@ -5688,7 +5656,6 @@ export async function createGenerationParameters(settings, model, type, messages
         generate_data.custom_include_body = settings.custom_include_body;
         generate_data.custom_exclude_body = settings.custom_exclude_body;
         generate_data.custom_include_headers = settings.custom_include_headers;
-        generate_data.custom_reasoning_preset = settings.custom_reasoning_preset;
         generate_data.custom_reasoning_param_name = settings.custom_reasoning_param_name;
         generate_data.custom_reasoning_param_format = settings.custom_reasoning_param_format;
         generate_data.custom_reasoning_enabled_value = settings.custom_reasoning_enabled_value;
@@ -7613,6 +7580,8 @@ function setAutoAppendReasoningTagControls() {
 async function getStatusOpen() {
     // Neconyan: only the latest connection attempt may update status or provider models.
     cancelStatusCheck('New Chat Completion status check');
+    // Neconyan: the check owns the Connect/Cancel loading state so no early return can leave the buttons stuck.
+    startStatusLoading();
     const { signal } = abortStatusCheck;
     const requestedSource = oai_settings.chat_completion_source;
     const isCurrentCheck = () => !signal.aborted && main_api === 'openai' && oai_settings.chat_completion_source === requestedSource;
@@ -7665,7 +7634,7 @@ async function getStatusOpen() {
     }
 
     if (oai_settings.chat_completion_source === chat_completion_sources.CUSTOM) {
-        $('.model_custom_select').empty();
+        // Neconyan: the model list is replaced only when a new one arrives; a failed probe keeps the old options.
         data.custom_url = oai_settings.custom_url;
         data.custom_include_headers = oai_settings.custom_include_headers;
         if (selected_custom_endpoint_preset?.secretId) {
@@ -7726,7 +7695,7 @@ async function getStatusOpen() {
             return;
         }
 
-        if ('data' in responseData && Array.isArray(responseData.data)) {
+        if ('data' in responseData && Array.isArray(responseData.data) && !responseData.error) {
             saveModelList(responseData.data, requestedSource);
         }
         if (!('error' in responseData)) {
@@ -7734,6 +7703,12 @@ async function getStatusOpen() {
         }
         if (responseData.bypass) {
             setOnlineStatus(t`Status check bypassed`);
+        }
+        if (responseData.error && requestedSource === chat_completion_sources.CUSTOM) {
+            // Neconyan: a failed Custom probe says why instead of pretending the check was skipped.
+            const message = String(responseData.message || t`The endpoint did not return a model list.`);
+            setOnlineStatus(t`Connected without model list. Requests may fail.`);
+            toastr.warning(message, t`Custom endpoint`, { timeOut: 10000 });
         }
     } catch (error) {
         if (!isCurrentCheck()) {
@@ -9596,59 +9571,28 @@ async function onCustomizeParametersClick() {
         saveSettingsDebounced();
     });
 
-    const syncCustomReasoningPopup = () => {
-        template.find('#custom_reasoning_preset').val(oai_settings.custom_reasoning_preset);
-        template.find('#custom_reasoning_param_name').val(oai_settings.custom_reasoning_param_name);
-        template.find('#custom_reasoning_param_format').val(oai_settings.custom_reasoning_param_format);
-        template.find('#custom_reasoning_enabled_value').val(oai_settings.custom_reasoning_enabled_value);
-        template.find('#custom_reasoning_disabled_value').val(oai_settings.custom_reasoning_disabled_value);
-
-        const format = String(oai_settings.custom_reasoning_param_format ?? custom_reasoning_param_formats.OPENAI);
-        const showToggleValues = [custom_reasoning_param_formats.STRING, custom_reasoning_param_formats.THINKING_OBJECT].includes(format);
-        template.find('.sb-custom-reasoning-toggle-values').toggle(showToggleValues);
-    };
-
-    const applyCustomReasoningPreset = (preset, { preserveValues = false } = {}) => {
-        setCustomReasoningPreset(preset, { preserveValues });
-        syncCustomReasoningPopup();
-        saveSettingsDebounced();
-    };
-
-    template.find('#custom_reasoning_preset').on('input', function () {
-        applyCustomReasoningPreset(String($(this).val()));
-    });
-
-    template.find('#custom_reasoning_param_name').on('input', function () {
-        oai_settings.custom_reasoning_preset = custom_reasoning_preset_types.CUSTOM;
-        oai_settings.custom_reasoning_param_name = String($(this).val()).trim();
-        syncCustomReasoningPopup();
-        saveSettingsDebounced();
-    });
-
-    template.find('#custom_reasoning_param_format').on('input', function () {
-        oai_settings.custom_reasoning_preset = custom_reasoning_preset_types.CUSTOM;
+    template.find('#custom_reasoning_param_format').val(oai_settings.custom_reasoning_param_format).on('input', function () {
         oai_settings.custom_reasoning_param_format = String($(this).val());
-        syncCustomReasoningPopup();
+        syncCustomReasoningFormatView(template);
         saveSettingsDebounced();
     });
 
-    template.find('#custom_reasoning_enabled_value').on('input', function () {
-        oai_settings.custom_reasoning_preset = custom_reasoning_preset_types.CUSTOM;
-        oai_settings.custom_reasoning_enabled_value = String($(this).val()).trim();
-        syncCustomReasoningPopup();
-        saveSettingsDebounced();
-    });
+    // Trim on blur, not on every keystroke, so a space typed mid-edit is not eaten under the cursor.
+    const bindTrimmedTextSetting = (selector, key) => {
+        template.find(selector).val(oai_settings[key]).on('input', function () {
+            oai_settings[key] = String($(this).val()).trim();
+            saveSettingsDebounced();
+        }).on('blur', function () {
+            $(this).val(oai_settings[key]);
+        });
+    };
+    bindTrimmedTextSetting('#custom_reasoning_param_name', 'custom_reasoning_param_name');
+    bindTrimmedTextSetting('#custom_reasoning_enabled_value', 'custom_reasoning_enabled_value');
+    bindTrimmedTextSetting('#custom_reasoning_disabled_value', 'custom_reasoning_disabled_value');
 
-    template.find('#custom_reasoning_disabled_value').on('input', function () {
-        oai_settings.custom_reasoning_preset = custom_reasoning_preset_types.CUSTOM;
-        oai_settings.custom_reasoning_disabled_value = String($(this).val()).trim();
-        syncCustomReasoningPopup();
-        saveSettingsDebounced();
-    });
+    syncCustomReasoningFormatView(template);
 
-    syncCustomReasoningPopup();
-
-    await callGenericPopup(template, POPUP_TYPE.TEXT, '', { wide: true, large: true });
+    await callGenericPopup(template, POPUP_TYPE.TEXT, '', { wide: true, allowVerticalScrolling: true });
 }
 
 /**
@@ -10153,16 +10097,20 @@ export async function loadCustomEndpointPresets(settings) {
     // Neconyan: 'None' means "use the URL/model typed in the fields"; applying it at load would blank them.
     if (selected_custom_endpoint_preset && selected_custom_endpoint_preset.name !== 'None') {
         // Neconyan: load-time apply must not rotate or write secrets; requests send secret_id explicitly.
+        // applyFields: false keeps the URL/model the user last typed; the dropdown shows '(edited)' when they differ.
         await setCustomEndpointPreset(
             selected_custom_endpoint_preset.name,
             selected_custom_endpoint_preset.url,
             selected_custom_endpoint_preset.key,
             selected_custom_endpoint_preset.model,
-            { secretId: selected_custom_endpoint_preset.secretId, writeKey: false, reconnect: false },
+            { secretId: selected_custom_endpoint_preset.secretId, writeKey: false, reconnect: false, applyFields: false },
         );
     } else {
         $('#custom_endpoint_preset_name').val('');
     }
+
+    pruneStaleCustomEndpointSecretBindings();
+    refreshCustomEndpointPresetEditedState();
 }
 
 function getCustomEndpointPresetOption(name) {
@@ -10188,9 +10136,31 @@ function updateCustomEndpointPresetOption(preset) {
     }
 }
 
-async function activateCustomEndpointPresetSecret(preset, { forceWrite = false } = {}) {
+/**
+ * Marks the selected profile's option as '(edited)' when the live URL or model differ from what the profile saved.
+ */
+export function refreshCustomEndpointPresetEditedState() {
+    const preset = selected_custom_endpoint_preset;
     if (!preset || preset.name === 'None') {
         return;
+    }
+
+    const normalizedPreset = normalizeCustomEndpointPreset(preset);
+    const liveUrl = normalizeCustomEndpointPreset({ name: preset.name, url: oai_settings.custom_url }).url;
+    const liveModel = String(oai_settings.custom_model ?? '');
+    const edited = liveUrl !== normalizedPreset.url || liveModel !== normalizedPreset.model;
+    getCustomEndpointPresetOption(preset.name).text(edited ? `${preset.name} (edited)` : preset.name);
+}
+
+/**
+ * @param {object} preset
+ * @param {object} [options]
+ * @param {boolean} [options.forceWrite]
+ * @returns {Promise<boolean>} true when the active secret was rotated (which already triggers a reconnect)
+ */
+async function activateCustomEndpointPresetSecret(preset, { forceWrite = false } = {}) {
+    if (!preset || preset.name === 'None') {
+        return false;
     }
 
     if (preset.secretId && (!forceWrite || !preset.key)) {
@@ -10199,8 +10169,9 @@ async function activateCustomEndpointPresetSecret(preset, { forceWrite = false }
         const isAlreadyActive = secret_state[SECRET_KEYS.CUSTOM]?.some(secret => secret.id === preset.secretId && secret.active);
         if (!isAlreadyActive) {
             await rotateSecret(SECRET_KEYS.CUSTOM, preset.secretId);
+            return true;
         }
-        return;
+        return false;
     }
 
     // Neconyan: legacy/keyless profiles get a stable per-profile secret id, even when the key is intentionally empty.
@@ -10208,6 +10179,7 @@ async function activateCustomEndpointPresetSecret(preset, { forceWrite = false }
     if (secretId) {
         preset.secretId = secretId;
     }
+    return false;
 }
 
 function updateCustomEndpointKeyInput(preset, key) {
@@ -10218,6 +10190,34 @@ function updateCustomEndpointKeyInput(preset, key) {
     }
 
     $('#api_key_custom').removeAttr('placeholder').val(key);
+}
+
+/**
+ * Clears profile bindings that point at a secret which no longer exists (deleted in the key manager or
+ * settings copied without secrets). Without this the server would send an empty bearer token.
+ * @returns {boolean} whether anything changed
+ */
+export function pruneStaleCustomEndpointSecretBindings() {
+    if (!secret_state || typeof secret_state !== 'object' || Object.keys(secret_state).length === 0) {
+        return false;
+    }
+
+    const knownIds = new Set((secret_state[SECRET_KEYS.CUSTOM] ?? []).map(secret => secret.id));
+    let changed = false;
+    for (const preset of custom_endpoint_presets) {
+        if (preset.name !== 'None' && preset.secretId && !knownIds.has(preset.secretId)) {
+            preset.secretId = '';
+            preset.key = '';
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        updateCustomEndpointKeyInput(selected_custom_endpoint_preset, '');
+        toastr.warning(t`An endpoint profile pointed at an API key that no longer exists. Type the key again and press Connect to rebind it.`, t`Custom endpoint`, { timeOut: 10000 });
+        saveSettingsDebounced();
+    }
+    return changed;
 }
 
 // Neconyan: connection profiles can rotate CUSTOM secrets without using the endpoint preset dropdown.
@@ -10246,7 +10246,7 @@ export function syncCustomEndpointPresetSelectionBySecretId(secretId) {
     return false;
 }
 
-async function setCustomEndpointPreset(name, url, key, model, { secretId = '', writeKey = true, reconnect = true } = {}) {
+async function setCustomEndpointPreset(name, url, key, model, { secretId = '', writeKey = true, reconnect = true, applyFields = true } = {}) {
     const normalizedPreset = normalizeCustomEndpointPreset({ name, url, key, model, secretId });
     const preset = custom_endpoint_presets.find(p => p.name === normalizedPreset.name);
     if (preset) {
@@ -10263,19 +10263,29 @@ async function setCustomEndpointPreset(name, url, key, model, { secretId = '', w
     }
 
     $('#custom_endpoint_preset_name').val(normalizedPreset.name === 'None' ? '' : normalizedPreset.name);
-    oai_settings.custom_url = normalizedPreset.url;
+    // Neconyan: applyFields false (load) keeps what the user last typed; only empty fields take the profile values.
+    if (applyFields || !oai_settings.custom_url) {
+        oai_settings.custom_url = normalizedPreset.url;
+    }
     $('#custom_api_url_text').val(oai_settings.custom_url);
-    oai_settings.custom_model = normalizedPreset.model;
-    $('#custom_model_id').val(oai_settings.custom_model);
+    if (applyFields || !oai_settings.custom_model) {
+        oai_settings.custom_model = normalizedPreset.model;
+    }
+    $('#custom_model_id').val(oai_settings.custom_model).trigger('input');
     $('#model_custom_select').val(oai_settings.custom_model);
     refreshModelIdSearchControlsForSource(chat_completion_sources.CUSTOM);
 
+    // Neconyan: clear typed key text before rotating; rotation reconnects, and Connect would otherwise bind that text to this profile.
+    $('#api_key_custom').val('');
+    let rotated = false;
     if (writeKey) {
-        await activateCustomEndpointPresetSecret(selected_custom_endpoint_preset);
+        rotated = await activateCustomEndpointPresetSecret(selected_custom_endpoint_preset);
     }
     updateCustomEndpointKeyInput(selected_custom_endpoint_preset, normalizedPreset.key);
+    refreshCustomEndpointPresetEditedState();
 
-    if (reconnect && oai_settings.chat_completion_source === chat_completion_sources.CUSTOM) {
+    // Neconyan: a secret rotation already triggers a reconnect through the #main_api change; do not connect twice.
+    if (reconnect && !rotated && oai_settings.chat_completion_source === chat_completion_sources.CUSTOM) {
         reconnectOpenAi();
     }
 }
@@ -10292,16 +10302,49 @@ async function onCustomEndpointPresetChange() {
     saveSettingsDebounced();
 }
 
+/**
+ * Renames a profile in place and follows every connection profile that referenced it by name.
+ * @param {string} oldName
+ * @param {string} newName
+ */
+function renameCustomEndpointPreset(oldName, newName) {
+    const preset = custom_endpoint_presets.find(p => p.name === oldName);
+    if (!preset) {
+        return;
+    }
+    preset.name = newName;
+    const option = getCustomEndpointPresetOption(oldName);
+    option.attr('value', newName).text(newName);
+    for (const profile of extension_settings?.connectionManager?.profiles ?? []) {
+        if (profile?.['custom-endpoint-profile'] === oldName) {
+            profile['custom-endpoint-profile'] = newName;
+        }
+    }
+}
+
 $('#save_custom_endpoint').on('click', async function () {
     const presetName = String($('#custom_endpoint_preset_name').val()).trim();
     const keyInputValue = String($('#api_key_custom').val()).trim();
 
-    if (!presetName || presetName === 'None') {
+    if (!presetName || presetName.toLowerCase() === 'none') {
         toastr.error(t`Please enter a name for the endpoint profile.`);
         return;
     }
 
-    const existingPreset = custom_endpoint_presets.find(preset => preset.name === presetName);
+    // Neconyan: a new name typed over a selected profile, with the same URL/model and no new key, is a rename, not a copy.
+    let existingPreset = custom_endpoint_presets.find(preset => preset.name === presetName);
+    const selected = selected_custom_endpoint_preset;
+    let renamed = false;
+    if (!existingPreset && !keyInputValue && selected && selected.name !== 'None' && selected.name !== presetName) {
+        const typed = normalizeCustomEndpointPreset({ name: presetName, url: $('#custom_api_url_text').val(), model: $('#custom_model_id').val() });
+        const current = normalizeCustomEndpointPreset(selected);
+        if (typed.url === current.url && typed.model === current.model) {
+            renameCustomEndpointPreset(selected.name, presetName);
+            existingPreset = selected;
+            renamed = true;
+        }
+    }
+
     const preset = buildCustomEndpointPresetForSave({
         name: presetName,
         url: $('#custom_api_url_text').val(),
@@ -10310,9 +10353,13 @@ $('#save_custom_endpoint').on('click', async function () {
         secretId: keyInputValue ? '' : existingPreset?.secretId,
     });
 
-    // Bind the active CUSTOM secret when saving without typing a new key (e.g. picked via the secrets manager)
+    // Neconyan: with the key box empty, the active CUSTOM secret is bound only when no other profile owns it.
+    // Otherwise a keyless local endpoint would silently send another provider's key.
     const activeSecret = secret_state[SECRET_KEYS.CUSTOM]?.find(s => s.active);
-    if (!keyInputValue && !preset.secretId && activeSecret) {
+    const activeSecretOwner = activeSecret
+        ? custom_endpoint_presets.find(p => p.name !== 'None' && p.name !== presetName && p.secretId === activeSecret.id)
+        : null;
+    if (!keyInputValue && activeSecret && !activeSecretOwner) {
         preset.secretId = activeSecret.id;
     }
 
@@ -10333,38 +10380,43 @@ $('#save_custom_endpoint').on('click', async function () {
     if (await saveSettings(0, { returnResult: true }) !== true) {
         return;
     }
-    toastr.success(t`Custom Endpoint Profile Saved`);
+    toastr.success(renamed ? t`Custom Endpoint Profile Renamed` : t`Custom Endpoint Profile Saved`);
 });
 
 $('#delete_custom_endpoint').on('click', async function () {
-    const presetName = $('#custom_endpoint_preset_name').val();
+    // Neconyan: delete what the dropdown shows, not whatever was typed in the name box.
+    const presetName = String($('#custom_endpoint_preset').val() ?? '');
     const index = custom_endpoint_presets.findIndex(preset => preset.name === presetName);
 
-    if (index !== -1) {
-        custom_endpoint_presets.splice(index, 1);
-        getCustomEndpointPresetOption(presetName).remove();
-
-        if (custom_endpoint_presets.length > 0) {
-            const newIndex = Math.max(0, index - 1);
-            selected_custom_endpoint_preset = custom_endpoint_presets[newIndex];
-        } else {
-            selected_custom_endpoint_preset = normalizeCustomEndpointPreset({ name: 'None' });
-        }
-
-        await setCustomEndpointPreset(
-            selected_custom_endpoint_preset.name,
-            selected_custom_endpoint_preset.url,
-            selected_custom_endpoint_preset.key,
-            selected_custom_endpoint_preset.model,
-            { secretId: selected_custom_endpoint_preset.secretId },
-        );
-
-        saveSettingsDebounced();
-        $('#custom_endpoint_preset').val(selected_custom_endpoint_preset.name);
-        toastr.success(t`Custom Endpoint Profile Deleted`);
-    } else {
-        toastr.error(t`Could not find custom endpoint profile with name '${presetName}'`);
+    if (!presetName || presetName === 'None' || index === -1) {
+        toastr.error(t`Select an endpoint profile to delete.`);
+        return;
     }
+
+    const confirmed = await callGenericPopup(t`Delete endpoint profile '${presetName}'? The URL and model stay in the fields.`, POPUP_TYPE.CONFIRM);
+    if (confirmed !== POPUP_RESULT.AFFIRMATIVE) {
+        return;
+    }
+
+    const [removed] = custom_endpoint_presets.splice(index, 1);
+    getCustomEndpointPresetOption(presetName).remove();
+
+    // Neconyan: keep the fields and connection as they are; just stop pointing at a profile.
+    selected_custom_endpoint_preset = custom_endpoint_presets.find(preset => preset.name === 'None') ?? normalizeCustomEndpointPreset({ name: 'None' });
+    $('#custom_endpoint_preset').val('None');
+    $('#custom_endpoint_preset_name').val('');
+
+    // Neconyan: drop the profile's key unless another profile still uses it, so the key manager does not fill with orphans.
+    const secretShared = removed.secretId && custom_endpoint_presets.some(preset => preset.secretId === removed.secretId);
+    if (removed.secretId && !secretShared && secret_state[SECRET_KEYS.CUSTOM]?.some(secret => secret.id === removed.secretId)) {
+        await deleteSecret(SECRET_KEYS.CUSTOM, removed.secretId);
+    }
+    updateCustomEndpointKeyInput(selected_custom_endpoint_preset, '');
+
+    if (await saveSettings(0, { returnResult: true }) !== true) {
+        return;
+    }
+    toastr.success(t`Custom Endpoint Profile Deleted`);
 });
 
 // Neconyan: connection profiles record the selected Custom endpoint profile by name, like /proxy does for
@@ -10455,43 +10507,22 @@ function hasSlashCommandValue(args, value) {
         || String(value ?? '').trim().length > 0;
 }
 
-function syncCustomReasoningSettingControls() {
-    $('#custom_reasoning_preset').val(oai_settings.custom_reasoning_preset);
-    $('#custom_reasoning_param_name').val(oai_settings.custom_reasoning_param_name);
-    $('#custom_reasoning_param_format').val(oai_settings.custom_reasoning_param_format);
-    $('#custom_reasoning_enabled_value').val(oai_settings.custom_reasoning_enabled_value);
-    $('#custom_reasoning_disabled_value').val(oai_settings.custom_reasoning_disabled_value);
-
+/**
+ * Neconyan: the reasoning parameter format decides which value fields and which hint the
+ * Additional Parameters popup shows. Works on the popup template before it is attached, or
+ * document-wide once it is open (slash commands).
+ * @param {JQuery<HTMLElement>|JQuery<Document>} root Where to look for the popup fields
+ */
+function syncCustomReasoningFormatView(root = $(document)) {
     const format = String(oai_settings.custom_reasoning_param_format ?? custom_reasoning_param_formats.OPENAI);
     const showToggleValues = [custom_reasoning_param_formats.STRING, custom_reasoning_param_formats.THINKING_OBJECT].includes(format);
-    $('.sb-custom-reasoning-toggle-values').toggle(showToggleValues);
-}
-
-function setCustomReasoningPreset(preset, { preserveValues = false } = {}) {
-    oai_settings.custom_reasoning_preset = preset;
-
-    if (preset !== custom_reasoning_preset_types.CUSTOM) {
-        const presetConfig = getCustomReasoningPresetConfig(preset);
-        oai_settings.custom_reasoning_param_name = presetConfig.paramName;
-        oai_settings.custom_reasoning_param_format = presetConfig.format;
-        if (!preserveValues) {
-            oai_settings.custom_reasoning_enabled_value = presetConfig.enabledValue;
-            oai_settings.custom_reasoning_disabled_value = presetConfig.disabledValue;
-        }
-    }
-
-    syncCustomReasoningSettingControls();
-}
-
-function markCustomReasoningPreset() {
-    oai_settings.custom_reasoning_preset = custom_reasoning_preset_types.CUSTOM;
-    syncCustomReasoningSettingControls();
-}
-
-function markCustomReasoningPresetForManualCommand(args) {
-    if (!isTrueBoolean(String(args?.quiet ?? 'false'))) {
-        markCustomReasoningPreset();
-    }
+    // The hidden attribute works on the detached template too; jQuery's toggle() does not.
+    root.find('.sb-custom-reasoning-toggle-values').each(function () {
+        this.hidden = !showToggleValues;
+    });
+    root.find('.sb-custom-reasoning-format-hint').each(function () {
+        this.hidden = this.dataset.format !== format;
+    });
 }
 
 function runBooleanChatCompletionSettingCallback(commandName, settingName, selector, onChange = null) {
@@ -10657,32 +10688,25 @@ function registerChatCompletionProfileSlashCommands() {
         forceEnum: true,
     });
     registerChatCompletionProfileSlashCommand({
-        name: 'custom-reasoning-preset',
-        callback: runEnumChatCompletionSettingCallback('custom-reasoning-preset', 'custom_reasoning_preset', '#custom_reasoning_preset', Object.values(custom_reasoning_preset_types), () => setCustomReasoningPreset(oai_settings.custom_reasoning_preset)),
-        description: 'custom reasoning preset',
-        enumList: Object.values(custom_reasoning_preset_types),
-        forceEnum: true,
-    });
-    registerChatCompletionProfileSlashCommand({
         name: 'custom-reasoning-param-format',
-        callback: runEnumChatCompletionSettingCallback('custom-reasoning-param-format', 'custom_reasoning_param_format', '#custom_reasoning_param_format', Object.values(custom_reasoning_param_formats), markCustomReasoningPresetForManualCommand),
+        callback: runEnumChatCompletionSettingCallback('custom-reasoning-param-format', 'custom_reasoning_param_format', '#custom_reasoning_param_format', Object.values(custom_reasoning_param_formats), () => syncCustomReasoningFormatView()),
         description: 'custom reasoning parameter format',
         enumList: Object.values(custom_reasoning_param_formats),
         forceEnum: true,
     });
     registerChatCompletionProfileSlashCommand({
         name: 'custom-reasoning-param-name',
-        callback: runStringChatCompletionSettingCallback('custom-reasoning-param-name', 'custom_reasoning_param_name', '#custom_reasoning_param_name', markCustomReasoningPresetForManualCommand),
+        callback: runStringChatCompletionSettingCallback('custom-reasoning-param-name', 'custom_reasoning_param_name', '#custom_reasoning_param_name'),
         description: 'custom reasoning parameter name',
     });
     registerChatCompletionProfileSlashCommand({
         name: 'custom-reasoning-enabled-value',
-        callback: runStringChatCompletionSettingCallback('custom-reasoning-enabled-value', 'custom_reasoning_enabled_value', '#custom_reasoning_enabled_value', markCustomReasoningPresetForManualCommand),
+        callback: runStringChatCompletionSettingCallback('custom-reasoning-enabled-value', 'custom_reasoning_enabled_value', '#custom_reasoning_enabled_value'),
         description: 'custom reasoning enabled value',
     });
     registerChatCompletionProfileSlashCommand({
         name: 'custom-reasoning-disabled-value',
-        callback: runStringChatCompletionSettingCallback('custom-reasoning-disabled-value', 'custom_reasoning_disabled_value', '#custom_reasoning_disabled_value', markCustomReasoningPresetForManualCommand),
+        callback: runStringChatCompletionSettingCallback('custom-reasoning-disabled-value', 'custom_reasoning_disabled_value', '#custom_reasoning_disabled_value'),
         description: 'custom reasoning disabled value',
     });
     registerChatCompletionProfileSlashCommand({
@@ -11246,6 +11270,7 @@ export function initOpenAI() {
 
     $('#custom_api_url_text').on('input', function () {
         oai_settings.custom_url = String($(this).val());
+        refreshCustomEndpointPresetEditedState();
         saveSettingsDebounced();
     });
 
@@ -11262,6 +11287,7 @@ export function initOpenAI() {
         updateKimiK3PrefillVisibility();
         updateChatCompletionSamplerControlVisibility();
         updateOpenAISettingsGroupVisibility();
+        refreshCustomEndpointPresetEditedState();
         saveSettingsDebounced();
     });
 
@@ -11694,4 +11720,26 @@ export function initOpenAI() {
     $('#customize_additional_parameters').on('click', onCustomizeParametersClick);
     $('#openai_proxy_preset').on('change', onProxyPresetChange);
     $('#custom_endpoint_preset').on('change', onCustomEndpointPresetChange);
+    // Neconyan: the Save/Delete icons are not real buttons; make Enter and Space work on them.
+    $('#save_custom_endpoint, #delete_custom_endpoint').on('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            $(this).trigger('click');
+        }
+    });
+    // Neconyan: keep profile bindings honest when keys are deleted or rotated in the key manager.
+    eventSource.on(event_types.SECRET_DELETED, (key) => {
+        if (key === SECRET_KEYS.CUSTOM) {
+            pruneStaleCustomEndpointSecretBindings();
+        }
+    });
+    eventSource.on(event_types.SECRET_ROTATED, (key) => {
+        if (key !== SECRET_KEYS.CUSTOM) {
+            return;
+        }
+        const activeSecret = secret_state[SECRET_KEYS.CUSTOM]?.find(secret => secret.active);
+        if (activeSecret && selected_custom_endpoint_preset?.secretId !== activeSecret.id) {
+            syncCustomEndpointPresetSelectionBySecretId(activeSecret.id);
+        }
+    });
 }

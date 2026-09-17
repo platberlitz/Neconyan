@@ -201,6 +201,18 @@ describe('Chat Completion preset utilities', () => {
         });
     });
 
+    test('trims Custom endpoint URLs and strips trailing slashes', () => {
+        expect(normalizeCustomEndpointPreset({
+            name: 'Sloppy proxy',
+            url: '  https://proxy.example/v1///  ',
+        }).url).toBe('https://proxy.example/v1');
+
+        expect(normalizeCustomEndpointPreset({
+            name: 'Bare host',
+            url: 'http://127.0.0.1:8080/',
+        }).url).toBe('http://127.0.0.1:8080');
+    });
+
     test('normalizes Custom endpoint profile secret ids', () => {
         expect(normalizeCustomEndpointPreset({
             name: 'Bound proxy',

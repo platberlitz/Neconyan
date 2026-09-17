@@ -481,6 +481,19 @@ export function readSecret(directories, key, id = null) {
 }
 
 /**
+ * Checks whether a secret with the given ID exists for a key.
+ * Neconyan: endpoint profiles pin a secret by ID; a deleted or foreign ID must be reported, not sent as an empty bearer.
+ * @param {import('../users.js').UserDirectoryList} directories User directories
+ * @param {string} key Secret key
+ * @param {string} id Secret ID
+ * @returns {boolean} Whether the secret exists
+ */
+export function secretIdExists(directories, key, id) {
+    const state = new SecretManager(directories).getSecretState();
+    return Array.isArray(state[key]) && state[key].some(secret => secret.id === id);
+}
+
+/**
  * Reads the secret state from the secrets file
  * @param {import('../users.js').UserDirectoryList} directories User directories
  * @returns {Record<string, boolean>} Secret state

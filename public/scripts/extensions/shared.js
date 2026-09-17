@@ -16,7 +16,6 @@ const CHAT_COMPLETION_PROFILE_REQUEST_FIELDS = {
     'request-images': ['request_images', value => isTrueBoolean(String(value))],
     'request-image-resolution': ['request_image_resolution', value => String(value ?? '')],
     'request-image-aspect-ratio': ['request_image_aspect_ratio', value => String(value ?? '')],
-    'custom-reasoning-preset': ['custom_reasoning_preset', value => String(value ?? '')],
     'custom-reasoning-param-format': ['custom_reasoning_param_format', value => String(value ?? '')],
     'custom-reasoning-param-name': ['custom_reasoning_param_name', value => String(value ?? '')],
     'custom-reasoning-enabled-value': ['custom_reasoning_enabled_value', value => String(value ?? '')],

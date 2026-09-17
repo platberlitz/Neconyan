@@ -5,6 +5,9 @@ import {
     world_names,
 } from './world-info.js';
 import { createNeconyanFolder, moveNeconyanLorebook } from './neconyan-lorebook-folders.js';
+import { t } from './i18n.js';
+import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
+import { initModelRotation, mountModelRotationPanel } from './neconyan-model-rotation.js';
 
 const nativeState = {
     characterRoot: null,
@@ -154,7 +157,15 @@ function ensureModelPresetWorkspace(config) {
     if (presets.parentElement !== workspace) workspace.appendChild(presets);
 }
 
-function clearCustomConnectionFields() {
+async function clearCustomConnectionFields() {
+    // Neconyan: 'New endpoint' wipes the URL and model; ask first when there is something to lose.
+    const url = document.getElementById('custom_api_url_text');
+    const model = document.getElementById('custom_model_id');
+    const hasContent = (url instanceof HTMLInputElement && url.value.trim()) || (model instanceof HTMLInputElement && model.value.trim());
+    if (hasContent) {
+        const confirmed = await callGenericPopup(t`Clear the current endpoint URL, model and key to start a new endpoint? Saved profiles are not affected.`, POPUP_TYPE.CONFIRM);
+        if (confirmed !== POPUP_RESULT.AFFIRMATIVE) return;
+    }
     for (const id of ['custom_endpoint_preset_name', 'custom_api_url_text', 'api_key_custom', 'custom_model_id']) {
         const input = document.getElementById(id);
         if (input instanceof HTMLInputElement) {
@@ -177,12 +188,13 @@ function ensureCustomConnectionWorkflow(customForm) {
     let section = drawerContent.querySelector(':scope > .neconyan-saved-connections');
     if (!(section instanceof HTMLElement)) {
         section = element('section', 'neconyan-saved-connections');
-        section.setAttribute('aria-label', 'Custom endpoint presets');
+        section.setAttribute('aria-label', t`Custom endpoint profiles`);
         const heading = element('div', 'neconyan-model-native-heading');
-        heading.append(element('span', 'neconyan-native-kicker', 'Connections'), element('h4', '', 'Custom endpoints'));
+        heading.append(element('span', 'neconyan-native-kicker', t`Connections`), element('h4', '', t`Custom endpoints`));
         const actions = element('div', 'neconyan-saved-connection-actions');
-        const fresh = button('New endpoint', 'menu_button menu_button_icon');
-        fresh.innerHTML = '<i class="fa-solid fa-file-circle-plus" aria-hidden="true"></i><span>New endpoint</span>';
+        const fresh = button(t`New endpoint`, 'menu_button menu_button_icon');
+        fresh.innerHTML = '<i class="fa-solid fa-file-circle-plus" aria-hidden="true"></i>';
+        fresh.append(element('span', '', t`New endpoint`));
         fresh.addEventListener('click', clearCustomConnectionFields);
         actions.appendChild(fresh);
         section.append(heading, actions);
@@ -191,7 +203,7 @@ function ensureCustomConnectionWorkflow(customForm) {
     if (row.parentElement !== section) section.appendChild(row);
     let nameLabel = section.querySelector('label[for="custom_endpoint_preset_name"]');
     if (!nameLabel) {
-        nameLabel = element('label', '', 'Endpoint name');
+        nameLabel = element('label', '', t`Endpoint name`);
         nameLabel.htmlFor = nameInput.id;
         section.append(nameLabel);
         customForm.querySelector('[data-i18n="Profile Name"]')?.classList.add('neconyan-relocated-label');
@@ -217,6 +229,7 @@ function organizeSavedConnections(api, page) {
     const title = owner.querySelector('h3 [data-i18n="Connection Profile"]');
     if (title) { title.textContent = 'Saved connections'; title.removeAttribute('data-i18n'); }
     select.setAttribute('aria-label', 'Saved connection');
+    mountModelRotationPanel(library);
     const actions = owner.querySelector('.connection-profile-actions');
     if (!actions || owner.querySelector('.neconyan-connection-management')) return;
     const management = element('details', 'neconyan-connection-management');
@@ -336,6 +349,7 @@ function ensureModelConnectionWorkspace(apiRoot) {
 }
 
 export function mountNeconyanModelWorkspace(root = document) {
+    initModelRotation();
     const config = root.querySelector?.('#ai_response_configuration') ?? document.getElementById('ai_response_configuration');
     if (!(config instanceof HTMLElement)) return;
     nativeState.modelRoot = config;

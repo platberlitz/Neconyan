@@ -10,7 +10,15 @@ const keyInputSource = source.match(/function updateCustomEndpointKeyInput\(pres
 const activateSource = source.match(/async function activateCustomEndpointPresetSecret\([\s\S]*?\n\}/)[0];
 const setPresetSource = source.match(/async function setCustomEndpointPreset\([\s\S]*?\n\}/)[0];
 const saveSource = source.match(/\$\('#save_custom_endpoint'\)\.on\('click', async function \(\) \{[\s\S]*?\n\}\);/)[0];
+const deleteSource = source.match(/\$\('#delete_custom_endpoint'\)\.on\('click', async function \(\) \{[\s\S]*?\n\}\);/)[0];
 const changeSource = source.match(/async function onCustomEndpointPresetChange\([\s\S]*?\n\}/)[0];
+const optionSource = source.match(/function getCustomEndpointPresetOption\(name\) \{[\s\S]*?\n\}/)[0];
+const editedSource = source.match(/export function refreshCustomEndpointPresetEditedState\(\) \{[\s\S]*?\n\}/)[0].replace(/^export /, '');
+const pruneSource = source.match(/export function pruneStaleCustomEndpointSecretBindings\(\) \{[\s\S]*?\n\}/)[0].replace(/^export /, '');
+const renameSource = source.match(/function renameCustomEndpointPreset\(oldName, newName\) \{[\s\S]*?\n\}/)[0];
+const syncSource = source.match(/export function syncCustomEndpointPresetSelectionBySecretId\(secretId\) \{[\s\S]*?\n\}/)[0].replace(/^export /, '');
+const POPUP_TYPE = { CONFIRM: 'confirm' };
+const POPUP_RESULT = { AFFIRMATIVE: 1, CANCEL: 0 };
 const scriptSource = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const saverSource = ['saveSettings', 'saveSettingsInner', 'normalizeSettingsVersion']
     .map(name => scriptSource.match(new RegExp(`(?:async )?function ${name}\\([\\s\\S]*?\\n\\}`))[0]).join('\n');
@@ -35,7 +43,8 @@ function createHarness({ profile = normalizeCustomEndpointPreset({ name: 'Saved 
     const attributes = new Map();
     const secretState = { [keys.CUSTOM]: [{ id: 'unrelated-active-id', active: true }] };
     let persistedSettings;
-    let saveHandler;
+    const handlers = new Map();
+    const optionTexts = new Map();
     const context = {
         ...Object.fromEntries([
             'firstRun', 'currentVersion', 'name1', 'active_character', 'active_group', 'user_avatar',
@@ -71,18 +80,22 @@ function createHarness({ profile = normalizeCustomEndpointPreset({ name: 'Saved 
         secret_state: secretState,
         console: { warn: jest.fn(), error: jest.fn(), log: jest.fn() },
         t: strings => strings.join(''),
-        toastr: { success: jest.fn(), error: jest.fn() },
+        toastr: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
         refreshModelIdSearchControlsForSource: jest.fn(),
         reconnectOpenAi: jest.fn(),
         updateCustomEndpointPresetOption: jest.fn(),
         appendCustomEndpointPresetOption: jest.fn(),
         rotateSecret: jest.fn(async () => {}),
+        deleteSecret: jest.fn(async () => {}),
+        callGenericPopup: jest.fn(async () => POPUP_RESULT.AFFIRMATIVE),
+        POPUP_TYPE,
+        POPUP_RESULT,
         $: selector => ({
             find() {
                 return this;
             },
             on(event, handler) {
-                saveHandler = handler;
+                handlers.set(selector, handler);
             },
             val(value) {
                 if (value === undefined) return values.get(selector) ?? '';
@@ -97,6 +110,30 @@ function createHarness({ profile = normalizeCustomEndpointPreset({ name: 'Saved 
                 attributes.delete(`${selector}:${name}`);
                 return this;
             },
+            trigger() {
+                return this;
+            },
+            text(value) {
+                if (value !== undefined) optionTexts.set(selector, value);
+                return this;
+            },
+            filter(callback) {
+                const name = values.get('#custom_endpoint_preset') ?? '';
+                const matched = callback(0, { value: name });
+                return {
+                    length: matched ? 1 : 0,
+                    remove() {
+                        return this;
+                    },
+                    attr() {
+                        return this;
+                    },
+                    text(value) {
+                        if (value !== undefined) optionTexts.set(name, value);
+                        return this;
+                    },
+                };
+            },
         }),
         writeSecret: jest.fn(async () => {
             if (writeResult) {
@@ -109,14 +146,18 @@ function createHarness({ profile = normalizeCustomEndpointPreset({ name: 'Saved 
         saveSettingsDebounced: jest.fn(),
         getStatusOpen: jest.fn(async () => context.selected_custom_endpoint_preset?.secretId),
     };
-    runInNewContext(`${saverSource}\n${keyInputSource}\n${connectSource}\n${activateSource}\n${setPresetSource}\n${changeSource}\n${saveSource}`, context);
+    runInNewContext(`${saverSource}\n${keyInputSource}\n${connectSource}\n${activateSource}\n${setPresetSource}\n${changeSource}\n${saveSource}\n${deleteSource}\n${optionSource}\n${editedSource}\n${pruneSource}\n${renameSource}\n${syncSource}`, context);
     return {
         context,
         profile,
         values,
         attributes,
+        optionTexts,
+        POPUP_TYPE,
+        POPUP_RESULT,
         connect: () => context.onConnectButtonClick({ stopPropagation() {} }),
-        save: () => saveHandler(),
+        save: () => handlers.get('#save_custom_endpoint')(),
+        deleteProfile: () => handlers.get('#delete_custom_endpoint')(),
         reload: () => createHarness({ profile: persistedSettings.selected_custom_endpoint_preset }),
         persisted: () => persistedSettings,
     };
@@ -309,6 +350,149 @@ describe('Custom endpoint profile credentials on Connect', () => {
         expect(harness.profile.secretId).toBe('replacement-id');
         expect(otherProfile.secretId).toBe('saved-id');
         expect(harness.attributes.has('#api_key_custom:placeholder')).toBe(false);
+    });
+});
+
+describe('Custom endpoint profile hardening', () => {
+    test('does not bind a keyless new profile to a secret owned by another profile', async () => {
+        const harness = createHarness();
+        harness.context.custom_endpoint_presets.push(normalizeCustomEndpointPreset({ name: 'Owner', secretId: 'unrelated-active-id' }));
+        harness.values.set('#custom_endpoint_preset_name', 'Local endpoint');
+        harness.values.set('#custom_api_url_text', 'http://127.0.0.1:8080/v1');
+        harness.values.set('#custom_model_id', 'local-model');
+
+        await harness.save();
+
+        const saved = harness.context.custom_endpoint_presets.find(preset => preset.name === 'Local endpoint');
+        expect(saved.secretId).toBe('replacement-id');
+        expect(saved.secretId).not.toBe('unrelated-active-id');
+    });
+
+    test('binds the active secret to a keyless new profile when no other profile owns it', async () => {
+        const harness = createHarness();
+        harness.values.set('#custom_endpoint_preset_name', 'Local endpoint');
+        harness.values.set('#custom_api_url_text', 'http://127.0.0.1:8080/v1');
+        harness.values.set('#custom_model_id', 'local-model');
+
+        await harness.save();
+
+        const saved = harness.context.custom_endpoint_presets.find(preset => preset.name === 'Local endpoint');
+        expect(saved.secretId).toBe('unrelated-active-id');
+        expect(harness.context.writeSecret).not.toHaveBeenCalled();
+    });
+
+    test('rebinds an existing profile to the active secret when saved with an empty key box', async () => {
+        const harness = createHarness();
+        harness.values.set('#custom_endpoint_preset_name', harness.profile.name);
+
+        await harness.save();
+
+        expect(harness.profile.secretId).toBe('unrelated-active-id');
+        expect(harness.context.writeSecret).not.toHaveBeenCalled();
+        expect(harness.context.toastr.success).toHaveBeenCalledTimes(1);
+    });
+
+    test('clears typed key text before rotating a profile secret and skips the second reconnect', async () => {
+        const harness = createHarness();
+        const other = normalizeCustomEndpointPreset({ name: 'B', secretId: 'b-id' });
+        harness.context.custom_endpoint_presets.push(other);
+        harness.values.set('#api_key_custom', 'typed-not-sent');
+        harness.values.set('#custom_endpoint_preset', 'B');
+        let inputDuringRotate;
+        harness.context.rotateSecret.mockImplementation(async () => {
+            inputDuringRotate = harness.values.get('#api_key_custom');
+        });
+
+        await harness.context.onCustomEndpointPresetChange();
+
+        expect(inputDuringRotate).toBe('');
+        expect(harness.context.rotateSecret).toHaveBeenCalledWith(keys.CUSTOM, 'b-id');
+        expect(harness.context.reconnectOpenAi).not.toHaveBeenCalled();
+    });
+
+    test('refuses to delete None or a missing profile', async () => {
+        const harness = createHarness();
+        harness.values.set('#custom_endpoint_preset', 'None');
+
+        await harness.deleteProfile();
+
+        expect(harness.context.toastr.error).toHaveBeenCalledTimes(1);
+        expect(harness.context.callGenericPopup).not.toHaveBeenCalled();
+        expect(harness.context.custom_endpoint_presets).toHaveLength(1);
+    });
+
+    test('deletes the dropdown selection after confirmation, keeps the fields and drops the unshared secret', async () => {
+        const harness = createHarness();
+        harness.context.secret_state[keys.CUSTOM] = [{ id: 'saved-id', active: true }];
+        harness.values.set('#custom_endpoint_preset', harness.profile.name);
+
+        await harness.deleteProfile();
+
+        expect(harness.context.custom_endpoint_presets.some(preset => preset.name === harness.profile.name)).toBe(false);
+        expect(harness.values.get('#custom_endpoint_preset')).toBe('None');
+        expect(harness.context.oai_settings.custom_url).toBeUndefined();
+        expect(harness.context.deleteSecret).toHaveBeenCalledWith(keys.CUSTOM, 'saved-id');
+        expect(harness.context.toastr.success).toHaveBeenCalledTimes(1);
+    });
+
+    test('keeps the profile when deletion is not confirmed', async () => {
+        const harness = createHarness();
+        harness.values.set('#custom_endpoint_preset', harness.profile.name);
+        harness.context.callGenericPopup.mockResolvedValueOnce(POPUP_RESULT.CANCEL);
+
+        await harness.deleteProfile();
+
+        expect(harness.context.custom_endpoint_presets).toHaveLength(1);
+        expect(harness.context.deleteSecret).not.toHaveBeenCalled();
+        expect(harness.context.toastr.success).not.toHaveBeenCalled();
+    });
+
+    test('renames a profile in place and updates connection profiles that reference it', async () => {
+        const harness = createHarness();
+        harness.context.secret_state[keys.CUSTOM] = [{ id: 'saved-id', active: true }];
+        const connectionProfile = { 'custom-endpoint-profile': harness.profile.name };
+        harness.context.extension_settings = { connectionManager: { profiles: [connectionProfile] } };
+        harness.values.set('#custom_endpoint_preset_name', 'Renamed endpoint');
+
+        await harness.save();
+
+        expect(harness.profile.name).toBe('Renamed endpoint');
+        expect(connectionProfile['custom-endpoint-profile']).toBe('Renamed endpoint');
+        expect(harness.context.custom_endpoint_presets).toHaveLength(1);
+        expect(harness.context.toastr.success).toHaveBeenCalledWith('Custom Endpoint Profile Renamed');
+    });
+
+    test('clears a binding that points at a secret which no longer exists', () => {
+        const harness = createHarness();
+        harness.context.secret_state[keys.CUSTOM] = [{ id: 'other-id', active: true }];
+
+        expect(harness.context.pruneStaleCustomEndpointSecretBindings()).toBe(true);
+
+        expect(harness.profile.secretId).toBe('');
+        expect(harness.profile.key).toBe('');
+        expect(harness.context.toastr.warning).toHaveBeenCalledTimes(1);
+    });
+
+    test('follows a secret rotation to the profile that owns it', () => {
+        const harness = createHarness();
+        const other = normalizeCustomEndpointPreset({ name: 'B', secretId: 'b-id' });
+        harness.context.custom_endpoint_presets.push(other);
+        harness.values.set('#custom_endpoint_preset', harness.profile.name);
+
+        expect(harness.context.syncCustomEndpointPresetSelectionBySecretId('b-id')).toBe(true);
+
+        expect(harness.context.selected_custom_endpoint_preset).toBe(other);
+        expect(harness.values.get('#custom_endpoint_preset')).toBe('B');
+    });
+
+    test('marks the selected profile as edited when the live URL or model differ', () => {
+        const harness = createHarness();
+        harness.context.oai_settings.custom_url = 'https://other.example/v1';
+        harness.context.oai_settings.custom_model = 'other-model';
+
+        harness.context.refreshCustomEndpointPresetEditedState();
+
+        expect(harness.optionTexts.get(harness.profile.name)).toBe(`${harness.profile.name} (edited)`);
     });
 });
 

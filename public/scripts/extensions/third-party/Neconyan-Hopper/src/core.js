@@ -463,7 +463,6 @@ export function isAnswerable(item) {
 export const REASONING_REQUEST_FIELDS = Object.freeze([
     ['reasoning-effort', 'reasoning_effort'],
     ['verbosity', 'verbosity'],
-    ['custom-reasoning-preset', 'custom_reasoning_preset'],
     ['custom-reasoning-param-format', 'custom_reasoning_param_format'],
     ['custom-reasoning-param-name', 'custom_reasoning_param_name'],
     ['custom-reasoning-enabled-value', 'custom_reasoning_enabled_value'],

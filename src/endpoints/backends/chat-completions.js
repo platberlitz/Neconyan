@@ -66,7 +66,7 @@ import {
 import { applyReasoningEffortNormalization, toWireReasoningEffort } from '../../reasoning-effort.js';
 import { isBunRuntime } from '../../runtime.js';
 
-import { readSecret, SECRET_KEYS } from '../secrets.js';
+import { readSecret, SECRET_KEYS, secretIdExists } from '../secrets.js';
 import {
     getTokenizerModel,
     getSentencepiceTokenizer,
@@ -263,6 +263,56 @@ function applyCustomReasoningParameters(bodyParams, requestBody) {
             bodyParams[paramName] = { type: isEnabled ? enabledValue : disabledValue };
             break;
     }
+}
+
+/** Neconyan: how long the Custom endpoint model-list probe may hang before Connect gives up. */
+export const CUSTOM_STATUS_TIMEOUT_MS = 15000;
+
+/**
+ * Neconyan: endpoint profiles pin a Custom secret by id. A deleted or foreign id must fail loudly
+ * instead of sending an empty bearer token to the endpoint.
+ * @param {import('express').Request} request Express request
+ * @returns {string} Error message, or an empty string when the binding is fine
+ */
+export function getCustomSecretIdError(request) {
+    const secretId = String(request.body?.secret_id ?? '').trim();
+    if (!secretId) {
+        return '';
+    }
+    if (secretIdExists(request.user.directories, SECRET_KEYS.CUSTOM, secretId)) {
+        return '';
+    }
+    return 'This endpoint profile points at an API key that no longer exists. Type the key again and press Connect to rebind it.';
+}
+
+/**
+ * Neconyan: turn a failed Custom endpoint /models probe into a sentence the user can act on.
+ * @param {Response} response Fetch response
+ * @returns {Promise<string>} Message
+ */
+export async function describeCustomStatusFailure(response) {
+    const contentType = String(response.headers.get('content-type') ?? '');
+    const body = await response.text().catch(() => '');
+    const looksLikeHtml = /text\/html/i.test(contentType) || /^\s*<(!doctype|html)/i.test(body);
+    if (response.status === 401 || response.status === 403) {
+        return looksLikeHtml
+            ? `The endpoint sent a login page (HTTP ${response.status}). The URL is behind a web login that an API key cannot pass.`
+            : `The endpoint rejected the API key (HTTP ${response.status}). Check the key saved for this profile.`;
+    }
+    if (response.status === 404) {
+        return 'The endpoint has no /models route at this URL (HTTP 404). Check that the URL ends with the API base, for example /v1.';
+    }
+    if (looksLikeHtml) {
+        return `The endpoint answered with a web page (HTTP ${response.status}) instead of a model list. Check the URL.`;
+    }
+    let detail = '';
+    try {
+        const json = JSON.parse(body);
+        detail = String(json?.error?.message ?? json?.message ?? json?.error ?? '').trim();
+    } catch {
+        detail = body.trim().slice(0, 200);
+    }
+    return `The endpoint returned HTTP ${response.status}${detail ? `: ${detail}` : ''}.`;
 }
 
 function getOpenAiCompatibleServerUrl(requestBody) {
@@ -1963,6 +2013,11 @@ router.post('/status', async function (request, statusResponse) {
             headers = {};
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.CUSTOM) {
             apiUrl = request.body.custom_url;
+            const staleSecretError = getCustomSecretIdError(request);
+            if (staleSecretError) {
+                console.warn(staleSecretError);
+                return statusResponse.send({ error: true, bypass: true, data: [], message: staleSecretError });
+            }
             apiKey = readSecret(request.user.directories, SECRET_KEYS.CUSTOM, request.body.secret_id);
             headers = {};
             mergeObjectWithYaml(headers, request.body.custom_include_headers);
@@ -2280,13 +2335,38 @@ router.post('/status', async function (request, statusResponse) {
         Object.keys(queryParams).forEach(key => {
             modelsUrl.searchParams.append(key, queryParams[key]);
         });
+        const isCustomSource = request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.CUSTOM;
         const response = await fetch(modelsUrl, {
             method: 'GET',
             headers: {
                 'Authorization': 'Bearer ' + apiKey,
                 ...headers,
             },
+            // Neconyan: a hanging custom endpoint must not leave the Connect button stuck forever.
+            signal: isCustomSource ? AbortSignal.timeout(CUSTOM_STATUS_TIMEOUT_MS) : undefined,
         });
+
+        if (isCustomSource && !response.ok) {
+            const message = await describeCustomStatusFailure(response);
+            console.error('Custom endpoint status check failed:', message);
+            return statusResponse.send({ error: true, bypass: true, data: [], message });
+        }
+
+        if (isCustomSource && response.ok) {
+            // Neconyan: a login page or HTML error served with 200 must not pass as a valid endpoint.
+            const rawBody = await response.text();
+            let data;
+            try {
+                data = JSON.parse(rawBody);
+            } catch {
+                const message = 'The endpoint answered with a web page instead of a model list. Check the URL and that no login wall sits in front of it.';
+                console.error('Custom endpoint status check failed:', message);
+                return statusResponse.send({ error: true, bypass: true, data: [], message });
+            }
+            const modelIds = Array.isArray(data?.data) ? data.data.filter(x => x && typeof x === 'object').map(x => x.id).sort() : [];
+            console.info('Available models:', modelIds);
+            return statusResponse.send(data);
+        }
 
         if (response.ok) {
             /** @type {any} */
@@ -2355,6 +2435,13 @@ router.post('/status', async function (request, statusResponse) {
         console.error(e);
 
         if (!statusResponse.headersSent) {
+            if (request.body?.chat_completion_source === CHAT_COMPLETION_SOURCES.CUSTOM) {
+                const timedOut = e?.name === 'TimeoutError' || e?.name === 'AbortError';
+                const message = timedOut
+                    ? `The endpoint did not answer within ${Math.round(CUSTOM_STATUS_TIMEOUT_MS / 1000)} seconds. Check the URL and that the server is reachable.`
+                    : `The endpoint could not be reached: ${e?.cause?.message || e?.message || 'unknown error'}.`;
+                return statusResponse.send({ error: true, bypass: true, data: [], message });
+            }
             statusResponse.send({ error: true });
         } else {
             statusResponse.end();
@@ -3047,6 +3134,11 @@ export async function handleChatCompletionsGenerate(request, response) {
             }
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.CUSTOM) {
             apiUrl = request.body.custom_url;
+            const staleSecretError = getCustomSecretIdError(request);
+            if (staleSecretError) {
+                console.warn(staleSecretError);
+                return response.status(400).send({ error: { message: staleSecretError } });
+            }
             apiKey = readSecret(request.user.directories, SECRET_KEYS.CUSTOM, request.body.secret_id);
             headers = {};
             bodyParams = {

@@ -162,7 +162,7 @@ describe('OpenAI proxy preset wiring', () => {
     });
 
     test('requires a profile name before saving a Custom endpoint profile', () => {
-        expect(openAiSource).toContain('if (!presetName || presetName === \'None\') {');
+        expect(openAiSource).toContain('if (!presetName || presetName.toLowerCase() === \'none\') {');
     });
 
     test('allows saving keyless Custom endpoint profiles with a stable empty secret', () => {
@@ -199,7 +199,7 @@ describe('OpenAI proxy preset wiring', () => {
         const rotateIndex = activationSource.indexOf('await rotateSecret(SECRET_KEYS.CUSTOM, preset.secretId);');
         const writeIndex = activationSource.indexOf('await writeSecret(SECRET_KEYS.CUSTOM, preset.key, undefined, { allowEmpty: true });');
 
-        expect(openAiSource).toContain('import { rotateSecret, SECRET_KEYS, secret_state, writeSecret } from \'./secrets.js\';');
+        expect(openAiSource).toContain('import { deleteSecret, rotateSecret, SECRET_KEYS, secret_state, writeSecret } from \'./secrets.js\';');
         expect(rotateIndex).toBeGreaterThanOrEqual(0);
         expect(writeIndex).toBeGreaterThan(rotateIndex);
     });
@@ -257,7 +257,7 @@ describe('OpenAI proxy preset wiring', () => {
     test('applies the saved profile on load without rotating or writing secrets', () => {
         const loadCustomEndpointSource = getFunctionSource('loadCustomEndpointPresets');
         const applyPresetIndex = loadCustomEndpointSource.indexOf('await setCustomEndpointPreset(');
-        const optionsIndex = loadCustomEndpointSource.indexOf('{ secretId: selected_custom_endpoint_preset.secretId, writeKey: false, reconnect: false }', applyPresetIndex);
+        const optionsIndex = loadCustomEndpointSource.indexOf('{ secretId: selected_custom_endpoint_preset.secretId, writeKey: false, reconnect: false, applyFields: false }', applyPresetIndex);
 
         expect(applyPresetIndex).toBeGreaterThanOrEqual(0);
         expect(optionsIndex).toBeGreaterThan(applyPresetIndex);

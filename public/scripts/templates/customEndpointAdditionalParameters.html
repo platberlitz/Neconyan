@@ -1,51 +1,51 @@
-<div class="flex-container flexFlowColumn height100p">
+<div class="sb-custom-params">
     <h3 data-i18n="Additional Parameters">Additional Parameters</h3>
-    <div class="flex1 flex-container flexFlowColumn">
+    <section class="sb-custom-params-section">
         <h4 data-i18n="Include Body Parameters">Include Body Parameters</h4>
-        <textarea id="custom_include_body" class="flex1" placeholder="Parameters to be included in the Chat Completion request body (YAML object)&#10;&#10;Example:&#10;top_k: 20&#10;repetition_penalty: 1.1" data-i18n="[placeholder]custom_include_body_desc"></textarea>
-    </div>
-    <div class="flex1 flex-container flexFlowColumn">
+        <small data-i18n="custom_include_body_hint">Extra keys added to every request body. One key per line, written as name: value.</small>
+        <textarea id="custom_include_body" class="text_pole" rows="5" placeholder="Parameters to be included in the Chat Completion request body (YAML object)&#10;&#10;Example:&#10;top_k: 20&#10;repetition_penalty: 1.1" data-i18n="[placeholder]custom_include_body_desc"></textarea>
+    </section>
+    <section class="sb-custom-params-section">
         <h4 data-i18n="Exclude Body Parameters">Exclude Body Parameters</h4>
-        <textarea id="custom_exclude_body" class="flex1" placeholder="Parameters to be excluded from the Chat Completion request body (YAML array)&#10;&#10;Example:&#10;- frequency_penalty&#10;- presence_penalty" data-i18n="[placeholder]custom_exclude_body_desc"></textarea>
-    </div>
-    <div class="flex1 flex-container flexFlowColumn">
+        <small data-i18n="custom_exclude_body_hint">Keys removed from every request body before it is sent. One key per line, each starting with a dash.</small>
+        <textarea id="custom_exclude_body" class="text_pole" rows="4" placeholder="Parameters to be excluded from the Chat Completion request body (YAML array)&#10;&#10;Example:&#10;- frequency_penalty&#10;- presence_penalty" data-i18n="[placeholder]custom_exclude_body_desc"></textarea>
+    </section>
+    <section class="sb-custom-params-section">
         <h4 data-i18n="Include Request Headers">Include Request Headers</h4>
-        <textarea id="custom_include_headers" class="flex1" placeholder="Additional headers for Chat Completion requests (YAML object)&#10;&#10;Example:&#10;CustomHeader: custom-value&#10;AnotherHeader: custom-value" data-i18n="[placeholder]custom_include_headers_desc"></textarea>
-    </div>
-    <div class="flex1 flex-container flexFlowColumn">
-        <h4>Reasoning Parameter Preset</h4>
-        <label class="flex-container flexFlowColumn">
-            <span>Model Preset</span>
-            <select id="custom_reasoning_preset" class="text_pole">
-                <option value="openai">Default OpenAI-style</option>
-                <option value="glm_5_1">GLM 5.1</option>
-                <option value="kimi_k2">Kimi K2.5/K2.6</option>
-                <option value="custom">Custom</option>
-            </select>
-        </label>
-        <label class="flex-container flexFlowColumn">
-            <span>Parameter Format</span>
-            <select id="custom_reasoning_param_format" class="text_pole">
-                <option value="openai">OpenAI effort string</option>
-                <option value="boolean">Boolean true/false</option>
-                <option value="string">String enabled/disabled</option>
-                <option value="thinking_object">Thinking object</option>
-            </select>
-        </label>
-        <label class="flex-container flexFlowColumn">
-            <span>Parameter Name</span>
-            <input id="custom_reasoning_param_name" class="text_pole" type="text" placeholder="reasoning_effort">
-        </label>
-        <div class="sb-custom-reasoning-toggle-values flex-container flexFlowColumn">
-            <label class="flex-container flexFlowColumn">
-                <span>Enabled Value</span>
-                <input id="custom_reasoning_enabled_value" class="text_pole" type="text" placeholder="enabled">
+        <small data-i18n="custom_include_headers_hint">Extra HTTP headers sent with every request. One header per line, written as Name: value. An Authorization header here replaces the saved API key.</small>
+        <textarea id="custom_include_headers" class="text_pole" rows="4" placeholder="Additional headers for Chat Completion requests (YAML object)&#10;&#10;Example:&#10;CustomHeader: custom-value&#10;AnotherHeader: custom-value" data-i18n="[placeholder]custom_include_headers_desc"></textarea>
+    </section>
+    <section class="sb-custom-params-section">
+        <h4 data-i18n="Reasoning Parameter">Reasoning Parameter</h4>
+        <small data-i18n="custom_reasoning_param_hint">Adds one key to the request body that switches the model's reasoning on or off. It follows the Request model reasoning toggle and the Reasoning Effort setting. A key of the same name in Include Body Parameters wins.</small>
+        <div class="sb-custom-params-grid">
+            <label>
+                <span data-i18n="Parameter Format">Parameter Format</span>
+                <select id="custom_reasoning_param_format" class="text_pole">
+                    <option value="openai" data-i18n="OpenAI effort string">OpenAI effort string</option>
+                    <option value="boolean" data-i18n="Boolean true/false">Boolean true/false</option>
+                    <option value="string" data-i18n="String enabled/disabled">String enabled/disabled</option>
+                    <option value="thinking_object" data-i18n="Thinking object">Thinking object</option>
+                </select>
             </label>
-            <label class="flex-container flexFlowColumn">
-                <span>Disabled Value</span>
-                <input id="custom_reasoning_disabled_value" class="text_pole" type="text" placeholder="disabled">
+            <label>
+                <span data-i18n="Parameter Name">Parameter Name</span>
+                <input id="custom_reasoning_param_name" class="text_pole" type="text" placeholder="reasoning_effort" autocapitalize="off" autocorrect="off" spellcheck="false">
             </label>
         </div>
-        <small>Presets fill current provider-specific reasoning keys. If you also set the same key in Include Body YAML, the YAML value wins.</small>
-    </div>
+        <div class="sb-custom-params-grid sb-custom-reasoning-toggle-values">
+            <label>
+                <span data-i18n="Enabled Value">Enabled Value</span>
+                <input id="custom_reasoning_enabled_value" class="text_pole" type="text" placeholder="enabled" autocapitalize="off" autocorrect="off" spellcheck="false">
+            </label>
+            <label>
+                <span data-i18n="Disabled Value">Disabled Value</span>
+                <input id="custom_reasoning_disabled_value" class="text_pole" type="text" placeholder="disabled" autocapitalize="off" autocorrect="off" spellcheck="false">
+            </label>
+        </div>
+        <small class="sb-custom-reasoning-format-hint" data-format="openai" data-i18n="custom_reasoning_format_openai_hint">Sends your Reasoning Effort setting as text, for example high. Nothing is sent when the effort is None, except to GPT-5.1 and newer, which receive none.</small>
+        <small class="sb-custom-reasoning-format-hint" data-format="boolean" data-i18n="custom_reasoning_format_boolean_hint">Sends true when reasoning is requested and false when it is not.</small>
+        <small class="sb-custom-reasoning-format-hint" data-format="string" data-i18n="custom_reasoning_format_string_hint">Sends the Enabled Value when reasoning is requested and the Disabled Value when it is not.</small>
+        <small class="sb-custom-reasoning-format-hint" data-format="thinking_object" data-i18n="custom_reasoning_format_thinking_object_hint">Sends an object with a type field: the Enabled Value when reasoning is requested, the Disabled Value when it is not. This is the shape GLM and Kimi endpoints expect for a thinking key.</small>
+    </section>
 </div>

@@ -77,7 +77,6 @@ const CC_COMMANDS = [
     'request-images',
     'request-image-resolution',
     'request-image-aspect-ratio',
-    'custom-reasoning-preset',
     'custom-reasoning-param-format',
     'custom-reasoning-param-name',
     'custom-reasoning-enabled-value',
@@ -132,7 +131,6 @@ const FANCY_NAMES = {
     'request-images': 'Request Inline Images',
     'request-image-resolution': 'Request Image Resolution',
     'request-image-aspect-ratio': 'Request Image Aspect Ratio',
-    'custom-reasoning-preset': 'Custom Reasoning Preset',
     'custom-reasoning-param-format': 'Custom Reasoning Parameter Format',
     'custom-reasoning-param-name': 'Custom Reasoning Parameter Name',
     'custom-reasoning-enabled-value': 'Custom Reasoning Enabled Value',
@@ -260,7 +258,6 @@ const profilesProvider = () => [
  * @property {string} [request-images] Request inline images
  * @property {string} [request-image-resolution] Request image resolution
  * @property {string} [request-image-aspect-ratio] Request image aspect ratio
- * @property {string} [custom-reasoning-preset] Custom reasoning preset
  * @property {string} [custom-reasoning-param-format] Custom reasoning parameter format
  * @property {string} [custom-reasoning-param-name] Custom reasoning parameter name
  * @property {string} [custom-reasoning-enabled-value] Custom reasoning enabled value

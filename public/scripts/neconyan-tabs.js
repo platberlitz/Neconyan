@@ -32,6 +32,12 @@ import { eventSource, event_types } from './events.js';
 import { extensionNames, findExtension, getExtensionManifest, getExtensionType } from './extensions.js';
 import { getCurrentUserHandle } from './user.js';
 import { getAssistantIconSrc } from './neconyan-assistant-art.js';
+import { t } from './i18n.js';
+import {
+    MODEL_FILTER_BOTH_VIEWPORTS_SELECTORS,
+    MODEL_FILTER_PHONE_ONLY_SELECTORS,
+    computeVisibleModelOptions,
+} from './neconyan-model-filter.js';
 import {
     mountNeconyanCharacterWorkspace,
     mountNeconyanLorebookWorkspace,
@@ -18072,7 +18078,7 @@ function reinitSelect2AfterShell() {
     ];
 
     if (isMobileViewport()) {
-        // On mobile, destroy Select2 (doesn't work on iOS Safari) and add native filter inputs
+        // On mobile, destroy Select2 (doesn't work on iOS Safari); filter inputs come from installModelFilterInputs()
         for (const selector of modelSelectors) {
             const $el = $(selector);
             if ($el.length && $el.data('select2')) {
@@ -18082,7 +18088,6 @@ function reinitSelect2AfterShell() {
                     // Ignore
                 }
             }
-            injectModelFilterInput($el);
         }
     } else {
         // On desktop, reinitialize Select2 after DOM reparenting
@@ -18112,37 +18117,61 @@ function injectModelFilterInput($select) {
         return;
     }
 
+    const select = $select[0];
     const input = document.createElement('input');
     input.type = 'search';
     input.className = 'sb-model-filter text_pole';
-    input.placeholder = 'Filter models...';
+    input.placeholder = t`Filter models...`;
+    input.setAttribute('aria-label', t`Filter models`);
 
-    // Store all options for filtering
-    const allOptions = Array.from($select[0].options).map(opt => ({
-        value: opt.value,
-        text: opt.textContent,
-        selected: opt.selected,
+    const snapshotModelOptions = () => Array.from(select.options).map(option => ({
+        value: option.value,
+        text: option.textContent,
     }));
 
-    input.addEventListener('input', () => {
-        const query = input.value.toLowerCase().trim();
-        const select = $select[0];
-        const currentValue = select.value;
+    let masterOptions = snapshotModelOptions();
 
-        // Rebuild options filtered by query
-        select.innerHTML = '';
-        for (const opt of allOptions) {
-            if (!query || opt.text.toLowerCase().includes(query) || opt.value.toLowerCase().includes(query)) {
-                const option = document.createElement('option');
-                option.value = opt.value;
-                option.textContent = opt.text;
-                option.selected = opt.value === currentValue;
-                select.appendChild(option);
-            }
-        }
+    // Neconyan: backends replace the option list when their models finish loading, so re-snapshot on
+    // external DOM changes instead of freezing the boot-time list (which only holds the placeholder).
+    const observer = new MutationObserver(() => {
+        masterOptions = snapshotModelOptions();
+        applyFilter();
     });
 
+    const applyFilter = () => {
+        const currentValue = select.value;
+        const selectedValues = new Set(Array.from(select.selectedOptions, option => option.value));
+        const visibleOptions = computeVisibleModelOptions(masterOptions, input.value, {
+            currentValue,
+            selectedValues: [...selectedValues],
+            multiple: select.multiple,
+        });
+
+        observer.disconnect();
+        select.innerHTML = '';
+        for (const option of visibleOptions) {
+            const element = document.createElement('option');
+            element.value = option.value;
+            element.textContent = option.text;
+            element.selected = select.multiple ? selectedValues.has(option.value) : option.value === currentValue;
+            select.appendChild(element);
+        }
+        observer.observe(select, { childList: true });
+    };
+
+    input.addEventListener('input', applyFilter);
+    observer.observe(select, { childList: true });
     $select.before(input);
+}
+
+function installModelFilterInputs() {
+    const selectors = isMobileViewport()
+        ? [...MODEL_FILTER_BOTH_VIEWPORTS_SELECTORS, ...MODEL_FILTER_PHONE_ONLY_SELECTORS]
+        : MODEL_FILTER_BOTH_VIEWPORTS_SELECTORS;
+
+    for (const selector of selectors) {
+        injectModelFilterInput($(selector));
+    }
 }
 
 function buildBottomChatBar() {
@@ -19095,6 +19124,9 @@ function initAll() {
     // Reinitialize Select2 widgets after shell reparents DOM elements.
     // Select2 bindings break when elements are moved in the DOM.
     reinitSelect2AfterShell();
+
+    // One filter box above every model dropdown that has no search of its own.
+    installModelFilterInputs();
 
     // Group Advanced Formatting sections into collapsible drawers
     groupAdvancedFormattingIntoDrawers();

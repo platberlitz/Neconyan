@@ -28,6 +28,16 @@ describe('Neconyan native workspace module', () => {
             createNeconyanFolder: jest.fn(name => ({ id: 'folder-test', name })),
             moveNeconyanLorebook: jest.fn(value => value),
         }));
+        await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: strings => strings.join('') }));
+        await jest.unstable_mockModule('../public/scripts/neconyan-model-rotation.js', () => ({
+            initModelRotation: jest.fn(),
+            mountModelRotationPanel: jest.fn(),
+        }));
+        await jest.unstable_mockModule('../public/scripts/popup.js', () => ({
+            callGenericPopup: jest.fn(),
+            POPUP_RESULT: { AFFIRMATIVE: 1 },
+            POPUP_TYPE: { CONFIRM: 2 },
+        }));
 
         const nativeWorkspaces = await import('../public/scripts/neconyan-native-workspaces.js');
         expect(typeof nativeWorkspaces.mountNeconyanCharacterWorkspace).toBe('function');

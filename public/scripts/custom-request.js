@@ -776,9 +776,6 @@ export class ChatCompletionService {
         if (overridePayload.request_image_aspect_ratio !== undefined) {
             settings.request_image_aspect_ratio = overridePayload.request_image_aspect_ratio;
         }
-        if (overridePayload.custom_reasoning_preset !== undefined) {
-            settings.custom_reasoning_preset = overridePayload.custom_reasoning_preset;
-        }
         if (overridePayload.custom_reasoning_param_name !== undefined) {
             settings.custom_reasoning_param_name = overridePayload.custom_reasoning_param_name;
         }

@@ -33,13 +33,14 @@ async function sendCustom(body) {
         applyReasoningEffortNormalization, toWireReasoningEffort, filterChatCompletionSamplingParameters,
         TEXT_COMPLETION_MODELS: [], SECRET_KEYS: { CUSTOM: 'custom' },
         readSecret: () => 'test-secret',
+        secretIdExists: () => true,
         embedOpenRouterMedia: () => {}, applyLocalPromptCacheScope: () => {}, abortOnRequestClose: () => {},
         logVerboseGenerationRequest: () => {}, summarizeLlmPayloadForLog: value => value,
         isExpectedStreamAbort: () => false,
         fetch: jest.fn(async () => ({ ok: true, json: async () => ({ choices: [] }) })),
     });
     load(context, 'util.js', ['mergeObjectWithYaml', 'excludeKeysByYaml']);
-    load(context, files[0], ['hasCustomReasoningParamConfig', 'resolveCustomOpenAiReasoningEffort', 'shouldEnableCustomReasoning', 'applyCustomReasoningParameters', 'getSafeCompletionErrorStatus', 'handleChatCompletionsGenerate']);
+    load(context, files[0], ['hasCustomReasoningParamConfig', 'resolveCustomOpenAiReasoningEffort', 'shouldEnableCustomReasoning', 'applyCustomReasoningParameters', 'getCustomSecretIdError', 'getSafeCompletionErrorStatus', 'handleChatCompletionsGenerate']);
     const request = {
         body: {
             chat_completion_source: CHAT_COMPLETION_SOURCES.CUSTOM,

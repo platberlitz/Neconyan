@@ -90,7 +90,7 @@ body.neconyan {
 }
 
 body.neconyan :is(button, input, textarea, select, .menu_button) { text-shadow: none; }
-body.neconyan :is(.menu_button, .sb-proxy-button, .sb-shell-tab, .sb-character-shell-tab, .sb-settings-tab-btn) {
+body.neconyan :is(.menu_button, .sb-proxy-button, .sb-shell-tab, .sb-settings-tab-btn) {
     border-radius: 6px; box-shadow: none; font-weight: 500;
 }
 body.neconyan :is(button, a, input, textarea, select, summary, [tabindex]):focus-visible {
@@ -256,12 +256,12 @@ body.neconyan :is(.sb-shell-nav, .sb-character-shell-nav) {
     justify-content: flex-start; gap: 2px; padding: 6px 10px;
     border-bottom: 1px solid var(--neco-border); scroll-padding-inline: 12px;
 }
-body.neconyan :is(.sb-shell-tab, .sb-character-shell-tab) {
+body.neconyan .sb-shell-tab {
     min-height: 36px; min-width: 0; padding: 6px 9px; gap: 6px; flex: 0 0 auto;
     background: transparent; border-color: transparent; color: var(--neco-muted);
 }
-body.neconyan :is(.sb-shell-tab, .sb-character-shell-tab).is-active { background: var(--neco-raised); border-color: transparent; color: var(--neco-ink); }
-body.neconyan :is(.sb-shell-tab-copy strong, .sb-character-shell-tab strong) { font-size: 12px; font-weight: 500; }
+body.neconyan .sb-shell-tab.is-active { background: var(--neco-raised); border-color: transparent; color: var(--neco-ink); }
+body.neconyan .sb-shell-tab-copy strong { font-size: 12px; font-weight: 500; }
 body.neconyan :is(.sb-shell-header, #right-nav-panel.openDrawer > .sb-character-shell-header) {
     padding: 16px 52px 16px 18px; border-bottom: 1px solid var(--neco-border);
 }
@@ -302,10 +302,10 @@ body.neconyan #user-settings-block .sb-settings-subdrawer > .inline-drawer-heade
 }
 body.neconyan .inline-drawer-header strong { flex: 1; color: var(--neco-ink); font-weight: 500; font-size: 13px; }
 body.neconyan .inline-drawer-header .inline-drawer-icon { color: var(--neco-muted); font-size: 14px; }
-body.neconyan :is(.sb-theme-card, .sb-settings-group, .sb-shell-callout, .sb-admin-card, .sb-agent-card, .sb-theme-settings-drawer) {
+body.neconyan :is(.sb-theme-card, .sb-settings-group, .sb-shell-callout, .sb-admin-card, .sb-theme-settings-drawer) {
     background: transparent; border-color: var(--neco-border); box-shadow: none;
 }
-body.neconyan :is(.sb-theme-card, .sb-admin-card, .sb-agent-card, .sb-shell-callout)::before { display: none; }
+body.neconyan :is(.sb-theme-card, .sb-admin-card, .sb-shell-callout)::before { display: none; }
 body.neconyan .sb-settings-tabs-nav { gap: 2px; margin: 14px 0; padding-bottom: 8px; border-color: var(--neco-border); }
 body.neconyan .sb-settings-tab-btn { gap: 6px; padding: 8px; border: 0; border-radius: 5px; background: transparent; color: var(--neco-muted); font-size: 12px; font-weight: 500; }
 body.neconyan .sb-settings-tab-btn.active { background: var(--neco-raised); color: var(--neco-ink); box-shadow: none; }
@@ -554,7 +554,7 @@ body.neconyan #neconyan-tour-coachmark button:focus-visible { outline: 2px solid
         min-width: 44px !important; min-height: 44px !important; min-inline-size: 44px !important; min-block-size: 44px !important;
         max-width: 44px !important; max-height: 44px !important; max-inline-size: 44px !important; max-block-size: 44px !important; flex: 0 0 44px;
     }
-    body.neconyan :is(.sb-shell-tab, .sb-character-shell-tab, .sb-settings-tab-btn) { min-height: 44px; }
+    body.neconyan :is(.sb-shell-tab, .sb-settings-tab-btn) { min-height: 44px; }
 }
 
 body.neconyan .neconyan-included-tool-page {
@@ -978,7 +978,7 @@ body.neconyan #sb-topbar-inner :is(#sb-home-toggle, #sb-character-toggle) {
         overflow-x: hidden !important;
         overflow-y: auto !important;
     }
-    body.neconyan #right-nav-panel.openDrawer :is(.sb-shell-tab, .sb-character-shell-tab) {
+    body.neconyan #right-nav-panel.openDrawer .sb-shell-tab {
         width: 100%;
         min-height: 44px;
         flex: 0 0 auto;
@@ -1050,7 +1050,7 @@ body.neconyan #sb-topbar-inner :is(#sb-home-toggle, #sb-character-toggle) {
     body.neconyan .sb-shell-root.openDrawer .sb-shell-nav-scroll {
         display: none !important;
     }
-    body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer :is(.sb-shell-tab, .sb-character-shell-tab),
+    body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer .sb-shell-tab,
     body.neconyan #right-nav-panel.neconyan-character-workspace .neconyan-character-native-nav-wrapper .sb-shell-tab {
         width: auto;
         min-width: var(--sb-mobile-touch-target, 44px);
@@ -1062,7 +1062,7 @@ body.neconyan #sb-topbar-inner :is(#sb-home-toggle, #sb-character-toggle) {
         padding: 0 12px;
         white-space: nowrap;
     }
-    body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer :is(.sb-shell-tab, .sb-character-shell-tab) i {
+    body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer .sb-shell-tab i {
         width: auto;
         margin: 0;
     }
@@ -1135,7 +1135,6 @@ body.neconyan #sb-topbar-inner :is(#sb-home-toggle, #sb-character-toggle) {
         visibility: visible !important;
         pointer-events: auto !important;
     }
-    body.neconyan #sb-topbar-inner #sb-advanced-toggle,
     body.neconyan #sb-topbar-inner #sb-shortcut-right {
         visibility: visible !important;
         pointer-events: auto !important;
@@ -2691,7 +2690,6 @@ body.neconyan .neconyan-retired-content-controls .menu_button {
 body.neconyan .neconyan-retired-content-row .menu_button { width: auto !important; min-width: 88px; min-height: 44px; flex: 0 0 auto; white-space: nowrap; }
 body.neconyan .neconyan-retired-content-section { margin: 16px 0 0; }
 body.neconyan .neconyan-retired-content-section h4 { margin: 0 0 8px; color: var(--neco-ink); font-size: 13px; }
-body.neconyan .neconyan-retired-content-rows { display: grid; gap: 6px; }
 body.neconyan .neconyan-retired-content-row {
     min-width: 0; min-height: 52px; display: flex; align-items: center; gap: 10px;
     padding: 8px 10px; border-top: 1px solid var(--neco-border);
@@ -2804,8 +2802,11 @@ body.neconyan #left-nav-panel .neconyan-model-saved h3 { display: flex; gap: 6px
 body.neconyan .neconyan-model-saved .connection-profile-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 body.neconyan .neconyan-model-saved .connection-profile-actions > button { flex: 1; min-height: 44px; }
 body.neconyan .neconyan-connection-management > summary,
+body.neconyan .neconyan-model-rotation > summary,
 body.neconyan .neconyan-provider-help > summary,
 body.neconyan .neconyan-connection-tools > summary { min-height: 44px; padding: 12px 0; cursor: pointer; }
+body.neconyan .neconyan-model-rotation-toggle,
+body.neconyan .neconyan-model-rotation-list label { display: flex; gap: 8px; align-items: center; min-height: 40px; }
 body.neconyan .neconyan-connection-secondary { display: grid; gap: 6px; }
 body.neconyan .neconyan-connection-secondary > button { width: 100%; min-height: 44px; justify-content: flex-start; }
 body.neconyan #left-nav-panel .neconyan-model-service-selector { margin: 0; padding: 0; border: 0; background: none; }
@@ -2979,3 +2980,14 @@ body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell
 #user-settings-block #passkey_controls .passkey-remove { flex-shrink: 0; width: max-content; white-space: nowrap; }
 .passkey-form { gap: 8px; flex-direction: column; align-items: stretch; }
 #passkey_controls input, #passkey_controls button { min-height: 44px; }
+
+/* Neconyan: Custom endpoint Additional Parameters popup. */
+.sb-custom-params { display: grid; gap: 18px; padding-bottom: 8px; }
+.sb-custom-params-section { display: grid; gap: 6px; }
+.sb-custom-params-section h4 { margin: 0; }
+.sb-custom-params-section small { color: var(--neco-muted); line-height: 1.5; }
+.sb-custom-params textarea { width: 100%; min-height: 96px; resize: vertical; font-family: var(--monoFontFamily); }
+.sb-custom-params-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 10px; }
+.sb-custom-params-grid label { display: grid; gap: 4px; margin: 0; }
+.sb-custom-params [hidden] { display: none; }
+
