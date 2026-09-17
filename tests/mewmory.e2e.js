@@ -13,15 +13,18 @@ const provider = process.env.MEWMORY_FIXTURE_URL || 'http://127.0.0.1:4491/v1';
 
 test('native Mewmory setup, backfill, source inspection, correction, recall and writing work on desktop and mobile', async ({ page }, info) => {
     page.setDefaultTimeout(20000);
-    await page.setViewportSize({ width: 1280, height: 1000 });
+    await page.setViewportSize({ width: 1280, height: 900 });
     const { errors, navigate } = trackNavigationErrors(page);
     await navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
     await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+    const skipTour = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
+    if (await skipTour.isVisible()) await skipTour.click();
+    await expect(page.locator('#neconyan-tour-coachmark')).toHaveCount(0);
     await info.attach('frontend-assets', {
         body: Buffer.from(JSON.stringify(await page.evaluate(() => [...document.querySelectorAll('script[src]')].map(script => script.src)))),
         contentType: 'application/json',
     });
-    const headers = await page.evaluate(() => window.SillyTavern.getContext().getRequestHeaders());
+    let headers = await page.evaluate(() => window.SillyTavern.getContext().getRequestHeaders());
     const post = async (route, data = {}) => {
         const response = await page.request.post(route, { headers, data });
         const body = await response.json();
@@ -58,18 +61,79 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     config.autoUpdate = false;
     config.batchMessages = 3;
     config.writerTokenizer = 'cl100k_base';
-    for (const [name, role] of Object.entries(config.roles)) {
-        Object.assign(role, { enabled: name !== 'fallback', endpoint: provider, model: name });
+    for (const role of Object.values(config.roles)) {
+        Object.assign(role, { enabled: false, endpoint: '', model: '', profileId: '', modelOverride: '', tokenizer: 'auto' });
     }
-    await post('/api/mewmory/config/save', { config });
+    const initial = await post('/api/mewmory/config/save', { config });
+    await page.evaluate(async endpoint => {
+        const { extension_settings } = await import('/scripts/extensions.js');
+        const manager = extension_settings.connectionManager;
+        manager.profiles = manager.profiles.filter(profile => !profile.id.startsWith('mewmory-test-'));
+        for (const name of ['extractor', 'pawspective', 'embedding', 'selector', 'fallback']) {
+            manager.profiles.push({ id: 'mewmory-test-' + name, name: 'Mewmory test ' + name, api: 'custom',
+                mode: 'cc', 'api-url': endpoint, ...(name === 'embedding' ? {} : { model: name }) });
+        }
+        await (await import('/script.js')).saveSettings();
+    }, provider);
     const workspace = page.locator('#mewmory-workspace');
     await page.locator('#neconyan-workspace-rail [data-neconyan-route="mewmory"]').click();
     await expect(workspace.getByRole('tab', { name: 'Now', exact: true })).toBeVisible();
     await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
-    await workspace.getByLabel('Configure role').selectOption('fallback');
-    await workspace.getByLabel('Enable this role', { exact: true }).check();
+    for (const name of ['extractor', 'pawspective', 'embedding', 'selector', 'fallback']) {
+        await workspace.getByLabel('Configure role').selectOption(name);
+        await workspace.getByLabel('Enable this role', { exact: true }).check();
+        await workspace.getByLabel('Connection profile', { exact: true }).selectOption('mewmory-test-' + name);
+        await expect(workspace.getByLabel('Tokenizer for this role')).toHaveValue('auto');
+    }
+    const settingsStatus = workspace.locator('#mewmory-settings-status');
+    await expect(settingsStatus).toContainText('Unsaved changes');
     await workspace.getByRole('button', { name: 'Save configuration', exact: true }).click();
-    await expect.poll(async () => (await post('/api/mewmory/config/get')).config.roles.fallback.enabled).toBe(true);
+    await expect(settingsStatus).toContainText('Not saved: Embeddings:');
+    await expect(settingsStatus).toContainText('no saved model');
+    expect((await post('/api/mewmory/config/get')).config.revision).toBe(initial.config.revision);
+    expect((await post('/api/mewmory/config/get')).config.roles.extractor.enabled).toBe(false);
+    await workspace.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect(settingsStatus).toContainText('Not saved: Embeddings:');
+    await workspace.getByRole('tab', { name: 'Now', exact: true }).click();
+    await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
+    await expect(settingsStatus).toContainText('Not saved: Embeddings:');
+    await workspace.getByLabel('Configure role').selectOption('embedding');
+    await expect(workspace.getByLabel('Enable this role', { exact: true })).toBeChecked();
+    await workspace.getByLabel('Model', { exact: true }).fill('text-embedding-3-small');
+    await workspace.getByRole('button', { name: 'Save configuration', exact: true }).click();
+    await expect(settingsStatus).toHaveText('Configuration saved.');
+    await expect(workspace.getByText(/Auto uses gpt-3.5-turbo/)).toBeVisible();
+    await navigate(() => page.reload({ waitUntil: 'domcontentloaded' }));
+    await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+    headers = await page.evaluate(() => window.SillyTavern.getContext().getRequestHeaders());
+    await page.evaluate(async ({ avatar, chatName }) => {
+        const context = window.SillyTavern.getContext();
+        await context.getCharacters();
+        await context.selectCharacterById(context.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
+        await (await import('/script.js')).openCharacterChat(chatName);
+        window.NeconyanShell.openTab('left', 'mewmory');
+    }, { avatar, chatName });
+    await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
+    await workspace.getByLabel('Configure role').selectOption('embedding');
+    await expect(workspace.getByLabel('Model', { exact: true })).toHaveValue('text-embedding-3-small');
+    await expect(workspace.getByLabel('Enable this role', { exact: true })).toBeChecked();
+    await expect(settingsStatus).toHaveText('Configuration saved.');
+    const external = (await post('/api/mewmory/config/get')).config;
+    external.batchMessages = 4;
+    const changed = await post('/api/mewmory/config/save', { config: external });
+    await workspace.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect(workspace.getByLabel('Messages per update')).toHaveValue('4');
+    await workspace.getByLabel('Messages per update').fill('3');
+    changed.config.memoryTokens += 1;
+    await post('/api/mewmory/config/save', { config: changed.config });
+    await workspace.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect(workspace.getByLabel('Messages per update')).toHaveValue('3');
+    await expect(settingsStatus).toContainText('Settings were saved elsewhere');
+    await workspace.getByRole('button', { name: 'Discard unsaved settings', exact: true }).click();
+    await expect(workspace.getByLabel('Messages per update')).toHaveValue('4');
+    await workspace.getByLabel('Messages per update').fill('3');
+    await workspace.getByRole('button', { name: 'Save configuration', exact: true }).click();
+    await expect(settingsStatus).toHaveText('Configuration saved.');
     await workspace.getByLabel('Use Mewmory in this chat').check();
     await workspace.getByRole('tab', { name: 'Now', exact: true }).click();
     await workspace.getByRole('button', { name: 'Update now', exact: true }).click();
@@ -103,12 +167,18 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     await expect(workspace.getByText(fixture.lore[0].text, { exact: false })).toBeVisible();
     await expect(workspace.getByText('DISABLED:', { exact: false })).toHaveCount(0);
 
-    for (const width of [390, 320]) {
-        await page.setViewportSize({ width, height: 844 });
+    const touch = await page.context().newCDPSession(page);
+    await touch.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    for (const width of [393, 320]) {
+        await page.setViewportSize({ width, height: 852 });
         await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
         await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
         await workspace.getByLabel('Configure role').selectOption('extractor');
-        await expect(workspace.getByLabel('OpenAI-compatible endpoint')).toHaveValue(provider);
+        await expect(workspace.getByLabel('Connection profile', { exact: true })).toHaveValue('mewmory-test-extractor');
+        await workspace.getByLabel('Tokenizer for this role').selectOption('cl100k_base');
+        await expect(settingsStatus).toContainText('Unsaved changes');
+        await workspace.getByRole('button', { name: 'Discard unsaved settings', exact: true }).click();
+        await expect(workspace.getByLabel('Tokenizer for this role')).toHaveValue('auto');
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
         const inputs = workspace.locator('input:not([type="checkbox"]):visible');
         for (let index = 0; index < await inputs.count(); index++) {
@@ -116,11 +186,22 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
             expect(box.x).toBeGreaterThanOrEqual(-1);
             expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
         }
+        const tokenizer = workspace.getByLabel('Tokenizer for this role');
+        expect((await tokenizer.boundingBox()).height).toBeGreaterThanOrEqual(44);
+        await info.attach('mewmory-controls-' + width, {
+            body: Buffer.from(JSON.stringify(await tokenizer.evaluate(element => ({
+                fontSize: window.getComputedStyle(element).fontSize,
+                height: element.getBoundingClientRect().height,
+                touchPoints: window.navigator.maxTouchPoints,
+            })))), contentType: 'application/json',
+        });
         await workspace.getByRole('tab', { name: 'Pawspective', exact: true }).click();
         await page.screenshot({ path: info.outputPath('mewmory-mobile-' + width + '.png') });
     }
 
-    await page.setViewportSize({ width: 1280, height: 1000 });
+    await touch.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    await touch.detach();
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
     await page.locator('#main_api').selectOption('openai');
     await page.locator('#chat_completion_source').selectOption('custom');

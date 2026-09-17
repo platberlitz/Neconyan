@@ -577,6 +577,7 @@ function getWebTokenizersChunks(tokenizer, ids) {
  * @returns {string} Tokenizer model to use
  */
 export function getTokenizerModel(requestModel) {
+    requestModel = requestModel.toLowerCase();
     // Neconyan, ponytail: estimate Astra with GPT-5's tokenizer until an Astra encoding is published.
     if (requestModel === 'gpt-6-astra') {
         return 'o1';
@@ -650,7 +651,7 @@ export function getTokenizerModel(requestModel) {
         return 'jamba';
     }
 
-    if (requestModel.includes('qwen2')) {
+    if (requestModel.includes('qwen2') || requestModel.includes('qwen3')) {
         return 'qwen2';
     }
 

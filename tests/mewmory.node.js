@@ -14,13 +14,13 @@ const {
     sourceAt, syncSources, undoRecord, validateRecord,
 } = await import('../src/mewmory/core.js');
 const { activeReferences, assembleContext } = await import('../src/mewmory/context.js');
-const { callJsonRole, defaultConfig, isLocalEndpoint, validateEndpoint, saveConfig } = await import('../src/mewmory/models.js');
+const { callJsonRole, defaultConfig, embed, isLocalEndpoint, validateEndpoint, saveConfig } = await import('../src/mewmory/models.js');
 const { applyExtraction, applyInterview, interviewInput, pendingSources, processBatch } = await import('../src/mewmory/processing.js');
 const { validateSelection, recall } = await import('../src/mewmory/retrieval.js');
 const { hybridCandidates, lexicalSearch, searchDocuments, updateIndex } = await import('../src/mewmory/search.js');
 const { loadCurrentState } = await import('../src/mewmory/sources.js');
 const { mutateState, normalizeLocator, readState, renameChatMemory, renameCharacterMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
-const { getCounter } = await import('../src/mewmory/tokens.js');
+const { getCounter, getTokenizerModel } = await import('../src/mewmory/tokens.js');
 const { inspectState, restoreRecords } = await import('../src/endpoints/mewmory.js');
 const { createMewmoryProvider } = await import('./mewmory-provider.js');
 const { readConfig, publicConfig } = await import('../src/mewmory/models.js');
@@ -43,6 +43,7 @@ test('connection profiles resolve server-side and retain local-only permissions'
         const result = await callJsonRole(directories, saved, 'extractor', 'Extract facts.', { sources: [], existing: [] });
         assert.deepEqual(result.value.records, []);
         assert.equal(provider.calls.at(-1).model, 'extractor');
+        assert.equal(result.usage.tokenizer, 'gpt-3.5-turbo');
         saved.roles.extractor.profileId = 'remote';
         assert.throws(() => saveConfig(directories, saved), /not allowed/);
         writeJson(path.join(root, 'settings.json'), {});
@@ -52,6 +53,70 @@ test('connection profiles resolve server-side and retain local-only permissions'
         await new Promise(resolve => provider.server.close(resolve));
         fs.rmSync(root, { recursive: true, force: true });
     }
+});
+
+test('a missing profile model names the role, preserves saved settings and accepts a role-specific override', async t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mewmory-profile-model-'));
+    const provider = await createMewmoryProvider();
+    t.after(async () => {
+        await new Promise(resolve => provider.server.close(resolve));
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+    const directories = { root };
+    writeJson(path.join(root, 'settings.json'), { custom_endpoint_presets: [{ name: 'facts', url: provider.url, model: 'extractor' }],
+        extension_settings: { connectionManager: { profiles: [
+            { id: 'facts', name: 'Facts', api: 'custom', 'custom-endpoint-profile': 'facts' },
+            { id: 'embedding', name: 'Embedding', api: 'custom', 'api-url': provider.url },
+        ] } } });
+    const config = defaultConfig();
+    config.writerTokenizer = 'o200k_base';
+    Object.assign(config.roles.extractor, { enabled: true, profileId: 'facts' });
+    Object.assign(config.roles.embedding, { enabled: true, profileId: 'embedding' });
+    config.roles.fallback.profileId = 'deleted-disabled-profile';
+    assert.throws(() => saveConfig(directories, config), /Embeddings:.*no saved model.*Enter a Model/);
+    assert.equal(publicConfig(directories).revision, 0);
+    assert.equal(readConfig(directories).roles.extractor.enabled, false);
+    config.roles.embedding.enabled = false;
+    const saved = saveConfig(directories, config);
+    assert.equal(saved.profiles[0].model, 'extractor');
+    assert.equal(readConfig(directories).roles.extractor.enabled, true);
+    assert.equal(readConfig(directories).roles.embedding.connection, undefined);
+    saved.roles.embedding.enabled = true;
+    assert.throws(() => saveConfig(directories, saved), /Embeddings:.*no saved model/);
+    assert.equal(publicConfig(directories).revision, saved.revision);
+    saved.roles.embedding.modelOverride = 'text-embedding-3-small';
+    saveConfig(directories, saved);
+    const resolved = readConfig(directories);
+    assert.equal(resolved.roles.embedding.model, 'text-embedding-3-small');
+    assert.equal(resolved.roles.embedding.connection.endpoint, provider.url);
+    assert.equal(publicConfig(directories).roles.embedding.autoTokenizer, 'gpt-3.5-turbo');
+    const embeddings = await embed(directories, resolved, ['猫 🐾 memory']);
+    assert.equal(embeddings.vectors.length, 1);
+    assert.equal(embeddings.usage.tokenizer, 'gpt-3.5-turbo');
+    assert.equal(provider.calls.at(-1).model, 'text-embedding-3-small');
+    resolved.roles.extractor.tokenizer = 'cl100k_base';
+    saveConfig(directories, resolved);
+    const facts = await callJsonRole(directories, readConfig(directories), 'extractor', 'Extract facts.', { sources: [], existing: [] });
+    assert.equal(facts.usage.tokenizer, 'cl100k_base');
+    const invalid = publicConfig(directories);
+    invalid.roles.extractor.contextTokens = 0;
+    assert.throws(() => saveConfig(directories, invalid), /Facts and events:.*Role context/);
+});
+
+test('Auto matches the role model independently, handles model families and retains explicit tokenizers', async () => {
+    assert.equal(getTokenizerModel('OpenAI/GPT-4o-mini'), 'gpt-4o');
+    assert.equal(getTokenizerModel('Qwen/Qwen3-Embedding-0.6B'), 'qwen2');
+    assert.equal(getTokenizerModel('Gemma-4-31B-it'), 'gemma');
+    assert.equal(getTokenizerModel('deepseek/deepseek-v4.1-flash'), 'deepseek');
+    assert.equal(getTokenizerModel('unknown-provider-alias'), 'gpt-3.5-turbo');
+    const hint = { tokenizerKey: 'openai', tokenizerName: 'OpenAI/GPT-4o-mini' };
+    const auto = await getCounter('auto', hint);
+    const explicit = await getCounter('cl100k_base', hint);
+    const matching = await getCounter('o200k_base');
+    assert.equal(auto.name, 'gpt-4o');
+    assert.equal(explicit.name, 'cl100k_base');
+    assert.equal(auto.count('猫 🐾 café\nFacts and events'), matching.count('猫 🐾 café\nFacts and events'));
+    await assert.rejects(getCounter('auto', { tokenizerKey: 'api_current' }), /local writer tokenizer/);
 });
 
 const fixture = JSON.parse(fs.readFileSync(new URL('./fixtures/mewmory-gift.json', import.meta.url), 'utf8'));

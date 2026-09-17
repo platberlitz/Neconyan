@@ -5,9 +5,9 @@ Mewmory is Neconyan’s native long-form Roleplay memory system. Pawspective is 
 ## Set up
 
 1. Open a saved character or group Roleplay chat.
-2. In **Mewmory → Settings**, configure the facts/events, Pawspective and recall-selector roles. Each uses its own OpenAI-compatible endpoint and model. Embeddings and a separate fallback selector are optional.
-3. Set the tokenizer and limits for each model. Local-only requests are the default. A remote role requires both disabling local-only mode and explicitly allowing that endpoint.
-4. Save configuration and enable **Use Mewmory in this chat**.
+2. In **Mewmory → Settings**, enable and configure the Facts and events, Pawspective and recall-selector roles. Choose a saved connection profile or a manual OpenAI-compatible endpoint and model. Embeddings and a separate fallback selector are optional; embedding profiles must be OpenAI-compatible. If a profile has no saved model, enter your service’s model name in Mewmory’s **Model** field. A role-specific override keeps the profile’s connection and credentials.
+3. Set the limits for each model. **Auto (match this model)** chooses a local tokenizer from that role’s model name; an explicit tokenizer remains available. Local-only requests are the default. A remote role requires both disabling local-only mode and explicitly allowing that endpoint.
+4. Save configuration and wait for **Configuration saved.**, then enable **Use Mewmory in this chat**. Unsaved edits do not affect processing. If saving fails, the message names the affected role and stays visible in Settings until you save successfully or discard your edits. An incomplete disabled role does not prevent saving the enabled roles.
 5. For an existing story, use **Backfill this chat**. New accepted messages are processed automatically when automatic updates are enabled.
 
 No model connection or credential is borrowed from the RP writer. Role keys use Neconyan’s protected server credential store. Exports do not contain those keys.
@@ -36,7 +36,7 @@ The coordinator starts preservation review around the 80% buffer. A generation c
 
 The original chat remains unchanged. Source passages remain searchable through the local lexical index even when embeddings are unavailable. Memory and active-NPC sections are assembled outside history trimming. If the retained prompt cannot fit, generation stops with an actionable error. Increase context, reduce pinned memory or complete backfill instead of silently losing protected material.
 
-Token counts use a real local tokenizer, with an explicit model/tokenizer choice. Auto follows the application’s selected tokenizer; a backend-only estimate is insufficient for exclusion. Tokenizer choices still need to match the model. Final request accounting includes a conservative serialised-payload check as well as the host’s prompt budget.
+Token counts use a real local tokenizer. Each memory role’s Auto option follows its own model, including the selected connection profile, independently of the RP writer. Settings shows the local match. Model-family matches are approximate, and unknown model names fall back to the GPT-3.5 tokenizer; choose an explicit tokenizer if your provider uses another. The writer’s separate Auto option follows the application’s selected tokenizer; a backend-only estimate is insufficient for exclusion. Final request accounting includes a conservative serialised-payload check as well as the host’s prompt budget.
 
 ## Storage and branches
 
@@ -96,7 +96,7 @@ For the browser check, start a disposable Neconyan server and the fixture provid
     node tests/mewmory-provider.js
     NECONYAN_MEWMORY_TEST_DISPOSABLE=1 NECONYAN_TEST_BASE_URL=http://127.0.0.1:4490 npm --prefix tests run test:e2e -- mewmory.e2e.js --workers=1
 
-Build frontend assets before testing a packaged server. The browser check covers role settings, backfill, original sources, correction persistence, selector diagnostics, desktop and 390/320px layouts, and the real writing prompt.
+Build frontend assets before testing a packaged server. The browser check covers connection profiles, rejected saves, saved settings after a reload, role-specific Auto, backfill, original sources, correction persistence, selector diagnostics, desktop and 393/320px touch layouts, and the real writing prompt.
 
 Real-model extraction recall, unsupported interpretations, character voice, associative relevance and fallback cost still require a labelled story set and configured model endpoints. No particular selector model is claimed to be best. A shared provider in the fixtures is a test arrangement, not automatic role sharing in the application.
 

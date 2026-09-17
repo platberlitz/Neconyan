@@ -11,7 +11,7 @@ const kinds = { entity: 'NPC or entity reference', state: 'Current state', event
 const roles = { extractor: 'Facts and events', pawspective: 'Pawspective interviews', embedding: 'Embeddings', selector: 'Recall selector', fallback: 'Recall fallback' };
 const tokenizers = ['auto', 'o200k_base', 'cl100k_base', 'gpt2', 'llama', 'llama3', 'mistral', 'gemma', 'claude', 'qwen2', 'deepseek', 'nemo', 'jamba', 'yi'];
 const ui = { root: null, tab: 'now', owner: '', subject: '', significance: '', status: '', kind: 'objective', query: '', offset: 0,
-    source: null, editor: null, draft: null, role: 'extractor', restore: null, matches: null, running: false, progress: '', scope: '' };
+    source: null, editor: null, draft: null, savedDraft: '', configError: '', role: 'extractor', restore: null, matches: null, running: false, progress: '', scope: '' };
 
 function node(tag, className = '', content = '') {
     const element = document.createElement(tag);
@@ -44,7 +44,7 @@ function field(label, value, onChange, { type = 'text', multiline = false, optio
         if (type === 'password') control.autocomplete = 'new-password';
     }
     control.value = value ?? '';
-    control.disabled = disabled;
+    control.disabled = disabled || ui.running;
     control.addEventListener(options ? 'change' : 'input', () => onChange(type === 'number' ? Number(control.value) : control.value));
     const caption = node('label', '', label);
     caption.htmlFor = control.id;
@@ -477,8 +477,24 @@ function renderEditor(root) {
     root.append(editor);
 }
 
+function resetSettingsDraft(config = mewmory.config) {
+    ui.draft = structuredClone(config);
+    ui.savedDraft = JSON.stringify(ui.draft);
+}
+
+function updateSettingsStatus() {
+    const status = document.getElementById('mewmory-settings-status');
+    if (!status || !ui.draft) return;
+    const changed = JSON.stringify(ui.draft) !== ui.savedDraft;
+    status.textContent = ui.configError ? 'Not saved: ' + ui.configError
+        : ui.draft.revision !== mewmory.config.revision ? 'Settings were saved elsewhere. Discard your unsaved settings to load them before editing again.'
+            : changed ? 'Unsaved changes. Mewmory still uses the saved configuration.'
+                : ui.draft.revision ? 'Configuration saved.' : 'No model configuration saved yet.';
+    status.dataset.error = String(Boolean(ui.configError));
+}
+
 function renderSettings(root) {
-    ui.draft ??= structuredClone(mewmory.config);
+    if (mewmory.config && (!ui.draft || JSON.stringify(ui.draft) === ui.savedDraft)) resetSettingsDraft();
     const draft = ui.draft;
     if (!draft) return;
     const settings = section('Automatic memory');
@@ -503,24 +519,41 @@ function renderSettings(root) {
     roleForm.append(node('legend', '', roles[ui.role]), check('Enable this role', role.enabled, value => { role.enabled = value; }));
     const fields = node('div', 'mewmory-fields');
     const profiles = (mewmory.config.profiles || []).filter(profile => ui.role !== 'embedding' || profile.embeddings);
+    const selectedProfile = profiles.find(profile => profile.id === role.profileId);
     fields.append(field('Connection profile', role.profileId || '', value => {
         role.profileId = value;
         const profile = profiles.find(profile => profile.id === value);
-        if (profile) role.model = profile.model;
+        role.model = profile?.model || '';
+        role.modelOverride = '';
         render();
-    }, { options: [['', 'Manual endpoint'], ...profiles.map(profile => [profile.id, profile.name])], key: 'profile-' + ui.role,
-        hint: 'Uses the saved profile’s model and server-side credentials. Embeddings need an OpenAI-compatible profile.' }));
+    }, { options: [['', 'Manual endpoint'], ...profiles.map(profile => [profile.id, profile.name]),
+        ...(role.profileId && !selectedProfile ? [[role.profileId, 'Unavailable saved profile']] : [])], key: 'profile-' + ui.role,
+    hint: 'Uses the saved profile’s model and server-side credentials. Embeddings need an OpenAI-compatible profile.' }));
+    if (role.profileId) fields.append(field(selectedProfile?.model ? 'Model override, optional' : 'Model', role.modelOverride || '', value => {
+        role.modelOverride = value;
+        render();
+    }, { key: 'model-override-' + ui.role, hint: selectedProfile?.model
+        ? 'Leave blank to use the profile’s model: ' + selectedProfile.model
+        : 'This profile has no saved model. Enter the model name provided by your service.' }));
     if (!role.profileId) fields.append(
         field('OpenAI-compatible endpoint', role.endpoint, value => { role.endpoint = value; }, { hint: 'For example: http://127.0.0.1:8000/v1', key: 'endpoint-' + ui.role }),
-        field('Model', role.model, value => { role.model = value; }, { key: 'model-' + ui.role }),
+        field('Model', role.model, value => { role.model = value; render(); }, { key: 'model-' + ui.role }),
         field('API key', role.apiKey || '', value => { role.apiKey = value; }, { type: 'password', hint: role.hasKey ? 'A key is saved. Leave blank to keep it.' : 'Stored in the server’s protected credentials.', key: 'api-key-' + ui.role }),
     );
+    const modelName = role.profileId ? role.modelOverride || selectedProfile?.model : role.model;
+    const savedRole = mewmory.config.roles[ui.role];
+    const autoTokenizer = role.profileId && !role.modelOverride ? selectedProfile?.autoTokenizer
+        : modelName === savedRole.model ? savedRole.autoTokenizer : '';
     fields.append(
         field('Model revision, optional', role.modelRevision, value => { role.modelRevision = value; }, { key: 'revision-' + ui.role }),
         field('Context limit, tokens', role.contextTokens, value => { role.contextTokens = value; }, { type: 'number', key: 'context-' + ui.role }),
         field('Output limit, tokens', role.maxOutputTokens, value => { role.maxOutputTokens = value; }, { type: 'number', disabled: ui.role === 'embedding', key: 'output-' + ui.role }),
         field('Timeout, seconds', role.timeoutMs / 1000, value => { role.timeoutMs = value * 1000; }, { type: 'number', key: 'timeout-' + ui.role }),
-        field('Tokenizer for this role', role.tokenizer, value => { role.tokenizer = value; }, { options: tokenizers.filter(value => value !== 'auto'), key: 'tokenizer-' + ui.role }),
+        field('Tokenizer for this role', role.tokenizer, value => { role.tokenizer = value; render(); }, {
+            options: tokenizers.map(value => value === 'auto' ? ['auto', 'Auto (match this model)'] : value), key: 'tokenizer-' + ui.role,
+            hint: role.tokenizer === 'auto' ? (autoTokenizer ? 'Auto uses ' + autoTokenizer + '.' : 'Save the model settings to see Auto’s local tokenizer match.')
+                + ' Counts are approximate. Choose a tokenizer manually if your provider uses a different one.' : '',
+        }),
     );
     if (ui.role === 'embedding') fields.append(
         field('Query prefix, optional', role.queryPrefix, value => { role.queryPrefix = value; }),
@@ -541,11 +574,24 @@ function renderSettings(root) {
     root.append(model);
     const actions = node('div', 'mewmory-actions');
     actions.append(button('Save configuration', () => act(async () => {
-        const saved = await changeMewmory('config/save', { config: ui.draft });
-        ui.draft = structuredClone(saved.config);
-        window.dispatchEvent(new Event('mewmory:configured'));
-    }), { primary: true }), button('Discard unsaved settings', () => { ui.draft = structuredClone(mewmory.config); render(); }));
-    root.append(actions);
+        try {
+            const saved = await changeMewmory('config/save', { config: ui.draft });
+            resetSettingsDraft(saved.config);
+            ui.configError = '';
+            window.dispatchEvent(new Event('mewmory:configured'));
+        } catch (error) {
+            ui.configError = error.message;
+            throw error;
+        }
+    }), { primary: true }), button('Discard unsaved settings', () => { resetSettingsDraft(); ui.configError = ''; render(); }));
+    const status = node('p', 'mewmory-status');
+    status.id = 'mewmory-settings-status';
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    root.append(actions, status);
+    root.addEventListener('input', updateSettingsStatus);
+    root.addEventListener('change', updateSettingsStatus);
+    updateSettingsStatus();
     renderHealth(root);
 }
 
@@ -677,7 +723,7 @@ function render() {
     heading.append(node('p', 'mewmory-caption mewmory-scope', mewmory.view?.locator.chat || 'No Roleplay chat selected'),
         button('Refresh', () => act(() => refreshMewmory(filters()), { refresh: false })));
     const status = node('p', 'mewmory-status', mewmory.error || (mewmory.busy || mewmory.preparing ? 'Processing…'
-        : mewmory.view?.enabled ? 'Current' : 'Off'));
+        : mewmory.view?.enabled ? mewmory.config?.roles.extractor.enabled ? 'Current' : 'Facts and events is not enabled in the saved settings.' : 'Off'));
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
     status.dataset.error = String(Boolean(mewmory.error));

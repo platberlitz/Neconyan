@@ -1,6 +1,8 @@
 import { get_encoding } from 'tiktoken';
+import { getTokenizerModel } from '../endpoints/tokenizers.js';
 import { fail } from './core.js';
 
+export { getTokenizerModel };
 export const TOKENIZERS = ['auto', 'o200k_base', 'cl100k_base', 'gpt2', 'llama', 'llama3', 'mistral', 'gemma', 'claude', 'qwen2', 'deepseek', 'nemo', 'jamba', 'yi'];
 const encodings = new Map();
 
@@ -9,7 +11,6 @@ export async function getCounter(choice = 'o200k_base', hint = {}) {
         const names = { nerd: 'nerdstash', nerd2: 'nerdstash_v2', command_r: 'command-r', command_a: 'command-a' };
         choice = names[hint.tokenizerKey] || hint.tokenizerKey;
         if (choice === 'openai') {
-            const { getTokenizerModel } = await import('../endpoints/tokenizers.js');
             choice = getTokenizerModel(String(hint.tokenizerName || ''));
         }
         if (!choice || ['none', 'api_current', 'api_kobold', 'api_textgenerationwebui', 'best_match'].includes(choice)) {
