@@ -7351,7 +7351,18 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     }
 
     #left-nav-panel .neconyan-saved-connections .openai_logit_bias_preset_form {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #left-nav-panel .neconyan-saved-connections .openai_logit_bias_preset_form select {
+        grid-column: 1 / -1;
+    }
+
+    #left-nav-panel .neconyan-saved-connections .openai_logit_bias_preset_form > .menu_button {
+        width: auto;
+        max-width: 100%;
+        aspect-ratio: auto;
+        min-height: var(--sb-mobile-touch-target, 44px);
     }
 
     #right-nav-panel .neconyan-character-library .neconyan-character-native-nav .sb-shell-tab {
@@ -8184,12 +8195,16 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
         border-radius: 10px;
     }
 
-    .sb-shell-root-left .sb-shell-subtitle,
     .sb-shell-root-left .sb-shell-description,
-    .sb-shell-root-right .sb-shell-subtitle,
     .sb-shell-root-right .sb-shell-description,
     .sb-shell-tab-copy small {
         display: none;
+    }
+
+    #left-nav-panel .sb-shell-subtitle,
+    #user-settings-block .sb-shell-subtitle {
+        white-space: normal;
+        overflow: visible;
     }
 
     #openai_api-presets :is(

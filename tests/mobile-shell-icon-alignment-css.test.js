@@ -36,4 +36,27 @@ describe('mobile shell icon alignment css', () => {
         expect(importIconRule).toContain('align-items: center;');
         expect(importIconRule).toContain('justify-content: center;');
     });
+
+    test('puts the endpoint save and delete buttons side by side on phones', () => {
+        const formRule = getRuleBody('#left-nav-panel .neconyan-saved-connections .openai_logit_bias_preset_form');
+        const selectRule = getRuleBody('#left-nav-panel .neconyan-saved-connections .openai_logit_bias_preset_form select');
+        const iconRule = getRuleBody('#left-nav-panel .neconyan-saved-connections .openai_logit_bias_preset_form > .menu_button');
+
+        expect(formRule).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+        expect(selectRule).toContain('grid-column: 1 / -1;');
+        expect(iconRule).toContain('width: auto;');
+        expect(iconRule).toContain('max-width: 100%;');
+        expect(iconRule).toContain('aspect-ratio: auto;');
+        expect(iconRule).toContain('min-height: var(--sb-mobile-touch-target, 44px);');
+    });
+
+    test('shows shell page blurbs on phones and lets them wrap', () => {
+        expect(tabsCss).not.toContain('.sb-shell-root-left .sb-shell-subtitle');
+        expect(tabsCss).not.toContain('.sb-shell-root-right .sb-shell-subtitle');
+
+        const subtitleRule = getRuleBody('#user-settings-block .sb-shell-subtitle');
+
+        expect(subtitleRule).toContain('white-space: normal;');
+        expect(subtitleRule).toContain('overflow: visible;');
+    });
 });
