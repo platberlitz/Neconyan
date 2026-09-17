@@ -267,7 +267,7 @@ route('/prepare', async (directories, body, signal) => {
         if (!ref || (sourceEligible(state, ref) && state.checkpoints[refKey(ref)] !== policy)) break;
         excludedIndices.push(item.index);
     }
-    const context = await recall(directories, locator, { asOf, tokenizer: body.tokenizer || {}, signal });
+    const context = await recall(directories, locator, { asOf, tokenizer: body.tokenizer || {}, signal, local: true });
     if (generationFingerprint(await loadCurrentState(directories, locator), readConfig(directories)) !== snapshot) {
         fail('The accepted sources, settings or author corrections changed during preparation. Reload and generate again.', 409);
     }

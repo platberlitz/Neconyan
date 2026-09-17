@@ -7,8 +7,25 @@ import { callJsonRole, embed, readConfig, roleVersion } from './models.js';
 import { addUsage } from './processing.js';
 import { hybridCandidates, searchDocuments, terms, updateIndex } from './search.js';
 import { loadCurrentState } from './sources.js';
-import { mutateState } from './store.js';
+import { mutateState, statePath } from './store.js';
 import { getCounter } from './tokens.js';
+
+const running = new Map();
+
+/** One recall per user/story; a slow provider must not accumulate work on every send. */
+export function recallInBackground(directories, locator, options = {}, dependencies = {}) {
+    const key = statePath(directories, locator);
+    if (running.has(key)) return running.get(key);
+    const job = recall(directories, locator, { ...options, local: false, background: true, signal: undefined }, dependencies)
+        .finally(() => running.delete(key));
+    running.set(key, job);
+    job.catch(error => console.warn('Mewmory background recall:', error.message));
+    return job;
+}
+
+function recallFingerprint(state, config, sourceCount) {
+    return generationFingerprint({ ...state, timeline: state.timeline.slice(0, sourceCount) }, config);
+}
 
 function onlyKeys(value, keys, label) {
     object(value, label);
@@ -129,18 +146,19 @@ async function selectMemories(state, directories, config, documents, scene, allD
 }
 
 export async function recall(directories, locator, {
-    asOf = Infinity, query: manualQuery = '', tokenizer = {}, signal,
+    asOf = Infinity, query: manualQuery = '', tokenizer = {}, signal, local = false, background = false,
 } = {}, { call = callJsonRole, embedFn = embed } = {}) {
     const config = readConfig(directories);
     const state = await loadCurrentState(directories, locator);
     if (!state.enabled) return { enabled: false, npcText: '', memoryText: '', tokens: { npc: 0, memory: 0 } };
     const fingerprint = assemblyFingerprint(state, config);
     const validationFingerprint = generationFingerprint(state, config);
+    const sourceCount = state.timeline.length;
     const indexSnapshot = hash(state.index);
     const counter = await getCounter(config.writerTokenizer, tokenizer);
     const usage = [];
     let indexError = '';
-    try {
+    if (!local) try {
         const indexed = await updateIndex(state, directories, config, { signal, embedFn });
         usage.push(...indexed.usage);
     } catch (error) {
@@ -154,7 +172,7 @@ export async function recall(directories, locator, {
     const query = scene.map(cue => cue.speaker + ': ' + cue.text).join('\n');
     const allDocuments = searchDocuments(state, asOf);
     let vector = null;
-    if (config.roles.embedding.enabled && state.index.version === roleVersion(config, 'embedding')) {
+    if (!local && config.roles.embedding.enabled && state.index.version === roleVersion(config, 'embedding')) {
         try {
             const result = await embedFn(directories, config, [query], { query: true, signal, dataTypes: ['chat'] });
             vector = result.vectors[0];
@@ -166,10 +184,16 @@ export async function recall(directories, locator, {
     const forced = forcedMatches(state, allDocuments, query, asOf);
     const candidates = [...new Map([...forced, ...hybridCandidates(allDocuments, query, vector,
         state.index.vectors, config.candidateLimit)].map(document => [document.id, document])).values()];
-    const selection = await selectMemories(state, directories, config, candidates, scene, allDocuments, asOf, signal, call);
+    const cached = local && state.recalls.findLast(item => item.status === 'complete' && item.asOf <= asOf
+        && item.sourceCount <= sourceCount && item.validationFingerprint === recallFingerprint(state, config, item.sourceCount));
+    const selection = local ? {
+        status: { status: 'local', selections: cached?.selections || [], rejections: [], needsEvidence: [] },
+        documents: candidates, usage: [], fallbackUsed: false, error: '',
+    } : await selectMemories(state, directories, config, candidates, scene, allDocuments, asOf, signal, call);
     usage.push(...selection.usage);
     await loadCurrentState(directories, locator);
-    const selectedIds = new Set([...forced.map(document => document.id), ...selection.status.selections.map(item => item.recordId)]);
+    const selectedIds = new Set([...forced.map(document => document.id), ...selection.status.selections.map(item => item.recordId),
+        ...(local ? candidates.map(document => document.id) : [])]);
     // Use one coherent completed snapshot; the model never supplies assembled memory text.
     const currentById = new Map(allDocuments.map(document => [document.id, document]));
     const currentDocuments = [...selectedIds].map(id => currentById.get(id)).filter(Boolean);
@@ -182,15 +206,21 @@ export async function recall(directories, locator, {
         error: selection.error, indexError, ...selection.status,
         candidates: selection.documents.map(document => ({ id: document.id, kind: document.kind, refs: document.refs })),
         forcedIds: forced.map(document => document.id), omitted: assembly.omitted, usage,
+        sourceCount, validationFingerprint, background,
     };
     mutateState(directories, locator, current => {
-        if (generationFingerprint(current, readConfig(directories)) !== validationFingerprint) {
+        const currentConfig = readConfig(directories);
+        if ((background ? recallFingerprint(current, currentConfig, sourceCount) : generationFingerprint(current, currentConfig)) !== validationFingerprint) {
             fail('The story, settings or an author correction changed during recall. Generate again to use its current version.', 409);
         }
-        if (assemblyFingerprint(current, config) === fingerprint && hash(current.index) === indexSnapshot) current.index = state.index;
+        const indexState = background ? { ...current, timeline: current.timeline.slice(0, sourceCount) } : current;
+        if (!local && assemblyFingerprint(indexState, config) === fingerprint && hash(current.index) === indexSnapshot) {
+            current.index = { ...state.index, pending: state.index.pending || current.timeline.length > sourceCount };
+        }
         current.recalls = [...current.recalls.slice(-9), inspection];
-        current.preview = { ...assembly, fingerprint };
+        if (!background) current.preview = { ...assembly, fingerprint };
         addUsage(current, usage);
     });
+    if (local) recallInBackground(directories, locator, { asOf: Math.min(asOf, sourceCount - 1), query: manualQuery, tokenizer }, { call, embedFn });
     return { enabled: true, ...assembly, inspection, fingerprint, validationFingerprint };
 }

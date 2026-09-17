@@ -26,8 +26,10 @@ export async function createMewmoryProvider(port = 0) {
             return response.end('{}');
         }
         const name = typeof body.prompt === 'string' ? 'text-writer' : body.model;
-        calls.push({ model: name, messages: body.messages, prompt: body.prompt, tools: body.tools });
-        if (name === mode.hold) await new Promise(resolve => held.add(resolve));
+        const call = { model: name, messages: body.messages, prompt: body.prompt, tools: body.tools, startedAt: Date.now(), completedAt: null };
+        calls.push(call);
+        if ([].concat(mode.hold).includes(name)) await new Promise(resolve => held.add(resolve));
+        call.completedAt = Date.now();
         if (mode.fail) {
             response.statusCode = 503;
             return response.end(JSON.stringify({ error: 'Fixture provider unavailable.' }));
@@ -107,6 +109,12 @@ export async function createMewmoryProvider(port = 0) {
                 };
         } else {
             output = 'Mara touches the bag. "Of course I kept it. Do not make a fuss."';
+        }
+        if (body.stream && name === 'mewmory-writer') {
+            response.setHeader('Content-Type', 'text/event-stream');
+            call.firstTokenAt = Date.now();
+            response.write('data: ' + JSON.stringify({ choices: [{ index: 0, delta: { role: 'assistant', content: output }, finish_reason: null }] }) + '\n\n');
+            return response.end('data: ' + JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }) + '\n\ndata: [DONE]\n\n');
         }
         response.end(JSON.stringify({
             choices: [{ text: typeof output === 'string' ? output : JSON.stringify(output),

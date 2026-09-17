@@ -16,7 +16,7 @@ const {
 const { activeReferences, assembleContext, generationFingerprint } = await import('../src/mewmory/context.js');
 const { callJsonRole, defaultConfig, embed, isLocalEndpoint, validateEndpoint, saveConfig } = await import('../src/mewmory/models.js');
 const { applyExtraction, applyInterview, interviewInput, pendingSources, processBatch } = await import('../src/mewmory/processing.js');
-const { validateSelection, recall } = await import('../src/mewmory/retrieval.js');
+const { validateSelection, recall, recallInBackground } = await import('../src/mewmory/retrieval.js');
 const { hybridCandidates, lexicalSearch, searchDocuments, updateIndex } = await import('../src/mewmory/search.js');
 const { loadCurrentState } = await import('../src/mewmory/sources.js');
 const { mutateState, normalizeLocator, readState, renameChatMemory, renameCharacterMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
@@ -830,6 +830,71 @@ test('recall uses its completed snapshot when automatic memory finishes, but rej
     } }), /author correction changed during recall/);
 });
 
+test('local recall overlaps embeddings and selection, reuses completed IDs and rejects stale background work', async t => {
+    const { directories, write } = disk(t);
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    Object.assign(config.roles.embedding, { enabled: true, endpoint: 'http://127.0.0.1:4491/v1', model: 'embedding' });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    let releaseEmbedding, releaseSelector, startEmbedding, startSelector;
+    const embeddingHeld = new Promise(resolve => { releaseEmbedding = resolve; });
+    const selectorHeld = new Promise(resolve => { releaseSelector = resolve; });
+    const embeddingStarted = new Promise(resolve => { startEmbedding = resolve; });
+    const selectorStarted = new Promise(resolve => { startSelector = resolve; });
+    t.after(() => { releaseEmbedding(); releaseSelector(); });
+    let selections = 0;
+    const dependencies = {
+        embedFn: async (_directories, _config, inputs) => {
+            startEmbedding();
+            await embeddingHeld;
+            return { vectors: inputs.map(() => [1, 0, 1]), usage: { role: 'embedding' } };
+        },
+        call: async (_directories, _config, role, _contract, input) => {
+            selections++;
+            startSelector();
+            await selectorHeld;
+            const candidate = input.candidates.find(candidate => candidate.recordId === 'event:gift');
+            return { value: { status: 'complete', selections: candidate ? [{ recordId: candidate.recordId,
+                relevanceType: 'direct', currentCueRefs: [input.scene.at(-1).id],
+                memoryEvidenceRefs: [candidate.sourceRefs[0]], justification: 'INSPECT ONLY' }] : [],
+            rejections: [], needsEvidence: [] }, usage: { role } };
+        },
+    };
+    const quick = await recall(directories, locator, { local: true }, dependencies);
+    assert.ok(quick.memoryText.includes('Mara accepted the gift.'));
+    assert.equal(quick.inspection.status, 'local');
+    await embeddingStarted;
+    const job = recallInBackground(directories, locator, {}, dependencies);
+    await recall(directories, locator, { local: true }, dependencies);
+    assert.equal(recallInBackground(directories, locator, {}, dependencies), job, 'one pending job per story');
+    releaseEmbedding();
+    await selectorStarted;
+    assert.equal(selections, 1);
+    const preview = readState(directories, locator).preview;
+    write([...fixture.messages, { name: 'Mara', is_user: false, send_date: 'parallel-reply', mes: 'I kept it.' }]);
+    await loadCurrentState(directories, locator);
+    releaseSelector();
+    await job;
+    const completed = readState(directories, locator);
+    assert.ok(completed.recalls.at(-1).background);
+    assert.deepEqual(completed.preview, preview, 'late selection must not replace the actual writer preview');
+    const cached = await recall(directories, locator, { local: true }, dependencies);
+    assert.equal(cached.inspection.selections[0].recordId, 'event:gift');
+    assert.ok(!cached.memoryText.includes('INSPECT ONLY'));
+    await recallInBackground(directories, locator, {}, dependencies);
+    const earlier = await recall(directories, locator, { local: true, asOf: 0 }, dependencies);
+    assert.deepEqual(earlier.inspection.selections, [], 'future selections must not leak into an earlier swipe');
+    await recallInBackground(directories, locator, {}, dependencies);
+    await assert.rejects(recall(directories, locator, { background: true }, { ...dependencies,
+        call: async () => {
+            mutateState(directories, locator, state => { putRecord(state, { ...state.records[0], excluded: true, authorOverride: true, origin: 'author' }); });
+            return { value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: {} };
+        },
+    }), /author correction changed during recall/);
+});
+
 test('HTTP preparation uses only completed preservation and accepts automatic progress before final validation', async t => {
     const messages = Array.from({ length: 10 }, (_, index) => ({
         name: index % 2 ? 'Player' : 'Mara', is_user: Boolean(index % 2),
@@ -859,6 +924,7 @@ test('HTTP preparation uses only completed preservation and accepts automatic pr
     const prepare = async () => {
         const response = await fetch(url + '/prepare', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(3000),
             body: JSON.stringify({ locator, integrity: 'fixture', history: messages.map((message, index) => ({ index, text: message.mes })) }),
         });
         const value = await response.json();
@@ -869,15 +935,23 @@ test('HTTP preparation uses only completed preservation and accepts automatic pr
     provider.mode.fail = true;
     await assert.rejects(processBatch(directories, locator, { checkpoint: true }), /HTTP 503/);
     const failed = await prepare();
+    await recallInBackground(directories, locator);
     assert.deepEqual(failed.excludedIndices, []);
     assert.ok(failed.history.waitingForPreservation);
     assert.deepEqual(readState(directories, locator).checkpoints, {});
     provider.mode.fail = false;
     const callsBefore = provider.calls.length;
-    assert.deepEqual((await prepare()).excludedIndices, []);
+    provider.mode.hold = 'selector';
+    try {
+        assert.deepEqual((await prepare()).excludedIndices, [], 'reply preparation must finish while AI recall is held');
+    } finally {
+        await fetch(provider.url.replace('/v1', '/fixture/release'), { method: 'POST', body: '{}' });
+        await recallInBackground(directories, locator);
+    }
     assert.ok(provider.calls.slice(callsBefore).every(call => call.model === 'selector'), 'preparation must not start extraction or preservation');
     await processBatch(directories, locator, { checkpoint: true });
     const preserved = await prepare();
+    await recallInBackground(directories, locator);
     assert.ok(preserved.excludedIndices.length > 0);
     assert.ok(preserved.history.retainedTokens <= 1024);
     assert.equal(fs.readFileSync(filename, 'utf8'), original);

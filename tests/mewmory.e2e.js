@@ -210,29 +210,43 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     await page.locator('#custom_model_id').fill('mewmory-writer');
     await page.evaluate(async () => {
         const { oai_settings } = await import('/scripts/openai.js');
-        Object.assign(oai_settings, { openai_max_context: 65536, openai_max_tokens: 512, stream_openai: false });
+        Object.assign(oai_settings, { openai_max_context: 65536, openai_max_tokens: 512, stream_openai: true });
     });
     await page.locator('#api_button_openai').click();
     await expect.poll(() => page.evaluate(async () => (await import('/script.js')).online_status)).not.toBe('no_connection');
     await page.evaluate(() => window.NeconyanShell.closeWorkspace());
     const fixtureUrl = provider.replace(/\/v1$/, '');
     const providerCalls = async () => (await page.request.get(fixtureUrl + '/fixture/calls')).json();
-    const sendWhileMemoryBusy = async (message, label) => {
+    const sendWhileMemoryBusy = async (message, label, heldRole) => {
         const before = await providerCalls();
         const extractions = before.filter(call => call.model === 'extractor').length;
         const replies = before.filter(call => call.model === 'mewmory-writer').length;
-        await page.request.post(fixtureUrl + '/fixture/hold', { data: { model: 'extractor' } });
+        const recalls = before.filter(call => call.model === heldRole).length;
+        const inspections = (await post('/api/mewmory/inspect', { locator })).recalls.map(item => item.id);
+        await page.request.post(fixtureUrl + '/fixture/hold', { data: { model: ['extractor', heldRole] } });
         try {
             await page.evaluate(async () => {
                 const memory = await import('/scripts/mewmory/index.js');
                 void memory.processMewmory({ checkpoint: true });
             });
             await expect.poll(async () => (await providerCalls()).filter(call => call.model === 'extractor').length).toBe(extractions + 1);
+            const sentAt = Date.now();
             await page.locator('#send_textarea').fill(message);
             await page.locator('#send_but').click();
             await expect.poll(async () => (await providerCalls()).filter(call => call.model === 'mewmory-writer').length, { timeout: 30000 }).toBe(replies + 1);
             await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press)).toBe(false);
             await expect(page.locator('#chat .mes').last()).toContainText('Of course I kept it.');
+            await page.locator('#chat .mes').last().scrollIntoViewIfNeeded();
+            await expect(page.locator('#chat .mes').last()).toBeInViewport();
+            await expect.poll(async () => (await providerCalls()).filter(call => call.model === heldRole).length).toBe(recalls + 1);
+            const pending = await providerCalls();
+            expect(pending.findLast(call => call.model === heldRole).completedAt).toBeNull();
+            const writer = pending.findLast(call => call.model === 'mewmory-writer');
+            expect(writer.firstTokenAt).toBeGreaterThanOrEqual(sentAt);
+            await info.attach('parallel-recall-' + label, { body: JSON.stringify({
+                heldRole, sendToFirstTokenMs: writer.firstTokenAt - sentAt,
+                visibleReplyWhileRecallHeld: true,
+            }), contentType: 'application/json' });
             const during = await post('/api/mewmory/inspect', { locator });
             expect(during.health.jobs.at(-1).status).toBe('processing');
             await page.screenshot({ path: info.outputPath('mewmory-overlap-' + label + '.png') });
@@ -240,16 +254,18 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
             await page.request.post(fixtureUrl + '/fixture/release', { data: {} });
         }
         await expect.poll(() => page.evaluate(async () => (await import('/scripts/mewmory/index.js')).mewmory.busy)).toBe(false);
+        await expect.poll(async () => (await post('/api/mewmory/inspect', { locator })).recalls
+            .some(item => item.background && item.status === 'complete' && !inspections.includes(item.id))).toBe(true);
         const after = await post('/api/mewmory/inspect', { locator });
         expect(after.health.jobs.at(-1).status).toBe('complete');
         expect(after.recalls.length).toBeGreaterThan(0);
         expect(after.health.pending).toBeGreaterThan(0);
     };
-    await sendWhileMemoryBusy('You really kept the gift?', 'desktop');
+    await sendWhileMemoryBusy('You really kept the gift?', 'desktop', 'selector');
     const overlapTouch = await page.context().newCDPSession(page);
     await overlapTouch.send('Emulation.setTouchEmulationEnabled', { enabled: true });
     await page.setViewportSize({ width: 393, height: 852 });
-    await sendWhileMemoryBusy('And you still have the receipt?', 'phone');
+    await sendWhileMemoryBusy('And you still have the receipt?', 'phone', 'text-embedding-3-small');
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(394);
     expect((await page.locator('#send_but').boundingBox()).height).toBeGreaterThanOrEqual(44);
     await overlapTouch.send('Emulation.setTouchEmulationEnabled', { enabled: false });

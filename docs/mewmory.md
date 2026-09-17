@@ -34,7 +34,7 @@ Use **Edit** to correct the text, owner, subjects or sources. The correction men
 
 The default recent-chat target is **30,000 tokens of chat**, separate from NPC references, memory, instructions, lore and output space.
 
-Automatic background batches include preservation review when history exclusion is enabled. Your next reply uses completed memories while extraction, interviews and backfill carry on. Reply-specific memory selection still runs before the writing request. Older messages leave the outgoing history only when their current revisions have completed the required checkpoint. A failed job does not advance coverage.
+Automatic background batches include preservation review when history exclusion is enabled. I no longer make the reply wait for Mewmory's model requests: it uses a quick local search and completed AI selections while embeddings and fresh AI recall run alongside the writer. Fresh selections become available for later replies, so the current reply can miss an association that only the AI would find. Extraction, interviews and backfill also carry on separately. Older messages leave the outgoing history only when their current revisions have completed the required checkpoint. A failed job does not advance coverage.
 
 The original chat remains unchanged. Source passages remain searchable through the local lexical index even when embeddings are unavailable. Memory and active-NPC sections are assembled outside history trimming. If the retained prompt cannot fit, generation stops with an actionable error. Increase context, reduce pinned memory or complete backfill instead of silently losing protected material.
 
