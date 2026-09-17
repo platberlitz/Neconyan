@@ -7,6 +7,13 @@
   "processing": "Chroma green removed, transparent raster cutouts resized. Pixel sprite frames encoded as lossless animated WebP; derived rotations keep the generated mascot inside its frame.",
   "sources": [
     {
+      "path": "neconyan-sleepers-sunburst.png",
+      "sha256": "7f3b05c34e4f3e8d42171180f229a0965e8b9f5eef3886db32d4309207b987a9",
+      "generated_at": "2026-09-17",
+      "prompt": "Matching thick-outlined flat-colour sleeping animals on solid chroma green: calico on the left facing right, tail hanging down outside left; orange tiger on the right facing left, tail hanging down outside right. Closed eyes, chin on tucked paws, ivory/orange/dark patches and pink ears. Two isolated complete silhouettes, no text, props, borders or shadows. 1536x1024.",
+      "processing": "Removed chroma green and edge spill. Cropped at [32,280,720,832] and [816,280,1504,832], resized to 384x308 using Lanczos and encoded as lossless RGBA WebP. Body contact line y=164; tails extend below it."
+    },
+    {
       "path": "output/imagegen/neconyan-ui/cat-details-sunburst.png",
       "sha256": "d3c74baf725e5f5e098c6f9127f4bed7359f309c19019ac3a00016c183a68f21",
       "prompt": "Use case: illustration-story\nCreate a precisely aligned 3-column by 2-row sheet of SIX separate small illustrated UI decoration assets. Use the reference calico cat's rounded Japanese stationery style, dark cocoa outline, matte ivory/caramel/black patches and blush-pink inner ears. Canvas1024x1024. Each equal cell contains one complete isolated part, large green margins with no part touching a cell edge. No separators, labels, text, scenery, shadow, glow or gradient.\nTop left: just the calico cat HEAD, slightly tilted, eyes CLOSED asleep, with both ears. No neck or body.\nTop middle: only a cute upward-curled thick calico cat TAIL, cream base with caramel and black patches. Distinct single tail silhouette, no body.\nTop right: only THREE gently curved dark cocoa cat whisker strokes fanning leftward from one shared point at the right edge of the shape. No face, no dots, no framing shape. Slightly thick smooth strokes readable at32pixels wide.\nBottom left: only THREE gently curved dark cocoa whisker strokes fanning rightward from one shared point at the left edge, mirrored partner of top-right. No face, dots or framing shape.\nBottom middle: only a LEFT cat ear, a softly rounded triangular pointed cream ear with blush-pink inner triangle and caramel outer patch, dark cocoa outline, flat horizontal base. No face or body. Slight outward lean.\nBottom right: only the matching RIGHT cat ear, softly rounded triangular pointed ear with blush-pink interior, dark cocoa outer fur patch and a flat horizontal base. No face or body. Slight outward lean.\nBackground MUST be perfectly uniform solid chroma green #00ff00 outside each asset for clean removal. No green in any part. Do not draw a checkerboard. Keep parts clean, simple and pleasant at small sizes. Use the supplied illustration only as a style and palette reference.\n"
@@ -50,6 +57,18 @@
     }
   ],
   "outputs": [
+    {
+      "path": "public/img/neconyan/sleeping-calico-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "5d6b2e5f8ee3767489553568e1967d98270ad4ec34702564911a3ee9feb31733"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-tiger-right.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "31f1b85f0687191f60d867b42ea6392e2c7344e83ce15df98e56be9f355103f6"
+    },
     {
       "path": "default/content/user-default.png",
       "size": [

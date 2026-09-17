@@ -8,6 +8,21 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const readJson = file => JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
 
 describe('Neconyan generated UI artwork', () => {
+    test('ships the two transparent sleeping animals with matching provenance', () => {
+        const provenance = readJson('public/img/neconyan/artwork-provenance.json');
+        for (const name of ['sleeping-calico-left', 'sleeping-tiger-right']) {
+            const file = `public/img/neconyan/${name}.webp`;
+            const item = provenance.outputs.find(item => item.path === file);
+            const bytes = fs.readFileSync(path.join(root, file));
+            expect(item.size).toEqual([384, 308]);
+            expect(createHash('sha256').update(bytes).digest('hex')).toBe(item.sha256);
+            expect(bytes.toString('ascii', 8, 16)).toBe('WEBPVP8L');
+            const header = bytes.readUInt32LE(21);
+            expect((header & 0x3fff) + 1).toBe(384);
+            expect(((header >>> 14) & 0x3fff) + 1).toBe(308);
+            expect((header >>> 28) & 1).toBe(1); // Lossless WebP alpha flag.
+        }
+    });
     test('ships nine distinct Sunburst assistant head icons covering every gender', () => {
         const provenance = readJson('public/img/neconyan/assistant-icons/artwork-provenance.json');
         expect(provenance.model).toBe('gpt-image-2.5-sunburst');

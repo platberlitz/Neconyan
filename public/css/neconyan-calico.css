@@ -667,3 +667,12 @@ body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_header :is
 }
 body.neconyan #neconyan-tour-coachmark [data-tour-paw-stamp] { position: absolute; right: 10px; bottom: 10px; font-size: 28px; color: var(--neco-ginger); transform: rotate(-18deg); pointer-events: none; }
 body.neconyan #neconyan-tour-coachmark [data-tour-paw-stamp][hidden] { display: none; }
+
+/* The paws meet y=164 in the 384x308 cutouts; the remaining height is hanging tail. */
+body.neconyan img.neconyan-message-sleeper {
+    position: absolute; z-index: 2; top: -41px; left: -17px;
+    width: 96px; height: 77px; max-width: none; margin: 0; padding: 0;
+    border: 0; border-radius: 0 !important; background: none; box-shadow: none;
+    pointer-events: none; user-select: none; object-fit: contain;
+}
+body.neconyan img.neconyan-message-sleeper.is-user { left: auto; right: -17px; }

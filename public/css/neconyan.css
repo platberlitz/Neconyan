@@ -320,7 +320,26 @@ body.ripplestyle :is(#expression-wrapper, #visual-novel-wrapper) { visibility: h
 body.ripplestyle #chat .mes .mesAvatarWrapper .avatar.has-expression > :not(.neconyan-expression-avatar) { display: none; }
 body.ripplestyle #chat .mes .mesAvatarWrapper .avatar.has-expression > .neconyan-expression-avatar { display: block; object-fit: contain; mask-image: none; -webkit-mask-image: none; }
 body.neconyan.flatchat:not(.sbterm) #chat { padding: 24px max(24px, calc((100% - 820px) / 2)); text-shadow: none; }
-body.neconyan.flatchat:not(.sbterm) #chat .mes { width: 100%; max-width: 100%; margin: 0 auto 24px; padding: 12px 0; gap: 12px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+/* Reserve room for the perched bodies, including first/history/Story/terminal rows. */
+body.neconyan #chat .mes.mes[mesid]:has(> .neconyan-message-sleeper:not([hidden])) {
+    contain: layout style; margin-top: 52px !important; overflow: visible;
+}
+body.neconyan #sheld .sb-conversation-message-bubble:has(> .neconyan-message-sleeper),
+body.neconyan #sheld :is(.sbtw-post, .sbtw-reply):has(> .neconyan-message-sleeper) {
+    position: relative; overflow: visible; margin-top: 52px;
+}
+body.neconyan #sheld .sbtw-list { padding-inline: 18px; }
+body.neconyan #sheld .sbtw-quote-card { position: relative; margin-top: 52px; }
+body.neconyan #sheld .sbtw-quote-card .sbtw-post-compact { position: static; margin-top: 0; }
+body.neconyan #sheld .sb-conversation-message[data-message-id] { gap: 20px; }
+@media (min-width: 769px) {
+    body.neconyan:is(.sbterm, :not(.flatchat)) #chat { padding-inline: 24px; }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes .mes_text { margin-top: 52px; }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes > .neconyan-message-sleeper { top: calc(var(--neconyan-sleeper-text-top, 0px) - 41px); }
+    body.neconyan.flatchat:not(.sbterm):not(.sbstory) #chat .mes > .neconyan-message-sleeper { top: -29px; }
+    body.neconyan.flatchat:not(.sbterm):not(.sbstory) #chat .mes[is_user='false'] > .neconyan-message-sleeper { left: calc(var(--avatar-width, 50px) + 13px); }
+}
+body.neconyan.flatchat:not(.sbterm) #chat .mes { width: 100%; max-width: 100%; margin: 0 auto 24px; padding: 12px 0; gap: 18px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 body.neconyan.flatchat:not(.sbterm) #chat .mes::before { display: none; }
 body.neconyan.flatchat:not(.sbterm) #chat .mes .mes_block { min-width: 0; padding: 0; border: 0; box-shadow: none; }
 body.neconyan.flatchat:not(.sbterm) #chat .mes[is_user='true'] .mes_block { padding: 12px 16px; border-radius: 8px; background: var(--neco-user); }

@@ -164,6 +164,13 @@ function icon(name) {
     return el('i', { className: `fa-solid ${name}`, attrs: { 'aria-hidden': 'true' } });
 }
 
+function messageSleeper(account) {
+    return el('img', { className: `neconyan-message-sleeper${account?.kind === 'persona' ? ' is-user' : ''}`, attrs: {
+        src: `/img/neconyan/sleeping-${account?.kind === 'persona' ? 'tiger-right' : 'calico-left'}.webp`,
+        width: 384, height: 308, alt: '', 'aria-hidden': 'true', draggable: 'false',
+    } });
+}
+
 /** Generated Neconyan artwork; retain the legacy class for saved custom CSS. */
 function catIcon(className = '') {
     const node = el('i', { className: `sbtw-bunny${className ? ' ' + className : ''}`, attrs: { 'aria-hidden': 'true' } });
@@ -1137,6 +1144,7 @@ function replyNode(reply) {
     const reposted = Boolean(stats.mine.get('repost'));
     const fresh = isNewToMe(reply, reply.actorKey);
     return el('div', { className: `sbtw-reply${fresh ? ' sbtw-reply-new' : ''}`, attrs: { 'data-kind': reply.actorSnapshot?.kind ?? '', 'data-reply-id': reply.id, 'data-focus-key': `comment:${reply.id}`, tabindex: '-1' } }, [
+        messageSleeper(account ?? reply.actorSnapshot),
         // The avatar shares a row with the name block so it stays centred on it even when the time wraps.
         el('div', { className: 'sbtw-reply-head' }, [
             avatarButton(account ?? reply.actorSnapshot ?? null, 'sm', reply.actorKey),
@@ -1209,6 +1217,7 @@ function repostedReplyNode({ post, reply, repost }) {
     const reposted = Boolean(stats.mine.get('repost'));
     const targeted = isReplyTarget(post.id, repost.id);
     return el('article', { className: 'sbtw-post sbtw-reply-repost', attrs: { 'data-repost-id': repost.id, 'data-focus-key': `quote:${repost.id}`, tabindex: '-1' } }, [
+        repost.content ? messageSleeper(actor ?? repost.actorSnapshot) : null,
         el('div', { className: 'sbtw-repost-context' }, [
             icon('fa-retweet'),
             el('span', { text: `${nameFor(repost.actorKey, repost.actorSnapshot)} reposted a reply${repost.content ? ' with a comment' : ''}` }),
@@ -1252,6 +1261,7 @@ function postNode(post, repost = null, { compact = false } = {}) {
     const mine = me && post.authorKey === me.key && !compact;
     const fresh = !compact && isNewToMe(post, post.authorKey);
     return el('article', { className: `sbtw-post${compact ? ' sbtw-post-compact' : ''}${fresh ? ' sbtw-post-new' : ''}`, attrs: compact ? {} : { 'data-post-id': post.id, 'data-focus-key': `post:${post.id}`, tabindex: '-1' } }, [
+        messageSleeper(account ?? post.authorSnapshot),
         repost ? el('div', { className: 'sbtw-repost-context' }, [
             icon('fa-retweet'),
             el('span', { text: `${nameFor(repost.actorKey, repost.actorSnapshot)} reposted` }),
@@ -1299,6 +1309,7 @@ function quoteNode(post, repost) {
     const reposted = Boolean(stats.mine.get('repost'));
     const targeted = isReplyTarget(post.id, repost.id);
     return el('article', { className: 'sbtw-post sbtw-quote', attrs: { 'data-repost-id': repost.id, 'data-focus-key': `quote:${repost.id}`, tabindex: '-1' } }, [
+        messageSleeper(actor ?? repost.actorSnapshot),
         el('div', { className: 'sbtw-repost-context' }, [
             icon('fa-retweet'),
             el('span', { text: `${nameFor(repost.actorKey, repost.actorSnapshot)} reposted with a comment` }),

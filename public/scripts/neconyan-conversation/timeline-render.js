@@ -355,6 +355,18 @@ function createConversationMessageElement(message, { avatar, groupId, settings, 
 
     const bubble = document.createElement('div');
     bubble.className = 'sb-conversation-message-bubble';
+    if (message.role !== 'system') {
+        const sleeper = document.createElement('img');
+        sleeper.className = 'neconyan-message-sleeper';
+        sleeper.classList.toggle('is-user', message.role === 'user');
+        sleeper.src = `/img/neconyan/sleeping-${message.role === 'user' ? 'tiger-right' : 'calico-left'}.webp`;
+        sleeper.width = 384;
+        sleeper.height = 308;
+        sleeper.alt = '';
+        sleeper.draggable = false;
+        sleeper.setAttribute('aria-hidden', 'true');
+        bubble.appendChild(sleeper);
+    }
 
     const meta = document.createElement('div');
     meta.className = 'sb-conversation-message-meta';

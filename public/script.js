@@ -2741,12 +2741,21 @@ async function applyChatMessageResizeAction(element, entry, metadata) {
     refreshChatMessageResizeState(element, metadata, entry);
 }
 
+function updateMessageSleeperPosition(message) {
+    const text = message?.querySelector('.mes_text');
+    if (text) {
+        message.style.setProperty('--neconyan-sleeper-text-top', `${text.getBoundingClientRect().top - message.getBoundingClientRect().top - message.clientTop}px`);
+    }
+}
+
 function onChatMessageResize(element, entry, metadata) {
     if (!element?.isConnected) {
         unobserveChatMessageResizeBlock(element);
         return;
     }
 
+    // Echo's painted surface follows a wrapping header; reuse the existing resize observer.
+    updateMessageSleeperPosition(element.closest('.mes'));
     void applyChatMessageResizeAction(element, entry, metadata);
 }
 
@@ -5637,6 +5646,12 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
     });
 
     const viewportAvatarImg = isMobile() ? mobileAvatarImg : originalAvatarImg;
+    const isNotice = mes.is_system && Object.values(system_message_types).includes(mes.extra?.type)
+        && ![system_message_types.NARRATOR, system_message_types.ASSISTANT_MESSAGE].includes(mes.extra?.type);
+    messageElement.children('.neconyan-message-sleeper')
+        .toggleClass('is-user', Boolean(mes.is_user))
+        .attr('src', `/img/neconyan/sleeping-${mes.is_user ? 'tiger-right' : 'calico-left'}.webp`)
+        .prop('hidden', Boolean(isNotice));
     const viewportThumbnailSrc = isMobile() ? mobileAvatarImg : avatarImg;
 
     if (messageElement[0] instanceof HTMLElement) {
@@ -13866,6 +13881,7 @@ async function renderMessageScreenshotCanvas(startId, endId) {
 
         await delay(50);
         await waitForMessageScreenshotAssets(surface);
+        surface.querySelectorAll('.mes').forEach(updateMessageSleeperPosition);
         await inlineMessageScreenshotImages(surface);
         const iconFontStyle = await getMessageScreenshotIconFontStyle();
         const mobileCapture = isMobile();
