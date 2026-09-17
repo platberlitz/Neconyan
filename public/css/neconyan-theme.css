@@ -1414,38 +1414,6 @@ select.text_pole:where(:not([multiple]):not([size]):not(.select2-hidden-accessib
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sb-focus-ring) 32%, transparent);
 }
 
-#send_form.sb-generating-controls {
-    --sb-generating-glow-color: color-mix(in srgb, var(--SmartThemeQuoteColor) 90%, var(--color-primary, var(--sb-accent)) 10%);
-    border-color: color-mix(in srgb, var(--sb-generating-glow-color) 86%, var(--sb-shell-border));
-    box-shadow:
-        0 -10px 40px color-mix(in srgb, var(--SmartThemeShadowColor) 14%, transparent),
-        0 -8px 34px color-mix(in srgb, var(--sb-generating-glow-color) 26%, transparent),
-        0 0 0 1px color-mix(in srgb, var(--sb-generating-glow-color) 68%, transparent),
-        inset 0 0 0 1px color-mix(in srgb, var(--sb-generating-glow-color) 54%, transparent);
-}
-
-#send_form.sb-generating-controls #nonQRFormItems {
-    border-color: color-mix(in srgb, var(--sb-generating-glow-color, var(--SmartThemeQuoteColor)) 76%, var(--sb-shell-border));
-    background:
-        linear-gradient(180deg, color-mix(in srgb, var(--sb-generating-glow-color, var(--SmartThemeQuoteColor)) 22%, transparent), transparent 82%),
-        color-mix(in srgb, var(--SmartThemeBodyColor) 5%, var(--sb-composer-surface-base, transparent));
-}
-
-#send_form.sb-generating-controls::after {
-    content: '';
-    position: absolute;
-    top: 4px;
-    left: 50%;
-    z-index: 1;
-    inline-size: min(72px, 34%);
-    block-size: 3px;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--sb-generating-glow-color, var(--SmartThemeQuoteColor)) 96%, var(--SmartThemeBodyColor));
-    box-shadow: 0 0 18px color-mix(in srgb, var(--sb-generating-glow-color, var(--SmartThemeQuoteColor)) 42%, transparent);
-    transform: translateX(-50%);
-    pointer-events: none;
-}
-
 #leftSendForm > div i,
 #rightSendForm > div i,
 #options_button i {

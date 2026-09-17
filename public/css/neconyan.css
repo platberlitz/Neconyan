@@ -337,6 +337,7 @@ body.neconyan #options_button { border-radius: 12px; border: 1px solid var(--nec
 body.neconyan :is(#send_but, #sb_conversation_send) { border-radius: 12px !important; background: var(--neco-ginger) !important; color: var(--neco-on-accent) !important; box-shadow: none; }
 body.neconyan :is(#send_form:focus-within, .sb-conversation-composer:focus-within) { border-color: var(--neco-ginger); box-shadow: none; }
 body.neconyan #send_form:focus-within :is(#nonQRFormItems, #send_textarea) { background: transparent; box-shadow: none; }
+body.neconyan #send_form.sb-generating-controls { border-color: var(--neco-ginger); }
 
 body.neconyan #sheld[data-sb-conversation-mode='on'] { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'header' 'stage'; border: 0; border-radius: 0; }
 body.neconyan #sheld :is(#sb_conversation_header, #sb_conversation_stage) { background: var(--neco-canvas); border-color: var(--neco-border); }

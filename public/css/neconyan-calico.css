@@ -240,6 +240,10 @@ body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel
         border-radius: 18px 18px 0 0;
         padding-top: 6px !important;
     }
+    /* The phone's visible composer border belongs to the outer bar. */
+    body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel:has(#send_form.sb-generating-controls) {
+        border-top-color: var(--neco-ginger);
+    }
     body.neconyan:not(.sbterm) #send_form.neconyan-cat-panel {
         background: transparent !important;
         border: 0 !important;

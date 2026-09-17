@@ -9,7 +9,7 @@ function getComposerSpacing(page) {
         const composer = document.getElementById('nonQRFormItems');
         const textarea = document.getElementById('send_textarea');
         const form = document.getElementById('send_form');
-        const leftRail = document.getElementById('leftSendForm');
+        const bar = document.getElementById('form_sheld');
         const textareaRect = textarea?.getBoundingClientRect();
         const getVisibleControls = id => Array.from(document.getElementById(id)?.children ?? [])
             .filter(element => {
@@ -24,14 +24,13 @@ function getComposerSpacing(page) {
             !rightmost || element.getBoundingClientRect().right > rightmost.getBoundingClientRect().right ? element : rightmost
         ), null);
 
-        if (!composer || !form || !leftRail || !rightmostLeftControl || !textareaRect || rightControlRects.length === 0) {
+        if (!composer || !form || !bar || !rightmostLeftControl || !textareaRect || rightControlRects.length === 0) {
             return null;
         }
 
         return {
             columnGap: Number.parseFloat(getComputedStyle(composer).columnGap),
             leftClearance: textareaRect.left - Math.max(...leftControlRects.map(rect => rect.right)),
-            leftRailPaintClearance: leftRail.getBoundingClientRect().right - rightmostLeftControl.getBoundingClientRect().right,
             leftControlBorderRadius: getComputedStyle(rightmostLeftControl).borderTopRightRadius,
             rightClearance: Math.min(...rightControlRects.map(rect => rect.left)) - textareaRect.right,
             textareaWidth: textareaRect.width,
@@ -39,6 +38,12 @@ function getComposerSpacing(page) {
             composerBorderTopWidth: getComputedStyle(composer).borderTopWidth,
             composerBorderColor: getComputedStyle(composer).borderColor,
             composerBackgroundImage: getComputedStyle(composer).backgroundImage,
+            composerBackgroundColor: getComputedStyle(composer).backgroundColor,
+            barBorderRadius: getComputedStyle(bar).borderRadius,
+            barBorderTopWidth: getComputedStyle(bar).borderTopWidth,
+            barBorderTopColor: getComputedStyle(bar).borderTopColor,
+            barBackgroundImage: getComputedStyle(bar).backgroundImage,
+            barBoxShadow: getComputedStyle(bar).boxShadow,
             textareaBorderRadius: getComputedStyle(textarea).borderRadius,
             textareaBackgroundColor: getComputedStyle(textarea).backgroundColor,
             textareaBoxShadow: getComputedStyle(textarea).boxShadow,
@@ -56,7 +61,7 @@ test.describe('mobile composer spacing at 320x568', () => {
     });
 
     test('normal and compact modes keep the action rails clear of the textarea', async ({ page }) => {
-        await openQuietChatForSmoke(page, { selectCharacter: false });
+        await openQuietChatForSmoke(page);
 
         await page.evaluate(() => {
             document.documentElement.style.setProperty('--sb-bottom-bar-scale', '1.5');
@@ -72,16 +77,22 @@ test.describe('mobile composer spacing at 320x568', () => {
                 }
             }, compactMode);
             await waitForAnimationFrames(page, 2);
+            // Wait for the previous focus transition before measuring idle colours.
+            await expect(page.locator('#send_textarea')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
 
             const defaultState = await getComposerSpacing(page);
 
             expect(defaultState).not.toBeNull();
-            expect(Number.parseFloat(defaultState.composerBorderRadius)).toBeGreaterThan(0);
-            expect(Number.parseFloat(defaultState.composerBorderTopWidth)).toBeGreaterThan(0);
-            expect(defaultState.composerBackgroundImage).not.toBe('none');
+            // Phones put the border and rounded corners on the outer bar, not the inner row.
+            expect(Number.parseFloat(defaultState.composerBorderRadius)).toBe(0);
+            expect(Number.parseFloat(defaultState.composerBorderTopWidth)).toBe(0);
+            expect(defaultState.composerBackgroundImage).toBe('none');
+            expect(Number.parseFloat(defaultState.barBorderRadius)).toBeGreaterThan(0);
+            expect(Number.parseFloat(defaultState.barBorderTopWidth)).toBeGreaterThan(0);
+            expect(defaultState.barBackgroundImage).toBe('none');
+            expect(defaultState.barBoxShadow).toBe('none');
             expect(Number.parseFloat(defaultState.textareaBorderRadius)).toBeGreaterThan(0);
-            expect(defaultState.textareaBackgroundColor).not.toBe('rgba(0, 0, 0, 0)');
-            expect(defaultState.leftRailPaintClearance).toBeGreaterThanOrEqual(1);
+            expect(defaultState.textareaBackgroundColor).toBe('rgba(0, 0, 0, 0)');
             expect(Number.parseFloat(defaultState.leftControlBorderRadius)).toBeGreaterThanOrEqual(compactMode === 'true' ? 9 : 10);
 
             await page.locator('#send_textarea').focus();
@@ -96,9 +107,10 @@ test.describe('mobile composer spacing at 320x568', () => {
             expect(focusState.textareaWidth).toBeGreaterThanOrEqual(100);
             expect(focusState.formOutlineStyle).toBe('none');
             expect(focusState.composerBorderColor).not.toBe(defaultState.composerBorderColor);
-            expect(focusState.composerBackgroundImage).not.toBe(defaultState.composerBackgroundImage);
+            expect(focusState.composerBackgroundImage).toBe(defaultState.composerBackgroundImage);
             expect(focusState.textareaBackgroundColor).not.toBe(defaultState.textareaBackgroundColor);
             expect(focusState.textareaBoxShadow).not.toBe(defaultState.textareaBoxShadow);
+            expect(focusState.barBorderTopColor).toBe(defaultState.barBorderTopColor);
 
             await page.evaluate(() => {
                 if (document.activeElement instanceof HTMLElement) {
@@ -111,8 +123,14 @@ test.describe('mobile composer spacing at 320x568', () => {
             const generatingState = await getComposerSpacing(page);
 
             expect(generatingState).not.toBeNull();
-            expect(generatingState.composerBorderColor).not.toBe(defaultState.composerBorderColor);
-            expect(generatingState.composerBackgroundImage).not.toBe(defaultState.composerBackgroundImage);
+            expect(generatingState.barBorderTopColor).not.toBe(defaultState.barBorderTopColor);
+            expect(generatingState.barBackgroundImage).toBe(defaultState.barBackgroundImage);
+            expect(generatingState.barBoxShadow).toBe(defaultState.barBoxShadow);
+            expect(generatingState.composerBackgroundImage).toBe('none');
+            expect(generatingState.composerBackgroundColor).toBe(defaultState.composerBackgroundColor);
+
+            await page.locator('#send_form').evaluate(form => form.classList.remove('sb-generating-controls'));
+            await expect(page.locator('#form_sheld')).toHaveCSS('border-top-color', defaultState.barBorderTopColor);
         }
     });
 });

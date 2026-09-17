@@ -72,9 +72,12 @@ export async function selectSampleCharacter(page) {
             await context.getCharacters();
         }
 
-        const characterId = context.characters.findIndex(character => /Bunny Guide|Seraphina/.test(character?.name ?? character?.data?.name ?? ''));
+        // The named sample characters only exist in the bundled test data. Fall back to any
+        // available character so local and preview profiles can still open a chat.
+        const preferredId = context.characters.findIndex(character => /Bunny Guide|Seraphina/.test(character?.name ?? character?.data?.name ?? ''));
+        const characterId = preferredId >= 0 ? preferredId : 0;
 
-        if (characterId < 0) {
+        if (!context.characters.length) {
             return false;
         }
 
