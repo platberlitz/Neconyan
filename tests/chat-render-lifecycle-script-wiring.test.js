@@ -686,8 +686,8 @@ describe('chat render lifecycle script wiring', () => {
         expect(source).toContain('scrollLockImmunityUntil = Math.max(scrollLockImmunityUntil, chatLoadBottomLockUntil);');
         expect(source).toContain('requestMobileChatBottomPin({ requireNearBottom: false, durationMs: bottomLockDurationMs + MOBILE_SEND_SCROLL_SETTLE_MS });');
         expect(source).toContain('for (const delayMs of CHAT_LOAD_SCROLL_SETTLE_DELAYS_MS)');
-        expect(source).toContain('if (!isChatLoadBottomLockActive())');
-        expect(source).toContain('scrollChatToBottom({ waitForFrame: true, force: true });');
+        expect(source).toContain('setTimeout(() => pinChatLoadToBottom({ waitForFrame: true }), delayMs);');
+        expect(source).not.toContain('force: true');
 
         const initSource = scriptSource.slice(scriptSource.indexOf('const chatElementScroll = document.getElementById(\'chat\');'));
         expect(initSource).toContain('clearChatLoadBottomLock();');

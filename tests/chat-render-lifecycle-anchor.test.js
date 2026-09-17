@@ -139,4 +139,28 @@ describe('chat render lifecycle anchor helpers', () => {
 
         expect(scrollElement.scrollTop).toBe(0);
     });
+
+    test('an outdated anchor cannot undo a newer scroll position', async () => {
+        const message = new FakeMessageElement(5, { top: 10, bottom: 60 });
+        const element = new FakeScrollElement([message]);
+        const anchor = captureVisibleMessageAnchor(element);
+        const frames = [];
+        let current = true;
+        const settling = settleVisibleMessageAnchor(element, anchor, {
+            frames: 2,
+            requestAnimationFrameRef: callback => frames.push(callback),
+            isCurrent: () => current,
+        });
+
+        message.rect = { top: 40, bottom: 90 };
+        frames.shift()();
+        await Promise.resolve();
+        expect(element.scrollTop).toBe(30);
+
+        current = false;
+        element.scrollTop = 800;
+        frames.shift()();
+        await settling;
+        expect(element.scrollTop).toBe(800);
+    });
 });

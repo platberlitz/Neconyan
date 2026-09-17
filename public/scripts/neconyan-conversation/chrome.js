@@ -1064,7 +1064,6 @@ export function openConversationWorkspaceForAvatar(avatar, { branchId = '', grou
     if (branchId && targetAvatar && !getConversationBranches(targetAvatar, { groupId: targetGroupId }).some(branch => branch.id === String(branchId))) {
         return false;
     }
-    const wasWorkspaceOpen = Boolean(conversationState.conversationWorkspaceOpen);
     const threadChanged = conversationState.conversationSelectedAvatar !== targetAvatar || conversationState.conversationSelectedGroupId !== targetGroupId;
     conversationState.conversationWorkspaceOpen = true;
     emitConversationWorkspaceStateChange();
@@ -1075,9 +1074,7 @@ export function openConversationWorkspaceForAvatar(avatar, { branchId = '', grou
         conversationState.conversationTimelineChannel = 'main';
         conversationState.conversationTimelineSearchQuery = '';
     }
-    if (!wasWorkspaceOpen || threadChanged) {
-        conversationState.timelineBottomScrollPending = true;
-    }
+    conversationState.timelineBottomScrollPending = true;
     ensureConversationStylesheet();
 
     if (!targetAvatar) {

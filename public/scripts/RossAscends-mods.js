@@ -914,6 +914,11 @@ export function initRossMods() {
 
                 const threshold = 1;
                 const newHeight = chatBlock.offsetHeight;
+                // Hiding or revealing the chat is not a composer resize.
+                if (!lastHeight || !newHeight) {
+                    lastHeight = newHeight;
+                    continue;
+                }
                 const deltaHeight = newHeight - lastHeight;
                 const wasScrollAtBottom = Math.abs(chatBlock.scrollHeight - chatBlock.scrollTop - lastHeight) <= threshold;
 

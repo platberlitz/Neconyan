@@ -544,6 +544,17 @@ function scrollConversationTimelineToBottom(timeline) {
 }
 
 function anchorConversationTimelineToBottom(timeline, renderThreadKey) {
+    if (!timeline.dataset.sbConversationScrollBound) {
+        timeline.dataset.sbConversationScrollBound = 'true';
+        const cancelBottomScroll = () => {
+            timelineBottomScrollToken++;
+            conversationState.timelineBottomScrollPending = false;
+        };
+        for (const event of ['touchstart', 'wheel', 'pointerdown', 'keydown']) {
+            timeline.addEventListener(event, cancelBottomScroll, { passive: true });
+        }
+    }
+
     const token = ++timelineBottomScrollToken;
     const applyScroll = () => {
         if (token !== timelineBottomScrollToken || !timeline.isConnected || conversationState.lastRenderedThreadKey !== renderThreadKey) {

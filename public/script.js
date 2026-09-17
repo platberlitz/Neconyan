@@ -696,6 +696,7 @@ let lastMobileStreamingBottomPinAt = 0;
 let chatLoadBottomLockUntil = 0;
 let chatLoadBottomPinFrame = 0;
 let chatLastBottomPinScrollTop = 0;
+let chatScrollVersion = 0;
 let lastChatPointerUpAt = 0;
 
 // ponytail: pointerup only — a touch scroll ends in pointercancel, so scrolling never arms the window.
@@ -1437,6 +1438,7 @@ export async function selectCharacterById(id, { switchMenu = true } = {}) {
         await unshallowCharacter(this_chid);
         select_selected_character(this_chid, { switchMenu });
         syncCharacterMenuActiveEntity();
+        await scrollReopenedChatToBottom();
         return true;
     }
 }
@@ -2129,6 +2131,7 @@ function isChatLoadBottomLockActive() {
 }
 
 function clearChatLoadBottomLock() {
+    chatScrollVersion++;
     chatLoadBottomLockUntil = 0;
     // Neconyan: leaving the load lock means user intent took over; do not let the scroll handler immediately re-arm autoscroll.
     scrollLockImmunityUntil = 0;
@@ -2169,6 +2172,7 @@ function pinChatLoadToBottom({ waitForFrame = false } = {}) {
 }
 
 function beginChatLoadBottomLock({ durationMs = Math.max(...CHAT_LOAD_SCROLL_SETTLE_DELAYS_MS) + CHAT_LOAD_BOTTOM_LOCK_EXTRA_MS } = {}) {
+    chatScrollVersion++;
     chatLoadBottomLockUntil = Math.max(chatLoadBottomLockUntil, Date.now() + durationMs);
     scrollLock = false;
     scrollLockImmunityUntil = Math.max(scrollLockImmunityUntil, chatLoadBottomLockUntil);
@@ -2565,9 +2569,11 @@ function restoreVisibleChatMessageAnchor(anchor) {
 }
 
 async function settleVisibleChatMessageAnchor(anchor, frames = 8) {
+    const scrollVersion = chatScrollVersion;
     await settleVisibleMessageAnchor(chatElement[0], anchor, {
         frames,
         requestAnimationFrameRef: requestAnimationFrame,
+        isCurrent: () => scrollVersion === chatScrollVersion && !isChatLoadBottomLockActive(),
     });
 }
 
@@ -3325,6 +3331,22 @@ export async function printMessages() {
     delay(debounce_timeout.short).then(() => scrollOnMediaLoad({ force: true }));
 }
 
+export async function scrollReopenedChatToBottom() {
+    const chatNode = chatElement[0];
+    // An unfinished render already owns the initial bottom scroll.
+    if (!chatNode?.clientHeight || !chat.length || !chatNode.querySelector('.mes.last_mes')) {
+        return;
+    }
+
+    // Restore the newest history window without discarding an unfinished message edit.
+    if (this_edit_mes_id === undefined && getRenderedChatMessageWindow().lastMessageId !== getLastMessageId()) {
+        await printMessages();
+        return;
+    }
+
+    scrollLoadedChatToBottomThroughLifecycle();
+}
+
 function scrollLoadedChatToBottomThroughLifecycle() {
     if (!isChatRenderLifecycleRolloutEnabled(CHAT_RENDER_LIFECYCLE_ROUTE.INITIAL_LOAD)) {
         scrollLoadedChatToBottom();
@@ -3353,17 +3375,10 @@ function scrollLoadedChatToBottom() {
         requestMobileChatBottomPin({ requireNearBottom: false, durationMs: bottomLockDurationMs + MOBILE_SEND_SCROLL_SETTLE_MS });
     }
 
-    scrollChatToBottom({ force: true });
-    scrollChatToBottom({ waitForFrame: true, force: true });
+    pinChatLoadToBottom({ waitForFrame: true });
 
     for (const delayMs of CHAT_LOAD_SCROLL_SETTLE_DELAYS_MS) {
-        setTimeout(() => {
-            if (!isChatLoadBottomLockActive()) {
-                return;
-            }
-
-            scrollChatToBottom({ waitForFrame: true, force: true });
-        }, delayMs);
+        setTimeout(() => pinChatLoadToBottom({ waitForFrame: true }), delayMs);
     }
 }
 
@@ -3508,7 +3523,11 @@ export function scrollOnMediaLoad({ force = false } = {}) {
         }
         mediaLoaded++;
         if (mediaLoaded === media.length) {
-            scrollChatToBottom({ waitForFrame: true, force });
+            if (force) {
+                pinChatLoadToBottom({ waitForFrame: true });
+            } else {
+                scrollChatToBottom({ waitForFrame: true });
+            }
         }
     }
 }

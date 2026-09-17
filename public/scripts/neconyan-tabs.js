@@ -15,6 +15,7 @@ import {
     PERSONA_APPENDICES_SELECTIONS_KEY,
 } from './neconyan-conversation/constants.js';
 import { conversationState } from './neconyan-conversation/state.js';
+import { scheduleTimelineRender } from './neconyan-conversation/render-scheduler.js';
 import {
     resolveCharacterBadgeMirrorPlan,
     resolveTopbarAdoptionPlan,
@@ -25,7 +26,7 @@ import {
 import { setCharacterSpoilerFreeFieldsHidden } from './power-user.js';
 import { escapeRegex } from './util/escape-regex.js';
 import { copyText, flashHighlight, showFontAwesomePicker } from './utils.js';
-import { characters, chat, flushCharacterSaveDebounced, getChatGeneration, getCurrentChatId, getOneCharacter, getThumbnailUrl, is_send_press, parseAvatarSource, refreshCsrfToken, saveSettingsDebounced, selectCharacterById, selectRightMenuWithAnimation, this_chid } from '../script.js';
+import { characters, chat, flushCharacterSaveDebounced, getChatGeneration, getCurrentChatId, getOneCharacter, getThumbnailUrl, is_send_press, parseAvatarSource, refreshCsrfToken, saveSettingsDebounced, scrollReopenedChatToBottom, selectCharacterById, selectRightMenuWithAnimation, this_chid } from '../script.js';
 import { is_group_generating } from './group-chats.js';
 import { eventSource, event_types } from './events.js';
 import { extensionNames, findExtension, getExtensionManifest, getExtensionType } from './extensions.js';
@@ -544,6 +545,7 @@ let neconyanIncludedToolRestore = null;
 let neconyanModeTask = null;
 let neconyanModeSyncFrame = 0;
 let neconyanModeObserver = null;
+let neconyanChatReopenFrame = 0;
 
 function normalizeNeconyanMode(value) {
     const normalized = String(value ?? '').trim().toLowerCase();
@@ -645,7 +647,11 @@ function syncNeconyanModeControls() {
     const definition = getNeconyanModeDefinition(activeMode);
     document.documentElement.dataset.neconyanChatMode = activeMode;
     if (document.body?.dataset.neconyanChatMode !== activeMode) {
+        const previousMode = document.body.dataset.neconyanChatMode;
         document.body.dataset.neconyanChatMode = activeMode;
+        if (previousMode) {
+            queueReopenedChatBottomScroll();
+        }
     }
 
     document.querySelectorAll('button[data-neconyan-chat-mode]').forEach(button => {
@@ -702,6 +708,27 @@ function queueNeconyanModeSync() {
     neconyanModeSyncFrame = window.requestAnimationFrame(() => {
         neconyanModeSyncFrame = 0;
         syncNeconyanModeControls();
+    });
+}
+
+function queueReopenedChatBottomScroll() {
+    if (neconyanChatReopenFrame || document.hidden) {
+        return;
+    }
+
+    neconyanChatReopenFrame = window.requestAnimationFrame(() => {
+        neconyanChatReopenFrame = 0;
+        if (document.hidden || document.body.classList.contains('neconyan-home-visible')) {
+            return;
+        }
+
+        const mode = getActualNeconyanMode();
+        if (mode === 'conversation') {
+            conversationState.timelineBottomScrollPending = true;
+            scheduleTimelineRender();
+        } else if (mode === 'roleplay') {
+            void scrollReopenedChatToBottom().catch(error => console.error('Could not scroll the reopened chat.', error));
+        }
     });
 }
 
@@ -781,6 +808,7 @@ async function activateNeconyanMode(mode) {
             closeWorkspace();
             closeMobileNav();
             syncNeconyanModeControls();
+            queueReopenedChatBottomScroll();
             return true;
         }
 
@@ -921,6 +949,13 @@ function bindNeconyanModeStateEvents() {
     window.addEventListener('sb:activate-neconyan-mode', event => {
         const requestedMode = event instanceof CustomEvent ? event.detail?.mode : '';
         void activateNeconyanMode(requestedMode);
+    });
+    window.addEventListener('neconyan:home-hidden', queueReopenedChatBottomScroll);
+    document.addEventListener('visibilitychange', queueReopenedChatBottomScroll);
+    window.addEventListener('pageshow', event => {
+        if (event.persisted) {
+            queueReopenedChatBottomScroll();
+        }
     });
 
     if (document.body instanceof HTMLElement && typeof MutationObserver !== 'undefined') {

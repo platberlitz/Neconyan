@@ -1871,7 +1871,11 @@ function getWelcomeHost() {
 
 export function concealWelcomeHome() {
     welcomeRequestId++;
+    const wasVisible = document.body.classList.contains('neconyan-home-visible');
     document.body.classList.remove('neconyan-home-visible');
+    if (wasVisible) {
+        window.dispatchEvent(new Event('neconyan:home-hidden'));
+    }
 }
 
 globalThis.NeconyanWelcome = {

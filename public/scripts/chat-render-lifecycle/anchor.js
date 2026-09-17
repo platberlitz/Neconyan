@@ -85,12 +85,14 @@ export function restoreVisibleMessageAnchor(scrollElement, anchor, { messageSele
  * @param {object} [options] Options.
  * @param {number} [options.frames=8] Number of animation frames to settle over.
  * @param {(callback: FrameRequestCallback) => number|void} [options.requestAnimationFrameRef] Frame scheduler.
+ * @param {() => boolean} [options.isCurrent] Whether this anchor still owns the scroll position.
  * @param {string} [options.messageSelector] Message selector to anchor against.
  * @param {string} [options.keyAttribute] Attribute that identifies the anchor element.
  */
 export async function settleVisibleMessageAnchor(scrollElement, anchor, {
     frames = 8,
     requestAnimationFrameRef = globalThis.requestAnimationFrame,
+    isCurrent = () => true,
     messageSelector = DEFAULT_MESSAGE_SELECTOR,
     keyAttribute = 'mesid',
 } = {}) {
@@ -98,7 +100,9 @@ export async function settleVisibleMessageAnchor(scrollElement, anchor, {
         return;
     }
 
-    await runSettledFrames(() => restoreVisibleMessageAnchor(scrollElement, anchor, { messageSelector, keyAttribute }), {
+    await runSettledFrames(() => {
+        if (isCurrent()) restoreVisibleMessageAnchor(scrollElement, anchor, { messageSelector, keyAttribute });
+    }, {
         frames,
         requestAnimationFrameRef,
     });

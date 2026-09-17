@@ -27,6 +27,7 @@ import {
     chat,
     sendSystemMessage,
     printMessages,
+    scrollReopenedChatToBottom,
     printCharacters,
     characters,
     default_avatar,
@@ -2828,6 +2829,7 @@ export async function openGroupById(groupId, { switchMenu = true } = {}) {
 
     if (selected_group === groupId) {
         syncCharacterMenuActiveEntity();
+        await scrollReopenedChatToBottom();
         return true;
     }
 

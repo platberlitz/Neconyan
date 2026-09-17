@@ -296,8 +296,9 @@ describe('conversation timeline operation identity', () => {
     });
 
     test('changes the rendered thread identity when only the persona changes', () => {
-        class FakeElement {
+        class FakeElement extends EventTarget {
             constructor() {
+                super();
                 this.children = [];
                 this.clientHeight = 400;
                 this.dataset = {};
