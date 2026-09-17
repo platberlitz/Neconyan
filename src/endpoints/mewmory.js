@@ -2,9 +2,9 @@ import express from 'express';
 import { abortOnRequestClose } from '../util.js';
 import {
     continueState, eligibleRecords, fail, hash, list, object, putRecord, recordEligible, recordRevision,
-    refKey, sourceAt, sourceEligible, sourceFingerprint, strings, text, undoRecord, validateRecord,
+    refKey, sourceAt, sourceEligible, strings, text, undoRecord, validateRecord,
 } from '../mewmory/core.js';
-import { activeReferences, assemblyFingerprint, currentOverviews } from '../mewmory/context.js';
+import { activeReferences, assemblyFingerprint, currentOverviews, generationFingerprint } from '../mewmory/context.js';
 import { publicConfig, readConfig, roleVersion, saveConfig } from '../mewmory/models.js';
 import { addUsage, pendingSources, processBatch, processingVersion } from '../mewmory/processing.js';
 import { recall } from '../mewmory/retrieval.js';
@@ -190,7 +190,7 @@ route('/recall', (directories, body, signal) => recall(directories, normalizeLoc
 
 route('/validate', async (directories, body) => {
     const state = await loadCurrentState(directories, normalizeLocator(body.locator));
-    if (body.fingerprint !== assemblyFingerprint(state, readConfig(directories))) {
+    if (body.fingerprint !== generationFingerprint(state, readConfig(directories))) {
         fail('The story or Mewmory changed while the prompt was being built. Generate again.', 409);
     }
     return { ok: true };
@@ -232,9 +232,9 @@ route('/associate', async (directories, body) => {
 route('/prepare', async (directories, body, signal) => {
     const locator = normalizeLocator(body.locator);
     const config = readConfig(directories);
-    let state = await loadCurrentState(directories, locator);
+    const state = await loadCurrentState(directories, locator);
     if (!state.enabled) return { enabled: false, excludedIndices: [], npcText: '', memoryText: '' };
-    const sourceSnapshot = sourceFingerprint(state);
+    const snapshot = generationFingerprint(state, config);
     const source = readChat(directories, locator);
     if (body.integrity && source.metadata.integrity !== body.integrity) {
         fail('This chat changed in another tab. Reload before generating.', 409);
@@ -248,16 +248,6 @@ route('/prepare', async (directories, body, signal) => {
         return { index: item.index, tokens: counter.count(text(item.text, 'History text', 2000000, true)) + 4 };
     });
     const asOf = history.length ? history.at(-1).index + offset : offset - 1;
-    let processingError = '';
-    if (config.autoUpdate && pendingSources(state, config, { through: asOf }).length) {
-        try {
-            // Include newly accepted scene cues before loading the active cast for the writer.
-            state = await processBatch(directories, locator, { through: asOf, signal });
-        } catch (error) {
-            processingError = error.message;
-            state = await loadCurrentState(directories, locator);
-        }
-    }
     const startForWindow = target => {
         let tokens = 0;
         let index = history.length;
@@ -270,19 +260,6 @@ route('/prepare', async (directories, body, signal) => {
         return index;
     };
     const desiredStart = config.excludeHistory ? startForWindow(config.historyWindow) : 0;
-    const bufferStart = config.excludeHistory ? startForWindow(config.historyWindow * 0.8) : 0;
-    const through = bufferStart > 0 ? history[bufferStart - 1].index + offset : -1;
-    // Ordinary play amortizes preservation before the 30k boundary. Large imports expose a backfill action.
-    for (let batch = 0; batch < (desiredStart ? 4 : 1) && through >= 0; batch++) {
-        if (!pendingSources(state, config, { checkpoint: true, through }).length) break;
-        try {
-            state = await processBatch(directories, locator, { checkpoint: true, through, signal });
-        } catch (error) {
-            processingError = error.message;
-            state = await loadCurrentState(directories, locator);
-            break;
-        }
-    }
     const policy = processingVersion(config);
     const excludedIndices = [];
     for (const item of history.slice(0, desiredStart)) {
@@ -291,8 +268,9 @@ route('/prepare', async (directories, body, signal) => {
         excludedIndices.push(item.index);
     }
     const context = await recall(directories, locator, { asOf, tokenizer: body.tokenizer || {}, signal });
-    if (readConfig(directories).revision !== config.revision) fail('Mewmory settings changed. Generate again.', 409);
-    if (sourceFingerprint(await loadCurrentState(directories, locator)) !== sourceSnapshot) fail('The accepted sources changed during preparation. Reload and generate again.', 409);
+    if (generationFingerprint(await loadCurrentState(directories, locator), readConfig(directories)) !== snapshot) {
+        fail('The accepted sources, settings or author corrections changed during preparation. Reload and generate again.', 409);
+    }
     const excluded = new Set(excludedIndices);
     const historyUsage = {
         originalTokens: history.reduce((sum, item) => sum + item.tokens, 0),
@@ -303,7 +281,7 @@ route('/prepare', async (directories, body, signal) => {
         if (current.preview?.fingerprint === context.fingerprint) current.preview.history = historyUsage;
     });
     return {
-        ...context, excludedIndices, processingError,
+        ...context, excludedIndices,
         history: historyUsage,
     };
 });

@@ -14,13 +14,13 @@ const ROLE_LABELS = { extractor: 'Facts and events', pawspective: 'Pawspective i
 
 export function defaultConfig() {
     return {
-        revision: 0, localOnly: false, autoUpdate: true, historyWindow: 30000,
+        revision: 0, defaultsVersion: 1, localOnly: false, autoUpdate: true, historyWindow: 30000,
         memoryTokens: 6000, batchMessages: 12, candidateLimit: 24,
         writerTokenizer: 'auto', excludeHistory: true,
         roles: Object.fromEntries(ROLE_NAMES.map(name => [name, {
             enabled: false, profileId: '', endpoint: '', model: '', modelOverride: '', modelRevision: '', allowRemote: true,
             contextTokens: 32768, maxOutputTokens: name === 'embedding' ? 0 : 16000,
-            timeoutMs: 60000, tokenizer: 'auto', allowedData: [...SOURCE_TYPES],
+            timeoutMs: 300000, tokenizer: 'auto', allowedData: [...SOURCE_TYPES],
             queryPrefix: '', documentPrefix: '',
         }])),
     };
@@ -99,8 +99,20 @@ export function validateConfig(input) {
     return result;
 }
 
-export function readConfig(directories) {
+function readSavedConfig(directories) {
     const config = readJson(path.join(directories.root, 'mewmory', 'config.json'), null) || defaultConfig();
+    // Saving records the upgrade, so a later deliberate 60-second timeout stays untouched.
+    if (!config.defaultsVersion) {
+        for (const role of Object.values(config.roles)) {
+            if (role.timeoutMs === 60000) role.timeoutMs = 300000;
+        }
+        config.defaultsVersion = 1;
+    }
+    return config;
+}
+
+export function readConfig(directories) {
+    const config = readSavedConfig(directories);
     for (const name of ROLE_NAMES) {
         const role = config.roles[name];
         if (!role.enabled || !role.profileId) continue;
@@ -112,7 +124,7 @@ export function readConfig(directories) {
 }
 
 export function publicConfig(directories) {
-    const config = readJson(path.join(directories.root, 'mewmory', 'config.json'), null) || defaultConfig();
+    const config = readSavedConfig(directories);
     const profiles = listModelProfiles(directories);
     return { ...config, profiles, roles: Object.fromEntries(ROLE_NAMES.map(name => {
         const role = config.roles[name];

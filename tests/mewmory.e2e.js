@@ -84,6 +84,7 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
         await workspace.getByLabel('Enable this role', { exact: true }).check();
         await workspace.getByLabel('Connection profile', { exact: true }).selectOption('mewmory-test-' + name);
         await expect(workspace.getByLabel('Tokenizer for this role')).toHaveValue('auto');
+        await expect(workspace.getByLabel('Timeout, seconds', { exact: true })).toHaveValue('300');
     }
     const settingsStatus = workspace.locator('#mewmory-settings-status');
     await expect(settingsStatus).toContainText('Unsaved changes');
@@ -214,9 +215,46 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     await page.locator('#api_button_openai').click();
     await expect.poll(() => page.evaluate(async () => (await import('/script.js')).online_status)).not.toBe('no_connection');
     await page.evaluate(() => window.NeconyanShell.closeWorkspace());
-    await page.locator('#send_textarea').fill('You really kept the gift?');
-    await page.locator('#send_but').click();
-    await expect(page.locator('#chat')).toContainText('Of course I kept it.', { timeout: 60000 });
+    const fixtureUrl = provider.replace(/\/v1$/, '');
+    const providerCalls = async () => (await page.request.get(fixtureUrl + '/fixture/calls')).json();
+    const sendWhileMemoryBusy = async (message, label) => {
+        const before = await providerCalls();
+        const extractions = before.filter(call => call.model === 'extractor').length;
+        const replies = before.filter(call => call.model === 'mewmory-writer').length;
+        await page.request.post(fixtureUrl + '/fixture/hold', { data: { model: 'extractor' } });
+        try {
+            await page.evaluate(async () => {
+                const memory = await import('/scripts/mewmory/index.js');
+                void memory.processMewmory({ checkpoint: true });
+            });
+            await expect.poll(async () => (await providerCalls()).filter(call => call.model === 'extractor').length).toBe(extractions + 1);
+            await page.locator('#send_textarea').fill(message);
+            await page.locator('#send_but').click();
+            await expect.poll(async () => (await providerCalls()).filter(call => call.model === 'mewmory-writer').length, { timeout: 30000 }).toBe(replies + 1);
+            await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press)).toBe(false);
+            await expect(page.locator('#chat .mes').last()).toContainText('Of course I kept it.');
+            const during = await post('/api/mewmory/inspect', { locator });
+            expect(during.health.jobs.at(-1).status).toBe('processing');
+            await page.screenshot({ path: info.outputPath('mewmory-overlap-' + label + '.png') });
+        } finally {
+            await page.request.post(fixtureUrl + '/fixture/release', { data: {} });
+        }
+        await expect.poll(() => page.evaluate(async () => (await import('/scripts/mewmory/index.js')).mewmory.busy)).toBe(false);
+        const after = await post('/api/mewmory/inspect', { locator });
+        expect(after.health.jobs.at(-1).status).toBe('complete');
+        expect(after.recalls.length).toBeGreaterThan(0);
+        expect(after.health.pending).toBeGreaterThan(0);
+    };
+    await sendWhileMemoryBusy('You really kept the gift?', 'desktop');
+    const overlapTouch = await page.context().newCDPSession(page);
+    await overlapTouch.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    await page.setViewportSize({ width: 393, height: 852 });
+    await sendWhileMemoryBusy('And you still have the receipt?', 'phone');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(394);
+    expect((await page.locator('#send_but').boundingBox()).height).toBeGreaterThanOrEqual(44);
+    await overlapTouch.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    await overlapTouch.detach();
+    await page.setViewportSize({ width: 1280, height: 900 });
     const calls = await (await page.request.get(provider.replace(/\/v1$/, '') + '/fixture/calls')).json();
     const writer = calls.findLast(call => call.model === 'mewmory-writer');
     expect(writer).toBeTruthy();
@@ -265,5 +303,12 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     expect(textWriter.prompt).toContain('Mewmory: active NPC reference');
     expect(textWriter.prompt).toContain('Owner: Mara');
     expect(textWriter.prompt).not.toContain('INSPECT ONLY');
+    const automatic = (await post('/api/mewmory/config/get')).config;
+    automatic.autoUpdate = true;
+    await post('/api/mewmory/config/save', { config: automatic });
+    const backgroundRequest = page.waitForRequest(request => request.url().endsWith('/api/mewmory/process'));
+    await page.evaluate(() => window.dispatchEvent(new Event('mewmory:configured')));
+    expect((await backgroundRequest).postDataJSON().checkpoint).toBe(true);
+    await expect.poll(async () => (await post('/api/mewmory/inspect', { locator })).health.checkpointPending, { timeout: 60000 }).toBe(0);
     expect(errors).toEqual([]);
 });

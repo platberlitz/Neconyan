@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 /** A deterministic local provider for exercising the real HTTP and browser paths without story/model credentials. */
 export async function createMewmoryProvider(port = 0) {
     const calls = [];
-    const mode = { fail: false, invalidSelector: false };
+    const mode = { fail: false, invalidSelector: false, hold: '' };
+    const held = new Set();
     const server = createServer(async (request, response) => {
         response.setHeader('Content-Type', 'application/json');
         if (request.method === 'GET') {
@@ -14,8 +15,19 @@ export async function createMewmoryProvider(port = 0) {
         let raw = '';
         for await (const chunk of request) raw += chunk;
         const body = JSON.parse(raw);
+        if (request.url === '/fixture/hold') {
+            mode.hold = body.model;
+            return response.end('{}');
+        }
+        if (request.url === '/fixture/release') {
+            mode.hold = '';
+            for (const release of held) release();
+            held.clear();
+            return response.end('{}');
+        }
         const name = typeof body.prompt === 'string' ? 'text-writer' : body.model;
         calls.push({ model: name, messages: body.messages, prompt: body.prompt, tools: body.tools });
+        if (name === mode.hold) await new Promise(resolve => held.add(resolve));
         if (mode.fail) {
             response.statusCode = 503;
             return response.end(JSON.stringify({ error: 'Fixture provider unavailable.' }));

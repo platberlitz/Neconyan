@@ -6,6 +6,12 @@ export function assemblyFingerprint(state, config) {
         state.records.map(record => [record.id, record.version, record.excluded, record.status]), config]);
 }
 
+/** Completed automatic updates can coexist with a prompt built from an earlier valid snapshot. */
+export function generationFingerprint(state, config) {
+    return hash([sourceFingerprint(state), state.enabled, state.activeNpcIds, state.overrides,
+        state.records.filter(record => record.authorOverride).map(record => [record.id, record.version]), config]);
+}
+
 export function currentOverviews(state, asOf = Infinity) {
     return currentRecords(eligibleRecords(state, { asOf }).filter(record => record.kind === 'overview'),
         record => record.ownerId + ':' + record.subjectIds.join(':'));

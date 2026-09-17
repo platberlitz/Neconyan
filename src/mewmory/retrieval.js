@@ -2,7 +2,7 @@ import {
     eligibleRecords, fail, hash, list, object, refKey, sourceAt, sourceEligible, text,
 } from './core.js';
 import { SELECTION_CONTRACT } from './contracts.js';
-import { assemblyFingerprint, assembleContext, currentOverviews } from './context.js';
+import { assemblyFingerprint, assembleContext, currentOverviews, generationFingerprint } from './context.js';
 import { callJsonRole, embed, readConfig, roleVersion } from './models.js';
 import { addUsage } from './processing.js';
 import { hybridCandidates, searchDocuments, terms, updateIndex } from './search.js';
@@ -135,6 +135,8 @@ export async function recall(directories, locator, {
     const state = await loadCurrentState(directories, locator);
     if (!state.enabled) return { enabled: false, npcText: '', memoryText: '', tokens: { npc: 0, memory: 0 } };
     const fingerprint = assemblyFingerprint(state, config);
+    const validationFingerprint = generationFingerprint(state, config);
+    const indexSnapshot = hash(state.index);
     const counter = await getCounter(config.writerTokenizer, tokenizer);
     const usage = [];
     let indexError = '';
@@ -166,15 +168,12 @@ export async function recall(directories, locator, {
         state.index.vectors, config.candidateLimit)].map(document => [document.id, document])).values()];
     const selection = await selectMemories(state, directories, config, candidates, scene, allDocuments, asOf, signal, call);
     usage.push(...selection.usage);
-    const fresh = await loadCurrentState(directories, locator);
-    if (assemblyFingerprint(fresh, readConfig(directories)) !== fingerprint) {
-        fail('The story or memory changed during recall. Generate again to use its current version.', 409);
-    }
+    await loadCurrentState(directories, locator);
     const selectedIds = new Set([...forced.map(document => document.id), ...selection.status.selections.map(item => item.recordId)]);
-    // Resolve IDs against a fresh eligible set; the model never supplies assembled memory text.
-    const currentById = new Map(searchDocuments(fresh, asOf).map(document => [document.id, document]));
+    // Use one coherent completed snapshot; the model never supplies assembled memory text.
+    const currentById = new Map(allDocuments.map(document => [document.id, document]));
     const currentDocuments = [...selectedIds].map(id => currentById.get(id)).filter(Boolean);
-    const assembly = assembleContext(fresh, currentDocuments, {
+    const assembly = assembleContext(state, currentDocuments, {
         asOf, counter, memoryTokens: config.memoryTokens, forcedIds: forced.map(document => document.id),
     });
     const inspection = {
@@ -185,10 +184,13 @@ export async function recall(directories, locator, {
         forcedIds: forced.map(document => document.id), omitted: assembly.omitted, usage,
     };
     mutateState(directories, locator, current => {
-        current.index = state.index;
+        if (generationFingerprint(current, readConfig(directories)) !== validationFingerprint) {
+            fail('The story, settings or an author correction changed during recall. Generate again to use its current version.', 409);
+        }
+        if (assemblyFingerprint(current, config) === fingerprint && hash(current.index) === indexSnapshot) current.index = state.index;
         current.recalls = [...current.recalls.slice(-9), inspection];
         current.preview = { ...assembly, fingerprint };
         addUsage(current, usage);
-    }, fresh.revision);
-    return { enabled: true, ...assembly, inspection, fingerprint };
+    });
+    return { enabled: true, ...assembly, inspection, fingerprint, validationFingerprint };
 }

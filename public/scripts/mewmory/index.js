@@ -12,7 +12,6 @@ export const mewmory = {
 };
 let initialized = false;
 let timer;
-let currentBatch = null;
 let failures = 0;
 let stopRequested = false;
 let viewKey = '';
@@ -68,7 +67,7 @@ export async function refreshMewmory(filters = mewmory.filters || {}) {
     if (locator && (existing || inspecting)) {
         try {
             const view = await requestMewmory('inspect', { locator, ...filters });
-            if (key(getMewmoryLocator()) === currentKey) mewmory.view = view;
+            if (key(getMewmoryLocator()) === currentKey && (!mewmory.view || view.revision >= mewmory.view.revision)) mewmory.view = view;
         } catch (error) {
             if (key(getMewmoryLocator()) === currentKey) mewmory.error = error.message;
         }
@@ -97,7 +96,7 @@ export function stopMewmoryBackfill() {
 }
 
 export async function processMewmory({ all = false, checkpoint = false } = {}) {
-    if (mewmory.busy || mewmory.preparing) return;
+    if (mewmory.busy) return;
     const locator = getMewmoryLocator();
     if (!locator || !mewmory.view?.enabled) return;
     const currentKey = key(locator);
@@ -108,12 +107,10 @@ export async function processMewmory({ all = false, checkpoint = false } = {}) {
     try {
         if (!await flushPendingChatSaves({ silent: true })) throw new Error('Save this chat before updating Mewmory.');
         do {
-            if (key(getMewmoryLocator()) !== currentKey || mewmory.preparing) break;
-            currentBatch = requestMewmory('process', { locator, checkpoint });
-            const view = await currentBatch;
-            currentBatch = null;
             if (key(getMewmoryLocator()) !== currentKey) break;
-            mewmory.view = view;
+            const view = await requestMewmory('process', { locator, checkpoint });
+            if (key(getMewmoryLocator()) !== currentKey) break;
+            if (!mewmory.view || view.revision >= mewmory.view.revision) mewmory.view = view;
             mewmory.error = '';
             failures = 0;
             notifyMewmory();
@@ -123,7 +120,6 @@ export async function processMewmory({ all = false, checkpoint = false } = {}) {
         failures++;
         if (key(getMewmoryLocator()) === currentKey) mewmory.error = error.message;
     } finally {
-        currentBatch = null;
         mewmory.busy = false;
         mewmory.backfilling = false;
         notifyMewmory();
@@ -141,9 +137,12 @@ function scheduleUpdate({ resetFailures = false } = {}) {
         try {
             await refreshMewmory();
             if (!mewmory.view?.enabled || !mewmory.config?.autoUpdate || failures >= 3) return;
-            if (mewmory.view.health.pending) {
-                await processMewmory();
-                if (mewmory.view?.health.pending && failures < 3) scheduleUpdate();
+            // ponytail: automatic batches also review preservation, without a second pass that holds up chat.
+            const checkpoint = mewmory.config.excludeHistory;
+            const pending = () => checkpoint ? mewmory.view?.health.checkpointPending : mewmory.view?.health.pending;
+            if (pending()) {
+                await processMewmory({ checkpoint });
+                if (pending() && failures < 3) scheduleUpdate();
             }
         } catch (error) {
             mewmory.error = error.message;
@@ -182,7 +181,6 @@ export async function prepareMewmoryGeneration(messages, { signal } = {}) {
     mewmory.preparing = true;
     notifyMewmory();
     try {
-        if (currentBatch) await currentBatch.catch(() => {});
         await refreshMewmory();
         if (!mewmory.view?.enabled) {
             const enabled = mewmory.stories.some(story => key(story.locator) === currentKey && story.enabled);
@@ -200,7 +198,7 @@ export async function prepareMewmoryGeneration(messages, { signal } = {}) {
         }, { signal });
         if (getChatGeneration() !== generation || key(getMewmoryLocator()) !== currentKey) throw new Error('The active chat changed during recall.');
         const excluded = new Set(result.excludedIndices);
-        mewmory.error = result.processingError || result.inspection?.error || result.inspection?.indexError || '';
+        mewmory.error = result.inspection?.error || result.inspection?.indexError || '';
         mewmory.view.preview = result;
         mewmory.view.previewCurrent = true;
         return { ...result, locator, tokenizer, chat: messages.filter(message => !excluded.has(message.mewmorySourceIndex)) };
@@ -225,5 +223,5 @@ export async function validateMewmoryGeneration(context, prompt, tokenBudget, { 
     if (counted.counts[0] > tokenBudget) {
         throw new Error('Mewmory and the retained chat exceed this model’s input limit. Raise the context size, reduce the memory budget, or finish backfill in Mewmory.');
     }
-    await requestMewmory('validate', { locator: context.locator, fingerprint: context.fingerprint }, { signal });
+    await requestMewmory('validate', { locator: context.locator, fingerprint: context.validationFingerprint }, { signal });
 }

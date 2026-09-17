@@ -6,7 +6,7 @@ Mewmory is Neconyan’s native long-form Roleplay memory system. Pawspective is 
 
 1. Open a saved character or group Roleplay chat.
 2. In **Mewmory → Settings**, enable and configure the Facts and events, Pawspective and recall-selector roles. Choose a saved connection profile or a manual OpenAI-compatible endpoint and model. Embeddings and a separate fallback selector are optional; embedding profiles must be OpenAI-compatible. If a profile has no saved model, enter your service’s model name in Mewmory’s **Model** field. A role-specific override keeps the profile’s connection and credentials.
-3. Set the limits for each model. **Auto (match this model)** chooses a local tokenizer from that role’s model name; an explicit tokenizer remains available. Remote model requests are allowed by default; turn on **Local-only model requests** to restrict every role to loopback and private-network endpoints. A role only sends story data to a remote provider while **Allow story data to be sent to this remote endpoint** is on. The default output limit is **16000** tokens because reasoning models may spend part of that on hidden reasoning.
+3. Set the limits for each model. **Auto (match this model)** chooses a local tokenizer from that role’s model name; an explicit tokenizer remains available. Remote model requests are allowed by default; turn on **Local-only model requests** to restrict every role to loopback and private-network endpoints. A role only sends story data to a remote provider while **Allow story data to be sent to this remote endpoint** is on. The default output limit is **16000** tokens because reasoning models may spend part of that on hidden reasoning. Every role defaults to a **300-second timeout**. Saved settings using the old 60-second default are upgraded when loaded; other values stay as set. Saving the upgraded configuration preserves any later deliberate choice of 60 seconds.
 4. Save configuration and wait for **Configuration saved.**, then enable **Use Mewmory in this chat**. Unsaved edits do not affect processing. If saving fails, the message names the affected role and stays visible in Settings until you save successfully or discard your edits. An incomplete disabled role does not prevent saving the enabled roles.
 5. For an existing story, use **Backfill this chat**. New accepted messages are processed automatically when automatic updates are enabled.
 
@@ -24,6 +24,8 @@ No model connection or credential is borrowed from the RP writer. Role keys use 
 
 An interview receives only that character’s source-backed knowledge and eligible prior views. It does not receive an omniscient transcript or the complete lorebook. A player character cannot own an interview. Generated interview gestures never enter the source archive or objective extraction inputs.
 
+I keep the interview guidance brief: aim for 1-3 short sentences per answer, with at most one action or subtext cue when it adds meaning. Character voice and supported uncertainty still matter; answers aren't cut off to enforce that target.
+
 “Reported” means that someone said something; it does not establish that the claim is true. Significance requires accepted story evidence. Retrieval, retrying a job and copying summaries do not raise significance.
 
 Use **Edit** to correct the text, owner, subjects or sources. The correction menu supports suspicion, unsupported interpretations, knowledge a character never acquired, resolution, background status, scene pins and exclusions. An undo checks the source again; it cannot make a rejected or deleted scene accepted.
@@ -32,7 +34,7 @@ Use **Edit** to correct the text, owner, subjects or sources. The correction men
 
 The default recent-chat target is **30,000 tokens of chat**, separate from NPC references, memory, instructions, lore and output space.
 
-The coordinator starts preservation review around the 80% buffer. A generation can complete up to four bounded checkpoint batches. Older messages leave the outgoing history only when their current revisions have completed the required checkpoint. A failed job does not advance coverage.
+Automatic background batches include preservation review when history exclusion is enabled. Your next reply uses completed memories while extraction, interviews and backfill carry on. Reply-specific memory selection still runs before the writing request. Older messages leave the outgoing history only when their current revisions have completed the required checkpoint. A failed job does not advance coverage.
 
 The original chat remains unchanged. Source passages remain searchable through the local lexical index even when embeddings are unavailable. Memory and active-NPC sections are assembled outside history trimming. If the retained prompt cannot fit, generation stops with an actionable error. Increase context, reduce pinned memory or complete backfill instead of silently losing protected material.
 
@@ -45,7 +47,7 @@ Authority lives under each user’s data directory:
 - mewmory/config.json: role settings and limits, without credentials.
 - mewmory/stories/&lt;chat-locator-hash&gt;.json: typed sources, revisions, records, dependencies, jobs, coverage, audit entries and rebuildable vectors.
 
-This version reuses Neconyan’s atomic writes and file locks. Model requests run outside the storage lock. A result commits only if its source snapshot, settings and author revisions still match. No SQLite, Qdrant or graph service is required. Individual archives and restores are capped at 256 MiB; a write beyond that limit keeps the previous file intact.
+This version reuses Neconyan’s atomic writes and file locks. Model requests run outside the storage lock. A result commits only if its original sources, settings and author revisions still match. Appending new chat messages or saving recall progress doesn't discard an otherwise valid batch. Each reply uses a consistent completed-memory snapshot; finishing background work doesn't invalidate that reply. No SQLite, Qdrant or graph service is required. Individual archives and restores are capped at 256 MiB; a write beyond that limit keeps the previous file intact.
 
 Lexical and vector candidates are searched independently and combined by rank. Vector representations are cached by content and model configuration. A changed embedding configuration builds separately; queries and documents never mix vector spaces. Search is currently linear within a story. Large libraries should be measured before replacing it with an approximate-nearest-neighbour service.
 

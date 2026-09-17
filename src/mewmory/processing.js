@@ -12,6 +12,11 @@ const running = new Map();
 const objectiveKinds = ['entity', 'state', 'event', 'relationship', 'knowledge', 'commitment'];
 export const processingVersion = config => hash([POLICY_VERSION, roleVersion(config, 'extractor'), roleVersion(config, 'pawspective')]);
 
+function processingFingerprint(state, sourceCount) {
+    return hash([sourceFingerprint({ ...state, timeline: state.timeline.slice(0, sourceCount) }),
+        state.enabled, state.activeNpcIds, state.sceneNpcIds, state.records, state.audit, state.overrides]);
+}
+
 export function pendingSources(state, config, { checkpoint = false, through = Infinity } = {}) {
     const policy = processingVersion(config);
     const coverage = checkpoint ? state.checkpoints : state.coverage;
@@ -215,7 +220,9 @@ async function runBatch(directories, locator, options, call) {
         current.jobs.push({ id: jobId, status: 'processing', checkpoint: Boolean(options.checkpoint),
             from: sourceAt(current, refs[0]).sequence, through: asOf, startedAt: Date.now(), policy });
     }, state.revision);
-    const expectedRevision = state.revision;
+    const sourceCount = state.timeline.length;
+    const snapshotFingerprint = processingFingerprint(state, sourceCount);
+    const auditLength = state.audit.length;
     const usage = [];
     try {
         const input = extractionInput(state, refs, asOf, options.checkpoint);
@@ -236,20 +243,24 @@ async function runBatch(directories, locator, options, call) {
             usage.push(generated.usage);
             applyInterview(state, request, generated.value, interview, jobId);
         }
-        const fresh = await loadCurrentState(directories, locator);
+        await loadCurrentState(directories, locator);
         if (options.signal?.aborted) fail('Mewmory request cancelled.', 499);
-        if (sourceFingerprint(fresh) !== snapshot || fresh.revision !== expectedRevision || processingVersion(readConfig(directories)) !== policy) {
-            fail('The story, settings, or an author correction changed during processing. This result was discarded.', 409);
-        }
-        return mutateState(directories, locator, () => {
-            for (const ref of refs) {
-                state.coverage[refKey(ref)] = policy;
-                if (options.checkpoint) state.checkpoints[refKey(ref)] = policy;
+        return mutateState(directories, locator, current => {
+            if (processingFingerprint(current, sourceCount) !== snapshotFingerprint || processingVersion(readConfig(directories)) !== policy) {
+                fail('The story, settings, or an author correction changed during processing. This result was discarded.', 409);
             }
-            Object.assign(state.jobs.at(-1), { status: 'complete', finishedAt: Date.now(), usage });
-            addUsage(state, usage);
-            return state;
-        }, expectedRevision);
+            // Keep appended sources, concurrent recall, indexing and usage; this batch owns only its memory changes.
+            current.records = state.records;
+            current.audit = state.audit;
+            current.sceneNpcIds = state.sceneNpcIds;
+            current.index.pending ||= state.audit.length > auditLength;
+            for (const ref of refs) {
+                current.coverage[refKey(ref)] = policy;
+                if (options.checkpoint) current.checkpoints[refKey(ref)] = policy;
+            }
+            Object.assign(current.jobs.find(job => job.id === jobId), { status: 'complete', finishedAt: Date.now(), usage });
+            addUsage(current, usage);
+        });
     } catch (error) {
         mutateState(directories, locator, current => {
             const job = current.jobs.find(item => item.id === jobId);

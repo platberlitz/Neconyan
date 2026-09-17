@@ -13,7 +13,7 @@ const {
     continueState, eligibleRecords, forkState, hash, newState, putRecord, recordEligible,
     ROLE_NAMES, sourceAt, syncSources, undoRecord, validateRecord,
 } = await import('../src/mewmory/core.js');
-const { activeReferences, assembleContext } = await import('../src/mewmory/context.js');
+const { activeReferences, assembleContext, generationFingerprint } = await import('../src/mewmory/context.js');
 const { callJsonRole, defaultConfig, embed, isLocalEndpoint, validateEndpoint, saveConfig } = await import('../src/mewmory/models.js');
 const { applyExtraction, applyInterview, interviewInput, pendingSources, processBatch } = await import('../src/mewmory/processing.js');
 const { validateSelection, recall } = await import('../src/mewmory/retrieval.js');
@@ -38,6 +38,7 @@ test('connection profiles resolve server-side and retain local-only permissions'
         assert.equal(config.localOnly, false, 'remote model requests are allowed by default');
         assert.ok(ROLE_NAMES.every(name => config.roles[name].allowRemote));
         assert.ok(ROLE_NAMES.every(name => config.roles[name].maxOutputTokens === (name === 'embedding' ? 0 : 16000)));
+        assert.ok(ROLE_NAMES.every(name => config.roles[name].timeoutMs === 300000));
         Object.assign(config.roles.extractor, { enabled: true, profileId: 'local' });
         saveConfig(directories, config);
         assert.equal(publicConfig(directories).profiles.length, 2);
@@ -203,6 +204,25 @@ function disk(t, messages = fixture.messages) {
     writeJson(path.join(root, 'settings.json'), {});
     return { directories, filename, write };
 }
+
+test('legacy 60-second timeouts upgrade while custom and subsequently saved values survive', t => {
+    const { directories } = disk(t);
+    const legacy = defaultConfig();
+    delete legacy.defaultsVersion;
+    for (const role of Object.values(legacy.roles)) role.timeoutMs = 60000;
+    legacy.roles.embedding.timeoutMs = 90000;
+    writeJson(path.join(directories.root, 'mewmory', 'config.json'), legacy);
+    for (const read of [readConfig, publicConfig]) {
+        const config = read(directories);
+        assert.ok(ROLE_NAMES.filter(name => name !== 'embedding').every(name => config.roles[name].timeoutMs === 300000));
+        assert.equal(config.roles.embedding.timeoutMs, 90000);
+    }
+    const saved = saveConfig(directories, publicConfig(directories));
+    saved.roles.pawspective.timeoutMs = 60000;
+    saveConfig(directories, saved);
+    assert.equal(readConfig(directories).roles.pawspective.timeoutMs, 60000);
+    assert.equal(publicConfig(directories).roles.extractor.timeoutMs, 300000);
+});
 
 test('accepted revisions stay stable; editing and replacing even an identical swipe invalidate dependants', () => {
     const state = base();
@@ -475,6 +495,77 @@ test('a failed checkpoint leaves coverage and existing valid memory intact', asy
     assert.ok(eligibleRecords(state).some(record => record.id === 'event:gift'));
 });
 
+test('a background batch saves alongside recall, indexing and appended chat without losing either result', async t => {
+    const messages = fixture.messages.slice(0, 3);
+    const { directories, write } = disk(t, messages);
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    let release, started;
+    const held = new Promise(resolve => { release = resolve; });
+    const ready = new Promise(resolve => { started = resolve; });
+    const processing = processBatch(directories, locator, { checkpoint: true }, async (_directories, _config, role, _contract, input) => {
+        started();
+        await held;
+        const source = input.sources.filter(source => source.type === 'chat').at(-1);
+        return { value: { records: [{
+            id: 'event:background', kind: 'event', text: 'The gift is in Mara’s bag.', subjectIds: ['gift'],
+            refs: [{ id: source.id, revision: source.revision }], evidenceStatus: 'established',
+        }], interviews: [], activeNpcIds: [] }, usage: { role, input: 50, output: 25 } };
+    });
+    await ready;
+    let result;
+    try {
+        result = await recall(directories, locator, {}, { call: async (_directories, _config, role) => ({
+            value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: { role, input: 10 },
+        }) });
+        write([...messages, { name: 'Mara', mes: 'A new reply while memory is busy.', send_date: 'new-reply', is_user: false }]);
+        await loadCurrentState(directories, locator);
+        mutateState(directories, locator, state => { state.index.vectors.concurrent = { textHash: 'kept', vector: [1] }; });
+        assert.equal(readState(directories, locator).jobs.at(-1).status, 'processing');
+    } finally {
+        release();
+    }
+    const state = await processing;
+    assert.equal(state.timeline.length, 4);
+    assert.ok(eligibleRecords(state).some(record => record.id === 'event:background'));
+    assert.equal(state.recalls.at(-1).id, result.inspection.id);
+    assert.equal(state.preview.fingerprint, result.fingerprint);
+    assert.deepEqual(state.index.vectors.concurrent.vector, [1]);
+    assert.equal(state.usage.selector.requests, 1);
+    assert.equal(state.usage.extractor.requests, 1);
+    assert.equal(Object.keys(state.checkpoints).length, 3);
+    assert.equal(pendingSources(state, config).length, 1);
+    assert.equal(state.jobs.at(-1).status, 'complete');
+});
+
+for (const change of ['author correction', 'model settings']) {
+    test('background processing still rejects a concurrent ' + change, async t => {
+        const { directories } = disk(t, fixture.messages.slice(0, 3));
+        await loadCurrentState(directories, locator);
+        mutateState(directories, locator, state => { state.enabled = true; event(state); });
+        await assert.rejects(processBatch(directories, locator, {}, async (_directories, _config, role) => {
+            if (change === 'author correction') {
+                mutateState(directories, locator, state => {
+                    const record = state.records.find(record => record.id === 'event:gift');
+                    putRecord(state, { ...record, text: 'Author correction survives.', authorOverride: true, origin: 'author' });
+                });
+            } else {
+                const config = publicConfig(directories);
+                config.roles.extractor.timeoutMs = 90000;
+                saveConfig(directories, config);
+            }
+            return { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role } };
+        }), /discarded/);
+        const state = readState(directories, locator);
+        assert.equal(state.jobs.at(-1).status, 'failed');
+        assert.equal(Object.keys(state.coverage).length, 0);
+        if (change === 'author correction') assert.equal(state.records[0].text, 'Author correction survives.');
+    });
+}
+
 test('independent users, safe locators, rename and chat deletion keep storage ownership', async t => {
     const first = disk(t);
     const second = disk(t);
@@ -626,6 +717,8 @@ test('real model HTTP calls complete chronological extraction, bounded interview
     assert.equal(result.memoryText.includes('INSPECT ONLY'), false);
     assert.equal(result.memoryText.includes('SEARCH ONLY'), false);
     assert.ok(provider.calls.filter(call => call.model === 'pawspective').every(call => !JSON.stringify(call.messages).includes('SECRET:')));
+    assert.ok(provider.calls.filter(call => call.model === 'pawspective').every(call =>
+        call.messages[0].content.includes('1-3 short sentences per answer') && call.messages[0].content.includes('at most one brief narrated action')));
     assert.ok(provider.calls.every(call => call.tools === undefined));
     assert.equal(fs.readFileSync(filename, 'utf8'), bytes);
     provider.mode.invalidSelector = true;
@@ -708,7 +801,36 @@ test('recall gives the selector significance evidence and preserves its usefulne
     assert.equal(result.memoryText.includes('INSPECT ONLY'), false);
 });
 
-test('HTTP preparation excludes only preserved old chat and retains it on checkpoint failure', async t => {
+test('recall uses its completed snapshot when automatic memory finishes, but rejects a subsequent author correction', async t => {
+    const { directories } = disk(t);
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    const result = await recall(directories, locator, {}, { call: async (_directories, _config, role, _contract, input) => {
+        const candidate = input.candidates.find(candidate => candidate.recordId === 'event:gift');
+        mutateState(directories, locator, state => { event(state, { text: 'A newer automatic interpretation.' }); });
+        return { value: { status: 'complete', selections: [{
+            recordId: candidate.recordId, relevanceType: 'direct', currentCueRefs: [input.scene.at(-1).id],
+            memoryEvidenceRefs: [candidate.sourceRefs[0]], justification: 'The gift is discussed again.',
+        }], rejections: [], needsEvidence: [] }, usage: { role } };
+    } });
+    assert.ok(result.memoryText.includes('Mara accepted the gift.'));
+    assert.equal(result.memoryText.includes('A newer automatic interpretation.'), false);
+    const state = readState(directories, locator);
+    assert.equal(generationFingerprint(state, readConfig(directories)), result.validationFingerprint);
+    assert.equal(inspectState(state, config).previewCurrent, false);
+    assert.equal(state.index.pending, true);
+    await assert.rejects(recall(directories, locator, {}, { call: async (_directories, _config, role) => {
+        mutateState(directories, locator, state => {
+            putRecord(state, { ...state.records[0], excluded: true, authorOverride: true, origin: 'author' });
+        });
+        return { value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: { role } };
+    } }), /author correction changed during recall/);
+});
+
+test('HTTP preparation uses only completed preservation and accepts automatic progress before final validation', async t => {
     const messages = Array.from({ length: 10 }, (_, index) => ({
         name: index % 2 ? 'Player' : 'Mara', is_user: Boolean(index % 2),
         send_date: 'long-' + index, mes: 'Harbour continuity detail ' + index + '. '.repeat(2) + 'walking '.repeat(400),
@@ -745,16 +867,31 @@ test('HTTP preparation excludes only preserved old chat and retains it on checkp
     };
     const original = fs.readFileSync(filename, 'utf8');
     provider.mode.fail = true;
+    await assert.rejects(processBatch(directories, locator, { checkpoint: true }), /HTTP 503/);
     const failed = await prepare();
     assert.deepEqual(failed.excludedIndices, []);
     assert.ok(failed.history.waitingForPreservation);
     assert.deepEqual(readState(directories, locator).checkpoints, {});
     provider.mode.fail = false;
+    const callsBefore = provider.calls.length;
+    assert.deepEqual((await prepare()).excludedIndices, []);
+    assert.ok(provider.calls.slice(callsBefore).every(call => call.model === 'selector'), 'preparation must not start extraction or preservation');
+    await processBatch(directories, locator, { checkpoint: true });
     const preserved = await prepare();
     assert.ok(preserved.excludedIndices.length > 0);
     assert.ok(preserved.history.retainedTokens <= 1024);
     assert.equal(fs.readFileSync(filename, 'utf8'), original);
     assert.ok(searchDocuments(readState(directories, locator)).some(document => document.text.includes('Harbour continuity detail 0')));
+    const validate = () => fetch(url + '/validate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locator, fingerprint: preserved.validationFingerprint }),
+    });
+    mutateState(directories, locator, state => { event(state); });
+    assert.equal((await validate()).status, 200, 'background completion must not invalidate a prepared prompt');
+    mutateState(directories, locator, state => {
+        putRecord(state, { ...state.records[0], pinned: true, origin: 'author', authorOverride: true });
+    });
+    assert.equal((await validate()).status, 409, 'author corrections still invalidate a prepared prompt');
 });
 
 test('restoring a complete export preserves earlier knowledge revisions and subsequent chronological processing', () => {
