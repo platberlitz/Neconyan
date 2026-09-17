@@ -44,6 +44,7 @@ function getComposerSpacing(page) {
             barBorderTopColor: getComputedStyle(bar).borderTopColor,
             barBackgroundImage: getComputedStyle(bar).backgroundImage,
             barBoxShadow: getComputedStyle(bar).boxShadow,
+            barHeight: bar.getBoundingClientRect().height,
             textareaBorderRadius: getComputedStyle(textarea).borderRadius,
             textareaBackgroundColor: getComputedStyle(textarea).backgroundColor,
             textareaBoxShadow: getComputedStyle(textarea).boxShadow,
@@ -91,6 +92,8 @@ test.describe('mobile composer spacing at 320x568', () => {
             expect(Number.parseFloat(defaultState.barBorderTopWidth)).toBeGreaterThan(0);
             expect(defaultState.barBackgroundImage).toBe('none');
             expect(defaultState.barBoxShadow).toBe('none');
+            await expect(page.locator('#sb-bottom-chat-bar')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+            await expect(page.locator('#sb-bottom-chat-bar')).toHaveCSS('padding-left', '3px');
             expect(Number.parseFloat(defaultState.textareaBorderRadius)).toBeGreaterThan(0);
             expect(defaultState.textareaBackgroundColor).toBe('rgba(0, 0, 0, 0)');
             expect(Number.parseFloat(defaultState.leftControlBorderRadius)).toBeGreaterThanOrEqual(compactMode === 'true' ? 9 : 10);
@@ -125,12 +128,14 @@ test.describe('mobile composer spacing at 320x568', () => {
             expect(generatingState).not.toBeNull();
             expect(generatingState.barBorderTopColor).not.toBe(defaultState.barBorderTopColor);
             expect(generatingState.barBackgroundImage).toBe(defaultState.barBackgroundImage);
-            expect(generatingState.barBoxShadow).toBe(defaultState.barBoxShadow);
+            expect(generatingState.barBoxShadow).toBe(`${generatingState.barBorderTopColor} 0px 0px 0px 3px inset`);
+            expect(generatingState.barHeight).toBe(defaultState.barHeight);
             expect(generatingState.composerBackgroundImage).toBe('none');
             expect(generatingState.composerBackgroundColor).toBe(defaultState.composerBackgroundColor);
 
             await page.locator('#send_form').evaluate(form => form.classList.remove('sb-generating-controls'));
             await expect(page.locator('#form_sheld')).toHaveCSS('border-top-color', defaultState.barBorderTopColor);
+            await expect(page.locator('#form_sheld')).toHaveCSS('box-shadow', defaultState.barBoxShadow);
         }
     });
 });
