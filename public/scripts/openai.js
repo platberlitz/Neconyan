@@ -1579,7 +1579,7 @@ export function getPromptRole(role) {
  * @param {object[]} options.messageExamples - Array containing all message examples.
  * @returns {Promise<void>}
  */
-async function populateChatCompletion(prompts, chatCompletion, { bias, quietPrompt, quietImage, type, cyclePrompt, messages, messageExamples, mewmoryContext }) {
+async function populateChatCompletion(prompts, chatCompletion, { bias, quietPrompt, quietImage, type, cyclePrompt, messages, messageExamples, mewmoryContext, assistantKnowledge }) {
     // Helper function for preparing a prompt, that already exists within the prompt collection, for completion
     const addToChatCompletion = async (source, target = null) => {
         // We need the prompts array to determine a position for the source.
@@ -1622,6 +1622,12 @@ async function populateChatCompletion(prompts, chatCompletion, { bias, quietProm
         }
         // Allocate before history, at a separate position outside every prompt-manager marker.
         chatCompletion.add(memory, prompts.collection.length);
+    }
+
+    if (assistantKnowledge?.text) {
+        const knowledge = new MessageCollection('neconyan-help');
+        knowledge.add(await Message.createAsync('system', assistantKnowledge.text, 'neconyan-help'));
+        chatCompletion.add(knowledge, prompts.collection.length + (mewmoryContext?.enabled ? 1 : 0));
     }
 
     // Collection of control prompts that will always be positioned last
@@ -1969,6 +1975,7 @@ export async function prepareOpenAIMessages({
     messageExamples,
     responseLength = null,
     mewmoryContext = null,
+    assistantKnowledge = null,
 }, dryRun) {
     // Without a character selected, there is no way to accurately calculate tokens
     if (!promptManager.activeCharacter && dryRun) return [null, false];
@@ -1999,8 +2006,12 @@ export async function prepareOpenAIMessages({
         });
 
         // Fill the chat completion with as much context as the budget allows
-        await populateChatCompletion(prompts, chatCompletion, { bias, quietPrompt, quietImage, type, cyclePrompt, messages, messageExamples, mewmoryContext });
+        await populateChatCompletion(prompts, chatCompletion, { bias, quietPrompt, quietImage, type, cyclePrompt, messages, messageExamples, mewmoryContext, assistantKnowledge });
     } catch (error) {
+        if (assistantKnowledge?.text) {
+            toastr.error('The assistant help reference could not fit. Increase context or shorten the required prompt.');
+            throw error;
+        }
         if (mewmoryContext?.enabled) {
             toastr.error('Mewmory could not fit the protected prompt. Increase context, reduce memory, or complete backfill.');
             throw error;

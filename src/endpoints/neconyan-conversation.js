@@ -1,5 +1,6 @@
 import express from 'express';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
+import { buildAssistantKnowledge, getAssistantKnowledgeBudget } from '../../public/scripts/neconyan-assistant-knowledge.js';
 
 import { getSettingsVersion } from '../settings-version.js';
 import { extractCharacterReplyCommandParts, normalizeConversationOutputText } from '../../public/scripts/neconyan-conversation/generation-utils.js';
@@ -693,7 +694,7 @@ router.post('/message/send', asyncRoute(async (request, response) => {
             signal: cancellationController.signal,
             userDirectories: request.user.directories,
         });
-        const systemPrompt = buildConversationSystemPrompt({
+        let systemPrompt = buildConversationSystemPrompt({
             settings,
             character,
             userName,
@@ -701,6 +702,12 @@ router.post('/message/send', asyncRoute(async (request, response) => {
             branch,
             participantNames,
         });
+        const generationSettings = request.body.generation?.payload || request.body.generation?.body || request.body.generation;
+        const inputLimit = Number(generationSettings?.max_context ?? generationSettings?.openai_max_context ?? generationSettings?.context_length)
+            - Number(generationSettings?.max_completion_tokens ?? generationSettings?.max_tokens ?? settings.reply_max_tokens);
+        const knowledge = await buildAssistantKnowledge({ character, messages: branch.messages,
+            maxTokens: getAssistantKnowledgeBudget(inputLimit) });
+        if (knowledge.text) systemPrompt += '\n\n' + knowledge.text;
         const { backend, payload } = buildGenerationRequestBody(
             request.body.generation,
             systemPrompt,

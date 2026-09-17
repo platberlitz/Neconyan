@@ -26,13 +26,9 @@ import { extension_settings } from './extensions.js';
 import { getPresetManager } from './preset-manager.js';
 import { getCurrentUserHandle } from './user.js';
 import { getExtensionCapability } from './neconyan-conversation/extension-capabilities.js';
+import { isNeconyanAssistant } from './neconyan-assistant-knowledge.js';
 
 const TOOL_PREFIX = 'Neconyan_Assistant_';
-const ASSISTANT_IDS = new Set([
-    'miso-male', 'miso-female', 'miso-neutral',
-    'taro-male', 'taro-female', 'taro-neutral',
-    'nori-male', 'nori-female', 'nori-neutral',
-]);
 const registeredTools = new Set();
 const editableCharacterFields = Object.freeze([
     'name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example',
@@ -187,7 +183,7 @@ function getActiveAssistantContext() {
     const chatId = getCurrentChatId?.();
     const metadata = character?.data?.extensions?.neconyan_assistant;
     if (selected_group || !character || chatId === undefined || chatId === null || chatId === ''
-        || !ASSISTANT_IDS.has(String(metadata?.id))) {
+        || !isNeconyanAssistant(character)) {
         return null;
     }
 

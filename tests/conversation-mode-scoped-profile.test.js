@@ -91,7 +91,7 @@ describe('conversation mode scoped connection profile', () => {
         expect(helperSource).not.toContain('/profile ');
         expect(helperSource).not.toContain('applyConnectionProfileByName');
         // Falls back to generateRaw (the active profile) when scoped path is unavailable.
-        expect(helperSource).toContain('generateRaw(options)');
+        expect(helperSource).toContain('generateRaw(assistantContext ? await prepare(getMaxPromptTokens(options.responseLength)) : options)');
     });
 
     test('replaces every generation call site with the scoped helper', () => {

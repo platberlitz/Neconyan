@@ -1775,6 +1775,30 @@ describe('SillyBunny Conversation REST API', () => {
         expect(persistedMessages.map(message => message.mes)).toEqual(['winning write']);
     });
 
+    test.each(['chat', 'responses', 'text'])('marked assistants receive shared help in the actual %s request with tools disabled', async format => {
+        const generation = format === 'text' ? {
+            backend: 'text', payload: { api_type: TEXTGEN_TYPES.GENERIC, api_server: upstreamUrl, max_tokens: 64 },
+        } : {
+            backend: 'chat', payload: {
+                chat_completion_source: format === 'responses' ? CHAT_COMPLETION_SOURCES.OPENAI_RESPONSES : CHAT_COMPLETION_SOURCES.CUSTOM,
+                reverse_proxy: upstreamUrl, proxy_password: 'test-key', custom_url: upstreamUrl.replace(/\/$/, ''), model: 'test-model', max_tokens: 64,
+            },
+        };
+        const response = await postJson('/message/send', {
+            avatar: 'nova.png', text: 'How do I change dialogue colours?', version: 0,
+            character: { name: 'Renamed helper', extensions: { neconyan_assistant: { id: 'nori-neutral', version: 0 } } }, generation,
+        });
+        expect(response.status).toBe(200);
+        expect(upstreamRequests).toHaveLength(1);
+        const request = upstreamRequests[0];
+        const instructions = request.instructions ?? request.prompt ?? request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n');
+        expect(instructions).toContain('[Neconyan help reference');
+        expect(instructions).toContain('Included tools → Dialogue Colors → Settings → Characters');
+        expect(instructions).toContain('Quote Text');
+        expect(request.tools).toBeUndefined();
+        expect(JSON.stringify(readConversationStore())).not.toContain('Neconyan help reference');
+    });
+
     test('message/send supports the text completion backend adapter', async () => {
         upstreamReplyText = 'Text backend reply.';
         const response = await postJson('/message/send', {

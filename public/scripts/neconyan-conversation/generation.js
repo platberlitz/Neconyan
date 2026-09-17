@@ -1,4 +1,5 @@
-import { characters, generateRaw } from '../../script.js';
+import { characters, generateRaw, getMaxPromptTokens } from '../../script.js';
+import { buildAssistantKnowledge, getAssistantKnowledgeBudget, isNeconyanAssistant } from '../neconyan-assistant-knowledge.js';
 import { extractProfileResponseText } from '../extensions/in-chat-agents/llm-utils.js';
 import { isAbortLikeError } from '../util/abort-error.js';
 import {
@@ -60,29 +61,41 @@ export {
  * @param {Object} settings - Conversation settings holding connection_profile (a profile NAME).
  * @returns {Promise<string>}
  */
-export async function generateConversationRaw(options, settings) {
+export async function generateConversationRaw(options, settings, assistantContext = null) {
+    if (!isNeconyanAssistant(assistantContext?.character)) assistantContext = null;
     const profileName = String(settings?.connection_profile || '').trim();
     const ctx = window?.SillyTavern?.getContext?.();
     const CMRS = ctx?.ConnectionManagerRequestService;
+    const prepare = async inputLimit => {
+        if (!assistantContext) return options;
+        const knowledge = await buildAssistantKnowledge({ ...assistantContext, maxTokens: getAssistantKnowledgeBudget(inputLimit) });
+        return { ...options, systemPrompt: [options.systemPrompt, knowledge.text].filter(Boolean).join('\n\n') };
+    };
 
     if (profileName && CMRS) {
         const profile = getConnectionProfiles().find(candidate => candidate?.name === profileName);
         if (profile?.id) {
-            const messages = [];
-            if (options.systemPrompt) {
-                messages.push({ role: 'system', content: options.systemPrompt });
-            }
-            if (Array.isArray(options.prompt)) {
-                for (const message of options.prompt) {
-                    if (message && typeof message === 'object') {
-                        messages.push({ role: String(message.role || 'user'), content: message.content });
-                    }
-                }
-            } else {
-                messages.push({ role: 'user', content: options.prompt });
-            }
-
             try {
+                let prepared = options;
+                if (assistantContext) {
+                    const api = CMRS.validateProfile(profile).selected;
+                    const preset = ctx.getPresetManager(api)?.getCompletionPresetByName(profile.preset);
+                    const limit = Number(preset?.openai_max_context ?? preset?.max_context);
+                    prepared = await prepare(limit - Number(options.responseLength || 0));
+                }
+                const messages = [];
+                if (prepared.systemPrompt) {
+                    messages.push({ role: 'system', content: prepared.systemPrompt });
+                }
+                if (Array.isArray(options.prompt)) {
+                    for (const message of options.prompt) {
+                        if (message && typeof message === 'object') {
+                            messages.push({ role: String(message.role || 'user'), content: message.content });
+                        }
+                    }
+                } else {
+                    messages.push({ role: 'user', content: options.prompt });
+                }
                 const result = await CMRS.sendRequest(profile.id, messages, options.responseLength, {
                     extractData: true,
                     includePreset: true,
@@ -99,11 +112,12 @@ export async function generateConversationRaw(options, settings) {
         }
     }
 
-    return generateRaw(options);
+    return generateRaw(assistantContext ? await prepare(getMaxPromptTokens(options.responseLength)) : options);
 }
 
 export async function generateConversationReply(directive, settings, { responseLength = null, speakerName = getCurrentCharName(), trimNames = true, avatar = getCurrentCharAvatar(), threadAvatar = avatar, speakerAvatar = avatar, branchId = '', groupId = getConversationGroupIdForAvatar(threadAvatar), personaId = getConversationPersonaId() } = {}) {
     const messages = getConversationThread(threadAvatar, { branchId, create: false, groupId, personaId });
+    const assistantContext = { character: getCharacterForAvatar(speakerAvatar), messages: messages.map(message => ({ role: message.role, mes: message.mes })) };
     const resolvedResponseLength = Number.isFinite(responseLength) && responseLength > 0
         ? clamp(Math.round(responseLength), MIN_CONVERSATION_REPLY_MAX_TOKENS, MAX_CONVERSATION_REPLY_MAX_TOKENS)
         : getConversationReplyMaxTokens(settings);
@@ -115,7 +129,7 @@ export async function generateConversationReply(directive, settings, { responseL
         responseLength: resolvedResponseLength,
         trimNames,
         cacheScope: 'conversation-mode',
-    }, settings);
+    }, settings, assistantContext);
 }
 
 export function editConversationMessage(messageId) {

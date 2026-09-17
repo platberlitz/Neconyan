@@ -1035,6 +1035,7 @@ export async function regenerateConversationMessage(messageId) {
     }
 
     const sourceMessages = context.messages.slice(0, index + 1);
+    const assistantContext = { character: getCharacterForAvatar(speakerAvatar), messages: sourceMessages.slice(0, -1).map(message => ({ role: message.role, mes: message.mes })) };
     const sourceRevision = getConversationMessagesRevision(sourceMessages);
     regenerationBusyKeys.add(operationKey);
     const operation = beginConversationGenerationOperation();
@@ -1060,7 +1061,7 @@ export async function regenerateConversationMessage(messageId) {
                 responseLength: getConversationReplyMaxTokens(settings),
                 trimNames: true,
                 cacheScope: 'conversation-mode',
-            }, settings),
+            }, settings, assistantContext),
             context.avatar,
             { branchId: context.branchId, groupId: context.groupId, personaId: context.personaId },
         );

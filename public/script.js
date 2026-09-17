@@ -318,6 +318,7 @@ import { getAssistantIconSrc } from './scripts/neconyan-assistant-art.js';
 import { initWelcomeScreen, openPermanentAssistantChat, openPermanentAssistantCard, getPermanentAssistantAvatar } from './scripts/welcome-screen.js';
 import { initDataMaid } from './scripts/data-maid.js';
 import { initMewmory, prepareMewmoryGeneration, validateMewmoryGeneration } from './scripts/mewmory/index.js';
+import { buildAssistantKnowledge, getAssistantKnowledgeBudget } from './scripts/neconyan-assistant-knowledge.js';
 import { clearItemizedPrompts, deleteItemizedPromptForMessage, deleteItemizedPrompts, findItemizedPromptSet, restoreItemizedPrompts, initItemizedPrompts, itemizedParams, itemizedPrompts, loadItemizedPrompts, promptItemize, replaceItemizedPromptText, saveItemizedPrompts, swapItemizedPrompts } from './scripts/itemized-prompts.js';
 import { getSystemMessageByType, initSystemMessages, SAFETY_CHAT, sendSystemMessage, system_message_types, system_messages } from './scripts/system-messages.js';
 import { event_types, eventSource } from './scripts/events.js';
@@ -8515,6 +8516,8 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             console.debug('Skipping extension interceptors for dry run');
         }
 
+        const assistantCharacter = characters[this_chid];
+        const assistantMessages = coreChat.map(message => ({ is_user: message.is_user, is_system: message.is_system, mes: message.mes }));
         if (!dryRun && !isAuxiliaryGeneration && type !== 'impersonate') {
             mewmoryContext = await prepareMewmoryGeneration(coreChat, { signal });
             if (!isCurrent()) return;
@@ -8552,6 +8555,12 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 console.log(`Max context reduced by ${decrement} tokens of CFG prompt (${previousMaxContext} -> ${this_max_context})`);
             }
         }
+
+        const assistantKnowledge = !isAuxiliaryGeneration && !['quiet', 'impersonate'].includes(type)
+            ? await buildAssistantKnowledge({ character: assistantCharacter, messages: assistantMessages,
+                maxTokens: getAssistantKnowledgeBudget(this_max_context), countTokens: getTokenCountAsync })
+            : null;
+        if (!isCurrent()) return;
 
         console.log(`Core/all messages: ${coreChat.length}/${chat.length}`);
 
@@ -8692,6 +8701,9 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         if (main_api !== 'openai' && mewmoryContext?.enabled) {
             const memory = [mewmoryContext.npcText, mewmoryContext.memoryText].filter(Boolean).join('\n\n');
             if (memory) combinedStoryString += '\n\n' + (isInstruct ? formatInstructModeStoryString(memory) : memory);
+        }
+        if (main_api !== 'openai' && assistantKnowledge?.text) {
+            combinedStoryString += '\n\n' + (isInstruct ? formatInstructModeStoryString(assistantKnowledge.text) : assistantKnowledge.text);
         }
 
         // Story string rendered, safe to remove
@@ -9284,6 +9296,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                     messageExamples: oaiMessageExamples,
                     responseLength: requestResponseLength,
                     mewmoryContext,
+                    assistantKnowledge,
                 }, dryRun);
                 if (!isCurrent()) return;
                 generate_data = { prompt: prompt, cacheScope: resolvedCacheScope };
@@ -9304,6 +9317,10 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         await eventSource.emit(event_types.GENERATE_AFTER_DATA, generate_data, dryRun);
         if (!isCurrent()) return;
 
+        if (assistantKnowledge?.text && main_api !== 'openai'
+            && await getTokenCountAsync(generate_data.prompt ?? finalPrompt, power_user.token_padding) > this_max_context) {
+            throw new Error('The assistant help reference and required prompt exceed the model context. Increase the context allowance or shorten the required prompt.');
+        }
         if (mewmoryContext?.enabled) {
             await validateMewmoryGeneration(mewmoryContext, generate_data.prompt ?? finalPrompt, this_max_context, { signal });
             if (!isCurrent()) return;

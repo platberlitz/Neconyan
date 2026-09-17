@@ -11,6 +11,7 @@ const threadMessages = [{ id: 'user-1', role: 'user', name: 'User', mes: 'hello'
 await jest.unstable_mockModule('../public/script.js', () => ({
     characters: [{ avatar: 'char.png', name: 'Aster' }],
     generateRaw: jest.fn(),
+    getMaxPromptTokens: () => 8192,
 }));
 await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/llm-utils.js', () => ({
     extractProfileResponseText: value => String(value || ''),

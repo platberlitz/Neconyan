@@ -9,6 +9,7 @@ import { buildChatCompletionSamplerMetadata, filterChatCompletionSamplingParamet
 import { resolveGenerationOutputBufferState, resolveGenerationUnblockState, resolveStopGenerationState } from '../public/scripts/generation-lifecycle/index.js';
 import { event_types } from '../public/scripts/events.js';
 import { OVERSWIPE_BEHAVIOR, SWIPE_DIRECTION, SWIPE_SOURCE, SWIPE_STATE } from '../public/scripts/constants.js';
+import { buildAssistantKnowledge, getAssistantKnowledgeBudget } from '../public/scripts/neconyan-assistant-knowledge.js';
 
 const sources = Object.fromEntries(['script.js', 'scripts/openai.js', 'scripts/reasoning.js', 'scripts/group-chats.js', 'scripts/utils.js', 'scripts/st-context.js', 'scripts/sse-stream.js', 'scripts/textgen-settings.js'].map(file => {
     const source = readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8');
@@ -93,6 +94,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
         eventSource, event_types,
         resolveGenerationOutputBufferState, resolveGenerationUnblockState, resolveStopGenerationState,
         applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse,
+        buildAssistantKnowledge, getAssistantKnowledgeBudget,
         buildChatCompletionSamplerMetadata, filterChatCompletionSamplingParameters,
         modelSamplerMetadataBySource: new Map(), nanoGptModelList: [],
         applyClaudeModelParameterConstraints, applyKimiK3ModelParameterConstraints, isKimiK3Model,
@@ -532,7 +534,7 @@ describe('owned host generation flow', () => {
             clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
         });
         context.document.body = { dataset: {} };
-        load(context, 'script.js', ['swipe']);
+        load(context, 'script.js', ['swipe', 'syncSwipeToMes']);
         // getContext exposes this same function as swipe.to, not the legacy right wrapper.
         const contextSwipe = { to: context.swipe };
         const controls = { suppressUserMessage: true, suppressAutoContinue: true, maxOutputTokens: 2 };

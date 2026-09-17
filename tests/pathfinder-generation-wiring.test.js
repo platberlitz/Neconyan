@@ -6,6 +6,7 @@ import { EventEmitter } from '../public/lib/eventemitter.js';
 import { event_types } from '../public/scripts/events.js';
 import { resolveGenerationUiLockState, resolveGenerationUnblockState, resolveStopGenerationState } from '../public/scripts/generation-lifecycle/index.js';
 import { limitGenerationProse, isGenerationLengthFinish } from '../public/scripts/generation-request-controls.js';
+import { buildAssistantKnowledge, getAssistantKnowledgeBudget } from '../public/scripts/neconyan-assistant-knowledge.js';
 
 await jest.unstable_mockModule('../public/script.js', () => ({ chat: [], getCurrentChatId: () => 'chat-a' }));
 await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-store.js', () => ({ isPathfinderSubmoduleEnabled: () => true }));
@@ -39,6 +40,7 @@ function createHost() {
         eventSource: events, event_types,
         resolveGenerationUiLockState, resolveGenerationUnblockState, resolveStopGenerationState,
         limitGenerationProse, isGenerationLengthFinish,
+        buildAssistantKnowledge, getAssistantKnowledgeBudget,
         activeGenerationRun: null, agentGenerationContextProvider: null, abortController: null,
         generationChatFilter: null,
         chatId: 'chat-a', chatGeneration: 0, agentRunId: 0, cancelRevision: 0,
