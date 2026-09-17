@@ -300,8 +300,9 @@ body.neconyan.reduced-motion :is(.neconyan-cat-panel, .neconyan-assistant-row, #
     body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::after { animation: none !important; transition: none !important; }
 }
 
-/* The generated cloud art is an ambient layer. #bg1 remains the user's own
-   background control and keeps its normal stacking and fitting behaviour. */
+/* The generated cloud art is the default ambient layer and yields to the user's own
+   background: #bg1 paints above it (-1 against -2), so a chosen image replaces the
+   clouds, while the bundled transparent default leaves them visible. */
 body.neconyan {
     isolation: isolate;
     position: relative;
@@ -310,7 +311,7 @@ body.neconyan::before {
     content: '';
     position: fixed;
     inset: 0;
-    z-index: 0;
+    z-index: -2;
     pointer-events: none;
     background: url('../img/neconyan/kitty-clouds.webp?v=20260913g') 50% 50% / cover no-repeat;
     opacity: .67;

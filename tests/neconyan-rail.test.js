@@ -265,6 +265,9 @@ describe('Neconyan workspace rail behavior', () => {
         expect(neconyanCalicoCss).toContain('kitty-clouds.webp?v=20260913g');
         expect(neconyanCalicoCss).toContain('pointer-events: none;');
         expect(backgroundsCss).toContain('#bg1');
+        // The user's picked background paints above the default cloud art.
+        expect(neconyanCalicoCss).toMatch(/body\.neconyan::before\s*\{[^}]*z-index: -2;/);
+        expect(backgroundsCss).toMatch(/#bg1\s*\{[^}]*z-index: -1;/);
         // Phones keep the character name in the centre and drop the clock instead.
         expect(neconyanCss).not.toContain('body.neconyan #sb-topbar-title { display: none !important; }');
         expect(neconyanCss).toContain('body.neconyan #sb-topbar-clock { display: none; }');
