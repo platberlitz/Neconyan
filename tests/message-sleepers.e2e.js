@@ -13,8 +13,10 @@ async function checkAnimals(page, selector) {
     expect(await animals.count()).toBeGreaterThanOrEqual(2);
     for (const animal of await animals.all()) {
         await expect(animal).toHaveAttribute('alt', '');
-        await expect(animal).toHaveAttribute('aria-hidden', 'true');
-        await expect(animal).toHaveCSS('pointer-events', 'none');
+        await expect(animal).toHaveAttribute('role', 'button');
+        await expect(animal).toHaveAttribute('aria-label', 'Pet sleeping cat');
+        await expect(animal).toHaveAttribute('tabindex', '0');
+        await expect(animal).toHaveCSS('pointer-events', 'auto');
         const state = await animal.evaluate(async img => {
             await img.decode();
             const box = img.getBoundingClientRect();
@@ -31,6 +33,32 @@ async function checkAnimals(page, selector) {
         expect(state.left).toBeGreaterThanOrEqual(0);
         expect(state.right).toBeLessThanOrEqual(page.viewportSize().width);
     }
+}
+
+async function checkPet(page, animal, touch) {
+    const original = await animal.getAttribute('src');
+    // The twitch frame lasts 240ms, so record src changes instead of racing them.
+    await animal.evaluate(img => {
+        img.__petLog = [];
+        new MutationObserver(() => img.__petLog.push(img.getAttribute('src'))).observe(img, { attributes: true, attributeFilter: ['src'] });
+    });
+    const twitched = () => animal.evaluate(img => img.__petLog.splice(0).some(src => /-twitch\.webp$/.test(src)));
+    if (touch) await animal.tap({ position: { x: 48, y: 25 } });
+    else await animal.click({ position: { x: 48, y: 25 } });
+    await expect.poll(twitched).toBe(true);
+    await expect(animal).toHaveAttribute('src', original);
+    await animal.focus();
+    for (const key of ['Enter', 'Space']) {
+        await animal.press(key);
+        await expect.poll(twitched).toBe(true);
+        await expect(animal).toHaveAttribute('src', original);
+    }
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await animal.press('Enter');
+    await page.waitForTimeout(300);
+    expect(await twitched()).toBe(false);
+    await expect(animal).toHaveAttribute('src', original);
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
 }
 
 for (const width of [393, 1280]) {
@@ -59,14 +87,24 @@ for (const width of [393, 1280]) {
                 const geometry = await page.locator('#chat > .mes').evaluateAll(rows => rows.map(row => {
                     const img = row.querySelector('.neconyan-message-sleeper').getBoundingClientRect();
                     const chat = row.parentElement;
-                    return { clearance: Number.parseFloat(getComputedStyle(row).marginTop), contain: getComputedStyle(row).contain,
+                    return { clearance: Number.parseFloat(getComputedStyle(row).marginTop), bottomMargin: getComputedStyle(row).marginBottom,
+                        gap: row.nextElementSibling ? row.nextElementSibling.getBoundingClientRect().top - row.getBoundingClientRect().bottom : null,
+                        width: row.getBoundingClientRect().width, contain: getComputedStyle(row).contain,
                         top: img.top, viewportTop: chat.getBoundingClientRect().top, overflow: chat.scrollWidth - chat.clientWidth };
                 }));
                 expect(geometry[0].top, style).toBeGreaterThanOrEqual(geometry[0].viewportTop);
                 for (const row of geometry) {
                     expect(row.contain, style).not.toContain('paint');
-                    expect(row.clearance, style).toBeGreaterThanOrEqual(41);
+                    expect(row.clearance, style).toBe(44);
+                    expect(row.bottomMargin, style).toBe('0px');
                     expect(row.overflow, style).toBeLessThanOrEqual(1);
+                }
+                if (style === 'bubblechat') {
+                    expect(geometry[0].gap).toBeCloseTo(44, 1);
+                    if (width === 393) expect(geometry[0].width).toBeCloseTo(357, 1);
+                    for (const animal of await page.locator('#chat > .mes > .neconyan-message-sleeper').all()) {
+                        await checkPet(page, animal, width === 393);
+                    }
                 }
                 await page.screenshot({ path: info.outputPath(`${style}.png`) });
             }
@@ -88,7 +126,7 @@ for (const width of [393, 1280]) {
                     document.querySelector('#chat').scrollTop = 0;
                 }, mode);
                 await checkAnimals(page, '#chat > .mes > .neconyan-message-sleeper');
-                await expect(page.locator('#chat > .mes').first()).toHaveCSS('margin-top', '52px');
+                await expect(page.locator('#chat > .mes').first()).toHaveCSS('margin-top', '44px');
                 await page.screenshot({ path: info.outputPath(`${mode}.png`) });
             }
             await page.evaluate(() => document.body.classList.remove('sbterm'));
@@ -122,6 +160,7 @@ for (const width of [393, 1280]) {
             const conversation = '#sb_conversation_stage .sb-conversation-message-bubble > .neconyan-message-sleeper';
             await expect(page.locator(conversation).last()).toBeVisible();
             await checkAnimals(page, conversation);
+            await checkPet(page, page.locator(conversation).last(), width === 393);
             await page.locator('.sb-conversation-more-actions').last().click();
             await checkAnimals(page, conversation);
             await page.screenshot({ path: info.outputPath('conversation.png') });
@@ -146,6 +185,7 @@ for (const width of [393, 1280]) {
             const meower = '.sbtw-shell .neconyan-message-sleeper';
             await expect(page.locator(meower)).toHaveCount(7);
             await checkAnimals(page, meower);
+            await checkPet(page, page.locator(meower).first(), width === 393);
             await expect(page.locator('.sbtw-quote > .neconyan-message-sleeper')).toHaveAttribute('src', /tiger-right/);
             await expect(page.locator('.sbtw-quote .sbtw-post-compact > .neconyan-message-sleeper')).toHaveAttribute('src', /calico-left/);
             await page.screenshot({ path: info.outputPath('meower.png') });

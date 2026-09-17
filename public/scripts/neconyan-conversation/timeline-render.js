@@ -364,7 +364,10 @@ function createConversationMessageElement(message, { avatar, groupId, settings, 
         sleeper.height = 308;
         sleeper.alt = '';
         sleeper.draggable = false;
-        sleeper.setAttribute('aria-hidden', 'true');
+        sleeper.setAttribute('role', 'button');
+        sleeper.tabIndex = 0;
+        sleeper.title = 'Pet sleeping cat';
+        sleeper.setAttribute('aria-label', sleeper.title);
         bubble.appendChild(sleeper);
     }
 

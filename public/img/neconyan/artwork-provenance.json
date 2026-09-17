@@ -7,6 +7,20 @@
   "processing": "Chroma green removed, transparent raster cutouts resized. Pixel sprite frames encoded as lossless animated WebP; derived rotations keep the generated mascot inside its frame.",
   "sources": [
     {
+      "path": "calico-twitch-sunburst.png",
+      "sha256": "14ec05cb2a6e0edb9960159d86e14592b0455a6e40aaf92c2b697ae725542844",
+      "generated_at": "2026-09-17",
+      "prompt": "Edit the sleeping calico reference: fold only the large orange foreground ear sideways towards the left by about 25 degrees as a sleepy ear flick. Preserve the pose, proportions, position, colours, closed eyes, paws and hanging tail. Transparent background, no text or motion lines.",
+      "processing": "Isolated the generated foreground ear, removed the checkerboard, resized and composited into the original 384x308 cutout. All pixels outside the ear region remain from the original. Lossless WebP alternate frame; tap displays it briefly then restores the original."
+    },
+    {
+      "path": "tiger-twitch-sunburst.png",
+      "sha256": "5de2764c35ee2f64fcf3db2df1b2ebedfc4ff107c8fff365d966868f75f375dd",
+      "generated_at": "2026-09-17",
+      "prompt": "Edit the sleeping tiger reference: fold only the large orange foreground ear sideways towards the right by about 25 degrees as a sleepy ear flick. Preserve the pose, proportions, position, colours, closed eyes, paws and hanging tail. Transparent background, no text or motion lines.",
+      "processing": "Isolated the generated foreground ear, removed the checkerboard, resized and composited into the original 384x308 cutout. All pixels outside the ear region remain from the original. Lossless WebP alternate frame; tap displays it briefly then restores the original."
+    },
+    {
       "path": "neconyan-sleepers-sunburst.png",
       "sha256": "7f3b05c34e4f3e8d42171180f229a0965e8b9f5eef3886db32d4309207b987a9",
       "generated_at": "2026-09-17",
@@ -57,6 +71,18 @@
     }
   ],
   "outputs": [
+    {
+      "path": "public/img/neconyan/sleeping-calico-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "abe94f0d10ac136a2bdf286a026a3c0cb828ab87e73889fd004f4fc30972fcce"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-tiger-right-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "703bfd192b0aadc318561082353ecbc00b8ba58c235b37f0520403b507ead3bb"
+    },
     {
       "path": "public/img/neconyan/sleeping-calico-left.webp",
       "size": [384, 308],

@@ -10,7 +10,7 @@ const readJson = file => JSON.parse(fs.readFileSync(path.join(root, file), 'utf8
 describe('Neconyan generated UI artwork', () => {
     test('ships the two transparent sleeping animals with matching provenance', () => {
         const provenance = readJson('public/img/neconyan/artwork-provenance.json');
-        for (const name of ['sleeping-calico-left', 'sleeping-tiger-right']) {
+        for (const name of ['sleeping-calico-left', 'sleeping-tiger-right'].flatMap(name => [name, `${name}-twitch`])) {
             const file = `public/img/neconyan/${name}.webp`;
             const item = provenance.outputs.find(item => item.path === file);
             const bytes = fs.readFileSync(path.join(root, file));

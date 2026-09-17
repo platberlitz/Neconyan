@@ -2926,7 +2926,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
     }
 
     #chat {
-        padding-inline: max(24px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px)) !important;
+        padding-inline: max(18px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px)) !important;
     }
 
     #form_sheld {

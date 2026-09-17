@@ -673,6 +673,7 @@ body.neconyan img.neconyan-message-sleeper {
     position: absolute; z-index: 2; top: -41px; left: -17px;
     width: 96px; height: 77px; max-width: none; margin: 0; padding: 0;
     border: 0; border-radius: 0 !important; background: none; box-shadow: none;
-    pointer-events: none; user-select: none; object-fit: contain;
+    pointer-events: auto; cursor: pointer; touch-action: pan-y; user-select: none; object-fit: contain;
 }
 body.neconyan img.neconyan-message-sleeper.is-user { left: auto; right: -17px; }
+body.neconyan img.neconyan-message-sleeper:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }

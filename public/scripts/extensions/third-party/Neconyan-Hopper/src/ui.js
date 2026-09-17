@@ -167,7 +167,7 @@ function icon(name) {
 function messageSleeper(account) {
     return el('img', { className: `neconyan-message-sleeper${account?.kind === 'persona' ? ' is-user' : ''}`, attrs: {
         src: `/img/neconyan/sleeping-${account?.kind === 'persona' ? 'tiger-right' : 'calico-left'}.webp`,
-        width: 384, height: 308, alt: '', 'aria-hidden': 'true', draggable: 'false',
+        width: 384, height: 308, alt: '', role: 'button', tabindex: '0', title: 'Pet sleeping cat', 'aria-label': 'Pet sleeping cat', draggable: 'false',
     } });
 }
 
