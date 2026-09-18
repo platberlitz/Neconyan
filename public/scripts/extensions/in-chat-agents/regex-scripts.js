@@ -117,6 +117,9 @@ export function createDefaultRegexScript() {
  * @returns {import('../../char-data.js').RegexScriptData}
  */
 export function normalizeRegexScript(rawScript = {}) {
+    if (!rawScript || typeof rawScript !== 'object') {
+        rawScript = {};
+    }
     const defaults = createDefaultRegexScript();
     const placement = Array.isArray(rawScript.placement)
         ? rawScript.placement
@@ -211,14 +214,20 @@ export function applyRegexScript(script, rawString, {
         return rawString;
     }
 
+    /* The message's own speaker must win over the globally selected character in every macro pass. */
+    const macroOptions = characterOverride ? { name2Override: characterOverride } : {};
     const regexString = (() => {
         switch (Number(script.substituteRegex)) {
             case AGENT_REGEX_SUBSTITUTE.NONE:
                 return script.findRegex;
             case AGENT_REGEX_SUBSTITUTE.RAW:
-                return substituteParamsExtendedFn(script.findRegex);
+                return characterOverride
+                    ? substituteParamsFn(script.findRegex, macroOptions)
+                    : substituteParamsExtendedFn(script.findRegex);
             case AGENT_REGEX_SUBSTITUTE.ESCAPED:
-                return substituteParamsExtendedFn(script.findRegex, {}, sanitizeRegexMacro);
+                return characterOverride
+                    ? substituteParamsFn(script.findRegex, { ...macroOptions, postProcessFn: sanitizeRegexMacro })
+                    : substituteParamsExtendedFn(script.findRegex, {}, sanitizeRegexMacro);
             default:
                 return script.findRegex;
         }
@@ -231,15 +240,20 @@ export function applyRegexScript(script, rawString, {
 
     return rawString.replace(compiled, function (match) {
         const args = [...arguments];
+        /* Trailing callback arguments are offset, source string and (optionally) named groups; only the leading entries are captures. */
+        const namedGroups = args[args.length - 1] && typeof args[args.length - 1] === 'object' ? args[args.length - 1] : null;
+        const captureCount = args.length - 2 - (namedGroups ? 1 : 0);
         const replaceString = script.replaceString.replace(/{{match}}/gi, '$0');
         const interpolated = replaceString.replaceAll(/\$(\d+)|\$<([^>]+)>/g, (_, groupIndex, groupName) => {
-            const replacement = groupIndex
-                ? args[Number(groupIndex)]
-                : (args[args.length - 1] && typeof args[args.length - 1] === 'object'
-                    ? args[args.length - 1][groupName]
-                    : undefined);
+            let replacement;
+            if (groupIndex) {
+                const index = Number(groupIndex);
+                replacement = index <= captureCount ? args[index] : undefined;
+            } else {
+                replacement = namedGroups?.[groupName];
+            }
 
-            if (!replacement) {
+            if (typeof replacement !== 'string' || !replacement) {
                 return '';
             }
 
@@ -249,7 +263,7 @@ export function applyRegexScript(script, rawString, {
             });
         });
 
-        return substituteParamsFn(interpolated);
+        return substituteParamsFn(interpolated, macroOptions);
     });
 }
 

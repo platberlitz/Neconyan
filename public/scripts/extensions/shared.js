@@ -563,6 +563,10 @@ export class ConnectionManagerRequestService {
         const profile = this.getProfile(profileId);
         const selectedApiMap = this.validateProfile(profile);
         const profileRequestOverrides = getChatCompletionProfileRequestOverrides(profile, overridePayload);
+        // Resolve the effective model once so chat and text completion honour the same override.
+        const model = typeof modelOverride === 'string' && modelOverride.trim()
+            ? modelOverride.trim()
+            : profile.model;
 
         try {
             switch (selectedApiMap.selected) {
@@ -573,9 +577,6 @@ export class ConnectionManagerRequestService {
 
                     const reverseProxyFields = getChatCompletionProfileReverseProxy(profile, selectedApiMap.source);
 
-                    const model = typeof modelOverride === 'string' && modelOverride.trim()
-                        ? modelOverride.trim()
-                        : profile.model;
                     const messages = Array.isArray(prompt) ? prompt : [{ role: 'user', content: prompt }];
                     const ccRequestData = {
                         stream,
@@ -633,7 +634,7 @@ export class ConnectionManagerRequestService {
                         stream,
                         prompt,
                         max_tokens: maxTokens,
-                        model: profile.model,
+                        model,
                         api_type: selectedApiMap.type,
                         service_tier: getProfileServiceTier(profile),
                         api_server: profile['api-url'],
@@ -745,7 +746,8 @@ export class ConnectionManagerRequestService {
         }
 
         const apiMap = CONNECT_API_MAP[profile.api];
-        if (!Object.hasOwn(this.getAllowedTypes(), apiMap.selected)) {
+        // An unknown or removed provider id must not throw here, or one bad profile hides every valid one.
+        if (!apiMap || !Object.hasOwn(this.getAllowedTypes(), apiMap.selected)) {
             return false;
         }
 

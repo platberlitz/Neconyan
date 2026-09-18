@@ -1,3 +1,4 @@
+/* global globalThis */
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 
 const mockOpenAiSettings = {};
@@ -62,6 +63,7 @@ await jest.unstable_mockModule('../public/scripts/utils.js', () => ({
 }));
 
 const {
+    ConnectionManagerRequestService,
     getChatCompletionProfileRequestOverrides,
     getChatCompletionProfileReverseProxy,
     getProfileServiceTier,
@@ -318,5 +320,48 @@ describe('reasoning settings from the profile preset', () => {
         expect(getChatCompletionProfileRequestOverrides({ ...base, preset: 'Empty Preset' }, {}).overrides).toEqual({});
         expect(getChatCompletionProfileRequestOverrides({ ...base, preset: 'Missing Preset' }, {}).overrides).toEqual({});
         expect(getChatCompletionProfileRequestOverrides(base, {}).overrides).toEqual({});
+    });
+});
+
+describe('ConnectionManagerRequestService profile handling', () => {
+    function useContext(profiles, services = {}) {
+        globalThis.SillyTavern = {
+            getContext: () => ({
+                extensionSettings: {
+                    disabledExtensions: [],
+                    connectionManager: { profiles },
+                },
+                CONNECT_API_MAP: {
+                    openai: { selected: 'openai', source: 'openai' },
+                    'openrouter-text': { selected: 'textgenerationwebui', type: 'openrouter' },
+                },
+                ...services,
+            }),
+        };
+    }
+
+    test('one profile with an unknown provider does not hide the valid ones', () => {
+        useContext([
+            { id: 'valid', name: 'Valid', api: 'openai', model: 'gpt-4o' },
+            { id: 'ghost', name: 'Ghost', api: 'removed-provider', model: 'x' },
+            { id: 'no-api', name: 'No api' },
+            null,
+        ]);
+
+        expect(ConnectionManagerRequestService.getSupportedProfiles().map(profile => profile.id)).toEqual(['valid']);
+    });
+
+    test('a text-completion profile sends the model override, not the saved model', async () => {
+        const processRequest = jest.fn(async (data) => ({ content: data.model }));
+        useContext(
+            [{ id: 'tc', name: 'Text', api: 'openrouter-text', model: 'saved-model', 'api-url': 'http://x' }],
+            { TextCompletionService: { processRequest } },
+        );
+
+        await ConnectionManagerRequestService.sendRequest('tc', 'hello', 64, { modelOverride: 'override-model', includePreset: false, includeInstruct: false });
+        expect(processRequest.mock.calls[0][0].model).toBe('override-model');
+
+        await ConnectionManagerRequestService.sendRequest('tc', 'hello', 64, { modelOverride: '   ', includePreset: false, includeInstruct: false });
+        expect(processRequest.mock.calls[1][0].model).toBe('saved-model');
     });
 });

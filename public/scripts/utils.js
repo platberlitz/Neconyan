@@ -1397,15 +1397,16 @@ export function escapeRegex(string) {
 export function regexFromString(input) {
     try {
         // Parse input
-        var m = input.match(/(\/?)(.+)\1([a-z]*)/i);
+        // Parse the whole input, including newlines, so a multi-line pattern is not cut at its first line.
+        var m = input.match(/^(\/?)([\s\S]+)\1([a-z]*)$/i);
 
-        // Invalid flags
-        if (m[3] && !/^(?!.*?(.).*?\1)[gmixXsuUAJ]+$/.test(m[3])) {
+        try {
+            // Let the native constructor validate the flags (covers y, s, d, v, and rejects duplicates).
+            return new RegExp(m[2], m[3]);
+        } catch {
+            // Not a valid literal: treat the whole input as a plain pattern, as before.
             return RegExp(input);
         }
-
-        // Create the regular expression
-        return new RegExp(m[2], m[3]);
     } catch {
         return;
     }
