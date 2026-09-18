@@ -1214,7 +1214,7 @@ async function sendWelcomePanel(chats, expand, requestId, assistantPersonalities
             return;
         }
         const templateData = buildWelcomeTemplateData(chats, assistantPersonalities);
-        const template = await renderTemplateAsync('/scripts/templates/welcomePanelOnboarding.html?v=20260916-tour', templateData, true, true, true);
+        const template = await renderTemplateAsync('/scripts/templates/welcomePanelOnboarding.html?v=20260918-tour', templateData, true, true, true);
         if (requestId !== welcomeRequestId) {
             return;
         }
