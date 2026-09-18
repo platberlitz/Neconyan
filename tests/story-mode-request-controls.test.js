@@ -223,6 +223,24 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
 }
 
 describe('request-local output controls', () => {
+    test.each(['openai', 'textgenerationwebui'])('raw %s helpers emit auxiliary events and receive only their supplied context', async api => {
+        const { context, requests, eventSource } = makeRuntime({ api });
+        load(context, 'script.js', ['createRawPrompt']);
+        const promptEvents = [];
+        eventSource.on(event_types.GENERATE_AFTER_COMBINE_PROMPTS, data => promptEvents.push(data));
+        eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, data => promptEvents.push(data));
+        const settingsEvents = [];
+        eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, (_data, request) => settingsEvents.push(request));
+        await context.generateRawData({ prompt: [{ role: 'user', content: 'Only this task' }], responseLength: 100 });
+        expect(JSON.stringify(requests[0].body)).toContain('Only this task');
+        expect(JSON.stringify(requests[0].body)).not.toContain('Existing prose');
+        expect(promptEvents).toHaveLength(1);
+        expect(promptEvents[0]).toMatchObject({ type: 'quiet', isAuxiliaryGeneration: true });
+        expect(settingsEvents.every(event => event.isAuxiliaryGeneration && event.type === 'quiet')).toBe(true);
+        expect(requests[0].body).not.toHaveProperty('generationContext');
+        expect(requests[0].body).not.toHaveProperty('isAuxiliaryGeneration');
+    });
+
     test.each([undefined, 0, -1, NaN, Infinity, '160'])('leaves presets alone for an inactive limit: %s', maxOutputTokens => {
         const preset = { max_tokens: 8192, max_new_tokens: 8192 };
         expect(applyGenerationRequestControls(preset, { maxOutputTokens })).toBe(preset);

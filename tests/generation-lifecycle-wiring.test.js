@@ -151,7 +151,7 @@ describe('generation lifecycle wiring', () => {
         expect(bufferSource).toContain('event_types.GENERATION_OUTPUT_BUFFERING_DECISION');
         expect(bufferSource).toContain('resolveGenerationOutputBufferState({');
         expect(bufferSource).toContain('hasPostMainInterceptors: Boolean(eventData.hasPostMainInterceptors)');
-        expect(scriptSource).toContain('await shouldBufferMainGenerationOutput({ type, isStreaming: true })');
+        expect(scriptSource).toContain('await shouldBufferMainGenerationOutput({ type, isStreaming: true, generationContext: agentGenerationContext })');
         expect(scriptSource).toContain('await activeStreamingProcessor.generateBuffered()');
     });
 
@@ -166,7 +166,7 @@ describe('generation lifecycle wiring', () => {
         expect(bufferedSource).not.toContain('this.onProgressStreaming');
         expect(bufferedSource).not.toContain('this.onFinishStreaming');
 
-        expect(generateSource).toContain('const shouldBufferOutput = await shouldBufferMainGenerationOutput({ type, isStreaming: true });');
+        expect(generateSource).toContain('const shouldBufferOutput = await shouldBufferMainGenerationOutput({ type, isStreaming: true, generationContext: agentGenerationContext });');
         expect(generateSource).toContain('await activeStreamingProcessor.generateBuffered()');
         expect(normalizedGenerateSource).toMatch(/const interceptResult = await applyMainGenerationOutputInterceptors\(\{\s+type,\s+text: getMessage,\s+isStreaming: true,/);
         expect(generateSource).toContain('const saveReplyType = originalType !== \'continue\' ? type : \'appendFinal\';');

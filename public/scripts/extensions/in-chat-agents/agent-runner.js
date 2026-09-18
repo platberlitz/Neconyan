@@ -9,7 +9,6 @@ import {
     setAgentGenerationContextProvider,
     substituteParams,
     substituteParamsExtended,
-    generateQuietPrompt,
     getCurrentChatId,
     itemizedPrompts,
     normalizeContentText,
@@ -47,6 +46,7 @@ import {
 import { regexFromString, uuidv4 } from '../../utils.js';
 import { resetChatBackupSequence } from '../../chat-backup-sequence.js';
 import { isKimiK3Model } from '../../openai-model-capabilities.js';
+import { isGenerationLengthFinish } from '../../generation-request-controls.js';
 import { buildFallbackPromptText, extractProfileResponseText } from './llm-utils.js';
 import { getConnectionProfileDisplayName, getConnectionProfileModelName } from './profile-utils.js';
 import {
@@ -819,7 +819,6 @@ export function syncToolAgentRegistrations() {
                     const callerIsCurrent = typeof callerContext?.isCurrent === 'function' ? callerContext.isCurrent : () => true;
                     const abortFromCaller = () => controller.abort();
                     if (callerSignal?.aborted) return 'The user declined this tool call. Continue the response without it and do not retry.';
-                    callerSignal?.addEventListener?.('abort', abortFromCaller, { once: true });
                     const isCurrent = () => {
                         const liveAgent = getEnabledToolAgents().find(item => item.id === agent.id);
                         return !controller.signal.aborted && !callerSignal?.aborted && callerIsCurrent()
@@ -836,6 +835,7 @@ export function syncToolAgentRegistrations() {
 
                     activeToolApprovals.set(controller, isCurrent);
                     try {
+                        callerSignal?.addEventListener?.('abort', abortFromCaller, { once: true });
                         if (shouldConfirmToolCall(toolDef.name, getEnabledToolAgents().find(item => item.id === agent.id)?.settings)) {
                             const approved = await confirmToolCall(toolDef.displayName ?? toolDef.name, args, controller.signal);
                             if (!approved) return declined;
@@ -1610,11 +1610,6 @@ function scheduleDeferredPostProcessingFlush(delayMs = 0) {
             return;
         }
 
-        if (internalPromptTransformDepth > 0) {
-            scheduleDeferredPostProcessingFlush();
-            return;
-        }
-
         if (isBodyGenerationFlagBlocking()) {
             scheduleDeferredPostProcessingFlush(DEFERRED_POST_PROCESSING_RETRY_MS);
             return;
@@ -1694,7 +1689,7 @@ function scheduleLatestAssistantPostProcessingFallback(delayMs = DEFERRED_POST_P
             return;
         }
 
-        if (internalPromptTransformDepth > 0 || isBodyGenerationFlagBlocking()) {
+        if (isBodyGenerationFlagBlocking()) {
             if (Date.now() < latestAssistantPostProcessingFallbackDeadline) {
                 scheduleLatestAssistantPostProcessingFallback(DEFERRED_POST_PROCESSING_RETRY_MS);
             } else {
@@ -1764,7 +1759,7 @@ function hasRecoverableAssistantPostProcessingCandidate() {
         return false;
     }
 
-    if (clearStalePendingGenerationSnapshot() || !pendingGenerationSnapshot || generationStopRequested || internalPromptTransformDepth > 0) {
+    if (clearStalePendingGenerationSnapshot() || !pendingGenerationSnapshot || generationStopRequested) {
         return false;
     }
 
@@ -3103,7 +3098,7 @@ const claimedInterceptRunsByMessage = new WeakMap();
  * @param {object} message
  */
 function claimPendingInterceptRunsForMessage(message) {
-    if (!message || pendingPreGenerationInterceptRuns.length === 0) {
+    if (!message) {
         return;
     }
 
@@ -3115,7 +3110,7 @@ function takeInterceptRunsForMessage(message) {
     const claimed = message ? claimedInterceptRunsByMessage.get(message) : null;
     if (claimed) {
         claimedInterceptRunsByMessage.delete(message);
-        return [...claimed, ...takePendingPreGenerationInterceptRuns()];
+        return claimed;
     }
 
     return takePendingPreGenerationInterceptRuns();
@@ -3231,15 +3226,15 @@ function getUserFinalPromptTransformMessages(promptMessages, options = {}) {
     ];
 }
 
-function canUseMainChatCompletionHelper(context) {
-    return context?.mainApi === 'openai' && typeof context?.generateRaw === 'function';
-}
-
-async function requestMainChatCompletionPromptTransform(context, promptMessages, maxTokens, options = {}, signal = null) {
-    const output = await context.generateRaw({
-        prompt: getUserFinalPromptTransformMessages(promptMessages, options),
-        api: 'openai',
-        instructOverride: true,
+async function requestMainModelPromptTransform(context, promptMessages, maxTokens, options = {}, signal = null) {
+    const generate = context?.generateRawData ?? context?.generateRaw;
+    if (typeof generate !== 'function') {
+        throw new Error('The main connection does not support isolated agent requests. Choose a saved connection profile.');
+    }
+    const response = await generate({
+        prompt: structuredClone(getUserFinalPromptTransformMessages(promptMessages, options)),
+        api: context.mainApi,
+        instructOverride: context.mainApi === 'openai',
         responseLength: maxTokens,
         trimNames: false,
         signal,
@@ -3247,9 +3242,10 @@ async function requestMainChatCompletionPromptTransform(context, promptMessages,
     });
 
     return {
-        output: extractProfileResponseText({ content: output }),
+        output: extractProfileResponseText(response),
         runner: 'main',
         profileId: '',
+        lengthLimited: isGenerationLengthFinish(response),
     };
 }
 
@@ -3431,44 +3427,9 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
             );
         }
 
-        if (canUseMainChatCompletionHelper(context)) {
-            return await runAllowedRequest(
-                () => requestMainChatCompletionPromptTransform(context, promptMessages, maxTokens, options, requestAbortController.signal),
-            );
-        }
-
-        const quietPrompt = promptMessages
-            .map(message => `${message.role.toUpperCase()}:\n${normalizeContentText(message?.content)}`)
-            .join('\n\n');
-        const preservedPrompts = Object.entries(extension_prompts)
-            .filter(([key]) => key.startsWith(PROMPT_KEY_PREFIX));
-        const origin = getAgentGenerationContext();
-
-        for (const [key] of preservedPrompts) {
-            delete extension_prompts[key];
-        }
-
-        try {
-            return await runAllowedRequest(async () => ({
-                output: await generateQuietPrompt({
-                    quietPrompt,
-                    quietName: 'In-Chat Agent',
-                    skipWIAN: true,
-                    responseLength: maxTokens,
-                    removeReasoning: true,
-                    signal: requestAbortController.signal,
-                }),
-                runner: 'main',
-                profileId: '',
-            }));
-        } finally {
-            if (!requestAbortController.signal.aborted && origin.chatId === getCurrentSnapshotChatId()
-                && origin.runId === postProcessingGenerationRunId && origin.cancelRevision === agentGenerationCancelRevision) {
-                for (const [key, value] of preservedPrompts) {
-                    if (!Object.hasOwn(extension_prompts, key)) extension_prompts[key] = value;
-                }
-            }
-        }
+        return await runAllowedRequest(
+            () => requestMainModelPromptTransform(context, promptMessages, maxTokens, options, requestAbortController.signal),
+        );
     } finally {
         activeAgentRequestAbortControllers.delete(requestAbortController);
     }
@@ -3986,7 +3947,7 @@ function injectPreGenerationAgentPrompts(activeAgents, generationType) {
 function onGenerationStarted(generationType, options, dryRun) {
     swipeNavigationPending = false;
 
-    if (dryRun || options?.isAuxiliaryGeneration || (internalPromptTransformDepth > 0 && normalizeGenerationType(generationType) === 'quiet')) {
+    if (dryRun || options?.isAuxiliaryGeneration || normalizeGenerationType(generationType) === 'quiet') {
         return;
     }
 
@@ -4015,7 +3976,7 @@ function onGenerationStarted(generationType, options, dryRun) {
     clearAllPromptTransformRunningToasts();
     clearInitialGenerationToast();
     takePendingPreGenerationInterceptRuns();
-    pendingGenerationSnapshot = buildActivationSnapshot(currentMainGenerationType);
+    pendingGenerationSnapshot = null;
     generationStartChatLength = chat.length;
     const latestAssistantMessageIndex = getLatestAssistantMessageIndex();
     generationStartLastAssistantIndex = latestAssistantMessageIndex;
@@ -4023,13 +3984,7 @@ function onGenerationStarted(generationType, options, dryRun) {
     generationStartLastAssistantRevision = getMessageRevisionKey(generationStartLastAssistantMessage);
     processedPostProcessingRunsByIndex.clear();
 
-    const lastMsg = chat[chat.length - 1];
-    const isRecursiveToolPass = lastMsg?.extra?.tool_invocations != null;
-    if (isRecursiveToolPass) {
-        toolRecursionDepth++;
-    } else {
-        toolRecursionDepth = 0;
-    }
+    toolRecursionDepth = Number.isInteger(options?.depth) ? Math.max(0, options.depth) : 0;
 
     clearInChatAgentExtensionPrompts();
 }
@@ -4040,10 +3995,6 @@ function onGenerationEnded(_chatLength, generationContext) {
         || generationContext.cancelRevision !== agentGenerationCancelRevision)) {
         return;
     }
-    if (internalPromptTransformDepth > 0 && activePathfinderRetrievalAbortControllers.size === 0) {
-        return;
-    }
-
     clearInitialGenerationToast();
     invalidateToolApprovals(true);
     abortActivePathfinderRetrieval();
@@ -4122,7 +4073,7 @@ function onGenerationStopped(generationContext) {
  * @param {boolean} dryRun
  */
 async function onGenerationAfterCommands(generationType, options, dryRun) {
-    if (options?.isAuxiliaryGeneration || (internalPromptTransformDepth > 0 && (dryRun || normalizeGenerationType(generationType) === 'quiet'))) {
+    if (options?.isAuxiliaryGeneration || normalizeGenerationType(generationType) === 'quiet') {
         return;
     }
 
@@ -4142,14 +4093,11 @@ async function onGenerationAfterCommands(generationType, options, dryRun) {
         return;
     }
 
-    // The generation-start snapshot is taken before the host inserts the new user
-    // message, so keyword triggers would look at the previous turn. Rebuild once
-    // here when the chat grew since generation start; this is the one activation
-    // decision that the rest of the run reuses.
-    const userMessageInsertedSinceStart = !dryRun && chat.length !== generationStartChatLength;
+    // Decide once, after the submitted user message exists. Every later stage
+    // reuses this snapshot, including its probability decision.
     const activationSnapshot = dryRun
         ? buildActivationSnapshot(normalizedGenerationType)
-        : pendingGenerationSnapshot?.generationType === normalizedGenerationType && !userMessageInsertedSinceStart
+        : pendingGenerationSnapshot?.generationType === normalizedGenerationType
             ? cloneActivationSnapshot(pendingGenerationSnapshot, normalizedGenerationType)
             : buildActivationSnapshot(normalizedGenerationType);
 
@@ -4532,17 +4480,6 @@ async function onMessageReceived(messageIndex, generationType) {
 
     claimPendingInterceptRunsForMessage(message);
 
-    if (internalPromptTransformDepth > 0) {
-        // Keep this reply's original activation decision instead of rerolling
-        // probability and keyword checks while an unrelated helper is running.
-        const snapshot = pendingGenerationSnapshot?.generationType === normalizeGenerationType(generationType)
-            && isActivationSnapshotForCurrentChat(pendingGenerationSnapshot)
-            ? pendingGenerationSnapshot
-            : buildActivationSnapshot(generationType);
-        deferPostProcessing(numericMessageIndex, generationType, snapshot);
-        return;
-    }
-
     ensureMessageRegexSnapshot(numericMessageIndex, generationType);
 
     if (generationStopRequested || wasStreamingMessageStopped(numericMessageIndex)) {
@@ -4567,7 +4504,7 @@ async function onMessageReceived(messageIndex, generationType) {
 }
 
 function onStreamTokenReceived() {
-    if (internalPromptTransformDepth > 0 || !areAgentsGloballyEnabled()) {
+    if (!areAgentsGloballyEnabled()) {
         return;
     }
 
@@ -4959,7 +4896,7 @@ function getGenerationContextSnapshot(generationType = null) {
 }
 
 async function runPreGenerationInterceptorsOnText(initialContextText, generationType, contextFormat) {
-    if (internalPromptTransformDepth > 0 || !areAgentsGloballyEnabled()) {
+    if (!areAgentsGloballyEnabled()) {
         return { text: initialContextText, runs: [] };
     }
 
@@ -5044,7 +4981,7 @@ function insertContextInterceptChatMessage(chatMessages, content, agent) {
 }
 
 async function runPreGenerationInterceptorsOnChat(initialChatMessages, generationType) {
-    if (internalPromptTransformDepth > 0 || !areAgentsGloballyEnabled()) {
+    if (!areAgentsGloballyEnabled()) {
         return { chat: initialChatMessages, runs: [] };
     }
 
@@ -5132,7 +5069,7 @@ async function runPreGenerationInterceptorsOnChat(initialChatMessages, generatio
 }
 
 async function runPostMainGenerationInterceptorsOnText(initialOutputText, generationType, options = {}) {
-    if (internalPromptTransformDepth > 0 || !areAgentsGloballyEnabled()) {
+    if (!areAgentsGloballyEnabled()) {
         return { text: initialOutputText, runs: [], cancelled: false };
     }
 
@@ -5250,7 +5187,7 @@ async function showPostMainInterceptReviewPopup(text) {
 }
 
 function getPostMainGenerationInterceptorsForGeneration(generationType) {
-    if (internalPromptTransformDepth > 0 || !areAgentsGloballyEnabled()) {
+    if (!areAgentsGloballyEnabled()) {
         return [];
     }
 
@@ -5258,8 +5195,13 @@ function getPostMainGenerationInterceptorsForGeneration(generationType) {
     return getPostMainGenerationInterceptAgents(getSnapshotAgents(activationSnapshot));
 }
 
+function isAuxiliaryOrStaleRequest(eventData) {
+    return eventData?.isAuxiliaryGeneration || eventData?.type === 'quiet'
+        || (eventData?.generationContext && !isInterceptOriginCurrent(eventData.generationContext));
+}
+
 async function onGenerateAfterCombinePrompts(eventData) {
-    if (eventData?.dryRun || internalPromptTransformDepth > 0 || !isGenerationInProgress) {
+    if (eventData?.dryRun || isAuxiliaryOrStaleRequest(eventData) || !isGenerationInProgress) {
         return;
     }
 
@@ -5282,7 +5224,7 @@ async function onGenerateAfterCombinePrompts(eventData) {
 }
 
 async function onChatCompletionPromptReady(eventData) {
-    if (eventData?.dryRun || internalPromptTransformDepth > 0 || !isGenerationInProgress) {
+    if (eventData?.dryRun || isAuxiliaryOrStaleRequest(eventData) || !isGenerationInProgress) {
         return;
     }
 
@@ -5309,7 +5251,7 @@ async function onChatCompletionPromptReady(eventData) {
 }
 
 async function onGenerationOutputBufferingDecision(eventData) {
-    if (!eventData || eventData.dryRun || internalPromptTransformDepth > 0 || !isGenerationInProgress) {
+    if (!eventData || eventData.dryRun || isAuxiliaryOrStaleRequest(eventData) || !isGenerationInProgress) {
         return;
     }
 
@@ -5323,7 +5265,7 @@ async function onGenerationOutputBufferingDecision(eventData) {
 }
 
 async function onMainGenerationOutputReady(eventData) {
-    if (!eventData || eventData.dryRun || internalPromptTransformDepth > 0) {
+    if (!eventData || eventData.dryRun || isAuxiliaryOrStaleRequest(eventData)) {
         return;
     }
 
@@ -5378,8 +5320,8 @@ async function onMainGenerationOutputReady(eventData) {
     eventData.text = result.text;
 }
 
-async function onImpersonateReady(text = '') {
-    if (internalPromptTransformDepth > 0 || !areAgentsGloballyEnabled()) {
+async function onImpersonateReady(text = '', eventData = {}) {
+    if (isAuxiliaryOrStaleRequest(eventData) || !areAgentsGloballyEnabled()) {
         return;
     }
 
@@ -5409,10 +5351,11 @@ async function onImpersonateReady(text = '') {
     let transformedText = initialText;
     let changed = false;
     const cancelRevision = agentGenerationCancelRevision;
+    const origin = getAgentGenerationContext();
 
     if (promptTransformAgents.length > 0) {
         const result = await runPromptTransformAgentsForText(promptTransformAgents, transformedText, IMPERSONATE_GENERATION_TYPE, { cancelRevision });
-        if (result.cancelled || agentGenerationCancelRevision !== cancelRevision) {
+        if (result.cancelled || !isInterceptOriginCurrent(origin)) {
             return;
         }
         transformedText = result.text;
@@ -5450,10 +5393,6 @@ async function onMessageSwiped(data) {
 }
 
 function onMessageSwipeDeleted(data) {
-    if (internalPromptTransformDepth > 0) {
-        return;
-    }
-
     pendingGenerationSnapshot = null;
     clearLatestAssistantPostProcessingFallback();
     clearPostGenerationRecoveryCheck();
@@ -5469,8 +5408,8 @@ function onMessageSwipeDeleted(data) {
  * make the server drop every tool.
  * @param {object} data Generation data being prepared for the API call
  */
-function onChatCompletionSettingsReady(data) {
-    if (internalPromptTransformDepth > 0 || !areAgentsGloballyEnabled() || agentRegisteredToolNames.size === 0) {
+function onChatCompletionSettingsReady(data, request = {}) {
+    if (isAuxiliaryOrStaleRequest(request) || !areAgentsGloballyEnabled() || agentRegisteredToolNames.size === 0) {
         return;
     }
 
@@ -5506,7 +5445,7 @@ function onWorldInfoActivated(entries, generationContext) {
     const run = pathfinderRetrievalRun;
     // Native activation is emitted after retrieval, before either prompt builder
     // reads extension prompts. Untagged events cannot identify overlapping scans.
-    if (internalPromptTransformDepth > 0 || !isGenerationInProgress || !run?.isCurrent()
+    if (!isGenerationInProgress || !run?.isCurrent()
         || !run.result?.success || run.nativeApplied || run.skipWIAN || !Array.isArray(entries)
         || generationContext?.runId !== run.runId || generationContext?.chatId !== run.chatId
         || generationContext?.cancelRevision !== run.cancelRevision) {

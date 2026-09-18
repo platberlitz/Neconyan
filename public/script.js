@@ -6819,11 +6819,13 @@ function hideStopButton({ emitGenerationEnded = true } = {}) {
     }
 }
 
-async function shouldBufferMainGenerationOutput({ type, isStreaming = false } = {}) {
+async function shouldBufferMainGenerationOutput({ type, isStreaming = false, generationContext = null } = {}) {
     const eventData = {
         type,
         isStreaming: Boolean(isStreaming),
         hasPostMainInterceptors: false,
+        generationContext,
+        isAuxiliaryGeneration: type === 'quiet',
     };
 
     await eventSource.emit(event_types.GENERATION_OUTPUT_BUFFERING_DECISION, eventData);
@@ -6834,7 +6836,7 @@ async function shouldBufferMainGenerationOutput({ type, isStreaming = false } = 
     }).shouldBuffer;
 }
 
-async function applyMainGenerationOutputInterceptors({ type, text, isStreaming = false } = {}) {
+async function applyMainGenerationOutputInterceptors({ type, text, isStreaming = false, generationContext = null } = {}) {
     const outputState = resolveGenerationOutputBufferState({
         type,
         isStreaming,
@@ -6850,6 +6852,8 @@ async function applyMainGenerationOutputInterceptors({ type, text, isStreaming =
         isStreaming: Boolean(isStreaming),
         text: String(text ?? ''),
         cancelled: false,
+        generationContext,
+        isAuxiliaryGeneration: type === 'quiet',
     };
 
     await eventSource.emit(event_types.MAIN_GENERATION_OUTPUT_READY, eventData);
@@ -7310,7 +7314,7 @@ class StreamingProcessor {
             if (!this.#isCurrent(messageId)) return;
             await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, this.messageId, this.type);
         } else {
-            await eventSource.emit(event_types.IMPERSONATE_READY, text);
+            await eventSource.emit(event_types.IMPERSONATE_READY, text, { generationContext: this.agentGenerationContext, type: this.type });
         }
         if (!this.#isCurrent(messageId)) return;
 
@@ -7681,19 +7685,20 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
         // Allow extensions to modify the prompt before generation
         // 1. for text completion
         if (typeof prompt === 'string') {
-            const eventData = { prompt: prompt, dryRun: false };
+            const eventData = { prompt: prompt, dryRun: false, type: 'quiet', isAuxiliaryGeneration: true };
             await eventSource.emit(event_types.GENERATE_AFTER_COMBINE_PROMPTS, eventData);
             prompt = eventData.prompt;
         }
         // 2. for chat completion
         if (Array.isArray(prompt)) {
-            const eventData = { chat: prompt, dryRun: false };
+            const eventData = { chat: prompt, dryRun: false, type: 'quiet', isAuxiliaryGeneration: true };
             await eventSource.emit(event_types.CHAT_COMPLETION_PROMPT_READY, eventData);
             prompt = eventData.chat;
         }
 
         // Check if the generation was aborted during the event
         eventAbortController.signal.throwIfAborted();
+        abortController.signal.throwIfAborted();
 
         switch (api) {
             case 'kobold':
@@ -8074,7 +8079,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         if (!isCurrent()) return;
 
         // Occurs every time, even if the generation is aborted due to slash commands execution
-        await eventSource.emit(event_types.GENERATION_STARTED, type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, cacheScope, preserveLastMessage, isAuxiliaryGeneration, ...requestControls }, dryRun);
+        await eventSource.emit(event_types.GENERATION_STARTED, type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, cacheScope, preserveLastMessage, isAuxiliaryGeneration, depth, ...requestControls }, dryRun);
         if (!isCurrent()) return;
         agentGenerationContext = !dryRun && !isAuxiliaryGeneration && !run?.isGroupDispatch ? getAgentGenerationContext() : null;
         if (run) run.context = agentGenerationContext;
@@ -8161,7 +8166,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         // Occurs only if the generation is not aborted due to slash commands execution
         const companionFeedbackTarget = companionHistoryTarget
         ?? (type === 'continue' || type === 'swipe' || type === 'regenerate' ? lastMessage : null);
-        await eventSource.emit(event_types.GENERATION_AFTER_COMMANDS, type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, cacheScope: resolvedCacheScope, preserveLastMessage, companionHistoryTarget: companionFeedbackTarget, isAuxiliaryGeneration, ...requestControls }, dryRun);
+        await eventSource.emit(event_types.GENERATION_AFTER_COMMANDS, type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, cacheScope: resolvedCacheScope, preserveLastMessage, companionHistoryTarget: companionFeedbackTarget, isAuxiliaryGeneration, depth, ...requestControls }, dryRun);
         if (!isCurrent()) return;
 
         if (main_api == 'kobold' && kai_settings.streaming_kobold && !kai_flags.can_use_streaming) {
@@ -9253,7 +9258,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
 
         let finalPrompt = await getCombinedPrompt(false);
 
-        const eventData = { prompt: finalPrompt, dryRun: dryRun };
+        const eventData = { prompt: finalPrompt, dryRun: dryRun, type, isAuxiliaryGeneration: type === 'quiet', generationContext: agentGenerationContext };
         await eventSource.emit(event_types.GENERATE_AFTER_COMBINE_PROMPTS, eventData);
         if (!isCurrent()) return;
         finalPrompt = eventData.prompt;
@@ -9319,6 +9324,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                     responseLength: requestResponseLength,
                     mewmoryContext,
                     assistantKnowledge,
+                    generationContext: agentGenerationContext,
                 }, dryRun);
                 if (!isCurrent()) return;
                 generate_data = { prompt: prompt, cacheScope: resolvedCacheScope };
@@ -9433,9 +9439,9 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                         activeStreamingProcessor.firstMessageText = '';
                     }
 
-                    const shouldBufferOutput = await shouldBufferMainGenerationOutput({ type, isStreaming: true });
+                    const shouldBufferOutput = await shouldBufferMainGenerationOutput({ type, isStreaming: true, generationContext: agentGenerationContext });
                     if (!isCurrent()) return;
-                    activeStreamingProcessor.generator = await sendStreamingRequest(type, generate_data, { jsonSchema, cacheScope: generate_data.cacheScope, signal, recoveryContext, ...requestControls });
+                    activeStreamingProcessor.generator = await sendStreamingRequest(type, generate_data, { jsonSchema, cacheScope: generate_data.cacheScope, signal, recoveryContext, generationContext: agentGenerationContext, ...requestControls });
                     if (!isCurrent()) return;
 
                     hideSwipeButtons();
@@ -9506,6 +9512,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                                 type,
                                 text: getMessage,
                                 isStreaming: true,
+                                generationContext: agentGenerationContext,
                             });
 
                             if (interceptResult.cancelled || !isCurrent() || activeStreamingProcessor.abortController.signal.aborted) {
@@ -9577,7 +9584,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                     }
                 }
             } else {
-                return await sendGenerationRequest(type, generate_data, { jsonSchema, cacheScope: generate_data.cacheScope, signal, recoveryContext, ...requestControls });
+                return await sendGenerationRequest(type, generate_data, { jsonSchema, cacheScope: generate_data.cacheScope, signal, recoveryContext, generationContext: agentGenerationContext, ...requestControls });
             }
         }
 
@@ -9676,6 +9683,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 type,
                 text: getMessage,
                 isStreaming: false,
+                generationContext: agentGenerationContext,
             });
 
             if (interceptResult.cancelled || !isCurrent()) {
@@ -9696,7 +9704,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
 
             if (isImpersonate) {
                 $('#send_textarea').val(getMessage)[0].dispatchEvent(new Event('input', { bubbles: true }));
-                await eventSource.emit(event_types.IMPERSONATE_READY, getMessage);
+                await eventSource.emit(event_types.IMPERSONATE_READY, getMessage, { generationContext: agentGenerationContext, type });
             } else if (type == 'quiet') {
                 unblockGeneration(type);
                 return getMessage;

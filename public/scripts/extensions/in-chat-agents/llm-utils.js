@@ -89,6 +89,7 @@ export function extractProfileResponseText(response) {
         response?.choices?.[0]?.text,
         response?.choices?.[0]?.message?.content,
         response?.choices?.[0]?.content,
+        response?.results?.[0]?.text,
         response?.responseContent?.parts,
         response?.candidates?.[0]?.content?.parts,
         response?.candidates?.[0]?.output?.parts,
@@ -97,6 +98,9 @@ export function extractProfileResponseText(response) {
         response?.message?.content,
         response?.message?.tool_plan,
         response?.message,
+        response?.response,
+        response?.[0]?.content,
+        typeof response === 'string' ? response : '',
     );
     return removeReasoningFromString(text, { force: true });
 }

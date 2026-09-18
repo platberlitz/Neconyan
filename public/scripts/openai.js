@@ -1948,6 +1948,7 @@ export async function prepareOpenAIMessages({
     responseLength = null,
     mewmoryContext = null,
     assistantKnowledge = null,
+    generationContext = null,
 }, dryRun) {
     // Without a character selected, there is no way to accurately calculate tokens
     if (!promptManager.activeCharacter && dryRun) return [null, false];
@@ -2020,7 +2021,7 @@ export async function prepareOpenAIMessages({
 
     // Neconyan: only prompt-ready listeners that mutate the finalized chat should
     // trigger the post-mutation budget recount.
-    const eventData = { chat, dryRun, chatChanged: false };
+    const eventData = { chat, dryRun, chatChanged: false, type, isAuxiliaryGeneration: type === 'quiet', generationContext };
     await eventSource.emit(event_types.CHAT_COMPLETION_PROMPT_READY, eventData);
     if (!Array.isArray(eventData.chat)) {
         chatCompletion.log('Pre-generation intercepts produced an invalid chat payload.');
@@ -5896,7 +5897,7 @@ export async function createGenerationParameters(settings, model, type, messages
  * @returns {Promise<unknown>}
  * @throws {Error}
  */
-async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, cacheScope = null, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false } = {}) {
+async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, cacheScope = null, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, generationContext = null } = {}) {
     // Provide default abort signal
     if (!signal) {
         signal = new AbortController().signal;
@@ -5905,7 +5906,7 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
     const model = getChatCompletionModel(oai_settings);
     let { generate_data, stream, canMultiSwipe } = await createGenerationParameters(oai_settings, model, type, messages, { jsonSchema, cacheScope });
 
-    await eventSource.emit(event_types.CHAT_COMPLETION_SETTINGS_READY, generate_data);
+    await eventSource.emit(event_types.CHAT_COMPLETION_SETTINGS_READY, generate_data, { type, isAuxiliaryGeneration: type === 'quiet', generationContext });
 
     const requestControls = { maxOutputTokens, responseLength, preserveReasoningBudget };
     if (generate_data.chat_completion_source === chat_completion_sources.CUSTOM) {

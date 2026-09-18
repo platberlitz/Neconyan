@@ -38,6 +38,7 @@ describe('in-chat agent post-processing runner', () => {
     let updateMessageBlock;
     let generateQuietPrompt;
     let generateRaw;
+    let generateRawData;
     let runSidecarRetrieval;
     let injectPathfinderRetrieval;
     let isGroupGenerating;
@@ -106,6 +107,11 @@ describe('in-chat agent post-processing runner', () => {
         updateMessageBlock = jest.fn();
         generateQuietPrompt = jest.fn(async () => 'quiet result');
         generateRaw = jest.fn(async () => 'raw result');
+        // Reuse the existing controllable transport responses; production helpers
+        // receive only the raw request below, never the quiet chat builder.
+        generateRawData = jest.fn(async request => ({ content: await (request.api === 'openai'
+            ? generateRaw(request)
+            : generateQuietPrompt({ ...request, quietPrompt: request.prompt.map(message => `${message.role.toUpperCase()}:\n${message.content}`).join('\n\n') })) }));
         runSidecarRetrieval = jest.fn(async () => ({ success: true, selectedEntries: [] }));
         injectPathfinderRetrieval = jest.fn();
         isGroupGenerating = false;
@@ -281,6 +287,7 @@ describe('in-chat agent post-processing runner', () => {
                 ConnectionManagerRequestService: connectionManagerRequestService,
                 executeSlashCommandsWithOptions,
                 generateRaw,
+                generateRawData,
                 mainApi,
                 characters: contextCharacters,
                 characterId: contextCharacterId,
@@ -4132,7 +4139,7 @@ describe('in-chat agent post-processing runner', () => {
         expect(enabledToolAgents).toHaveLength(2);
     });
 
-    test.each(['chat change', 'new run', 'Stop'])('does not restore suspended text-helper prompts after %s', async reason => {
+    test.each(['chat change', 'new run', 'Stop'])('an isolated text helper never removes or restores another request\'s prompts after %s', async reason => {
         const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
         runner.initAgentRunner();
         await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
@@ -4141,6 +4148,7 @@ describe('in-chat agent post-processing runner', () => {
         generateQuietPrompt.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
         const request = runner.requestPromptTransform({ id: 'helper' }, [{ role: 'user', content: 'transform' }], 100);
         await Promise.resolve();
+        expect(extensionPrompts.inchat_agent_saved.value).toBe('original chat prompt');
         const cancel = {
             'chat change': async () => { currentChatId = 'chat-b'; await eventSource.emit(eventTypes.CHAT_CHANGED); },
             'new run': () => eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false),
@@ -4153,11 +4161,15 @@ describe('in-chat agent post-processing runner', () => {
         expect(extensionPrompts.inchat_agent_saved.value).toBe('current prompt');
     });
 
-    test('restores suspended prompts when the quiet helper still belongs to the same run and chat', async () => {
+    test('an isolated text helper receives only its prepared context and leaves shared prompts alone', async () => {
         const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
         extensionPrompts.inchat_agent_saved = { value: 'original prompt' };
+        chat.push({ mes: 'Private history excluded from this request', is_user: true });
         await runner.requestPromptTransform({ id: 'helper' }, [{ role: 'user', content: 'transform' }], 100);
         expect(extensionPrompts.inchat_agent_saved.value).toBe('original prompt');
+        expect(generateRawData).toHaveBeenCalledWith(expect.objectContaining({
+            api: 'kobold', prompt: [{ role: 'user', content: 'transform' }], responseLength: 100, cacheScope: 'auxiliary',
+        }));
     });
 
     test('tool sync drops tools whose action vanished and honours the saved registration flag', async () => {
@@ -4741,13 +4753,14 @@ describe('in-chat agent post-processing runner', () => {
         initAgentRunner();
         syncToolAgentRegistrations();
         await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
-        const textData = { prompt: 'auxiliary text', dryRun: false };
-        const chatData = { chat: [{ role: 'user', content: 'auxiliary chat' }], dryRun: false };
+        const auxiliary = { type: 'quiet', isAuxiliaryGeneration: true };
+        const textData = { prompt: 'auxiliary text', dryRun: false, ...auxiliary };
+        const chatData = { chat: [{ role: 'user', content: 'auxiliary chat' }], dryRun: false, ...auxiliary };
         const settingsData = { tools: [{}], chat_completion_source: 'openai' };
         generateRaw.mockImplementation(async () => {
             await eventSource.emit(eventTypes.GENERATE_AFTER_COMBINE_PROMPTS, textData);
             await eventSource.emit(eventTypes.CHAT_COMPLETION_PROMPT_READY, chatData);
-            await eventSource.emit(eventTypes.CHAT_COMPLETION_SETTINGS_READY, settingsData);
+            await eventSource.emit(eventTypes.CHAT_COMPLETION_SETTINGS_READY, settingsData, auxiliary);
             return 'auxiliary result';
         });
         await expect(sidecarGenerateWithProfile('request')).resolves.toBe('auxiliary result');
@@ -4773,6 +4786,52 @@ describe('in-chat agent post-processing runner', () => {
         finish('finished');
         await pending;
         expect(isAgentGenerationActive()).toBe(false);
+    });
+
+    test('a held helper does not suppress a successor reply\'s intercepts, activation or completion', async () => {
+        enabledAgents = [createPreInterceptAgent({ conditions: { triggerProbability: 50 } })];
+        const random = jest.spyOn(Math, 'random').mockReturnValue(0);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        let finish;
+        const held = runner.runAsInternalPromptTransform(() => new Promise(resolve => { finish = resolve; }));
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', { depth: 0 }, false);
+        expect(random).not.toHaveBeenCalled();
+        chat.push({ mes: 'New input', is_user: true });
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+        const generationContext = runner.getAgentGenerationContext();
+        const prompt = { type: 'normal', prompt: 'Outgoing prompt', generationContext, isAuxiliaryGeneration: false };
+        await eventSource.emit(eventTypes.GENERATE_AFTER_COMBINE_PROMPTS, prompt);
+        expect(prompt.prompt).toBe('quiet result');
+        chat.push({ mes: 'Main reply', is_user: false, is_system: false, extra: {} });
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 1, 'normal');
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length, generationContext);
+        await waitFor(() => chat[1].extra.inChatAgentPreGenerationInterceptHistory?.length === 1);
+        expect(random).toHaveBeenCalledTimes(1);
+        finish();
+        await held;
+        random.mockRestore();
+    });
+
+    test('tool recursion uses the host request depth and quiet settings never force tool use', async () => {
+        usePathfinderAgent({ mandatoryTools: true, sidecarEnabled: true });
+        getToolAction.mockReturnValue(jest.fn());
+        getForcedToolChoice.mockReturnValue('required');
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        chat.push({ mes: 'Previous tool result', extra: { tool_invocations: [{}] } });
+        runner.syncToolAgentRegistrations();
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', { depth: 0 }, false);
+        const quiet = { chat_completion_source: 'openai' };
+        await eventSource.emit(eventTypes.CHAT_COMPLETION_SETTINGS_READY, quiet, { type: 'quiet' });
+        expect(quiet.tool_choice).toBeUndefined();
+        const first = { tools: [{}], chat_completion_source: 'openai' };
+        await eventSource.emit(eventTypes.CHAT_COMPLETION_SETTINGS_READY, first, { type: 'normal' });
+        expect(first.tool_choice).toBe('required');
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', { depth: 4 }, false);
+        const final = { tools: [{}], tool_choice: 'required' };
+        await eventSource.emit(eventTypes.CHAT_COMPLETION_SETTINGS_READY, final, { type: 'normal' });
+        expect(final).toEqual({});
     });
 
     test('starts a real successor generation even while an older raw retrieval is internally guarded', async () => {
@@ -4819,11 +4878,10 @@ describe('in-chat agent post-processing runner', () => {
 
         expect(extensionPrompts['inchat_agent_agent-pre-intercept']).toBeUndefined();
         expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
-        expect(generateQuietPrompt.mock.calls[0][0]).toEqual(expect.objectContaining({
-            quietName: 'In-Chat Agent',
+        expect(generateRawData.mock.calls[0][0]).toEqual(expect.objectContaining({
+            api: 'kobold',
             responseLength: 123,
-            skipWIAN: true,
-            removeReasoning: true,
+            cacheScope: 'auxiliary',
         }));
         expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('Outgoing context:');
         expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('Original outgoing prompt');
