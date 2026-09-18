@@ -103,6 +103,7 @@ import {
 } from './profile-utils.js';
 import { collectRecentCompanionResults, getCompanionResults, initCompanionRunner, getLatestValidCompanionMessageIndex, runTrackerCompanionsOnMessage, syncCompanionChatHistoryConfig } from './companion/companion-runner.js';
 import { getCompanionReferenceIds } from './companion/companion-shared.js';
+import { stripStateChangingMacros } from './companion/companion-macros.js';
 import { initCompanionCardUi, sanitizeCompanionHtml, updateCompanionButtonVisibility } from './companion/companion-ui.js';
 import { configureCompanionDashboard, initCompanionWandMenuItem, openCompanionDashboard } from './companion/companion-dashboard.js';
 import { configureCompanionPanel, initCompanionPanel, refreshCompanionPanel, updateCompanionPanelHandleVisibility } from './companion/companion-panel.js';
@@ -1637,7 +1638,8 @@ async function previewPreGenerationPrompt(agent, promptOverride = null) {
         return;
     }
 
-    const previewText = substituteParams(prompt, {
+    // Previewing must not write variables; only a real run may do that.
+    const previewText = substituteParams(stripStateChangingMacros(prompt), {
         dynamicMacros: buildPromptDynamicMacros('', null, agent, 'normal'),
     });
     const previewNote = isPreGenerationInterceptAgent(agent)

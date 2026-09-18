@@ -209,6 +209,9 @@ export function sanitizeCompanionHtml(html = '', { prefix = '.ica--companion-bod
         MESSAGE_SANITIZE: true,
         ADD_TAGS: ['custom-style'],
         ADD_ATTR: ['style', 'target', 'rel'],
+        // Note bodies must never carry the panel/dashboard action attribute; delegated
+        // click handlers would otherwise treat generated content as a trusted control.
+        FORBID_ATTR: ['data-action'],
     });
     return decodeStyleTags(sanitized, { prefix });
 }

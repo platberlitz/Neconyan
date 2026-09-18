@@ -90,3 +90,35 @@ describe('agent HTML sinks are escaped or sanitised', () => {
         expect(source).toMatch(/value="\$\{escapeHtml\(agent\.id\)\}"/);
     });
 });
+
+describe('generated note content cannot act as a trusted control', () => {
+    test('companion sanitiser strips the delegated action attribute', () => {
+        const source = readSource('companion/companion-ui.js');
+        const sanitiser = source.slice(source.indexOf('export function sanitizeCompanionHtml'), source.indexOf('function applyAgentRegexToCompanionContent'));
+        expect(sanitiser).toMatch(/FORBID_ATTR:\s*\['data-action'\]/);
+    });
+
+    test('displaying stored text never runs variable-writing macros', async () => {
+        jest.resetModules();
+        const substituteParams = jest.fn(content => content);
+        await jest.unstable_mockModule('../public/script.js', () => ({ substituteParams }));
+        await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/companion-shared.js', () => ({
+            normalizeCompanionMacroSyntax: content => content,
+        }));
+        const { resolveCompanionContentMacros, stripStateChangingMacros } = await import('../public/scripts/extensions/in-chat-agents/companion/companion-macros.js');
+
+        const note = 'Mood: {{getvar::mood}} {{setvar::mood::angry}}{{incvar::turns}}{{ SetGlobalVar::seen::1 }}{{deleteglobalvar::x}} {{char}}';
+        expect(stripStateChangingMacros(note)).toBe('Mood: {{getvar::mood}}  {{char}}');
+
+        resolveCompanionContentMacros(note, { name: 'Alice', mes: 'hi' });
+        const [passed] = substituteParams.mock.calls[0];
+        expect(passed).not.toMatch(/(?:set|add|inc|dec|delete)(?:global)?var::/i);
+        expect(passed).toContain('{{getvar::mood}}');
+    });
+
+    test('prompt preview strips variable-writing macros before substitution', () => {
+        const source = readSource('index.js');
+        const preview = source.slice(source.indexOf('async function previewPreGenerationPrompt'));
+        expect(preview).toMatch(/substituteParams\(stripStateChangingMacros\(prompt\)/);
+    });
+});
