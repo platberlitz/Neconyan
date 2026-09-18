@@ -1045,8 +1045,8 @@ const NN_SHELLS = Object.freeze({
         hostIconSelector: '#leftNavDrawerIcon',
         proxyButtonId: 'sb-left-shell-toggle',
         proxyIcon: 'fa-bars',
-        proxyLabel: 'Model',
-        title: 'Model',
+        proxyLabel: 'Connections',
+        title: 'Connections',
         subtitle: '', // Removed redundant workspace subtext (PR #145 expansion)
         searchPlaceholder: 'Find presets, connections, samplers, lore, or tools...',
         storageKey: NN_STORAGE_KEYS.leftTab,
@@ -10626,7 +10626,7 @@ function buildTopBar() {
             id: 'sb-left-shell-toggle',
             icon: getShellConfig('left').proxyIcon,
             label: getShellConfig('left').proxyLabel,
-            title: 'Open model controls',
+            title: 'Open connections',
         },
         () => toggleShellPanel('left'),
     );
@@ -17239,7 +17239,7 @@ function buildMobileNav() {
         workspace.appendChild(home);
         for (const [shellKey, tabId, label, icon] of [
             ['characters', 'characters', 'Characters', 'fa-address-card'],
-            ['left', 'api', 'Model', 'fa-plug'],
+            ['left', 'api', 'Connections', 'fa-plug'],
             ['left', 'agents', 'Agents', 'fa-cat'],
             ['left', 'mewmory', 'Mewmory', 'fa-brain'],
             ['characters', 'world-info', 'Lorebooks', 'fa-book-atlas'],

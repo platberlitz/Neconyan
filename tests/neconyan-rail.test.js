@@ -146,8 +146,10 @@ describe('Neconyan workspace rail behavior', () => {
         expect(neconyanCss).toContain('body.neconyan .neconyan-rail-modes-label { margin-top: 14px; }');
         expect(neconyanCss).toContain('body.neconyan .neconyan-rail-advanced { margin-top: 14px; }');
         expect(welcomeSource).toContain('[\'presets\', \'Presets\', \'fa-sliders\']');
+        expect(welcomeSource).toContain('[\'model\', \'Connections\', \'fa-plug\']');
         expect(welcomeSource).toContain('[\'background\', \'Background\', \'fa-panorama\']');
         expect(tabsSource).toContain('[\'right\', \'extensions\', \'Extensions\', \'fa-cubes\']');
+        expect(tabsSource).toContain('[\'left\', \'api\', \'Connections\', \'fa-plug\']');
         expect(tabsSource).toContain('data-neconyan-native-tool-list');
         expect(tabsSource).toContain('id: \'sb-topbar-clock\'');
         expect(tabsSource).toContain('id: \'sb-topbar-edit-card\'');
@@ -316,7 +318,7 @@ describe('Neconyan workspace rail behavior', () => {
         expect(routes).toEqual([['characters', 'characters']]);
     });
 
-    test('Model opens Connections through the main rail', () => {
+    test('Connections rail entry opens the Connections tab', () => {
         const routes = [];
         const runtime = createWelcomeRuntime();
         runtime.context.NeconyanShell = { openTab: (...route) => routes.push(route) };

@@ -1784,7 +1784,7 @@ function ensureNeconyanRail() {
     const primaryRoutes = [
         ['home', 'Home', 'fa-house'],
         ['characters', 'Characters', 'fa-address-card'],
-        ['model', 'Model', 'fa-sliders'],
+        ['model', 'Connections', 'fa-plug'],
         ['agents', 'Agents', 'fa-cat'],
         ['mewmory', 'Mewmory', 'fa-brain'],
         ['lorebooks', 'Lorebooks', 'fa-book-atlas'],
