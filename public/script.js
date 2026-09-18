@@ -294,7 +294,7 @@ import { initTextGenModels } from './scripts/textgen-models.js';
 import { appendFileContent, hasPendingFileAttachment, populateFileAttachment, decodeStyleTags, encodeStyleTags, isExternalMediaAllowed, preserveNeutralChat, restoreNeutralChat, formatCreatorNotes, initChatUtilities, addDOMPurifyHooks } from './scripts/chats.js';
 import { getPresetManager, initPresetManager } from './scripts/preset-manager.js';
 import { evaluateMacros, getLastMessageId, initMacros } from './scripts/macros.js';
-import { setUserControls } from './scripts/user.js';
+import { getCurrentUserHandle, setUserControls } from './scripts/user.js';
 import { POPUP_RESULT, POPUP_TYPE, Popup, callGenericPopup, fixToastrForDialogs } from './scripts/popup.js';
 import { renderTemplate, renderTemplateAsync } from './scripts/templates.js';
 import { initScrapers } from './scripts/scrapers.js';
@@ -7310,9 +7310,9 @@ class StreamingProcessor {
         }
 
         if (this.type !== 'impersonate') {
-            await eventSource.emit(event_types.MESSAGE_RECEIVED, this.messageId, this.type);
+            await eventSource.emit(event_types.MESSAGE_RECEIVED, this.messageId, this.type, this.agentGenerationContext);
             if (!this.#isCurrent(messageId)) return;
-            await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, this.messageId, this.type);
+            await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, this.messageId, this.type, this.agentGenerationContext);
         } else {
             await eventSource.emit(event_types.IMPERSONATE_READY, text, { generationContext: this.agentGenerationContext, type: this.type });
         }
@@ -7348,8 +7348,8 @@ class StreamingProcessor {
 
         const noEmitTypes = ['swipe', 'impersonate', 'continue'];
         if (!noEmitTypes.includes(this.type)) {
-            eventSource.emit(event_types.MESSAGE_RECEIVED, this.messageId, this.type);
-            eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, this.messageId, this.type);
+            eventSource.emit(event_types.MESSAGE_RECEIVED, this.messageId, this.type, this.agentGenerationContext);
+            eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, this.messageId, this.type, this.agentGenerationContext);
         }
     }
 
@@ -9534,6 +9534,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                             ({ type, getMessage } = await saveReply({
                                 type: saveReplyType,
                                 isCurrent,
+                                generationContext: agentGenerationContext,
                                 getMessage,
                                 swipes: activeStreamingProcessor.swipes,
                                 reasoning: activeStreamingProcessor.lastReasoningPrefix
@@ -9712,9 +9713,9 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             } else {
             // Without streaming we'll be having a full message on continuation. Treat it as a last chunk.
                 if (originalType !== 'continue') {
-                    ({ type, getMessage } = await saveReply({ type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens, isCurrent }));
+                    ({ type, getMessage } = await saveReply({ type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens, isCurrent, generationContext: agentGenerationContext }));
                 } else {
-                    ({ type, getMessage } = await saveReply({ type: 'appendFinal', getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens, isCurrent }));
+                    ({ type, getMessage } = await saveReply({ type: 'appendFinal', getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens, isCurrent, generationContext: agentGenerationContext }));
                 }
                 if (!isCurrent()) return;
 
@@ -11171,7 +11172,7 @@ async function processImageAttachment(message, { imageUrls }) {
  * @property {string} type Type of generation
  * @property {string} getMessage Generated message
  */
-export async function saveReply({ type, getMessage, fromStreaming = false, title = '', swipes = [], reasoning = '', imageUrls = [], reasoningSignature = null, reasoningTokens = 0, isCurrent = () => true }) {
+export async function saveReply({ type, getMessage, fromStreaming = false, title = '', swipes = [], reasoning = '', imageUrls = [], reasoningSignature = null, reasoningTokens = 0, isCurrent = () => true, generationContext = null }) {
     // Backward compatibility
     if (arguments.length > 1 && typeof arguments[0] !== 'object') {
         console.trace('saveReply called with positional arguments. Please use an object instead.');
@@ -11227,10 +11228,10 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
             await updateMessageTokenAccounting(lastMessage, { reasoning, reasoningTokens });
             if (!isReplyCurrent()) return { type, getMessage };
             const chat_id = replyIndex;
-            !fromStreaming && await eventSource.emit(event_types.MESSAGE_RECEIVED, chat_id, type);
+            !fromStreaming && await eventSource.emit(event_types.MESSAGE_RECEIVED, chat_id, type, generationContext);
             if (!isReplyCurrent()) return { type, getMessage };
             addOneMessage(replyMessage, { type: 'swipe' });
-            !fromStreaming && await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, chat_id, type);
+            !fromStreaming && await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, chat_id, type, generationContext);
         } else {
             lastMessage.mes = getMessage;
         }
@@ -11253,10 +11254,10 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
         await updateMessageTokenAccounting(lastMessage, { reasoning, reasoningTokens });
         if (!isReplyCurrent()) return { type, getMessage };
         const chat_id = replyIndex;
-        !fromStreaming && await eventSource.emit(event_types.MESSAGE_RECEIVED, chat_id, type);
+        !fromStreaming && await eventSource.emit(event_types.MESSAGE_RECEIVED, chat_id, type, generationContext);
         if (!isReplyCurrent()) return { type, getMessage };
         addOneMessage(replyMessage, { type: 'swipe' });
-        !fromStreaming && await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, chat_id, type);
+        !fromStreaming && await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, chat_id, type, generationContext);
     } else if (type === 'appendFinal') {
         oldMessage = lastMessage.mes;
         console.debug('Trying to appendFinal.');
@@ -11279,10 +11280,10 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
         });
         if (!isReplyCurrent()) return { type, getMessage };
         const chat_id = replyIndex;
-        !fromStreaming && await eventSource.emit(event_types.MESSAGE_RECEIVED, chat_id, type);
+        !fromStreaming && await eventSource.emit(event_types.MESSAGE_RECEIVED, chat_id, type, generationContext);
         if (!isReplyCurrent()) return { type, getMessage };
         addOneMessage(replyMessage, { type: 'swipe' });
-        !fromStreaming && await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, chat_id, type);
+        !fromStreaming && await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, chat_id, type, generationContext);
     } else {
         console.debug('entering chat update routine for non-swipe post');
         const newMessage = {};
@@ -11325,10 +11326,10 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
         if (!isReplyCurrent()) return { type, getMessage };
         const chat_id = replyIndex;
 
-        !fromStreaming && await eventSource.emit(event_types.MESSAGE_RECEIVED, chat_id, type);
+        !fromStreaming && await eventSource.emit(event_types.MESSAGE_RECEIVED, chat_id, type, generationContext);
         if (!isReplyCurrent()) return { type, getMessage };
         addOneMessage(replyMessage);
-        !fromStreaming && await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, chat_id, type);
+        !fromStreaming && await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, chat_id, type, generationContext);
     }
 
     if (!isReplyCurrent()) return { type, getMessage };
@@ -13173,14 +13174,15 @@ export async function getSettings(initLoaderHandle = null) {
 
 //MARK: saveSettings()
 export async function saveSettings(loopCounter = 0, { returnResult = false } = {}) {
-    const saveTask = settingsSaveQueue.then(() => saveSettingsInner(loopCounter));
+    const account = getCurrentUserHandle();
+    const saveTask = settingsSaveQueue.then(() => account === getCurrentUserHandle() ? saveSettingsInner(loopCounter, account) : false);
     settingsSaveQueue = saveTask.catch(() => {});
     const saved = await saveTask;
     // Neconyan: acknowledgement is opt-in; extensions rely on the default undefined result.
     return returnResult ? saved : undefined;
 }
 
-async function saveSettingsInner(loopCounter = 0) {
+async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle()) {
     if (!settingsReady) {
         console.warn('Settings not ready, scheduling another save');
         saveSettingsDebounced();
@@ -13243,14 +13245,17 @@ async function saveSettingsInner(loopCounter = 0) {
     try {
         const saveSettingsRequest = await compressRequest({
             method: 'POST',
-            headers: getRequestHeaders(),
+            headers: { ...getRequestHeaders(), 'X-Neconyan-Account': account },
             body: JSON.stringify(payload),
             cache: 'no-cache',
         });
+        if (account !== getCurrentUserHandle()) return false;
         const result = await fetch('/api/settings/save', saveSettingsRequest);
+        if (account !== getCurrentUserHandle()) return false;
 
         if (result.status === 409) {
             const conflict = await result.json().catch(() => ({}));
+            if (account !== getCurrentUserHandle()) return false;
             lastServerSettingsVersion = normalizeSettingsVersion(conflict?.version);
             settingsConflictReloadRequired = true;
             settingsConflictPromptDismissed = false;
@@ -13263,6 +13268,7 @@ async function saveSettingsInner(loopCounter = 0) {
         }
 
         const saveResult = await result.json().catch(() => ({}));
+        if (account !== getCurrentUserHandle()) return false;
         const savedSettingsVersion = normalizeSettingsVersion(saveResult?.version);
         if (savedSettingsVersion <= payload._version) {
             throw new Error('Settings save returned an invalid version token');
@@ -13273,8 +13279,9 @@ async function saveSettingsInner(loopCounter = 0) {
 
         settings = payload;
         await eventSource.emit(event_types.SETTINGS_UPDATED);
-        return true;
+        return account === getCurrentUserHandle();
     } catch (error) {
+        if (account !== getCurrentUserHandle()) return false;
         console.error('Error saving settings:', error);
         toastr.error(t`Check the server connection and reload the page to prevent data loss.`, t`Settings could not be saved`);
         return false;

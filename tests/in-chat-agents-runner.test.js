@@ -5095,6 +5095,48 @@ describe('in-chat agent post-processing runner', () => {
         expect(final).toEqual({});
     });
 
+    test('late replies keep their own intercept history and activation after a successor starts', async () => {
+        useAppendPostAgent();
+        enabledAgents[0].conditions.triggerKeywords = ['first'];
+        enabledAgents.push(createPreInterceptAgent());
+        generateQuietPrompt.mockResolvedValueOnce('First rewritten prompt').mockResolvedValueOnce('Second rewritten prompt');
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        chat.push({ mes: 'The first turn', is_user: true });
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+        const firstOrigin = runner.getAgentGenerationContext();
+        await eventSource.emit(eventTypes.GENERATE_AFTER_COMBINE_PROMPTS, { prompt: 'First original prompt', generationContext: firstOrigin });
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        chat.push({ mes: 'The second turn', is_user: true });
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+        const secondOrigin = runner.getAgentGenerationContext();
+        await eventSource.emit(eventTypes.GENERATE_AFTER_COMBINE_PROMPTS, { prompt: 'Second original prompt', generationContext: secondOrigin });
+        chat.push({ mes: 'First reply', is_user: false, extra: {} }, { mes: 'Second reply', is_user: false, extra: {} });
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 2, 'normal', firstOrigin);
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 3, 'normal', secondOrigin);
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length, secondOrigin);
+        await waitFor(() => chat[3].extra.inChatAgentPreGenerationInterceptHistory?.length === 1);
+        expect(chat[2].extra.inChatAgentPreGenerationInterceptHistory[0]).toMatchObject({ beforeText: 'First original prompt', afterText: 'First rewritten prompt' });
+        expect(chat[3].extra.inChatAgentPreGenerationInterceptHistory[0]).toMatchObject({ beforeText: 'Second original prompt', afterText: 'Second rewritten prompt' });
+        expect(chat[2].mes).toContain('[post processed]');
+        expect(chat[3].mes).toBe('Second reply');
+    });
+
+    test('a previously chosen target is not rebound when its reply changes before enqueueing', async () => {
+        useManualTransformAgents();
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        chat.push({ mes: 'Original reply', is_user: false, extra: {} });
+        const message = chat[0];
+        const state = runner.captureMessageTargetState(message);
+        const target = { kind: 'message', messageIndex: 0, message, state, isCurrent: () => runner.isMessageTargetCurrent(message, state, 0) };
+        message.mes = 'Edited after choosing';
+        await runner.runAgentOnTarget('agent-manual-a', target);
+        expect(generateRawData).not.toHaveBeenCalled();
+        expect(message.mes).toBe('Edited after choosing');
+    });
+
     test('starts a real successor generation even while an older raw retrieval is internally guarded', async () => {
         usePathfinderAgent();
         const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');

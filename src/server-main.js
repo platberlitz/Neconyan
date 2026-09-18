@@ -22,6 +22,7 @@ import './fetch-patch.js';
 import { APP_NAME, isBunRuntime } from './runtime.js';
 import { serverDirectory } from './server-directory.js';
 import { getServerBootId } from './server-boot-marker.js';
+import { AGENT_STORAGE_LIMITS } from '../public/scripts/extensions/in-chat-agents/setup-presets.js';
 
 import { serverEvents, EVENT_NAMES } from './server-events.js';
 import { getLoadedServerPlugins, loadPlugins } from './plugin-loader.js';
@@ -119,6 +120,7 @@ app.use(getResponseCompressionMiddleware());
 app.use(responseTime());
 
 app.use('/api/auth', express.json({ limit: '32kb' }), express.urlencoded({ extended: false, limit: '32kb' }));
+app.use('/api/in-chat-agents', express.json({ limit: AGENT_STORAGE_LIMITS.presetBytes }), express.urlencoded({ extended: false, limit: AGENT_STORAGE_LIMITS.presetBytes }));
 app.use(express.json({ limit: '500mb' }));
 app.use(express.urlencoded({ extended: true, limit: '500mb' }));
 

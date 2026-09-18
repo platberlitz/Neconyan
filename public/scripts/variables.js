@@ -14,6 +14,7 @@ import { slashCommandReturnHelper } from './slash-commands/SlashCommandReturnHel
 import { SlashCommandScope } from './slash-commands/SlashCommandScope.js';
 import { isFalseBoolean, convertValueType, isTrueBoolean } from './utils.js';
 import { booleanOperandToString, isNumericOperand, isNumericZero, readVariableValue } from './slash-commands/SlashCommandRuntimeUtils.js';
+import { areVariablesReadOnly } from './variable-read-only.js';
 
 /** @typedef {import('./slash-commands/SlashCommandParser.js').NamedArguments} NamedArguments */
 /** @typedef {import('./slash-commands/SlashCommand.js').UnnamedArguments} UnnamedArguments */
@@ -21,11 +22,11 @@ import { booleanOperandToString, isNumericOperand, isNumericZero, readVariableVa
 const MAX_LOOPS = 100;
 
 export function getLocalVariable(name, args = {}) {
-    if (!chat_metadata.variables) {
+    if (!chat_metadata.variables && !areVariablesReadOnly()) {
         chat_metadata.variables = {};
     }
 
-    let localVariable = chat_metadata?.variables[args.key ?? name];
+    let localVariable = chat_metadata?.variables?.[args.key ?? name];
     if (args.index !== undefined) {
         try {
             localVariable = JSON.parse(localVariable);
@@ -47,6 +48,7 @@ export function getLocalVariable(name, args = {}) {
 }
 
 export function setLocalVariable(name, value, args = {}) {
+    if (areVariablesReadOnly()) return '';
     if (!name) {
         throw new Error('Variable name cannot be empty or undefined.');
     }
@@ -104,6 +106,7 @@ export function getGlobalVariable(name, args = {}) {
 }
 
 export function setGlobalVariable(name, value, args = {}) {
+    if (areVariablesReadOnly()) return '';
     if (!name) {
         throw new Error('Variable name cannot be empty or undefined.');
     }
@@ -135,6 +138,7 @@ export function setGlobalVariable(name, value, args = {}) {
 }
 
 export function addLocalVariable(name, value) {
+    if (areVariablesReadOnly()) return '';
     const currentValue = getLocalVariable(name) || 0;
     try {
         const parsedValue = JSON.parse(currentValue);
@@ -165,6 +169,7 @@ export function addLocalVariable(name, value) {
 }
 
 export function addGlobalVariable(name, value) {
+    if (areVariablesReadOnly()) return '';
     const currentValue = getGlobalVariable(name) || 0;
     try {
         const parsedValue = JSON.parse(currentValue);
@@ -601,6 +606,7 @@ async function executeSubCommands(command, scope = null, parserFlags = null, abo
  * @returns {string} Empty string
  */
 export function deleteLocalVariable(name) {
+    if (areVariablesReadOnly()) return '';
     if (!existsLocalVariable(name)) {
         console.warn(`The local variable "${name}" does not exist.`);
         return '';
@@ -617,6 +623,7 @@ export function deleteLocalVariable(name) {
  * @returns {string} Empty string
  */
 export function deleteGlobalVariable(name) {
+    if (areVariablesReadOnly()) return '';
     if (!existsGlobalVariable(name)) {
         console.warn(`The global variable "${name}" does not exist.`);
         return '';

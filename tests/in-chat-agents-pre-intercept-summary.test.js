@@ -172,6 +172,8 @@ beforeAll(async () => {
     }));
 
     await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-runner.js', () => ({
+        captureMessageTargetState: jest.fn(() => ({})),
+        isMessageTargetCurrent: jest.fn(() => true),
         getPathfinderRuntimeAgent: jest.fn(() => null),
         cancelAgentGeneration: jest.fn(),
         buildPromptDynamicMacros: jest.fn(() => ({})),
@@ -228,6 +230,7 @@ beforeAll(async () => {
     }));
 
     await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js', () => ({
+        captureCompanionResultTarget: jest.fn(() => () => true),
         agentHasConnectedCompanionDependencies: jest.fn(() => false),
         collectRecentCompanionResults: jest.fn(() => []),
         getCompanionResults: jest.fn(() => ({})),

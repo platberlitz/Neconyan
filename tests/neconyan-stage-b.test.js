@@ -20,6 +20,7 @@ function folderRuntime() {
         world_names: ['Notes'], worldInfoEditor: null, selected_world_info: [],
         structuredClone, NECONYAN_LOREBOOK_FOLDERS_KEY: 'neconyanFolders', normalizeNeconyanLorebookFolders,
         saveSettings: jest.fn(async () => true), getRequestHeaders: () => ({}),
+        getCurrentUserHandle: () => 'one',
         warnNeconyanFolderSaveFailure: jest.fn(),
         fetch: async () => ({ ok: true, json: async () => ({ world_names: ['Renamed'] }) }),
         $: () => field, Option: class {}, updatePersonaLorebookActions() {}, updateWorldInfoWorkspaceState() {},

@@ -61,6 +61,7 @@ function createHarness({ profile = normalizeCustomEndpointPreset({ name: 'Saved 
         accountStorage: { getState: () => ({}) },
         getWorldInfoSettings: () => ({}),
         getRequestHeaders: () => ({}),
+        getCurrentUserHandle: () => 'one',
         TempResponseLength: { isCustomized: jest.fn(() => false), restore: jest.fn() },
         promptSettingsConflictReload: jest.fn(async () => {}),
         compressRequest: jest.fn(async request => request),
@@ -497,6 +498,26 @@ describe('Custom endpoint profile hardening', () => {
 });
 
 describe('Queued settings save acknowledgement', () => {
+    test('queued settings from a previous login are discarded and current saves send their account', async () => {
+        const { context } = createHarness();
+        let account = 'one';
+        context.getCurrentUserHandle = () => account;
+        const old = context.saveSettings(0, { returnResult: true });
+        account = 'two';
+        expect(await old).toBe(false);
+        expect(context.fetch).not.toHaveBeenCalled();
+        expect(await context.saveSettings(0, { returnResult: true })).toBe(true);
+        expect(context.fetch.mock.calls[0][1].headers['X-Neconyan-Account']).toBe('two');
+    });
+
+    test('a settings response finishing after a login change cannot publish its old payload', async () => {
+        const { context } = createHarness();
+        let account = 'one';
+        context.getCurrentUserHandle = () => account;
+        context.fetch.mockResolvedValueOnce({ ok: true, json: async () => { account = 'two'; return { version: 2 }; } });
+        expect(await context.saveSettings(0, { returnResult: true })).toBe(false);
+        expect(context.eventSource.emit).not.toHaveBeenCalled();
+    });
     test.each([false, true])('preserves the default result and optionally confirms success: %s', async returnResult => {
         const { context } = createHarness();
         expect(await context.saveSettings(0, { returnResult })).toBe(returnResult ? true : undefined);

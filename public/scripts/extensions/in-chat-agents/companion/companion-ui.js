@@ -5,6 +5,7 @@ import { eventSource, event_types } from '../../../events.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../popup.js';
 import { escapeHtml } from '../../../utils.js';
 import { attachTextareaFullscreen } from '../textarea-fullscreen.js';
+import { withReadOnlyVariables } from '../../../variable-read-only.js';
 import { captureMessageTargetState, isMessageTargetCurrent } from '../agent-runner.js';
 import { replaceCompanionView, runCompanionViewAction } from './view-state.js';
 import {
@@ -231,12 +232,12 @@ function applyAgentRegexToCompanionContent(agentId, content, message) {
     // Same semantics as the chat message display path: a converted tracker's beautifier
     // regex keeps working on its note card. Sanitization happens after, in the format step.
     const normalizedContent = isChatroomAgent(agent) ? normalizeChatroomContent(content) : content;
-    return applyRegexScriptList(normalizedContent, scripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, {
+    return withReadOnlyVariables(() => applyRegexScriptList(normalizedContent, scripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, {
         characterOverride: String(message?.name ?? '').trim(),
         isMarkdown: true,
         substituteParamsFn: substituteParams,
         substituteParamsExtendedFn: substituteParamsExtended,
-    });
+    }));
 }
 
 export function formatCompanionContent(agentId, result = {}, message = null, stylePrefix = '.ica--companion-body ') {

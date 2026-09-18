@@ -258,6 +258,8 @@ export const router = express.Router();
 
 router.post('/save', function (request, response) {
     try {
+        const account = request.get('X-Neconyan-Account');
+        if (account && account !== request.user.profile.handle) return response.status(409).send({ error: 'account_changed' });
         const pathToSettings = path.join(request.user.directories.root, SETTINGS_FILE);
 
         if (!request.body || typeof request.body !== 'object' || Array.isArray(request.body)) {

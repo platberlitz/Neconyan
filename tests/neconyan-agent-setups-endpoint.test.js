@@ -10,6 +10,7 @@ import { AGENT_STORAGE_LIMITS } from '../public/scripts/extensions/in-chat-agent
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { router } = await import('../src/endpoints/in-chat-agents.js');
+const { router: settingsRouter } = await import('../src/endpoints/settings.js');
 let server;
 let root;
 let baseUrl;
@@ -23,6 +24,7 @@ beforeAll(async () => {
         request.user = { profile: { handle: profile }, directories: { inChatAgents: path.join(root, profile), inChatAgentGroups: path.join(root, profile, 'groups') } };
         next();
     });
+    app.use('/settings', settingsRouter);
     app.use(router);
     await new Promise((resolve, reject) => {
         server = app.listen(0, '127.0.0.1', resolve);
@@ -105,6 +107,9 @@ test('a tab bound to the previous account cannot write into the newly authentica
     }
     expect(fs.existsSync(path.join(root, 'two/account-race.json'))).toBe(false);
     expect(fs.existsSync(path.join(root, 'two/presets/account-race.json'))).toBe(false);
+    const settingsResponse = await post('/settings/save', { _version: 0, extension_settings: { inChatAgents: {} } }, 'two', { 'X-Neconyan-Account': 'one' });
+    expect(settingsResponse.status).toBe(409);
+    expect(await settingsResponse.json()).toEqual({ error: 'account_changed' });
 });
 
 test('lossy, reserved and overlong identifiers never alias a valid record', async () => {

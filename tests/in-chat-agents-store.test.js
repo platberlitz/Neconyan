@@ -1269,9 +1269,10 @@ describe('legacy kit migration keeps its source until every write is acknowledge
         const source = readFileSync(new URL('../public/scripts/extensions/in-chat-agents/index.js', import.meta.url), 'utf8');
         const persist = source.slice(source.indexOf('function persistExtensionState()'), source.indexOf('function restoreAutoSeededTemplateIds'));
         expect(persist).toMatch(/if \(legacyGroupsRetired\) \{\s*delete extension_settings\.inChatAgents\.groups;/);
-        const migration = source.slice(source.indexOf('if (legacyGroups.length > 0) {'), source.indexOf('if (!areAgentsLoaded()) throw'));
-        expect(migration).toContain('initResults[1]?.status === \'fulfilled\'');
-        expect(migration.indexOf('await migrateLegacyGroups(legacyGroups)')).toBeLessThan(migration.indexOf('legacyGroupsRetired = true'));
+        const migration = source.slice(source.indexOf('async function migrateStoredLegacyGroups()'), source.indexOf('function hasMatchingAgentSnapshot'));
+        expect(migration.indexOf('await migrateLegacyGroups(saved.groups)')).toBeLessThan(migration.indexOf('legacyGroupsRetired = true'));
+        const initialisation = source.slice(source.indexOf('async function finishAgentLibraryInitialization()'), source.indexOf('async function retryAgentSetupLoading'));
+        expect(initialisation.indexOf('if (getAgentLibraryErrors().length)')).toBeLessThan(initialisation.indexOf('await migrateStoredLegacyGroups()'));
     });
 });
 

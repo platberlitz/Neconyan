@@ -78,6 +78,8 @@ import {
 } from './agent-store.js';
 import {
     cancelAgentGeneration,
+    captureMessageTargetState,
+    isMessageTargetCurrent,
     buildPromptDynamicMacros,
     deactivatePathfinderRuntime,
     initAgentRunner,
@@ -111,9 +113,10 @@ import {
     buildConnectionProfileNameMap,
     populateConnectionProfileSelect,
 } from './profile-utils.js';
-import { collectRecentCompanionResults, getCompanionResults, initCompanionRunner, getLatestValidCompanionMessageIndex, runTrackerCompanionsOnMessage, syncCompanionChatHistoryConfig } from './companion/companion-runner.js';
+import { captureCompanionResultTarget, collectRecentCompanionResults, getCompanionResults, initCompanionRunner, getLatestValidCompanionMessageIndex, runTrackerCompanionsOnMessage, syncCompanionChatHistoryConfig } from './companion/companion-runner.js';
 import { getCompanionReferenceIds } from './companion/companion-shared.js';
 import { stripStateChangingMacros } from './companion/companion-macros.js';
+import { withReadOnlyVariables } from '../../variable-read-only.js';
 import { initCompanionCardUi, sanitizeCompanionHtml, updateCompanionButtonVisibility } from './companion/companion-ui.js';
 import { configureCompanionDashboard, initCompanionWandMenuItem, openCompanionDashboard } from './companion/companion-dashboard.js';
 import { configureCompanionPanel, initCompanionPanel, refreshCompanionPanel, updateCompanionPanelHandleVisibility } from './companion/companion-panel.js';
@@ -346,6 +349,7 @@ async function finishAgentLibraryInitialization() {
         agentLibraryReady = true;
         throw new Error('A setup load was interrupted. Load a saved recovery setup or another complete setup before running agents.');
     }
+    await migrateStoredLegacyGroups();
     await persistAgentIdentityRepairs();
     await ensureDefaultBundledAgents();
     const latestBundledAgentMigration = await refreshBundledAgentsFromLatestTemplates();
@@ -956,7 +960,13 @@ function getManualAgentRunMessageIndices(rangeText, lastAssistantIndex) {
  */
 async function pickManualAgentRunTargets(agent) {
     const lastAssistantIndex = getLastAssistantMessageIndex();
-    const composerText = String(document.getElementById('send_textarea')?.value ?? '').trim();
+    const composer = document.getElementById('send_textarea');
+    const composerValue = composer?.value;
+    const composerText = String(composerValue ?? '').trim();
+    const scope = {};
+    const scopeState = captureMessageTargetState(scope);
+    const messageTargets = chat.map((message, index) => ({ message, state: captureMessageTargetState(message, index) }));
+    const noteTargets = new Map();
     const options = [];
 
     if (lastAssistantIndex >= 0) {
@@ -968,6 +978,7 @@ async function pickManualAgentRunTargets(agent) {
 
         for (const [companionAgentId, result] of Object.entries(getCompanionResults(chat[lastAssistantIndex]))) {
             if (result?.status !== 'done' || !String(result?.content ?? '').trim()) continue;
+            noteTargets.set(companionAgentId, captureCompanionResultTarget(lastAssistantIndex, companionAgentId));
 
             const companionLabel = String(result?.agentName ?? '').trim()
                 || getAgentById(companionAgentId)?.name
@@ -1011,14 +1022,13 @@ async function pickManualAgentRunTargets(agent) {
         }
     });
 
-    const lastAssistantMessage = lastAssistantIndex >= 0 ? chat[lastAssistantIndex] : null;
     const popupResult = await new Popup(picker, POPUP_TYPE.CONFIRM, '', { okButton: 'Apply', cancelButton: 'Cancel' }).show();
     if (popupResult !== POPUP_RESULT.AFFIRMATIVE) {
         return null;
     }
     // The picker described a specific chat state; a chat switch or a new reply while it was
     // open would make the listed numbers point at different messages.
-    if (lastAssistantMessage && chat[lastAssistantIndex] !== lastAssistantMessage) {
+    if (!isMessageTargetCurrent(scope, scopeState)) {
         toastr.warning('The chat changed while the picker was open. Please choose the targets again.');
         return null;
     }
@@ -1037,9 +1047,10 @@ async function pickManualAgentRunTargets(agent) {
         return null;
     }
 
-    return selected.flatMap(value => {
+    const targets = selected.flatMap(value => {
         if (value === 'composer') {
-            return [{ kind: 'composer' }];
+            return [{ kind: 'composer', state: scopeState, composer, composerText: composerValue,
+                isCurrent: () => isMessageTargetCurrent(scope, scopeState) && document.getElementById('send_textarea') === composer && composer?.value === composerValue }];
         }
 
         if (value.startsWith('companion:')) {
@@ -1047,15 +1058,26 @@ async function pickManualAgentRunTargets(agent) {
                 kind: 'companion',
                 messageIndex: lastAssistantIndex,
                 companionAgentId: value.slice('companion:'.length),
+                ...messageTargets[lastAssistantIndex],
+                isCurrent: noteTargets.get(value.slice('companion:'.length)) ?? (() => false),
             }];
         }
 
         if (value === 'message') {
-            return messageIndices.map(messageIndex => ({ kind: 'message', messageIndex }));
+            return messageIndices.map(messageIndex => {
+                const captured = messageTargets[messageIndex];
+                return { kind: 'message', messageIndex, ...captured,
+                    isCurrent: () => Boolean(captured) && isMessageTargetCurrent(captured.message, captured.state, messageIndex) };
+            });
         }
 
         return [];
     });
+    if (targets.some(target => !target.isCurrent())) {
+        toastr.warning('A selected message or note changed while the picker was open. Please choose the targets again.');
+        return null;
+    }
+    return targets;
 }
 
 function hasTrackerFixAgents() {
@@ -1650,7 +1672,7 @@ function getCompanionTriggerLabel(companion) {
 }
 
 function getCompanionDisplayLabel(companion) {
-    return companion.displayMode === 'hidden' ? 'hidden' : 'card';
+    return ['hidden', 'panel'].includes(companion.displayMode) ? companion.displayMode : 'card';
 }
 
 function buildCompanionCardPill(agent) {
@@ -1721,9 +1743,9 @@ async function previewPreGenerationPrompt(agent, promptOverride = null) {
     }
 
     // Previewing must not write variables; only a real run may do that.
-    const previewText = substituteParams(stripStateChangingMacros(prompt), {
+    const previewText = withReadOnlyVariables(() => substituteParams(stripStateChangingMacros(prompt), {
         dynamicMacros: buildPromptDynamicMacros('', null, agent, 'normal'),
-    });
+    }));
     const previewNote = isPreGenerationInterceptAgent(agent)
         ? isPostMainGenerationInterceptAgent(agent)
             ? 'Preview shows the agent instruction after macro substitution. At runtime, post-main intercept mode also receives the fresh assistant output and can rewrite it before it is shown or saved.'
@@ -2388,10 +2410,11 @@ async function migrateLegacyGroups(legacyGroups = []) {
 
     for (const group of legacyGroups) {
         if (!group || typeof group !== 'object') {
-            continue;
+            throw new Error('A legacy kit is invalid. Its original data was kept.');
         }
 
         const groupId = String(group.id ?? '').trim();
+        if (!groupId) throw new Error('A legacy kit has no saved identity. Its original data was kept.');
         if (groupId && existingCustomGroupIds.has(groupId)) {
             continue;
         }
@@ -2407,6 +2430,16 @@ async function migrateLegacyGroups(legacyGroups = []) {
     }
 
     return migratedCount;
+}
+
+async function migrateStoredLegacyGroups() {
+    const saved = extension_settings.inChatAgents;
+    if (legacyGroupsRetired || !saved || !Object.hasOwn(saved, 'groups')) return;
+    if (!Array.isArray(saved.groups)) throw new Error('The legacy kit collection is invalid. Its original data was kept.');
+    // This runs only after the complete kit list loaded, including on a Retry.
+    await migrateLegacyGroups(saved.groups);
+    legacyGroupsRetired = true;
+    persistExtensionState();
 }
 
 function hasMatchingAgentSnapshot(snapshot, existingAgents = getAgents()) {
@@ -5250,7 +5283,7 @@ function buildTrackerHtmlPreviewNode(generatedKit, sampleText) {
     let previewError = '';
 
     try {
-        renderedOutput = applyRegexScriptList(
+        renderedOutput = withReadOnlyVariables(() => applyRegexScriptList(
             sampleOutput,
             generatedKit.regexScripts,
             AGENT_REGEX_PLACEMENT.AI_OUTPUT,
@@ -5258,7 +5291,7 @@ function buildTrackerHtmlPreviewNode(generatedKit, sampleText) {
                 isMarkdown: true,
                 substituteParamsFn: substituteParams,
             },
-        );
+        ));
     } catch (error) {
         previewError = error instanceof Error ? error.message : String(error);
     }
@@ -6313,9 +6346,6 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     }
 
     const savedState = extension_settings.inChatAgents;
-    const legacyGroups = Array.isArray(savedState?.groups)
-        ? savedState.groups.map(group => structuredClone(group))
-        : [];
     let removedAutoSeededTemplateIds = false;
     if (savedState && typeof savedState === 'object') {
         if (savedState.globalSettings && typeof savedState.globalSettings === 'object') {
@@ -6342,26 +6372,6 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         }
     }
     renderAgentSetupControls();
-
-    if (legacyGroups.length > 0) {
-        // Only migrate when the server kit list actually loaded (else "already exists" checks are blind),
-        // and only retire the legacy copy after every write was acknowledged.
-        const customGroupsLoaded = initResults[1]?.status === 'fulfilled';
-        try {
-            if (!customGroupsLoaded) throw new Error('The custom kit list did not load; legacy kits were kept for a later attempt.');
-            const migratedCount = await migrateLegacyGroups(legacyGroups);
-            legacyGroupsRetired = true;
-            persistExtensionState();
-            if (migratedCount > 0) {
-                toastr.success(`Migrated ${migratedCount} custom group(s) to backend storage.`);
-            }
-        } catch (error) {
-            console.warn('[InChatAgents] Failed to migrate legacy groups:', error);
-        }
-    } else if (savedState && Object.hasOwn(savedState, 'groups')) {
-        legacyGroupsRetired = true;
-        persistExtensionState();
-    }
 
     if (removedAutoSeededTemplateIds) {
         persistExtensionState();

@@ -142,7 +142,7 @@ let activeManualAgentRun = null;
 let parallelManualRunCount = 0;
 let agentGenerationCancelRevision = 0;
 const promptTransformIdleResolvers = new Set();
-let pendingPreGenerationInterceptRuns = [];
+const pendingGenerationRecords = new Map();
 let generationStartChatId = '';
 let postProcessingInvalidatedByChatChange = false;
 let generationStartChatLength = 0;
@@ -300,11 +300,11 @@ function setPostProcessingText(message, text, target = null) {
 
 // A request outlives the state it was built from. Capture the text and swipe the agent
 // read, and refuse to apply its output once the user (or another run) moved on.
-export function captureMessageTargetState(message) {
+export function captureMessageTargetState(message, messageIndex = chat.indexOf(message)) {
     return {
         mes: message?.mes,
         swipeId: message?.swipe_id ?? 0,
-        messageIndex: chat.indexOf(message),
+        messageIndex,
         chatId: getCurrentSnapshotChatId(),
         chatLoadRevision,
         editRevision: messageEditRevisions.get(message) ?? 0,
@@ -583,11 +583,13 @@ function normalizeManualRunTarget(target) {
 }
 
 function enqueueManualAgentRun(agentId, target) {
+    const submitted = target;
     target = normalizeManualRunTarget(target);
-    target.message = chat[target.messageIndex];
-    target.state = captureMessageTargetState(target.message);
-    target.composer = target.kind === 'composer' ? document.querySelector('#send_textarea') : null;
-    target.composerText = target.composer?.value;
+    target.message = submitted?.message ?? chat[target.messageIndex];
+    target.state = submitted?.state ?? captureMessageTargetState(target.message);
+    target.composer = submitted?.composer ?? (target.kind === 'composer' ? document.querySelector('#send_textarea') : null);
+    target.composerText = submitted?.composerText ?? target.composer?.value;
+    target.isCurrent = typeof submitted?.isCurrent === 'function' ? submitted.isCurrent : () => true;
     const wasAlreadyActive = isAgentGenerationActive();
     manualAgentRunCancelRequested = false;
     if (!isGenerationInProgress) {
@@ -3155,13 +3157,17 @@ function isInterceptOriginCurrent(origin) {
         && origin.chatId === getCurrentSnapshotChatId();
 }
 
-function takePendingPreGenerationInterceptRuns() {
-    const runs = pendingPreGenerationInterceptRuns;
-    pendingPreGenerationInterceptRuns = [];
-    return runs;
+function getGenerationRecord(origin = getAgentGenerationContext(), create = false) {
+    const key = JSON.stringify([origin.chatId, origin.runId, origin.cancelRevision]);
+    if (!pendingGenerationRecords.has(key) && create) {
+        pendingGenerationRecords.set(key, { key, origin, runs: [], snapshot: null });
+        // Unclaimed replies from abandoned requests must not retain prompt text indefinitely.
+        while (pendingGenerationRecords.size > 8) pendingGenerationRecords.delete(pendingGenerationRecords.keys().next().value);
+    }
+    return pendingGenerationRecords.get(key);
 }
 
-/** @type {WeakMap<object, object[]>} */
+/** @type {WeakMap<object, object>} */
 const claimedInterceptRunsByMessage = new WeakMap();
 
 /**
@@ -3170,23 +3176,20 @@ const claimedInterceptRunsByMessage = new WeakMap();
  * them before this reply's deferred post-processing runs.
  * @param {object} message
  */
-function claimPendingInterceptRunsForMessage(message) {
-    if (!message) {
-        return;
-    }
-
-    const existing = claimedInterceptRunsByMessage.get(message) ?? [];
-    claimedInterceptRunsByMessage.set(message, [...existing, ...takePendingPreGenerationInterceptRuns()]);
+function claimPendingInterceptRunsForMessage(message, origin = getAgentGenerationContext()) {
+    const existing = claimedInterceptRunsByMessage.get(message);
+    if (existing?.origin.runId === origin.runId && existing.origin.cancelRevision === origin.cancelRevision && existing.origin.chatId === origin.chatId && existing.swipeId === (message.swipe_id ?? 0)) return existing;
+    const record = getGenerationRecord(origin, true);
+    const claimed = { ...record, swipeId: message.swipe_id ?? 0 };
+    claimedInterceptRunsByMessage.set(message, claimed);
+    return claimed;
 }
 
 function takeInterceptRunsForMessage(message) {
-    const claimed = message ? claimedInterceptRunsByMessage.get(message) : null;
-    if (claimed) {
-        claimedInterceptRunsByMessage.delete(message);
-        return claimed;
-    }
-
-    return takePendingPreGenerationInterceptRuns();
+    const claimed = claimedInterceptRunsByMessage.get(message);
+    if (!claimed || claimed.swipeId !== (message.swipe_id ?? 0)) return [];
+    pendingGenerationRecords.delete(claimed.key);
+    return claimed.runs.splice(0);
 }
 
 function storePreGenerationInterceptHistory(message, runs) {
@@ -4020,7 +4023,7 @@ function onGenerationStarted(generationType, options, dryRun) {
     clearMissedGenerationEndRecoveryCheck();
     clearAllPromptTransformRunningToasts();
     clearInitialGenerationToast();
-    takePendingPreGenerationInterceptRuns();
+    getGenerationRecord(getAgentGenerationContext(), true);
     pendingGenerationSnapshot = null;
     generationStartChatLength = chat.length;
     const latestAssistantMessageIndex = getLatestAssistantMessageIndex();
@@ -4105,7 +4108,7 @@ function onGenerationStopped(generationContext) {
     clearAllPromptTransformRunningToasts();
     clearPathfinderRetrievalToast();
     clearInitialGenerationToast();
-    takePendingPreGenerationInterceptRuns();
+    pendingGenerationRecords.clear();
     abortActivePathfinderRetrieval('Pawthfinder retrieval cancelled because generation stopped.');
     clearPathfinderExtensionPrompts();
     notifyAgentGenerationStateChanged();
@@ -4148,6 +4151,7 @@ async function onGenerationAfterCommands(generationType, options, dryRun) {
 
     if (!dryRun) {
         pendingGenerationSnapshot = activationSnapshot;
+        getGenerationRecord(getAgentGenerationContext(), true).snapshot = activationSnapshot;
     }
 
     const activeAgents = getSnapshotAgents(activationSnapshot);
@@ -4473,7 +4477,7 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
     }
 }
 
-async function onMessageReceived(messageIndex, generationType) {
+async function onMessageReceived(messageIndex, generationType, generationContext = null) {
     if (!areAgentsGloballyEnabled()) {
         return;
     }
@@ -4499,9 +4503,11 @@ async function onMessageReceived(messageIndex, generationType) {
         return;
     }
 
-    claimPendingInterceptRunsForMessage(message);
+    if (generationContext && (generationContext.chatId !== getCurrentSnapshotChatId() || generationContext.cancelRevision !== agentGenerationCancelRevision)) return;
+    const record = claimPendingInterceptRunsForMessage(message, generationContext ?? getAgentGenerationContext());
+    const activationSnapshot = record.snapshot;
 
-    ensureMessageRegexSnapshot(numericMessageIndex, generationType);
+    ensureMessageRegexSnapshot(numericMessageIndex, generationType, activationSnapshot);
 
     if (generationStopRequested || wasStreamingMessageStopped(numericMessageIndex)) {
         clearDeferredPostProcessing(numericMessageIndex);
@@ -4509,18 +4515,18 @@ async function onMessageReceived(messageIndex, generationType) {
     }
 
     if (isStreamingMessageStillActive(numericMessageIndex)) {
-        deferPostProcessing(numericMessageIndex, generationType);
+        deferPostProcessing(numericMessageIndex, generationType, activationSnapshot);
         return;
     }
 
     if (isMainGenerationStillActive()) {
-        deferPostProcessing(numericMessageIndex, generationType);
+        deferPostProcessing(numericMessageIndex, generationType, activationSnapshot);
         return;
     }
 
     clearDeferredPostProcessing(numericMessageIndex);
 
-    await processReceivedMessage(numericMessageIndex, generationType);
+    await processReceivedMessage(numericMessageIndex, generationType, activationSnapshot);
     clearPostGenerationStateAfterCompletion();
 }
 
@@ -4551,7 +4557,7 @@ function onStreamTokenReceived() {
     );
 }
 
-async function onCharacterMessageRendered(messageIndex, generationType) {
+async function onCharacterMessageRendered(messageIndex, generationType, generationContext = null) {
     const numericMessageIndex = Number(messageIndex);
     const message = chat[numericMessageIndex];
 
@@ -4575,7 +4581,8 @@ async function onCharacterMessageRendered(messageIndex, generationType) {
         scheduleMessageRefresh(numericMessageIndex, message);
     }
 
-    await onMessageReceived(messageIndex, generationType);
+    const claimed = message && claimedInterceptRunsByMessage.get(message);
+    await onMessageReceived(messageIndex, generationType, generationContext ?? claimed?.origin);
 }
 
 async function onMessageEdited(messageIndex) {
@@ -5248,7 +5255,7 @@ async function onGenerateAfterCombinePrompts(eventData) {
     }
 
     eventData.prompt = result.text;
-    pendingPreGenerationInterceptRuns.push(...result.runs);
+    getGenerationRecord(origin, true).runs.push(...result.runs);
 }
 
 async function onChatCompletionPromptReady(eventData) {
@@ -5268,7 +5275,7 @@ async function onChatCompletionPromptReady(eventData) {
     }
 
     const nextChat = result.chat;
-    pendingPreGenerationInterceptRuns.push(...result.runs);
+    getGenerationRecord(origin, true).runs.push(...result.runs);
     if (nextChat === originalChat || !result.runs.some(run => run.changed)) {
         return;
     }
@@ -5338,7 +5345,7 @@ async function onMainGenerationOutputReady(eventData) {
         return;
     }
 
-    pendingPreGenerationInterceptRuns.push(...result.runs);
+    getGenerationRecord(origin, true).runs.push(...result.runs);
 
     if (result.cancelled || generationStopRequested) {
         eventData.cancelled = true;
@@ -5489,6 +5496,7 @@ async function onWorldInfoActivated(entries, generationContext) {
 let _onChatChangedToolSync = false;
 
 function onChatChangedToolSync() {
+    pendingGenerationRecords.clear();
     chatLoadRevision++;
     pathfinderChatSyncRevision++;
     clearPendingPostProcessingForChatChange();
@@ -5813,7 +5821,7 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
         toastr.error('Agent not found.');
         return null;
     }
-    if (!isAgentRuntimeAllowed(agent) || agentGenerationCancelRevision !== cancelRevision) {
+    if (!isAgentRuntimeAllowed(agent) || agentGenerationCancelRevision !== cancelRevision || !target.isCurrent()) {
         return null;
     }
 
