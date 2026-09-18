@@ -245,6 +245,8 @@ router.post('/get', (request, response) => {
         return response.sendStatus(404);
     }
 
+    // Clients echo this revision on conditional saves so a stale copy cannot overwrite another client's edit.
+    response.set('X-World-Info-Revision', worldInfoRevision(file));
     return response.send(file);
 });
 
@@ -339,7 +341,7 @@ router.post('/edit', (request, response) => {
 
     writeWorldInfoFile(pathToFile, JSON.stringify(request.body.data, null, 4));
 
-    return response.send({ ok: true, name: worldName });
+    return response.send({ ok: true, name: worldName, revision: worldInfoRevision(request.body.data) });
 });
 
 router.post('/rename', (request, response) => {

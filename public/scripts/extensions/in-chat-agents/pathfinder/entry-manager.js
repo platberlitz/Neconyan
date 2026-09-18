@@ -33,12 +33,19 @@ function assertCreatedEntry(newEntry, bookName) {
     }
 }
 
+export const STALE_LOREBOOK_MESSAGE = 'The lorebook changed in another tab or device, so nothing was overwritten. Try again.';
+
 async function saveWI(name, data, immediate) {
     beginPathfinderSelfWrite(name);
     try {
-        if (_saveWorldInfo) return await _saveWorldInfo(name, data, immediate);
+        // Conditional: the host sends the revision it loaded, and the server rejects a stale copy instead of overwriting.
+        const options = { conditional: true };
+        if (_saveWorldInfo) return await _saveWorldInfo(name, data, immediate, options);
         const ctx = window?.SillyTavern?.getContext?.();
-        return await ctx?.saveWorldInfo?.(name, data, immediate);
+        return await ctx?.saveWorldInfo?.(name, data, immediate, options);
+    } catch (error) {
+        if (error?.status === 409) throw new Error(STALE_LOREBOOK_MESSAGE, { cause: error });
+        throw error;
     } finally {
         endPathfinderSelfWrite();
     }

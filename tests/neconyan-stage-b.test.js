@@ -230,6 +230,37 @@ describe('Agent setup apply and recovery', () => {
         expect(runtime.presets.size).toBe(0);
     });
 
+    test('rollback preserves a record another client edited after the setup wrote it', async () => {
+        const runtime = await storeRuntime();
+        runtime.state.hook = async (_url, payload) => {
+            if (payload.id === 'b') {
+                // Another browser edits agent "a" after this setup already wrote it, then this setup fails.
+                runtime.agents.set('a', { ...runtime.agents.get('a'), prompt: 'edited elsewhere' });
+                throw new Error('Write failed');
+            }
+        };
+        const error = await runtime.store.applyAgentSetupPreset(runtime.preset).catch(e => e);
+        expect(error.message).toContain('Write failed');
+        expect(error.message).toContain('Recovery needs attention');
+        expect(runtime.agents.get('a').prompt).toBe('edited elsewhere');
+        expect(runtime.presets.size).toBe(1);
+        expect(runtime.store.getAgentById('a').prompt).toBe('old A');
+    });
+
+    test('rollback stops issuing requests once the account changes', async () => {
+        const runtime = await storeRuntime();
+        let account = 'one';
+        runtime.state.hook = async (_url, payload) => {
+            if (payload.id === 'b') { account = 'two'; throw new Error('Write failed'); }
+        };
+        const before = runtime.writes.length;
+        const error = await runtime.store.applyAgentSetupPreset(runtime.preset, { canPersist: () => account === 'one' }).catch(e => e);
+        expect(error.message).toContain('Recovery needs attention');
+        // Only the two attempted setup writes happened; no restore request was sent for the other account.
+        expect(runtime.writes.slice(before).map(write => write.payload.id)).toEqual(['a', 'b']);
+        expect(runtime.presets.size).toBe(1);
+    });
+
     test('failed settings commit restores agent files and settings; failed rollback retains a saved recovery setup', async () => {
         const runtime = await storeRuntime();
         const originalGlobals = structuredClone(runtime.store.getGlobalSettings());

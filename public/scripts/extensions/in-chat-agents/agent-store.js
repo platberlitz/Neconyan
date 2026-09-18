@@ -1888,6 +1888,15 @@ async function deleteAgentFile(id) {
     if (!response.ok) throw new Error('Failed to delete agent');
 }
 
+/** The server stores the exact JSON it received, so a re-read equal to our write means nobody else touched it. */
+function isSameStoredAgentRecord(current, written) {
+    try {
+        return JSON.stringify(normalizeAgent(structuredClone(current))) === JSON.stringify(normalizeAgent(structuredClone(written)));
+    } catch {
+        return false;
+    }
+}
+
 /** All setup writes share the agent queue; a restore point exists before the first write. */
 export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPersist = () => true, confirmExtras = async () => true } = {}) {
     const preset = normalizeAgentSetupPreset(rawPreset);
@@ -1904,6 +1913,7 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
         let previousGlobals;
         let appliedGlobals;
         const written = [];
+        const nextAgentsById = new Map();
         try {
             if (await saveSettings(0, { returnResult: true }) !== true) throw new Error('Save the current settings before loading a setup.');
             assertCurrent();
@@ -1932,6 +1942,7 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
                 assertCurrent();
                 // Include attempted writes: a lost response may follow a committed server write.
                 written.push(agent.id);
+                nextAgentsById.set(agent.id, agent);
                 await writeAgentSnapshot(agent);
             }
             assertCurrent();
@@ -1946,7 +1957,29 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
             const rollbackErrors = [];
             if (recovery && canPersist()) {
                 const previousById = new Map(previousAgents.map(agent => [agent.id, agent]));
+                const writtenById = new Map(nextAgentsById);
+                // Re-read the server library so rollback only touches records that still hold this operation's write.
+                let currentById = null;
+                try {
+                    const currentResponse = await fetch('/api/settings/get', { method: 'POST', headers: getRequestHeaders(), body: '{}' });
+                    const currentData = currentResponse.ok ? await currentResponse.json() : null;
+                    if (Array.isArray(currentData?.inChatAgents)) {
+                        currentById = new Map(currentData.inChatAgents.map(agent => [agent.id, agent]));
+                    }
+                } catch { /* Fall through: an unreadable library blocks the blind restore below. */ }
+                if (!currentById) rollbackErrors.push(new Error('The current agent library could not be read, so nothing was restored.'));
                 for (const id of written.reverse()) {
+                    if (!currentById) break;
+                    if (!canPersist()) {
+                        rollbackErrors.push(new Error('The active account changed during recovery.'));
+                        break;
+                    }
+                    const current = currentById.get(id);
+                    const ours = writtenById.get(id);
+                    if (current && ours && !isSameStoredAgentRecord(current, ours)) {
+                        rollbackErrors.push(new Error(`Agent ${current.name || id} was edited elsewhere and was preserved.`));
+                        continue;
+                    }
                     try {
                         const previous = previousById.get(id);
                         if (previous) await writeAgentSnapshot(previous);
@@ -1955,7 +1988,7 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
                         rollbackErrors.push(rollbackError);
                     }
                 }
-                if (appliedGlobals) {
+                if (appliedGlobals && canPersist()) {
                     if (JSON.stringify(globalSettings) !== JSON.stringify(appliedGlobals)) {
                         rollbackErrors.push(new Error('Concurrent global settings were preserved.'));
                     } else {
@@ -1968,7 +2001,7 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
                         }
                     }
                 }
-                if (!rollbackErrors.length) loadAgents(previousAgents);
+                if (!rollbackErrors.length && canPersist()) loadAgents(previousAgents);
             } else if (recovery) {
                 rollbackErrors.push(new Error('Return to the original account to recover its setup.'));
             }

@@ -103,6 +103,8 @@ const worldInfoDataSnapshots = new WeakMap();
 const worldInfoEntryInstances = new WeakMap();
 const worldInfoCommittedEntryInstances = new Map();
 const worldInfoCacheVersions = new Map();
+// Neconyan: the newest server revision this client has seen per book, for conditional saves.
+const worldInfoKnownRevisions = new Map();
 let worldInfoEditor = null;
 const saveSettingsDebounced = debounce(() => {
     Object.assign(world_info, { globalSelect: selected_world_info });
@@ -2231,6 +2233,8 @@ export async function loadWorldInfo(name) {
         if (worldInfoCacheVersions.get(name) !== version) {
             return worldInfoCache.has(name) ? loadWorldInfo(name) : null;
         }
+        const loadedRevision = response.headers?.get?.('X-World-Info-Revision');
+        if (loadedRevision) worldInfoKnownRevisions.set(name, loadedRevision);
         data = cloneWorldInfoData(data, worldInfoCommittedEntryInstances.get(name));
         worldInfoCommittedEntryInstances.set(name, worldInfoEntryInstances.get(data));
         worldInfoCache.set(name, data);
@@ -4877,20 +4881,38 @@ function invalidateWorldInfoCache(name) {
     worldInfoCacheVersions.set(name, {});
 }
 
-async function _save(name, data, { snapshot, notify = true, revision } = {}) {
+/**
+ * Returns the newest server revision this client has loaded or saved for a book, if known.
+ * @param {string} name
+ * @returns {string|undefined}
+ */
+export function getWorldInfoKnownRevision(name) {
+    return worldInfoKnownRevisions.get(name);
+}
+
+async function _save(name, data, { snapshot, notify = true, revision, conditional = false } = {}) {
     const previousSave = worldInfoSaveQueues.get(name) ?? Promise.resolve();
     const save = previousSave.catch(() => undefined).then(async () => {
         let savedName;
         try {
+            // Resolve the guard revision after queued saves settle so this client's own writes never conflict with it.
+            const guardRevision = revision !== undefined ? revision : (conditional ? worldInfoKnownRevisions.get(name) : undefined);
             const response = await fetch('/api/worldinfo/edit', {
                 method: 'POST',
                 headers: getRequestHeaders(),
-                body: JSON.stringify({ name: name, data: data, ...(revision === undefined ? {} : { revision }) }),
+                body: JSON.stringify({ name: name, data: data, ...(guardRevision === undefined ? {} : { revision: guardRevision }) }),
             });
             if (!response.ok) {
-                throw new Error(`World Info save failed with status ${response.status}`);
+                const error = new Error(`World Info save failed with status ${response.status}`);
+                error.status = response.status;
+                throw error;
             }
-            savedName = (await response.json()).name;
+            const saved = await response.json();
+            savedName = saved.name;
+            if (typeof saved.revision === 'string' && saved.revision) {
+                if (savedName !== name) worldInfoKnownRevisions.delete(name);
+                worldInfoKnownRevisions.set(savedName, saved.revision);
+            }
         } catch (error) {
             // Compare identity without StructuredCloneMap's cloning getter; a later save owns its cache.
             if (Map.prototype.get.call(worldInfoCache, name) === data) {
@@ -5001,10 +5023,12 @@ async function getCanonicalWorldInfoName(name) {
  * @param {string} name - The name of the world info
  * @param {any} data - The data to be saved
  * @param {boolean} [immediately=false] - Whether to save immediately or use debouncing
+ * @param {object} [options]
+ * @param {boolean} [options.conditional=false] - Send the last known server revision so a stale copy is rejected (409) instead of overwriting another client's edit.
  * @return {Promise<string|null|undefined>} Immediate saves resolve to the committed name, or null if invalid/discarded.
  * Debounced saves resolve to undefined when scheduled (not committed), or null if invalid/discarded; failures are reported by toast.
  */
-export async function saveWorldInfo(name, data, immediately = false) {
+export async function saveWorldInfo(name, data, immediately = false, { conditional = false } = {}) {
     if (typeof name !== 'string' || !name.trim() || !lodash.isPlainObject(data) || !lodash.isPlainObject(data.entries)
         || !Object.values(data.entries).every(lodash.isPlainObject)) {
         return null;
@@ -5053,12 +5077,12 @@ export async function saveWorldInfo(name, data, immediately = false) {
     worldInfoCacheVersions.set(name, data);
 
     if (immediately) {
-        return await _save(name, data, { snapshot });
+        return await _save(name, data, { snapshot, conditional });
     }
 
     const timer = setTimeout(() => {
         pendingWorldInfoSaves.delete(name);
-        _save(name, data, { snapshot }).catch(error => {
+        _save(name, data, { snapshot, conditional }).catch(error => {
             console.error(`Failed to save World Info ${name}:`, error);
             toastr.error(String(error), t`World Info Save Failed`);
         });

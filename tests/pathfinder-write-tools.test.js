@@ -188,4 +188,18 @@ describe('Pathfinder write tool actions', () => {
         expect(result).not.toContain('UID: 3');
         expect(save).toHaveBeenCalledTimes(1);
     });
+
+    test('writes ask the host for a conditional save so a stale copy cannot overwrite another client', async () => {
+        await getToolAction('pathfinder_update')({ uid: 3, content: 'changed' });
+        expect(save).toHaveBeenCalledWith('Memory Book', expect.any(Object), true, { conditional: true });
+    });
+
+    test('a rejected stale save reports the conflict and changes nothing locally', async () => {
+        save.mockImplementationOnce(async () => {
+            throw Object.assign(new Error('World Info save failed with status 409'), { status: 409 });
+        });
+        const result = await getToolAction('pathfinder_update')({ uid: 3, content: 'changed' });
+        expect(result).toContain('changed in another tab or device');
+        expect(store['Memory Book'].entries[3].content).toBe('existing');
+    });
 });
