@@ -319,7 +319,14 @@ function buildCompanionBody(agentId, result, message) {
         return '<div class="ica--companion-empty">Companion run was cancelled.</div>';
     }
 
-    return formatCompanionContent(agentId, result, message);
+    return buildLastRunErrorNotice(result) + formatCompanionContent(agentId, result, message);
+}
+
+export function buildLastRunErrorNotice(result = {}) {
+    const failure = String(result?.lastRunError ?? '').trim();
+    return failure
+        ? `<div class="ica--companion-error">Last run failed (${escapeHtml(failure)}). Showing the previous note.</div>`
+        : '';
 }
 
 function buildChatOnlyCardComposer(agentId) {

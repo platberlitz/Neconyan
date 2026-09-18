@@ -101,6 +101,7 @@ describe('companion tracker panel', () => {
         }));
 
         await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/companion-ui.js', () => ({
+            buildLastRunErrorNotice: jest.fn(() => ''),
             cleanCompanionAgentName: jest.fn(name => String(name ?? '').trim() || 'Companion'),
             editCompanionResult: jest.fn(async () => {}),
             formatCompanionContent: jest.fn((agentId, result) => `<formatted>${result.content}</formatted>`),

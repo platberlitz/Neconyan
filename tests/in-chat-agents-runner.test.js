@@ -2884,6 +2884,76 @@ describe('in-chat agent post-processing runner', () => {
         expect(saveChatDebounced).not.toHaveBeenCalled();
     });
 
+    describe('a failed rerun keeps the previous note', () => {
+        async function seedDoneNote() {
+            const companion = createCompanionAgent({ id: 'rerun-companion' });
+            enabledAgents = [companion];
+            const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+            chat.push({ mes: 'Assistant reply', name: 'Assistant', is_user: false, is_system: false, extra: {} });
+            companionRunner.setCompanionResult(chat[0], companion, { status: 'done', content: 'Useful earlier note' });
+            return { companion, companionRunner };
+        }
+
+        test('a provider error preserves the note and records the failure', async () => {
+            const { companion, companionRunner } = await seedDoneNote();
+            generateQuietPrompt.mockRejectedValueOnce(new Error('quota exceeded'));
+
+            await companionRunner.runCompanionAgentOnMessage(companion.id, 0);
+
+            const stored = chat[0].extra.inChatAgentCompanionResults[companion.id];
+            expect(stored.status).toBe('done');
+            expect(stored.content).toBe('Useful earlier note');
+            expect(stored.lastRunError).toBe('quota exceeded');
+        });
+
+        test('cancelling mid-request preserves the note', async () => {
+            const { companion, companionRunner } = await seedDoneNote();
+            const { cancelAgentGeneration } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+            let resolveRun;
+            generateQuietPrompt.mockImplementationOnce(async () => await new Promise(resolve => {
+                resolveRun = resolve;
+            }));
+
+            const running = companionRunner.runCompanionAgentOnMessage(companion.id, 0);
+            await waitFor(() => generateQuietPrompt.mock.calls.length === 1);
+            cancelAgentGeneration();
+            resolveRun('Late replacement note');
+            await running;
+
+            const stored = chat[0].extra.inChatAgentCompanionResults[companion.id];
+            expect(stored.status).toBe('done');
+            expect(stored.content).toBe('Useful earlier note');
+            expect(stored.lastRunError).toBe('Cancelled.');
+        });
+
+        test('whitespace-only output counts as a failure', async () => {
+            const { companion, companionRunner } = await seedDoneNote();
+            generateQuietPrompt.mockResolvedValueOnce('   \n  ');
+
+            await companionRunner.runCompanionAgentOnMessage(companion.id, 0);
+
+            const stored = chat[0].extra.inChatAgentCompanionResults[companion.id];
+            expect(stored.status).toBe('done');
+            expect(stored.content).toBe('Useful earlier note');
+            expect(stored.lastRunError).toBe('Companion returned no output.');
+        });
+
+        test('a later successful run clears the failure marker', async () => {
+            const { companion, companionRunner } = await seedDoneNote();
+            generateQuietPrompt.mockRejectedValueOnce(new Error('quota exceeded'));
+            await companionRunner.runCompanionAgentOnMessage(companion.id, 0);
+            expect(chat[0].extra.inChatAgentCompanionResults[companion.id].lastRunError).toBe('quota exceeded');
+
+            generateQuietPrompt.mockResolvedValueOnce('Fresh note');
+            await companionRunner.runCompanionAgentOnMessage(companion.id, 0);
+
+            const stored = chat[0].extra.inChatAgentCompanionResults[companion.id];
+            expect(stored.status).toBe('done');
+            expect(stored.content).toBe('Fresh note');
+            expect(stored.lastRunError).toBeUndefined();
+        });
+    });
+
     test('repairs only runnable tracker companions', async () => {
         const runnableTracker = createCompanionAgent({
             id: 'runnable-tracker-companion',
@@ -6316,6 +6386,43 @@ describe('in-chat agent post-processing runner', () => {
             8192,
             expect.objectContaining({ extractData: true, stream: false }),
         );
+    });
+
+    test('a rewrite the provider cut short at its output limit keeps the original text', async () => {
+        usePromptTransformPostAgent();
+        enabledAgents[0].connectionProfile = 'profile-cc';
+        connectionManagerRequestService = {
+            getProfile: jest.fn(() => ({ name: 'Example profile', model: 'm' })),
+            sendRequest: jest.fn(async () => ({ content: 'Half a rewr', lengthLimited: true })),
+        };
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        chat.push({ name: 'Assistant', mes: 'Needs rewrite', is_user: false, is_system: false, extra: {} });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await new Promise(resolve => setTimeout(resolve, 5));
+
+        expect(connectionManagerRequestService.sendRequest).toHaveBeenCalledTimes(1);
+        expect(chat[0].mes).toBe('Needs rewrite');
+    });
+
+    test('a complete profile rewrite still replaces the text', async () => {
+        usePromptTransformPostAgent();
+        enabledAgents[0].connectionProfile = 'profile-cc';
+        connectionManagerRequestService = {
+            getProfile: jest.fn(() => ({ name: 'Example profile', model: 'm' })),
+            sendRequest: jest.fn(async () => ({ content: 'Full rewrite', lengthLimited: false })),
+        };
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        chat.push({ name: 'Assistant', mes: 'Needs rewrite', is_user: false, is_system: false, extra: {} });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await new Promise(resolve => setTimeout(resolve, 5));
+
+        expect(chat[0].mes).toBe('Full rewrite');
     });
 
     test('appends global helper prefill messages to profile prompt-transform requests', async () => {

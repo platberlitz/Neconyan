@@ -26,6 +26,7 @@ import {
 } from './companion-runner.js';
 import { isLorebookAgent, sendCompanionResultToLorebook } from './lorebook-sender.js';
 import {
+    buildLastRunErrorNotice,
     cleanCompanionAgentName,
     editCompanionResult,
     formatCompanionContent,
@@ -540,7 +541,7 @@ function buildPanelEntryBody(agentId, entry) {
         return `<div class="ica--companion-error">${escapeHtml(entry.result.error || 'Companion run failed.')}</div>`;
     }
 
-    return formatCompanionContent(agentId, entry.result, chat[entry.messageIndex], '.ica--tpanel-agent-body ');
+    return buildLastRunErrorNotice(entry.result) + formatCompanionContent(agentId, entry.result, chat[entry.messageIndex], '.ica--tpanel-agent-body ');
 }
 
 function buildChatOnlyComposer(state) {

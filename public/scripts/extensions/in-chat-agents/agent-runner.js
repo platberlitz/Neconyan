@@ -3233,6 +3233,7 @@ async function requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, 
                 output: primaryOutput,
                 runner: 'profile',
                 profileId,
+                lengthLimited: primaryResponse?.lengthLimited === true,
             };
         }
     } catch (error) {
@@ -3277,6 +3278,7 @@ async function requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, 
         output: extractProfileResponseText(fallbackResponse),
         runner: 'profile',
         profileId,
+        lengthLimited: fallbackResponse?.lengthLimited === true,
     };
 }
 
@@ -3514,15 +3516,22 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
             : promptOutputText;
         const nextMessageText = protectedPartialPrefill + transformedMessageText;
         const staleTarget = !isMessageTargetCurrent(message, targetState, messageIndex);
-        if (staleTarget || agentGenerationCancelRevision !== cancelRevision || !isRuntimeAllowed()) {
+        // A rewrite the provider cut short at its output limit must not replace the complete original.
+        const truncatedRewrite = promptTransformMode !== 'append' && response.lengthLimited === true && applyToMessage;
+        if (staleTarget || truncatedRewrite || agentGenerationCancelRevision !== cancelRevision || !isRuntimeAllowed()) {
             if (staleTarget) {
                 console.info(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" finished after the message changed; result discarded.`);
+            } else if (truncatedRewrite) {
+                console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" hit its output limit; the original text was kept.`);
+                if (showNotifications) {
+                    toastr.warning(`${escapeToastHtml(agent.name)} ran out of output room, so the original text was kept. Raise its max tokens and try again.`);
+                }
             }
             return {
                 agentId: agent.id,
                 agentName: agent.name,
                 changed: false,
-                status: staleTarget ? 'stale-target' : agentGenerationCancelRevision !== cancelRevision ? 'cancelled' : 'skipped-runtime-filter',
+                status: staleTarget ? 'stale-target' : truncatedRewrite ? 'truncated' : agentGenerationCancelRevision !== cancelRevision ? 'cancelled' : 'skipped-runtime-filter',
                 mode: promptTransformMode,
                 profileId: response.profileId,
                 ...getPromptTransformRunMetadata(agent, response.profileId),

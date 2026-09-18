@@ -7,6 +7,7 @@ import { chat_completion_sources, getStreamingReply, tryParseStreamingError, cre
 import EventSourceStream from './sse-stream.js';
 import { fetchResumable } from './resumable-generation.js';
 import { migrateNanoGptProviderSettings } from './openai-preset-utils.js';
+import { isGenerationLengthFinish } from './generation-request-controls.js';
 
 const BOOLEAN_CHAT_COMPLETION_FIELDS = [
     'include_reasoning',
@@ -191,6 +192,7 @@ export class TextCompletionService {
                     textGenType: data.api_type,
                     ignoreShowThoughts: true,
                 }),
+                lengthLimited: isGenerationLengthFinish(json),
             };
         }
 
@@ -556,6 +558,7 @@ export class ChatCompletionService {
                     textGenType: data.chat_completion_source,
                     ignoreShowThoughts: true,
                 }),
+                lengthLimited: isGenerationLengthFinish(json),
             };
             // Try parse JSON
             if (data.json_schema) {
