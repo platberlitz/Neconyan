@@ -86,10 +86,11 @@ for (const width of [1280, 1024, 997, 768, 390, 393, 320]) {
             try {
                 await checkClose(page);
                 if (width < 769) {
-                    await expect(page.locator('#ica--workspaceNav [role="tablist"]')).toBeHidden();
-                    await page.locator('#ica--workspaceSelect').selectOption('connections');
+                    await expect(page.locator('#ica--workspaceNav [role="tablist"]')).toBeVisible();
+                    await expect(page.locator('#ica--workspaceSelect')).toBeHidden();
+                    await page.locator('.ica--workspace-tab[data-workspace-view="connections"]').click();
                     await expect(page.locator('[data-ica-view="connections"]')).toBeVisible();
-                    await page.locator('#ica--workspaceSelect').selectOption('manage');
+                    await page.locator('.ica--workspace-tab[data-workspace-view="manage"]').click();
                     await expect(page.locator('#ica--agentTabs')).toBeVisible();
                     await page.locator('#ica--agentTabs .ica--agent-tab[data-tab="quick"]').click();
                     await page.locator('#ica--agentTabs .ica--agent-tab[data-tab="all"]').click();

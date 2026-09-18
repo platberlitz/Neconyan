@@ -3660,11 +3660,6 @@ body.neconyan .ica--standalone-title { display: none; }
     .ica--card-mobile-phase { display: block; color: var(--ica-muted); font-size: 12px; }
 }
 
-@media (max-width: 768px) {
-    #ica--settings .ica--workspace-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
-    #ica--settings .ica--workspace-tab { white-space: normal; min-height: 48px; padding: 8px; font-size: 12px; line-height: 1.25; }
-}
-
 .ica--template-browser { text-align: left; }
 .ica--library-header h2 { margin: 0 0 6px; font-size: 20px; }
 .ica--library-header p { margin: 0; color: var(--ica-muted); font-size: 13px; }
@@ -3853,10 +3848,10 @@ body.neconyan .ica--standalone-title { display: none; }
     .ica--editor-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }
     #ica--settings .ica--workspace-nav,
     .ica--template-browser .ica--template-filter-bar { position: static; }
-    #ica--settings .ica--workspace-tabs,
     #ica--editor .ica--editor-tabs,
     .ica--template-browser .ica--template-pill-row { display: none; }
-    .ica--workspace-select,
+    #ica--settings .ica--workspace-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+    #ica--settings .ica--workspace-tab { justify-content: center; white-space: normal; min-height: 48px; padding: 8px; font-size: 12px; line-height: 1.25; }
     .ica--editor-section-select-label,
     .ica--template-category-select { display: block; width: 100%; min-height: 44px; }
     #ica--editor-section-select { width: 100%; min-height: 44px; }
