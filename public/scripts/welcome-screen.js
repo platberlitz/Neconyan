@@ -1657,6 +1657,16 @@ function activateNeconyanRailRoute(route) {
         case 'persona':
             shell?.openTab?.('characters', 'persona');
             break;
+        case 'pathfinder':
+            void globalThis.NeconyanAgents?.openPathfinder?.();
+            break;
+        case 'dialogue-colors':
+            void globalThis.NeconyanExtensions?.focusUnit?.('Dialogue Colors');
+            break;
+        case 'quick-image-gen':
+            shell?.openTab?.('right', 'extensions');
+            void globalThis.NeconyanExtensions?.focusUnit?.('Quick Image Gen');
+            break;
         case 'background':
             shell?.openTab?.('right', 'background');
             break;
@@ -1814,6 +1824,9 @@ function ensureNeconyanRail() {
         ['regex', translate('Regexes', 'ext_regex_title'), 'fa-code'],
         ['expressions', t`Character Expressions`, 'fa-masks-theater'],
         ['persona', 'Persona', 'fa-face-smile'],
+        ['pathfinder', 'Pawthfinder', 'fa-diamond-turn-right'],
+        ['dialogue-colors', 'Dialogue Colors', 'fa-palette'],
+        ['quick-image-gen', 'Quick Image Gen', 'fa-image'],
         ['background', 'Background', 'fa-panorama'],
     ];
     for (const [route, label, icon] of advancedRoutes) {

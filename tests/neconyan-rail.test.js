@@ -147,6 +147,9 @@ describe('Neconyan workspace rail behavior', () => {
         expect(neconyanCss).toContain('body.neconyan .neconyan-rail-advanced { margin-top: 14px; }');
         expect(welcomeSource).toContain('[\'presets\', \'Presets\', \'fa-sliders\']');
         expect(welcomeSource).toContain('[\'model\', \'Connections\', \'fa-plug\']');
+        expect(welcomeSource).toContain('[\'pathfinder\', \'Pawthfinder\', \'fa-diamond-turn-right\']');
+        expect(welcomeSource).toContain('[\'dialogue-colors\', \'Dialogue Colors\', \'fa-palette\']');
+        expect(welcomeSource).toContain('[\'quick-image-gen\', \'Quick Image Gen\', \'fa-image\']');
         expect(welcomeSource).toContain('[\'background\', \'Background\', \'fa-panorama\']');
         expect(tabsSource).toContain('[\'right\', \'extensions\', \'Extensions\', \'fa-cubes\']');
         expect(tabsSource).toContain('[\'left\', \'api\', \'Connections\', \'fa-plug\']');
@@ -350,6 +353,22 @@ describe('Neconyan workspace rail behavior', () => {
             ['characters', 'persona'],
             ['right', 'background'],
         ]);
+    });
+
+    test('Fine-tuning additions open Pawthfinder, Dialogue Colors and Quick Image Gen', () => {
+        const routes = [];
+        const calls = [];
+        const runtime = createWelcomeRuntime();
+        runtime.context.NeconyanShell = { openTab: (...route) => routes.push(route) };
+        runtime.context.NeconyanAgents = { openPathfinder: () => calls.push('pathfinder') };
+        runtime.context.NeconyanExtensions = { focusUnit: label => calls.push(`focus:${label}`) };
+
+        runtime.context.activateNeconyanRailRoute('pathfinder');
+        runtime.context.activateNeconyanRailRoute('dialogue-colors');
+        runtime.context.activateNeconyanRailRoute('quick-image-gen');
+
+        expect(routes).toEqual([['right', 'extensions']]);
+        expect(calls).toEqual(['pathfinder', 'focus:Dialogue Colors', 'focus:Quick Image Gen']);
     });
 
     test('recent roleplay and group entries strip the API .jsonl suffix', async () => {

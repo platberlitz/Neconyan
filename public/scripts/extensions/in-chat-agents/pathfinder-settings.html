@@ -406,7 +406,6 @@
 </div>
 
 <style>
-.pf--extensions-host,
 .pf--settings {
     --pf-accent: var(--color-primary, var(--sb-accent, var(--SmartThemeQuoteColor, oklch(79% 0.035 99))));
     --pf-on-accent: var(--sb-on-solid-accent, oklch(22% 0.012 100));
@@ -490,25 +489,6 @@
 
 .pf--save-state .pf--prompt-status {
     margin: 0;
-}
-
-.pf--extensions-host .inline-drawer-header b {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.pf--extensions-body {
-    padding: 10px 0;
-}
-
-.pf--extensions-empty {
-    padding: 12px 14px;
-    border: 1px solid var(--pf-border);
-    border-radius: var(--pf-radius-md);
-    background: var(--pf-surface-soft);
-    color: var(--pf-text-muted);
-    font-size: calc(var(--mainFontSize) * 0.84);
 }
 
 /* Status Banner */
@@ -1260,7 +1240,6 @@
 
 /* Responsive */
 @media (max-width: 768px), (pointer: coarse) {
-    .pf--extensions-host,
     .pf--settings {
         --pf-control-size: max(44px, var(--sb-control-min-height, 44px));
     }

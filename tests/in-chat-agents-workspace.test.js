@@ -215,6 +215,19 @@ test('new generation clears the previous manual result', () => {
     expect(runtime.lastManualRunFeedback).toBeNull();
 });
 
+test('Pawthfinder opens its own panel and the settings cards do not stretch', () => {
+    expect(settingsSource).toContain('Open Pawthfinder');
+    expect(settingsSource).toContain('Opens the full Pawthfinder settings panel.');
+    expect(settingsSource).not.toContain('Detailed Pawthfinder controls are in Extensions.');
+    expect(indexSource).not.toContain('PATHFINDER_EXTENSIONS_HOST_ID');
+    expect(indexSource).not.toContain('openPathfinderExtensionsDrawer');
+    expect(indexSource).not.toContain('schedulePathfinderExtensionsMount');
+    expect(indexSource).toContain('openPathfinder: (...args)');
+    expect(indexSource).toContain('mountPathfinderSettings: (...args)');
+    expect(styleSource).toContain('.ica--settings-groups {\n    display: grid;\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n    gap: 10px;\n    align-items: start;\n}');
+    expect(styleSource).toContain('#ica--settings .ica--settings-group > * { flex: 0 0 auto; }');
+});
+
 test('composer post passes preserve provider failure metadata without changing draft text', async () => {
     const runner = readRepoFile('public/scripts/extensions/in-chat-agents/agent-runner.js');
     const source = runner.match(/^export async function runSingleAgentPostPassesOnText\([\s\S]*?^}/m)[0].replace('export ', '');

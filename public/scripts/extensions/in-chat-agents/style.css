@@ -3244,6 +3244,7 @@ body.neconyan .ica--standalone-title { display: none; }
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
+    align-items: start;
 }
 
 .ica--settings-group {
@@ -3318,7 +3319,7 @@ body.neconyan .ica--standalone-title { display: none; }
 }
 
 #ica--settings .ica--connections-view { container-type: inline-size; }
-#ica--settings .ica--settings-group > * { flex-shrink: 0; }
+#ica--settings .ica--settings-group > * { flex: 0 0 auto; }
 #ica--settings .ica--settings-group-heading { min-height: 80px; }
 #ica--settings .ica--profile-label > span { min-height: 2.7em; line-height: 1.35; }
 #ica--settings .ica--profile-label > :is(select, textarea) { margin: 0; width: 100%; }

@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 const key = 'NeconyanWorkspaceRailOrder.v1';
 const groups = {
     primary: ['home', 'characters', 'model', 'agents', 'mewmory', 'lorebooks', 'extensions'],
-    advanced: ['presets', 'sampling', 'formatting', 'persona', 'background'],
+    advanced: ['presets', 'sampling', 'formatting', 'regex', 'expressions', 'persona', 'pathfinder', 'dialogue-colors', 'quick-image-gen', 'background'],
     modes: ['roleplay', 'conversation', 'meower', 'story'],
 };
 const selector = name => `[data-neconyan-${name === 'modes' ? 'mode' : name}-nav]`;

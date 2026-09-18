@@ -67,7 +67,7 @@ async function openSettings(page, baseURL) {
     });
     await page.waitForFunction(async () => (await import('/script.js')).settingsReady, null, { timeout: 60000 });
     await page.waitForFunction(() => typeof window.SillyTavern?.getContext === 'function');
-    await page.locator('#extension_settings_in_chat_agents_pathfinder #pf--settings').waitFor({ state: 'attached', timeout: 60000 });
+    await page.waitForFunction(() => typeof window.NeconyanAgents?.mountPathfinderSettings === 'function', null, { timeout: 60000 });
 
     await page.evaluate(async ({ manualBook, attachedBook }) => {
         const ui = await import('/scripts/extensions/in-chat-agents/pathfinder-settings-ui.js');

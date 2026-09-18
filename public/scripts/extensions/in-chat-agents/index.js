@@ -106,7 +106,7 @@ import {
     normalizeRegexScript,
 } from './regex-scripts.js';
 import { initPathfinder, teardownPathfinder } from './pathfinder-init.js';
-import { openPathfinderSettings, closePathfinderSettings, canClosePathfinderSettings, cancelPathfinderSummary, refreshPathfinderSettings, isPathfinderAgent } from './pathfinder-settings-ui.js';
+import { openPathfinderSettings, closePathfinderSettings, canClosePathfinderSettings, cancelPathfinderSummary, isPathfinderAgent } from './pathfinder-settings-ui.js';
 import { getPathfinderToolDefinitions } from './pathfinder/tool-definitions.js';
 import { appendHelperPrefillMessages } from '../helper-prefill.js';
 import {
@@ -123,7 +123,6 @@ import { configureCompanionPanel, initCompanionPanel, refreshCompanionPanel, upd
 import { attachTextareaFullscreen } from './textarea-fullscreen.js';
 
 const MODULE_NAME = 'in-chat-agents';
-const PATHFINDER_EXTENSIONS_HOST_ID = 'extension_settings_in_chat_agents_pathfinder';
 
 let collapsedCategories = new Set();
 let lastManualRunFeedback = null;
@@ -572,8 +571,6 @@ let selectModeActive = false;
 /** Set of agent IDs currently selected in select mode. */
 const selectedAgentIds = new Set();
 let suppressCardClickUntil = 0;
-let pathfinderExtensionsMountPromise = null;
-let pathfinderExtensionsMountRevision = 0;
 let fixTrackersRunning = false;
 let agentSetupOperationBusy = false;
 let selectedAgentSetupId = '';
@@ -1867,6 +1864,8 @@ function updateUpdateAllButtonVisibility() {
 
 const neconyanAgents = Object.assign(globalThis.NeconyanAgents || globalThis.SillyBunnyAgents || {}, {
     getEnabledAgents,
+    openPathfinder: (...args) => openPathfinder(...args),
+    mountPathfinderSettings: (...args) => mountPathfinderSettings(...args),
 });
 globalThis.NeconyanAgents = neconyanAgents;
 globalThis.SillyBunnyAgents = neconyanAgents;
@@ -5784,165 +5783,48 @@ function getPathfinderSettingsAgent() {
     return getPathfinderRuntimeAgent() ?? getAgents().find(isPathfinderAgent) ?? null;
 }
 
-function removePathfinderExtensionsHost() {
-    pathfinderExtensionsMountRevision++;
-    closePathfinderSettings();
-    document.getElementById(PATHFINDER_EXTENSIONS_HOST_ID)?.remove();
-    pathfinderExtensionsMountPromise = null;
-}
+let pathfinderMountToken = 0;
 
-function ensurePathfinderExtensionsHost() {
-    const parent = document.getElementById('extensions_settings2') ?? document.getElementById('extensions_settings');
-    if (!parent) {
-        return null;
-    }
-
-    let host = document.getElementById(PATHFINDER_EXTENSIONS_HOST_ID);
-    if (!host) {
-        host = document.createElement('div');
-        host.id = PATHFINDER_EXTENSIONS_HOST_ID;
-        host.className = 'extension_container pf--extensions-host';
-        host.innerHTML = `
-            <div class="inline-drawer">
-                <div class="inline-drawer-toggle inline-drawer-header">
-                    <b><i class="fa-solid fa-route"></i> Pawthfinder</b>
-                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-                </div>
-                <div class="inline-drawer-content pf--extensions-body" style="display:none"></div>
-            </div>
-        `;
-        parent.append(host);
-    }
-
-    return host;
-}
-
-async function mountPathfinderSettingsInExtensions(agent = getPathfinderSettingsAgent()) {
-    if (!isPathfinderSubmoduleEnabled()) {
-        removePathfinderExtensionsHost();
-        return null;
-    }
-
-    const host = ensurePathfinderExtensionsHost();
-    if (!host) {
-        console.warn('[Pawthfinder] Could not mount settings in Extensions drawer because #extensions_settings was not found.');
-        return null;
-    }
-
-    const body = host.querySelector('.pf--extensions-body');
-    if (!body) {
-        return null;
-    }
-
-    const mountRevision = ++pathfinderExtensionsMountRevision;
-    closePathfinderSettings();
-    delete host.dataset.pathfinderAgentId;
-    body.innerHTML = '';
-
+function openPathfinder() {
+    const agent = getPathfinderSettingsAgent();
     if (!agent) {
-        body.innerHTML = '<div class="pf--extensions-empty">Pawthfinder agent is not available. Reload In-Chat Agents or restore the bundled Pawthfinder template.</div>';
-        return host;
+        toastr.warning('Pawthfinder agent is not available.');
+        return;
     }
-
-    body.setAttribute('aria-busy', 'true');
-    const settingsPanel = await openPathfinderSettings(agent).catch(error => {
-        if (mountRevision === pathfinderExtensionsMountRevision) {
-            body.setAttribute('aria-busy', 'false');
-            body.innerHTML = '<div class="pf--extensions-empty">Could not load Pawthfinder settings.</div>';
-        }
-        throw error;
+    return openPathfinderEditor(agent).catch(error => {
+        console.warn('[InChatAgents] Failed to open Pawthfinder settings:', error);
+        toastr.error('Could not open Pawthfinder settings.');
     });
-    if (mountRevision !== pathfinderExtensionsMountRevision || !host.isConnected || !isPathfinderSubmoduleEnabled()) {
-        if (settingsPanel) closePathfinderSettings(settingsPanel);
+}
+
+function mountPathfinderSettings(host) {
+    if (!(host instanceof HTMLElement) || !isPathfinderSubmoduleEnabled()) {
         return null;
     }
-    body.setAttribute('aria-busy', 'false');
 
-    if (!settingsPanel) {
-        body.innerHTML = '<div class="pf--extensions-empty">Could not load Pawthfinder settings.</div>';
-        return host;
+    const agent = getPathfinderSettingsAgent();
+    if (!agent) {
+        return null;
     }
 
-    settingsPanel.filter('#pf--settings').addClass('pf--settings-embedded');
-    for (const node of settingsPanel.toArray()) {
-        body.append(node);
-    }
-    host.dataset.pathfinderAgentId = agent.id;
-    return host;
-}
+    const mountToken = ++pathfinderMountToken;
+    const mount = document.createElement('div');
+    mount.className = 'pf--inline-mount';
+    host.append(mount);
 
-function schedulePathfinderExtensionsMount(agent) {
-    if (!isPathfinderSubmoduleEnabled()) {
-        removePathfinderExtensionsHost();
-        return Promise.resolve(null);
-    }
+    openPathfinderSettings(agent).then(settingsPanel => {
+        if (!settingsPanel) return;
+        if (mountToken !== pathfinderMountToken || !mount.isConnected) {
+            closePathfinderSettings(settingsPanel);
+            return;
+        }
+        settingsPanel.filter('#pf--settings').addClass('pf--settings-embedded');
+        mount.append(...settingsPanel.toArray());
+    }).catch(error => {
+        console.warn('[InChatAgents] Failed to mount Pawthfinder settings:', error);
+    });
 
-    pathfinderExtensionsMountPromise = mountPathfinderSettingsInExtensions(agent)
-        .catch(error => {
-            console.warn('[Pawthfinder] Failed to mount settings in Extensions drawer:', error);
-            return null;
-        });
-
-    return pathfinderExtensionsMountPromise;
-}
-
-function scrollElementIntoNearestPanelScroller(element, { block = 'nearest' } = {}) {
-    if (!(element instanceof HTMLElement)) {
-        return;
-    }
-
-    const scroller = element.closest('.sb-shell-panel-scroller, .scrollableInner, .scrollableInnerFull');
-    const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
-    if (!(scroller instanceof HTMLElement) || scroller.clientHeight <= 0) {
-        element.scrollIntoView({ block, inline: 'nearest', behavior });
-        return;
-    }
-
-    const scrollerRect = scroller.getBoundingClientRect();
-    const elementRect = element.getBoundingClientRect();
-    const topOverflow = elementRect.top - scrollerRect.top;
-    const bottomOverflow = elementRect.bottom - scrollerRect.bottom;
-    let delta = 0;
-
-    if (block === 'start') {
-        delta = topOverflow;
-    } else if (block === 'center') {
-        delta = topOverflow - ((scrollerRect.height - elementRect.height) / 2);
-    } else if (topOverflow < 0) {
-        delta = topOverflow;
-    } else if (bottomOverflow > 0) {
-        delta = bottomOverflow;
-    }
-
-    if (Math.abs(delta) > 1) {
-        scroller.scrollTo({
-            top: Math.min(Math.max(scroller.scrollTop + delta, 0), Math.max(0, scroller.scrollHeight - scroller.clientHeight)),
-            behavior,
-        });
-    }
-}
-
-function openPathfinderExtensionsDrawer(host) {
-    refreshPathfinderSettings();
-    const clickEvent = () => new (globalThis.MouseEvent ?? Event)('click', { bubbles: true });
-    const drawer = document.getElementById('extensions-settings-button');
-    const drawerContent = drawer?.querySelector(':scope > .drawer-content');
-    if (drawer && drawerContent?.classList.contains('closedDrawer')) {
-        drawer.querySelector(':scope > .drawer-toggle')?.dispatchEvent(clickEvent());
-    }
-
-    const inlineDrawer = host?.querySelector('.inline-drawer');
-    const inlineContent = inlineDrawer?.querySelector(':scope > .inline-drawer-content');
-    const inlineIcon = inlineDrawer?.querySelector(':scope > .inline-drawer-header .inline-drawer-icon');
-    if (inlineDrawer && inlineContent && inlineIcon?.classList.contains('down')) {
-        inlineDrawer.querySelector(':scope > .inline-drawer-toggle')?.dispatchEvent(clickEvent());
-    }
-
-    globalThis.setTimeout(() => {
-        if (!host?.isConnected) return;
-        scrollElementIntoNearestPanelScroller(host, { block: 'start' });
-        host?.querySelector('input, button, select, textarea')?.focus?.({ preventScroll: true });
-    }, 100);
+    return mount;
 }
 
 /**
@@ -5952,16 +5834,6 @@ function openPathfinderExtensionsDrawer(host) {
 async function openPathfinderEditor(agent) {
     if (!isPathfinderSubmoduleEnabled()) {
         toastr.warning('Pawthfinder is disabled in In-Chat Agents settings.');
-        return;
-    }
-
-    const existingHost = document.getElementById(PATHFINDER_EXTENSIONS_HOST_ID);
-    if (existingHost) {
-        const host = await (existingHost.dataset.pathfinderAgentId === agent.id
-            ? (pathfinderExtensionsMountPromise ?? schedulePathfinderExtensionsMount(agent))
-            : schedulePathfinderExtensionsMount(agent));
-        openPathfinderExtensionsDrawer(host ?? existingHost);
-        toastr.info('Pawthfinder settings are in the Extensions drawer.');
         return;
     }
 
@@ -6428,7 +6300,6 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         refreshAgentList: () => renderAgentList(),
     });
     initCompanionPanel();
-    schedulePathfinderExtensionsMount();
 
     // Wire up toolbar
     $('#ica--globalEnabled').on('click', () => {
@@ -6444,8 +6315,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     });
     $('#ica--addAgent').on('click', agentAction(() => openEditor()));
     $('#ica--pathfinderSettings').on('click', () => {
-        globalThis.NeconyanShell?.openTab?.('right', 'extensions');
-        openPathfinderExtensionsDrawer(document.getElementById(PATHFINDER_EXTENSIONS_HOST_ID));
+        void openPathfinder();
     });
     $('#ica--updateAllAgents').on('click', agentAction(() => updateAllAgentsFromSourceTemplates()));
     $('#ica--companionsDashboard').on('click', agentAction(() => openCompanionDashboard()));
@@ -6675,7 +6545,6 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
                     toastr.success(`Updated ${migratedPathfinderToolCount} Pawthfinder agent(s) with default tool toggles.`);
                 }
                 initPathfinder(getContext());
-                schedulePathfinderExtensionsMount();
                 syncToolAgentRegistrations();
                 toastr.info('Pawthfinder submodule enabled.');
             } catch (err) {
@@ -6687,7 +6556,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
 
         teardownPathfinder();
         deactivatePathfinderRuntime();
-        removePathfinderExtensionsHost();
+        closePathfinderSettings();
         toastr.info('Pawthfinder submodule disabled.');
     });
     $('#ica--appendAgentsExecutionMode').on('change', function () {

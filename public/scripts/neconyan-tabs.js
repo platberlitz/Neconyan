@@ -2733,7 +2733,13 @@ function buildIncludedToolPanel() {
         content.replaceChildren();
         panelBundle.scroller.scrollTop = 0;
         neconyanIncludedToolRestore = () => globalThis.NeconyanExtensions?.restoreMountedUnits?.();
-        const mounted = await waitForNeconyanNativeReady(() => token === activationToken && globalThis.NeconyanExtensions?.mountUnit?.(tool.label, content, tool.id), 4000);
+        const mounted = await waitForNeconyanNativeReady(() => {
+            if (token !== activationToken) return false;
+            if (tool.id === 'pathfinder') {
+                return globalThis.NeconyanAgents?.mountPathfinderSettings?.(content);
+            }
+            return globalThis.NeconyanExtensions?.mountUnit?.(tool.label, content, tool.id);
+        }, 4000);
         if (token !== activationToken) return;
         if (!mounted) {
             const message = createElement('p', { className: 'neconyan-included-tool-unavailable', text: `No settings are available for ${tool.label}. Use Manage extensions to install or enable it.` });
