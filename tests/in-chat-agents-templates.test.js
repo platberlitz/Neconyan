@@ -573,6 +573,18 @@ describe('in-chat agent bundled templates', () => {
         expect(chatOnly.regexScripts[0].replaceString).toContain('ica--chatonly-message');
         expect(chatOnly.regexScripts[0].replaceString).toContain('white-space:pre-wrap');
 
+        // Speaker names are not limited to ASCII letters: a Japanese speaker after 'You' gets its own turn.
+        const transcript = 'You: hello there\n美咲: こんにちは\nÉlodie: salut';
+        const rendered = applyRegexScriptList(transcript, chatOnly.regexScripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, {
+            isMarkdown: true,
+            substituteParamsFn: value => value,
+            substituteParamsExtendedFn: value => value,
+        });
+        expect(rendered.match(/ica--chatonly-turn/g)).toHaveLength(3);
+        expect(rendered).toContain('>美咲</b>');
+        expect(rendered).toContain('>Élodie</b>');
+        expect(rendered).not.toContain('hello there\n美咲');
+
         expect(messageInbox.companion).toEqual(expect.objectContaining({
             trigger: 'auto',
             displayMode: 'panel',
