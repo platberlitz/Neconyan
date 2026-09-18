@@ -15,6 +15,9 @@ const { clearAllTrees, getTree, getSettings, replaceSettings, setBookPermission 
 const { buildTreeFromMetadata } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/tree-builder.js');
 const { initEntryManagerAPIs } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/entry-manager.js');
 const { getToolAction } = await import('../public/scripts/extensions/in-chat-agents/tool-action-registry.js');
+const { prepareToolCall } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/pathfinder-tool-bridge.js');
+const { getDefinition: getForgetDefinition } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/tools/forget.js');
+const { getDefinition: getUpdateDefinition } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/tools/update.js');
 for (const tool of ['remember', 'update', 'forget', 'merge-split', 'reorganize', 'summarize']) {
     (await import(`../public/scripts/extensions/in-chat-agents/pathfinder/tools/${tool}.js`)).registerActions();
 }
@@ -163,7 +166,7 @@ describe('Pathfinder write tool actions', () => {
 
     test('rejects an array masquerading as a destination ID', async () => {
         const result = await getToolAction('pathfinder_reorganize')({ action: 'move', uid: 0, target_node_id: [getTree('Memory Book').id] });
-        expect(result).toContain('"target_node_id" required');
+        expect(result).toContain('"target_node_id" must be text');
         expect(save).not.toHaveBeenCalled();
     });
 
@@ -201,5 +204,61 @@ describe('Pathfinder write tool actions', () => {
         const result = await getToolAction('pathfinder_update')({ uid: 3, content: 'changed' });
         expect(result).toContain('changed in another tab or device');
         expect(store['Memory Book'].entries[3].content).toBe('existing');
+    });
+
+    test.each([
+        ['update', { uid: 3, content: { text: 'broken' } }],
+        ['remember', { title: [], content: 'new' }],
+        ['remember', { title: 'New', content: null }],
+        ['update', { uid: 3, content: 'new', book: {} }],
+        ['merge_split', { action: {}, uid1: 0, uid2: 3 }],
+        ['reorganize', { action: 'create_waypoint', name: [] }],
+        ['summarize', { title: 'Summary', content: 'new', significance: {} }],
+    ])('refuses invalid %s text fields before any write (%j)', async (tool, args) => {
+        const before = structuredClone(store);
+        expect(await getToolAction(`pathfinder_${tool}`)(args)).toContain('must be text');
+        expect(store).toEqual(before);
+        expect(save).not.toHaveBeenCalled();
+    });
+
+    test('approval binds the resolved book even when the default order changes', async () => {
+        const prepared = await prepareToolCall(getForgetDefinition(), { uid: 3, hard_delete: true });
+        expect(prepared.args.book).toBe('Memory Book');
+        getSettings().enabledLorebooks.reverse();
+        await getToolAction('pathfinder_forget')(prepared.args, prepared.options);
+        expect(store['Memory Book'].entries[3]).toBeUndefined();
+        expect(store['Second Book'].entries[3].content).toBe('untouched');
+    });
+
+    test.each(['changed', 'excluded', 'deleted'])('approval cannot overwrite a target that was %s while awaiting consent', async change => {
+        const prepared = await prepareToolCall(getUpdateDefinition(), { uid: 3, content: 'approved edit' });
+        if (change === 'changed') store['Memory Book'].entries[3].content = 'newer edit';
+        if (change === 'excluded') getSettings().enabledLorebooks = ['Second Book'];
+        if (change === 'deleted') delete store['Memory Book'];
+        const before = structuredClone(store);
+        await getToolAction('pathfinder_update')(prepared.args, prepared.options);
+        expect(store).toEqual(before);
+        expect(save).not.toHaveBeenCalled();
+    });
+
+    test('a committed write invalidates its cached tree even if cancellation arrives before refresh', async () => {
+        const controller = new AbortController();
+        save.mockImplementationOnce(async (name, data) => {
+            store[name] = structuredClone(data);
+            controller.abort();
+            return name;
+        });
+        expect(getTree('Memory Book')).not.toBeNull();
+        await getToolAction('pathfinder_update')({ uid: 3, content: 'committed' }, { signal: controller.signal });
+        expect(store['Memory Book'].entries[3].content).toBe('committed');
+        expect(getTree('Memory Book')).toBeNull();
+    });
+
+    test('the exported permission setter treats reserved names as own book records', () => {
+        const before = Object.getOwnPropertyDescriptors(Object.prototype);
+        setBookPermission('__proto__', 'write', false);
+        expect(Object.hasOwn(getSettings().bookPermissions, '__proto__')).toBe(true);
+        expect(JSON.parse(JSON.stringify(getSettings().bookPermissions)).__proto__.write).toBe(false);
+        expect(Object.getOwnPropertyDescriptors(Object.prototype)).toEqual(before);
     });
 });

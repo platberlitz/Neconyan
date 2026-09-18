@@ -1,12 +1,14 @@
 import { mergeEntries, splitEntry } from '../entry-manager.js';
 import { canDeleteBook, parseEntryUid } from '../tree-store.js';
-import { getToolWriteOptions, getUnknownBookError, getWritableBooks, resolveTargetBook, TOOL_NAMES } from '../pathfinder-tool-bridge.js';
+import { getToolArgumentError, getToolWriteOptions, getUnknownBookError, getWritableBooks, resolveTargetBook, TOOL_NAMES } from '../pathfinder-tool-bridge.js';
 import { registerToolAction, registerToolFormatter } from '../../tool-action-registry.js';
 import { logToolCallStarted, logToolCallCompleted, logToolCallError } from '../activity-feed.js';
 
 const COMPACT_DESCRIPTION = 'Merge related entries together or split a long entry into two.';
 
 async function mergeSplitAction(args, options = {}) {
+    const argumentError = getToolArgumentError(args, getDefinition().parameters);
+    if (argumentError) return argumentError;
     const action = String(args.action || '').trim().toLowerCase();
     const bookName = String(args.book || '').trim();
 

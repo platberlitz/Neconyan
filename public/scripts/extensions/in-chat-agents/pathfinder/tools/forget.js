@@ -1,6 +1,6 @@
 import { forgetEntry } from '../entry-manager.js';
 import { parseEntryUid } from '../tree-store.js';
-import { getDeletableBooks, getToolWriteOptions, getUnknownBookError, getWritableBooks, resolveTargetBook, TOOL_NAMES } from '../pathfinder-tool-bridge.js';
+import { getDeletableBooks, getToolArgumentError, getToolWriteOptions, getUnknownBookError, getWritableBooks, resolveTargetBook, TOOL_NAMES } from '../pathfinder-tool-bridge.js';
 import { registerToolAction, registerToolFormatter } from '../../tool-action-registry.js';
 import { logToolCallStarted, logToolCallCompleted, logToolCallError } from '../activity-feed.js';
 
@@ -18,6 +18,8 @@ function toBooleanArg(value) {
 }
 
 async function forgetAction(args, options = {}) {
+    const argumentError = getToolArgumentError(args, getDefinition().parameters);
+    if (argumentError) return argumentError;
     const uid = parseEntryUid(args.uid);
     const bookName = String(args.book || '').trim();
     const hardDelete = toBooleanArg(args.hard_delete);

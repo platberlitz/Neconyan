@@ -4,11 +4,18 @@ import { isEntryEligible, parseEntryUid } from './tree-store.js';
 
 const STORAGE_KEY = 'pathfinder-summary-memory-state';
 const listeners = new Set();
-let state = loadState();
+let state;
+let hydrated = false;
 
-function loadState() {
+function hydrateState() {
+    if (hydrated) return;
+    hydrated = accountStorage.isReady !== false;
+    state = loadState(hydrated);
+}
+
+function loadState(ready) {
     try {
-        const parsed = JSON.parse(accountStorage.getItem(STORAGE_KEY) || '{}');
+        const parsed = JSON.parse(ready ? accountStorage.getItem(STORAGE_KEY) || '{}' : '{}');
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
             return {
                 title: String(parsed.title || ''),
@@ -40,6 +47,7 @@ function loadState() {
 }
 
 function persistState() {
+    hydrated = true;
     try {
         accountStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch {
@@ -61,14 +69,16 @@ function formatSummaryContent(content, significance = '') {
 }
 
 function stripSummaryContent(content) {
-    return String(content || '').replace(/^Significance:\s*[^\n]*\n\n/i, '').trim();
+    return String(content || '').replace(/^Significance:[ \t]*[^\n]*(?:\n+|$)/i, '').trim();
 }
 
 export function getSummaryMemoryState() {
+    hydrateState();
     return { ...state };
 }
 
 export function setSummaryMemoryCreated({ title, content, significance, arc, bookName, uid }) {
+    hydrated = true;
     state = {
         title: String(title || ''),
         content: stripSummaryContent(content),
@@ -83,15 +93,28 @@ export function setSummaryMemoryCreated({ title, content, significance, arc, boo
     persistState();
 }
 
-export async function saveSummaryMemoryContent(content) {
+export async function saveSummaryMemoryContent(content, options = {}) {
+    hydrateState();
+    if (typeof content !== 'string') throw new Error('Summary content must be text.');
     const previous = state;
     const nextContent = String(content || '').trim();
+    const context = globalThis.window?.SillyTavern?.getContext?.();
+    const chatId = context?.getCurrentChatId?.() ?? context?.chatId;
+    const isCurrent = () => {
+        const current = globalThis.window?.SillyTavern?.getContext?.();
+        return state === previous && (!options.isCurrent || options.isCurrent())
+            && (current?.getCurrentChatId?.() ?? current?.chatId) === chatId
+            && current?.chatMetadata === context?.chatMetadata;
+    };
+    const { getToolWriteOptions } = await import('./pathfinder-tool-bridge.js');
+    options.signal?.throwIfAborted();
+    if (!isCurrent()) throw new DOMException('The summary edit was cancelled because its target changed.', 'AbortError');
     if (previous.bookName && previous.uid !== null) {
         try {
             await updateEntry(previous.bookName, previous.uid, formatSummaryContent(nextContent, previous.significance), previous.title || undefined, {
                 title: previous.title,
                 content: formatSummaryContent(previous.content, previous.significance),
-            });
+            }, getToolWriteOptions(previous.bookName, { ...options, isCurrent }));
         } catch (error) {
             if (error.code === 'PATHFINDER_ENTRY_CHANGED' && state === previous) detachSummaryMemoryBook(previous.bookName);
             throw error;
@@ -99,22 +122,26 @@ export async function saveSummaryMemoryContent(content) {
         return;
     }
     state = { ...previous, content: nextContent, updatedAt: Date.now(), injectedAt: 0, injectedMode: '' };
+    hydrated = true;
     persistState();
 }
 
 export function detachSummaryMemoryBook(bookName) {
+    hydrateState();
     if (state.bookName !== bookName) return;
     state = { ...state, bookName: '', uid: null, injectedAt: 0, injectedMode: '' };
     persistState();
 }
 
 export function renameSummaryMemoryBook(oldName, newName) {
+    hydrateState();
     if (state.bookName !== oldName) return;
     state = { ...state, bookName: newName };
     persistState();
 }
 
 export function syncSummaryMemoryForBook(bookName, bookData, previousEntry = undefined) {
+    hydrateState();
     if (state.bookName !== bookName || state.uid === null) return;
     const entry = Object.values(bookData?.entries || {}).find(item => item?.uid === state.uid);
     const expected = previousEntry === undefined ? entry : previousEntry;
@@ -123,14 +150,14 @@ export function syncSummaryMemoryForBook(bookName, bookData, previousEntry = und
         return;
     }
     if (isSummaryMemoryEntry({ ...entry, bookName })) return;
-    const significance = String(entry.content || '').match(/^Significance:\s*([^\n]*)\n\n/i)?.[1] || '';
+    const significance = String(entry.content || '').match(/^Significance:[ \t]*([^\n]*)(?:\n|$)/i)?.[1] || '';
     const title = String(entry.comment || '');
     state = {
         ...state,
         title,
         content: stripSummaryContent(entry.content),
         significance,
-        arc: state.arc && title.endsWith(` \u2014 ${state.arc}`) ? state.arc : '',
+        arc: state.arc && [': ', ' - ', ' \u2014 '].some(separator => title.endsWith(`${separator}${state.arc}`)) ? state.arc : '',
         updatedAt: Date.now(),
         injectedAt: 0,
         injectedMode: '',
@@ -139,6 +166,7 @@ export function syncSummaryMemoryForBook(bookName, bookData, previousEntry = und
 }
 
 export function markSummaryMemoryInjected({ mode = '' } = {}) {
+    hydrateState();
     if (state.uid === null) {
         return;
     }
@@ -152,10 +180,11 @@ export function markSummaryMemoryInjected({ mode = '' } = {}) {
 }
 
 export function isSummaryMemoryEntry(entry) {
+    hydrateState();
     return isEntryEligible(entry) && state.uid !== null
         && parseEntryUid(entry.uid) === state.uid && (entry.bookName ?? entry.world) === state.bookName
         && (entry.comment ?? entry.name ?? entry.title) === state.title
-        && String(entry.content || '').trim() === formatSummaryContent(state.content, state.significance);
+        && String(entry.content || '').trim() === formatSummaryContent(state.content, state.significance).trim();
 }
 
 export function onSummaryMemoryChanged(listener) {

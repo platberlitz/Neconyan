@@ -682,7 +682,11 @@ function extractJsonObject(text) {
 
 function parseGeneratedSummary(rawSummary) {
     const parsed = extractJsonObject(rawSummary);
-    if (parsed && typeof parsed === 'object') {
+    if (parsed !== null) {
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
+            || ['title', 'content', 'significance', 'arc'].some(key => parsed[key] !== undefined && typeof parsed[key] !== 'string')) {
+            throw new Error('The model returned invalid summary fields. Request a new summary.');
+        }
         return {
             title: String(parsed.title || 'Recent scene summary').trim(),
             content: String(parsed.content || '').trim(),

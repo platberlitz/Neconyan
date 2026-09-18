@@ -22,6 +22,7 @@ const { initEntryManagerAPIs, listNodeEntries } = await import('../public/script
 const { initCommands, removeCommands } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/commands.js');
 const { registerActions } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/tools/search.js');
 const { getToolAction } = await import('../public/scripts/extensions/in-chat-agents/tool-action-registry.js');
+const { getEntryContent, getAllEntriesWithContent } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/pathfinder-tool-bridge.js');
 registerActions();
 
 describe('Pathfinder search and category reads', () => {
@@ -116,5 +117,34 @@ describe('Pathfinder search and category reads', () => {
         expect(generate.mock.calls[0][0]).not.toContain('blacklisted content');
         expect(book).toEqual(before);
         expect(save).not.toHaveBeenCalled();
+    });
+
+    test.each(['search', 'entry', 'all'])('a delayed %s read returns no contents after read permission is revoked', async method => {
+        const tree = await buildTreeFromMetadata('Book', book);
+        let release;
+        let started;
+        const loading = new Promise(resolve => { started = resolve; });
+        load.mockImplementationOnce(() => new Promise(resolve => { release = resolve; started(); }));
+        const pending = method === 'entry' ? getEntryContent('Book', 0)
+            : method === 'all' ? getAllEntriesWithContent('Book')
+                : getToolAction('pathfinder_search')({ node_id: tree.id });
+        await loading;
+        setBookPermission('Book', 'read', false);
+        release(structuredClone(book));
+        const result = JSON.stringify(await pending);
+        expect(result).not.toContain('root text');
+        expect(result).not.toContain('Root memory');
+        expect(save).not.toHaveBeenCalled();
+    });
+
+    test('slash search drops earlier results when a later load revokes their permission', async () => {
+        setBookPermission('Denied', 'read', true);
+        load.mockImplementation(async name => {
+            if (name === 'Denied') setBookPermission('Book', 'read', false);
+            return structuredClone(book);
+        });
+        const result = await parser.commands['pf-search'].callback({}, 'Root');
+        expect(result).not.toContain('Book: Root');
+        expect(result).toContain('Denied: Root');
     });
 });

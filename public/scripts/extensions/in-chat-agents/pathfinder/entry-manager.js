@@ -55,16 +55,22 @@ async function saveWI(name, data, immediate) {
 // ponytail: global lock; per-book locks if tool-call throughput ever matters
 let writeChain = Promise.resolve();
 
-function writeBook(bookName, mutate, { signal, isCurrent } = {}) {
+function writeBook(bookName, mutate, { signal, isCurrent, expectedEntries = [] } = {}) {
     const assertCurrent = () => {
         signal?.throwIfAborted();
         if (isCurrent && !isCurrent()) throw new DOMException('Cancelled', 'AbortError');
     };
     const run = writeChain.then(async () => {
+        assertCurrent();
         // The host returns a private copy and tracks its identity for stale-editor merges.
         const bookData = await loadWI(bookName);
         assertCurrent();
         if (!bookData) throw new Error(`Lorebook "${bookName}" not found.`);
+        for (const [uid, expected] of expectedEntries) {
+            if (JSON.stringify(findEntryByUid(bookData.entries, uid)) !== expected) {
+                throw new Error(`Entry UID ${uid} in "${bookName}" changed after approval. Nothing was overwritten.`);
+            }
+        }
         const summary = getSummaryMemoryState();
         const previousSummaryEntry = summary.bookName === bookName
             ? structuredClone(findEntryByUid(bookData.entries, summary.uid)) : null;
@@ -74,6 +80,9 @@ function writeBook(bookName, mutate, { signal, isCurrent } = {}) {
         // Cancellation cannot undo a save once the request has been sent.
         const committedName = await saveWI(bookName, bookData, true);
         if (typeof committedName !== 'string' || !committedName) throw new Error('The lorebook save did not complete.');
+        // A committed write changes the cache even when its originating request was cancelled.
+        deleteTree(bookName);
+        if (committedName !== bookName) deleteTree(committedName);
         if (signal?.aborted || (isCurrent && !isCurrent())) return { ...result, bookName: committedName, refreshFailed: true };
         if (committedName !== bookName) onPathfinderWorldInfoRenamed(bookName, committedName);
         let committedData;
@@ -84,7 +93,6 @@ function writeBook(bookName, mutate, { signal, isCurrent } = {}) {
         }
         if (signal?.aborted || (isCurrent && !isCurrent())) return { ...result, bookName: committedName, refreshFailed: true };
         // A failed refresh must not retry an already committed entry creation.
-        deleteTree(committedName);
         if (!committedData) {
             // The write is on disk but could not be read back: leave the tracked summary alone rather than
             // treating an unreadable book as a deleted entry, and tell the caller the refresh failed.
@@ -157,7 +165,7 @@ export function updateEntry(bookName, uid, newContent, newTitle, expectedEntry =
             && !entry.agentBlacklisted
             && (allowDisabledExpected || isEntryEligible(entry))
             && (exactExpected ? String(entry.comment ?? '') : entry.comment) === expectedEntry.title
-            && (exactExpected ? currentContent === expectedContent : currentContent.trim() === expectedContent)
+            && (exactExpected ? currentContent === expectedContent : currentContent.trim() === expectedContent.trim())
         );
         if (!expectedMatches) {
             const error = new Error('The summary or its linked entry changed while the user was editing. Saves are blocked to prevent overwriting.');

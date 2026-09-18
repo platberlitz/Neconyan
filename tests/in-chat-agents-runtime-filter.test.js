@@ -187,6 +187,7 @@ beforeEach(async () => {
     jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/pathfinder-tool-bridge.js', () => ({
         getContextualLorebooks: () => [],
         getForcedToolChoice: jest.fn(() => null),
+        prepareToolCall: async (_tool, args, options) => ({ args, options }),
     }));
     jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/tool-confirmation.js', () => ({
         shouldConfirmToolCall: () => true,

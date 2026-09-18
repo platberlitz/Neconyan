@@ -12,6 +12,7 @@ const accountStorage = {
 };
 await jest.unstable_mockModule('../public/scripts/util/AccountStorage.js', () => ({ accountStorage }));
 await jest.unstable_mockModule('../public/scripts/extensions.js', () => ({ getContext: () => null }));
+await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-store.js', () => ({ isPathfinderSubmoduleEnabled: () => true }));
 await jest.unstable_mockModule('../public/scripts/world-info.js', () => ({
     createWorldInfoEntry: jest.fn(), syncWIOriginalDataEntry: jest.fn(), deleteWIOriginalDataValue: jest.fn(), reloadEditor: jest.fn(),
 }));
@@ -23,7 +24,7 @@ const {
     initEntryManagerAPIs, createEntry, updateEntry, forgetEntry, mergeEntries, splitEntry,
     onPathfinderWorldInfoUpdated, onPathfinderWorldInfoRenamed, onPathfinderWorldInfoDeleted,
 } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/entry-manager.js');
-const { clearAllTrees } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/tree-store.js');
+const { clearAllTrees, replaceSettings, setBookPermission } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/tree-store.js');
 const loadedState = getSummaryMemoryState();
 
 describe('Pathfinder summary memory account storage', () => {
@@ -32,6 +33,7 @@ describe('Pathfinder summary memory account storage', () => {
 
     beforeEach(() => {
         clearAllTrees();
+        replaceSettings({ enabledLorebooks: ['Memory Book'], includeContextualLorebooks: false });
         setSummaryMemoryCreated({ title: '[Summary] Current', content: 'current', significance: 'high', bookName: 'Memory Book', uid: 0 });
         store = { 'Memory Book': { entries: {
             0: { uid: 0, comment: '[Summary] Current', content: 'Significance: high\n\ncurrent' },
@@ -69,9 +71,10 @@ describe('Pathfinder summary memory account storage', () => {
     test('does not coerce missing or malformed persisted UIDs into entry zero on reload', async () => {
         for (const uid of [null, false, '', [], {}, 0.5]) {
             accountStorageValues.set('pathfinder-summary-memory-state', JSON.stringify({ ...storedState, uid }));
-            jest.resetModules();
-            const reloaded = await import('../public/scripts/extensions/in-chat-agents/pathfinder/summary-memory-store.js');
-            expect(reloaded.getSummaryMemoryState().uid).toBeNull();
+            await jest.isolateModulesAsync(async () => {
+                const reloaded = await import('../public/scripts/extensions/in-chat-agents/pathfinder/summary-memory-store.js');
+                expect(reloaded.getSummaryMemoryState().uid).toBeNull();
+            });
         }
     });
 
@@ -159,4 +162,60 @@ describe('Pathfinder summary memory account storage', () => {
         expect(store['Memory Book'].entries[0].content).toContain('saved to the old entry');
         expect(getSummaryMemoryState()).toMatchObject({ uid: 1, title: 'Other', content: 'other' });
     });
+
+    test('an empty significant summary stays linked across repeated saves and later edits', async () => {
+        await saveSummaryMemoryContent('');
+        await saveSummaryMemoryContent('');
+        expect(getSummaryMemoryState()).toMatchObject({ uid: 0, significance: 'high', content: '' });
+        expect(isSummaryMemoryEntry({ ...store['Memory Book'].entries[0], bookName: 'Memory Book' })).toBe(true);
+        await saveSummaryMemoryContent('restored text');
+        expect(getSummaryMemoryState()).toMatchObject({ uid: 0, content: 'restored text' });
+    });
+
+    test('a queued summary edit rechecks write access after loading', async () => {
+        let release;
+        let started;
+        const loading = new Promise(resolve => { started = resolve; });
+        initEntryManagerAPIs(() => new Promise(resolve => { release = resolve; started(); }), jest.fn(), save);
+        const pending = saveSummaryMemoryContent('not authorised');
+        await loading;
+        setBookPermission('Memory Book', 'write', false);
+        release(structuredClone(store['Memory Book']));
+        await expect(pending).rejects.toThrow();
+        expect(save).not.toHaveBeenCalled();
+        expect(store['Memory Book'].entries[0].content).toContain('current');
+    });
+
+    test('a current-format arc survives a content-only summary edit', async () => {
+        const title = '[Summary] Current: First arc';
+        store['Memory Book'].entries[0].comment = title;
+        setSummaryMemoryCreated({ title, content: 'current', significance: 'high', arc: 'First arc', bookName: 'Memory Book', uid: 0 });
+        await saveSummaryMemoryContent('next part');
+        expect(getSummaryMemoryState()).toMatchObject({ uid: 0, arc: 'First arc', title });
+    });
+
+    test('a summary changed during request preparation is never used as the old edit target', async () => {
+        const pending = saveSummaryMemoryContent('old edit');
+        setSummaryMemoryCreated({ title: 'Other', content: 'other', bookName: 'Memory Book', uid: 1 });
+        await expect(pending).rejects.toThrow('target changed');
+        expect(save).not.toHaveBeenCalled();
+        expect(getSummaryMemoryState()).toMatchObject({ title: 'Other', content: 'other', uid: 1 });
+    });
+});
+
+test('summary hydration waits for account storage and never overwrites a newer in-memory summary', async () => {
+    accountStorage.isReady = false;
+    jest.resetModules();
+    const summary = await import('../public/scripts/extensions/in-chat-agents/pathfinder/summary-memory-store.js');
+    expect(summary.getSummaryMemoryState().uid).toBeNull();
+    accountStorageValues.set('pathfinder-summary-memory-state', JSON.stringify(storedState));
+    accountStorage.isReady = true;
+    expect(summary.getSummaryMemoryState()).toEqual(storedState);
+    accountStorage.isReady = false;
+    jest.resetModules();
+    const fresh = await import('../public/scripts/extensions/in-chat-agents/pathfinder/summary-memory-store.js');
+    fresh.setSummaryMemoryCreated({ title: 'New', content: 'new', bookName: 'New book', uid: 3 });
+    accountStorageValues.set('pathfinder-summary-memory-state', JSON.stringify(storedState));
+    accountStorage.isReady = true;
+    expect(fresh.getSummaryMemoryState()).toMatchObject({ title: 'New', uid: 3 });
 });

@@ -1,5 +1,5 @@
 import { createEntry } from '../entry-manager.js';
-import { getToolWriteOptions, getUnknownBookError, getWritableBooks, resolveTargetBook, TOOL_NAMES } from '../pathfinder-tool-bridge.js';
+import { getToolArgumentError, getToolWriteOptions, getUnknownBookError, getWritableBooks, resolveTargetBook, TOOL_NAMES } from '../pathfinder-tool-bridge.js';
 import { registerToolAction, registerToolFormatter } from '../../tool-action-registry.js';
 import { logToolCallStarted, logToolCallCompleted, logToolCallError } from '../activity-feed.js';
 import { setSummaryMemoryCreated } from '../summary-memory-store.js';
@@ -29,7 +29,7 @@ function stripSummaryTitle(title, arc = '') {
     let normalized = normalizeTitle(title).replace(/^\[Summary\]\s*/i, '');
     const arcName = normalizeTitle(arc);
     if (arcName) {
-        normalized = normalized.replace(new RegExp(`\\s+(?:\\u2014|-|:)\\s*${escapeRegex(arcName)}$`, 'i'), '').trim();
+        normalized = normalized.replace(new RegExp(`(?:\\s+(?:\\u2014|-)|:)\\s*${escapeRegex(arcName)}$`, 'i'), '').trim();
     }
 
     return normalized;
@@ -62,6 +62,8 @@ export function deriveSummaryLorebookTitle({ title = '', content = '', arc = '' 
 }
 
 export async function createSummaryMemoryEntry(args = {}, options = {}) {
+    const argumentError = getToolArgumentError(args, getDefinition().parameters);
+    if (argumentError) throw new Error(argumentError);
     const title = String(args.title || '').trim();
     const content = String(args.content || '').trim();
     const arc = String(args.arc || '').trim();
@@ -123,6 +125,8 @@ export async function createSummaryMemoryEntry(args = {}, options = {}) {
 }
 
 export async function createSeparateSummaryMemoryEntry(args = {}) {
+    const argumentError = getToolArgumentError(args, getDefinition().parameters);
+    if (argumentError) throw new Error(argumentError);
     const content = String(args.content || '').trim();
     if (!content) {
         throw new Error('No summary text is available to save as a lorebook entry.');

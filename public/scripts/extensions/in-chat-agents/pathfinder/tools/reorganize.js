@@ -1,12 +1,14 @@
 import { moveEntry, createCategory } from '../entry-manager.js';
 import { parseEntryUid } from '../tree-store.js';
-import { getToolWriteOptions, getUnknownBookError, getWritableBooks, resolveTargetBook, TOOL_NAMES } from '../pathfinder-tool-bridge.js';
+import { getToolArgumentError, getToolWriteOptions, getUnknownBookError, getWritableBooks, resolveTargetBook, TOOL_NAMES } from '../pathfinder-tool-bridge.js';
 import { registerToolAction, registerToolFormatter } from '../../tool-action-registry.js';
 import { logToolCallStarted, logToolCallCompleted, logToolCallError } from '../activity-feed.js';
 
 const COMPACT_DESCRIPTION = 'Move entries between waypoints or create new waypoints to reorganize the lorebook.';
 
 async function reorganizeAction(args, options = {}) {
+    const argumentError = getToolArgumentError(args, getDefinition().parameters);
+    if (argumentError) return argumentError;
     const action = String(args.action || '').trim().toLowerCase();
     const bookName = String(args.book || '').trim();
 

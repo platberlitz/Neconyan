@@ -6,7 +6,7 @@ import { isPathfinderSubmoduleEnabled } from '../agent-store.js';
 import { findNodeById } from './tree-store.js';
 import { getTreeWithAutoBuild } from './tree-builder.js';
 import { createEntry } from './entry-manager.js';
-import { getReadableBooks, getWritableBooks } from './pathfinder-tool-bridge.js';
+import { getReadableBooks, getWritableBooks, getToolWriteOptions, isToolReadCurrent } from './pathfinder-tool-bridge.js';
 
 const registeredCommands = [];
 
@@ -73,8 +73,14 @@ export function initCommands(registerSlashCommand) {
             const books = getWritableBooks();
             if (books.length === 0) return 'No writable Pawthfinder-enabled lorebooks.';
             const bookName = books[0];
+            const origin = globalThis.window?.SillyTavern?.getContext?.();
+            const chatId = origin?.getCurrentChatId?.() ?? origin?.chatId;
+            const isCurrent = () => {
+                const current = globalThis.window?.SillyTavern?.getContext?.();
+                return (current?.getCurrentChatId?.() ?? current?.chatId) === chatId && current?.chatMetadata === origin?.chatMetadata;
+            };
             try {
-                const result = await createEntry(bookName, content.slice(0, 50), content);
+                const result = await createEntry(bookName, content.slice(0, 50), content, [], getToolWriteOptions(bookName, { isCurrent }));
                 return `Remembered in "${result.bookName}".`;
             } catch (err) {
                 return `Error: ${err.message}`;
@@ -96,14 +102,14 @@ export function initCommands(registerSlashCommand) {
             const results = [];
             for (const bookName of getReadableBooks()) {
                 const tree = await getTreeWithAutoBuild(bookName);
-                if (!tree) continue;
+                if (!tree || !isToolReadCurrent(bookName)) continue;
                 const exact = findNodeById(tree, query);
                 const matches = exact ? [exact] : findNodesByName(tree, q);
                 for (const node of matches) {
-                    results.push(`${bookName}: ${node.name} (${(node.entries || []).length} entries)${node.id ? ` [id: ${node.id}]` : ''}`);
+                    results.push({ bookName, text: `${bookName}: ${node.name} (${(node.entries || []).length} entries)${node.id ? ` [id: ${node.id}]` : ''}` });
                 }
             }
-            return results.length > 0 ? results.join('\n') : 'No waypoints found matching query.';
+            return results.filter(result => isToolReadCurrent(result.bookName)).map(result => result.text).join('\n') || 'No waypoints found matching query.';
         },
     }));
 }

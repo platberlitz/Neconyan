@@ -67,7 +67,7 @@ import { onPathfinderWorldInfoUpdated, onPathfinderWorldInfoRenamed, onPathfinde
 import { initializePromptStore, setPromptStorePersistHook } from './pathfinder/prompts/prompt-store.js';
 import { getDefaultPrompts, getDefaultPipelines } from './pathfinder/prompts/default-prompts.js';
 import { getPathfinderToolDefinitions } from './pathfinder/tool-definitions.js';
-import { getContextualLorebooks, getForcedToolChoice } from './pathfinder/pathfinder-tool-bridge.js';
+import { getContextualLorebooks, getForcedToolChoice, prepareToolCall } from './pathfinder/pathfinder-tool-bridge.js';
 import { confirmToolCall, shouldConfirmToolCall } from './pathfinder/tool-confirmation.js';
 import { injectPathfinderRetrieval, PATHFINDER_RETRIEVAL_PROMPT_KEYS, runSidecarRetrieval } from './pathfinder/sidecar-retrieval.js';
 import { resetAutoSummaryCount, shouldAutoSummarize } from './pathfinder/auto-summary.js';
@@ -864,13 +864,16 @@ export function syncToolAgentRegistrations() {
                     activeToolApprovals.set(controller, isCurrent);
                     try {
                         callerSignal?.addEventListener?.('abort', abortFromCaller, { once: true });
+                        let prepared = { args, options: { signal: controller.signal, isCurrent } };
                         if (shouldConfirmToolCall(toolDef.name, getEnabledToolAgents().find(item => item.id === agent.id)?.settings)) {
-                            const approved = await confirmToolCall(toolDef.displayName ?? toolDef.name, args, controller.signal);
+                            prepared = await prepareToolCall(toolDef, args, prepared.options);
+                            if (!isCurrent()) return declined;
+                            const approved = await confirmToolCall(toolDef.displayName ?? toolDef.name, prepared.args, controller.signal);
                             if (!approved) return declined;
                         }
                         if (!isAgentRuntimeAllowed(agent)) return '';
                         if (!isCurrent()) return declined;
-                        return await action(args, { signal: controller.signal, isCurrent });
+                        return await action(prepared.args, prepared.options);
                     } finally {
                         callerSignal?.removeEventListener?.('abort', abortFromCaller);
                         activeToolApprovals.delete(controller);

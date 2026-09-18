@@ -1,5 +1,5 @@
 import { findNodeById, getSettings, isEntryEligible } from '../tree-store.js';
-import { getReadableBooks, TOOL_NAMES, getBookListWithDescriptions } from '../pathfinder-tool-bridge.js';
+import { getReadableBooks, isToolReadCurrent, getToolArgumentError, TOOL_NAMES, getBookListWithDescriptions } from '../pathfinder-tool-bridge.js';
 import { getTreeWithAutoBuild } from '../tree-builder.js';
 import { registerToolAction, registerToolFormatter } from '../../tool-action-registry.js';
 import { logToolCallStarted, logToolCallCompleted, logToolCallError } from '../activity-feed.js';
@@ -64,7 +64,9 @@ function formatNodeChildren(node) {
     return lines.join('\n') || 'No content at this waypoint.';
 }
 
-async function searchAction(args) {
+async function searchAction(args, options = {}) {
+    const argumentError = getToolArgumentError(args, getDefinition().parameters);
+    if (argumentError) return argumentError;
     const s = getSettings();
     const nodeId = args.node_id;
     const books = getReadableBooks();
@@ -79,30 +81,35 @@ async function searchAction(args) {
     if (!nodeId) {
         const results = [];
         for (const bookName of books) {
+            if (!isToolReadCurrent(bookName, options)) continue;
             const tree = await getTreeWithAutoBuild(bookName);
-            if (!tree) continue;
-            results.push(`=== ${bookName} ===\n${getTreeOverview(tree, bookName, s.searchMode)}`);
+            if (!tree || !isToolReadCurrent(bookName, options)) continue;
+            results.push({ bookName, text: `=== ${bookName} ===\n${getTreeOverview(tree, bookName, s.searchMode)}` });
         }
+        if (options.signal?.aborted || (options.isCurrent && !options.isCurrent())) return 'Search cancelled.';
         const bookList = getBookListWithDescriptions();
-        const output = `📊 Pawthfinder Waypoint Map\n\n${bookList}\n\n${results.join('\n\n')}\n\nCall this tool again with a specific node_id to drill deeper into a waypoint.`;
+        const output = `📊 Pawthfinder Waypoint Map\n\n${bookList}\n\n${results.filter(result => isToolReadCurrent(result.bookName, options)).map(result => result.text).join('\n\n')}\n\nCall this tool again with a specific node_id to drill deeper into a waypoint.`;
         logToolCallCompleted(TOOL_NAMES.SEARCH, output);
         return output;
     }
 
     let childListing = '';
+    let childBook = '';
     let allEntries = [];
     for (const bookName of books) {
+        if (!isToolReadCurrent(bookName, options)) continue;
         const tree = await getTreeWithAutoBuild(bookName);
-        if (!tree) continue;
+        if (!tree || !isToolReadCurrent(bookName, options)) continue;
         const cachedNode = findNodeById(tree, nodeId);
         if (!cachedNode) continue;
         const bookData = await loadWorldInfoSafe(bookName);
-        if (!bookData) continue;
+        if (!bookData || !isToolReadCurrent(bookName, options)) continue;
         const node = { ...cachedNode, entries: (cachedNode.entries || []).filter(uid => findEntrySafe(bookData.entries, uid)) };
 
         // A node can hold both sub-waypoints and entries: list the children
         // for navigation AND return the entry contents below.
         if (node.children?.length > 0) {
+            childBook = bookName;
             childListing = `🧭 ${node.name}\n\n${formatNodeChildren(node)}\n\nDrill further by calling with one of the sub-waypoint IDs.`;
             if (!node.entries?.length) {
                 logToolCallCompleted(TOOL_NAMES.SEARCH, childListing);
@@ -118,6 +125,8 @@ async function searchAction(args) {
         }
     }
 
+    allEntries = allEntries.filter(entry => isToolReadCurrent(entry.bookName, options));
+    if (!isToolReadCurrent(childBook, options)) childListing = '';
     if (allEntries.length === 0) {
         if (childListing) {
             logToolCallCompleted(TOOL_NAMES.SEARCH, childListing);

@@ -1,12 +1,14 @@
 import { updateEntry } from '../entry-manager.js';
 import { parseEntryUid } from '../tree-store.js';
-import { getToolWriteOptions, getUnknownBookError, getWritableBooks, resolveTargetBook, TOOL_NAMES } from '../pathfinder-tool-bridge.js';
+import { getToolArgumentError, getToolWriteOptions, getUnknownBookError, getWritableBooks, resolveTargetBook, TOOL_NAMES } from '../pathfinder-tool-bridge.js';
 import { registerToolAction, registerToolFormatter } from '../../tool-action-registry.js';
 import { logToolCallStarted, logToolCallCompleted, logToolCallError } from '../activity-feed.js';
 
 const COMPACT_DESCRIPTION = 'Edit an existing lorebook entry when information changes.';
 
 async function updateAction(args, options = {}) {
+    const argumentError = getToolArgumentError(args, getDefinition().parameters);
+    if (argumentError) return argumentError;
     const uid = parseEntryUid(args.uid);
     const newContent = String(args.content || '').trim();
     const newTitle = String(args.title || '').trim();

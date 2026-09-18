@@ -1,4 +1,4 @@
-import { getActiveTunnelVisionBooks, TOOL_NAMES } from '../pathfinder-tool-bridge.js';
+import { getActiveTunnelVisionBooks, getToolArgumentError, TOOL_NAMES } from '../pathfinder-tool-bridge.js';
 import { registerToolAction, registerToolFormatter } from '../../tool-action-registry.js';
 import { logToolCallStarted, logToolCallCompleted, logToolCallError } from '../activity-feed.js';
 
@@ -47,7 +47,10 @@ async function saveNotebookData(chatId) {
 
 const SAVE_FAILED_MESSAGE = 'Error: The notebook change could not be saved, so it was not kept. Try again.';
 
-async function notebookAction(args) {
+async function notebookAction(args, options = {}) {
+    const argumentError = getToolArgumentError(args, getDefinition().parameters);
+    if (argumentError) return argumentError;
+    if (options.signal?.aborted || (options.isCurrent && !options.isCurrent())) return 'Notebook request cancelled.';
     const action = String(args.action || '').trim().toLowerCase();
     const key = String(args.key || '').trim();
     const content = String(args.content || '').trim();

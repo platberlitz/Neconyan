@@ -1,6 +1,6 @@
 import { canReadBook, getSettings, isEntryEligible } from '../tree-store.js';
 import { createEntry } from '../entry-manager.js';
-import { getToolWriteOptions, getUnknownBookError, getWritableBooks, resolveTargetBook, TOOL_NAMES } from '../pathfinder-tool-bridge.js';
+import { getToolArgumentError, getToolWriteOptions, getUnknownBookError, getWritableBooks, isToolReadCurrent, resolveTargetBook, TOOL_NAMES } from '../pathfinder-tool-bridge.js';
 import { registerToolAction, registerToolFormatter } from '../../tool-action-registry.js';
 import { logToolCallStarted, logToolCallCompleted, logToolCallError } from '../activity-feed.js';
 
@@ -22,6 +22,8 @@ function trigramSimilarity(a, b) {
 }
 
 async function rememberAction(args, options = {}) {
+    const argumentError = getToolArgumentError(args, getDefinition().parameters);
+    if (argumentError) return argumentError;
     const settings = getSettings();
     const title = String(args.title || '').trim();
     const content = String(args.content || '').trim();
@@ -52,7 +54,7 @@ async function rememberAction(args, options = {}) {
         try {
             const ctx = window?.SillyTavern?.getContext?.();
             const bookData = await ctx?.loadWorldInfo?.(targetBook);
-            if (bookData?.entries) {
+            if (bookData?.entries && isToolReadCurrent(targetBook, options)) {
                 for (const [, entry] of Object.entries(bookData.entries)) {
                     if (isEntryEligible(entry)) {
                         const sim = trigramSimilarity(entry.content || '', content);

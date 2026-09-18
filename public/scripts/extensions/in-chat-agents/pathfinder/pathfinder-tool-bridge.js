@@ -1,6 +1,6 @@
 import { isPathfinderSubmoduleEnabled } from '../agent-store.js';
 import { getLinkApiRequestFormat } from '../../../linkapi-utils.js';
-import { getSettings, getTree, getAllEntryUids, isEntryEligible, isLorebookEnabled, canReadBook, canWriteBook, canDeleteBook } from './tree-store.js';
+import { getSettings, getTree, getAllEntryUids, isEntryEligible, isLorebookEnabled, canReadBook, canWriteBook, canDeleteBook, parseEntryUid } from './tree-store.js';
 
 const CHAT_LOREBOOK_METADATA_KEY = 'world_info';
 
@@ -176,9 +176,61 @@ export function getDeletableBooks(s = getSettings()) {
 export function getToolWriteOptions(bookName, options = {}, getAllowedBooks = getWritableBooks) {
     // Queued writes must recheck permissions after loading, not only when invoked.
     return {
+        ...options,
         signal: options.signal,
         isCurrent: () => (!options.isCurrent || options.isCurrent()) && getAllowedBooks().includes(bookName),
     };
+}
+
+export function isToolReadCurrent(bookName, options = {}) {
+    return !options.signal?.aborted && (!options.isCurrent || options.isCurrent()) && getReadableBooks().includes(bookName);
+}
+
+export function getToolArgumentError(args, parameters) {
+    if (!args || typeof args !== 'object' || Array.isArray(args)) return 'Error: Tool arguments must be an object.';
+    for (const [name, definition] of Object.entries(parameters?.properties ?? {})) {
+        const value = args[name];
+        if (value === undefined) continue;
+        // UID and deletion-flag parsers retain their documented legacy string forms.
+        if (definition.type === 'string' && typeof value !== 'string') return `Error: "${name}" must be text.`;
+        if (definition.enum && !definition.enum.includes(value?.trim?.().toLowerCase())) {
+            return `Error: "${name}" must be one of: ${definition.enum.join(', ')}.`;
+        }
+    }
+    return null;
+}
+
+export async function prepareToolCall(tool, args, options = {}) {
+    const argumentError = getToolArgumentError(args, tool.parameters);
+    if (argumentError) throw new Error(argumentError);
+    const prepared = { ...args };
+    if (!CONFIRMABLE_TOOLS.has(tool.name)) return { args: prepared, options };
+    const hardDelete = prepared.hard_delete === true || /^(true|1|yes)$/i.test(String(prepared.hard_delete ?? '').trim());
+    const merge = tool.name === TOOL_NAMES.MERGE_SPLIT && prepared.action?.trim().toLowerCase() === 'merge';
+    const allowed = tool.name === TOOL_NAMES.FORGET && hardDelete ? getDeletableBooks()
+        : getWritableBooks().filter(book => !merge || canDeleteBook(book));
+    const requested = prepared.book?.trim() ?? '';
+    const bookError = getUnknownBookError(requested, allowed);
+    if (bookError) throw new Error(bookError);
+    prepared.book = resolveTargetBook(requested, allowed);
+    if (!prepared.book) throw new Error('No Pawthfinder-enabled lorebook allows this operation.');
+    const uids = ['uid', 'uid1', 'uid2'].filter(key => prepared[key] !== undefined).map(key => {
+        const uid = parseEntryUid(prepared[key]);
+        if (uid === null) throw new Error(`Error: "${key}" must be a valid entry UID.`);
+        return uid;
+    });
+    const expectedEntries = [];
+    if (uids.length) {
+        const data = await globalThis.window?.SillyTavern?.getContext?.()?.loadWorldInfo?.(prepared.book);
+        options.signal?.throwIfAborted();
+        if (options.isCurrent && !options.isCurrent()) throw new DOMException('Cancelled', 'AbortError');
+        for (const uid of uids) {
+            const entry = Object.values(data?.entries ?? {}).find(entry => entry?.uid === uid);
+            if (!entry || entry.agentBlacklisted) throw new Error(`Entry UID ${uid} is unavailable in "${prepared.book}".`);
+            expectedEntries.push([uid, JSON.stringify(entry)]);
+        }
+    }
+    return { args: prepared, options: { ...options, expectedEntries } };
 }
 
 export function resolveTargetBook(requestedBook, writableBooks = null) {
@@ -233,8 +285,8 @@ export function preflightToolRuntimeState() {
  * @param {number} uid - Entry UID
  * @returns {Promise<Object|null>} Entry object with uid, comment, content, etc.
  */
-export async function getEntryContent(bookName, uid) {
-    if (!canReadBook(bookName)) return null;
+export async function getEntryContent(bookName, uid, options = {}) {
+    if (!isToolReadCurrent(bookName, options)) return null;
     const ctx = window?.SillyTavern?.getContext?.();
     if (!ctx?.loadWorldInfo) {
         console.warn(`${PATHFINDER_LOG_PREFIX} Cannot fetch lorebook entry because loadWorldInfo is unavailable.`, {
@@ -246,6 +298,7 @@ export async function getEntryContent(bookName, uid) {
 
     try {
         const bookData = await ctx.loadWorldInfo(bookName);
+        if (!isToolReadCurrent(bookName, options)) return null;
         if (!bookData?.entries) {
             console.warn(`${PATHFINDER_LOG_PREFIX} Lorebook "${bookName}" has no entries while fetching UID ${uid}.`);
             return null;
@@ -283,8 +336,8 @@ export async function getEntryContent(bookName, uid) {
  * @param {string} bookName - Lorebook name
  * @returns {Promise<Object[]>} Array of entry objects
  */
-export async function getAllEntriesWithContent(bookName) {
-    if (!canReadBook(bookName)) return [];
+export async function getAllEntriesWithContent(bookName, options = {}) {
+    if (!isToolReadCurrent(bookName, options)) return [];
     const ctx = window?.SillyTavern?.getContext?.();
     if (!ctx?.loadWorldInfo) {
         console.warn(`${PATHFINDER_LOG_PREFIX} Cannot fetch lorebook contents because loadWorldInfo is unavailable.`, {
@@ -295,6 +348,7 @@ export async function getAllEntriesWithContent(bookName) {
 
     try {
         const bookData = await ctx.loadWorldInfo(bookName);
+        if (!isToolReadCurrent(bookName, options)) return [];
         if (!bookData?.entries) {
             console.warn(`${PATHFINDER_LOG_PREFIX} Lorebook "${bookName}" has no entries while fetching all content.`);
             return [];

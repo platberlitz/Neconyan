@@ -56,6 +56,10 @@ class AccountStorage {
      */
     #ready = false;
 
+    get isReady() {
+        return this.#ready;
+    }
+
     #migrateLocalStorage() {
         const localStorageKeys = [];
         for (let i = 0; i < globalThis.localStorage.length; i++) {

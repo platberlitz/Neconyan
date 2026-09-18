@@ -21,6 +21,7 @@ await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/path
     canReadBook: jest.fn(() => true),
     canWriteBook: jest.fn(() => true),
     canDeleteBook: jest.fn(() => true),
+    parseEntryUid: value => Number.isInteger(Number(value)) ? Number(value) : null,
 }));
 
 const { getForcedToolChoice } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/pathfinder-tool-bridge.js');

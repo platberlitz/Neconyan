@@ -496,6 +496,7 @@ describe('in-chat agent post-processing runner', () => {
             CONFIRMABLE_TOOLS: new Set(['Pathfinder_Summarize']),
             getContextualLorebooks: jest.fn(() => []),
             getForcedToolChoice,
+            prepareToolCall: async (_tool, args, options) => ({ args, options }),
         }));
 
         await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/sidecar-retrieval.js', () => ({
@@ -4783,6 +4784,7 @@ describe('in-chat agent post-processing runner', () => {
         const tool = registeredTools.get('Pathfinder_Summarize');
         expect(tool.toFunctionOpenAI().function.name).toBe('Pathfinder_Summarize');
         const pending = tool.invoke({ title: 'Memory', content: 'Original chat' });
+        await waitFor(() => typeof approve === 'function');
         await cancel(runner);
         await expect(pending).resolves.toContain('The user declined this tool call.');
         approve(1);
@@ -4899,8 +4901,9 @@ describe('in-chat agent post-processing runner', () => {
         const { syncToolAgentRegistrations } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
         syncToolAgentRegistrations();
         const pending = registeredTools.get('Pathfinder_Summarize').invoke({ title: 'Memory' });
+        await waitFor(() => typeof approve === 'function');
         approve(1);
-        agent.settings.toolStates = { Pathfinder_Summarize: false };
+        enabledToolAgents.find(item => item.id === agent.id).settings.toolStates = { Pathfinder_Summarize: false };
         await expect(pending).resolves.toContain('The user declined this tool call.');
         expect(action).not.toHaveBeenCalled();
     });

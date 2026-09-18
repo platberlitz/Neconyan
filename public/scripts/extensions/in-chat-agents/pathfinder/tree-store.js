@@ -344,15 +344,14 @@ export function listConnectionProfiles() {
 }
 
 export function getBookPermission(bookName, permission, s = getSettings()) {
-    const perms = s.bookPermissions?.[bookName];
+    const perms = Object.hasOwn(s.bookPermissions ?? {}, bookName) ? s.bookPermissions[bookName] : undefined;
     return perms?.[permission] ?? 'readwrite';
 }
 
 export function setBookPermission(bookName, permission, value) {
     const s = getSettings();
-    if (!s.bookPermissions) s.bookPermissions = {};
-    if (!s.bookPermissions[bookName]) s.bookPermissions[bookName] = {};
-    s.bookPermissions[bookName][permission] = value;
+    const previous = Object.hasOwn(s.bookPermissions ?? {}, bookName) ? s.bookPermissions[bookName] : {};
+    s.bookPermissions = { ...s.bookPermissions, [bookName]: { ...previous, [permission]: value } };
 }
 
 function isPermissionAllowed(value) {
