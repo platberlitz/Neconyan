@@ -5,7 +5,7 @@ import express from 'express';
 import sanitize from 'sanitize-filename';
 import _ from 'lodash';
 import { tryParse, tryWriteFileSync } from '../util.js';
-import { removeSourceMemory } from '../mewmory/store.js';
+import { removeSourceMemory, renameWorldMemory } from '../mewmory/store.js';
 import {
     appendWorldInfoCommit, deleteWorldInfoHistory, mergeWorldInfoHistory, newWorldInfoHistory,
     readWorldInfoHistory, renameWorldInfoHistory, validateWorldInfoHistory, worldInfoRevision, writeWorldInfoHistory,
@@ -365,9 +365,12 @@ router.post('/rename', (request, response) => {
     try {
         writeWorldInfoFile(oldPath, JSON.stringify(data, null, 4));
         fs.renameSync(oldPath, newPath);
+        let undoMemory;
         try {
+            undoMemory = renameWorldMemory(request.user.directories, getWorldInfoName(oldName), canonicalName);
             renameWorldInfoHistory(oldPath, newPath);
         } catch (error) {
+            undoMemory?.();
             fs.renameSync(newPath, oldPath);
             throw error;
         }

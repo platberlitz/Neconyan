@@ -23,12 +23,12 @@ export function searchDocuments(state, asOf = Infinity) {
     const documents = records.map(record => {
         const content = recordBody(record);
         return {
-            id: record.id, kind: record.kind, dataType: 'memory', recordId: record.id,
+            id: record.id, kind: record.kind, dataType: 'memory', recordId: record.id, version: record.version,
             text: content, searchText: [names.get(record.ownerId || record.entityId), ...record.subjectIds.map(id => record.subjectNames?.[id] || names.get(id) || id),
                 record.searchDescription || content].filter(Boolean).join('\n'),
             refs: record.refs, asOf: record.asOf, ownerId: record.ownerId,
             subjectIds: record.subjectIds, status: record.status,
-            significance: record.significance, evidenceRefs: record.evidenceRefs,
+            significance: record.significance, evidenceRefs: record.evidenceRefs, linkedRecordIds: record.dependencies.map(dependency => dependency.id),
         };
     });
     for (const ref of [...state.timeline, ...state.contextSources]) {

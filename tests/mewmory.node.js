@@ -6,6 +6,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { setConfigFilePath } from '../src/util.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
@@ -15,24 +16,28 @@ const {
 } = await import('../src/mewmory/core.js');
 const { activeReferences, assembleContext, generationFingerprint } = await import('../src/mewmory/context.js');
 const { callJsonRole, defaultConfig, embed, isLocalEndpoint, validateEndpoint, saveConfig } = await import('../src/mewmory/models.js');
-const { applyExtraction, applyInterview, interviewInput, pendingSources, processBatch } = await import('../src/mewmory/processing.js');
-const { validateSelection, recall, recallInBackground } = await import('../src/mewmory/retrieval.js');
+const { applyExtraction, applyInterview, extractionInput, interviewInput, pendingSources, processBatch } = await import('../src/mewmory/processing.js');
+const { forcedMatches, validateSelection, recall, recallInBackground } = await import('../src/mewmory/retrieval.js');
 const { hybridCandidates, lexicalSearch, searchDocuments, updateIndex } = await import('../src/mewmory/search.js');
 const { loadCurrentState } = await import('../src/mewmory/sources.js');
-const { mutateState, normalizeLocator, readState, renameChatMemory, renameCharacterMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
+const { chatPath, listStories, mutateState, normalizeLocator, readState, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
+const { ensureMewmoryMessageIds } = await import('../public/scripts/mewmory/message-identity.js');
 const { getCounter, getTokenizerModel } = await import('../src/mewmory/tokens.js');
 const { inspectState, restoreRecords } = await import('../src/endpoints/mewmory.js');
 const { createMewmoryProvider } = await import('./mewmory-provider.js');
 const { readConfig, publicConfig } = await import('../src/mewmory/models.js');
+const { readSecret, writeSecret, SecretManager, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
+const { resolveModelProfile } = await import('../src/mewmory/connection-profiles.js');
 
 test('connection profiles resolve server-side and retain local-only permissions', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mewmory-profiles-'));
     const provider = await createMewmoryProvider();
     const directories = { root };
     try {
+        const remoteKey = writeSecret(directories, SECRET_KEYS.OPENAI, 'test-openai-key');
         writeJson(path.join(root, 'settings.json'), { extension_settings: { connectionManager: { profiles: [
             { id: 'local', name: 'Local facts', api: 'custom', 'api-url': provider.url, model: 'extractor' },
-            { id: 'remote', name: 'Remote facts', api: 'openai', model: 'gpt-4o' },
+            { id: 'remote', name: 'Remote facts', api: 'openai', model: 'gpt-4o', 'secret-id': remoteKey },
         ] } } });
         const config = defaultConfig();
         assert.equal(config.localOnly, false, 'remote model requests are allowed by default');
@@ -58,7 +63,7 @@ test('connection profiles resolve server-side and retain local-only permissions'
         saveConfig(directories, saved);
         assert.equal(readConfig(directories).roles.extractor.profileId, 'remote');
         writeJson(path.join(root, 'settings.json'), {});
-        assert.throws(() => readConfig(directories), /no longer exists/);
+        assert.match(readConfig(directories).roles.extractor.error, /no longer exists/);
         assert.equal(publicConfig(directories).roles.extractor.profileId, 'remote');
     } finally {
         await new Promise(resolve => provider.server.close(resolve));
@@ -128,6 +133,168 @@ test('Auto matches the role model independently, handles model families and reta
     assert.equal(explicit.name, 'cl100k_base');
     assert.equal(auto.count('猫 🐾 café\nFacts and events'), matching.count('猫 🐾 café\nFacts and events'));
     await assert.rejects(getCounter('auto', { tokenizerKey: 'api_current' }), /local writer tokenizer/);
+});
+
+test('saved profiles keep keyless connections anonymous, enforce bindings, and reject redirects for every request role', async t => {
+    const { directories } = disk(t);
+    const provider = await createMewmoryProvider();
+    const destination = await createMewmoryProvider();
+    t.after(async () => {
+        await new Promise(resolve => provider.server.close(resolve));
+        await new Promise(resolve => destination.server.close(resolve));
+    });
+    writeSecret(directories, SECRET_KEYS.CUSTOM, 'another-service-key');
+    const profile = { id: 'local', api: 'custom', 'api-url': provider.url.replace('127.0.0.1', 'localhost'), model: 'extractor' };
+    const settings = { extension_settings: { connectionManager: { profiles: [profile] } } };
+    writeJson(path.join(directories.root, 'settings.json'), settings);
+    const config = defaultConfig();
+    config.localOnly = true;
+    for (const name of ['extractor', 'embedding', 'fallback']) Object.assign(config.roles[name], { enabled: true, profileId: 'local' });
+    saveConfig(directories, config);
+    const input = { sources: [], existing: [] };
+    await callJsonRole(directories, readConfig(directories), 'extractor', 'Extract facts.', input);
+    await embed(directories, readConfig(directories), ['Anonymous embedding']);
+    assert.ok(provider.calls.every(call => !call.headers.authorization));
+    assert.ok(provider.calls.every(call => call.headers.host.startsWith('127.0.0.1:')));
+    const captured = readConfig(directories);
+    profile['secret-id'] = writeSecret(directories, SECRET_KEYS.CUSTOM, 'this-service-key');
+    writeJson(path.join(directories.root, 'settings.json'), settings);
+    await assert.rejects(callJsonRole(directories, captured, 'extractor', 'Extract.', input), /settings changed/);
+    await callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input);
+    assert.equal(provider.calls.at(-1).headers.authorization, 'Bearer this-service-key');
+    for (const status of [307, 308]) {
+        provider.mode.redirectStatus = status;
+        provider.mode.redirect = destination.url + '/chat/completions';
+        for (const name of ['extractor', 'fallback']) await assert.rejects(callJsonRole(directories, readConfig(directories), name, 'Extract.', input));
+        await assert.rejects(embed(directories, readConfig(directories), ['Private passage']));
+    }
+    assert.equal(destination.calls.length, 0);
+    const manual = publicConfig(directories);
+    Object.assign(manual.roles.fallback, { profileId: '', endpoint: provider.url, model: 'extractor' });
+    saveConfig(directories, manual);
+    await assert.rejects(callJsonRole(directories, readConfig(directories), 'fallback', 'Extract.', input));
+    assert.equal(destination.calls.length, 0);
+    new SecretManager(directories).deleteSecret(SECRET_KEYS.CUSTOM, profile['secret-id']);
+    await assert.rejects(callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input), /own saved API key/);
+    const before = provider.calls.length;
+    delete profile['secret-id'];
+    profile['api-url'] = destination.url;
+    writeJson(path.join(directories.root, 'settings.json'), settings);
+    await assert.rejects(callJsonRole(directories, captured, 'extractor', 'Extract.', input), /settings changed/);
+    assert.equal(provider.calls.length, before);
+    assert.equal(destination.calls.length, 0);
+});
+
+test('credential saves roll back on invalid input or failed configuration writes and clearing removes older keys', t => {
+    const { directories } = disk(t);
+    let config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test', apiKey: 'key-A' });
+    config = saveConfig(directories, config);
+    const previous = fs.readFileSync(path.join(directories.root, 'secrets.json'));
+    config.roles.extractor.apiKey = 'key-B';
+    config.roles.pawspective.apiKey = '   ';
+    assert.throws(() => saveConfig(directories, config), /API key/);
+    assert.deepEqual(fs.readFileSync(path.join(directories.root, 'secrets.json')), previous);
+    delete config.roles.pawspective.apiKey;
+    const rename = fs.renameSync;
+    const fault = t.mock.method(fs, 'renameSync', (from, to) => {
+        if (to === path.join(directories.root, 'mewmory', 'config.json')) throw new Error('Simulated configuration write failure');
+        return rename(from, to);
+    });
+    assert.throws(() => saveConfig(directories, config), /Simulated configuration write failure/);
+    fault.mock.restore();
+    assert.deepEqual(fs.readFileSync(path.join(directories.root, 'secrets.json')), previous);
+    assert.equal(readConfig(directories).revision, config.revision);
+    config = saveConfig(directories, config);
+    assert.equal(readSecret(directories, 'mewmory_extractor'), 'key-B');
+    config.roles.extractor.clearKey = true;
+    const cleared = saveConfig(directories, config);
+    assert.equal(cleared.roles.extractor.hasKey, false);
+    assert.equal(readSecret(directories, 'mewmory_extractor'), '');
+    assert.equal(new SecretManager(directories).getAllSecrets().mewmory_extractor, undefined);
+});
+
+test('broken optional profiles and disabled manual connections do not block inspection or local recall', async t => {
+    const { directories } = disk(t);
+    const provider = await createMewmoryProvider();
+    t.after(() => new Promise(resolve => provider.server.close(resolve)));
+    const settings = { extension_settings: { connectionManager: { profiles: [{ id: 'optional', api: 'custom', 'api-url': provider.url, model: 'embedding' }] } } };
+    writeJson(path.join(directories.root, 'settings.json'), settings);
+    const config = defaultConfig();
+    config.localOnly = true;
+    Object.assign(config.roles.selector, { enabled: true, endpoint: provider.url, model: 'selector' });
+    Object.assign(config.roles.embedding, { enabled: true, profileId: 'optional' });
+    config.writerTokenizer = 'cl100k_base';
+    config.roles.extractor.endpoint = 'https://disabled.example/v1';
+    config.roles.pawspective.endpoint = 'unfinished address';
+    saveConfig(directories, config);
+    writeJson(path.join(directories.root, 'settings.json'), {});
+    assert.match(readConfig(directories).roles.embedding.error, /no longer exists/);
+    assert.equal(readConfig(directories).roles.selector.error, undefined);
+    await loadCurrentState(directories, locator);
+    const state = mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    assert.doesNotThrow(() => inspectState(state, readConfig(directories)));
+    const result = await recall(directories, locator, { local: true });
+    assert.equal(result.enabled, true);
+    assert.equal(result.inspection.status, 'local');
+    const completed = await recallInBackground(directories, locator);
+    assert.match(completed.inspection.indexError, /no longer exists/);
+    assert.match(publicConfig(directories).roles.embedding.error, /no longer exists/);
+});
+
+test('profile-bound Azure and Workers settings resolve without active-writer defaults, and native proxies retain usage and truncation', async t => {
+    const { directories } = disk(t);
+    directories.openAI_Settings = path.join(directories.root, 'OpenAI Settings');
+    const provider = await createMewmoryProvider();
+    t.after(() => new Promise(resolve => provider.server.close(resolve)));
+    const azureKey = writeSecret(directories, SECRET_KEYS.AZURE_OPENAI, 'azure-test-key');
+    const workersKey = writeSecret(directories, SECRET_KEYS.WORKERS_AI, 'workers-test-key');
+    writeJson(path.join(directories.openAI_Settings, 'Azure.json'), { azure_base_url: provider.url, azure_deployment_name: 'saved-deployment', azure_api_version: '2024-10-21' });
+    writeJson(path.join(directories.openAI_Settings, 'Workers.json'), { workers_ai_account_id: 'saved-account' });
+    const profiles = [
+        { id: 'azure', api: 'azure_openai', model: 'extractor', preset: 'Azure', 'secret-id': azureKey },
+        { id: 'workers', api: 'workers_ai', model: 'extractor', preset: 'Workers', 'secret-id': workersKey },
+        ...['openai', 'claude', 'makersuite'].map(api => ({ id: api, api, model: 'extractor', proxy: 'Local proxy' })),
+    ];
+    writeJson(path.join(directories.root, 'settings.json'), { extension_settings: { connectionManager: { profiles } }, proxies: [{ name: 'Local proxy', url: provider.url, password: 'proxy-test-key' }],
+        oai_settings: { workers_ai_account_id: 'wrong-active-account', azure_base_url: 'https://wrong.example' } });
+    const azure = resolveModelProfile(directories, 'azure');
+    assert.equal(azure.payload.azure_base_url, provider.url);
+    assert.equal(azure.payload.azure_deployment_name, 'saved-deployment');
+    const workers = resolveModelProfile(directories, 'workers');
+    assert.equal(workers.payload.workers_ai_account_id, 'saved-account');
+    const { runBackendGeneration } = await import('../src/endpoints/conversation-generation.js');
+    const request = Object.assign(new EventEmitter(), { user: { directories }, headers: {}, socket: new EventEmitter() });
+    await runBackendGeneration(request, 'chat', { ...workers.payload, messages: [{ role: 'user', content: 'Test' }], max_tokens: 32 }, {
+        fetch: async (url, options) => {
+            assert.match(url, /accounts\/saved-account\/ai\/v1\/chat\/completions/);
+            assert.equal(options.headers.Authorization, 'Bearer workers-test-key');
+            return new Response(JSON.stringify({ choices: [{ message: { content: 'Test' } }] }));
+        },
+    });
+    fs.unlinkSync(path.join(directories.openAI_Settings, 'Workers.json'));
+    assert.throws(() => resolveModelProfile(directories, 'workers'), /workers ai account id/);
+    const content = JSON.stringify({ records: [], interviews: [], activeNpcIds: [] });
+    for (const api of ['azure', 'openai', 'claude', 'makersuite']) {
+        const config = publicConfig(directories);
+        config.localOnly = true;
+        Object.assign(config.roles.extractor, { enabled: true, profileId: api, tokenizer: 'cl100k_base' });
+        saveConfig(directories, config);
+        provider.mode.reply = api === 'claude'
+            ? { content: [{ type: 'text', text: content }], stop_reason: 'end_turn', usage: { input_tokens: 11, cache_read_input_tokens: 3, output_tokens: 7 } }
+            : api === 'makersuite' ? { candidates: [{ content: { parts: [{ text: content }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 14, candidatesTokenCount: 5, thoughtsTokenCount: 2 } }
+                : { choices: [{ message: { content }, finish_reason: 'stop' }], usage: { prompt_tokens: 14, completion_tokens: 7 } };
+        const result = await callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', { sources: [], existing: [] });
+        assert.equal(result.usage.input, 14);
+        assert.equal(result.usage.output, 7);
+        assert.ok(provider.calls.at(-1).headers.host.startsWith('127.0.0.1:'));
+        if (api === 'azure') assert.match(provider.calls.at(-1).url, /deployments\/saved-deployment\/chat\/completions\?api-version=2024-10-21/);
+        if (api === 'openai') assert.equal(provider.calls.at(-1).headers.authorization, 'Bearer proxy-test-key');
+        if (api === 'claude') provider.mode.reply.stop_reason = 'max_tokens';
+        else if (api === 'makersuite') provider.mode.reply.candidates[0].finishReason = 'MAX_TOKENS';
+        else provider.mode.reply.choices[0].finish_reason = 'length';
+        await assert.rejects(callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', {}), /cut short/);
+    }
 });
 
 const fixture = JSON.parse(fs.readFileSync(new URL('./fixtures/mewmory-gift.json', import.meta.url), 'utf8'));
@@ -299,6 +466,184 @@ test('deleting an ambiguous timestamp occurrence purges old text and never reuse
     }
 });
 
+test('native message identities preserve legacy references through differently dated swipes and deletion plus append', () => {
+    const messages = structuredClone(fixture.messages);
+    const state = base();
+    const original = { ...state.timeline[2] };
+    let sequence = 0;
+    ensureMewmoryMessageIds(messages, () => 'message-' + sequence++);
+    messages[2].swipe_info = [{ send_date: messages[2].send_date }, { send_date: 'different-date' }];
+    messages[2].send_date = 'different-date';
+    messages[2].swipe_id = 1;
+    messages[2].mes = 'A different accepted reply.';
+    syncSources(state, messages, fixture.lore);
+    assert.equal(state.timeline[2].id, original.id);
+    assert.equal(sourceAt(state, original).text, fixture.messages[2].mes);
+    messages[2].send_date = fixture.messages[2].send_date;
+    messages[2].swipe_id = 0;
+    messages[2].mes = fixture.messages[2].mes;
+    syncSources(state, messages, fixture.lore);
+    assert.equal(state.timeline[2].id, original.id);
+    assert.equal(state.timeline[2].revision, original.revision + 2);
+    const stable = messages[2].mewmory_id;
+    ensureMewmoryMessageIds(messages, () => 'message-' + sequence++);
+    assert.equal(messages[2].mewmory_id, stable);
+
+    const duplicates = [{ name: 'Mara', send_date: 'same', mes: 'DELETED PRIVATE TEXT' }, { name: 'Mara', send_date: 'same', mes: 'Surviving reply' }];
+    const ambiguous = newState(locator);
+    syncSources(ambiguous, duplicates);
+    syncSources(ambiguous, [duplicates[1], { name: 'Mara', send_date: 'new', mes: 'Appended reply' }]);
+    assert.equal(JSON.stringify(ambiguous).includes('DELETED PRIVATE TEXT'), false);
+});
+
+test('native branch saves capture memory immediately, including a continuation with a different first local reply', async t => {
+    const { directories } = disk(t);
+    const { trySaveChat } = await import('../src/endpoints/chats.js');
+    const parent = mutateState(directories, locator, () => {
+        const state = base();
+        state.enabled = true;
+        event(state, { text: 'Memory at branch creation' });
+        return state;
+    });
+    const branch = normalizeLocator({ ...locator, chat: 'Native branch' });
+    const save = (target, mainChat, messages) => trySaveChat([{ chat_metadata: { main_chat: mainChat } }, ...messages],
+        chatPath(directories, target), false, 'mewmory-audit', target.chat, directories.root,
+        { deferBackup: true, mewmory: { directories, locator: target } });
+    await save(branch, locator.chat, fixture.messages.slice(0, 3));
+    const copied = readState(directories, branch);
+    assert.equal(copied.enabled, true);
+    assert.ok(copied.records.some(record => record.text === 'Memory at branch creation'));
+    mutateState(directories, locator, state => { state.records[0].text = 'A later parent correction'; });
+    removeChatMemory(directories, locator);
+    assert.equal((await loadCurrentState(directories, branch)).branchId, copied.branchId);
+    assert.equal(JSON.stringify(readState(directories, branch)).includes('A later parent correction'), false);
+
+    const continuation = normalizeLocator({ ...locator, chat: 'Continuation' });
+    const local = [{ name: 'Mara', send_date: 'next', mes: 'First local reply' }];
+    mutateState(directories, continuation, () => continueState(parent, continuation, local));
+    const child = normalizeLocator({ ...locator, chat: 'Continuation branch' });
+    await save(child, continuation.chat, [{ ...local[0], mes: 'Another first reply', swipe_id: 1 }]);
+    const state = await loadCurrentState(directories, child);
+    assert.equal(state.inheritedTimeline.length, parent.timeline.length);
+    assert.ok(state.timeline.every(ref => sourceAt(state, ref)));
+    assert.doesNotThrow(() => inspectState(state, defaultConfig()));
+});
+
+test('character and book renames preserve distinct identities, deletion reaches renamed sources, and unbound books survive', async t => {
+    const { directories } = disk(t);
+    const { write: writeCard } = await import('../src/character-card-parser.js');
+    const png = fs.readFileSync(new URL('../default/content/backgrounds/__transparent.png', import.meta.url));
+    const card = (avatar, description) => fs.writeFileSync(path.join(directories.characters, avatar), writeCard(png, JSON.stringify({ name: avatar, description })));
+    card('Mara.png', 'Original character');
+    const group = normalizeLocator({ group: true, chat: 'Group' });
+    fs.writeFileSync(chatPath(directories, group), JSON.stringify({ chat_metadata: {} }) + '\n' + JSON.stringify(fixture.messages[0]));
+    const groupFile = path.join(directories.groups, 'group.json');
+    writeJson(groupFile, { chat_id: group.chat, members: ['Mara.png'] });
+    const original = await loadCurrentState(directories, group);
+    renameCharacterMemory(directories, 'Mara.png', 'Renamed.png');
+    fs.renameSync(path.join(directories.characters, 'Mara.png'), path.join(directories.characters, 'Renamed.png'));
+    card('Mara.png', 'Different character');
+    writeJson(groupFile, { chat_id: group.chat, members: ['Mara.png', 'Renamed.png'] });
+    const both = await loadCurrentState(directories, group);
+    assert.equal(new Set(both.contextSources.map(ref => ref.id)).size, 2);
+    assert.equal((await loadCurrentState(directories, group)).revision, both.revision);
+    assert.ok(both.contextSources.some(ref => ref.id === original.contextSources[0].id));
+    renameCharacterMemory(directories, 'Renamed.png', 'Final.png');
+    fs.renameSync(path.join(directories.characters, 'Renamed.png'), path.join(directories.characters, 'Final.png'));
+    fs.unlinkSync(path.join(directories.characters, 'Final.png'));
+    removeSourceMemory(directories, { avatar: 'Final.png' });
+    assert.equal(JSON.stringify(readState(directories, group)).includes('Original character'), false);
+
+    const book = { entries: { 1: { comment: 'Harbour', content: 'Lighthouse detail', key: ['harbour'] } } };
+    writeJson(path.join(directories.worlds, 'Old.json'), book);
+    writeJson(path.join(directories.root, 'settings.json'), { world_info: { globalSelect: ['Old'] } });
+    const before = await loadCurrentState(directories, locator);
+    renameWorldMemory(directories, 'Old', 'New');
+    fs.renameSync(path.join(directories.worlds, 'Old.json'), path.join(directories.worlds, 'New.json'));
+    writeJson(path.join(directories.root, 'settings.json'), { world_info: { globalSelect: ['New'] } });
+    const after = await loadCurrentState(directories, locator);
+    const lore = before.contextSources.find(ref => ref.id.startsWith('lore:'));
+    assert.ok(after.contextSources.some(ref => ref.id === lore.id && ref.revision === lore.revision));
+    writeJson(path.join(directories.root, 'settings.json'), {});
+    assert.ok(JSON.stringify(await loadCurrentState(directories, locator)).includes('Lighthouse detail'));
+    fs.unlinkSync(path.join(directories.worlds, 'New.json'));
+    assert.equal(JSON.stringify(await loadCurrentState(directories, locator)).includes('Lighthouse detail'), false);
+});
+
+test('HTTP recovery handles missing and corrupt archives without restoring deleted evidence or accepting unrelated exports', async t => {
+    const messages = structuredClone(fixture.messages);
+    let next = 0;
+    ensureMewmoryMessageIds(messages, () => 'saved-' + next++);
+    const { directories, write } = disk(t, messages);
+    await loadCurrentState(directories, locator);
+    const guardFile = path.join(directories.root, 'mewmory', 'recovery', path.basename(statePath(directories, locator)));
+    fs.writeFileSync(guardFile, '{broken');
+    const initial = mutateState(directories, locator, state => {
+        event(state, { id: 'event:removed', text: 'Must never return', refs: [state.timeline[2]] });
+        event(state, { id: 'event:kept', text: 'Still supported', refs: [state.timeline[0]] });
+    });
+    assert.equal(JSON.parse(fs.readFileSync(guardFile, 'utf8')).storyId, initial.storyId, 'a healthy archive repairs a damaged recovery ledger');
+    const backup = { format: 'mewmory-export-1', state: structuredClone(initial) };
+    write(messages.filter((_, index) => index !== 2));
+    await loadCurrentState(directories, locator);
+    const express = (await import('express')).default;
+    const { router } = await import('../src/endpoints/mewmory.js');
+    const app = express();
+    app.use(express.json());
+    app.use((request, response, next) => { request.user = { directories }; next(); });
+    app.use(router);
+    const server = await new Promise(resolve => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
+    t.after(() => new Promise(resolve => server.close(resolve)));
+    const restore = body => fetch('http://127.0.0.1:' + server.address().port + '/restore', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locator, backup, ...body }),
+    });
+    for (const missing of [true, false]) {
+        if (missing) fs.unlinkSync(statePath(directories, locator));
+        else fs.writeFileSync(statePath(directories, locator), '{broken');
+        assert.doesNotThrow(() => listStories(directories));
+        assert.throws(() => renameChatMemory(directories, locator, { ...locator, chat: 'Moved' }), /archive is missing|could not read/);
+        assert.equal(fs.existsSync(statePath(directories, { ...locator, chat: 'Moved' })), false);
+        const previewResponse = await restore({ recover: true });
+        const preview = await previewResponse.json();
+        assert.equal(previewResponse.status, 200, JSON.stringify(preview));
+        assert.deepEqual(preview.restored, ['event:kept']);
+        assert.ok(preview.skipped.some(record => record.id === 'event:removed'));
+        const response = await restore({ recover: true, apply: true, recoveryToken: preview.recoveryToken });
+        const applied = await response.json();
+        assert.equal(response.status, 200, JSON.stringify(applied));
+        assert.equal(applied.revision, readState(directories, locator).revision);
+        assert.equal(JSON.stringify(readState(directories, locator)).includes('Must never return'), false);
+    }
+    const unrelated = structuredClone(backup);
+    unrelated.state.branchId = 'unrelated';
+    assert.equal((await restore({ recover: true, backup: unrelated })).status, 409);
+    removeChatMemory(directories, locator);
+    assert.equal((await restore({ recover: true })).status, 409, 'deleting a chat also deletes its recovery identity');
+    assert.equal(chatPath(directories, { ...locator, avatar: 'part.png.extra.png' }), path.join(directories.chats, 'part.extra.png', 'Gift.jsonl'));
+});
+
+for (const operation of ['rename', 'delete']) test('finishing work cannot recreate an archive after chat ' + operation, async t => {
+    const { directories, filename } = disk(t);
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    const renamed = normalizeLocator({ ...locator, chat: 'Moved' });
+    await assert.rejects(processBatch(directories, locator, {}, async () => {
+        if (operation === 'rename') {
+            renameChatMemory(directories, locator, renamed);
+            fs.renameSync(filename, chatPath(directories, renamed));
+        } else {
+            fs.unlinkSync(filename);
+            removeChatMemory(directories, locator);
+        }
+        return { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role: 'extractor', input: 1, output: 1 } };
+    }), /source file is unavailable/);
+    assert.equal(fs.existsSync(statePath(directories, locator)), false);
+    if (operation === 'rename') assert.doesNotThrow(() => renameChatMemory(directories, renamed, locator));
+});
+
 test('claims stay reported; a temporary disguise never replaces stable appearance; extractor cannot write an interview', () => {
     const state = base();
     const refs = [state.timeline[2]];
@@ -391,7 +736,7 @@ test('author corrections survive automatic retries under the same or a different
     putRecord(state, { ...original, text: 'Author: the gift was accepted without a confession.', authorOverride: true, origin: 'author' });
     const corrected = state.records.find(record => record.id === original.id);
     putRecord(state, { ...original, text: 'Bad automatic rewrite.' }, { automatic: true });
-    putRecord(state, { ...original, id: 'event:duplicate', text: 'Bad duplicate rewrite.' }, { automatic: true });
+    putRecord(state, { ...original, id: 'event:duplicate' }, { automatic: true });
     assert.equal(state.records.find(record => record.id === original.id).text, corrected.text);
     assert.equal(state.records.some(record => record.id === 'event:duplicate'), false);
     undoRecord(state, original.id);
@@ -434,6 +779,178 @@ test('multiple corrections can be undone, and significance loses eligibility wit
     changed[5].mes = 'The callback is removed.';
     syncSources(state, changed, fixture.lore);
     assert.equal(recordEligible(state, significant), false);
+});
+
+test('objective extraction excludes corrected interview prose and text from ineligible author corrections', () => {
+    const { state, original } = giftHistory();
+    putRecord(state, { ...original, pinned: true, authorOverride: true, origin: 'author' });
+    const correction = event(state, { id: 'event:private-correction', text: 'EXCLUDED AUTHOR TEXT' });
+    putRecord(state, { ...correction, authorOverride: true, origin: 'author' });
+    state.excludedSources.push(correction.refs[0].id);
+    const input = extractionInput(state, [state.timeline[5]], 5, true);
+    const serialized = JSON.stringify(input);
+    assert.equal(serialized.includes(fixture.expectations.interview_only_gesture), false);
+    assert.equal(serialized.includes('EXCLUDED AUTHOR TEXT'), false);
+    assert.ok(input.authorOverrides.some(record => record.id === original.id));
+    assert.ok(input.authorOverrides.some(record => record.id === correction.id));
+    assert.equal(input.authorOverrides.find(record => record.id === original.id).interview, undefined);
+});
+
+test('corrections retain the rejected claim identity without suppressing different facts from the same source', () => {
+    for (const legacy of [false, true]) {
+        const state = base();
+        const original = event(state);
+        putRecord(state, { ...original, text: 'Corrected account.', ownerId: 'npc:mara', subjectIds: ['gift-box'], refs: [state.timeline[0]], authorOverride: true, origin: 'author' });
+        if (legacy) state.overrides = [{ id: original.id, signature: 'old-coarse-signature' }];
+        putRecord(state, { ...original, id: 'event:recreated-error' }, { automatic: true });
+        const separate = { ...original, id: 'event:separate-fact', text: 'Mara put the gift in her bag.' };
+        putRecord(state, separate, { automatic: true });
+        assert.equal(state.records.some(record => record.id === 'event:recreated-error'), false);
+        assert.ok(state.records.some(record => record.id === separate.id));
+        assert.equal(state.records.find(record => record.id === original.id).text, 'Corrected account.');
+    }
+});
+
+test('undoing an unchanged author save leaves another record’s correction and undo history intact', () => {
+    const state = base();
+    const first = event(state);
+    const second = event(state, { id: 'event:second', text: 'A separate fact.' });
+    putRecord(state, { ...first, origin: 'author', authorOverride: true });
+    putRecord(state, { ...second, text: 'A separate correction.', authorOverride: true, origin: 'author' });
+    const otherAudit = structuredClone(state.audit.filter(entry => entry.recordId === second.id));
+    undoRecord(state, first.id);
+    assert.deepEqual(state.audit.filter(entry => entry.recordId === second.id), otherAudit);
+    assert.equal(state.audit.at(-1).recordId, first.id);
+    assert.equal(state.audit.at(-1).action, 'undo');
+    undoRecord(state, second.id);
+    assert.equal(state.records.find(record => record.id === second.id).text, second.text);
+});
+
+test('same-time interviews with different knowledge stay eligible and preservation never accepts an invalid replacement', async t => {
+    const { directories } = disk(t, fixture.messages.slice(0, 3));
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => {
+        state.enabled = true;
+        putRecord(state, validateRecord(state, { id: 'entity:mara', kind: 'entity', entityId: 'npc:mara', name: 'Mara', text: 'Mara',
+            isCharacter: true, subjectIds: ['npc:mara'], refs: [state.timeline[0]] }, { asOf: 0, origin: 'objective_extractor' }), { automatic: true });
+    });
+    let interviews = 0;
+    const output = answer => ({ changed: true, interview: [{ question: 'What do you think?', answer }], searchDescription: answer,
+        changeExplanation: '', overviews: [{ subjectId: 'gift', text: answer, status: 'active' }] });
+    const state = await processBatch(directories, locator, { checkpoint: true }, async (_directories, _config, role, _contract, input) => {
+        if (role === 'pawspective') return { value: output('View ' + ++interviews), usage: { role } };
+        const source = input.sources.filter(source => source.type === 'chat').at(-1);
+        const refs = [{ id: source.id, revision: source.revision }];
+        return { value: {
+            records: ['first', 'second'].map(name => ({ id: 'knowledge:' + name, kind: 'knowledge', ownerId: 'npc:mara', subjectIds: ['gift'],
+                text: 'Known detail ' + name, method: 'witnessed', evidenceText: 'Mara accepts the gift.', refs })),
+            interviews: ['first', 'second'].map(name => ({ ownerId: 'npc:mara', subjectIds: ['gift'], knowledgeIds: ['knowledge:' + name], refs })), activeNpcIds: ['npc:mara'],
+        }, usage: { role } };
+    });
+    const saved = state.records.filter(record => record.kind === 'interview');
+    assert.equal(saved.length, 2);
+    assert.ok(saved.every(record => recordEligible(state, record)));
+    assert.equal(Object.keys(state.checkpoints).length, 3);
+    const request = { ownerId: 'npc:mara', subjectIds: ['gift'], knowledgeIds: ['knowledge:second'], refs: [state.timeline[2]] };
+    const input = interviewInput(state, request, 2);
+    assert.throws(() => applyInterview(state, request, output('Invalid self-dependent replacement'), input, state.jobs.at(-1).id), /Preservation has not advanced/);
+    assert.ok(readState(directories, locator).records.filter(record => record.kind === 'interview').every(record => recordEligible(readState(directories, locator), record)));
+});
+
+test('an old overview is labelled historical while the latest interpretation is the only current view', () => {
+    const { state } = giftHistory();
+    const old = searchDocuments(state).find(document => document.kind === 'overview' && document.asOf === 2);
+    const result = assembleContext(state, [old], { counter });
+    assert.equal(result.memoryText.match(/\[Current subjective view;/g)?.length, 1);
+    assert.ok(result.memoryText.includes('[Historical subjective view;'));
+    assert.ok(result.memoryText.includes(fixture.expectations.original_view));
+    assert.ok(result.memoryText.includes(fixture.expectations.current_view));
+    assert.ok(result.memoryText.indexOf(fixture.expectations.current_view) < result.memoryText.indexOf(fixture.expectations.original_view));
+    const past = assembleContext(state, [old], { counter, asOf: 2 });
+    assert.equal(past.memoryText.includes(fixture.expectations.current_view), false);
+    assert.ok(past.memoryText.includes('[Current subjective view;'));
+});
+
+test('historical recall preserves the selected version and never substitutes later evidence or text', async t => {
+    const { directories } = disk(t);
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => {
+        state.enabled = true;
+        event(state, { id: 'event:history', text: 'EARLIER gift account.' });
+        const anchor = event(state, { id: 'event:later-anchor', text: 'Later receipt evidence.', refs: [state.timeline[5]], asOf: 5 });
+        event(state, { id: 'event:history', text: 'LATER gift account.', refs: [state.timeline[5]], asOf: 5,
+            dependencies: [{ id: anchor.id, version: anchor.version }] });
+    });
+    const result = await recall(directories, locator, { asOf: 2 }, { call: async (_directories, _config, role, _contract, input) => {
+        const candidate = input.candidates.find(candidate => candidate.recordId === 'event:history');
+        assert.ok(candidate.excerpt.includes('EARLIER'));
+        assert.deepEqual(candidate.linkedRecordIds, []);
+        return { value: { status: 'complete', selections: [{ recordId: candidate.recordId, relevanceType: 'direct', currentCueRefs: [input.scene.at(-1).id],
+            memoryEvidenceRefs: [candidate.sourceRefs[0]], justification: 'Earlier accepted gift account.' }], rejections: [], needsEvidence: [] }, usage: { role } };
+    } });
+    assert.ok(result.memoryText.includes('EARLIER gift account.'));
+    assert.equal(result.memoryText.includes('LATER gift account.'), false);
+    assert.equal(result.memoryText.includes('event:later-anchor'), false);
+});
+
+test('automatic cast selection is bounded by story position and older backfill cannot overwrite a later cast', () => {
+    const state = base();
+    applyExtraction(state, { records: [], interviews: [], activeNpcIds: [] }, extractionInput(state, [state.timeline[5]], 5, false));
+    applyExtraction(state, { records: [], interviews: [], activeNpcIds: ['npc:mara'] }, extractionInput(state, [state.timeline[2]], 2, true));
+    assert.deepEqual(state.sceneNpcIds, []);
+    assert.deepEqual(activeReferences(state, 2).ids, ['npc:mara']);
+    assert.ok(activeReferences(state, 1).text.includes('Mara'), 'an unknown earlier cast keeps eligible references conservatively');
+    assert.equal(activeReferences(state, 5).text, '');
+    const branch = forkState(state, { ...locator, chat: 'Earlier cast' }, 2, fixture.messages.slice(0, 3));
+    assert.ok(activeReferences(branch).text.includes('Mara'));
+});
+
+test('evidence expansion adds an original passage even when more than twelve records share it', async t => {
+    const { directories } = disk(t, [{ name: 'Mara', mes: 'The sigil', send_date: 'one' }]);
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    config.candidateLimit = 4;
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => {
+        state.enabled = true;
+        for (let index = 0; index < 16; index++) event(state, { id: 'event:evidence-' + index, text: 'Mara the sigil', refs: [state.timeline[0]], asOf: 0 });
+    });
+    let round = 0;
+    await recall(directories, locator, {}, { call: async (_directories, _config, role, _contract, input) => {
+        round++;
+        if (round === 1) {
+            assert.equal(input.candidates.some(candidate => candidate.kind === 'source'), false);
+            return { value: { status: 'needs_evidence', selections: [], rejections: [], needsEvidence: [input.candidates[0].recordId] }, usage: { role } };
+        }
+        assert.ok(input.candidates.some(candidate => candidate.kind === 'source' && candidate.excerpt === 'The sigil'));
+        return { value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: { role } };
+    } });
+    assert.equal(round, 2);
+});
+
+test('punctuation-only commitment cues do not force recall while non-Latin words still match', () => {
+    const state = base();
+    for (const [name, cue] of [['punctuation', '...'], ['rain', '雨']]) {
+        putRecord(state, validateRecord(state, { id: 'commitment:' + name, kind: 'commitment', text: name, refs: [state.timeline[2]],
+            subjectIds: ['gift'], triggerTerms: [cue] }, { asOf: 2, origin: 'objective_extractor' }), { automatic: true });
+    }
+    const documents = searchDocuments(state);
+    assert.deepEqual(forcedMatches(state, documents, 'An unrelated scene.', Infinity), []);
+    assert.deepEqual(forcedMatches(state, documents, '雨', Infinity).map(document => document.id), ['commitment:rain']);
+});
+
+test('archive filters apply before pagination and retain a separate unfiltered record count', () => {
+    const state = base();
+    for (let index = 0; index < 81; index++) event(state, { id: 'event:page-' + index, status: index === 0 ? 'background' : 'active' });
+    const view = inspectState(state, defaultConfig(), { kind: 'event', status: 'background' });
+    assert.equal(view.total, 1);
+    assert.equal(view.records[0].id, 'event:page-0');
+    assert.equal(view.recordCount, state.records.length);
+    assert.equal(inspectState(state, defaultConfig(), { kind: 'interview' }).recordCount, state.records.length);
 });
 
 test('deletion removes source text from older audit copies and prepared previews', () => {

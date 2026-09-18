@@ -595,7 +595,7 @@ async function sendClaudeRequest(request, response) {
         // Neconyan: node-fetch's stream pipeline leaks Bun timeout rejections; direct HTTPS preserves global agents.
         const generateResponse = isBunRuntime() && request.body.stream && request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.LINKAPI
             ? await fetchBunLinkApiStream(requestUrl, requestOptions)
-            : await fetch(requestUrl, requestOptions);
+            : await (request.fetch || fetch)(requestUrl, requestOptions);
 
         if (request.body.stream) {
             // Pipe remote SSE stream to Express response
@@ -622,7 +622,9 @@ async function sendClaudeRequest(request, response) {
             console.debug('Claude response:', summarizeLlmPayloadForLog(generateResponseJson));
 
             // Wrap it back to OAI format + save the original content
-            const reply = { choices: [{ 'message': { 'content': responseText } }], content: generateResponseJson.content };
+            const usage = generateResponseJson.usage || {};
+            const reply = { choices: [{ message: { content: responseText }, finish_reason: generateResponseJson.stop_reason === 'max_tokens' ? 'length' : generateResponseJson.stop_reason }],
+                content: generateResponseJson.content, usage: { prompt_tokens: (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0), completion_tokens: usage.output_tokens || 0 } };
             return response.send(reply);
         }
     } catch (error) {
@@ -919,7 +921,7 @@ async function sendMakerSuiteRequest(request, response) {
             url = `${baseUrl}/models/${model}:${responseType}?key=${apiKey}${stream ? '&alt=sse' : ''}`;
         }
 
-        const generateResponse = await fetch(url, {
+        const generateResponse = await (request.fetch || fetch)(url, {
             body: JSON.stringify(body),
             method: 'POST',
             headers: headers,
@@ -970,7 +972,9 @@ async function sendMakerSuiteRequest(request, response) {
             }
 
             // Wrap it back to OAI format (responseContent includes thought signatures in parts array)
-            const reply = { choices: [{ 'message': { 'content': responseText } }], responseContent };
+            const usage = generateResponseJson.usageMetadata || {};
+            const reply = { choices: [{ message: { content: responseText }, finish_reason: candidates[0].finishReason === 'MAX_TOKENS' ? 'length' : candidates[0].finishReason }],
+                responseContent, usage: { prompt_tokens: usage.promptTokenCount || 0, completion_tokens: (usage.candidatesTokenCount || 0) + (usage.thoughtsTokenCount || 0) } };
             return response.send(reply);
         }
     } catch (error) {
@@ -1035,7 +1039,7 @@ async function sendAI21Request(request, response) {
     logVerboseGenerationRequest('AI21', request, body);
 
     try {
-        const generateResponse = await fetch(API_AI21 + '/chat/completions', options);
+        const generateResponse = await (request.fetch || fetch)(API_AI21 + '/chat/completions', options);
         if (request.body.stream) {
             forwardFetchResponse(generateResponse, response, request, () => controller.abort());
         } else {
@@ -1122,7 +1126,7 @@ async function sendMistralAIRequest(request, response) {
 
         logVerboseGenerationRequest('MistralAI', request, requestBody);
 
-        const generateResponse = await fetch(apiUrl + '/chat/completions', config);
+        const generateResponse = await (request.fetch || fetch)(apiUrl + '/chat/completions', config);
         if (request.body.stream) {
             forwardFetchResponse(generateResponse, response, request, () => controller.abort());
         } else {
@@ -1221,10 +1225,10 @@ async function sendCohereRequest(request, response) {
         const apiUrl = API_COHERE_V2 + '/chat';
 
         if (request.body.stream) {
-            const stream = await fetch(apiUrl, config);
+            const stream = await (request.fetch || fetch)(apiUrl, config);
             forwardFetchResponse(stream, response, request, () => controller.abort());
         } else {
-            const generateResponse = await fetch(apiUrl, config);
+            const generateResponse = await (request.fetch || fetch)(apiUrl, config);
             if (!generateResponse.ok) {
                 const errorText = await generateResponse.text();
                 console.warn(`Cohere API returned error: ${generateResponse.status} ${generateResponse.statusText} ${errorText}`);
@@ -1338,7 +1342,7 @@ async function sendDeepSeekRequest(request, response) {
 
         logVerboseGenerationRequest('DeepSeek', request, requestBody);
 
-        const generateResponse = await fetch(apiUrl + '/chat/completions', config);
+        const generateResponse = await (request.fetch || fetch)(apiUrl + '/chat/completions', config);
 
         if (request.body.stream) {
             forwardFetchResponse(generateResponse, response, request, () => controller.abort());
@@ -1441,7 +1445,7 @@ async function sendXaiRequest(request, response) {
 
         logVerboseGenerationRequest('xAI', request, requestBody);
 
-        const generateResponse = await fetch(apiUrl + '/chat/completions', config);
+        const generateResponse = await (request.fetch || fetch)(apiUrl + '/chat/completions', config);
 
         if (request.body.stream) {
             forwardFetchResponse(generateResponse, response, request, () => controller.abort());
@@ -1543,7 +1547,7 @@ async function sendAimlapiRequest(request, response) {
 
         logVerboseGenerationRequest('AI/ML API', request, requestBody);
 
-        const generateResponse = await fetch(apiUrl + '/chat/completions', config);
+        const generateResponse = await (request.fetch || fetch)(apiUrl + '/chat/completions', config);
 
         if (request.body.stream) {
             forwardFetchResponse(generateResponse, response, request, () => controller.abort());
@@ -1652,7 +1656,7 @@ async function sendElectronHubRequest(request, response) {
 
         logVerboseGenerationRequest('Electron Hub', request, requestBody);
 
-        const generateResponse = await fetch(apiUrl + '/chat/completions', config);
+        const generateResponse = await (request.fetch || fetch)(apiUrl + '/chat/completions', config);
 
         if (request.body.stream) {
             forwardFetchResponse(generateResponse, response, request, () => controller.abort());
@@ -1750,7 +1754,7 @@ async function sendChutesRequest(request, response) {
 
         logVerboseGenerationRequest('Chutes', request, requestBody);
 
-        const generateResponse = await fetch(apiUrl + '/chat/completions', config);
+        const generateResponse = await (request.fetch || fetch)(apiUrl + '/chat/completions', config);
 
         if (request.body.stream) {
             forwardFetchResponse(generateResponse, response, request, () => controller.abort());
@@ -1827,7 +1831,7 @@ async function sendMinimaxRequest(request, response) {
 
         logVerboseGenerationRequest('MiniMax', request, requestBody);
 
-        const generateResponse = await fetch(apiUrl + '/chat/completions', config);
+        const generateResponse = await (request.fetch || fetch)(apiUrl + '/chat/completions', config);
 
         if (request.body.stream) {
             return forwardFetchResponse(generateResponse, response, request, () => controller.abort());
@@ -1922,7 +1926,7 @@ async function sendAzureOpenAIRequest(request, response) {
     console.info(`Sending request to Azure OpenAI: ${endpointUrl}`);
     logVerboseGenerationRequest('Azure OpenAI', request, apiRequestBody);
     try {
-        const fetchResponse = await fetch(endpointUrl, config);
+        const fetchResponse = await (request.fetch || fetch)(endpointUrl, config);
 
         if (request.body.stream) {
             return forwardFetchResponse(fetchResponse, response, request, () => controller.abort());
@@ -2897,7 +2901,7 @@ async function sendOpenAIResponsesRequest(request, response) {
 
         logVerboseGenerationRequest('OpenAI Responses API', request, requestBody);
 
-        const fetchResponse = await fetch(endpointUrl, config);
+        const fetchResponse = await (request.fetch || fetch)(endpointUrl, config);
 
         if (request.body.stream) {
             console.info('Streaming Responses API request in progress');
@@ -3139,7 +3143,7 @@ export async function handleChatCompletionsGenerate(request, response) {
                 console.warn(staleSecretError);
                 return response.status(400).send({ error: { message: staleSecretError } });
             }
-            apiKey = readSecret(request.user.directories, SECRET_KEYS.CUSTOM, request.body.secret_id);
+            apiKey = request.anonymousCustom ? '' : readSecret(request.user.directories, SECRET_KEYS.CUSTOM, request.body.secret_id);
             headers = {};
             bodyParams = {
                 logprobs: request.body.logprobs,
@@ -3525,7 +3529,7 @@ export async function handleChatCompletionsGenerate(request, response) {
             method: 'post',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + apiKey,
+                ...(apiKey ? { Authorization: 'Bearer ' + apiKey } : {}),
                 ...headers,
             },
             body: JSON.stringify(requestBody),
@@ -3534,7 +3538,7 @@ export async function handleChatCompletionsGenerate(request, response) {
 
         logVerboseGenerationRequest('Chat Completion', request, requestBody);
 
-        const fetchResponse = await fetch(endpointUrl, config);
+        const fetchResponse = await (request.fetch || fetch)(endpointUrl, config);
 
         if (request.body.stream) {
             console.info('Streaming request in progress');

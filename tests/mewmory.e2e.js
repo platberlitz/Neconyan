@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test';
 import { trackNavigationErrors } from './chat-scroll-regression-helpers.js';
 
 test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.describe.configure({ mode: 'default' });
 test.setTimeout(180000);
 // eslint-disable-next-line playwright/no-skipped-test -- This fixture must use an explicitly disposable server.
 test.skip(process.env.NECONYAN_MEWMORY_TEST_DISPOSABLE !== '1', 'Use a disposable Neconyan server and the local Mewmory fixture provider.');
@@ -328,3 +329,174 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     await expect.poll(async () => (await post('/api/mewmory/inspect', { locator })).health.checkpointPending, { timeout: 60000 }).toBe(0);
     expect(errors).toEqual([]);
 });
+
+for (const width of [1280, 393]) {
+    test(`native new chats and branches keep the selected Mewmory scope at ${width}px`, async ({ page }, info) => {
+        page.setDefaultTimeout(20000);
+        await page.setViewportSize({ width, height: width === 393 ? 852 : 900 });
+        const touch = await page.context().newCDPSession(page);
+        await touch.send('Emulation.setTouchEmulationEnabled', { enabled: width === 393 });
+        const { errors, navigate } = trackNavigationErrors(page);
+        await navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
+        await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+        const skipTour = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
+        if (await skipTour.isVisible()) await skipTour.click();
+        const headers = await page.evaluate(() => window.SillyTavern.getContext().getRequestHeaders());
+        const post = async (url, data = {}) => {
+            const response = await page.request.post(url, { headers, data });
+            const body = await response.json();
+            expect(response.ok(), JSON.stringify(body)).toBe(true);
+            return body;
+        };
+        const config = (await post('/api/mewmory/config/get')).config;
+        Object.assign(config, { autoUpdate: false, excludeHistory: false, writerTokenizer: 'cl100k_base' });
+        for (const role of Object.values(config.roles)) Object.assign(role, {
+            enabled: false, profileId: '', endpoint: '', model: '', modelOverride: '', tokenizer: 'cl100k_base',
+        });
+        Object.assign(config.roles.selector, { enabled: true, endpoint: provider, model: 'selector' });
+        await post('/api/mewmory/config/save', { config });
+        const marker = 'Mara promised to keep the brass bookmark.';
+        const created = await page.request.post('/api/characters/create', { headers, data: {
+            ch_name: `Mara scope ${width} ${Date.now()}`, description: 'Mara is an archivist with silver eyes.', first_mes: marker,
+        } });
+        expect(created.ok()).toBe(true);
+        const avatar = await created.text();
+        await page.evaluate(async avatar => {
+            const context = window.SillyTavern.getContext();
+            await context.getCharacters();
+            await context.selectCharacterById(context.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
+        }, avatar);
+        const scope = () => page.evaluate(async () => {
+            const { getMewmoryLocator, mewmory } = await import('/scripts/mewmory/index.js');
+            return { selected: getMewmoryLocator()?.chat, chat: mewmory.view?.locator.chat,
+                group: mewmory.view?.locator.group, enabled: mewmory.view?.enabled,
+                records: mewmory.view?.recordCount, branchId: mewmory.view?.branchId, error: mewmory.error };
+        });
+        const workspace = page.locator('#mewmory-workspace');
+        const heading = workspace.locator('.mewmory-scope');
+        await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
+        await expect(workspace.getByLabel('Use Mewmory in this chat')).toBeVisible();
+        const parent = await scope();
+        await expect(heading).toHaveText(parent.selected);
+        await workspace.getByLabel('Use Mewmory in this chat').check();
+        await expect.poll(scope).toMatchObject({ chat: parent.selected, enabled: true, error: '' });
+        await page.evaluate(async marker => {
+            const { changeMewmory, mewmory } = await import('/scripts/mewmory/index.js');
+            const source = mewmory.view.sources.find(source => source.type === 'chat');
+            await changeMewmory('record/save', { record: { id: 'event:branch-bookmark', kind: 'event',
+                text: marker, subjectIds: ['bookmark'], refs: [{ id: source.id, revision: source.revision }],
+                evidenceStatus: 'established', pinned: true } });
+        }, marker);
+        await page.evaluate(() => window.NeconyanShell.closeWorkspace());
+        await page.locator('#chat .mes').first().getByRole('button', { name: 'More message actions', exact: true }).click();
+        await page.locator('#chat .mes').first().locator('.mes_create_branch').click();
+        await expect.poll(async () => (await scope()).selected).not.toBe(parent.selected);
+        const branch = (await scope()).selected;
+        await expect.poll(scope).toMatchObject({ chat: branch, enabled: true, records: 1, error: '' });
+        expect((await scope()).branchId).not.toBe(parent.branchId);
+
+        // The first reply must inherit memory even though its Mewmory panel has never opened.
+        await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
+        await page.locator('#main_api').selectOption('openai');
+        await page.locator('#chat_completion_source').selectOption('custom');
+        await page.locator('#custom_api_url_text').fill(provider);
+        await page.locator('#custom_model_id').fill('mewmory-writer');
+        await page.evaluate(async () => Object.assign((await import('/scripts/openai.js')).oai_settings,
+            { openai_max_context: 65536, openai_max_tokens: 512, stream_openai: true }));
+        await page.locator('#api_button_openai').click();
+        await expect.poll(() => page.evaluate(async () => (await import('/script.js')).online_status)).not.toBe('no_connection');
+        await page.evaluate(() => window.NeconyanShell.closeWorkspace());
+        await page.locator('#send_textarea').fill('Did you keep the bookmark?');
+        await page.locator('#send_but').click();
+        await expect(page.locator('#chat .mes .mes_text').last()).toContainText('Of course I kept it');
+        await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press)).toBe(false);
+        const calls = await (await page.request.get(provider.replace(/\/v1$/, '') + '/fixture/calls')).json();
+        const prompt = JSON.stringify(calls.findLast(call => call.model === 'mewmory-writer').messages);
+        expect(prompt).toContain('Mewmory: retrieved story context');
+        expect(prompt).toContain(marker);
+        await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
+        await expect(heading).toHaveText(branch);
+        await expect(workspace.getByLabel('Use Mewmory in this chat')).toBeChecked();
+
+        // Deliver an old inspection after native new-chat navigation has completed.
+        const held = Promise.withResolvers();
+        const release = Promise.withResolvers();
+        let delayed = false;
+        const delayPreviousChat = async route => {
+            if (!delayed && route.request().postDataJSON().locator.chat === branch) {
+                delayed = true;
+                const response = await route.fetch();
+                held.resolve();
+                await release.promise;
+                await route.fulfill({ response });
+            } else await route.continue();
+        };
+        await page.route('**/api/mewmory/inspect', delayPreviousChat);
+        await page.evaluate(async () => {
+            window.mewmoryHeldRefresh = (await import('/scripts/mewmory/index.js')).refreshMewmory();
+        });
+        await held.promise;
+        await page.evaluate(async () => (await import('/script.js')).doNewChat());
+        const fresh = (await scope()).selected;
+        expect(fresh).not.toBe(branch);
+        await expect(heading).toHaveText(fresh);
+        await expect.poll(scope).toMatchObject({ chat: fresh, enabled: false, records: 0, error: '' });
+        release.resolve();
+        await page.evaluate(() => window.mewmoryHeldRefresh);
+        await page.unroute('**/api/mewmory/inspect', delayPreviousChat);
+        await expect(heading).toHaveText(fresh);
+        await expect(workspace.getByLabel('Use Mewmory in this chat')).not.toBeChecked();
+
+        await page.evaluate(async avatar => {
+            await (await import('/scripts/neconyan-conversation/chrome.js')).openConversationWorkspaceForAvatar(avatar);
+        }, avatar);
+        await expect.poll(async () => (await scope()).selected).toBeUndefined();
+        await page.evaluate(async () => {
+            await (await import('/scripts/neconyan-conversation/chrome.js')).disableConversationModeForCurrentCharacter();
+        });
+        await expect.poll(scope).toMatchObject({ selected: fresh, chat: fresh, enabled: false, error: '' });
+        await page.evaluate(() => window.NeconyanShell.closeWorkspace());
+        await page.evaluate(() => document.getElementById('option_start_new_chat').click());
+        await page.locator('.popup-button-ok').click();
+        await expect.poll(async () => (await scope()).selected).not.toBe(fresh);
+        const closedPanelChat = (await scope()).selected;
+        await expect.poll(scope).toMatchObject({ chat: closedPanelChat, enabled: false, error: '' });
+
+        const group = await post('/api/groups/create', {
+            name: `Mewmory group ${Date.now()}`, members: [avatar], chat_id: '', chats: [],
+        });
+        await page.evaluate(async id => {
+            const groups = await import('/scripts/group-chats.js');
+            await groups.getGroups();
+            await groups.openGroupById(id, { switchMenu: false });
+        }, group.id);
+        await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
+        await expect.poll(scope).toMatchObject({ group: true, enabled: false, error: '' });
+        const groupParent = (await scope()).selected;
+        await expect(heading).toHaveText(groupParent);
+        await workspace.getByLabel('Use Mewmory in this chat').check();
+        await expect.poll(scope).toMatchObject({ enabled: true });
+        await page.evaluate(async () => (await import('/scripts/bookmarks.js')).branchChat(0));
+        await expect.poll(async () => (await scope()).selected).not.toBe(groupParent);
+        const groupBranch = (await scope()).selected;
+        await expect.poll(scope).toMatchObject({ chat: groupBranch, group: true, enabled: true, error: '' });
+        await expect(heading).toHaveText(groupBranch);
+        await page.evaluate(async () => (await import('/script.js')).doNewChat());
+        await expect.poll(async () => (await scope()).selected).not.toBe(groupBranch);
+        const groupFresh = (await scope()).selected;
+        await expect.poll(scope).toMatchObject({ chat: groupFresh, group: true, enabled: false, error: '' });
+        await expect(heading).toHaveText(groupFresh);
+        const geometry = await workspace.evaluate(element => {
+            const rect = element.getBoundingClientRect();
+            return { width: rect.width, right: rect.right, scrollWidth: document.documentElement.scrollWidth,
+                fontSize: window.getComputedStyle(element).fontSize, touchPoints: window.navigator.maxTouchPoints };
+        });
+        expect(geometry.scrollWidth).toBeLessThanOrEqual(width + 1);
+        expect(geometry.right).toBeLessThanOrEqual(width + 1);
+        expect(geometry.width).toBeGreaterThan(0);
+        await info.attach('native-selection-layout', { body: Buffer.from(JSON.stringify(geometry)), contentType: 'application/json' });
+        await info.attach('native-selection', { body: await page.screenshot(), contentType: 'image/png' });
+        await touch.detach();
+        expect(errors).toEqual([]);
+    });
+}

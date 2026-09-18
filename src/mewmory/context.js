@@ -1,8 +1,8 @@
-import { currentRecords, eligibleRecords, fail, hash, recordEligible, refKey, sourceAt, sourceEligible, sourceFingerprint } from './core.js';
+import { currentRecords, eligibleRecords, fail, hash, recordEligible, recordRevision, refKey, sourceAt, sourceEligible, sourceFingerprint } from './core.js';
 import { recordBody } from './search.js';
 
 export function assemblyFingerprint(state, config) {
-    return hash([sourceFingerprint(state), state.enabled, state.activeNpcIds, state.sceneNpcIds,
+    return hash([sourceFingerprint(state), state.enabled, state.activeNpcIds, state.sceneNpcIds, state.castHistory,
         state.records.map(record => [record.id, record.version, record.excluded, record.status]), config]);
 }
 
@@ -22,7 +22,10 @@ export function activeReferences(state, asOf = Infinity) {
     const entities = currentRecords(records.filter(record => record.kind === 'entity'), record => record.entityId);
     const defaultNpc = state.contextSources.filter(ref => state.sources[ref.id]?.type === 'character')
         .map(ref => sourceAt(state, ref)?.entityId).filter(Boolean);
-    const active = state.activeNpcIds ?? state.sceneNpcIds ?? defaultNpc;
+    const cast = state.castHistory?.findLast(entry => entry.asOf <= asOf && entry.refs.every(ref => sourceEligible(state, ref, asOf)));
+    const legacyCast = !Number.isFinite(asOf) && !state.castHistory?.length ? state.sceneNpcIds : null;
+    const active = state.activeNpcIds ?? cast?.ids ?? legacyCast
+        ?? [...new Set([...defaultNpc, ...entities.filter(record => record.isCharacter).map(record => record.entityId)])];
     const sheets = entities.filter(record => record.isCharacter && active.includes(record.entityId));
     const states = currentRecords(records.filter(record => record.kind === 'state' && active.includes(record.entityId)), record => record.entityId);
     return {
@@ -44,7 +47,7 @@ export function expandBundle(state, document, asOf = Infinity) {
         sources: document.refs.every(ref => sourceEligible(state, ref, asOf))
             && sourceAt(state, document.refs[0])?.text.includes(document.text) ? [document] : [],
     };
-    const record = state.records.find(item => item.id === document.recordId);
+    const record = recordRevision(state, document.recordId, document.version);
     if (!recordEligible(state, record, { asOf })) return { records: [], sources: [] };
     const records = new Map([[record.id, record]]);
     if (['interview', 'overview'].includes(record.kind)) {
@@ -52,25 +55,27 @@ export function expandBundle(state, document, asOf = Infinity) {
             && item.subjectIds.some(subject => record.subjectIds.includes(subject)))) {
             records.set(overview.id, overview);
             for (const dependency of overview.dependencies) {
-                const interview = state.records.find(item => item.id === dependency.id && item.kind === 'interview');
-                if (recordEligible(state, interview, { asOf })) records.set(interview.id, interview);
+                const interview = recordRevision(state, dependency.id, dependency.version);
+                if (interview?.kind === 'interview' && recordEligible(state, interview, { asOf })) records.set(interview.id, interview);
             }
         }
         if (record.previousId) {
-            const previous = state.records.find(item => item.id === record.previousId);
+            const previous = eligibleRecords(state, { asOf }).find(item => item.id === record.previousId);
             if (recordEligible(state, previous, { asOf })) records.set(previous.id, previous);
         }
     }
     return { records: [...records.values()], sources: [] };
 }
 
-function recordText(record, currentIds, names) {
-    const label = record.kind === 'overview' ? 'Current subjective view'
+function recordText(record, current, names) {
+    const label = record.kind === 'overview' ? current.some(overview => overview.id === record.id && overview.version === record.version)
+        ? 'Current subjective view' : 'Historical subjective view'
         : record.kind === 'interview' ? 'Historical Pawspective interview, imaginary and outside the story'
             : record.kind + (record.evidenceStatus ? ' / ' + record.evidenceStatus : record.method ? ' / ' + record.method : '');
     const header = '[' + label + '; ' + record.id + '; as of message ' + (record.asOf + 1) + '; ' + record.status + ']';
     const content = recordBody(record);
-    const noCurrent = record.kind === 'interview' && !record.subjectIds.some(subject => currentIds.has(record.ownerId + ':' + subject))
+    const noCurrent = record.kind === 'interview' && !current.some(overview => overview.ownerId === record.ownerId
+        && overview.subjectIds.some(subject => record.subjectIds.includes(subject)))
         ? '\nCurrent interpretation unavailable. This interview describes history, not a present stance.' : '';
     const owner = record.ownerId ? '\nOwner: ' + (names.get(record.ownerId) || record.ownerId) : '';
     const subjects = record.subjectIds.length ? '\nSubjects: ' + record.subjectIds.map(id => record.subjectNames?.[id] || names.get(id) || id).join(', ') : '';
@@ -82,7 +87,7 @@ function recordText(record, currentIds, names) {
 export function assembleContext(state, documents, { asOf = Infinity, counter, memoryTokens = 6000, forcedIds = [] } = {}) {
     const references = activeReferences(state, asOf);
     const npcText = references.text ? '[Mewmory: active NPC reference]\n' + references.text : '';
-    const currentIds = new Set(currentOverviews(state, asOf).flatMap(record => record.subjectIds.map(subject => record.ownerId + ':' + subject)));
+    const current = currentOverviews(state, asOf);
     const names = new Map(currentRecords(eligibleRecords(state, { asOf }).filter(record => record.kind === 'entity'), record => record.entityId)
         .map(record => [record.entityId, record.name]));
     const included = new Set();
@@ -103,8 +108,8 @@ export function assembleContext(state, documents, { asOf = Infinity, counter, me
             return '[Original ' + source.dataType + ' passage; ' + source.refs.map(refKey).join(', ') + '; ' + original.speaker + ']\n' + source.text;
         });
         // Current overview comes before historical interviews.
-        unique.sort((a, b) => Number(b.kind === 'overview') - Number(a.kind === 'overview') || a.asOf - b.asOf);
-        const block = [...unique.map(record => recordText(record, currentIds, names)), ...sourceBlocks].join('\n\n');
+        unique.sort((a, b) => Number(current.some(record => record.id === b.id)) - Number(current.some(record => record.id === a.id)) || a.asOf - b.asOf);
+        const block = [...unique.map(record => recordText(record, current, names)), ...sourceBlocks].join('\n\n');
         if (!block) continue;
         const tokens = counter.count('\n\n' + block);
         if (used + tokens > memoryTokens) {

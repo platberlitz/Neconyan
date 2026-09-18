@@ -2,15 +2,15 @@ import express from 'express';
 import { abortOnRequestClose } from '../util.js';
 import {
     continueState, eligibleRecords, fail, hash, list, object, putRecord, recordEligible, recordRevision,
-    refKey, sourceAt, sourceEligible, strings, text, undoRecord, validateRecord,
+    refKey, sourceAt, sourceEligible, strings, syncSources, text, undoRecord, validateRecord,
 } from '../mewmory/core.js';
 import { activeReferences, assemblyFingerprint, currentOverviews, generationFingerprint } from '../mewmory/context.js';
 import { publicConfig, readConfig, roleVersion, saveConfig } from '../mewmory/models.js';
 import { addUsage, pendingSources, processBatch, processingVersion } from '../mewmory/processing.js';
 import { recall } from '../mewmory/retrieval.js';
 import { lexicalSearch, searchDocuments, updateIndex } from '../mewmory/search.js';
-import { loadCurrentState } from '../mewmory/sources.js';
-import { listStories, MAX_ARCHIVE_BYTES, mutateState, normalizeLocator, readChat } from '../mewmory/store.js';
+import { loadCurrentState, purgeMissingContextSources, readContextSources } from '../mewmory/sources.js';
+import { commitRecovery, listStories, MAX_ARCHIVE_BYTES, mutateState, normalizeLocator, readChat, recoveryState } from '../mewmory/store.js';
 import { getCounter } from '../mewmory/tokens.js';
 
 export const router = express.Router();
@@ -41,11 +41,12 @@ function expectedRevision(body, state) {
     }
 }
 
-export function inspectState(state, config, { query = '', kind = '', ownerId = '', subjectId = '', offset = 0 } = {}) {
+export function inspectState(state, config, { query = '', kind = '', ownerId = '', subjectId = '', significance = '', status = '', offset = 0 } = {}) {
     const search = String(query).toLocaleLowerCase();
     const filtered = state.records.filter(record => (!kind || (kind === 'objective'
         ? !['interview', 'overview'].includes(record.kind) : record.kind === kind))
         && (!ownerId || record.ownerId === ownerId) && (!subjectId || record.subjectIds.includes(subjectId))
+        && (!significance || record.significance === significance) && (!status || record.status === status)
         && (!search || JSON.stringify(record).toLocaleLowerCase().includes(search)))
         .sort((a, b) => b.asOf - a.asOf || b.createdAt - a.createdAt);
     const page = Number.isSafeInteger(offset) && offset >= 0 ? offset : 0;
@@ -64,7 +65,7 @@ export function inspectState(state, config, { query = '', kind = '', ownerId = '
             ...record, eligible: recordEligible(state, record),
             unavailableSources: record.refs.filter(ref => !sourceEligible(state, ref)).map(refKey),
         })),
-        total: filtered.length, offset: page,
+        total: filtered.length, recordCount: state.records.length, offset: page,
         sourceCount: Object.keys(state.sources).length,
         sources: [...state.timeline.slice(-60), ...state.contextSources].map(ref => {
             const source = sourceAt(state, ref);
@@ -359,10 +360,24 @@ export function restoreRecords(state, backup) {
 
 route('/restore', async (directories, body) => {
     const locator = normalizeLocator(body.locator);
+    if (body.recover === true) {
+        const { state, token } = recoveryState(directories, locator, body.backup?.state);
+        const source = readChat(directories, locator);
+        const context = await readContextSources(directories, locator, state);
+        syncSources(state, source.messages, context);
+        purgeMissingContextSources(directories, state);
+        const recoveryToken = hash([token, source.metadata, source.messages, context]);
+        const result = restoreRecords(state, body.backup);
+        if (body.apply === true) {
+            if (body.recoveryToken !== recoveryToken) fail('The chat or its memory changed. Review recovery again.', 409);
+            commitRecovery(directories, locator, body.backup.state, state, token, hash([source.metadata, source.messages]));
+        }
+        return { ...result, recoveryToken, revision: state.revision, applied: body.apply === true };
+    }
     const state = await loadCurrentState(directories, locator);
     expectedRevision(body, state);
     const proposed = structuredClone(state);
     const result = restoreRecords(proposed, body.backup);
-    if (body.apply === true) mutateState(directories, locator, () => proposed, state.revision);
-    return { ...result, revision: state.revision, applied: body.apply === true };
+    const saved = body.apply === true ? mutateState(directories, locator, () => proposed, state.revision) : state;
+    return { ...result, revision: saved.revision, applied: body.apply === true };
 });

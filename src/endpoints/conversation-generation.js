@@ -585,7 +585,7 @@ export function getSafeConversationGenerationStatus(status) {
 /**
  * Run backend generation with error handling
  */
-export async function runBackendGeneration(request, backend, payload, { signal } = {}) {
+export async function runBackendGeneration(request, backend, payload, { signal, fetch, anonymousCustom = false } = {}) {
     if (!Object.keys(payload).length) {
         const error = new Error('generation payload is required');
         error.status = 400;
@@ -604,6 +604,8 @@ export async function runBackendGeneration(request, backend, payload, { signal }
         user: request.user,
         headers: request.headers,
         app: request.app,
+        fetch,
+        anonymousCustom,
         socket: request.socket || inertSocket,
         get: typeof request.get === 'function' ? request.get.bind(request) : undefined,
         on: typeof request.on === 'function' ? request.on.bind(request) : undefined,

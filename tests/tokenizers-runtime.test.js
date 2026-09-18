@@ -1,6 +1,9 @@
 /* eslint-disable playwright/no-duplicate-hooks */
 /* global globalThis */
 import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, test, expect, jest, beforeEach, afterEach } from '@jest/globals';
 
 describe('web tokenizer runtime bootstrap', () => {
@@ -46,5 +49,23 @@ describe('web tokenizer runtime bootstrap', () => {
 
         expect(tokenizer).toBeTruthy();
         expect(tokenizer.encode('hello world').length).toBeGreaterThan(0);
+    });
+
+    test('Mewmory rejects a silently substituted tokenizer even after its fallback is cached', async () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mewmory-tokenizer-'));
+        globalThis.DATA_ROOT = root;
+        jest.unstable_mockModule('node-fetch', () => ({ default: jest.fn(async () => ({ ok: false, status: 503, statusText: 'Test download failure' })) }));
+        try {
+            const { setConfigFilePath } = await import('../src/util.js');
+            setConfigFilePath(defaultConfigPath);
+            const { getWebTokenizer } = await import('../src/endpoints/tokenizers.js');
+            const tokenizer = getWebTokenizer('qwen2');
+            expect(await tokenizer.get()).toBeTruthy();
+            expect(tokenizer.loadedModel).toBe('llama3');
+            const { getCounter } = await import('../src/mewmory/tokens.js');
+            await expect(getCounter('qwen2')).rejects.toThrow(/qwen2.*llama3.*History has been kept/);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
     });
 });

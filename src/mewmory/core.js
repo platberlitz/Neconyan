@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-export const POLICY_VERSION = 'mewmory-1';
+export const POLICY_VERSION = 'mewmory-2';
 export const RECORD_KINDS = ['entity', 'state', 'event', 'relationship', 'knowledge', 'commitment', 'interview', 'overview'];
 export const ROLE_NAMES = ['extractor', 'pawspective', 'embedding', 'selector', 'fallback'];
 export const SOURCE_TYPES = ['chat', 'character', 'lore', 'memory'];
@@ -42,7 +42,7 @@ export function newState(locator) {
     const branchId = randomUUID();
     return {
         format: 1, revision: 0, storyId: branchId, branchId, sourceNamespace: branchId, locator, parent: null,
-        enabled: false, activeNpcIds: null, sceneNpcIds: null,
+        enabled: false, activeNpcIds: null, sceneNpcIds: null, castHistory: [],
         sources: {}, timeline: [], inheritedTimeline: [], contextSources: [], records: [], overrides: [],
         coverage: {}, checkpoints: {}, jobs: [], audit: [], recalls: [],
         index: { version: '', vectors: {}, pending: true },
@@ -149,9 +149,10 @@ export function syncSources(state, messages, context = []) {
     const occurrences = new Map();
     const inherited = state.inheritedTimeline || [];
     const previousLocal = previousTimeline.slice(inherited.length);
-    if (messages.length < previousLocal.length) {
+    {
         const previousGroups = new Map();
         for (const ref of previousLocal) {
+            if (state.sources[ref.id]?.messageId) continue;
             const identity = state.sources[ref.id]?.identity ?? 'legacy';
             const group = previousGroups.get(identity) || [];
             group.push(ref);
@@ -159,8 +160,10 @@ export function syncSources(state, messages, context = []) {
         }
         const currentCounts = new Map();
         for (const message of messages) {
-            const identity = String(message.send_date ?? 'undated');
-            currentCounts.set(identity, (currentCounts.get(identity) || 0) + 1);
+            for (const identity of new Set([message.send_date, ...(message.swipe_info || []).map(swipe => swipe?.send_date)]
+                .map(date => String(date ?? 'undated')))) {
+                currentCounts.set(identity, (currentCounts.get(identity) || 0) + 1);
+            }
         }
         for (const [identity, refs] of previousGroups) {
             if ((refs.length > 1 || ['undated', 'legacy'].includes(identity)) && refs.length > (currentCounts.get(identity) || 0)) {
@@ -169,12 +172,24 @@ export function syncSources(state, messages, context = []) {
             }
         }
     }
+    const identities = new Map(Object.values(state.sources).filter(source => source.messageId).map(source => [source.messageId, source.id]));
+    const assigned = new Set();
     const local = messages.map((message, index) => {
         const sequence = inherited.length + index;
         const identity = String(message.send_date ?? 'position:' + index);
         const occurrence = occurrences.get(identity) || 0;
         occurrences.set(identity, occurrence + 1);
-        const sourceId = 'chat:' + hash([identity, occurrence, ...(inherited.length ? [state.sourceNamespace] : [])]).slice(0, 32);
+        let sourceId = identities.get(message.mewmory_id);
+        if (!sourceId && message.mewmory_id) {
+            const dates = new Set([message.send_date, ...(message.swipe_info || []).map(swipe => swipe?.send_date)]
+                .map(date => String(date ?? 'undated')));
+            // Migrate accepted legacy sources in place so existing corrections keep their references.
+            sourceId = previousLocal.find(ref => !assigned.has(ref.id) && !state.sources[ref.id]?.messageId
+                && state.sources[ref.id]?.active && dates.has(state.sources[ref.id]?.identity))?.id;
+        }
+        sourceId ||= 'chat:' + hash([message.mewmory_id || identity, occurrence, ...(inherited.length ? [state.sourceNamespace] : [])]).slice(0, 32);
+        if (assigned.has(sourceId)) fail('This chat contains duplicate message identities. Reload and save it before using Mewmory.', 409);
+        assigned.add(sourceId);
         const attachments = (message.extra?.media || []).map(item => item.title).filter(item => typeof item === 'string');
         const ref = appendSource(state, sourceId, 'chat', {
             text: String(message.mes ?? ''), speaker: String(message.name ?? ''),
@@ -185,6 +200,7 @@ export function syncSources(state, messages, context = []) {
             attachments, storyTime: null,
         });
         state.sources[sourceId].identity = String(message.send_date ?? 'undated');
+        if (message.mewmory_id) state.sources[sourceId].messageId = message.mewmory_id;
         return ref;
     });
     const timeline = [...inherited, ...local];
@@ -240,7 +256,8 @@ export function purgeSources(state, sourceIds) {
     const removedRecords = new Set(state.records.filter(record => removedVersions.has(record.id + '@' + record.version)).map(record => record.id));
     for (const sourceId of removedSources) {
         const source = state.sources[sourceId];
-        if (source) state.sources[sourceId] = { id: sourceId, type: source.type, current: source.current, active: false, revisions: [] };
+        if (source) state.sources[sourceId] = { id: sourceId, type: source.type, current: source.current,
+            messageId: source.messageId, active: false, revisions: [] };
     }
     state.timeline = state.timeline.filter(ref => !removedSources.has(ref.id));
     state.inheritedTimeline = (state.inheritedTimeline || []).filter(ref => !removedSources.has(ref.id));
@@ -250,6 +267,8 @@ export function purgeSources(state, sourceIds) {
     state.audit = state.audit.filter(entry => !removedRecords.has(entry.recordId)
         && (!entry.before || !removedVersions.has(entry.before.id + '@' + entry.before.version)));
     state.overrides = state.overrides.filter(entry => !removedRecords.has(entry.id));
+    state.castHistory = (state.castHistory || []).filter(entry => entry.refs.every(ref => !removedSources.has(ref.id)));
+    state.sceneNpcIds = null;
     state.recalls = [];
     state.preview = null;
     state.index = { version: '', vectors: {}, pending: true };
@@ -263,6 +282,7 @@ export function sourceFingerprint(state) {
 }
 
 export function forkState(parent, locator, through, messages) {
+    through = Math.max(through, (parent.inheritedTimeline?.length || 0) - 1);
     const state = structuredClone(parent);
     state.branchId = randomUUID();
     state.locator = locator;
@@ -287,6 +307,7 @@ export function forkState(parent, locator, through, messages) {
     state.checkpoints = {};
     state.activeNpcIds = null;
     state.sceneNpcIds = null;
+    state.castHistory = (state.castHistory || []).filter(entry => entry.asOf <= through);
     state.index = { version: '', vectors: {}, pending: true };
     // The child owns its copied history. Later edits and future records in the parent cannot enter.
     syncSources(state, messages, state.contextSources.map(ref => {
@@ -336,7 +357,14 @@ export function validateRefs(state, refs, { asOf = Infinity, allowedRefs = null 
 }
 
 export function recordSignature(record) {
-    return hash([record.kind, record.ownerId, [...record.subjectIds].sort(), record.refs.map(refKey).sort()]);
+    // ponytail: match saved claim content; stable record IDs protect paraphrased retries.
+    return hash([record.kind, record.ownerId, record.entityId, [...record.subjectIds].sort(), record.refs.map(refKey).sort(),
+        (record.text || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim(), record.interview, record.appearance, record.speech]);
+}
+
+function correctionSignatures(state, recordId) {
+    return [...state.records.filter(record => record.id === recordId), ...state.audit
+        .filter(entry => entry.recordId === recordId && entry.action === 'corrected' && entry.before).map(entry => entry.before)].map(recordSignature);
 }
 
 export function validateRecord(state, input, { asOf, origin = 'author', allowedRefs = null, allowedDependencies = null } = {}) {
@@ -421,13 +449,14 @@ export function validateRecord(state, input, { asOf, origin = 'author', allowedR
     return record;
 }
 
-export function putRecord(state, record, { automatic = false } = {}) {
+export function putRecord(state, record, { automatic = false, force = false } = {}) {
     const previous = state.records.find(item => item.id === record.id);
     if (automatic && previous?.asOf > record.asOf && recordEligible(state, previous)) return previous;
     if (automatic && previous?.authorOverride) return previous;
-    const override = automatic && state.overrides.find(override => override.signature === recordSignature(record));
+    const signature = recordSignature(record);
+    const override = automatic && state.overrides.find(override => (override.signatures || correctionSignatures(state, override.id)).includes(signature));
     if (override) return state.records.find(record => record.id === override.id);
-    if (previous && hash({ ...previous, version: 0, createdAt: 0, provenance: null, inputRefs: null })
+    if (!force && previous && hash({ ...previous, version: 0, createdAt: 0, provenance: null, inputRefs: null })
         === hash({ ...record, version: 0, createdAt: 0, provenance: null, inputRefs: null })) {
         Object.assign(previous, { inputRefs: record.inputRefs, provenance: record.provenance });
         return previous;
@@ -441,8 +470,9 @@ export function putRecord(state, record, { automatic = false } = {}) {
     state.records = state.records.filter(item => item.id !== record.id);
     state.records.push(record);
     if (record.authorOverride) {
+        const signatures = [...new Set([...(state.overrides.find(override => override.id === record.id)?.signatures || []), ...correctionSignatures(state, record.id)])];
         state.overrides = state.overrides.filter(override => override.id !== record.id);
-        state.overrides.push({ id: record.id, signature: recordSignature(record) });
+        state.overrides.push({ id: record.id, signatures });
         state.coverage = {};
         state.checkpoints = {};
     }
@@ -460,8 +490,8 @@ export function undoRecord(state, recordId) {
     if (entry.before && !recordEligible(state, entry.before, { includeExcluded: true })) {
         fail('The earlier version depends on an edited, rejected, or excluded source.', 409);
     }
-    if (entry.before) putRecord(state, { ...entry.before, authorOverride: true, origin: 'author', createdAt: Date.now() });
-    else putRecord(state, { ...record, status: 'invalidated', authorOverride: true, origin: 'author' });
+    if (entry.before) putRecord(state, { ...entry.before, authorOverride: true, origin: 'author', createdAt: Date.now() }, { force: true });
+    else putRecord(state, { ...record, status: 'invalidated', authorOverride: true, origin: 'author' }, { force: true });
     state.audit.at(-1).action = 'undo';
     state.audit.at(-1).restoredFromVersion = entry.before?.version ?? 0;
 }

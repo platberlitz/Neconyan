@@ -24,13 +24,17 @@ export async function getCounter(choice = 'o200k_base', hint = {}) {
     }
     const tokenizers = await import('../endpoints/tokenizers.js');
     if (tokenizers.sentencepieceTokenizers.includes(choice)) {
-        const encoder = await tokenizers.getSentencepiceTokenizer(choice)?.get();
+        const tokenizer = tokenizers.getSentencepiceTokenizer(choice);
+        const encoder = await tokenizer?.get();
         if (!encoder) fail('The selected tokenizer is unavailable. History has been kept.', 503);
+        if (tokenizer.fallback) fail('The ' + choice + ' tokenizer is unavailable; the loaded ' + tokenizer.loadedModel + ' substitute cannot be used for Mewmory. History has been kept.', 503);
         return { name: choice, count: value => encoder.encodeIds(String(value)).length };
     }
     if (tokenizers.webTokenizers.includes(choice)) {
-        const encoder = await tokenizers.getWebTokenizer(choice)?.get();
+        const tokenizer = tokenizers.getWebTokenizer(choice);
+        const encoder = await tokenizer?.get();
         if (!encoder) fail('The selected tokenizer is unavailable. History has been kept.', 503);
+        if (tokenizer.fallback) fail('The ' + choice + ' tokenizer is unavailable; the loaded ' + tokenizer.loadedModel + ' substitute cannot be used for Mewmory. History has been kept.', 503);
         return { name: choice, count: value => encoder.encode(String(value)).length };
     }
     if (/^(gpt-|o[134]|text-|code-)/.test(choice)) {

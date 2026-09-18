@@ -12,6 +12,8 @@ Mewmory is Neconyan’s native long-form Roleplay memory system. Pawspective is 
 
 No model connection or credential is borrowed from the RP writer. Role keys use Neconyan’s protected server credential store. Exports do not contain those keys.
 
+A saved profile uses its own bound key and selected proxy. A keyless custom profile stays anonymous; a deleted key binding needs repair. Azure and Workers AI also need their connection fields in that profile or its named preset. Mewmory rejects redirects, including requests made through saved profiles. A failed configuration save leaves both settings and role keys unchanged, and removing a manual role key removes its older saved replacements too.
+
 **Now** shows the current cast, protected NPC references, current subject views and memory prompt preview. **Pawspective** shows current interpretations before historical interviews. **Archive** contains objective records and searchable original passages. **Recall** shows selection and rejection explanations. **Settings** includes jobs, preservation coverage, token/latency usage, index rebuild, export and restore.
 
 ## What is preserved
@@ -23,6 +25,8 @@ No model connection or credential is borrowed from the RP writer. Role keys use 
 - Author corrections, exclusions, pins and earlier derived versions for undo.
 
 An interview receives only that character’s source-backed knowledge and eligible prior views. It does not receive an omniscient transcript or the complete lorebook. A player character cannot own an interview. Generated interview gestures never enter the source archive or objective extraction inputs.
+
+Each entity has one complete current temporary-state record. Updating its clothing or location must retain an ongoing injury or carried item. Automatic cast changes are saved at their story position, so reviewing an earlier scene cannot apply a later departure. Superseded overviews remain labelled as historical when recalled alongside the current interpretation.
 
 I keep the interview guidance brief: aim for 1-3 short sentences per answer, with at most one action or subtext cue when it adds meaning. Character voice and supported uncertainty still matter; answers aren't cut off to enforce that target.
 
@@ -40,32 +44,39 @@ The original chat remains unchanged. Source passages remain searchable through t
 
 Token counts use a real local tokenizer. Each memory role’s Auto option follows its own model, including the selected connection profile, independently of the RP writer. Settings shows the local match. Model-family matches are approximate, and unknown model names fall back to the GPT-3.5 tokenizer; choose an explicit tokenizer if your provider uses another. The writer’s separate Auto option follows the application’s selected tokenizer; a backend-only estimate is insufficient for exclusion. Final request accounting includes a conservative serialised-payload check as well as the host’s prompt budget.
 
+If a chosen tokenizer cannot load and the host substitutes another, Mewmory reports that failure and keeps history instead of silently counting with the substitute. Changes to preservation rules require another review before old messages can be left out; existing sources and author corrections remain available.
+
 ## Storage and branches
 
 Authority lives under each user’s data directory:
 
 - mewmory/config.json: role settings and limits, without credentials.
 - mewmory/stories/&lt;chat-locator-hash&gt;.json: typed sources, revisions, records, dependencies, jobs, coverage, audit entries and rebuildable vectors.
+- mewmory/recovery/&lt;chat-locator-hash&gt;.json: story identity and accepted source revision checks, without message text, memory prose or credentials.
 
 This version reuses Neconyan’s atomic writes and file locks. Model requests run outside the storage lock. A result commits only if its original sources, settings and author revisions still match. Appending new chat messages or saving recall progress doesn't discard an otherwise valid batch. Each reply uses a consistent completed-memory snapshot; finishing background work doesn't invalidate that reply. No SQLite, Qdrant or graph service is required. Individual archives and restores are capped at 256 MiB; a write beyond that limit keeps the previous file intact.
 
 Lexical and vector candidates are searched independently and combined by rank. Vector representations are cached by content and model configuration. A changed embedding configuration builds separately; queries and documents never mix vector spaces. Search is currently linear within a story. Large libraries should be measured before replacing it with an approximate-nearest-neighbour service.
 
-Stories and branches have independent identities. Native branches inherit a matching accepted prefix and only record revisions at or before that branch point. They own a copy of that history; later parent developments cannot enter. Knowledge gained later preserves earlier valid interpretations. Author corrections invalidate faulty versions. The source identity uses the saved message date plus its occurrence within that chat. Legacy messages without dates use position, so moving those messages can conservatively invalidate more records.
+Stories and branches have independent identities. A native branch captures its matching accepted prefix and the memory available at that point when the branch is saved, including inherited continuation history. Opening the Mewmory panel later does not copy newer parent corrections. Knowledge gained later preserves earlier valid interpretations. Author corrections invalidate faulty versions. Native saves give each logical message a stable identity that survives swipe dates and selection changes. Existing accepted source references are migrated in place when that identity first appears.
 
 For a new chapter in another chat, **Link this continuation** explicitly copies the selected earlier story’s memory and history into an empty Mewmory archive. Chats remain unrelated until associated. Current overviews and corrections remain branch-specific.
+
+Switching chats refreshes Mewmory immediately, including while its panel is closed. A selected chat can show loading, disabled memory or a recoverable error; those states do not mean that no Roleplay chat is selected. Starting a separate chat with the same character does not automatically enable or share its other chats’ memory.
 
 ## Deletion and recovery
 
 Excluding a source makes it and its dependent records ineligible for processing and recall. It remains available for inspection.
 
-Deleting a chat message purges its archived revisions, dependent memory, associated undo copies, previews and vectors when the source is reconciled. Deleting a complete chat removes its Mewmory file. A deleted character/lore source is purged when its absence is reconciled. Disabling or unbinding a surviving lore entry makes it ineligible without pretending the witnessed events never happened.
+Deleting a chat message purges its archived revisions, dependent memory, associated undo copies, previews and vectors when the source is reconciled. Deleting a complete chat removes its Mewmory archive and recovery checks, and a finishing background job cannot recreate them. A deleted character, lorebook or lore entry is purged when its absence is reconciled. Renaming a card or book preserves its source identity; reusing the old filename for a different card or book does not merge them. Disabling or unbinding a surviving lore entry makes it ineligible without pretending the witnessed events never happened.
 
 An opaque source ID and revision counter remain after individual deletion so an old export cannot revive a deleted revision. If imported messages share a timestamp or have no dates, deleting an ambiguous occurrence conservatively rebuilds that group’s memory from the remaining accepted messages.
 
 Existing Neconyan chat backups, external copies and downloaded exports have their own retention. Mewmory does not erase those. A copied branch or explicitly linked continuation owns its own history.
 
 Export saves the complete Mewmory archive. Restore first shows which records can be used with the current accepted sources. It does not replace chat, manufacture old source revisions or revive rejected alternatives. Restored records become protected author corrections; preservation coverage is recomputed.
+
+If the archive is missing or damaged, the selected chat offers recovery from an export. Recovery requires the separate identity and source-revision checks, plus matching accepted chat and context. It skips unsupported records and rejects exports from another branch. Existing archives gain those recovery checks on their next successful inspection or update. An archive lost before those checks existed needs its original server backup; an export alone cannot prove which deleted or rejected revisions must stay excluded.
 
 ## Integration map
 
@@ -74,7 +85,7 @@ Export saves the complete Mewmory archive. Restore first shows which records can
 | Accepted source | public/script.js saves the active mes and swipe_id through /api/chats/save; groups use /api/chats/group/save. The source adapter reads those JSONL files. |
 | Edits, swipe changes, deletion | Existing saves remain authoritative. Reconciliation runs before processing, inspection, recall and final prompt validation. Browser lifecycle events debounce automatic updates. |
 | Imports | The first Mewmory read archives accepted imported messages. Backfill runs chronologically. |
-| Branches/checkpoints | public/scripts/bookmarks.js saves a prefix with chat_metadata.main_chat. The adapter copies only matching visible history. |
+| Branches/checkpoints | public/scripts/bookmarks.js saves a prefix with chat_metadata.main_chat. The native save captures matching visible memory before reporting success. |
 | Chat rename/delete | src/endpoints/chats.js moves or removes the corresponding Mewmory store. |
 | Character/lore changes | src/mewmory/sources.js loads current user-owned cards and applicable books. Changed sources acquire new revisions. |
 | Outgoing Roleplay | Generate() calls the native preparation step after prompt transforms/interceptors. Text Completion appends a protected memory section outside the history/story injection. Chat Completion reserves a dedicated Mewmory collection before history allocation. |
@@ -98,7 +109,7 @@ For the browser check, start a disposable Neconyan server and the fixture provid
     node tests/mewmory-provider.js
     NECONYAN_MEWMORY_TEST_DISPOSABLE=1 NECONYAN_TEST_BASE_URL=http://127.0.0.1:4490 npm --prefix tests run test:e2e -- mewmory.e2e.js --workers=1
 
-Build frontend assets before testing a packaged server. The browser check covers connection profiles, rejected saves, saved settings after a reload, role-specific Auto, backfill, original sources, correction persistence, selector diagnostics, desktop and 393/320px touch layouts, and the real writing prompt.
+Build frontend assets before testing a packaged server. The browser checks cover new chats and branches, connection profiles, rejected saves, saved settings after a reload, role-specific Auto, backfill, original sources, correction persistence, selector diagnostics, desktop and 393/320px touch layouts, and the real writing prompt.
 
 Real-model extraction recall, unsupported interpretations, character voice, associative relevance and fallback cost still require a labelled story set and configured model endpoints. No particular selector model is claimed to be best. A shared provider in the fixtures is a test arrangement, not automatic role sharing in the application.
 

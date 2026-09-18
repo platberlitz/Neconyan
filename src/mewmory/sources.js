@@ -4,16 +4,21 @@ import sanitize from 'sanitize-filename';
 import { parse as parseCharacterCard } from '../character-card-parser.js';
 import { readWorldInfoFile } from '../endpoints/worldinfo.js';
 import { fail, hash, purgeSources, sourceAt } from './core.js';
-import { mutateState, readChat, readJson, readState, synchronize } from './store.js';
+import { captureBranchMemory, mutateState, readChat, readJson, readState, synchronize } from './store.js';
 
 function safeFilename(value) {
     return typeof value === 'string' && value && value === sanitize(value);
 }
 
 /** The server resolves the applicable books; a request cannot add another story's library. */
-export async function readContextSources(directories, locator) {
-    const { metadata } = readChat(directories, locator);
-    const aliases = readState(directories, locator).characterAliases || {};
+export async function readContextSources(directories, locator, state) {
+    const source = readChat(directories, locator);
+    const { metadata } = source;
+    if (!state) {
+        captureBranchMemory(directories, locator, source);
+        state = readState(directories, locator);
+    }
+    const aliases = state.characterAliases || {};
     const settings = readJson(path.join(directories.root, 'settings.json'), {});
     const worlds = new Set(Array.isArray(settings.world_info?.globalSelect) ? settings.world_info.globalSelect : []);
     if (metadata.world_info) worlds.add(metadata.world_info);
@@ -61,7 +66,7 @@ export async function readContextSources(directories, locator) {
         for (const [uid, entry] of Object.entries(book.entries || {})) {
             if (!entry || typeof entry !== 'object') continue;
             sources.push({
-                id: 'lore:' + hash([world, uid]).slice(0, 32), type: 'lore',
+                id: 'lore:' + hash([state.worldAliases?.[world] || world, uid]).slice(0, 32), type: 'lore',
                 name: String(entry.comment || world + ' / ' + uid),
                 text: [entry.comment, (entry.key || []).join(', '), entry.content].filter(Boolean).join('\n'),
                 enabled: !entry.disable && entry.enabled !== false,
@@ -74,6 +79,10 @@ export async function readContextSources(directories, locator) {
 
 export async function loadCurrentState(directories, locator) {
     const state = synchronize(directories, locator, await readContextSources(directories, locator));
+    return mutateState(directories, locator, current => purgeMissingContextSources(directories, current), state.revision);
+}
+
+export function purgeMissingContextSources(directories, state) {
     const books = new Map();
     const deleted = [];
     for (const source of Object.values(state.sources)) {
@@ -83,8 +92,12 @@ export async function loadCurrentState(directories, locator) {
         if (source.type === 'lore' && revision.meta.world) {
             if (!books.has(revision.meta.world)) books.set(revision.meta.world, readWorldInfoFile(directories, revision.meta.world, false));
             const book = books.get(revision.meta.world);
-            if (book && !book.entries?.[revision.meta.uid]) deleted.push(source.id);
+            if (!book || !book.entries?.[revision.meta.uid]) deleted.push(source.id);
+        } else if (source.type === 'character' && revision.meta.avatar
+            && !fs.existsSync(path.join(directories.characters, revision.meta.avatar))) {
+            deleted.push(source.id);
         }
     }
-    return deleted.length ? mutateState(directories, locator, current => { purgeSources(current, deleted); }, state.revision) : state;
+    if (deleted.length) purgeSources(state, deleted);
+    return state;
 }

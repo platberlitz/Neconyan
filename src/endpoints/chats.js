@@ -13,7 +13,7 @@ import _ from 'lodash';
 import { acquireChatFileLock, acquireChatFileLocks } from '../chat-file-lock.js';
 import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
 import { renameChatFile } from '../chat-rename.js';
-import { removeChatMemory, renameChatMemory } from '../mewmory/store.js';
+import { captureBranchMemory, removeChatMemory, renameChatMemory } from '../mewmory/store.js';
 import {
     clearChatRecoveryState,
     createCharacterChatTarget,
@@ -1157,7 +1157,10 @@ export async function trySaveChat(chatData, filePath, skipIntegrityCheck = false
 
     const release = acquireChatFileLock(filePath);
     try {
-        return trySaveChatLocked(chatData, filePath, skipIntegrityCheck, handle, cardName, backupDirectory, options);
+        const result = trySaveChatLocked(chatData, filePath, skipIntegrityCheck, handle, cardName, backupDirectory, options);
+        if (options.mewmory) captureBranchMemory(options.mewmory.directories, options.mewmory.locator,
+            { metadata: chatData[0].chat_metadata || {}, messages: chatData.slice(1) });
+        return result;
     } finally {
         release();
     }
@@ -1379,6 +1382,7 @@ router.post('/save', validateAvatarUrlMiddleware, async function (request, respo
         if (Array.isArray(chatData)) {
             const recoveryTarget = createChatRecoveryTarget(request, false, sanitizedChatFileName);
             const saveResult = await trySaveChat(chatData, chatFilePath, request.body.force, handle, cardName, request.user.directories.backups, {
+                mewmory: { directories: request.user.directories, locator: { avatar: request.body.avatar_url, chat: sanitizedChatFileName } },
                 deferBackup: request.body.deferBackup === true,
                 deferSequenceId: typeof request.body.deferSequenceId === 'string' ? request.body.deferSequenceId : undefined,
                 allowShrink: request.body.allowShrink === true,
@@ -1901,6 +1905,7 @@ router.post('/group/save', async function (request, response) {
         if (Array.isArray(chatData)) {
             const recoveryTarget = createChatRecoveryTarget(request, true, chatFileName);
             const saveResult = await trySaveChat(chatData, chatFilePath, request.body.force, handle, String(id), request.user.directories.backups, {
+                mewmory: { directories: request.user.directories, locator: { group: true, chat: chatFileName } },
                 deferBackup: request.body.deferBackup === true,
                 deferSequenceId: typeof request.body.deferSequenceId === 'string' ? request.body.deferSequenceId : undefined,
                 allowShrink: request.body.allowShrink === true,

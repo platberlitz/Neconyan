@@ -319,6 +319,7 @@ import { getAssistantIconSrc } from './scripts/neconyan-assistant-art.js';
 import { initWelcomeScreen, openPermanentAssistantChat, openPermanentAssistantCard, getPermanentAssistantAvatar } from './scripts/welcome-screen.js';
 import { initDataMaid } from './scripts/data-maid.js';
 import { initMewmory, prepareMewmoryGeneration, validateMewmoryGeneration } from './scripts/mewmory/index.js';
+import { ensureMewmoryMessageIds } from './scripts/mewmory/message-identity.js';
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget } from './scripts/neconyan-assistant-knowledge.js';
 import { clearItemizedPrompts, deleteItemizedPromptForMessage, deleteItemizedPrompts, findItemizedPromptSet, restoreItemizedPrompts, initItemizedPrompts, itemizedParams, itemizedPrompts, loadItemizedPrompts, promptItemize, replaceItemizedPromptText, saveItemizedPrompts, swapItemizedPrompts } from './scripts/itemized-prompts.js';
 import { getSystemMessageByType, initSystemMessages, SAFETY_CHAT, sendSystemMessage, system_message_types, system_messages } from './scripts/system-messages.js';
@@ -3569,6 +3570,7 @@ function getQueuedChatIntegrityKey(avatarUrl, chatName) {
 }
 
 function cloneChatSavePayload(chatData) {
+    ensureMewmoryMessageIds(chatData, uuidv4);
     return structuredClone(chatData);
 }
 

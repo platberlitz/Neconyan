@@ -71,7 +71,6 @@ export function validateSelection(output, candidates, scene) {
 function candidateInput(state, documents, asOf) {
     const overviews = currentOverviews(state, asOf);
     return documents.map(document => {
-        const record = state.records.find(item => item.id === document.recordId);
         return {
             recordId: document.id, kind: document.kind, asOf: document.asOf, status: document.status,
             significance: document.significance || 'low',
@@ -79,7 +78,7 @@ function candidateInput(state, documents, asOf) {
             ownerId: document.ownerId, subjectIds: document.subjectIds,
             searchDescription: document.searchText, excerpt: document.text,
             sourceRefs: document.refs.map(refKey),
-            linkedRecordIds: record?.dependencies.map(dependency => dependency.id) || [],
+            linkedRecordIds: document.linkedRecordIds || [],
             currentOverviews: overviews.filter(item => item.ownerId === document.ownerId
                 && item.subjectIds.some(subject => document.subjectIds.includes(subject)))
                 .map(item => ({ id: item.id, text: item.text, asOf: item.asOf, status: item.status })),
@@ -91,7 +90,10 @@ export function forcedMatches(state, documents, query, asOf) {
     const queryTerms = new Set(terms(query));
     const records = eligibleRecords(state, { asOf }).filter(record => record.pinned
         || (record.kind === 'commitment' && record.status === 'active'
-            && record.triggerTerms.some(trigger => terms(trigger).every(term => queryTerms.has(term)))));
+            && record.triggerTerms.some(trigger => {
+                const words = terms(trigger);
+                return words.length > 0 && words.every(term => queryTerms.has(term));
+            })));
     const ids = new Set(records.map(record => record.id));
     return documents.filter(document => ids.has(document.recordId));
 }
@@ -126,8 +128,9 @@ async function selectMemories(state, directories, config, documents, scene, allD
         const requested = documents.filter(document => status.needsEvidence.includes(document.id));
         const refs = new Set(requested.flatMap(document => document.refs.map(refKey)));
         const linkedIds = new Set(candidates.filter(candidate => status.needsEvidence.includes(candidate.recordId)).flatMap(candidate => candidate.linkedRecordIds));
-        const expansion = allDocuments.filter(document => document.refs.some(ref => refs.has(refKey(ref)))
-            || linkedIds.has(document.recordId)).slice(0, 12);
+        const supplied = new Set(documents.map(document => document.id));
+        const expansion = allDocuments.filter(document => !supplied.has(document.id) && (document.refs.some(ref => refs.has(refKey(ref)))
+            || linkedIds.has(document.recordId))).sort((a, b) => Number(b.kind === 'source') - Number(a.kind === 'source')).slice(0, 12);
         documents = [...new Map([...documents, ...expansion].map(document => [document.id, document])).values()];
         candidates = candidateInput(state, documents, asOf);
         try { status = await select('selector'); } catch (failure) { error = failure.message; }

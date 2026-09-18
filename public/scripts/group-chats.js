@@ -19,6 +19,7 @@ import {
     paginationDropdownChangeHandler,
     uuidv4,
 } from './utils.js';
+import { ensureMewmoryMessageIds } from './mewmory/message-identity.js';
 import { RA_CountCharTokens, humanizedDateTime, dragElement, favsToHotswap, getMessageTimeStamp } from './RossAscends-mods.js';
 import { power_user, loadMovingUIState, sortEntitiesList } from './power-user.js';
 import { debounce_timeout } from './constants.js';
@@ -1153,6 +1154,7 @@ function resetSelectedGroup() {
 }
 
 function cloneGroupChatSavePayload(chatData) {
+    ensureMewmoryMessageIds(chatData, uuidv4);
     return structuredClone(chatData);
 }
 
@@ -3291,6 +3293,8 @@ export async function saveGroupBookmarkChat(groupId, name, metadata, mesId, chat
         : (mesId !== undefined && mesId >= 0 && mesId < chat.length)
             ? chat.slice(0, Number(mesId) + 1)
             : chat;
+
+    ensureMewmoryMessageIds(trimmedChat, uuidv4);
 
     try {
         await editGroup(groupId, true, false);

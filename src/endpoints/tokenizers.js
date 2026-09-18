@@ -161,6 +161,8 @@ async function getPathToTokenizer(model, fallbackModel) {
  * Sentencepiece tokenizer for tokenizing text.
  */
 class SentencePieceTokenizer {
+    loadedModel;
+    fallback = false;
     /**
      * @type {import('@agnai/sentencepiece-js').SentencePieceProcessor} Sentencepiece tokenizer instance
      */
@@ -197,6 +199,8 @@ class SentencePieceTokenizer {
             const pathToModel = await getPathToTokenizer(this.#model, this.#fallbackModel);
             this.#instance = new SentencePieceProcessor();
             await this.#instance.load(pathToModel);
+            this.loadedModel = path.parse(pathToModel).name;
+            this.fallback = pathToModel === this.#fallbackModel;
             console.info('Instantiated the tokenizer for', path.parse(pathToModel).name);
             return this.#instance;
         } catch (error) {
@@ -266,6 +270,8 @@ async function withWebTokenizerRuntimeLocation(callback) {
  * Web tokenizer for tokenizing text.
  */
 class WebTokenizer {
+    loadedModel;
+    fallback = false;
     /**
      * @type {Tokenizer} Web tokenizer instance
      */
@@ -303,6 +309,8 @@ class WebTokenizer {
             pathToModel = await getPathToTokenizer(this.#model, this.#fallbackModel);
             const fileBuffer = await fs.promises.readFile(pathToModel);
             this.#instance = await withWebTokenizerRuntimeLocation(() => Tokenizer.fromJSON(fileBuffer.toString('utf-8')));
+            this.loadedModel = path.parse(pathToModel).name;
+            this.fallback = pathToModel === this.#fallbackModel;
             console.info('Instantiated the tokenizer for', path.parse(pathToModel).name);
             return this.#instance;
         } catch (error) {

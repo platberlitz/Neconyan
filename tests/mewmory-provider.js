@@ -26,10 +26,15 @@ export async function createMewmoryProvider(port = 0) {
             return response.end('{}');
         }
         const name = typeof body.prompt === 'string' ? 'text-writer' : body.model;
-        const call = { model: name, messages: body.messages, prompt: body.prompt, tools: body.tools, startedAt: Date.now(), completedAt: null };
+        const call = { model: name, messages: body.messages, prompt: body.prompt, tools: body.tools, headers: request.headers, url: request.url, startedAt: Date.now(), completedAt: null };
         calls.push(call);
         if ([].concat(mode.hold).includes(name)) await new Promise(resolve => held.add(resolve));
         call.completedAt = Date.now();
+        if (mode.redirect) {
+            response.writeHead(mode.redirectStatus || 307, { Location: mode.redirect });
+            return response.end('{}');
+        }
+        if (mode.reply) return response.end(JSON.stringify(mode.reply));
         if (mode.fail) {
             response.statusCode = 503;
             return response.end(JSON.stringify({ error: 'Fixture provider unavailable.' }));

@@ -1,5 +1,5 @@
 import {
-    changeMewmory, getMewmoryLocator, initMewmory, mewmory, notifyMewmory,
+    changeMewmory, getMewmoryLocator, getMewmoryScope, initMewmory, mewmory, notifyMewmory,
     processMewmory, refreshMewmory, requestMewmory, stopMewmoryBackfill,
 } from './index.js';
 import { getFriendlyTokenizerName } from '../tokenizers.js';
@@ -84,23 +84,26 @@ function nameOf(id) {
 }
 
 function filters() {
-    if (ui.tab === 'pawspective') return { kind: 'interview', ownerId: ui.owner, subjectId: ui.subject, offset: ui.offset };
+    if (ui.tab === 'pawspective') return { kind: 'interview', ownerId: ui.owner, subjectId: ui.subject,
+        significance: ui.significance, status: ui.status, offset: ui.offset };
     if (ui.tab === 'archive') return { kind: ui.kind, query: ui.query, offset: ui.offset };
     return {};
 }
 
 async function act(action, { refresh = true } = {}) {
     if (ui.running) return;
-    ui.running = true;
+    const scope = getMewmoryScope();
+    ui.running = scope;
     render();
     try {
-        await action();
+        await action(scope);
+        if (scope !== getMewmoryScope()) return;
         mewmory.error = '';
         if (refresh) await refreshMewmory(filters());
     } catch (error) {
-        mewmory.error = error.message;
+        if (scope === getMewmoryScope()) mewmory.error = error.message;
     } finally {
-        ui.running = false;
+        if (ui.running === scope) ui.running = false;
         render();
     }
 }
@@ -283,8 +286,8 @@ function renderPawspective(root) {
     const extraFilters = node('details');
     extraFilters.append(node('summary', '', 'Filter interview history'));
     extraFilters.append(
-        field('Significance', ui.significance, value => { ui.significance = value; render(); }, { options: [['', 'Any significance'], 'low', 'medium', 'high'] }),
-        field('Status', ui.status, value => { ui.status = value; render(); }, { options: [['', 'Any status'], 'active', 'background', 'resolved', 'uncertain'] }),
+        field('Significance', ui.significance, value => { ui.significance = value; change(); }, { options: [['', 'Any significance'], 'low', 'medium', 'high'] }),
+        field('Status', ui.status, value => { ui.status = value; change(); }, { options: [['', 'Any status'], 'active', 'background', 'resolved', 'uncertain'] }),
     );
     extraFilters.open = Boolean(ui.significance || ui.status);
     root.append(extraFilters);
@@ -542,6 +545,7 @@ function renderSettings(root) {
     );
     const modelName = role.profileId ? role.modelOverride || selectedProfile?.model : role.model;
     const savedRole = mewmory.config.roles[ui.role];
+    if (savedRole.error && role.profileId === savedRole.profileId) roleForm.append(node('p', 'mewmory-error', savedRole.error));
     const autoTokenizer = role.profileId && !role.modelOverride ? selectedProfile?.autoTokenizer
         : modelName === savedRole.model ? savedRole.autoTokenizer : '';
     fields.append(
@@ -559,9 +563,8 @@ function renderSettings(root) {
         field('Query prefix, optional', role.queryPrefix, value => { role.queryPrefix = value; }),
         field('Document prefix, optional', role.documentPrefix, value => { role.documentPrefix = value; }),
     );
-    roleForm.append(fields,
-        check('Allow story data to be sent to this remote endpoint', role.allowRemote, value => { role.allowRemote = value; }),
-        check('Remove the saved API key when saving', role.clearKey, value => { role.clearKey = value; }));
+    roleForm.append(fields, check('Allow story data to be sent to this remote endpoint', role.allowRemote, value => { role.allowRemote = value; }));
+    if (!role.profileId) roleForm.append(check('Remove the saved API key when saving', role.clearKey, value => { role.clearKey = value; }));
     const scope = section('This role may read');
     for (const [type, label] of [['chat', 'Accepted chat'], ['character', 'Character cards'], ['lore', 'Enabled lore'], ['memory', 'Derived memory']]) {
         scope.append(check(label, role.allowedData.includes(type), checked => {
@@ -613,13 +616,14 @@ function renderHealth(root) {
     const actions = node('div', 'mewmory-actions');
     actions.append(button('Backfill this chat', () => processMewmory({ all: true }), { disabled: mewmory.busy || !view.enabled }),
         button('Review preservation', () => processMewmory({ all: true, checkpoint: true }), { disabled: mewmory.busy || !view.enabled }),
-        button('Rebuild search index', () => act(async () => {
+        button('Rebuild search index', () => act(async scope => {
             ui.stopIndex = false;
-            let result = await requestMewmory('index', { reset: true });
+            const locator = getMewmoryLocator();
+            let result = await requestMewmory('index', { locator, reset: true }, { scope });
             while (result.remaining > 0 && !ui.stopIndex) {
                 ui.progress = result.remaining + ' search passages remaining';
                 render();
-                result = await requestMewmory('index');
+                result = await requestMewmory('index', { locator }, { scope });
             }
             ui.progress = '';
         }), { disabled: !mewmory.config.roles.embedding.enabled }));
@@ -643,49 +647,8 @@ function renderHealth(root) {
     }
     health.append(usage);
     root.append(health);
-    const archive = section('Export and restore');
-    archive.append(node('p', 'mewmory-caption', 'Exports contain story text and memory, without model credentials. A restore checks every record against the current accepted sources.'));
-    const transfers = node('div', 'mewmory-actions');
-    transfers.append(button('Export Mewmory', () => act(async () => {
-        const data = await requestMewmory('export');
-        const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'Mewmory-' + view.locator.chat.replace(/[^\p{L}\p{N}_-]/gu, '-') + '.json';
-        link.click();
-        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }, { refresh: false })));
-    const upload = node('label', 'mewmory-field');
-    upload.append(node('span', '', 'Choose a Mewmory export'));
-    const file = document.createElement('input');
-    file.type = 'file';
-    file.accept = '.json,application/json';
-    file.addEventListener('change', () => {
-        const selected = file.files?.[0];
-        if (!selected) return;
-        void act(async () => {
-            if (selected.size > 256 * 1024 * 1024) throw new Error('This export is larger than the 256 MiB restore limit.');
-            const backup = JSON.parse(await selected.text());
-            const review = await requestMewmory('restore', { backup, revision: mewmory.view.revision });
-            ui.restore = { backup, review };
-        }, { refresh: false });
-    });
-    upload.append(file);
-    transfers.append(upload);
-    archive.append(transfers);
-    if (ui.restore) {
-        const { backup, review } = ui.restore;
-        archive.append(node('p', '', review.restored.length + ' records can be restored as author corrections. '
-            + review.skipped.length + ' records cannot use the current sources.'));
-        for (const skipped of review.skipped.slice(0, 5)) archive.append(node('p', 'mewmory-caption', skipped.reason));
-        archive.append(button('Restore ' + review.restored.length + ' records', () => act(async () => {
-            await requestMewmory('restore', { backup, revision: review.revision, apply: true });
-            ui.restore = null;
-        }), { disabled: !review.restored.length }), button('Cancel restore', () => { ui.restore = null; render(); }));
-    }
-    archive.append(node('p', 'mewmory-caption', 'Deleting a source removes its Mewmory copies and dependent records. Existing chat backups and downloaded exports are managed separately.'));
-    root.append(archive);
-    if (!view.parent && !view.total) {
+    renderTransfers(root);
+    if (!view.parent && !view.recordCount) {
         const association = section('Continue a story from another chat');
         association.append(node('p', 'mewmory-caption', 'This explicitly copies the selected chat’s current memory and accepted history into this continuation. Later changes stay in their own branch.'));
         const choices = mewmory.stories.filter(story => JSON.stringify(story.locator) !== JSON.stringify(view.locator));
@@ -700,6 +663,53 @@ function renderHealth(root) {
     }
 }
 
+function renderTransfers(root, recover = false) {
+    const archive = section('Export and restore');
+    archive.append(node('p', 'mewmory-caption', 'Exports contain story text and memory, without model credentials. A restore checks every record against the current accepted sources.'));
+    const transfers = node('div', 'mewmory-actions');
+    if (!recover) transfers.append(button('Export Mewmory', () => act(async () => {
+        const data = await requestMewmory('export');
+        const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'Mewmory-' + getMewmoryLocator().chat.replace(/[^\p{L}\p{N}_-]/gu, '-') + '.json';
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }, { refresh: false })));
+    const upload = node('label', 'mewmory-field');
+    upload.append(node('span', '', 'Choose a Mewmory export'));
+    const file = document.createElement('input');
+    file.type = 'file';
+    file.accept = '.json,application/json';
+    file.addEventListener('change', () => {
+        const selected = file.files?.[0];
+        if (!selected) return;
+        void act(async scope => {
+            if (selected.size > 256 * 1024 * 1024) throw new Error('This export is larger than the 256 MiB restore limit.');
+            const locator = getMewmoryLocator();
+            const revision = mewmory.view?.revision;
+            const backup = JSON.parse(await selected.text());
+            const review = await requestMewmory('restore', { locator, backup, revision, recover }, { scope });
+            ui.restore = { backup, review, recover };
+        }, { refresh: false });
+    });
+    upload.append(file);
+    transfers.append(upload);
+    archive.append(transfers);
+    if (ui.restore) {
+        const { backup, review, recover } = ui.restore;
+        archive.append(node('p', '', review.restored.length + ' records can be restored as author corrections. '
+            + review.skipped.length + ' records cannot use the current sources.'));
+        for (const skipped of review.skipped.slice(0, 5)) archive.append(node('p', 'mewmory-caption', skipped.reason));
+        archive.append(button('Restore ' + review.restored.length + ' records', () => act(async () => {
+            await requestMewmory('restore', { backup, revision: review.revision, recover, recoveryToken: review.recoveryToken, apply: true });
+            ui.restore = null;
+        }), { disabled: !recover && !review.restored.length }), button('Cancel restore', () => { ui.restore = null; render(); }));
+    }
+    archive.append(node('p', 'mewmory-caption', 'Deleting a source removes its Mewmory copies and dependent records. Existing chat backups and downloaded exports are managed separately.'));
+    root.append(archive);
+}
+
 function render() {
     const root = ui.root;
     if (!root) return;
@@ -707,7 +717,7 @@ function render() {
     const focusId = active?.id;
     const selection = active instanceof HTMLTextAreaElement || (active instanceof HTMLInputElement && ['text', 'password'].includes(active.type))
         ? [active.selectionStart, active.selectionEnd] : null;
-    const scope = JSON.stringify(getMewmoryLocator());
+    const scope = getMewmoryScope();
     if (ui.scope !== scope) {
         ui.scope = scope;
         ui.editor = null;
@@ -717,12 +727,20 @@ function render() {
         ui.subject = '';
         ui.offset = 0;
         ui.matches = null;
+        ui.query = '';
+        ui.significance = '';
+        ui.status = '';
+        ui.parent = '';
+        ui.progress = '';
+        ui.stopIndex = true;
+        ui.running = false;
     }
     root.replaceChildren();
     const heading = node('header', 'mewmory-heading');
-    heading.append(node('p', 'mewmory-caption mewmory-scope', mewmory.view?.locator.chat || 'No Roleplay chat selected'),
+    const locator = getMewmoryLocator();
+    heading.append(node('p', 'mewmory-caption mewmory-scope', locator?.chat || 'No Roleplay chat selected'),
         button('Refresh', () => act(() => refreshMewmory(filters()), { refresh: false })));
-    const status = node('p', 'mewmory-status', mewmory.error || (mewmory.busy || mewmory.preparing ? 'Processing…'
+    const status = node('p', 'mewmory-status', mewmory.error || (mewmory.loading ? 'Loading this chat’s memory…' : mewmory.busy || mewmory.preparing ? 'Processing…'
         : mewmory.view?.enabled ? mewmory.config?.roles.extractor.enabled ? 'Current' : 'Facts and events is not enabled in the saved settings.' : 'Off'));
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
@@ -767,7 +785,10 @@ function render() {
         root.append(page);
         if (page.hidden) continue;
         if (id !== 'settings' && !mewmory.view) {
-            empty(page, 'Open a saved Roleplay chat', 'Choose a character or group chat to inspect its memory. Model roles can be configured in Settings.');
+            if (locator) empty(page, mewmory.loading ? 'Loading memory' : 'Memory could not load',
+                mewmory.loading ? 'Your selected chat will appear here when it is ready.' : 'Press Refresh to try loading this chat again.');
+            else empty(page, 'Open a saved Roleplay chat', 'Choose a character or group chat to inspect its memory. Model roles can be configured in Settings.');
+            if (locator && mewmory.error && !mewmory.loading) renderTransfers(page, true);
         } else {
             ({ now: renderNow, pawspective: renderPawspective, archive: renderArchive, recall: renderRecall, settings: renderSettings })[id](page);
             renderEditor(page);

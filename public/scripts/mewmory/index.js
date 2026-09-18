@@ -8,13 +8,16 @@ import { getFriendlyTokenizerName } from '../tokenizers.js';
 import { conversationState } from '../neconyan-conversation/state.js';
 
 export const mewmory = {
-    config: null, view: null, stories: [], error: '', busy: false, backfilling: false, preparing: false,
+    config: null, view: null, stories: [], error: '', loading: false, busy: false, backfilling: false, preparing: false,
 };
 let initialized = false;
 let timer;
 let failures = 0;
 let stopRequested = false;
 let viewKey = '';
+let selectionVersion = 0;
+let refreshVersion = 0;
+let latestRefresh;
 
 export function getMewmoryLocator() {
     if (conversationState.conversationWorkspaceOpen) return null;
@@ -25,10 +28,11 @@ export function getMewmoryLocator() {
 }
 
 const key = locator => JSON.stringify(locator);
+export const getMewmoryScope = () => key([getMewmoryLocator(), getChatGeneration(), selectionVersion]);
 
 export function notifyMewmory() {
     window.dispatchEvent(new CustomEvent('mewmory:updated'));
-    const state = mewmory.error ? 'Needs attention' : mewmory.busy || mewmory.preparing ? 'Processing'
+    const state = mewmory.error ? 'Needs attention' : mewmory.loading ? 'Loading' : mewmory.busy || mewmory.preparing ? 'Processing'
         : mewmory.view?.enabled ? 'Current' : 'Off';
     for (const button of document.querySelectorAll('[data-neconyan-route="mewmory"], [data-sb-tab="mewmory"]')) {
         button.dataset.mewmoryStatus = state;
@@ -40,48 +44,66 @@ export function notifyMewmory() {
     }
 }
 
-export async function requestMewmory(route, data = {}, { signal } = {}) {
+export async function requestMewmory(route, data = {}, { signal, scope = getMewmoryScope() } = {}) {
+    if (scope !== getMewmoryScope()) throw new Error('The active chat changed.');
     const response = await fetch('/api/mewmory/' + route, {
         method: 'POST', headers: getRequestHeaders(), signal,
         body: JSON.stringify({ locator: getMewmoryLocator(), ...data }),
     });
     const result = await response.json().catch(() => ({}));
+    if (scope !== getMewmoryScope()) throw new Error('The active chat changed.');
     if (!response.ok) throw Object.assign(new Error(result.error || 'Mewmory could not reach the server.'), { status: response.status });
     return result;
 }
 
-export async function refreshMewmory(filters = mewmory.filters || {}) {
+export function refreshMewmory(filters = mewmory.filters || {}, options = {}) {
+    const scope = getMewmoryScope();
+    const pending = refreshCurrentChat(filters, options).then(view => scope === getMewmoryScope() && latestRefresh !== pending ? latestRefresh : view);
+    latestRefresh = pending;
+    return pending;
+}
+
+async function refreshCurrentChat(filters, { signal }) {
     mewmory.filters = filters;
     const locator = getMewmoryLocator();
-    const currentKey = key(locator);
-    const config = await requestMewmory('config/get');
-    mewmory.config = config.config;
-    mewmory.stories = config.stories;
+    const currentKey = getMewmoryScope();
+    const version = ++refreshVersion;
+    const current = () => currentKey === getMewmoryScope() && version === refreshVersion;
     if (viewKey !== currentKey) {
         mewmory.view = null;
         mewmory.error = '';
         viewKey = currentKey;
     }
-    const existing = config.stories.some(story => key(story.locator) === currentKey);
-    const inspecting = document.getElementById('mewmory-workspace')?.getClientRects().length > 0;
-    if (locator && (existing || inspecting)) {
-        try {
-            const view = await requestMewmory('inspect', { locator, ...filters });
-            if (key(getMewmoryLocator()) === currentKey && (!mewmory.view || view.revision >= mewmory.view.revision)) mewmory.view = view;
-        } catch (error) {
-            if (key(getMewmoryLocator()) === currentKey) mewmory.error = error.message;
-        }
-    } else mewmory.view = null;
+    mewmory.loading = Boolean(locator);
     notifyMewmory();
-    return mewmory.view;
+    try {
+        const config = await requestMewmory('config/get', {}, { signal, scope: currentKey });
+        if (!current()) return null;
+        if (!mewmory.config || config.config.revision >= mewmory.config.revision) mewmory.config = config.config;
+        mewmory.stories = config.stories;
+        const view = locator ? await requestMewmory('inspect', { locator, ...filters }, { signal, scope: currentKey }) : null;
+        if (!current()) return null;
+        if (!view || !mewmory.view || view.revision >= mewmory.view.revision) mewmory.view = view;
+        mewmory.error = '';
+        return view;
+    } catch (error) {
+        if (current()) mewmory.error = error.message;
+        return null;
+    } finally {
+        if (current()) {
+            mewmory.loading = false;
+            notifyMewmory();
+        }
+    }
 }
 
 export async function changeMewmory(route, data = {}) {
     const locator = getMewmoryLocator();
+    const scope = getMewmoryScope();
     const result = await requestMewmory(route, { locator, revision: mewmory.view?.revision, ...data });
-    if (key(locator) === key(getMewmoryLocator())) {
-        if (result.locator) mewmory.view = result;
-        if (result.config) mewmory.config = result.config;
+    if (scope === getMewmoryScope()) {
+        if (result.locator && (!mewmory.view || result.revision >= mewmory.view.revision)) mewmory.view = result;
+        if (result.config && (!mewmory.config || result.config.revision >= mewmory.config.revision)) mewmory.config = result.config;
         mewmory.error = '';
         failures = 0;
         notifyMewmory();
@@ -99,7 +121,7 @@ export async function processMewmory({ all = false, checkpoint = false } = {}) {
     if (mewmory.busy) return;
     const locator = getMewmoryLocator();
     if (!locator || !mewmory.view?.enabled) return;
-    const currentKey = key(locator);
+    const currentKey = getMewmoryScope();
     mewmory.busy = true;
     mewmory.backfilling = all;
     stopRequested = false;
@@ -107,9 +129,9 @@ export async function processMewmory({ all = false, checkpoint = false } = {}) {
     try {
         if (!await flushPendingChatSaves({ silent: true })) throw new Error('Save this chat before updating Mewmory.');
         do {
-            if (key(getMewmoryLocator()) !== currentKey) break;
+            if (getMewmoryScope() !== currentKey) break;
             const view = await requestMewmory('process', { locator, checkpoint });
-            if (key(getMewmoryLocator()) !== currentKey) break;
+            if (getMewmoryScope() !== currentKey) break;
             if (!mewmory.view || view.revision >= mewmory.view.revision) mewmory.view = view;
             mewmory.error = '';
             failures = 0;
@@ -117,8 +139,10 @@ export async function processMewmory({ all = false, checkpoint = false } = {}) {
             if (!(checkpoint ? view.health.checkpointPending : view.health.pending)) break;
         } while (all && !stopRequested);
     } catch (error) {
-        failures++;
-        if (key(getMewmoryLocator()) === currentKey) mewmory.error = error.message;
+        if (getMewmoryScope() === currentKey) {
+            failures++;
+            mewmory.error = error.message;
+        }
     } finally {
         mewmory.busy = false;
         mewmory.backfilling = false;
@@ -154,13 +178,18 @@ function scheduleUpdate({ resetFailures = false } = {}) {
 export function initMewmory() {
     if (initialized) return;
     initialized = true;
-    eventSource.on(event_types.CHAT_CHANGED, () => {
+    const changed = () => {
+        selectionVersion++;
         stopMewmoryBackfill();
         mewmory.view = null;
         mewmory.error = '';
-        notifyMewmory();
+        mewmory.filters = {};
+        void refreshMewmory();
         scheduleUpdate({ resetFailures: true });
-    });
+    };
+    eventSource.on(event_types.CHAT_CHANGED, changed);
+    eventSource.on(event_types.CHAT_RENAMED, changed);
+    window.addEventListener('sb:conversation-workspace-state-changed', changed);
     for (const event of [
         event_types.GENERATION_ENDED, event_types.MESSAGE_EDITED, event_types.MESSAGE_UPDATED,
         event_types.MESSAGE_SWIPED, event_types.MESSAGE_SWIPE_DELETED, event_types.MESSAGE_DELETED,
@@ -177,18 +206,16 @@ export async function prepareMewmoryGeneration(messages, { signal } = {}) {
     const locator = getMewmoryLocator();
     if (!locator) return { enabled: false, chat: messages };
     const generation = getChatGeneration();
-    const currentKey = key(locator);
+    const currentKey = getMewmoryScope();
     mewmory.preparing = true;
     notifyMewmory();
     try {
-        await refreshMewmory();
-        if (!mewmory.view?.enabled) {
-            const enabled = mewmory.stories.some(story => key(story.locator) === currentKey && story.enabled);
-            if (enabled) throw new Error(mewmory.error || 'Mewmory could not read this chat.');
-            return { enabled: false, chat: messages };
-        }
         if (!await flushPendingChatSaves({ silent: true })) throw new Error('Mewmory needs a saved source before preparing memory.');
-        if (getChatGeneration() !== generation || key(getMewmoryLocator()) !== currentKey) throw new Error('The active chat changed.');
+        if (getChatGeneration() !== generation || getMewmoryScope() !== currentKey) throw new Error('The active chat changed.');
+        const view = await refreshMewmory(undefined, { signal });
+        if (getMewmoryScope() !== currentKey) throw new Error('The active chat changed.');
+        if (!view) throw new Error(mewmory.error || 'Mewmory could not read this chat. Try again.');
+        if (!view.enabled) return { enabled: false, chat: messages };
         const tokenizer = getFriendlyTokenizerName();
         const result = await requestMewmory('prepare', {
             locator, tokenizer, integrity: chat_metadata.integrity,
@@ -196,14 +223,14 @@ export async function prepareMewmoryGeneration(messages, { signal } = {}) {
                 index: message.mewmorySourceIndex, text: String(message.name || '') + ': ' + String(message.mes || ''),
             })),
         }, { signal });
-        if (getChatGeneration() !== generation || key(getMewmoryLocator()) !== currentKey) throw new Error('The active chat changed during recall.');
+        if (getChatGeneration() !== generation || getMewmoryScope() !== currentKey) throw new Error('The active chat changed during recall.');
         const excluded = new Set(result.excludedIndices);
         mewmory.error = result.inspection?.error || result.inspection?.indexError || '';
         mewmory.view.preview = result;
         mewmory.view.previewCurrent = true;
         return { ...result, locator, tokenizer, chat: messages.filter(message => !excluded.has(message.mewmorySourceIndex)) };
     } catch (error) {
-        mewmory.error = error.message;
+        if (getMewmoryScope() === currentKey) mewmory.error = error.message;
         throw error;
     } finally {
         mewmory.preparing = false;

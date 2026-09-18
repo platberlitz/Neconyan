@@ -288,6 +288,14 @@ export class SecretManager {
         this._writeSecretsFile(secrets);
     }
 
+    /** Remove a dedicated credential slot, including inactive older keys. */
+    deleteSecrets(key) {
+        if (!fs.existsSync(this.filePath)) return;
+        const secrets = this._readSecretsFile();
+        delete secrets[key];
+        this._writeSecretsFile(secrets);
+    }
+
     /**
      * Reads the active secret value for a given key
      * @param {string} key Secret key

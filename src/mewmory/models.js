@@ -1,10 +1,12 @@
 import path from 'node:path';
+import fs from 'node:fs';
 import net from 'node:net';
 import { EventEmitter } from 'node:events';
 import ipaddr from 'ipaddr.js';
 import fetch from 'node-fetch';
-import { readSecret, writeSecret, deleteSecret } from '../endpoints/secrets.js';
-import { acquireChatFileLock } from '../chat-file-lock.js';
+import { sync as writeFileAtomicSync } from 'write-file-atomic';
+import { readSecret, writeSecret, SecretManager, SECRETS_FILE } from '../endpoints/secrets.js';
+import { acquireChatFileLocks } from '../chat-file-lock.js';
 import { fail, hash, list, object, ROLE_NAMES, SOURCE_TYPES, text } from './core.js';
 import { readJson, writeJson } from './store.js';
 import { getCounter, getTokenizerModel, TOKENIZERS } from './tokens.js';
@@ -77,7 +79,7 @@ export function validateConfig(input) {
             const endpoint = text(role.endpoint, 'Endpoint', 2048, !enabled || Boolean(profileId));
             const allowRemote = role.allowRemote === true;
             result.roles[name] = {
-                enabled, profileId, endpoint: !profileId && endpoint ? validateEndpoint(endpoint, { localOnly: result.localOnly, allowRemote }) : '',
+                enabled, profileId, endpoint: !profileId && endpoint ? enabled ? validateEndpoint(endpoint, { localOnly: result.localOnly, allowRemote }) : endpoint : '',
                 model: text(role.model, 'Model', 250, !enabled || Boolean(profileId)),
                 modelOverride: text(role.modelOverride, 'Model override', 250, true),
                 modelRevision: text(role.modelRevision, 'Model revision', 250, true), allowRemote,
@@ -116,26 +118,36 @@ export function readConfig(directories) {
     for (const name of ROLE_NAMES) {
         const role = config.roles[name];
         if (!role.enabled || !role.profileId) continue;
-        role.connection = resolveModelProfile(directories, role.profileId, name === 'embedding', role.modelOverride);
-        role.model = role.connection.model;
-        role.endpoint = role.connection.endpoint;
+        try {
+            role.connection = resolveModelProfile(directories, role.profileId, name === 'embedding', role.modelOverride);
+            role.model = role.connection.model;
+            role.endpoint = role.connection.endpoint;
+        } catch (error) {
+            role.error = error.message;
+        }
     }
     return config;
 }
 
 export function publicConfig(directories) {
     const config = readSavedConfig(directories);
+    const resolved = readConfig(directories);
     const profiles = listModelProfiles(directories);
     return { ...config, profiles, roles: Object.fromEntries(ROLE_NAMES.map(name => {
         const role = config.roles[name];
         const model = role.profileId ? role.modelOverride || profiles.find(profile => profile.id === role.profileId)?.model || '' : role.model;
-        return [name, { ...role, model, autoTokenizer: model ? getTokenizerModel(model) : '',
+        return [name, { ...role, model, error: resolved.roles[name].error || '', autoTokenizer: model ? getTokenizerModel(model) : '',
             hasKey: Boolean(readSecret(directories, 'mewmory_' + name)) }];
     })) };
 }
 
 export function saveConfig(directories, input) {
     const validated = validateConfig(input);
+    const credentials = ROLE_NAMES.flatMap(name => {
+        const role = input.roles[name];
+        if (role.clearKey === true) return [[name, null]];
+        return role.apiKey ? [[name, text(role.apiKey, ROLE_LABELS[name] + ' API key', 10000)]] : [];
+    });
     for (const name of ROLE_NAMES) {
         const role = validated.roles[name];
         if (!role.enabled || !role.profileId) continue;
@@ -148,17 +160,26 @@ export function saveConfig(directories, input) {
         }
     }
     const filename = path.join(directories.root, 'mewmory', 'config.json');
-    const release = acquireChatFileLock(filename);
+    const secretsFile = path.join(directories.root, SECRETS_FILE);
+    const release = acquireChatFileLocks([filename, secretsFile]);
     try {
         const current = readJson(filename, null) || defaultConfig();
         if (input.revision !== current.revision) fail('Model settings changed in another tab. Reload before saving.', 409);
-        for (const name of ROLE_NAMES) {
-            const role = input.roles[name];
-            if (role.clearKey === true) deleteSecret(directories, 'mewmory_' + name);
-            else if (role.apiKey) writeSecret(directories, 'mewmory_' + name, text(role.apiKey, 'API key', 10000));
+        const previousSecrets = credentials.length && fs.existsSync(secretsFile) ? fs.readFileSync(secretsFile) : null;
+        try {
+            for (const [name, value] of credentials) {
+                if (value === null) new SecretManager(directories).deleteSecrets('mewmory_' + name);
+                else writeSecret(directories, 'mewmory_' + name, value);
+            }
+            validated.revision = current.revision + 1;
+            writeJson(filename, validated);
+        } catch (error) {
+            if (credentials.length) {
+                if (previousSecrets) writeFileAtomicSync(secretsFile, previousSecrets, { mode: 0o600 });
+                else fs.rmSync(secretsFile, { force: true });
+            }
+            throw error;
         }
-        validated.revision = current.revision + 1;
-        writeJson(filename, validated);
     } finally {
         release();
     }
@@ -176,8 +197,9 @@ export function roleVersion(config, name) {
 function authorizeRole(config, name, dataTypes) {
     const role = config.roles[name];
     if (!ROLE_NAMES.includes(name) || !role?.enabled) fail('Enable ' + (ROLE_LABELS[name] || 'the model role') + ' in Mewmory settings, then save the configuration.', 409);
+    if (role.error) fail(ROLE_LABELS[name] + ': ' + role.error, 409);
     let endpoint = role.endpoint;
-    if (!role.connection || role.connection.api === 'custom') {
+    if (!role.connection || endpoint) {
         endpoint = validateEndpoint(endpoint, { localOnly: config.localOnly, allowRemote: role.allowRemote });
     } else if (config.localOnly || !role.allowRemote) {
         fail('This role is not allowed to send story data to a remote connection profile.', 403);
@@ -188,13 +210,24 @@ function authorizeRole(config, name, dataTypes) {
 
 async function requestModel(directories, config, name, payload, dataTypes, signal) {
     if (signal?.aborted) fail('Mewmory request cancelled.', 499);
-    if (readConfig(directories).revision !== config.revision) fail('Model permissions or settings changed. Retry with the current configuration.', 409);
+    const checkCurrent = () => {
+        const current = readConfig(directories);
+        if (current.revision !== config.revision || hash([current.localOnly, current.roles[name]]) !== hash([config.localOnly, config.roles[name]])) {
+            fail('Model permissions or settings changed. Retry with the current configuration.', 409);
+        }
+    };
+    checkCurrent();
     const { role, endpoint } = authorizeRole(config, name, dataTypes);
-    const base = (role.connection?.api === 'openai' ? 'https://api.openai.com/v1' : endpoint).replace(/\/(?:chat\/completions|embeddings)\/?$/, '');
+    const base = (endpoint || (role.connection?.api === 'openai' ? 'https://api.openai.com/v1' : '')).replace(/\/(?:chat\/completions|embeddings)\/?$/, '');
     const url = base + (name === 'embedding' ? '/embeddings' : '/chat/completions');
     const key = role.connection
-        ? readSecret(directories, role.connection.api === 'custom' ? 'api_key_custom' : 'api_key_openai', role.connection.secretId || undefined)
+        ? role.connection.payload.reverse_proxy ? role.connection.payload.proxy_password
+            : role.connection.secretId ? readSecret(directories, role.connection.secretType, role.connection.secretId) : ''
         : readSecret(directories, 'mewmory_' + name);
+    const send = (url, options) => {
+        checkCurrent();
+        return fetch(url, { ...options, redirect: 'error', size: 4 * 1024 * 1024 });
+    };
     const controller = new AbortController();
     const abort = () => controller.abort();
     const timeout = setTimeout(abort, role.timeoutMs);
@@ -209,13 +242,19 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
             controller.signal.addEventListener('abort', cancel, { once: true });
             let result;
             try {
-                result = await runBackendGeneration(request, 'chat', { ...role.connection.payload, ...payload }, { signal: controller.signal });
+                const connection = { ...role.connection.payload };
+                if (role.connection.api === 'custom') connection.custom_url = endpoint;
+                else if (connection.reverse_proxy) connection.reverse_proxy = endpoint;
+                else if (connection.azure_base_url) connection.azure_base_url = endpoint;
+                result = await runBackendGeneration(request, 'chat', { ...connection, ...payload }, {
+                    signal: controller.signal, fetch: send, anonymousCustom: role.connection.api === 'custom' && !role.connection.secretId,
+                });
             } finally {
                 controller.signal.removeEventListener('abort', cancel);
             }
             data = { ...result, choices: [{ ...(result.choices?.[0] || {}), message: { content: extractGeneratedText(result) } }] };
         } else {
-            const response = await fetch(url, {
+            const response = await send(url, {
                 method: 'POST', redirect: 'error', size: 4 * 1024 * 1024,
                 signal: controller.signal,
                 headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: 'Bearer ' + key } : {}) },

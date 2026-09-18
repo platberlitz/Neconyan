@@ -14,7 +14,7 @@ export const processingVersion = config => hash([POLICY_VERSION, roleVersion(con
 
 function processingFingerprint(state, sourceCount) {
     return hash([sourceFingerprint({ ...state, timeline: state.timeline.slice(0, sourceCount) }),
-        state.enabled, state.activeNpcIds, state.sceneNpcIds, state.records, state.audit, state.overrides]);
+        state.enabled, state.activeNpcIds, state.sceneNpcIds, state.castHistory, state.records, state.audit, state.overrides]);
 }
 
 export function pendingSources(state, config, { checkpoint = false, through = Infinity } = {}) {
@@ -75,7 +75,9 @@ export function extractionInput(state, refs, asOf, checkpoint) {
     return {
         policy: POLICY_VERSION, mode: checkpoint ? 'preservation_checkpoint' : 'live_update', asOf,
         sources, existing: [...reference, ...relevant],
-        authorOverrides: state.records.filter(record => record.authorOverride && record.asOf <= asOf),
+        authorOverrides: state.records.filter(record => record.authorOverride && record.asOf <= asOf)
+            .map(record => objectiveKinds.includes(record.kind) && recordEligible(state, record, { asOf }) ? record
+                : { id: record.id, kind: record.kind, excluded: record.excluded, status: record.status }),
     };
 }
 
@@ -112,7 +114,10 @@ export function applyExtraction(state, output, input) {
     const active = strings(output.activeNpcIds, 'Active characters');
     if (active.some(entityId => !state.records.some(record => record.kind === 'entity' && record.entityId === entityId
         && record.isCharacter && recordEligible(state, record, { asOf: input.asOf })))) fail('An active participant is not an eligible AI character.');
-    state.sceneNpcIds = active;
+    state.castHistory = [...(state.castHistory || []).filter(entry => entry.asOf !== input.asOf), {
+        asOf: input.asOf, ids: active, refs: input.sources.map(({ id, revision }) => ({ id, revision })),
+    }].sort((a, b) => a.asOf - b.asOf);
+    state.sceneNpcIds = state.castHistory.at(-1).ids;
     return list(output.interviews, 'Interview requests', 4).map(request => {
         object(request, 'Interview request');
         return {
@@ -166,7 +171,8 @@ export function applyInterview(state, request, output, input, jobId) {
         fail('Unexpected Pawspective output.');
     }
     const knowledge = request.knowledgeIds.map(key => knowledgeForTime(state, key, input.asOf));
-    const snapshotId = 'interview:' + hash([jobId, request.ownerId, request.subjectIds, input.asOf]).slice(0, 32);
+    const evidenceKey = interviewEvidenceKey(state, request, input.asOf);
+    const snapshotId = 'interview:' + hash([jobId, evidenceKey, input.asOf]).slice(0, 32);
     const dependencies = [
         ...knowledge.map(record => ({ id: record.id, version: record.version })),
         { id: input.owner.recordId, version: input.owner.version },
@@ -182,10 +188,10 @@ export function applyInterview(state, request, output, input, jobId) {
         significance: request.significance, evidenceRefs: request.evidenceRefs,
     }, { asOf: input.asOf, origin: 'generated_interview' });
     record.provenance = input.provenance;
-    record.evidenceKey = interviewEvidenceKey(state, request, input.asOf);
+    record.evidenceKey = evidenceKey;
     const saved = putRecord(state, record, { automatic: true });
-    if (!recordEligible(state, saved, { asOf: input.asOf })) return;
     if (saved.authorOverride) return;
+    if (!recordEligible(state, saved, { asOf: input.asOf })) fail('The generated interview is no longer eligible. Preservation has not advanced.', 409);
     const overviews = list(output.overviews, 'Subject overviews', request.subjectIds.length);
     if (overviews.length !== request.subjectIds.length || new Set(overviews.map(item => item.subjectId)).size !== request.subjectIds.length) {
         fail('Pawspective must supply one current overview for each requested subject.');
@@ -253,6 +259,7 @@ async function runBatch(directories, locator, options, call) {
             current.records = state.records;
             current.audit = state.audit;
             current.sceneNpcIds = state.sceneNpcIds;
+            current.castHistory = state.castHistory;
             current.index.pending ||= state.audit.length > auditLength;
             for (const ref of refs) {
                 current.coverage[refKey(ref)] = policy;
@@ -264,9 +271,10 @@ async function runBatch(directories, locator, options, call) {
     } catch (error) {
         mutateState(directories, locator, current => {
             const job = current.jobs.find(item => item.id === jobId);
-            if (job) Object.assign(job, { status: 'failed', error: error.message, finishedAt: Date.now(), usage });
+            if (!job || current.branchId !== state.branchId) return;
+            Object.assign(job, { status: 'failed', error: error.message, finishedAt: Date.now(), usage });
             addUsage(current, usage);
-        });
+        }, undefined, { existingOnly: true });
         throw error;
     }
 }

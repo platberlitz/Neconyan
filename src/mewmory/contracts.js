@@ -1,5 +1,5 @@
 export const EXTRACTION_CONTRACT = [
-    'Mewmory objective extraction contract v1.',
+    'Mewmory objective extraction contract v2.',
     'Inspect only supplied accepted sources and applicable author-level lore. Preserve events, identities, appearance, specific speech habits, temporary state, directional relationships, knowledge acquisition and explicit commitments.',
     'A spoken claim is reported, not established truth. Never invent the player’s private thoughts, feelings or motives. Unknowns stay unknown.',
     'Appearance and speech belong in entity records. Clothing, injuries, current location and carried items belong in separate state records. Do not overwrite stable appearance with a disguise.',
@@ -12,7 +12,7 @@ export const EXTRACTION_CONTRACT = [
     'Every record has: id (stable short identifier), kind, text, refs:[{id,revision}], subjectIds:[], dependencies:[], significance:"low"|"medium"|"high", evidenceRefs:[], status:"active"|"background"|"resolved"|"uncertain".',
     'Only supplied source reference IDs and revisions are allowed. Significance above low needs distinct accepted chat evidence. Reprocessing, retrieving, copying a summary and repeated phrasing are not new significance evidence.',
     'entity adds: entityId, name, aliases:[], isCharacter:boolean, appearance:string, speech:string. Preserve existing stable details when updating it.',
-    'state adds: entityId. Its text describes temporary state, separate from the entity sheet.',
+    'state adds: entityId. Keep one complete current state per entity, separate from its stable sheet. Retain every ongoing injury, item, location and clothing detail when updating that state; reuse its existing ID.',
     'event and relationship add: evidenceStatus:"established"|"reported"|"disputed"|"uncertain". Relationships are directional; beliefs and affection are subjective and belong in interviews or overviews.',
     'knowledge adds: ownerId, method:"witnessed"|"told"|"read"|"inferred"|"author", evidenceText (an exact substring of a supplied source). Its text contains only what this character knows, including uncertainty.',
     'commitment adds: triggerTerms:[] (specific situation cues, such as harbour or return the book). A resolved commitment has status resolved.',
