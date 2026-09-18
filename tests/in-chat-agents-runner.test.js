@@ -6505,6 +6505,65 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[0].mes).toBe('Full rewrite');
     });
 
+    test.each([401, 429, 500])('profile failure %s keeps its cause without repeating the same chat request', async status => {
+        usePromptTransformPostAgent();
+        enabledAgents[0].connectionProfile = 'profile-cc';
+        const cause = Object.assign(new Error('Provider account unavailable'), { status });
+        connectionManagerRequestService = {
+            getProfile: jest.fn(() => ({ name: 'Example profile', model: 'm' })),
+            sendRequest: jest.fn().mockRejectedValue(new Error('API request failed', { cause })),
+            constructPrompt: jest.fn(messages => messages),
+        };
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await new Promise(resolve => setTimeout(resolve, 5));
+
+        expect(connectionManagerRequestService.sendRequest).toHaveBeenCalledTimes(1);
+        expect(chat[0].mes).toBe('Original reply');
+        expect(chat[0].extra.inChatAgentPromptRuns[0]).toMatchObject({
+            status: 'error', error: 'API request failed: Provider account unavailable',
+        });
+    });
+
+    test('an empty chat profile result is not retried with identical formatting', async () => {
+        usePromptTransformPostAgent();
+        enabledAgents[0].connectionProfile = 'profile-cc';
+        connectionManagerRequestService = {
+            getProfile: jest.fn(() => ({ name: 'Example profile', model: 'm' })),
+            sendRequest: jest.fn().mockResolvedValue({ content: '' }),
+            constructPrompt: jest.fn(messages => messages),
+        };
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} });
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await new Promise(resolve => setTimeout(resolve, 5));
+        expect(connectionManagerRequestService.sendRequest).toHaveBeenCalledTimes(1);
+        expect(chat[0].mes).toBe('Original reply');
+    });
+
+    test('text formatting fallback is still available when it changes the request', async () => {
+        usePromptTransformPostAgent();
+        enabledAgents[0].connectionProfile = 'profile-text';
+        connectionManagerRequestService = {
+            getProfile: jest.fn(() => ({ name: 'Text profile', model: 'm' })),
+            sendRequest: jest.fn().mockRejectedValueOnce(new Error('Unsupported prompt format'))
+                .mockResolvedValueOnce({ content: 'Formatted rewrite' }),
+            constructPrompt: jest.fn(() => 'Formatted text request'),
+        };
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} });
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await new Promise(resolve => setTimeout(resolve, 5));
+        expect(connectionManagerRequestService.sendRequest).toHaveBeenCalledTimes(2);
+        expect(connectionManagerRequestService.sendRequest.mock.calls[1][1]).toBe('Formatted text request');
+        expect(chat[0].mes).toBe('Formatted rewrite');
+    });
+
     test('appends global helper prefill messages to profile prompt-transform requests', async () => {
         usePromptTransformPostAgent();
         enabledAgents[0].connectionProfile = 'profile-cc';

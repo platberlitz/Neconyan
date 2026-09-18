@@ -2820,32 +2820,20 @@ function unwrapContextInterceptOutput(value = '') {
     return text;
 }
 
-function formatContextMessageContent(content) {
-    if (typeof content === 'string') {
-        return content;
-    }
-
-    if (content === null || content === undefined) {
-        return '';
-    }
-
-    return JSON.stringify(content, null, 2);
-}
-
 function serializeChatContext(chatMessages) {
-    return JSON.stringify((Array.isArray(chatMessages) ? chatMessages : []).map(message => ({
-        ...message,
-        content: formatContextMessageContent(message?.content),
-    })), null, 2);
+    return JSON.stringify(Array.isArray(chatMessages) ? chatMessages : [], null, 2);
 }
 
 function parseChatContext(value) {
     const parsed = JSON.parse(value);
-    if (!Array.isArray(parsed)) {
-        throw new Error('Intercepted chat context must be a JSON array of chat messages.');
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+        throw new Error('Intercepted chat context must be a non-empty JSON array of chat messages.');
     }
 
     const allowedRoles = new Set(['system', 'user', 'assistant', 'tool']);
+    const pendingCalls = new Set();
+    const seenCalls = new Set();
+    let hasUsableContent = false;
     for (const [index, message] of parsed.entries()) {
         if (!message || typeof message !== 'object' || Array.isArray(message)) {
             throw new Error(`Intercepted chat message at index ${index} must be an object.`);
@@ -2855,16 +2843,49 @@ function parseChatContext(value) {
             throw new Error(`Intercepted chat message at index ${index} has an unsupported role.`);
         }
 
-        const hasContent = typeof message.content === 'string' || Array.isArray(message.content);
-        const hasToolCalls = Array.isArray(message.tool_calls);
+        const hasContent = typeof message.content === 'string' || (Array.isArray(message.content) && message.content.length > 0);
+        const hasToolCalls = Array.isArray(message.tool_calls) && message.tool_calls.length > 0;
         if (!hasContent && !hasToolCalls) {
             throw new Error(`Intercepted chat message at index ${index} must include content or tool_calls.`);
         }
-
-        if (message.role === 'tool' && typeof message.tool_call_id !== 'string') {
-            throw new Error(`Intercepted chat message at index ${index} must include tool_call_id for tool role.`);
+        if (Array.isArray(message.content)) {
+            for (const part of message.content) {
+                const validPart = part && typeof part === 'object' && !Array.isArray(part) && (
+                    (part.type === 'text' && typeof part.text === 'string')
+                    || (['image_url', 'video_url'].includes(part.type) && typeof part[part.type]?.url === 'string' && part[part.type].url.trim())
+                    || (part.type === 'input_audio' && typeof part.input_audio?.data === 'string' && typeof part.input_audio?.format === 'string')
+                    || (part.type === 'file' && (typeof part.file?.file_id === 'string' || typeof part.file?.file_data === 'string'))
+                );
+                if (!validPart) throw new Error(`Intercepted chat message at index ${index} has an invalid content part.`);
+                hasUsableContent ||= part.type !== 'text' || Boolean(part.text.trim());
+            }
+        } else if (typeof message.content === 'string') {
+            hasUsableContent ||= Boolean(message.content.trim());
+        }
+        if (message.role === 'tool') {
+            if (typeof message.tool_call_id !== 'string' || !pendingCalls.delete(message.tool_call_id)) {
+                throw new Error(`Intercepted chat message at index ${index} has no matching tool call.`);
+            }
+        } else if (pendingCalls.size) {
+            throw new Error('Intercepted chat context is missing a tool result.');
+        }
+        if (message.tool_calls !== undefined) {
+            if (message.role !== 'assistant' || !hasToolCalls) {
+                throw new Error(`Intercepted chat message at index ${index} has invalid tool_calls.`);
+            }
+            for (const call of message.tool_calls) {
+                if (!call || typeof call.id !== 'string' || !call.id.trim() || seenCalls.has(call.id)
+                    || call.type !== 'function' || typeof call.function?.name !== 'string' || !call.function.name.trim()
+                    || typeof call.function.arguments !== 'string') {
+                    throw new Error(`Intercepted chat message at index ${index} has an invalid tool call.`);
+                }
+                pendingCalls.add(call.id);
+                seenCalls.add(call.id);
+            }
+            hasUsableContent = true;
         }
     }
+    if (!hasUsableContent || pendingCalls.size) throw new Error('Intercepted chat context is empty or missing a tool result.');
 
     return parsed;
 }
@@ -3232,6 +3253,45 @@ async function requestMainChatCompletionPromptTransform(context, promptMessages,
     };
 }
 
+const PERMANENT_REQUEST_STATUSES = new Set([400, 401, 402, 403, 404, 413, 422, 429]);
+
+/**
+ * Reads the HTTP status carried by a request failure, looking through wrapped causes.
+ * @param {unknown} error
+ * @returns {number|null}
+ */
+function getRequestErrorStatus(error) {
+    let current = error;
+    for (let depth = 0; current && depth < 5; depth++) {
+        if (Number.isInteger(current.status)) {
+            return current.status;
+        }
+        current = current.cause;
+    }
+    return null;
+}
+
+/**
+ * Builds a human-readable error message that keeps the useful wrapped cause.
+ * @param {unknown} error
+ * @returns {string}
+ */
+function describeAgentError(error) {
+    if (!(error instanceof Error)) {
+        return String(error);
+    }
+    const parts = [error.message];
+    let cause = error.cause;
+    for (let depth = 0; cause && depth < 5; depth++) {
+        const text = cause instanceof Error ? cause.message : String(cause);
+        if (text && !parts.includes(text)) {
+            parts.push(text);
+        }
+        cause = cause?.cause;
+    }
+    return parts.filter(Boolean).join(': ');
+}
+
 async function requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, promptMessages, maxTokens, modelOverride = '', signal = null) {
     const requestOptions = {
         extractData: true,
@@ -3245,8 +3305,10 @@ async function requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, 
         requestOptions.modelOverride = modelOverride.trim();
     }
 
+    let primaryError = null;
+    let primaryResponse;
     try {
-        const primaryResponse = await CMRS.sendRequest(profileId, promptMessages, maxTokens, requestOptions);
+        primaryResponse = await CMRS.sendRequest(profileId, promptMessages, maxTokens, requestOptions);
         const primaryOutput = extractProfileResponseText(primaryResponse);
         if (primaryOutput.trim()) {
             return {
@@ -3261,7 +3323,12 @@ async function requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, 
             throw error;
         }
 
-        console.warn(`[InChatAgents] Primary prompt transform request via ${describePromptTransformTarget(profileId, 'profile')} failed, retrying with fallback prompt formatting.`, error);
+        if (PERMANENT_REQUEST_STATUSES.has(getRequestErrorStatus(error))) {
+            // Authentication, quota and validation failures repeat identically; do not resend.
+            throw error;
+        }
+
+        primaryError = error;
     }
 
     let fallbackPrompt = '';
@@ -3271,6 +3338,20 @@ async function requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, 
         } catch (error) {
             console.warn(`[InChatAgents] Failed to construct fallback prompt for ${describePromptTransformTarget(profileId, 'profile')}.`, error);
         }
+    }
+
+    if (Array.isArray(fallbackPrompt)) {
+        // Chat-completion profiles return the same message array, so a retry would be identical.
+        if (primaryError) throw primaryError;
+        return {
+            output: extractProfileResponseText(primaryResponse),
+            runner: 'profile',
+            profileId,
+            lengthLimited: primaryResponse?.lengthLimited === true,
+        };
+    }
+    if (primaryError) {
+        console.warn(`[InChatAgents] Primary prompt transform request via ${describePromptTransformTarget(profileId, 'profile')} failed, retrying with fallback prompt formatting.`, primaryError);
     }
 
     const fallbackRequestPrompt = Array.isArray(fallbackPrompt)
@@ -3537,7 +3618,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
         const nextMessageText = protectedPartialPrefill + transformedMessageText;
         const staleTarget = !isMessageTargetCurrent(message, targetState, messageIndex);
         // A rewrite the provider cut short at its output limit must not replace the complete original.
-        const truncatedRewrite = promptTransformMode !== 'append' && response.lengthLimited === true && applyToMessage;
+        const truncatedRewrite = response.lengthLimited === true;
         if (staleTarget || truncatedRewrite || agentGenerationCancelRevision !== cancelRevision || !isRuntimeAllowed()) {
             if (staleTarget) {
                 console.info(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" finished after the message changed; result discarded.`);
@@ -3616,7 +3697,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
             changed: false,
             status: 'error',
             mode: promptTransformMode,
-            error: error instanceof Error ? error.message : String(error),
+            error: describeAgentError(error),
             profileId,
             ...runMetadata,
             runner: 'error',
@@ -3680,7 +3761,7 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
                     changed: false,
                     status: 'error',
                     mode: getPromptTransformMode(agent),
-                    error: error instanceof Error ? error.message : String(error),
+                    error: describeAgentError(error),
                     runner: 'error',
                     timestamp: new Date().toISOString(),
                     outputText: '',
@@ -3705,7 +3786,7 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
                         changed: false,
                         status: 'error',
                         mode: getPromptTransformMode(agent),
-                        error: error instanceof Error ? error.message : String(error),
+                        error: describeAgentError(error),
                         runner: 'error',
                         timestamp: new Date().toISOString(),
                         outputText: '',
@@ -4328,7 +4409,7 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
                     changed: false,
                     status: 'error',
                     mode: getPromptTransformMode(agent),
-                    error: error instanceof Error ? error.message : String(error),
+                    error: describeAgentError(error),
                     runner: 'error',
                     timestamp: new Date().toISOString(),
                 });
@@ -4661,7 +4742,7 @@ async function runPromptTransformAgentsForText(promptTransformAgents, initialTex
                 changed: false,
                 status: 'error',
                 mode: getPromptTransformMode(agent),
-                error: error instanceof Error ? error.message : String(error),
+                error: describeAgentError(error),
                 runner: 'error',
                 timestamp: new Date().toISOString(),
             });
@@ -4827,6 +4908,10 @@ async function runContextInterceptAgent(agent, currentContextText, generationTyp
             };
         }
 
+        if (response.lengthLimited) {
+            return { ...baseResult, status: 'truncated', profileId: response.profileId, runner: response.runner };
+        }
+
         const outputText = unwrapContextInterceptOutput(response.output).trim();
 
         if (!outputText) {
@@ -4920,7 +5005,7 @@ async function runPreGenerationInterceptorsOnText(initialContextText, generation
                 contextFormat,
                 changed: false,
                 status: 'error',
-                error: error instanceof Error ? error.message : String(error),
+                error: describeAgentError(error),
                 beforeText: currentContextText,
                 afterText: currentContextText,
                 outputText: '',
@@ -5032,7 +5117,7 @@ async function runPreGenerationInterceptorsOnChat(initialChatMessages, generatio
                 contextFormat: 'chat',
                 changed: false,
                 status: 'error',
-                error: error instanceof Error ? error.message : String(error),
+                error: describeAgentError(error),
                 beforeText: contextText,
                 afterText: contextText,
                 outputText: normalizeContentText(result?.outputText),
@@ -5112,7 +5197,7 @@ async function runPostMainGenerationInterceptorsOnText(initialOutputText, genera
                 contextFormat: 'text',
                 changed: false,
                 status: 'error',
-                error: error instanceof Error ? error.message : String(error),
+                error: describeAgentError(error),
                 beforeText: currentOutputText,
                 afterText: currentOutputText,
                 outputText: '',
@@ -5986,7 +6071,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
                 changed: false,
                 status: 'error',
                 mode: getPromptTransformMode(agent),
-                error: error instanceof Error ? error.message : String(error),
+                error: describeAgentError(error),
                 runner: 'error',
                 timestamp: new Date().toISOString(),
             });

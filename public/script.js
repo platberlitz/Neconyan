@@ -10688,7 +10688,7 @@ export function stringifyUnknown(value) {
  * @param {any} value
  * @returns {string}
  */
-export function normalizeContentText(value) {
+export function normalizeContentText(value, { excludeReasoning = false } = {}) {
     if (typeof value === 'string') {
         return value;
     }
@@ -10703,25 +10703,28 @@ export function normalizeContentText(value) {
 
     if (Array.isArray(value)) {
         return value
-            .map(item => normalizeContentText(item))
+            .map(item => normalizeContentText(item, { excludeReasoning }))
             .filter(Boolean)
             .join('\n\n');
     }
 
     if (typeof value === 'object') {
+        if (excludeReasoning && (value.thought === true || /reasoning|thinking|thought/i.test(String(value.type ?? '')))) {
+            return '';
+        }
         if (typeof value.text === 'string') {
             return value.text;
         }
         if (typeof value.content === 'string') {
             return value.content;
         }
-        if (typeof value.thinking === 'string') {
+        if (!excludeReasoning && typeof value.thinking === 'string') {
             return value.thinking;
         }
         if (typeof value.tool_plan === 'string') {
             return value.tool_plan;
         }
-        if (typeof value.reasoning === 'string') {
+        if (!excludeReasoning && typeof value.reasoning === 'string') {
             return value.reasoning;
         }
         if (typeof value.output === 'string') {
@@ -10731,25 +10734,25 @@ export function normalizeContentText(value) {
             return value.message;
         }
         if (Array.isArray(value.parts)) {
-            return normalizeContentText(value.parts);
+            return normalizeContentText(value.parts, { excludeReasoning });
         }
         if (Array.isArray(value.content)) {
-            return normalizeContentText(value.content);
+            return normalizeContentText(value.content, { excludeReasoning });
         }
         if (typeof value.content === 'object' && value.content !== null) {
-            const nestedContent = normalizeContentText(value.content);
+            const nestedContent = normalizeContentText(value.content, { excludeReasoning });
             if (nestedContent) {
                 return nestedContent;
             }
         }
         if (Array.isArray(value.tool_plan)) {
-            return normalizeContentText(value.tool_plan);
+            return normalizeContentText(value.tool_plan, { excludeReasoning });
         }
-        if (Array.isArray(value.reasoning)) {
+        if (!excludeReasoning && Array.isArray(value.reasoning)) {
             return normalizeContentText(value.reasoning);
         }
         if (Array.isArray(value.output)) {
-            return normalizeContentText(value.output);
+            return normalizeContentText(value.output, { excludeReasoning });
         }
     }
 
@@ -10762,7 +10765,8 @@ export function normalizeContentText(value) {
  * @param {string} activeApi If it's set, ignores active API
  * @returns {string} Extracted message
  */
-export function extractMessageFromData(data, activeApi = null) {
+export function extractMessageFromData(data, activeApi = null, { excludeReasoning = false } = {}) {
+    const normalize = value => normalizeContentText(value, { excludeReasoning });
     function getResult() {
         if (typeof data === 'string') {
             return data;
@@ -10778,26 +10782,27 @@ export function extractMessageFromData(data, activeApi = null) {
             case 'novel':
                 return data.output;
             case 'openai':
-                return normalizeContentText(data?.content?.filter?.(p => p.type === 'text')?.map?.(p => p.text)?.join?.('\n\n'))
-                    || normalizeContentText(data?.choices?.[0]?.message?.content)
-                    || normalizeContentText(data?.choices?.[0]?.text)
-                    || normalizeContentText(data?.text)
-                    || normalizeContentText(data?.message?.content)
-                    || normalizeContentText(data?.message?.tool_plan)
+                return normalize(data?.content?.filter?.(p => p?.type === 'text')?.map?.(p => p.text)?.join?.('\n\n'))
+                    || normalize(data?.choices?.[0]?.message?.content)
+                    || normalize(data?.choices?.[0]?.text)
+                    || normalize(data?.text)
+                    || normalize(data?.message?.content)
+                    || normalize(data?.message?.tool_plan)
                     // Neconyan: an empty reply must not fall back to Gemini's thinking parts.
-                    || normalizeContentText(Array.isArray(data?.responseContent?.parts)
+                    || normalize(Array.isArray(data?.responseContent?.parts)
                         ? data.responseContent.parts.filter(part => !part?.thought)
                         : data?.responseContent?.parts)
-                    || normalizeContentText(Array.isArray(data?.candidates?.[0]?.content?.parts)
+                    || normalize(Array.isArray(data?.candidates?.[0]?.content?.parts)
                         ? data.candidates[0].content.parts.filter(part => !part?.thought)
                         : data?.candidates?.[0]?.content?.parts)
-                    || stringifyUnknown(data?.message?.content);
+                    || (excludeReasoning ? '' : stringifyUnknown(data?.message?.content));
             default:
                 return '';
         }
     }
 
     const result = getResult();
+    if (excludeReasoning) return normalize(result);
     if (Array.isArray(result)) {
         return result.map(x => typeof x?.text === 'string' ? x.text : '').filter(Boolean).join('');
     }

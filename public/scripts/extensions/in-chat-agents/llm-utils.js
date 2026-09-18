@@ -98,7 +98,7 @@ export function extractProfileResponseText(response) {
         response?.message?.tool_plan,
         response?.message,
     );
-    return removeReasoningFromString(text);
+    return removeReasoningFromString(text, { force: true });
 }
 
 export function buildFallbackPromptText(promptMessages) {

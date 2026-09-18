@@ -178,7 +178,9 @@ export class TextCompletionService {
 
             const json = await response.json();
             if (!response.ok || json.error) {
-                throw new Error(String(json.error?.message || 'Response not OK'));
+                const error = new Error(String(json.error?.message || json.error || 'Response not OK'));
+                error.status = response.status;
+                throw error;
             }
 
             if (!extractData) {
@@ -186,7 +188,7 @@ export class TextCompletionService {
             }
 
             return {
-                content: extractMessageFromData(json, this.TYPE),
+                content: extractMessageFromData(json, this.TYPE, { excludeReasoning: true }),
                 reasoning: extractReasoningFromData(json, {
                     mainApi: this.TYPE,
                     textGenType: data.api_type,
@@ -208,7 +210,9 @@ export class TextCompletionService {
             const text = await response.text();
             tryParseStreamingError(response, text, { quiet: true });
 
-            throw new Error(`Got response status ${response.status}`);
+            const error = new Error(`Got response status ${response.status}`);
+            error.status = response.status;
+            throw error;
         }
 
         const eventStream = new EventSourceStream();
@@ -544,7 +548,9 @@ export class ChatCompletionService {
         if (!data.stream) {
             const json = await response.json();
             if (!response.ok || json.error) {
-                throw new Error(String(json.error?.message || 'Response not OK'));
+                const error = new Error(String(json.error?.message || json.error || 'Response not OK'));
+                error.status = response.status;
+                throw error;
             }
 
             if (!extractData) {
@@ -552,7 +558,7 @@ export class ChatCompletionService {
             }
 
             const result = {
-                content: extractMessageFromData(json, this.TYPE),
+                content: extractMessageFromData(json, this.TYPE, { excludeReasoning: true }),
                 reasoning: extractReasoningFromData(json, {
                     mainApi: this.TYPE,
                     textGenType: data.chat_completion_source,
@@ -571,7 +577,9 @@ export class ChatCompletionService {
             const text = await response.text();
             tryParseStreamingError(response, text, { quiet: true });
 
-            throw new Error(`Got response status ${response.status}`);
+            const error = new Error(`Got response status ${response.status}`);
+            error.status = response.status;
+            throw error;
         }
 
         const eventStream = new EventSourceStream();
@@ -708,6 +716,10 @@ export class ChatCompletionService {
         if (overridePayload.model) {
             settings.openai_model = overridePayload.model;
         }
+        const outputLimit = overridePayload.max_completion_tokens ?? overridePayload.max_tokens;
+        if (outputLimit !== undefined) {
+            settings.openai_max_tokens = outputLimit;
+        }
         if (overridePayload.service_tier !== undefined) {
             const source = settings.chat_completion_source;
             if (['nanogpt', 'openrouter'].includes(source)) settings[`${source}_service_tier`] = overridePayload.service_tier;
@@ -810,6 +822,11 @@ export class ChatCompletionService {
         }
         delete overridePayload.__connectionProfileRequestFields;
         delete overridePayload.modelOverride;
+        // The model-specific conversion above owns the final output-limit field.
+        if (outputLimit !== undefined) {
+            delete overridePayload.max_tokens;
+            delete overridePayload.max_completion_tokens;
+        }
 
         // apply overrides
         return this.createRequestData({ ...payload, ...overridePayload });

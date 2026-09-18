@@ -57,8 +57,8 @@ function getAutoAppendReasoningTagOrder() {
     return [preferredTag, ...AUTO_APPEND_REASONING_TAGS].filter((tag, index, allTags) => AUTO_APPEND_REASONING_TAGS.includes(tag) && allTags.indexOf(tag) === index);
 }
 
-function getAutoAppendReasoningTemplates() {
-    if (!oai_settings.auto_append_reasoning_tags) {
+function getAutoAppendReasoningTemplates(force = false) {
+    if (!force && !oai_settings.auto_append_reasoning_tags) {
         return [];
     }
 
@@ -74,10 +74,10 @@ function isReasoningAutoParseEnabled() {
     return Boolean(power_user.reasoning.auto_parse || oai_settings.auto_append_reasoning_tags);
 }
 
-function getReasoningParseTemplates() {
+function getReasoningParseTemplates({ force = false } = {}) {
     const templates = [];
 
-    if (power_user.reasoning.auto_parse && power_user.reasoning.prefix && power_user.reasoning.suffix) {
+    if ((force || power_user.reasoning.auto_parse) && power_user.reasoning.prefix && power_user.reasoning.suffix) {
         templates.push({
             prefix: power_user.reasoning.prefix,
             suffix: power_user.reasoning.suffix,
@@ -85,7 +85,7 @@ function getReasoningParseTemplates() {
         });
     }
 
-    for (const template of getAutoAppendReasoningTemplates()) {
+    for (const template of getAutoAppendReasoningTemplates(force)) {
         templates.push(template);
     }
 
@@ -1590,9 +1590,19 @@ function setReasoningEventHandlers() {
  * @param {string} str Input string
  * @returns {string} Output string
  */
-export function removeReasoningFromString(str) {
-    if (!isReasoningAutoParseEnabled()) {
+export function removeReasoningFromString(str, { force = false } = {}) {
+    if (!force && !isReasoningAutoParseEnabled()) {
         return str;
+    }
+
+    if (force) {
+        let content = String(str);
+        for (const template of getReasoningParseTemplates({ force: true })) {
+            const prefix = escapeRegex(template.prefix);
+            const suffix = escapeRegex(template.suffix);
+            content = content.replace(new RegExp(`${prefix}[\\s\\S]*?(?:${suffix}|$)`, 'g'), '');
+        }
+        return content.trim();
     }
 
     const parsedReasoning = parseReasoningFromStringWithFallbacks(str);
