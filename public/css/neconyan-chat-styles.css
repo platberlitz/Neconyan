@@ -413,6 +413,7 @@ body.whisperstyle #chat {
             position: absolute;
             top: 70px;
             right: 0;
+            left: auto;
             width: 5px;
             height: 30px;
             opacity: 0.9;
@@ -587,6 +588,7 @@ body.hushstyle #chat {
             position: absolute;
             top: 40px;
             right: 0;
+            left: auto;
             width: 5px;
             height: 30px;
             opacity: 0.9;
