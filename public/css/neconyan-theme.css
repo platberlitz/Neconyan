@@ -1750,68 +1750,6 @@ body.bubblechat #chat .mes[is_user='true']:has(.reasoning_edit_textarea)::before
         0 12px 26px color-mix(in srgb, var(--SmartThemeShadowColor) 12%, transparent);
 }
 
-#chat .mes_edit_buttons,
-#chat .mes_reasoning_actions {
-    align-items: center;
-    gap: 5px;
-}
-
-#chat .mes_edit_buttons .menu_button,
-#chat .mes_reasoning_actions .edit_button {
-    --sb-edit-action-color: var(--color-primary, var(--sb-accent));
-    position: relative;
-    opacity: 0.92;
-    color: color-mix(in srgb, var(--sb-edit-action-color) 80%, var(--SmartThemeBodyColor));
-    border: 1px solid color-mix(in srgb, var(--sb-edit-action-color) 36%, transparent);
-    background: color-mix(in srgb, var(--sb-edit-action-color) 12%, var(--sb-button-bg));
-    box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--sb-edit-action-color) 28%, transparent);
-    filter: none;
-}
-
-#chat :is(.mes_edit_done, .mes_reasoning_edit_done).menu_button {
-    --sb-edit-action-color: var(--sb-color-success);
-}
-
-#chat :is(.mes_edit_cancel, .mes_reasoning_edit_cancel).menu_button {
-    --sb-edit-action-color: var(--sb-color-warning);
-}
-
-#chat :is(.mes_edit_delete, .mes_reasoning_delete).menu_button {
-    --sb-edit-action-color: var(--sb-color-danger);
-}
-
-#chat .mes_edit_add_reasoning.menu_button {
-    --sb-edit-action-color: var(--sb-accent-soft);
-}
-
-#chat :is(.mes_edit_copy, .mes_reasoning_copy).menu_button,
-#chat .mes_reasoning_copy.mes_button {
-    --sb-edit-action-color: var(--color-primary, var(--sb-accent));
-}
-
-#chat :is(.mes_edit_up, .mes_edit_down).menu_button {
-    --sb-edit-action-color: color-mix(in srgb, var(--SmartThemeBodyColor) 70%, var(--color-primary, var(--sb-accent)));
-}
-
-#chat .mes_edit_buttons .menu_button:not(.disabled):not([disabled]):hover,
-#chat .mes_reasoning_actions .edit_button:not(.disabled):not([disabled]):hover {
-    opacity: 1;
-    background: color-mix(in srgb, var(--sb-edit-action-color) 18%, var(--sb-button-bg));
-    border-color: color-mix(in srgb, var(--sb-edit-action-color) 48%, transparent);
-    box-shadow:
-        inset 0 0 0 1px color-mix(in srgb, var(--sb-edit-action-color) 24%, transparent),
-        inset 0 -2px 0 color-mix(in srgb, var(--sb-edit-action-color) 36%, transparent);
-}
-
-#chat .mes_edit_buttons .menu_button:is(.disabled, .is-disabled, [disabled]),
-#chat .mes_reasoning_actions .edit_button:is(.disabled, .is-disabled, [disabled]) {
-    opacity: 0.42;
-    color: color-mix(in srgb, var(--SmartThemeBodyColor) 52%, transparent);
-    border-color: color-mix(in srgb, var(--sb-shell-border) 62%, transparent);
-    background: color-mix(in srgb, var(--SmartThemeBodyColor) 5%, transparent);
-    box-shadow: none;
-}
-
 #chat .mes_edit_buttons :is(.mes_edit_up, .mes_edit_down).menu_button:is(.disabled, .is-disabled, [disabled]) {
     display: none;
 }
@@ -2181,30 +2119,6 @@ body.bubblechat .mes[is_user='true'] .mes_block {
         padding: 0 6px !important;
     }
 
-    #chat .mes_edit_buttons {
-        max-inline-size: 100%;
-        flex-wrap: wrap;
-        column-gap: 4px;
-        row-gap: 4px;
-    }
-
-    #chat .mes_edit_buttons .menu_button {
-        width: var(--sb-message-icon-size);
-        inline-size: var(--sb-message-icon-size);
-        height: var(--sb-message-icon-size);
-        block-size: var(--sb-message-icon-size);
-        min-width: var(--sb-message-icon-size);
-        min-inline-size: var(--sb-message-icon-size);
-        min-height: var(--sb-message-icon-size);
-        min-block-size: var(--sb-message-icon-size);
-        max-width: var(--sb-message-icon-size);
-        max-inline-size: var(--sb-message-icon-size);
-        max-height: var(--sb-message-icon-size);
-        max-block-size: var(--sb-message-icon-size);
-        flex: 0 0 var(--sb-message-icon-size);
-        font-size: calc(var(--sb-message-icon-size) * 0.52);
-        line-height: 1;
-    }
 }
 
 .character_select:hover,

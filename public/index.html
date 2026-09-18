@@ -38,18 +38,18 @@
     <link rel="icon" type="image/png" sizes="192x192" href="img/neconyan-icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="img/neconyan-icon-512.png">
     <link rel="apple-touch-icon" sizes="180x180" href="img/neconyan-icon-180.png" />
-    <link rel="stylesheet" type="text/css" href="style.css?v=20260917i">
+    <link rel="stylesheet" type="text/css" href="style.css?v=20260918b">
     <link rel="stylesheet" type="text/css" href="css/st-tailwind.css">
     <link rel="stylesheet" type="text/css" href="css/toggle-dependent.css">
     <link rel="stylesheet" type="text/css" href="css/select2-overrides.css?v=20260609a">
     <link rel="stylesheet" type="text/css" href="css/mobile-styles.css?v=20260916p" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-theme.css?v=20260917e">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-paper-theme.css?v=20260622g" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-tabs.css?v=20260917i">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-mobile-shell.css?v=20260917i" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan.css?v=20260917i">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20260917i">
-    <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20260917i">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-theme.css?v=20260918b">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-paper-theme.css?v=20260918b" media="(max-width: 768px)">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-tabs.css?v=20260918b">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-mobile-shell.css?v=20260918b" media="(max-width: 768px)">
+    <link rel="stylesheet" type="text/css" href="css/neconyan.css?v=20260918b">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20260918b">
+    <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20260918b">
     <link rel="stylesheet" type="text/css" href="css/user.css">
     <!-- Scripts are loaded at the end of the body to improve page load speed -->
 </head>
@@ -8371,13 +8371,27 @@
                             </div>
                         </div>
                         <div class="mes_edit_buttons">
-                            <div class="mes_edit_done menu_button  fa-solid fa-check" title="Confirm" data-i18n="[title]Confirm"></div>
-                            <div class="mes_edit_copy menu_button  fa-solid fa-copy" title="Copy this message" data-i18n="[title]Copy this message"></div>
-                            <div class="mes_edit_add_reasoning menu_button fa-solid fa-lightbulb" title="Add a reasoning block" data-i18n="[title]Add a reasoning block"></div>
-                            <div class="mes_edit_delete menu_button  fa-solid fa-trash-can" title="Delete this message" data-i18n="[title]Delete this message"></div>
-                            <div class="mes_edit_up menu_button  fa-solid fa-chevron-up " title="Move message up" data-i18n="[title]Move message up"></div>
-                            <div class="mes_edit_down menu_button  fa-solid fa-chevron-down" title="Move message down" data-i18n="[title]Move message down"></div>
-                            <div class="mes_edit_cancel menu_button  fa-solid fa-xmark" title="Cancel" data-i18n="[title]Cancel"></div>
+                            <button type="button" class="mes_edit_done menu_button neconyan-edit-action" title="Confirm" data-i18n="[title]Confirm">
+                                <i class="fa-solid fa-check" aria-hidden="true"></i><span class="neconyan-action-label" data-i18n="Confirm">Confirm</span>
+                            </button>
+                            <button type="button" class="mes_edit_copy menu_button neconyan-edit-action" title="Copy this message" data-i18n="[title]Copy this message">
+                                <i class="fa-solid fa-copy" aria-hidden="true"></i><span class="neconyan-action-label" data-i18n="Copy">Copy</span>
+                            </button>
+                            <button type="button" class="mes_edit_add_reasoning menu_button neconyan-edit-action" title="Add a reasoning block" data-i18n="[title]Add a reasoning block">
+                                <i class="fa-solid fa-lightbulb" aria-hidden="true"></i><span class="neconyan-action-label" data-i18n="Reasoning">Reasoning</span>
+                            </button>
+                            <button type="button" class="mes_edit_delete menu_button neconyan-edit-action" title="Delete this message" data-i18n="[title]Delete this message">
+                                <i class="fa-solid fa-trash-can" aria-hidden="true"></i><span class="neconyan-action-label" data-i18n="Delete">Delete</span>
+                            </button>
+                            <button type="button" class="mes_edit_up menu_button neconyan-edit-action" title="Move message up" data-i18n="[title]Move message up">
+                                <i class="fa-solid fa-chevron-up" aria-hidden="true"></i><span class="neconyan-action-label" data-i18n="Up">Up</span>
+                            </button>
+                            <button type="button" class="mes_edit_down menu_button neconyan-edit-action" title="Move message down" data-i18n="[title]Move message down">
+                                <i class="fa-solid fa-chevron-down" aria-hidden="true"></i><span class="neconyan-action-label" data-i18n="Down">Down</span>
+                            </button>
+                            <button type="button" class="mes_edit_cancel menu_button neconyan-edit-action" title="Cancel" data-i18n="[title]Cancel">
+                                <i class="fa-solid fa-xmark" aria-hidden="true"></i><span class="neconyan-action-label" data-i18n="Cancel">Cancel</span>
+                            </button>
                         </div>
                     </div>
                     <details class="mes_reasoning_details">
@@ -8389,9 +8403,15 @@
                                 </div>
                             </div>
                             <div class="mes_reasoning_actions flex-container">
-                                <div class="mes_reasoning_edit_done menu_button edit_button fa-solid fa-check" title="Confirm" data-i18n="[title]Confirm Edit"></div>
-                                <div class="mes_reasoning_delete menu_button edit_button fa-solid fa-trash-can" title="Remove reasoning" data-i18n="[title]Remove reasoning"></div>
-                                <div class="mes_reasoning_edit_cancel menu_button edit_button fa-solid fa-xmark" title="Cancel edit" data-i18n="[title]Cancel edit"></div>
+                                <button type="button" class="mes_reasoning_edit_done menu_button edit_button neconyan-edit-action" title="Confirm" data-i18n="[title]Confirm Edit">
+                                    <i class="fa-solid fa-check" aria-hidden="true"></i><span class="neconyan-action-label" data-i18n="Confirm">Confirm</span>
+                                </button>
+                                <button type="button" class="mes_reasoning_delete menu_button edit_button neconyan-edit-action" title="Remove reasoning" data-i18n="[title]Remove reasoning">
+                                    <i class="fa-solid fa-trash-can" aria-hidden="true"></i><span class="neconyan-action-label" data-i18n="Delete">Delete</span>
+                                </button>
+                                <button type="button" class="mes_reasoning_edit_cancel menu_button edit_button neconyan-edit-action" title="Cancel edit" data-i18n="[title]Cancel edit">
+                                    <i class="fa-solid fa-xmark" aria-hidden="true"></i><span class="neconyan-action-label" data-i18n="Cancel">Cancel</span>
+                                </button>
                                 <div class="mes_reasoning_close_all mes_button fa-solid fa-minimize" title="Collapse all reasoning blocks" data-i18n="[title]Collapse all reasoning blocks"></div>
                                 <div class="mes_reasoning_copy mes_button fa-solid fa-copy" title="Copy reasoning" data-i18n="[title]Copy reasoning"></div>
                                 <div class="mes_reasoning_edit mes_button fa-solid fa-pencil" title="Edit reasoning" data-i18n="[title]Edit reasoning"></div>

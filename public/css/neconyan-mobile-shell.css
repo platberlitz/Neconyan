@@ -3384,3 +3384,6 @@ body.neconyan #open_chat_expressions #expressions_stop_sprite_generation { grid-
     body.neconyan #neconyan-tour-coachmark .neconyan-tour-coach-dialogue { grid-template-columns: 44px minmax(0, 1fr); }
     body.neconyan #neconyan-tour-coachmark:not(.neconyan-tour-ending) figure { width: 44px; }
 }
+@media (max-width: 768px) {
+    body.neconyan #chat .mes .neconyan-edit-action { min-height: 44px; }
+}

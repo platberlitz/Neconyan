@@ -87,11 +87,11 @@ body::after {
 /* Soft, rounded app surfaces */
 .drawer-content,
 .popup,
-.menu_button:not(.gg-action-button),
+.menu_button:not(.gg-action-button):not(.neconyan-edit-action),
 input,
 textarea,
 select,
-button:not(.ica--tpanel-handle):not(.gg-action-button) {
+button:not(.ica--tpanel-handle):not(.gg-action-button):not(.neconyan-edit-action) {
     border-radius: 14px !important;
 }
 

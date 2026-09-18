@@ -650,6 +650,44 @@ body.neconyan #chat .mes_buttons .neconyan-message-action:focus-visible {
     color: var(--neco-ink);
 }
 body.neconyan #chat .mes .mes_bookmark { display: none; }
+body.neconyan #chat :is(.mes_edit_buttons, .mes_reasoning_actions) {
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 4px;
+    max-inline-size: 100%;
+}
+body.neconyan #chat .mes_reasoning_details:has(.reasoning_edit_textarea) .mes_reasoning_summary { flex-wrap: wrap; }
+body.neconyan #chat .neconyan-edit-action {
+    flex: 0 1 auto;
+    width: auto;
+    min-width: 44px;
+    min-height: 30px;
+    max-width: 100%;
+    margin: 0;
+    padding: 5px 7px;
+    gap: 5px;
+    border: 1px solid var(--neco-border);
+    border-radius: 6px;
+    background: var(--neco-surface);
+    color: var(--neco-muted);
+    font-size: 12px;
+    box-shadow: none;
+    filter: none;
+    opacity: 1;
+}
+body.neconyan #chat .neconyan-edit-action .neconyan-action-label { white-space: normal; }
+body.neconyan #chat .neconyan-edit-action:is(:hover, :focus-visible) {
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+}
+body.neconyan #chat :is(.mes_edit_done, .mes_reasoning_edit_done) {
+    background: color-mix(in oklch, var(--neco-ginger) 18%, var(--neco-surface));
+    border-color: var(--neco-ginger);
+    color: var(--neco-ink);
+}
+body.neconyan #chat :is(.mes_edit_delete, .mes_reasoning_delete) { color: color-mix(in oklch, var(--sb-color-danger) 55%, var(--neco-ink)); }
+body.neconyan #chat .neconyan-edit-action:is(.disabled, .is-disabled, [disabled]) { opacity: 0.42; }
 body.neconyan #chat .mes:not([bookmark_link='']) .mes_bookmark { display: inline-flex; }
 body.neconyan #chat .extraMesButtons {
     position: static;
@@ -2990,4 +3028,3 @@ body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell
 .sb-custom-params-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 10px; }
 .sb-custom-params-grid label { display: grid; gap: 4px; margin: 0; }
 .sb-custom-params [hidden] { display: none; }
-
