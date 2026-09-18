@@ -1954,6 +1954,70 @@ describe('in-chat agent post-processing runner', () => {
             const transformHistory = message.extra?.inChatAgentTransformHistory ?? [];
             expect(transformHistory.some(entry => String(entry?.beforeText ?? '').includes('tracker-none'))).toBe(false);
         }, 20000);
+
+        test('an interrupted automatic run warns once and stays retryable', async () => {
+            const agent = {
+                id: 'agent-interrupt-rewrite',
+                name: 'Interrupted Rewriter',
+                category: 'content',
+                phase: 'post',
+                prompt: 'Rewrite the assistant reply to be more polished without changing its meaning.',
+                injection: { position: 0, depth: 4, scan: false, role: 0, order: 100 },
+                postProcess: {
+                    enabled: false,
+                    type: 'extract',
+                    promptTransformEnabled: true,
+                    promptTransformMode: 'rewrite',
+                    promptTransformMaxTokens: 1024,
+                    promptTransformShowNotifications: true,
+                },
+                conditions: { triggerKeywords: [], triggerProbability: 100, generationTypes: ['normal'] },
+            };
+            const runtime = await setup([agent]);
+            const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+            runner.registerCompanionRuntime({
+                runCompanionStage: runtime.runCompanionStage,
+                injectCompanionFeedbackPrompts: runtime.injectCompanionFeedbackPrompts,
+                stripAuxiliaryTrackerEchoes: runtime.stripAuxiliaryTrackerEchoes,
+                runCompanionAgentOnMessage: runtime.runCompanionAgentOnMessage,
+                applyAgentPostPassesToCompanionResult: runtime.applyAgentPostPassesToCompanionResult,
+            });
+            runner.initAgentRunner();
+
+            let releaseRequest = null;
+            generateQuietPrompt.mockImplementationOnce(() => new Promise(resolve => { releaseRequest = resolve; }));
+
+            await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+            chat.push({ name: 'You', mes: 'Continue.', is_user: true, extra: {} });
+            await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+            chat.push({
+                name: 'Assistant',
+                mes: 'The scene unfolds.\n\ntracker-none\n\nLater prose.',
+                is_user: false,
+                extra: {},
+            });
+            const messageIndex = chat.length - 1;
+            const generationContext = runner.getAgentGenerationContext();
+            await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length, generationContext);
+            const received = eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+            for (let attempt = 0; attempt < 200 && typeof releaseRequest !== 'function'; attempt++) {
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+            expect(typeof releaseRequest).toBe('function');
+
+            currentChatId = 'chat-b';
+            releaseRequest('Rewritten reply.');
+            await received;
+            await new Promise(resolve => setTimeout(resolve, 15));
+
+            const message = chat[messageIndex];
+            expect(message.mes).toBe('The scene unfolds.\n\nLater prose.');
+            const postRuns = message.extra?.inChatAgentPostRuns ?? [];
+            expect(postRuns).toHaveLength(0);
+            const interruptedWarnings = globalThis.toastr.warning.mock.calls
+                .filter(call => call[1] === 'In-Chat Agents');
+            expect(interruptedWarnings).toHaveLength(1);
+        }, 20000);
     });
 
     test('injects the selected Chatroom style into companion prompts', async () => {
@@ -7197,6 +7261,31 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[0].extra.inChatAgentPromptRuns[0]).toMatchObject({
             status: 'error', error: 'API request failed: Provider account unavailable',
         });
+    });
+
+    test('a failed prompt rewrite raises the error toast when notifications are on', async () => {
+        usePromptTransformPostAgent();
+        enabledAgents[0].postProcess.promptTransformShowNotifications = true;
+        globalSettings.promptTransformShowNotifications = true;
+        enabledAgents[0].connectionProfile = 'profile-cc';
+        connectionManagerRequestService = {
+            getProfile: jest.fn(() => ({ name: 'Example profile', model: 'm' })),
+            sendRequest: jest.fn().mockRejectedValue(new Error('API request failed', {
+                cause: Object.assign(new Error('Provider account unavailable'), { status: 500 }),
+            })),
+            constructPrompt: jest.fn(messages => messages),
+        };
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await new Promise(resolve => setTimeout(resolve, 5));
+
+        expect(globalThis.toastr.error).toHaveBeenCalledTimes(1);
+        const [message, title] = globalThis.toastr.error.mock.calls[0];
+        expect(String(message)).toContain('API request failed: Provider account unavailable');
+        expect(title).toBe(enabledAgents[0].name);
     });
 
     test('an empty chat profile result is not retried with identical formatting', async () => {

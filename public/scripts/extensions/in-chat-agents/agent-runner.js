@@ -279,6 +279,7 @@ const processedPostProcessingRunsByIndex = new Map();
 const postProcessingInFlightKeys = new Set();
 const postProcessingTargets = new WeakMap();
 const messageEditRevisions = new WeakMap();
+const postProcessingInterruptionWarned = new WeakSet();
 let chatLoadRevision = 0;
 
 export function getAgentPostProcessingTarget(message) {
@@ -332,6 +333,24 @@ function invalidateMessageTarget(message) {
     messageEditRevisions.set(message, (messageEditRevisions.get(message) ?? 0) + 1);
     const target = postProcessingTargets.get(message);
     if (target) target.valid = false;
+}
+
+// A silent stop is indistinguishable from "the agents did nothing", which is what makes an
+// interrupted pipeline feel random. Tell the user once per reply when their reply is untouched.
+function warnPostProcessingInterrupted(message, detail = '') {
+    if (!message || postProcessingInterruptionWarned.has(message)) {
+        return;
+    }
+    postProcessingInterruptionWarned.add(message);
+    const suffix = detail ? ` (${String(detail).slice(0, 160)})` : '';
+    try {
+        toastr.warning(`Agent work was interrupted before it finished${suffix}. Your reply is unchanged; run the agents again.`, 'In-Chat Agents', {
+            timeOut: 10000,
+            extendedTimeOut: 12000,
+        });
+    } catch {
+        // A toast failure must not mask the original problem.
+    }
 }
 const stoppedStreamingMessageIndexes = new Set();
 let stoppedGenerationRunId = -1;
@@ -4283,6 +4302,7 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
     const isOperationCurrent = () => agentGenerationCancelRevision === operationCancelRevision
         && postProcessingTarget.valid && isMessageTargetCurrent(message, postProcessingTarget.state, messageIndex);
     postProcessingTargets.set(message, postProcessingTarget);
+    let pipelineCompleted = false;
     try {
         syncAssistantMessageTextToSwipe(message);
 
@@ -4294,7 +4314,6 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
         if (hasProcessedPostProcessingRun(message, runKey, messageIndex, indexRunKey)) {
             return;
         }
-        markPostProcessingRunProcessed(message, runKey, messageIndex, indexRunKey);
 
         const activeAgents = getActiveAgentsForMessage(generationType, resolvedActivationSnapshot);
         let chatStateChanged = false;
@@ -4329,6 +4348,15 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
         // The history baseline is the visible starting text (after the sentinel strip), so Undo never
         // restores a sentinel and a strip-only reply is not recorded as an agent transformation.
         const historyBaselineText = currentPromptTransformText;
+
+        // Neconyan: the sentinel strip is bookkeeping cleanup, not an agent edit, so publish it
+        // before the agents run. If a later stage is interrupted, the reply must not keep the
+        // sentinel in the chat.
+        if (currentPromptTransformText !== message.mes
+            && setPostProcessingText(message, currentPromptTransformText, postProcessingTarget)) {
+            chatStateChanged = true;
+            messageDisplayChanged = true;
+        }
 
         // Companions normally run last so they see the post-transform reply; the concurrent
         // option trades that for speed and runs them against the current reply alongside the passes.
@@ -4504,7 +4532,20 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
                 console.warn('[InChatAgents] Companion stage failed:', error);
             }
         }
+
+        // Neconyan: only mark the run as processed once the pipeline is done. Marking it up front
+        // turned any interrupted or failed stage into a permanently skipped reply, with no retry
+        // and no feedback for the user.
+        markPostProcessingRunProcessed(message, runKey, messageIndex, indexRunKey);
+        pipelineCompleted = true;
+    } catch (error) {
+        console.error('[InChatAgents] Agent post-processing failed:', error);
+        warnPostProcessingInterrupted(message, describeAgentError(error));
     } finally {
+        if (!pipelineCompleted && agentGenerationCancelRevision === operationCancelRevision
+            && !generationStopRequested && postProcessingTarget.valid && chat[messageIndex] === message) {
+            warnPostProcessingInterrupted(message);
+        }
         if (postProcessingTargets.get(message) === postProcessingTarget) postProcessingTargets.delete(message);
         postProcessingInFlightKeys.delete(inFlightKey);
     }
