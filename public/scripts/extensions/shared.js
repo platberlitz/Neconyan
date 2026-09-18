@@ -123,8 +123,10 @@ export function getChatCompletionProfileReverseProxy(profile, chatCompletionSour
     // SillyBunny: a profile that explicitly stores a proxy selection ('None' included)
     // must be honored as-is. Falling through here would leak the currently active
     // profile's proxy state into requests made under this profile (e.g. Agents).
+    // Empty strings are deliberate: a later preset merge only overrides fields that
+    // are present, so `{}` would let a preset's stored proxy come back.
     if (profileProxyName) {
-        return {};
+        return { reverse_proxy: '', proxy_password: '' };
     }
 
     const sourceProxy = proxies.find((preset) => preset.name !== 'None' && preset.source === chatCompletionSource && preset.url);
