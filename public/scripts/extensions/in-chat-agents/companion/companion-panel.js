@@ -60,6 +60,7 @@ const PANEL_HISTORY_LIMIT = 5;
 // object { edge, fraction } once the handle has been docked somewhere else.
 const HANDLE_POSITION_STORAGE_KEY = 'ica--tracker-panel-handle-top-v2';
 const PANEL_LOCK_STORAGE_KEY = 'ica--tracker-panel-locked';
+const PANEL_HANDLE_HIDDEN_STORAGE_KEY = 'ica--tracker-panel-handle-hidden';
 const HANDLE_DRAG_THRESHOLD_PX = 6;
 const HANDLE_EDGES = ['right', 'left', 'top', 'bottom'];
 const PANEL_ANCHOR_OPTIONS = {
@@ -70,6 +71,7 @@ const PANEL_ANCHOR_OPTIONS = {
 let panelInitialized = false;
 let panelOpen = false;
 let panelLocked = getStoredPanelLocked();
+let handleHidden = getStoredHandleHidden();
 let panelOpenedAt = 0;
 let suppressHandleClickUntil = 0;
 let handleNode = null;
@@ -192,6 +194,29 @@ function storePanelLocked(locked) {
     } catch {
         // Persistence failure leaves the in-memory lock state unchanged.
     }
+}
+
+function getStoredHandleHidden() {
+    try {
+        return accountStorage.getItem(PANEL_HANDLE_HIDDEN_STORAGE_KEY) === 'true';
+    } catch {
+        return false;
+    }
+}
+
+function storeHandleHidden(hidden) {
+    try {
+        accountStorage.setItem(PANEL_HANDLE_HIDDEN_STORAGE_KEY, hidden ? 'true' : 'false');
+    } catch {
+        // Persistence failure leaves the in-memory hidden state unchanged.
+    }
+}
+
+function setCompanionPanelHandleHidden(hidden) {
+    handleHidden = Boolean(hidden);
+    storeHandleHidden(handleHidden);
+    updateCompanionPanelHandleVisibility();
+    return handleHidden;
 }
 
 function getViewportWidth() {
@@ -499,7 +524,7 @@ export function collectPanelAgentStates() {
 }
 
 export function shouldShowCompanionPanelHandle() {
-    if (isConversationModeActive() || !areAgentsGloballyEnabled()) {
+    if (isConversationModeActive() || handleHidden || !areAgentsGloballyEnabled()) {
         return false;
     }
 
@@ -737,10 +762,11 @@ export function buildPanelHtml() {
 
     return `
         <div class="ica--tpanel-header">
-            <span class="ica--tpanel-title"><i class="fa-solid fa-user-astronaut"></i> Companions</span>
+            <span class="ica--tpanel-title"><i class="fa-solid fa-cat"></i> Companions</span>
             <span class="ica--tpanel-agent-actions">
                 <button type="button" class="ica--cdash-action${panelLocked ? ' is-active' : ''}" data-action="panel-lock" title="${panelLocked ? 'Unlock panel auto-close' : 'Keep panel open until unlocked'}" aria-label="${panelLocked ? 'Unlock panel' : 'Lock panel'}" aria-pressed="${panelLocked}"><i class="fa-solid ${panelLocked ? 'fa-lock' : 'fa-lock-open'}"></i></button>
                 <button type="button" class="ica--cdash-action" data-action="panel-regenerate-all" title="Regenerate every companion on the last reply" aria-label="Regenerate all companions"${areAgentsGloballyEnabled() ? '' : ' disabled'}><i class="fa-solid fa-rotate-right"></i></button>
+                <button type="button" class="ica--cdash-action" data-action="panel-hide-handle" title="Hide the floating button" aria-label="Hide the floating button"><i class="fa-solid fa-eye-slash"></i></button>
                 <button type="button" class="ica--cdash-action" data-action="panel-close" title="Close panel" aria-label="Close panel"><i class="fa-solid fa-xmark"></i></button>
             </span>
         </div>
@@ -843,6 +869,9 @@ export function openCompanionPanel() {
     }
 
     if (!panelOpen) returnFocus = document.activeElement;
+    if (handleHidden) {
+        setCompanionPanelHandleHidden(false);
+    }
     panelOpen = true;
     panelOpenedAt = Date.now();
     renderPanel();
@@ -895,6 +924,13 @@ async function handlePanelAction(event) {
 
     if (action === 'panel-lock') {
         setCompanionPanelLocked(!panelLocked);
+        return;
+    }
+
+    if (action === 'panel-hide-handle') {
+        setCompanionPanelHandleHidden(true);
+        closeCompanionPanel();
+        toastr.info('Floating button hidden. Open Companion Panel from the Extensions menu to bring it back.');
         return;
     }
 
@@ -1202,7 +1238,7 @@ export function initCompanionPanel() {
     $(document.body).append('<div id="ica--tracker-panel" class="ica--tpanel" data-edge="right" role="region" aria-label="Companions" aria-hidden="true"></div>');
     $(document.body).append(`
         <button type="button" id="ica--tracker-panel-handle" class="ica--tpanel-handle" data-edge="right" title="Open the companion panel" aria-label="Open the companion panel" aria-controls="ica--tracker-panel" aria-expanded="false" style="display:none">
-            <i class="fa-solid fa-user-astronaut"></i>
+            <i class="fa-solid fa-cat"></i>
         </button>
     `);
 
@@ -1267,7 +1303,7 @@ export function initCompanionPanel() {
     if (!$('#ica_tracker_panel_wand_item').length) {
         const menuItem = $(`
             <div id="ica_tracker_panel_wand_item" class="list-group-item flex-container flexGap5 interactable" title="Open the companion panel" tabindex="0">
-                <div class="fa-solid fa-user-astronaut extensionsMenuExtensionButton"></div>
+                <div class="fa-solid fa-cat extensionsMenuExtensionButton"></div>
                 <span>Companion Panel</span>
             </div>
         `);

@@ -832,6 +832,68 @@ describe('companion tracker panel', () => {
         expect(panel.buildPanelHtml()).toContain('aria-pressed="true"');
     });
 
+    test('hides the floating handle from the panel and restores it on the next explicit open', async () => {
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true }];
+        const panel = await importPanel();
+        const panelElement = {
+            on: jest.fn(() => panelElement),
+            html: jest.fn(() => panelElement),
+            toggle: jest.fn(() => panelElement),
+            attr: jest.fn(() => panelElement),
+            addClass: jest.fn(() => panelElement),
+            removeClass: jest.fn(() => panelElement),
+        };
+        const handleElement = { on: jest.fn(() => handleElement), toggle: jest.fn(() => handleElement), attr: jest.fn(() => handleElement) };
+        const actionButton = {};
+        globalThis.$ = jest.fn(arg => {
+            if (arg === globalThis.document.body) {
+                return { append: jest.fn() };
+            }
+            if (arg === '#ica--tracker-panel') {
+                return panelElement;
+            }
+            if (arg === '#ica--tracker-panel-handle') {
+                return handleElement;
+            }
+            if (arg === '#ica_tracker_panel_wand_item') {
+                return { length: 1 };
+            }
+            if (arg === actionButton) {
+                return {
+                    attr: jest.fn(name => (name === 'data-action' ? 'panel-hide-handle' : undefined)),
+                    closest: jest.fn(() => ({ attr: jest.fn() })),
+                };
+            }
+            return { length: 0, on: jest.fn(), append: jest.fn(), html: jest.fn(), toggle: jest.fn() };
+        });
+
+        const html = panel.buildPanelHtml();
+        expect(html).toContain('fa-cat');
+        expect(html).toContain('data-action="panel-hide-handle"');
+
+        panel.initCompanionPanel();
+        const actionHandler = panelElement.on.mock.calls.find(([, selector]) => selector === '[data-action]')[2];
+        await actionHandler({ preventDefault: jest.fn(), stopPropagation: jest.fn(), currentTarget: actionButton });
+
+        expect(accountStorage.setItem).toHaveBeenCalledWith('ica--tracker-panel-handle-hidden', 'true');
+        expect(panel.shouldShowCompanionPanelHandle()).toBe(false);
+        expect(handleElement.toggle).toHaveBeenLastCalledWith(false);
+        expect(globalThis.toastr.info).toHaveBeenCalled();
+
+        panel.openCompanionPanel();
+        expect(accountStorage.setItem).toHaveBeenCalledWith('ica--tracker-panel-handle-hidden', 'false');
+        expect(panel.shouldShowCompanionPanelHandle()).toBe(true);
+        expect(handleElement.toggle).toHaveBeenLastCalledWith(true);
+    });
+
+    test('keeps the handle hidden on load until the panel is opened', async () => {
+        accountStorageValues.set('ica--tracker-panel-handle-hidden', 'true');
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true }];
+        const panel = await importPanel();
+
+        expect(panel.shouldShowCompanionPanelHandle()).toBe(false);
+    });
+
     test('runs a stateless companion on the latest assistant reply', async () => {
         agents = [{ id: 'relationship-lens', name: 'Relationship Lens', execution: 'companion', enabled: true, companion: { trigger: 'manual' } }];
         chat.push({ is_user: true, mes: 'hello' }, { is_user: false, is_system: false, mes: 'latest reply' });
