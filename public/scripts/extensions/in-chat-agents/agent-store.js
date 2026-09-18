@@ -1,7 +1,7 @@
 import { getRequestHeaders, saveSettings, saveSettingsDebounced } from '../../../script.js';
 import { extension_settings, getContext } from '../../extensions.js';
 import { uuidv4 } from '../../utils.js';
-import { isAgentSetupId, mergeAgentSetupRecord, normalizeAgentSetupPreset } from './setup-presets.js';
+import { AGENT_STORAGE_LIMITS, getAgentRecordError, isAgentRecordId, isAgentSetupId, mergeAgentSetupRecord, normalizeAgentSetupPreset, normalizeAgentGroup, serializeAgentRecord } from './setup-presets.js';
 import {
     AGENT_REGEX_PLACEMENT,
     AGENT_REGEX_SUBSTITUTE,
@@ -185,6 +185,72 @@ let globalSettings = structuredClone(defaultGlobalSettings);
 
 /** @type {Array<{id: string, name: string, version: number, agents: object[], globalSettings: object}>} */
 let agentSetupPresets = [];
+let storageContext = { account: null, isCurrent: () => true };
+const storedRecords = { agent: new Map(), group: new Map(), preset: new Map() };
+let agentLoadErrors = [];
+let setupLoadErrors = [];
+let groupLoadErrors = [];
+
+export function bindAgentStorageAccount(account, isCurrent = () => true) {
+    if (account === storageContext.account) {
+        storageContext.isCurrent = isCurrent;
+        return;
+    }
+    storageContext = { account, isCurrent };
+    for (const records of Object.values(storedRecords)) records.clear();
+    agents = [];
+    agentSetupPresets = [];
+    customGroups = [];
+    agentsLoaded = false;
+    agentLoadErrors = [{ file: 'Agent library', message: 'The library has not loaded.' }];
+    setupLoadErrors = [{ file: 'Saved setups', message: 'The setup list has not loaded.' }];
+    groupLoadErrors = [{ file: 'Custom kits', message: 'The kit list has not loaded.' }];
+}
+
+function assertStorageContext(context) {
+    if (context !== storageContext || !context.isCurrent()) throw new Error('The active account changed. Reload the agent library.');
+}
+
+async function getStoredRevision(record) {
+    if (!record) return 'missing';
+    const text = serializeAgentRecord(record);
+    if (!globalThis.crypto?.subtle) {
+        const { sha256 } = await import('../../../lib.js');
+        return sha256(text);
+    }
+    const bytes = new TextEncoder().encode(text);
+    const hash = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function writeStoredRecord(kind, record, { remove = false, expected = storedRecords[kind].get(record.id) ?? null, context = storageContext } = {}) {
+    assertStorageContext(context);
+    const headers = { ...getRequestHeaders(), 'If-Match': await getStoredRevision(expected) };
+    if (context.account !== null) headers['X-Neconyan-Account'] = context.account;
+    assertStorageContext(context);
+    const prefix = kind === 'agent' ? '' : kind === 'group' ? '/groups' : '/presets';
+    const response = await fetch(`/api/in-chat-agents${prefix}/${remove ? 'delete' : 'save'}`, {
+        method: 'POST', headers, body: JSON.stringify(record),
+    });
+    if (!response.ok) {
+        const detail = await response.json?.().catch(() => null);
+        throw Object.assign(new Error(detail?.error || (response.status === 409
+            ? 'This record changed in another tab or account. Reload it before saving.'
+            : `Failed to ${remove ? 'delete' : 'save'} ${kind}${record.name ? ` ${record.name}` : ''}.`)), { status: response.status });
+    }
+    assertStorageContext(context);
+    if (remove) storedRecords[kind].delete(record.id);
+    else storedRecords[kind].set(record.id, structuredClone(record));
+    return response;
+}
+
+export function getAgentLibraryErrors() {
+    return [...agentLoadErrors, ...setupLoadErrors, ...groupLoadErrors];
+}
+
+export function hasPendingAgentRecovery() {
+    return agentSetupPresets.some(preset => preset.recoveryFor && preset.recoveryStatus !== 'completed');
+}
 
 /**
  * Returns the global settings.
@@ -206,6 +272,7 @@ export function getAgentSetupPresetById(id) {
 
 export function createAgentSetupSnapshot() {
     if (!areAgentsLoaded()) throw new Error('Wait for the agent library to finish loading.');
+    if (getAgentLibraryErrors().length) throw new Error('Resolve the incomplete agent library before saving a setup.');
     return {
         version: 1,
         agents: getAgents().map(agent => structuredClone(agent)),
@@ -255,23 +322,39 @@ export function isAgentSetupCurrent(preset) {
 }
 
 export async function loadAgentSetupPresets({ canPersist = () => true } = {}) {
+    const context = storageContext;
+    setupLoadErrors = [{ file: 'Saved setups', message: 'The setup list could not be loaded.' }];
     if (!canPersist()) throw new Error('The active account changed.');
     const response = await fetch('/api/in-chat-agents/presets/list', {
         method: 'POST',
         headers: getRequestHeaders(),
-        body: JSON.stringify({}),
+        body: JSON.stringify({ withDiagnostics: true }),
     });
     if (!response.ok) throw new Error('Failed to load agent setups.');
 
     const data = await response.json();
+    assertStorageContext(context);
+    const account = response.headers?.get?.('X-Neconyan-Account');
+    if (account && context.account !== null && account !== context.account) throw new Error('The signed-in account changed. Reload the library.');
     if (!canPersist()) throw new Error('The active account changed.');
-    if (!Array.isArray(data)) throw new Error('The server returned an invalid setup list.');
-    agentSetupPresets = data.map(normalizeAgentSetupPreset).filter(Boolean);
+    const records = Array.isArray(data) ? data : data?.records;
+    if (!Array.isArray(records)) throw new Error('The server returned an invalid setup list.');
+    setupLoadErrors = data.errors ?? [];
+    storedRecords.preset.clear();
+    agentSetupPresets = records.map(record => {
+        const normalized = normalizeAgentSetupPreset(record);
+        if (!normalized) setupLoadErrors.push({ file: record?.id ?? 'Unknown setup', message: 'Invalid setup data.' });
+        else storedRecords.preset.set(record.id, structuredClone(record));
+        return normalized;
+    }).filter(Boolean);
+    if (setupLoadErrors.length) throw new Error('Some saved setups could not be read. Their files were kept for recovery.');
     return getAgentSetupPresets();
 }
 
 export async function saveAgentSetupPreset(name, { id = uuidv4(), snapshot, canPersist = () => true } = {}) {
+    const context = storageContext;
     if (!snapshot) await agentSaveChain;
+    assertStorageContext(context);
     if (!canPersist()) throw new Error('The active account changed.');
     const preset = normalizeAgentSetupPreset({
         ...(snapshot ?? createAgentSetupSnapshot()),
@@ -280,15 +363,11 @@ export async function saveAgentSetupPreset(name, { id = uuidv4(), snapshot, canP
     });
     if (!preset) throw new Error('Give the agent setup a valid name.');
 
-    const response = await fetch('/api/in-chat-agents/presets/save', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify(preset),
-    });
-    if (!response.ok) throw new Error('Agent setup could not be saved.');
+    const response = await writeStoredRecord('preset', preset, { context });
 
     const saved = normalizeAgentSetupPreset(await response.json());
     if (!saved) throw new Error('The server returned an invalid agent setup.');
+    assertStorageContext(context);
     if (!canPersist()) throw new Error('The active account changed.');
     const index = agentSetupPresets.findIndex(item => item.id === saved.id);
     if (index >= 0) agentSetupPresets[index] = saved;
@@ -301,12 +380,7 @@ export async function deleteAgentSetupPreset(id, { canPersist = () => true } = {
     if (!isAgentSetupId(normalizedId)) throw new Error('Invalid agent setup.');
     if (!canPersist()) throw new Error('The active account changed.');
 
-    const response = await fetch('/api/in-chat-agents/presets/delete', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({ id: normalizedId }),
-    });
-    if (!response.ok) throw new Error('Agent setup could not be deleted.');
+    await writeStoredRecord('preset', { id: normalizedId }, { remove: true });
     if (!canPersist()) throw new Error('The active account changed.');
 
     agentSetupPresets = agentSetupPresets.filter(item => item.id !== normalizedId);
@@ -693,7 +767,7 @@ export const MAX_AGENT_MAX_TOKENS = 64000;
 export const PATHFINDER_TEMPLATE_ID = 'tpl-pathfinder';
 
 export function areAgentsGloballyEnabled() {
-    return globalSettings.enabled !== false && !agentSetupApplying;
+    return globalSettings.enabled !== false && !agentSetupApplying && !getAgentLibraryErrors().length && !hasPendingAgentRecovery();
 }
 
 export function isPathfinderSubmoduleEnabled() {
@@ -1097,7 +1171,7 @@ function clampNumber(value, fallback, min, max) {
  * @param {number} limit
  * @returns {string[]}
  */
-export function normalizeStringIdList(value = [], limit = 500) {
+export function normalizeStringIdList(value = [], limit = AGENT_STORAGE_LIMITS.agentCount) {
     const rawValues = Array.isArray(value)
         ? value
         : String(value ?? '').split(/[\n,]/);
@@ -1110,7 +1184,7 @@ export function normalizeStringIdList(value = [], limit = 500) {
 
         seenIds.add(id);
         ids.push(id);
-        if (ids.length >= limit) break;
+        if (ids.length > limit) throw new Error(`Choose at most ${limit} agent references.`);
     }
 
     return ids;
@@ -1441,6 +1515,7 @@ export function createDefaultAgent() {
  * @returns {AgentToolDef}
  */
 export function normalizeToolDef(raw = {}) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid tool definition.');
     return {
         ...raw,
         name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : '',
@@ -1461,6 +1536,8 @@ export function normalizeToolDef(raw = {}) {
  * @returns {InChatAgent}
  */
 export function normalizeAgent(rawAgent = {}) {
+    const validationError = getAgentRecordError(rawAgent, { requireId: false });
+    if (validationError) throw new Error(validationError);
     const defaults = createDefaultAgent();
     const rawAgentWithoutModalMetadata = { ...rawAgent };
     delete rawAgentWithoutModalMetadata.subcategory;
@@ -1547,7 +1624,7 @@ export function normalizeAgent(rawAgent = {}) {
                 : defaults.postProcess.promptTransformMaxTokens,
         },
         regexScripts: Array.isArray(rawAgent.regexScripts)
-            ? rawAgent.regexScripts.map(script => normalizeRegexScript(script ?? {}))
+            ? normalizeAgentRegexIdentities(rawAgent.regexScripts)
             : defaults.regexScripts,
         enabled: Boolean(rawAgent.enabled),
         favorite: Boolean(rawAgent.favorite),
@@ -1864,11 +1941,48 @@ export function convertAgentExecution(agent, targetExecution) {
  * Loads agents from the server settings response.
  * @param {object[]} data - Array of agent objects from settings
  */
-export function loadAgents(data) {
+export function loadAgents(data, { account = storageContext.account, isCurrent = storageContext.isCurrent, errors = [], fromServer = true } = {}) {
     if (Array.isArray(data)) {
-        agents = data.map(normalizeAgent);
+        if (account !== storageContext.account) {
+            bindAgentStorageAccount(account, isCurrent);
+        } else storageContext.isCurrent = isCurrent;
+        agentLoadErrors = [...errors];
+        if (fromServer) storedRecords.agent.clear();
+        const seen = new Set();
+        agents = data.slice(0, AGENT_STORAGE_LIMITS.agentCount).flatMap(raw => {
+            try {
+                const error = getAgentRecordError(raw);
+                if (error || seen.has(raw.id)) throw new Error(error || 'Duplicate agent identifier.');
+                seen.add(raw.id);
+                const agent = normalizeAgent(raw);
+                if (fromServer) storedRecords.agent.set(raw.id, structuredClone(raw));
+                return [agent];
+            } catch (error) {
+                agentLoadErrors.push({ file: raw?.id ?? 'Unknown agent', message: error.message });
+                return [];
+            }
+        });
+        if (data.length > AGENT_STORAGE_LIMITS.agentCount) agentLoadErrors.push({ file: 'Agent library', message: 'Too many agents to load safely.' });
         refreshAgentRegexScriptCache();
         agentsLoaded = true;
+    }
+}
+
+function normalizeAgentRegexIdentities(scripts) {
+    const reserved = new Set(scripts.map(script => script.id).filter(id => typeof id === 'string' && id));
+    const seen = new Set();
+    return scripts.map((script, index) => {
+        let id = typeof script.id === 'string' && script.id ? script.id : `legacy-script-${index}`;
+        while (seen.has(id) || (id !== script.id && reserved.has(id))) id += `-${index}`;
+        seen.add(id);
+        return normalizeRegexScript({ ...script, id });
+    });
+}
+
+export async function persistAgentIdentityRepairs() {
+    for (const agent of agents) {
+        const previous = storedRecords.agent.get(agent.id);
+        if (JSON.stringify(previous?.regexScripts?.map(script => script.id) ?? []) !== JSON.stringify(agent.regexScripts.map(script => script.id))) await saveAgent(agent);
     }
 }
 
@@ -1881,18 +1995,12 @@ export function areAgentsLoaded() {
 let agentSaveChain = Promise.resolve();
 let agentSetupApplying = false;
 
-async function writeAgentSnapshot(agent) {
-    const response = await fetch('/api/in-chat-agents/save', {
-        method: 'POST', headers: getRequestHeaders(), body: JSON.stringify(agent),
-    });
-    if (!response.ok) throw new Error(`Failed to save agent ${agent.name || agent.id}.`);
+async function writeAgentSnapshot(agent, options) {
+    await writeStoredRecord('agent', agent, options);
 }
 
-async function deleteAgentFile(id) {
-    const response = await fetch('/api/in-chat-agents/delete', {
-        method: 'POST', headers: getRequestHeaders(), body: JSON.stringify({ id }),
-    });
-    if (!response.ok) throw new Error('Failed to delete agent');
+async function deleteAgentFile(id, options = {}) {
+    await writeStoredRecord('agent', { id }, { ...options, remove: true });
 }
 
 /** The server stores the exact JSON it received, so a re-read equal to our write means nobody else touched it. */
@@ -1908,8 +2016,10 @@ function isSameStoredAgentRecord(current, written) {
 export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPersist = () => true, confirmExtras = async () => true } = {}) {
     const preset = normalizeAgentSetupPreset(rawPreset);
     if (!preset) return Promise.reject(new Error('Invalid agent setup.'));
+    const context = storageContext;
     const operation = agentSaveChain.then(async () => {
         const assertCurrent = () => {
+            assertStorageContext(context);
             if (!canPersist() || !isCurrent()) throw new Error('The active workspace changed. Load the setup again when it is ready.');
         };
         assertCurrent();
@@ -1928,7 +2038,8 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
             if (!response.ok) throw new Error('The current agent library could not be read.');
             const data = await response.json();
             assertCurrent();
-            if (!Array.isArray(data.inChatAgents)) throw new Error('The server returned an invalid agent library.');
+            if (!Array.isArray(data.inChatAgents) || data.inChatAgentLoadErrors?.length
+                || (context.account !== null && data.inChatAgentAccount !== undefined && data.inChatAgentAccount !== context.account)) throw new Error('The current agent library is incomplete or belongs to another account.');
             previousAgents = structuredClone(data.inChatAgents);
             previousGlobals = structuredClone(globalSettings);
             const previousById = new Map(previousAgents.map(agent => [agent.id, agent]));
@@ -1947,10 +2058,11 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
             assertCurrent();
             for (const agent of nextAgents) {
                 assertCurrent();
+                if (isSameStoredAgentRecord(previousById.get(agent.id), agent)) continue;
                 // Include attempted writes: a lost response may follow a committed server write.
                 written.push(agent.id);
                 nextAgentsById.set(agent.id, agent);
-                await writeAgentSnapshot(agent);
+                await writeAgentSnapshot(agent, { expected: previousById.get(agent.id) ?? null, context });
             }
             assertCurrent();
             if (JSON.stringify(globalSettings) !== JSON.stringify(previousGlobals)) throw new Error('Agent settings changed during the load; the setup was not applied.');
@@ -1959,7 +2071,7 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
             persistAgentGlobalSettings();
             if (await saveSettings(0, { returnResult: true }) !== true) throw new Error('The setup settings could not be saved.');
             assertCurrent();
-            loadAgents(nextAgents);
+            loadAgents(nextAgents, { fromServer: false });
         } catch (error) {
             const rollbackErrors = [];
             if (recovery && canPersist()) {
@@ -1970,32 +2082,34 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
                 try {
                     const currentResponse = await fetch('/api/settings/get', { method: 'POST', headers: getRequestHeaders(), body: '{}' });
                     const currentData = currentResponse.ok ? await currentResponse.json() : null;
-                    if (Array.isArray(currentData?.inChatAgents)) {
+                    if (Array.isArray(currentData?.inChatAgents) && !currentData.inChatAgentLoadErrors?.length
+                        && (context.account === null || currentData.inChatAgentAccount === undefined || currentData.inChatAgentAccount === context.account)) {
                         currentById = new Map(currentData.inChatAgents.map(agent => [agent.id, agent]));
                     }
                 } catch { /* Fall through: an unreadable library blocks the blind restore below. */ }
                 if (!currentById) rollbackErrors.push(new Error('The current agent library could not be read, so nothing was restored.'));
                 for (const id of written.reverse()) {
                     if (!currentById) break;
-                    if (!canPersist()) {
+                    if (!canPersist() || context !== storageContext || !context.isCurrent()) {
                         rollbackErrors.push(new Error('The active account changed during recovery.'));
                         break;
                     }
                     const current = currentById.get(id);
                     const ours = writtenById.get(id);
-                    if (current && ours && !isSameStoredAgentRecord(current, ours)) {
-                        rollbackErrors.push(new Error(`Agent ${current.name || id} was edited elsewhere and was preserved.`));
+                    const previous = previousById.get(id);
+                    if ((!current && !previous) || (current && previous && isSameStoredAgentRecord(current, previous))) continue;
+                    if (!current || !ours || !isSameStoredAgentRecord(current, ours)) {
+                        rollbackErrors.push(new Error(`Agent ${current?.name || id} changed elsewhere and was preserved.`));
                         continue;
                     }
                     try {
-                        const previous = previousById.get(id);
-                        if (previous) await writeAgentSnapshot(previous);
-                        else await deleteAgentFile(id);
+                        if (previous) await writeAgentSnapshot(previous, { expected: current, context });
+                        else await deleteAgentFile(id, { expected: current, context });
                     } catch (rollbackError) {
                         rollbackErrors.push(rollbackError);
                     }
                 }
-                if (appliedGlobals && canPersist()) {
+                if (appliedGlobals && canPersist() && context === storageContext && context.isCurrent()) {
                     if (JSON.stringify(globalSettings) !== JSON.stringify(appliedGlobals)) {
                         rollbackErrors.push(new Error('Concurrent global settings were preserved.'));
                     } else {
@@ -2008,11 +2122,12 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
                         }
                     }
                 }
-                if (!rollbackErrors.length && canPersist()) loadAgents(previousAgents);
+                if (!rollbackErrors.length && canPersist() && context === storageContext && context.isCurrent()) loadAgents(previousAgents, { fromServer: false });
             } else if (recovery) {
                 rollbackErrors.push(new Error('Return to the original account to recover its setup.'));
             }
             if (recovery && !rollbackErrors.length) {
+                try { await saveAgentSetupPreset(recovery.name, { id: recovery.id, snapshot: { ...recovery, recoveryStatus: 'completed' }, canPersist }); } catch { /* Keep an unconfirmed restore point if completion could not be recorded. */ }
                 try { await deleteAgentSetupPreset(recovery.id, { canPersist }); } catch { /* The restore point is still usable. */ }
             }
             if (recovery && rollbackErrors.length) {
@@ -2023,7 +2138,10 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
         } finally {
             agentSetupApplying = false;
         }
-        // Cleanup cannot turn a committed setup into a reported failure.
+        // A leftover completed restore point is distinct from an interrupted application.
+        for (const point of agentSetupPresets.filter(item => item.recoveryFor && item.recoveryStatus !== 'completed')) {
+            try { await saveAgentSetupPreset(point.name, { id: point.id, snapshot: { ...point, recoveryStatus: 'completed' }, canPersist }); } catch (error) { console.warn('[InChatAgents] Keep the restore point for review on the next start.', error); }
+        }
         try { await deleteAgentSetupPreset(recovery.id, { canPersist }); } catch { /* Keep the extra restore point. */ }
         return true;
     });
@@ -2038,14 +2156,19 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
  */
 export async function saveAgent(agent, { update = null, isCurrent = () => true } = {}) {
     const id = typeof agent === 'string' ? agent : agent.id;
+    const context = storageContext;
+    const submitted = storedRecords.agent.get(id) ?? null;
+    if (!update && agentSetupApplying && submitted) throw new Error('This agent changed while the edit was waiting. Reopen it before saving.');
     const snapshot = update ? null : normalizeAgent(structuredClone(agent));
     // Panel and background updates must merge only after earlier saves have committed.
     const save = agentSaveChain.then(async () => {
         if (!isCurrent()) throw new DOMException('The agent edit is no longer current.', 'AbortError');
+        assertStorageContext(context);
+        if (!update && serializeAgentRecord(submitted) !== serializeAgentRecord(storedRecords.agent.get(id) ?? null)) throw new Error('This agent changed while the edit was waiting. Reopen it before saving.');
         const next = update ? update(structuredClone(getAgentById(id))) : snapshot;
         if (!next) return null;
         const normalizedAgent = update ? normalizeAgent(next) : next;
-        await writeAgentSnapshot(normalizedAgent);
+        await writeAgentSnapshot(normalizedAgent, { context });
         if (!isCurrent()) return normalizedAgent;
 
         // Publish the saved snapshot only after the server accepts it.
@@ -2126,8 +2249,10 @@ export async function reorderAgentsIntoOrderSlots(orderedSubsetIds) {
  * @param {string} id
  */
 export async function deleteAgent(id) {
+    const context = storageContext;
+    const expected = storedRecords.agent.get(id) ?? null;
     const deletion = agentSaveChain.then(async () => {
-        await deleteAgentFile(id);
+        await deleteAgentFile(id, { expected, context });
         agents = agents.filter(agent => agent.id !== id);
         deleteCachedAgentRegexScripts(id);
         const scopedStateChanged = removeAgentIdFromScopedEnabledAgentIds(id);
@@ -2171,7 +2296,9 @@ export async function importAgents(data) {
             throw new Error(`Agent ${index + 1} in the pack is not an object`);
         }
         const newId = uuidv4();
-        const oldId = String(rawAgent.id ?? '').trim();
+        if (rawAgent.id !== undefined && !isAgentRecordId(rawAgent.id)) throw new Error(`Agent ${index + 1} has an invalid identifier.`);
+        const oldId = rawAgent.id ?? '';
+        if (oldId && idMap.has(oldId)) throw new Error(`The imported pack repeats agent identifier ${oldId}.`);
         if (oldId) idMap.set(oldId, newId);
         // Imported agents start paused so they can be reviewed before they run.
         return normalizeAgent({ ...createDefaultAgent(), ...rawAgent, id: newId, enabled: false });
@@ -2253,7 +2380,6 @@ export function createDefaultGroup() {
  */
 function normalizeGroupAgentSnapshot(rawAgent = {}) {
     const normalizedAgent = normalizeAgent(rawAgent);
-    delete normalizedAgent.id;
     normalizedAgent.enabled = false;
     return normalizedAgent;
 }
@@ -2267,10 +2393,12 @@ function normalizeGroupAgentSnapshot(rawAgent = {}) {
  */
 function normalizeGroup(rawGroup = {}, { builtin = false } = {}) {
     const defaults = createDefaultGroup();
+    const group = normalizeAgentGroup({ ...rawGroup, id: rawGroup.id ?? defaults.id });
+    if (!group) throw new Error('Invalid kit data.');
 
     return {
         ...defaults,
-        ...rawGroup,
+        ...group,
         id: typeof rawGroup.id === 'string' && rawGroup.id.trim() ? rawGroup.id.trim() : defaults.id,
         name: String(rawGroup.name ?? '').trim(),
         description: String(rawGroup.description ?? '').trim(),
@@ -2315,9 +2443,21 @@ export function loadBuiltinGroups(data) {
  * @param {AgentGroup[]} data
  */
 export function loadCustomGroups(data) {
-    customGroups = Array.isArray(data)
-        ? data.map(group => normalizeGroup(group, { builtin: false }))
-        : [];
+    const records = Array.isArray(data) ? data : data?.records;
+    groupLoadErrors = data?.errors ?? [];
+    storedRecords.group.clear();
+    if (!Array.isArray(records)) groupLoadErrors.push({ file: 'Custom kits', message: 'The server returned an invalid kit list.' });
+    customGroups = Array.isArray(records) ? records.flatMap(group => {
+        try {
+            const normalized = normalizeGroup(group, { builtin: false });
+            storedRecords.group.set(group.id, structuredClone(group));
+            return [normalized];
+        } catch (error) {
+            groupLoadErrors.push({ file: group?.id ?? 'Unknown kit', message: error.message });
+            return [];
+        }
+    }) : [];
+    if (groupLoadErrors.length) throw new Error('Some kits could not be read. Their files were kept for recovery.');
 }
 
 /**
@@ -2326,19 +2466,13 @@ export function loadCustomGroups(data) {
  * @returns {Promise<AgentGroup>}
  */
 export async function saveGroup(group) {
+    const context = storageContext;
     const normalizedGroup = normalizeGroup(group, { builtin: false });
+    const expected = storedRecords.group.get(normalizedGroup.id) ?? null;
     // Kit writes share the agent save queue and publish only after the server accepts them,
     // so a failed or out-of-order save cannot leave a kit that looks saved but is not.
     const save = agentSaveChain.then(async () => {
-        const response = await fetch('/api/in-chat-agents/groups/save', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify(normalizedGroup),
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to save group');
-        }
+        await writeStoredRecord('group', normalizedGroup, { context, expected });
 
         const index = customGroups.findIndex(existingGroup => existingGroup.id === normalizedGroup.id);
         if (index >= 0) {
@@ -2358,16 +2492,9 @@ export async function saveGroup(group) {
  * @param {string} id
  */
 export async function deleteGroup(id) {
+    const context = storageContext;
     const deletion = agentSaveChain.then(async () => {
-        const response = await fetch('/api/in-chat-agents/groups/delete', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({ id }),
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to delete group');
-        }
+        await writeStoredRecord('group', { id }, { remove: true, context });
 
         customGroups = customGroups.filter(group => group.id !== id);
     });

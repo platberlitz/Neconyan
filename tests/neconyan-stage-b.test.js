@@ -2,11 +2,12 @@
 import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { createHash } from 'node:crypto';
 import {
     createNeconyanFolder, moveNeconyanLorebook, normalizeNeconyanLorebookFolders,
     renameNeconyanLorebookAssignment, unfileNeconyanLorebook,
 } from '../public/scripts/neconyan-lorebook-folders.js';
-import { normalizeAgentSetupPreset } from '../public/scripts/extensions/in-chat-agents/setup-presets.js';
+import { normalizeAgentSetupPreset, serializeAgentRecord } from '../public/scripts/extensions/in-chat-agents/setup-presets.js';
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
@@ -140,6 +141,9 @@ async function storeRuntime({ loaded = true } = {}) {
         if (url.endsWith('/presets/delete')) { presets.delete(payload.id); return { ok: true }; }
         writes.push({ url, payload: structuredClone(payload) });
         await state.hook(url, payload);
+        const current = agents.get(payload.id);
+        const revision = current ? createHash('sha256').update(serializeAgentRecord(current)).digest('hex') : 'missing';
+        if (options.headers['If-Match'] !== revision) return { ok: false, status: 409, json: async () => ({ error: 'Concurrent record change.' }) };
         if (url.endsWith('/save')) agents.set(payload.id, structuredClone(payload));
         else if (url.endsWith('/delete')) agents.delete(payload.id);
         else throw new Error(`Unexpected URL: ${url}`);
@@ -226,7 +230,7 @@ describe('Agent setup apply and recovery', () => {
         expect(runtime.agents.get('a')).toEqual(runtime.initial[0]);
         expect(runtime.agents.has('b')).toBe(false);
         expect(runtime.agents.get('outside')).toMatchObject({ prompt: 'concurrent' });
-        expect(runtime.writes.filter(write => write.url.endsWith('/delete')).map(write => write.payload.id)).toEqual(['b']);
+        expect(runtime.writes.filter(write => write.url.endsWith('/delete'))).toEqual([]);
         expect(runtime.presets.size).toBe(0);
     });
 
@@ -259,6 +263,71 @@ describe('Agent setup apply and recovery', () => {
         // Only the two attempted setup writes happened; no restore request was sent for the other account.
         expect(runtime.writes.slice(before).map(write => write.payload.id)).toEqual(['a', 'b']);
         expect(runtime.presets.size).toBe(1);
+    });
+
+    test('rollback refuses an edit made after its recovery read but before its write', async () => {
+        const runtime = await storeRuntime();
+        runtime.state.hook = async (_url, payload) => {
+            if (payload.id === 'b') throw new Error('Write failed');
+            if (payload.id === 'a' && payload.prompt === 'old A') {
+                runtime.agents.set('a', { ...runtime.agents.get('a'), prompt: 'newer external edit' });
+            }
+        };
+        const error = await runtime.store.applyAgentSetupPreset(runtime.preset).catch(value => value);
+        expect(error.message).toContain('Recovery needs attention');
+        expect(runtime.agents.get('a').prompt).toBe('newer external edit');
+        expect(runtime.presets.size).toBe(1);
+    });
+
+    test('unfinished recovery blocks automatic agents until a complete setup is applied', async () => {
+        const runtime = await storeRuntime();
+        runtime.presets.set('recovery', { ...runtime.preset, id: 'recovery', recoveryFor: 'interrupted' });
+        await runtime.store.loadAgentSetupPresets();
+        expect(runtime.store.hasPendingAgentRecovery()).toBe(true);
+        expect(runtime.store.areAgentsGloballyEnabled()).toBe(false);
+        await runtime.store.applyAgentSetupPreset(runtime.preset);
+        expect(runtime.store.hasPendingAgentRecovery()).toBe(false);
+        expect(runtime.store.areAgentsGloballyEnabled()).toBe(true);
+        expect(runtime.presets.get('recovery').recoveryStatus).toBe('completed');
+    });
+
+    test('partial libraries preserve healthy agents and cannot replace a complete saved setup', async () => {
+        const runtime = await storeRuntime();
+        runtime.store.loadAgents([...runtime.initial, { id: 'broken', tools: [null] }, runtime.initial[0]]);
+        expect(runtime.store.getAgents().map(agent => agent.id)).toEqual(['a', 'extra']);
+        expect(runtime.store.getAgentLibraryErrors()).toHaveLength(2);
+        expect(runtime.store.areAgentsGloballyEnabled()).toBe(false);
+        await expect(runtime.store.saveAgentSetupPreset('Incomplete')).rejects.toThrow('incomplete');
+        expect(runtime.presets.size).toBe(0);
+    });
+
+    test('legacy regex identities remain unique and stable after their acknowledged migration', async () => {
+        const runtime = await storeRuntime();
+        const raw = { id: 'a', regexScripts: [{ findRegex: 'A' }, { id: 'same', findRegex: 'B' }, { id: 'same', findRegex: 'C' }] };
+        runtime.agents.set('a', raw);
+        runtime.store.loadAgents([raw]);
+        const before = runtime.store.getAgentById('a').regexScripts.map(script => script.id);
+        expect(new Set(before).size).toBe(3);
+        await runtime.store.persistAgentIdentityRepairs();
+        runtime.store.loadAgents([runtime.agents.get('a')]);
+        expect(runtime.store.getAgentById('a').regexScripts.map(script => script.id)).toEqual(before);
+    });
+
+    test('a whole-record edit queued during setup loading is rejected instead of reverting the setup', async () => {
+        const runtime = await storeRuntime();
+        let release;
+        let reached;
+        const waiting = new Promise(resolve => { reached = resolve; });
+        runtime.state.hook = async (_url, payload) => {
+            if (payload.id === 'b') { reached(); await new Promise(resolve => { release = resolve; }); }
+        };
+        const applying = runtime.store.applyAgentSetupPreset(runtime.preset);
+        await waiting;
+        const stale = runtime.store.saveAgent({ ...runtime.store.getAgentById('a'), name: 'Late edit' }).catch(error => error);
+        release();
+        await applying;
+        expect((await stale).message).toContain('changed while the edit was waiting');
+        expect(runtime.agents.get('a').prompt).toBe('new A');
     });
 
     test('failed settings commit restores agent files and settings; failed rollback retains a saved recovery setup', async () => {

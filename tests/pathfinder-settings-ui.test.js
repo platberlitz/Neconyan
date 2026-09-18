@@ -57,6 +57,14 @@ function deferred() {
     return { promise, resolve, reject };
 }
 
+async function waitForRequest() {
+    for (let attempt = 0; attempt < 100; attempt++) {
+        if (globalThis.fetch.mock.calls.length) return;
+        await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    throw new Error('The queued storage request did not start.');
+}
+
 const events = new EventEmitter();
 const eventTypes = { CHAT_CHANGED: 'chat', SETTINGS_UPDATED: 'settings', WORLDINFO_RENAMED: 'renamed', WORLDINFO_DELETED: 'deleted' };
 const summaryListeners = new Set();
@@ -217,7 +225,7 @@ describe('Pathfinder settings persistence', () => {
         globalThis.fetch.mockReturnValueOnce(request.promise);
         const syncing = runtime.syncPathfinderAgentLorebooksForCurrentChat(undefined, { persist: true });
         const editing = setting(panel, 'connectionProfile', 'new-profile');
-        await Promise.resolve();
+        await waitForRequest();
         const inFlight = globalThis.fetch.mock.calls.length;
         request.resolve({ ok: true });
         await Promise.all([syncing, editing]);
@@ -323,7 +331,7 @@ describe('Pathfinder settings persistence', () => {
         globalThis.fetch.mockReturnValueOnce(firstRequest.promise);
         const first = setting(panel, 'sidecarEnabled', true);
         const second = setting(panel, 'autoSummary', true);
-        await Promise.resolve();
+        await waitForRequest();
         expect(globalThis.fetch).toHaveBeenCalledTimes(1);
         expect(syncTools).not.toHaveBeenCalled();
         expect(store.getAgentById('agent-a').settings.sidecarEnabled).toBe(false);

@@ -7,6 +7,7 @@ import bytes from 'bytes';
 
 import { SETTINGS_FILE } from '../constants.js';
 import { prepareSettingsSave } from '../settings-version.js';
+import { readAgentCollection } from '../in-chat-agent-storage.js';
 import {
     getConfigValue,
     generateTimestamp,
@@ -334,7 +335,8 @@ router.post('/get', (request, response) => {
     const context = readAndParseFromDirectory(request.user.directories.context);
     const sysprompt = readAndParseFromDirectory(request.user.directories.sysprompt);
     const reasoning = readAndParseFromDirectory(request.user.directories.reasoning);
-    const inChatAgents = readAndParseFromDirectory(request.user.directories.inChatAgents);
+    const agentLibrary = readAgentCollection(request.user.directories.inChatAgents);
+    const inChatAgents = agentLibrary.records;
 
     response.send({
         settings,
@@ -355,6 +357,9 @@ router.post('/get', (request, response) => {
         sysprompt,
         reasoning,
         inChatAgents,
+        inChatAgentLoadErrors: agentLibrary.errors,
+        inChatAgentRevisions: agentLibrary.revisions,
+        inChatAgentAccount: request.user.profile.handle,
         enable_extensions: ENABLE_EXTENSIONS,
         enable_extensions_auto_update: ENABLE_EXTENSIONS_AUTO_UPDATE,
         enable_accounts: ENABLE_ACCOUNTS,

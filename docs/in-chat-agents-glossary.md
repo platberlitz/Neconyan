@@ -285,7 +285,7 @@ Chat Only can display a **Private side chat** field. Sending an aside adds it to
 
 Chatroom can display a **Respond to the chatroom** field. Sending a response supplies it as additional Chatroom context and reruns the Chatroom Companion. It also remains separate from the main conversation.
 
-A completed Memory Shard can display **Hide story above this shard**. After confirmation, earlier messages are excluded from future prompts while remaining visible in the chat interface. The Memory Shard is intended to carry their summarized information forward. Hidden messages can later be restored through normal message visibility controls.
+A completed Memory Shard can display **Hide summarised messages**. After confirmation, it excludes only unchanged messages that were included in that summary's request. Older messages outside its context window stay in future prompts. Hidden messages remain visible in the chat and can be restored through the normal visibility controls. Older shards without a saved record of their source messages do not offer this action.
 
 Some Companion results contain clickable choice lines. Clicking one inserts its text into the normal message input. The panel closes afterward unless it is locked.
 
@@ -306,3 +306,17 @@ Export All saves the current agent collection. Export before extensive edits, te
 Update All refreshes installed agents backed by newer bundled templates. ICA preserves several user-specific properties during bundled updates, including enabled state, favorites, profile overrides, model overrides, Companion configuration, and Order where applicable. Review updated prompts and regex afterward.
 
 Reset Bundled Agents to Defaults restores template-backed agents to their bundled configuration. Custom agents are not affected.
+
+## Storage and Recovery
+
+Agent storage has these limits to keep loading and saving responsive. One MiB is 1,048,576 bytes.
+
+| Collection | Maximum records | Maximum size per record | Maximum collection size |
+| --- | ---: | ---: | ---: |
+| Agents | 512 | 1 MiB | 32 MiB |
+| Custom kits | 128 | 8 MiB | 32 MiB |
+| Saved setups, including recovery copies | 32 | 8 MiB | 32 MiB |
+
+An individual record can contain up to 100,000 data values, nested up to 64 levels. Oversized or malformed imports are rejected. Existing files are kept when loading finds damaged or oversized records, and the interface reports which records need attention. Healthy records remain available, but automatic agents and new setup snapshots pause until the library loads completely.
+
+Setup loading saves a recovery copy before changing agents. If loading is interrupted, automatic agents stay paused until you load a complete setup or its recovery copy. A save that conflicts with another tab's newer edit is rejected rather than overwriting that edit. Recovery copies are kept when recovery needs attention.

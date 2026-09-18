@@ -10,6 +10,10 @@ import { is_group_generating } from '../../group-chats.js';
 import {
     areAgentsGloballyEnabled,
     areAgentsLoaded,
+    getAgentLibraryErrors,
+    bindAgentStorageAccount,
+    hasPendingAgentRecovery,
+    persistAgentIdentityRepairs,
     getAgents,
     getEnabledAgents,
     getAgentById,
@@ -252,11 +256,20 @@ async function fetchAgentLibrary() {
     if (!response.ok) throw new Error('The agent library could not be loaded. Try again.');
     const settings = await response.json();
     if (handle !== getCurrentUserHandle()) throw new Error('The active account changed.');
+    if (settings.inChatAgentAccount !== undefined && settings.inChatAgentAccount !== handle) throw new Error('The signed-in account changed. Reload the page before editing agents.');
     if (!Array.isArray(settings.inChatAgents)) throw new Error('The server returned an invalid agent library.');
-    loadAgents(settings.inChatAgents);
+    loadAgents(settings.inChatAgents, { account: settings.inChatAgentAccount ?? handle,
+        isCurrent: () => handle === getCurrentUserHandle(), errors: settings.inChatAgentLoadErrors ?? [] });
+    if (getAgentLibraryErrors().length) throw new Error(`Some agent files could not be read: ${getAgentLibraryErrors().map(item => item.file).join(', ')}. Repair them before running agents or saving a setup.`);
 }
 
 async function finishAgentLibraryInitialization() {
+    if (getAgentLibraryErrors().length) throw new Error('Repair the incomplete agent library before running startup updates.');
+    if (hasPendingAgentRecovery()) {
+        agentLibraryReady = true;
+        throw new Error('A setup load was interrupted. Load a saved recovery setup or another complete setup before running agents.');
+    }
+    await persistAgentIdentityRepairs();
     await ensureDefaultBundledAgents();
     const latestBundledAgentMigration = await refreshBundledAgentsFromLatestTemplates();
     if (latestBundledAgentMigration.updatedCount > 0) {
@@ -337,15 +350,12 @@ async function retryAgentSetupLoading() {
     renderAgentSetupControls();
     const handle = getCurrentUserHandle();
     try {
-        const results = await Promise.allSettled([
-            refreshAgentSetupList(),
-            !agentLibraryReady ? (async () => {
-                await fetchAgentLibrary();
-                await finishAgentLibraryInitialization();
-            })() : Promise.resolve(),
-        ]);
+        bindAgentStorageAccount(handle, () => handle === getCurrentUserHandle());
+        const results = await Promise.allSettled([refreshAgentSetupList(), fetchAgentLibrary(), loadCustomGroupsFromServer()]);
         if (handle !== getCurrentUserHandle()) return;
-        if (results[1].status === 'rejected') throw results[1].reason;
+        const failed = results.find(result => result.status === 'rejected');
+        if (failed) throw failed.reason;
+        await finishAgentLibraryInitialization();
         if (agentSetupListReady) {
             if (selectedAgentSetupId) showAgentSetupMatch(); else setAgentSetupStatus('');
         }
@@ -2250,10 +2260,11 @@ async function purgeRemovedBundledAgents() {
 }
 
 async function loadCustomGroupsFromServer() {
+    const handle = getCurrentUserHandle();
     const response = await fetch('/api/in-chat-agents/groups/list', {
         method: 'POST',
         headers: getRequestHeaders(),
-        body: JSON.stringify({}),
+        body: JSON.stringify({ withDiagnostics: true }),
     });
 
     if (!response.ok) {
@@ -2261,6 +2272,7 @@ async function loadCustomGroupsFromServer() {
     }
 
     const groups = await response.json();
+    if (handle !== getCurrentUserHandle() || (response.headers?.get?.('X-Neconyan-Account') && response.headers.get('X-Neconyan-Account') !== handle)) throw new Error('The active account changed.');
     loadCustomGroups(groups);
 }
 
@@ -6348,6 +6360,8 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         }
     }
 
+    const storageAccount = getCurrentUserHandle();
+    bindAgentStorageAccount(storageAccount, () => storageAccount === getCurrentUserHandle());
     const initResults = await Promise.allSettled([
         loadTemplates(),
         loadCustomGroupsFromServer(),

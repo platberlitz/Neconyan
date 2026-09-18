@@ -35,7 +35,7 @@ function replaceObject(target, source) {
 function restoreLocalAgent(host, snapshot) {
     const agents = host.store.getAgents?.();
     if (Array.isArray(agents) && typeof host.store.loadAgents === 'function') {
-        host.store.loadAgents(agents.map(item => item.id === snapshot.id ? snapshot : item));
+        host.store.loadAgents(agents.map(item => item.id === snapshot.id ? snapshot : item), { fromServer: false });
         return true;
     }
     const stored = host.store.getAgentById?.(snapshot.id);
