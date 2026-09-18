@@ -1783,6 +1783,133 @@ describe('in-chat agent post-processing runner', () => {
             await runtime.runCompanionAgentOnMessage(agent.id, 0);
             expect(runtime.getCompanionResults(chat[0])[agent.id]).toMatchObject({ content: 'Complete note', lastRunError: expect.stringContaining('output limit') });
         });
+
+        test('a running agent toast and auto note companions survive the real generation lifecycle', async () => {
+            const companion = createCompanionAgent();
+            const rewrite = {
+                id: 'agent-live-rewrite',
+                name: 'Live Rewrite',
+                category: 'rewrite',
+                phase: 'post',
+                prompt: 'Rewrite the reply.',
+                injection: { order: 90 },
+                postProcess: {
+                    enabled: false,
+                    promptTransformEnabled: true,
+                    promptTransformMode: 'rewrite',
+                    promptTransformMaxTokens: 8192,
+                    promptTransformShowNotifications: true,
+                },
+                conditions: { triggerKeywords: [], triggerProbability: 100, generationTypes: ['normal'] },
+            };
+            const runtime = await setup([rewrite, companion]);
+            globalSettings.promptTransformShowNotifications = true;
+            const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+            runner.registerCompanionRuntime({
+                runCompanionStage: runtime.runCompanionStage,
+                injectCompanionFeedbackPrompts: runtime.injectCompanionFeedbackPrompts,
+                stripAuxiliaryTrackerEchoes: runtime.stripAuxiliaryTrackerEchoes,
+                runCompanionAgentOnMessage: runtime.runCompanionAgentOnMessage,
+                applyAgentPostPassesToCompanionResult: runtime.applyAgentPostPassesToCompanionResult,
+            });
+            runner.initAgentRunner();
+
+            const waitForCondition = async (predicate, timeoutMs = 4000) => {
+                const deadline = Date.now() + timeoutMs;
+                while (Date.now() < deadline) {
+                    if (predicate()) return true;
+                    await new Promise(resolve => setTimeout(resolve, 20));
+                }
+                return predicate();
+            };
+
+            let releaseRewrite;
+            generateQuietPrompt
+                .mockImplementationOnce(() => new Promise(resolve => { releaseRewrite = resolve; }))
+                .mockImplementation(async request => `Companion note for ${request?.quietPrompt ?? ''}`);
+
+            await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+            chat.push({ name: 'You', mes: 'Please continue.', is_user: true, extra: {} });
+            await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+            chat.push({ name: 'Assistant', mes: 'The reply.', is_user: false, extra: {} });
+            const generationContext = runner.getAgentGenerationContext();
+            // Streaming emits generation end before the rendered message, so the message
+            // is processed immediately and the running rewrite toast is on screen.
+            await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length, generationContext);
+            const received = eventSource.emit(eventTypes.MESSAGE_RECEIVED, chat.length - 1, 'normal', generationContext);
+
+            expect(await waitForCondition(() => Boolean(releaseRewrite))).toBe(true);
+            expect(globalThis.toastr.info).toHaveBeenCalled();
+            globalThis.toastr.clear.mockClear();
+
+            // A second end can arrive from the generation finally while the helper is
+            // still waiting; it must not clear the running agent toast.
+            await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length, generationContext);
+            expect(globalThis.toastr.clear).not.toHaveBeenCalled();
+
+            releaseRewrite('Rewritten reply.');
+            expect(await waitForCondition(() => generateQuietPrompt.mock.calls.length >= 2)).toBe(true);
+            await received;
+            expect(globalThis.toastr.clear).toHaveBeenCalled();
+        }, 20000);
+
+        test('a token accounting failure does not skip companion agents', async () => {
+            const companion = createCompanionAgent();
+            const rewrite = {
+                id: 'agent-accounting-rewrite',
+                name: 'Accounting Rewrite',
+                category: 'rewrite',
+                phase: 'post',
+                prompt: 'Rewrite the reply.',
+                injection: { order: 90 },
+                postProcess: {
+                    enabled: false,
+                    promptTransformEnabled: true,
+                    promptTransformMode: 'rewrite',
+                    promptTransformMaxTokens: 8192,
+                    promptTransformShowNotifications: false,
+                },
+                conditions: { triggerKeywords: [], triggerProbability: 100, generationTypes: ['normal'] },
+            };
+            const runtime = await setup([rewrite, companion]);
+            const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+            runner.registerCompanionRuntime({
+                runCompanionStage: runtime.runCompanionStage,
+                injectCompanionFeedbackPrompts: runtime.injectCompanionFeedbackPrompts,
+                stripAuxiliaryTrackerEchoes: runtime.stripAuxiliaryTrackerEchoes,
+                runCompanionAgentOnMessage: runtime.runCompanionAgentOnMessage,
+                applyAgentPostPassesToCompanionResult: runtime.applyAgentPostPassesToCompanionResult,
+            });
+            runner.initAgentRunner();
+
+            let releaseRewrite;
+            generateQuietPrompt
+                .mockImplementationOnce(() => new Promise(resolve => { releaseRewrite = resolve; }))
+                .mockImplementation(async request => `Companion note for ${request?.quietPrompt ?? ''}`);
+            updateMessageTokenAccounting.mockRejectedValueOnce(new Error('Tokenizer unavailable'));
+
+            await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+            chat.push({ name: 'You', mes: 'Please continue.', is_user: true, extra: {} });
+            await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+            chat.push({ name: 'Assistant', mes: 'The reply.', is_user: false, extra: {} });
+            const generationContext = runner.getAgentGenerationContext();
+            await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length, generationContext);
+            const received = eventSource.emit(eventTypes.MESSAGE_RECEIVED, chat.length - 1, 'normal', generationContext);
+
+            const deadline = Date.now() + 4000;
+            while (!releaseRewrite && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
+            expect(typeof releaseRewrite).toBe('function');
+            releaseRewrite('Rewritten reply.');
+            await received;
+
+            // Let the scheduled message refresh run before the environment is torn down.
+            await new Promise(resolve => setTimeout(resolve, 15));
+
+            const message = chat[chat.length - 1];
+            expect(updateMessageTokenAccounting).toHaveBeenCalled();
+            expect(message.mes).toBe('Rewritten reply.');
+            expect(runtime.getCompanionResults(message)[companion.id]).toEqual(expect.objectContaining({ status: 'done' }));
+        }, 20000);
     });
 
     test('injects the selected Chatroom style into companion prompts', async () => {

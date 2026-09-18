@@ -2642,7 +2642,13 @@ async function syncPromptTransformMessageStateAsync(message, messageIndex) {
         return true;
     }
 
-    await updateMessageTokenAccounting(message);
+    try {
+        await updateMessageTokenAccounting(message);
+    } catch (error) {
+        // Neconyan: token counting is bookkeeping. A tokenizer or provider hiccup here must not
+        // abort the rest of post-processing, which would silently skip companion agents.
+        console.warn('[InChatAgents] Token accounting failed; continuing agent work:', error);
+    }
     if (!isMessageTargetCurrent(message, target, messageIndex)) return false;
 
     if (messageIndex === null || messageIndex === undefined || messageIndex === '') {
@@ -4056,7 +4062,6 @@ function onGenerationEnded(_chatLength, generationContext) {
         clearPostGenerationRecoveryCheck();
         clearMissedGenerationEndRecoveryCheck();
         clearDeferredPostProcessing();
-        clearAllPromptTransformRunningToasts();
         return;
     }
 
@@ -4072,7 +4077,9 @@ function onGenerationEnded(_chatLength, generationContext) {
     lastMainGenerationEndedAt = Date.now();
     generationStopRequested = false;
     clearMissedGenerationEndRecoveryCheck();
-    clearAllPromptTransformRunningToasts();
+    // Neconyan: generation end must not clear running agent toasts. A helper or a
+    // post-processing run can still be waiting on its own request, and its own
+    // finally (or an explicit Stop / next generation start) clears the toast.
     queueLatestAssistantPostProcessingFromSnapshot();
     scheduleDeferredPostProcessingFlush();
     schedulePostGenerationRecoveryCheck();
