@@ -36,6 +36,7 @@ const { LAYOUT_KEY } = await import('../public/scripts/extensions/in-chat-agents
 const {
     createEntry, createCategory, updateEntry, forgetEntry, initEntryManagerAPIs, mergeEntries, moveEntry, splitEntry,
 } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/entry-manager.js');
+const { getSummaryMemoryState, setSummaryMemoryCreated } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/summary-memory-store.js');
 
 describe('Pathfinder entry manager', () => {
     let store;
@@ -256,5 +257,27 @@ describe('Pathfinder entry manager', () => {
         await expect(createEntry('Memory Book', 'Discarded', 'not saved')).rejects.toThrow('The lorebook save did not complete.');
         expect(Object.keys(store['Memory Book'].entries)).toHaveLength(2);
         expect(reloadEditor).not.toHaveBeenCalled();
+    });
+
+    test('a failed reload after a committed write reports refreshFailed and keeps the tracked summary', async () => {
+        const created = await createEntry('Memory Book', 'Story so far', 'Significance: high\n\nThe party reached the gate.');
+        setSummaryMemoryCreated({ title: 'Story so far', content: 'The party reached the gate.', significance: 'high', arc: '', bookName: 'Memory Book', uid: created.uid });
+        const load = jest.fn(async name => store[name] ? structuredClone(store[name]) : null);
+        let loads = 0;
+        load.mockImplementation(async name => {
+            loads++;
+            if (loads === 2) throw new Error('read failed after commit');
+            return store[name] ? structuredClone(store[name]) : null;
+        });
+        initEntryManagerAPIs(load, jest.fn(), save);
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+        const result = await updateEntry('Memory Book', 2, 'edited second');
+
+        expect(result.refreshFailed).toBe(true);
+        expect(save).toHaveBeenCalledTimes(2);
+        expect(store['Memory Book'].entries[2].content).toBe('edited second');
+        expect(getSummaryMemoryState()).toMatchObject({ bookName: 'Memory Book', uid: created.uid });
+        warn.mockRestore();
     });
 });

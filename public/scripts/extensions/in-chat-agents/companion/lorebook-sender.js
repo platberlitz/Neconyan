@@ -103,8 +103,9 @@ function getCurrentCharacters(context) {
     return Number.isInteger(characterId) && characters[characterId] ? [characters[characterId]] : [];
 }
 
-async function offerFallbackLorebookAttachment(context, bookName, attachToChat) {
-    if (normalizeTitle(bookName) !== normalizeTitle(FALLBACK_BOOK_NAME)) {
+async function offerFallbackLorebookAttachment(context, requestedName, bookName, attachToChat, notifier) {
+    // The host may commit the fallback book under a different name; the offer keys off the requested title.
+    if (normalizeTitle(requestedName) !== normalizeTitle(FALLBACK_BOOK_NAME)) {
         return;
     }
 
@@ -141,12 +142,29 @@ async function offerFallbackLorebookAttachment(context, bookName, attachToChat) 
     }
 
     if (attachToChat) {
+        const previousBook = context.chatMetadata?.world_info;
         if (typeof context.updateChatMetadata === 'function') {
             context.updateChatMetadata({ world_info: bookName });
         } else {
             context.chatMetadata.world_info = bookName;
         }
-        await context.saveMetadata();
+        // saveMetadata resolves false (or throws) when the chat could not be saved; the entries are already
+        // committed to the book, so only the attachment is rolled back and reported.
+        let saved = false;
+        try {
+            saved = (await context.saveMetadata()) !== false;
+        } catch (error) {
+            console.error('[In-Chat Agents] Could not save the lorebook attachment.', error);
+        }
+        if (!saved) {
+            if (typeof context.updateChatMetadata === 'function') {
+                context.updateChatMetadata({ world_info: previousBook });
+            } else if (context.chatMetadata) {
+                context.chatMetadata.world_info = previousBook;
+            }
+            notifier?.warning?.(`Entries were saved to "${bookName}", but attaching it to the chat failed. Attach it from the lorebook panel.`);
+            return;
+        }
     }
 
     for (const character of missingCharacters) {
@@ -198,7 +216,9 @@ async function sendLorebookEntries(content, context, notifier) {
             throw new Error('Lorebook APIs are unavailable.');
         }
 
-        const { bookName, attachToChat } = await getTargetBook(context);
+        const target = await getTargetBook(context);
+        const { attachToChat } = target;
+        let { bookName } = target;
         const bookData = await context.loadWorldInfo(bookName);
         if (!bookData?.entries || typeof bookData.entries !== 'object') {
             throw new Error(`Lorebook "${bookName}" could not be loaded.`);
@@ -238,13 +258,20 @@ async function sendLorebookEntries(content, context, notifier) {
             created++;
         }
 
+        let committedName = bookName;
         if (created > 0 || booksNeedingSaveRetry.has(bookName)) {
             booksNeedingSaveRetry.add(bookName);
-            await context.saveWorldInfo(bookName, bookData, true);
+            // Immediate saves resolve to the committed name, or null when the host discarded the write.
+            const savedName = await context.saveWorldInfo(bookName, bookData, true);
+            if (typeof savedName !== 'string' || !savedName.trim()) {
+                throw new Error(`The host discarded the save of "${bookName}".`);
+            }
             booksNeedingSaveRetry.delete(bookName);
+            committedName = savedName;
         }
 
-        await offerFallbackLorebookAttachment(context, bookName, attachToChat);
+        await offerFallbackLorebookAttachment(context, bookName, committedName, attachToChat, notifier);
+        bookName = committedName;
         if (created > 0) {
             const duplicateNote = duplicates > 0 ? ` Skipped ${duplicates} duplicate${duplicates === 1 ? '' : 's'}.` : '';
             notifier?.success?.(`Added ${created} lorebook entr${created === 1 ? 'y' : 'ies'} to "${bookName}".${duplicateNote}`);

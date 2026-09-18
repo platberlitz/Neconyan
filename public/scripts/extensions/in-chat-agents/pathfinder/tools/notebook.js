@@ -6,8 +6,7 @@ const NOTEBOOK_KEY = 'pathfinder_notebook';
 
 const COMPACT_DESCRIPTION = 'Write to or read from a private AI scratchpad for plans, follow-ups, and narrative threads.';
 
-function getNotebookData() {
-    const ctx = window?.SillyTavern?.getContext?.();
+function getNotebookData(ctx = window?.SillyTavern?.getContext?.()) {
     const metadata = ctx?.chatMetadata ?? ctx?.chat_metadata;
     if (!metadata) return null;
     if (!metadata[NOTEBOOK_KEY]) {
@@ -16,10 +15,37 @@ function getNotebookData() {
     return metadata[NOTEBOOK_KEY];
 }
 
-function saveNotebookData() {
+/**
+ * Persists the notebook and reports whether the host accepted the save.
+ * Prefers the awaited save (returns true on success); falls back to the debounced
+ * save only when the host offers nothing better, in which case success cannot be confirmed.
+ * @param {string} chatId Chat the notebook belongs to.
+ * @returns {Promise<boolean>}
+ */
+async function saveNotebookData(chatId) {
     const ctx = window?.SillyTavern?.getContext?.();
-    if (ctx?.saveMetadataDebounced) ctx.saveMetadataDebounced();
+    if (!ctx) return false;
+    if ((ctx.chatId ?? null) !== chatId) {
+        console.warn('[Pawthfinder] Chat changed before the notebook could be saved.');
+        return false;
+    }
+    if (typeof ctx.saveMetadata === 'function') {
+        try {
+            const saved = await ctx.saveMetadata();
+            return saved !== false;
+        } catch (error) {
+            console.error('[Pawthfinder] Notebook save failed.', error);
+            return false;
+        }
+    }
+    if (typeof ctx.saveMetadataDebounced === 'function') {
+        ctx.saveMetadataDebounced();
+        return true;
+    }
+    return false;
 }
+
+const SAVE_FAILED_MESSAGE = 'Error: The notebook change could not be saved, so it was not kept. Try again.';
 
 async function notebookAction(args) {
     const action = String(args.action || '').trim().toLowerCase();
@@ -34,11 +60,19 @@ async function notebookAction(args) {
         return 'No Pawthfinder-enabled lorebooks active. Notebook is still available for reading.';
     }
 
-    const notebook = getNotebookData();
+    const ctx = window?.SillyTavern?.getContext?.();
+    const notebook = getNotebookData(ctx);
     if (!notebook) {
         logToolCallError(TOOL_NAMES.NOTEBOOK, 'No chat metadata');
         return 'Error: Could not access chat metadata for notebook storage.';
     }
+    const chatId = ctx?.chatId ?? null;
+    const previousEntries = structuredClone(notebook.entries ?? []);
+    const previousUpdated = notebook.updated;
+    const revertNotebook = () => {
+        notebook.entries = previousEntries;
+        notebook.updated = previousUpdated;
+    };
 
     try {
         if (action === 'read') {
@@ -65,7 +99,11 @@ async function notebookAction(args) {
                 notebook.entries.push({ key, content, updated: Date.now() });
             }
             notebook.updated = Date.now();
-            saveNotebookData();
+            if (!await saveNotebookData(chatId)) {
+                revertNotebook();
+                logToolCallError(TOOL_NAMES.NOTEBOOK, 'Save failed');
+                return SAVE_FAILED_MESSAGE;
+            }
             logToolCallCompleted(TOOL_NAMES.NOTEBOOK, `Wrote: ${key}`);
             return `📓 Wrote "${key}" to notebook.`;
         }
@@ -81,7 +119,11 @@ async function notebookAction(args) {
             }
             notebook.entries.splice(idx, 1);
             notebook.updated = Date.now();
-            saveNotebookData();
+            if (!await saveNotebookData(chatId)) {
+                revertNotebook();
+                logToolCallError(TOOL_NAMES.NOTEBOOK, 'Save failed');
+                return SAVE_FAILED_MESSAGE;
+            }
             logToolCallCompleted(TOOL_NAMES.NOTEBOOK, `Deleted: ${key}`);
             return `📓 Deleted "${key}" from notebook.`;
         }

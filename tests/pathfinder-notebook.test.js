@@ -49,6 +49,51 @@ describe('Pathfinder notebook baseline', () => {
         expect(buildNotebookPrompt()).not.toContain('second chat only');
     });
 
+    test('a write reports success only after the host accepts the metadata save', async () => {
+        const saveMetadata = jest.fn(async () => true);
+        context = { chatMetadata: {}, chatId: 'chat-1', saveMetadata, saveMetadataDebounced: jest.fn() };
+        const action = getToolAction('pathfinder_notebook');
+        expect(await action({ action: 'write', key: 'Plan', content: 'kept' })).toContain('Wrote "Plan"');
+        expect(saveMetadata).toHaveBeenCalledTimes(1);
+        expect(context.saveMetadataDebounced).not.toHaveBeenCalled();
+        expect(context.chatMetadata.pathfinder_notebook.entries).toHaveLength(1);
+    });
+
+    test('a declined or failed save reverts the note and tells the model', async () => {
+        context = { chatMetadata: {}, chatId: 'chat-1', saveMetadata: jest.fn(async () => false) };
+        const action = getToolAction('pathfinder_notebook');
+        await action({ action: 'write', key: 'Plan', content: 'first' });
+        expect(context.chatMetadata.pathfinder_notebook.entries).toEqual([]);
+
+        context.saveMetadata = jest.fn(async () => true);
+        await action({ action: 'write', key: 'Plan', content: 'first' });
+        context.saveMetadata = jest.fn(async () => { throw new Error('disk full'); });
+        expect(await action({ action: 'write', key: 'Plan', content: 'revised' })).toContain('could not be saved');
+        expect(context.chatMetadata.pathfinder_notebook.entries).toEqual([
+            expect.objectContaining({ key: 'Plan', content: 'first' }),
+        ]);
+        expect(await action({ action: 'delete', key: 'Plan' })).toContain('could not be saved');
+        expect(context.chatMetadata.pathfinder_notebook.entries).toHaveLength(1);
+    });
+
+    test('a chat change before the save keeps the old chat untouched and does not save the new one', async () => {
+        const oldSave = jest.fn(async () => true);
+        context = { chatMetadata: {}, chatId: 'chat-1', saveMetadata: oldSave };
+        const oldContext = context;
+        const action = getToolAction('pathfinder_notebook');
+        const newSave = jest.fn(async () => true);
+        globalThis.window = { SillyTavern: { getContext: () => {
+            // The notebook is read from the old chat, then the user switches chats before saving.
+            const current = context;
+            context = { chatMetadata: {}, chatId: 'chat-2', saveMetadata: newSave };
+            return current;
+        } } };
+        expect(await action({ action: 'write', key: 'Plan', content: 'late' })).toContain('could not be saved');
+        expect(oldContext.chatMetadata.pathfinder_notebook.entries).toEqual([]);
+        expect(oldSave).not.toHaveBeenCalled();
+        expect(newSave).not.toHaveBeenCalled();
+    });
+
     test('continues allowing reads but blocks writes without an active book', async () => {
         const action = getToolAction('pathfinder_notebook');
         await action({ action: 'write', key: 'Saved', content: 'retained note' });

@@ -90,11 +90,13 @@ function createContext({ attachedBook = '', existingTitles = [], auxiliaryBooks 
                 enabled: !entry.disable,
             };
         }),
-        saveWorldInfo: jest.fn(async () => {
+        // Real immediate saves resolve to the committed book name, or null when the host discards the write.
+        saveWorldInfo: jest.fn(async name => {
             if (remainingSaveFailures > 0) {
                 remainingSaveFailures--;
                 throw new Error('Simulated lorebook save failure.');
             }
+            return name;
         }),
         charUpdateAddAuxWorld: jest.fn(async (avatar, name) => {
             const fileName = avatar.replace(/\.[^/.]+$/, '');
@@ -345,5 +347,58 @@ describe('Lorebook Scout sender', () => {
         expect(books['Lorebook Scout'].entries[0].comment).toBe('Sun Dial');
         expect(context.callGenericPopup).toHaveBeenCalledTimes(1);
         expect(context.charUpdateAddAuxWorld).not.toHaveBeenCalled();
+    });
+});
+
+describe('Lorebook Scout sender honours the host save contract', () => {
+    const content = '**Sun Dial**\nKeys: Sun Dial, rain omen\nThe Sun Dial rings at noon when rain is coming.';
+    let notifier;
+
+    beforeEach(() => {
+        notifier = { info: jest.fn(), success: jest.fn(), warning: jest.fn(), error: jest.fn() };
+    });
+
+    test('a discarded save is reported as a failure and keeps the retry marker', async () => {
+        const { context } = createContext();
+        context.saveWorldInfo.mockResolvedValueOnce(null);
+        const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+        await expect(sendCompanionResultToLorebook(content, context, notifier)).resolves.toBeNull();
+        expect(notifier.success).not.toHaveBeenCalled();
+        expect(notifier.error).toHaveBeenCalledTimes(1);
+        expect(context.callGenericPopup).not.toHaveBeenCalled();
+        expect(context.updateChatMetadata).not.toHaveBeenCalled();
+
+        // The next send retries the save even though the cached book already holds the entry.
+        await sendCompanionResultToLorebook(content, context, notifier);
+        expect(context.saveWorldInfo).toHaveBeenCalledTimes(2);
+        consoleError.mockRestore();
+    });
+
+    test('a renamed committed book is reported and attached under its new name', async () => {
+        const { context } = createContext();
+        context.saveWorldInfo.mockResolvedValueOnce('Lorebook Scout (1)');
+
+        await expect(sendCompanionResultToLorebook(content, context, notifier)).resolves.toEqual({
+            bookName: 'Lorebook Scout (1)',
+            created: 1,
+            duplicates: 0,
+        });
+        expect(notifier.success).toHaveBeenCalledWith(expect.stringContaining('"Lorebook Scout (1)"'));
+        expect(context.updateChatMetadata).toHaveBeenCalledWith({ world_info: 'Lorebook Scout (1)' });
+    });
+
+    test('a failed attachment save rolls the attachment back and warns', async () => {
+        const { context } = createContext();
+        context.saveMetadata.mockResolvedValueOnce(false);
+
+        await expect(sendCompanionResultToLorebook(content, context, notifier)).resolves.toEqual({
+            bookName: 'Lorebook Scout',
+            created: 1,
+            duplicates: 0,
+        });
+        expect(context.chatMetadata.world_info).toBeUndefined();
+        expect(context.charUpdateAddAuxWorld).not.toHaveBeenCalled();
+        expect(notifier.warning).toHaveBeenCalledWith(expect.stringContaining('attaching it to the chat failed'));
     });
 });

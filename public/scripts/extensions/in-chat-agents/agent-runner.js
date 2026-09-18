@@ -227,12 +227,24 @@ function saveChatDebouncedForAgent({ deferBackup = shouldDeferAgentRegularBackup
     saveChatDebounced({ deferBackup: Boolean(deferBackup), completeDeferredBackup: !deferBackup });
 }
 
+/**
+ * Saves the chat through the host and reports whether the host accepted the save.
+ * The host returns `true` on success and `false` (or throws) when the save was declined.
+ * @returns {Promise<boolean>}
+ */
 async function saveChatForAgent(context, { deferBackup = shouldDeferAgentRegularBackup() } = {}) {
     if (typeof context?.saveChat !== 'function') {
-        return;
+        return false;
     }
 
-    await context.saveChat({ deferBackup: Boolean(deferBackup), completeDeferredBackup: !deferBackup });
+    try {
+        const saved = await context.saveChat({ deferBackup: Boolean(deferBackup), completeDeferredBackup: !deferBackup });
+        // Legacy hosts resolve undefined on success; only an explicit false means declined.
+        return saved !== false;
+    } catch (error) {
+        console.error('[In-Chat Agents] Chat save failed.', error);
+        return false;
+    }
 }
 
 function migrateLegacyRegexSnapshotsForCurrentChat(chatId = getCurrentChatId()) {
@@ -3759,7 +3771,22 @@ async function refreshMessageAfterMutation(messageIndex, message, { deferBackup 
         return;
     }
 
-    await saveChatForAgent(context, { deferBackup });
+    const chatIdBeforeSave = getCurrentChatId();
+    const saved = await saveChatForAgent(context, { deferBackup });
+
+    // Reloading replaces the in-memory chat with the stored copy. After a declined save, or once the
+    // user has moved to another chat, that would discard unsaved work (this mutation included), so
+    // fall back to the in-place update events instead.
+    const stillSameChat = getCurrentChatId() === chatIdBeforeSave && chat[messageIndex] === message;
+    if (!saved || !stillSameChat) {
+        if (!saved) {
+            console.warn('[In-Chat Agents] Skipping chat reload because the save was not accepted.');
+        }
+        if (stillSameChat && typeof eventSource?.emit === 'function' && event_types?.MESSAGE_UPDATED) {
+            await eventSource.emit(event_types.MESSAGE_UPDATED, messageIndex);
+        }
+        return;
+    }
 
     if (typeof context?.reloadCurrentChat === 'function') {
         await context.reloadCurrentChat();

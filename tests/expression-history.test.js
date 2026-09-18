@@ -91,3 +91,44 @@ describe('exact expression history', () => {
         });
     }
 });
+
+describe('sprite upload failures are not reported as success', () => {
+    function uploadRuntime(fetchImpl) {
+        const spriteCache = { Cat: [] };
+        const toastr = { error: jest.fn(), success: jest.fn() };
+        const runtime = vm.createContext({
+            console: { debug: jest.fn(), error: jest.fn() },
+            fetch: fetchImpl,
+            File: class { constructor() {} },
+            FormData: class { #m = new Map(); append(k, v) { this.#m.set(k, v); } get(k) { return this.#m.get(k); } },
+            toastr,
+            t: (strings, ...values) => String.raw({ raw: strings }, ...values),
+            MODULE_NAME: 'expressions',
+            spriteCache,
+            getRequestHeaders: () => ({}),
+            fetchImagesNoCache: async () => {},
+            validateImages: async () => {},
+            validateExpressionSpriteName: () => true,
+            getLastCharacterMessage: () => ({ name: 'Cat', original_avatar: 'Cat.png' }),
+            findChar: () => ({ name: 'Cat' }),
+            spriteFolderNameFromCharacter: () => 'Cat',
+        });
+        vm.runInContext(`${extract(expressions, 'handleFileUpload')}\n${extract(expressions, 'uploadSpriteCommand')}`, runtime);
+        return { runtime, toastr };
+    }
+
+    test('a rejected server upload throws instead of returning a sprite name', async () => {
+        const { runtime, toastr } = uploadRuntime(async (url) => url === 'blob:image'
+            ? { blob: async () => new Uint8Array() }
+            : { ok: false, status: 500 });
+        await expect(runtime.uploadSpriteCommand({ name: 'Cat', label: 'joy', folder: 'Cat' }, 'blob:image')).rejects.toThrow('Sprite upload failed');
+        expect(toastr.error).toHaveBeenCalledWith('Failed to upload image');
+    });
+
+    test('an accepted upload still returns the sprite name', async () => {
+        const { runtime } = uploadRuntime(async (url) => url === 'blob:image'
+            ? { blob: async () => new Uint8Array() }
+            : { ok: true, json: async () => ({}) });
+        await expect(runtime.uploadSpriteCommand({ name: 'Cat', label: 'joy', folder: 'Cat' }, 'blob:image')).resolves.toBe('joy');
+    });
+});

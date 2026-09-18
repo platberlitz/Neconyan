@@ -5837,6 +5837,60 @@ describe('in-chat agent post-processing runner', () => {
         expect(reloadCurrentChat).toHaveBeenCalledTimes(1);
     });
 
+    test('a declined off-screen save never reloads the chat over unsaved work', async () => {
+        useRegexOnlyAgent();
+        saveChat.mockResolvedValue(false);
+
+        const { initAgentRunner, undoPromptTransform } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        chat.push({
+            name: 'Assistant',
+            mes: 'Rewritten text',
+            is_user: false,
+            is_system: false,
+            extra: {
+                inChatAgentTransformHistory: [{ beforeText: 'Original text', afterText: 'Rewritten text' }],
+            },
+        });
+
+        await expect(undoPromptTransform(0)).resolves.toBe(true);
+        await new Promise(resolve => setTimeout(resolve, 5));
+
+        expect(saveChat).toHaveBeenCalledTimes(1);
+        expect(reloadCurrentChat).not.toHaveBeenCalled();
+        expect(chat[0].mes).toBe('Original text');
+    });
+
+    test('an off-screen save that settles after a chat change does not reload the new chat', async () => {
+        useRegexOnlyAgent();
+        let releaseSave;
+        saveChat.mockImplementation(() => new Promise(resolve => { releaseSave = resolve; }));
+
+        const { initAgentRunner, undoPromptTransform } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        chat.push({
+            name: 'Assistant',
+            mes: 'Rewritten text',
+            is_user: false,
+            is_system: false,
+            extra: {
+                inChatAgentTransformHistory: [{ beforeText: 'Original text', afterText: 'Rewritten text' }],
+            },
+        });
+
+        await expect(undoPromptTransform(0)).resolves.toBe(true);
+        await waitFor(() => typeof releaseSave === 'function');
+
+        currentChatId = 'chat-b';
+        chat.length = 0;
+        releaseSave(true);
+        await new Promise(resolve => setTimeout(resolve, 5));
+
+        expect(reloadCurrentChat).not.toHaveBeenCalled();
+    });
+
     test('does not downgrade a pending text-mutation refresh to a bookkeeping-only one', async () => {
         useRegexOnlyAgent();
 

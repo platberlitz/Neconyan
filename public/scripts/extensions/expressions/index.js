@@ -878,7 +878,10 @@ async function uploadSpriteCommand({ name, label, folder = null, spriteName = nu
         formData.append('avatar', file); // this is the image file
         formData.append('spriteName', spriteName); // this is a redundant comment
 
-        await handleFileUpload('/api/sprites/upload', formData);
+        const uploaded = await handleFileUpload('/api/sprites/upload', formData);
+        if (uploaded === null) {
+            throw new Error(`Sprite upload failed for ${name} (${label})`);
+        }
         console.debug(`[${MODULE_NAME}] Upload of ${imageUrl} completed for ${name} with label ${label}`);
     } catch (error) {
         console.error(`[${MODULE_NAME}] Error uploading file:`, error);
@@ -986,12 +989,18 @@ async function generateAndUploadExpressionSprite(expression, spriteFolderName, {
     }
 
     try {
-        const uploadedSpriteName = await uploadSpriteCommand({
-            name: uploadName,
-            label: expression,
-            folder: spriteFolderName,
-            spriteName: targetSpriteName,
-        }, uploadUrl);
+        let uploadedSpriteName = '';
+        try {
+            uploadedSpriteName = await uploadSpriteCommand({
+                name: uploadName,
+                label: expression,
+                folder: spriteFolderName,
+                spriteName: targetSpriteName,
+            }, uploadUrl);
+        } catch (error) {
+            if (isExpressionGenerationAbortError(error)) throw error;
+            console.error('[Expressions] Sprite upload failed:', error);
+        }
         throwIfExpressionGenerationStopped();
         setExpressionGenerationBusy(inSpriteGeneration);
 
@@ -1421,12 +1430,18 @@ async function splitAndUploadExpressionSpriteSheet(imageUrl, grid, expressions, 
         for (let index = 0; index < labels.length && index < tileUrls.length; index++) {
             throwIfExpressionGenerationStopped();
             const expression = labels[index];
-            const uploadedSpriteName = await uploadSpriteCommand({
-                name: uploadName,
-                label: expression,
-                folder: spriteFolderName,
-                spriteName: expression,
-            }, tileUrls[index]);
+            let uploadedSpriteName = '';
+            try {
+                uploadedSpriteName = await uploadSpriteCommand({
+                    name: uploadName,
+                    label: expression,
+                    folder: spriteFolderName,
+                    spriteName: expression,
+                }, tileUrls[index]);
+            } catch (error) {
+                if (isExpressionGenerationAbortError(error)) throw error;
+                console.error('[Expressions] Sprite sheet tile upload failed:', error);
+            }
             throwIfExpressionGenerationStopped();
             setExpressionGenerationBusy(inSpriteGeneration);
 
@@ -2594,7 +2609,8 @@ async function handleFileUpload(url, formData) {
     } catch (error) {
         console.error('Error uploading image:', error);
         toastr.error('Failed to upload image');
-        return {};
+        // null tells callers the upload did not happen; {} used to look like success.
+        return null;
     }
 }
 
@@ -2811,7 +2827,7 @@ async function onClickExpressionUploadPackButton() {
         formData.append('avatar', file);
 
         const uploadToast = toastr.info('Please wait...', 'Upload is processing', { timeOut: 0, extendedTimeOut: 0 });
-        const { count } = await handleFileUpload('/api/sprites/upload-zip', formData);
+        const { count } = (await handleFileUpload('/api/sprites/upload-zip', formData)) ?? {};
         toastr.clear(uploadToast);
 
         // Only show success message if at least one image was uploaded

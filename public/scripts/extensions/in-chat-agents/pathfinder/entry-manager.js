@@ -85,7 +85,12 @@ function writeBook(bookName, mutate, { signal, isCurrent } = {}) {
         if (signal?.aborted || (isCurrent && !isCurrent())) return { ...result, bookName: committedName, refreshFailed: true };
         // A failed refresh must not retry an already committed entry creation.
         deleteTree(committedName);
-        if (committedData) saveTree(committedName, deriveTreeFromMetadata(committedName, committedData));
+        if (!committedData) {
+            // The write is on disk but could not be read back: leave the tracked summary alone rather than
+            // treating an unreadable book as a deleted entry, and tell the caller the refresh failed.
+            return { ...result, bookName: committedName, refreshFailed: true };
+        }
+        saveTree(committedName, deriveTreeFromMetadata(committedName, committedData));
         syncTrackerUidsForLorebook(committedName, committedData);
         const currentSummary = getSummaryMemoryState();
         if (currentSummary.uid === summary.uid && currentSummary.title === summary.title && currentSummary.content === summary.content) {
