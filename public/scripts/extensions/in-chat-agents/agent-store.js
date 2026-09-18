@@ -1797,7 +1797,7 @@ function isSameStoredAgentRecord(current, written) {
 }
 
 /** All setup writes share the agent queue; a restore point exists before the first write. */
-export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPersist = () => true, confirmExtras = async () => true, updateAgents = null } = {}) {
+export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPersist = () => true, confirmExtras = async () => true, updateAgents = null, updateSettings = null, removeMissing = false } = {}) {
     const preset = normalizeAgentSetupPreset(rawPreset);
     if (!preset) return Promise.reject(new Error('Invalid agent setup.'));
     const context = storageContext;
@@ -1831,11 +1831,13 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
             const extras = previousAgents.filter(agent => !included.has(agent.id));
             if (!await confirmExtras(extras.filter(isAgentEnabledForAnyScope))) return false;
             assertCurrent();
-            const nextAgents = updateAgents ? updateAgents(previousAgents) : [
+            const nextGlobals = updateSettings ? updateSettings(structuredClone(previousGlobals), previousAgents)
+                : updateAgents ? previousGlobals : buildAppliedGlobalSettings(preset);
+            const nextAgents = updateAgents ? updateAgents(previousAgents, nextGlobals) : [
                 ...preset.agents.map(agent => normalizeAgent(mergeAgentSetupRecord(previousById.get(agent.id) ?? {}, agent))),
                 ...extras.map(agent => ({ ...structuredClone(agent), enabled: false })),
             ];
-            if (!normalizeAgentSetupPreset({ ...preset, agents: nextAgents, globalSettings: previousGlobals })) throw new Error('The complete agent change exceeds the setup storage limits or contains invalid references.');
+            if (!normalizeAgentSetupPreset({ ...preset, agents: nextAgents, globalSettings: nextGlobals })) throw new Error('The complete agent change exceeds the setup storage limits or contains invalid references.');
             recovery = await saveAgentSetupPreset(`Recovery before ${preset.name}`.slice(0, 120), {
                 snapshot: { agents: previousAgents, globalSettings: previousGlobals, recoveryFor: preset.id },
                 canPersist,
@@ -1849,10 +1851,20 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
                 nextAgentsById.set(agent.id, agent);
                 await writeAgentSnapshot(agent, { expected: previousById.get(agent.id) ?? null, context });
             }
+            if (removeMissing) {
+                const retained = new Set(nextAgents.map(agent => agent.id));
+                for (const previous of previousAgents) {
+                    if (retained.has(previous.id)) continue;
+                    assertCurrent();
+                    written.push(previous.id);
+                    nextAgentsById.set(previous.id, null);
+                    await deleteAgentFile(previous.id, { expected: previous, context });
+                }
+            }
             assertCurrent();
             if (JSON.stringify(globalSettings) !== JSON.stringify(previousGlobals)) throw new Error('Agent settings changed during the load; the setup was not applied.');
-            if (!updateAgents) {
-                setGlobalSettings(buildAppliedGlobalSettings(preset));
+            if (!updateAgents || updateSettings) {
+                setGlobalSettings(nextGlobals);
                 appliedGlobals = structuredClone(globalSettings);
                 persistAgentGlobalSettings();
                 if (await saveSettings(0, { returnResult: true }) !== true) throw new Error('The setup settings could not be saved.');
@@ -1885,12 +1897,12 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
                     const ours = writtenById.get(id);
                     const previous = previousById.get(id);
                     if ((!current && !previous) || (current && previous && isSameStoredAgentRecord(current, previous))) continue;
-                    if (!current || !ours || !isSameStoredAgentRecord(current, ours)) {
+                    if (!(ours === null && !current) && (!current || !ours || !isSameStoredAgentRecord(current, ours))) {
                         rollbackErrors.push(new Error(`Agent ${current?.name || id} changed elsewhere and was preserved.`));
                         continue;
                     }
                     try {
-                        if (previous) await writeAgentSnapshot(previous, { expected: current, context });
+                        if (previous) await writeAgentSnapshot(previous, { expected: current ?? null, context });
                         else await deleteAgentFile(id, { expected: current, context });
                     } catch (rollbackError) {
                         rollbackErrors.push(rollbackError);
@@ -1953,6 +1965,59 @@ export function saveAgentBatch(snapshots, name = 'Agent changes') {
             }
             return [...byId.values()];
         },
+    });
+}
+
+/** Bind a dialog or queued action to the library it originally displayed. */
+export function captureAgentSaveGuard(ids = []) {
+    const context = storageContext;
+    const previous = new Map(ids.map(id => [id, serializeAgentRecord(storedRecords.agent.get(id) ?? null)]));
+    return () => context === storageContext && context.isCurrent()
+        && [...previous].every(([id, record]) => serializeAgentRecord(storedRecords.agent.get(id) ?? null) === record);
+}
+
+export function saveAgentEnabledState(ids, enabled, scope = getActiveAgentChatScope()) {
+    const selected = new Set(ids);
+    const unchanged = captureAgentSaveGuard(ids);
+    return applyAgentSetupPreset({ id: uuidv4(), name: 'Agent switches', version: 1, agents: [], globalSettings: {} }, {
+        isCurrent: captureAgentSaveGuard(),
+        updateSettings: (settings, previous) => {
+            if (!unchanged() || ids.some(id => !previous.some(agent => agent.id === id))) throw new Error('An agent changed. Reload the list before retrying.');
+            if (!settings.separateRecentChats) return settings;
+            const scopes = normalizeScopedEnabledAgentIds(settings.enabledAgentIdsByChatType);
+            const key = normalizeAgentChatScope(scope);
+            if (!settings.scopedEnabledAgentIdsInitialized) scopes[key] = previous.filter(agent => agent.enabled).map(agent => agent.id);
+            const active = new Set(scopes[key]);
+            for (const id of selected) {
+                if (!previous.some(agent => agent.id === id)) throw new Error('An agent was removed. Reload the list before retrying.');
+                if (enabled) active.add(id); else active.delete(id);
+            }
+            scopes[key] = [...active];
+            return { ...settings, enabledAgentIdsByChatType: scopes, scopedEnabledAgentIdsInitialized: true };
+        },
+        updateAgents: (previous, settings) => previous.map(agent => !selected.has(agent.id) ? agent : {
+            ...agent,
+            enabled: settings.separateRecentChats ? isAgentIdEnabledInAnyScope(agent.id, settings.enabledAgentIdsByChatType) : Boolean(enabled),
+        }),
+    });
+}
+
+export function deleteAgentBatch(ids) {
+    const selected = new Set(ids);
+    const expected = new Map(ids.map(id => [id, structuredClone(storedRecords.agent.get(id) ?? null)]));
+    return applyAgentSetupPreset({ id: uuidv4(), name: 'Delete agents', version: 1, agents: [], globalSettings: {} }, {
+        isCurrent: captureAgentSaveGuard(),
+        removeMissing: true,
+        updateAgents: previous => previous.filter(agent => {
+            if (!selected.has(agent.id)) return true;
+            if (!isSameStoredAgentRecord(agent, expected.get(agent.id))) throw new Error('An agent changed before deletion. Review it before retrying.');
+            return false;
+        }),
+        updateSettings: settings => ({
+            ...settings,
+            enabledAgentIdsByChatType: Object.fromEntries(Object.entries(normalizeScopedEnabledAgentIds(settings.enabledAgentIdsByChatType))
+                .map(([scope, active]) => [scope, active.filter(id => !selected.has(id))])),
+        }),
     });
 }
 

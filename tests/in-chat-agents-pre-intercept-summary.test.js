@@ -112,6 +112,9 @@ beforeAll(async () => {
         normalizeStringIdList: jest.fn((value = []) => (Array.isArray(value) ? value : [])),
         saveAgent: jest.fn(async () => {}),
         saveAgentBatch: jest.fn(async () => {}),
+        saveAgentEnabledState: jest.fn(async () => {}),
+        deleteAgentBatch: jest.fn(async () => {}),
+        captureAgentSaveGuard: jest.fn(() => () => true),
         installAgentGroup: jest.fn(async () => []),
         getUnresolvedAgentReferences: jest.fn(() => []),
         buildLatestBundledAgentSnapshot: jest.fn(agent => agent),
@@ -175,6 +178,7 @@ beforeAll(async () => {
         deactivatePathfinderRuntime: jest.fn(),
         initAgentRunner: jest.fn(),
         getAgentGenerationCancelRevision: jest.fn(() => 0),
+        requestPromptTransform: jest.fn(async () => ({ output: 'Refined instructions' })),
         isAgentGenerationActive: jest.fn(() => false),
         onAgentGenerationStateChanged: jest.fn(),
         getPreGenerationInterceptHistoryForMessage: jest.fn(() => []),
@@ -326,5 +330,24 @@ describe('summarizeChatInterceptChange', () => {
             ok: false,
             reason: 'parse-error',
         });
+    });
+
+    test('uses the complete difference when messages are reordered', () => {
+        const messages = [{ role: 'user', content: 'First' }, { role: 'assistant', content: 'Second' }];
+        expect(summarizeChatInterceptChange(JSON.stringify(messages), JSON.stringify([...messages].reverse())))
+            .toEqual({ ok: false, reason: 'message-order' });
+    });
+
+    test('does not hide changes to speaker names or tool metadata', () => {
+        const before = JSON.stringify([{ role: 'user', content: 'Same text', name: 'Alice' }]);
+        const after = JSON.stringify([{ role: 'user', content: 'Same text', name: 'Bob' }]);
+        expect(summarizeChatInterceptChange(before, after).ok).toBe(false);
+        expect(summarizeChatInterceptChange('[]', JSON.stringify([{ role: 'assistant', content: '', tool_calls: [] }])).ok).toBe(false);
+    });
+
+    test('repeated messages still expose changed ordering', () => {
+        const one = { role: 'user', content: 'Repeated' };
+        const two = { role: 'assistant', content: 'Middle' };
+        expect(summarizeChatInterceptChange(JSON.stringify([one, two, one]), JSON.stringify([one, one, two])).ok).toBe(false);
     });
 });

@@ -4385,7 +4385,8 @@ describe('in-chat agent post-processing runner', () => {
         extensionPrompts.inchat_agent_saved = { value: 'original chat prompt' };
         let finish;
         generateQuietPrompt.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
-        const request = runner.requestPromptTransform({ id: 'helper' }, [{ role: 'user', content: 'transform' }], 100);
+        const request = runner.requestPromptTransform({ id: 'helper' }, [{ role: 'user', content: 'transform' }], 100)
+            .then(value => ({ value }), error => ({ error }));
         await Promise.resolve();
         expect(extensionPrompts.inchat_agent_saved.value).toBe('original chat prompt');
         const cancel = {
@@ -4396,8 +4397,27 @@ describe('in-chat agent post-processing runner', () => {
         await cancel[reason]();
         extensionPrompts.inchat_agent_saved = { value: 'current prompt' };
         finish('late result');
-        await request;
+        const outcome = await request;
+        expect(outcome.error?.name ?? 'completed').toBe(reason === 'new run' ? 'completed' : 'AbortError');
         expect(extensionPrompts.inchat_agent_saved.value).toBe('current prompt');
+    });
+
+    test.each(['abort', 'draft changed'])('editor-owned requests discard a response after %s', async reason => {
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const controller = new AbortController();
+        let current = true;
+        let finish;
+        generateQuietPrompt.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+        const request = runner.requestPromptTransform({ category: 'custom', execution: 'companion' }, [{ role: 'user', content: 'Only the editor task' }], 100, {
+            signal: controller.signal, isCurrent: () => current, cancelRevision: runner.getAgentGenerationCancelRevision(),
+        }).then(value => ({ value }), error => ({ error }));
+        await waitFor(() => typeof finish === 'function');
+        if (reason === 'abort') controller.abort();
+        else current = false;
+        finish('obsolete draft');
+        expect((await request).error?.name).toBe('AbortError');
+        expect(generateRawData).toHaveBeenCalledTimes(1);
+        expect(generateRawData.mock.calls[0][0].signal.aborted).toBe(reason === 'abort');
     });
 
     test('an isolated text helper receives only its prepared context and leaves shared prompts alone', async () => {

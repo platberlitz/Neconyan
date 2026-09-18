@@ -181,7 +181,7 @@
             </div>
         </section>
 
-        <section class="ica--view-panel ica--connections-view" data-ica-view="connections" data-view="connections" role="tabpanel" aria-label="Connections and defaults" hidden>
+        <section id="ica--panel-connections" class="ica--view-panel ica--connections-view" data-ica-view="connections" data-view="connections" role="tabpanel" aria-label="Connections and defaults" hidden>
             <div class="ica--subview-heading">
                 <span class="ica--section-kicker">Connections &amp; defaults</span>
                 <h3>Connections and run behaviour</h3>
@@ -237,9 +237,10 @@
     </div>
 </div>
 
-<div id="ica--bulkEditPopup" class="ica--bulk-edit-popup" style="display:none">
+<template id="ica--bulkEditPopup">
     <div class="ica--bulk-edit-popup-content">
         <strong>Bulk edit selected agents</strong>
+        <p data-ica-bulk-error role="alert" hidden></p>
         <p class="ica--regex-note">Choose which properties to change. Leave a field at its default to skip it.</p>
         <div class="ica--editor-row flex-container flexGap5">
             <label class="flex1">Injection Role<select id="ica--bulkEdit-role" class="text_pole"><option value="" selected>Don't change</option><option value="0">System</option><option value="1">User</option><option value="2">Assistant</option></select></label>
@@ -253,9 +254,5 @@
             <label class="flex1">Utility Post-Process Enabled<select id="ica--bulkEdit-ppEnabled" class="text_pole"><option value="" selected>Don't change</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label>
             <label class="flex1">Scan World Info<select id="ica--bulkEdit-scan" class="text_pole"><option value="" selected>Don't change</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label>
         </div>
-        <div class="ica--bulk-edit-popup-actions">
-            <button type="button" id="ica--bulkEditApply" class="menu_button menu_button_icon"><i class="fa-solid fa-check" aria-hidden="true"></i><span>Apply changes</span></button>
-            <button type="button" id="ica--bulkEditCancel" class="menu_button menu_button_icon"><i class="fa-solid fa-xmark" aria-hidden="true"></i><span>Cancel</span></button>
-        </div>
     </div>
-</div>
+</template>

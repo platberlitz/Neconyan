@@ -131,7 +131,7 @@ describe('in-chat agents generation UI wiring', () => {
         expect(readSource).toContain("sendContextToCompanions: root.find('#ica--editor-companion-sendContextToCompanions').prop('checked')");
         expect(readSource).toContain("contextRecipientAgentIds: normalizeStringIdList(root.find('#ica--editor-companion-contextRecipientAgentIds').val())");
         expect(writeSource).toContain("editorEl.find('#ica--editor-companion-sendContextToCompanions').prop('checked', nextCompanion.sendContextToCompanions);");
-        expect(writeSource).toContain('updateCompanionContextRecipientOptions();');
+        expect(writeSource).toContain('updateCompanionContextRecipientOptions(nextCompanion.contextRecipientAgentIds);');
         expect(indexSource).toContain("#ica--editor-companion-waitForDependencies");
         expect(readSource).toContain("waitForDependencies: root.find('#ica--editor-companion-waitForDependencies').prop('checked')");
         expect(writeSource).toContain("editorEl.find('#ica--editor-companion-waitForDependencies').prop('checked', nextCompanion.waitForDependencies);");
@@ -219,9 +219,12 @@ describe('in-chat agents generation UI wiring', () => {
         const dependencySource = getFunctionSource('updateCompanionDependencyOptions');
 
         for (const source of [batchSource, contextRecipientSource, dependencySource]) {
-            expect(source).toContain('options.flatMap(option => option.referenceIds)');
-            expect(source).toContain('option.referenceIds.some(id => selectedKeys.has(id.toLowerCase()))');
+            expect(source).toContain('refreshAgentReferenceOptions(');
         }
+        const shared = getFunctionSource('refreshAgentReferenceOptions');
+        expect(shared).toContain('options.flatMap(option => option.referenceIds)');
+        expect(shared).toContain('option.referenceIds.some(id => selected.has(id))');
+        expect(shared).not.toContain('toLowerCase');
     });
 
     test('migrates Level Up and User-based Stats context links once', () => {
@@ -295,14 +298,15 @@ describe('in-chat agents generation UI wiring', () => {
 
         expect(settingsSource).toContain('ica--bulkEnableOnCompanions');
         expect(settingsSource).toContain('On Companions');
-        expect(handlerSource).toContain('for (const id of selectedAgentIds)');
+        expect(handlerSource).toContain('await editSelectedAgents(');
         expect(handlerSource).toContain('isCompanionAgent(agent)');
         expect(handlerSource).toContain('isToolAgent(agent)');
         expect(handlerSource).toContain("['post', 'both'].includes(agent.phase)");
         expect(handlerSource).toContain('agent.conditions.runOnCompanionOutputs = true;');
-        expect(handlerSource).toContain('lockBundledAgentCustomization(agent);');
-        expect(handlerSource).toContain('await saveAgent(agent);');
-        expect(handlerSource).toContain('exitSelectMode();');
+        const shared = getFunctionSource('editSelectedAgents');
+        expect(shared).toContain('lockBundledAgentCustomization(draft);');
+        expect(shared).toContain('await saveAgentBatch(changes, name);');
+        expect(shared).toContain('exitSelectMode();');
     });
 
     test('allows manual agent application to multiple selected targets', () => {

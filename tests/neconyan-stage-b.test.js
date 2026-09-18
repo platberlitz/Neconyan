@@ -154,6 +154,49 @@ async function storeRuntime({ loaded = true } = {}) {
 }
 
 describe('Agent setup apply and recovery', () => {
+    test('scoped enable changes commit with settings and preserve the other scope', async () => {
+        const runtime = await storeRuntime();
+        runtime.store.setGlobalSettings({ separateRecentChats: true, scopedEnabledAgentIdsInitialized: true, enabledAgentIdsByChatType: { individual: ['a'], group: ['a', 'extra'] } });
+        await runtime.store.saveAgentEnabledState(['a'], false, 'individual');
+        expect(runtime.store.getGlobalSettings().enabledAgentIdsByChatType).toEqual({ individual: [], group: ['a', 'extra'] });
+        expect(runtime.store.getAgentById('a').enabled).toBe(true);
+        await runtime.store.saveAgentEnabledState(['a'], false, 'group');
+        expect(runtime.store.getAgentById('a').enabled).toBe(false);
+        expect(runtime.agents.get('a').enabled).toBe(false);
+        expect(runtime.presets.size).toBe(0);
+    });
+
+    test('a declined enabled-scope settings save restores both records and switches', async () => {
+        const runtime = await storeRuntime();
+        runtime.store.setGlobalSettings({ separateRecentChats: true, scopedEnabledAgentIdsInitialized: true, enabledAgentIdsByChatType: { individual: ['a', 'extra'], group: [] } });
+        const before = structuredClone(runtime.store.getGlobalSettings());
+        runtime.settingsSave.mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockResolvedValue(true);
+        await expect(runtime.store.saveAgentEnabledState(['a'], false, 'individual')).rejects.toThrow();
+        expect(runtime.store.getGlobalSettings()).toEqual(before);
+        expect(runtime.store.getAgentById('a').enabled).toBe(true);
+        expect(runtime.agents.get('a')).toEqual(runtime.initial[0]);
+        expect(runtime.presets.size).toBe(0);
+    });
+
+    test('a failed middle deletion restores the earlier deleted record', async () => {
+        const runtime = await storeRuntime();
+        runtime.state.hook = async (url, payload) => {
+            if (url.endsWith('/delete') && payload.id === 'extra') throw new Error('Deletion failed');
+        };
+        await expect(runtime.store.deleteAgentBatch(['a', 'extra'])).rejects.toThrow('Deletion failed');
+        expect([...runtime.agents.values()].sort((a, b) => a.id.localeCompare(b.id))).toEqual(runtime.initial);
+        expect(runtime.store.getAgents().map(agent => agent.id)).toEqual(['a', 'extra']);
+        expect(runtime.presets.size).toBe(0);
+    });
+
+    test('batch deletion preserves a record changed by another client', async () => {
+        const runtime = await storeRuntime();
+        runtime.agents.get('a').prompt = 'External correction';
+        await expect(runtime.store.deleteAgentBatch(['a'])).rejects.toThrow('changed');
+        expect(runtime.agents.get('a').prompt).toBe('External correction');
+        expect(runtime.writes).toHaveLength(0);
+    });
+
     test('an unloaded library cannot overwrite a setup or seed empty enabled scopes', async () => {
         const runtime = await storeRuntime({ loaded: false });
         expect(runtime.store.areAgentsLoaded()).toBe(false);

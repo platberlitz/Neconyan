@@ -3,7 +3,7 @@ import { extension_settings, renderExtensionTemplateAsync, getContext } from '..
 import { Popup, POPUP_TYPE, POPUP_RESULT } from '../../popup.js';
 import { accountStorage } from '../../util/AccountStorage.js';
 import { download, escapeHtml, escapeRegex, getSortableDelay, uuidv4 } from '../../utils.js';
-import { activateSendButtons, CLIENT_VERSION, chat, getChatGeneration, getCurrentChatId, getRequestHeaders, generateQuietPrompt, is_send_press, normalizeContentText, saveChatDebounced, saveSettings, saveSettingsDebounced, substituteParams } from '../../../script.js';
+import { activateSendButtons, CLIENT_VERSION, chat, getChatGeneration, getCurrentChatId, getRequestHeaders, is_send_press, normalizeContentText, saveChatDebounced, saveSettings, saveSettingsDebounced, substituteParams } from '../../../script.js';
 import { getCurrentUserHandle } from '../../user.js';
 import { eventSource, event_types } from '../../events.js';
 import { is_group_generating } from '../../group-chats.js';
@@ -21,6 +21,9 @@ import {
     loadAgents,
     saveAgent,
     saveAgentBatch,
+    saveAgentEnabledState,
+    deleteAgentBatch,
+    captureAgentSaveGuard,
     installAgentGroup,
     getUnresolvedAgentReferences,
     deleteAgent,
@@ -53,8 +56,6 @@ import {
     buildLatestBundledAgentSnapshot,
     getRedundantBundledAgentDuplicateIds,
     reconcileScopedEnabledAgentIdsFromLegacyFlags,
-    resolveConnectionProfile,
-    setAgentEnabledForCurrentScope,
     setGlobalSettings,
     setPathfinderSubmoduleEnabled,
     getGroups,
@@ -87,6 +88,7 @@ import {
     getPathfinderRuntimeAgent,
     getPromptTransformHistoryForMessage,
     refreshRegexSnapshotsForAgent,
+    requestPromptTransform,
     runAgentOnMessage,
     runAgentOnTarget,
     runTrackerFixOnMessage,
@@ -104,11 +106,9 @@ import {
 import { initPathfinder, teardownPathfinder } from './pathfinder-init.js';
 import { openPathfinderSettings, closePathfinderSettings, canClosePathfinderSettings, cancelPathfinderSummary, refreshPathfinderSettings, isPathfinderAgent } from './pathfinder-settings-ui.js';
 import { getPathfinderToolDefinitions } from './pathfinder/tool-definitions.js';
-import { buildFallbackPromptText, extractProfileResponseText } from './llm-utils.js';
 import { appendHelperPrefillMessages } from '../helper-prefill.js';
 import {
     buildConnectionProfileNameMap,
-    getConnectionManagerRequestService,
     populateConnectionProfileSelect,
 } from './profile-utils.js';
 import { collectRecentCompanionResults, getCompanionResults, initCompanionRunner, getLatestValidCompanionMessageIndex, runTrackerCompanionsOnMessage, syncCompanionChatHistoryConfig } from './companion/companion-runner.js';
@@ -128,6 +128,79 @@ let templateBrowserSearchValue = '';
 let templateBrowserOpening = false;
 const AGENT_WORKSPACE_VIEWS = ['manage', 'connections'];
 const AGENT_WORKSPACE_VIEW_STORAGE_KEY = 'ica--workspace-view';
+
+function agentAction(action) {
+    return async function (event) {
+        const button = event?.currentTarget;
+        if (button?.dataset?.icaBusy) return;
+        const disabled = button?.disabled;
+        if (button?.dataset) button.dataset.icaBusy = 'true';
+        if (button && 'disabled' in button && event?.type !== 'keydown') button.disabled = true;
+        try {
+            return await action.call(this, event);
+        } catch (error) {
+            console.error('[InChatAgents] The action could not be completed.', error);
+            toastr.error(escapeHtml(error.message || String(error)));
+            renderAgentList();
+        } finally {
+            if (button?.dataset) delete button.dataset.icaBusy;
+            if (button && 'disabled' in button) button.disabled = disabled;
+        }
+    };
+}
+
+async function refreshSavedAgents(ids) {
+    for (const id of ids) {
+        refreshRegexSnapshotsForAgent(id);
+        await syncCompanionChatHistoryConfig(getAgentById(id));
+    }
+    syncToolAgentRegistrations();
+    renderAgentList();
+    refreshCompanionPanel();
+    updateCompanionButtonVisibility();
+}
+
+async function editSelectedAgents(update, name) {
+    const changes = [];
+    for (const id of selectedAgentIds) {
+        const current = getAgentById(id);
+        if (!current) continue;
+        const draft = structuredClone(current);
+        if (update(draft) === false) continue;
+        lockBundledAgentCustomization(draft);
+        changes.push(draft);
+    }
+    await saveAgentBatch(changes, name);
+    await refreshSavedAgents(changes.map(agent => agent.id));
+    exitSelectMode();
+    return changes.length;
+}
+
+function assertEditorRequest(options = {}) {
+    if (options.signal?.aborted || (options.isCurrent && !options.isCurrent())
+        || (Number.isInteger(options.cancelRevision) && options.cancelRevision !== getAgentGenerationCancelRevision())) {
+        throw new DOMException('The editor changed or the request was stopped.', 'AbortError');
+    }
+}
+
+function refreshAgentReferenceOptions(select, options, savedIds, selection) {
+    const selectedIds = normalizeStringIdList(selection !== undefined ? selection
+        : select.data('icaInitialised') ? select.val() : savedIds);
+    select.data('icaInitialised', true);
+    const selected = new Set(selectedIds);
+    const available = new Set(options.flatMap(option => option.referenceIds));
+    select.empty();
+    for (const option of options) {
+        select.append($('<option>').val(option.id).text(option.label)
+            .prop('selected', option.referenceIds.some(id => selected.has(id))));
+    }
+    for (const id of selectedIds) {
+        if (!available.has(id)) select.append($('<option>').val(id).text(`Unavailable: ${id}`).prop('selected', true));
+    }
+    if (!options.length && !selectedIds.length) {
+        select.append($('<option>').val('').text('No companion agents available').prop('disabled', true));
+    }
+}
 
 async function decorateAgentControls(root) {
     if (!document.body?.classList?.contains('neconyan')) return;
@@ -1105,9 +1178,9 @@ function sortAgentsByOrder(agentList = []) {
 }
 
 async function toggleAgentEnabled(agent) {
-    setAgentEnabledForCurrentScope(agent, !isAgentEnabledForCurrentScope(agent));
-    if (isPathfinderAgent(agent) && !isAgentEnabledForCurrentScope(agent)) cancelPathfinderSummary();
-    await saveAgent(agent);
+    const enabled = !isAgentEnabledForCurrentScope(getAgentById(agent.id));
+    await saveAgentEnabledState([agent.id], enabled);
+    if (isPathfinderAgent(agent) && !enabled) cancelPathfinderSummary();
     refreshRegexSnapshotsForAgent(agent.id);
     persistExtensionState();
     syncToolAgentRegistrations();
@@ -1116,8 +1189,7 @@ async function toggleAgentEnabled(agent) {
 }
 
 async function toggleAgentFavorite(agent) {
-    agent.favorite = !agent.favorite;
-    await saveAgent(agent);
+    await saveAgent(agent.id, { update: draft => draft ? { ...draft, favorite: !draft.favorite } : null });
     renderAgentList();
 }
 
@@ -1131,7 +1203,7 @@ async function migrateTrackerCompanionsToAutoLoop() {
     }
 
     let migrated = 0;
-    for (const agent of getAgents()) {
+    for (const agent of getAgents().map(agent => structuredClone(agent))) {
         const contextChanged = applyCompanionContextAccessDefaults(agent);
         const displayChanged = applyCompanionPanelDisplayDefault(agent);
         const loopChanged = applyTrackerCompanionAutoLoopDefaults(agent);
@@ -1221,8 +1293,8 @@ async function migrateLevelUpStatsContextLinks() {
     }
 
     let migrated = 0;
-    for (const agent of getAgents()) {
-        if (applyLevelUpStatsContextLinkDefault(agent)) {
+    for (const agent of getAgents().map(agent => structuredClone(agent))) {
+        if (!agent.phaseLocked && agent.companion?.sendContextToCompanions !== false && applyLevelUpStatsContextLinkDefault(agent)) {
             await saveAgent(agent);
             migrated++;
         }
@@ -1237,12 +1309,13 @@ async function migrateLevelUpStatsContextLinks() {
 
 async function applyAgentExecutionConversion(agent, targetExecution) {
     const movesToCustom = targetExecution === 'inline' && agent.category === 'companion';
-    if (!convertAgentExecution(agent, targetExecution)) {
-        return false;
-    }
-
-    lockBundledAgentCustomization(agent);
-    await saveAgent(agent);
+    const saved = await saveAgent(agent.id, { update: draft => {
+        if (!draft || !convertAgentExecution(draft, targetExecution)) return null;
+        lockBundledAgentCustomization(draft);
+        return draft;
+    } });
+    if (!saved) return false;
+    agent = saved;
     refreshRegexSnapshotsForAgent(agent.id);
     syncToolAgentRegistrations();
     renderAgentList();
@@ -1687,6 +1760,20 @@ function buildUpdatedAgentFromTemplate(agent, template) {
     return buildLatestBundledAgentSnapshot(agent, mergeTemplateDefaults(template));
 }
 
+function buildResetAgentFromTemplate(agent, template) {
+    return {
+        ...agent,
+        ...buildAgentFromTemplate(template),
+        id: agent.id,
+        enabled: agent.enabled,
+        favorite: agent.favorite,
+        connectionProfile: agent.connectionProfile,
+        modelOverride: agent.modelOverride,
+        settings: structuredClone(agent.settings ?? {}),
+        phaseLocked: false,
+    };
+}
+
 async function updateAgentFromSourceTemplate(agent) {
     const template = findSourceTemplateForAgent(agent);
     if (!template) {
@@ -1871,7 +1958,8 @@ function getDefaultPathfinderTools(template) {
 async function migratePathfinderAgentToolsFromTemplate() {
     let migratedCount = 0;
 
-    for (const agent of getAgents()) {
+    for (const agent of getAgents().map(agent => structuredClone(agent))) {
+        if (shouldSkipBundledTemplateMigrations(agent)) continue;
         const template = findTemplateForAgent(agent);
         // The bundled agent shipped as Pawthfinder's former name; carry saved agents over.
         if (template?.id === 'tpl-pathfinder' && template.name && agent?.name !== template.name && (agent?.name === 'Pathfinder' || agent?.name === 'Pawthfinder')) {
@@ -1935,7 +2023,7 @@ function shouldMigrateBundledRegex(agent) {
 }
 
 async function migrateBundledRegexScriptsToSavedAgents() {
-    for (const agent of getAgents()) {
+    for (const agent of getAgents().map(agent => structuredClone(agent))) {
         if (!shouldMigrateBundledRegex(agent)) {
             continue;
         }
@@ -1981,7 +2069,7 @@ function shouldMigrateCyoaChoiceRegexCleanup(agent, template) {
 async function migrateCyoaChoiceRegexCleanupToSavedAgents() {
     let migratedCount = 0;
 
-    for (const agent of getAgents()) {
+    for (const agent of getAgents().map(agent => structuredClone(agent))) {
         const template = findTemplateForAgent(agent);
         if (!shouldMigrateCyoaChoiceRegexCleanup(agent, template)) {
             continue;
@@ -1999,7 +2087,7 @@ async function migrateCyoaChoiceRegexCleanupToSavedAgents() {
 async function migrateBundledTemplateMetadataToSavedAgents() {
     let migratedCount = 0;
 
-    for (const agent of getAgents()) {
+    for (const agent of getAgents().map(agent => structuredClone(agent))) {
         if (shouldSkipBundledTemplateMigrations(agent)) {
             continue;
         }
@@ -2057,7 +2145,7 @@ function shouldMigrateBundledTrackerPromptPass(agent, template) {
 async function migrateBundledTrackerPromptPassesToSavedAgents() {
     let migratedCount = 0;
 
-    for (const agent of getAgents()) {
+    for (const agent of getAgents().map(agent => structuredClone(agent))) {
         const template = findTemplateForAgent(agent);
         if (!shouldMigrateBundledTrackerPromptPass(agent, template)) {
             continue;
@@ -2147,7 +2235,7 @@ function shouldMigrateBundledPromptTransformImpersonate(agent, template) {
 async function migrateBundledPromptTransformImpersonateToSavedAgents() {
     let migratedCount = 0;
 
-    for (const agent of getAgents()) {
+    for (const agent of getAgents().map(agent => structuredClone(agent))) {
         const template = findTemplateForAgent(agent);
         if (!shouldMigrateBundledPromptTransformImpersonate(agent, template)) {
             continue;
@@ -2165,7 +2253,7 @@ async function migrateBundledPromptTransformImpersonateToSavedAgents() {
 async function migrateBundledRegexPostDefaultsToSavedAgents() {
     let migratedCount = 0;
 
-    for (const agent of getAgents()) {
+    for (const agent of getAgents().map(agent => structuredClone(agent))) {
         const template = findTemplateForAgent(agent);
         if (!shouldMigrateBundledRegexPostDefaults(agent, template)) {
             continue;
@@ -2194,7 +2282,7 @@ async function migrateBundledRegexPostDefaultsToSavedAgents() {
 async function migrateLegacyPromptTransformMaxTokens() {
     let migratedCount = 0;
 
-    for (const agent of getAgents()) {
+    for (const agent of getAgents().map(agent => structuredClone(agent))) {
         if (shouldSkipBundledTemplateMigrations(agent)) {
             continue;
         }
@@ -2415,11 +2503,11 @@ function setupCategorySortable(itemsEl) {
             suppressCardClickUntil = Date.now() + 750;
             ui.placeholder.height(ui.item.outerHeight());
         },
-        stop: async function () {
+        stop: agentAction(async function () {
             suppressCardClickUntil = Date.now() + 750;
             const orderedIds = items.children('.ica--agent-card').map((_, el) => el.dataset.agentId).get();
             await reorderAgentsInGroup(orderedIds);
-        },
+        }),
     });
 }
 
@@ -2437,21 +2525,42 @@ function exitSelectMode() {
     renderAgentList();
 }
 
-function openBulkEditPopup() {
-    const popup = document.getElementById('ica--bulkEditPopup');
-    if (!popup) return;
-    $('#ica--bulkEdit-role').val('');
-    $('#ica--bulkEdit-phase').val('');
-    $('#ica--bulkEdit-promptMode').val('');
-    $('#ica--bulkEdit-promptEnabled').val('');
-    $('#ica--bulkEdit-ppEnabled').val('');
-    $('#ica--bulkEdit-scan').val('');
-    popup.style.display = '';
-}
-
-function closeBulkEditPopup() {
-    const popup = document.getElementById('ica--bulkEditPopup');
-    if (popup) popup.style.display = 'none';
+async function openBulkEditPopup() {
+    const template = document.getElementById('ica--bulkEditPopup');
+    if (!template?.content || !selectedAgentIds.size) return;
+    const ids = [...selectedAgentIds];
+    const isCurrent = captureAgentSaveGuard(ids);
+    const content = $(template.content.firstElementChild.cloneNode(true));
+    let saving = false;
+    await new Popup(content, POPUP_TYPE.TEXT, '', {
+        okButton: 'Apply changes', cancelButton: 'Cancel', allowVerticalScrolling: true,
+        onOpen: popup => {
+            popup.dlg.setAttribute('aria-label', 'Edit selected agents');
+            for (const button of [popup.okButton, popup.cancelButton]) {
+                button.setAttribute('role', 'button');
+                button.tabIndex = 0;
+            }
+            content.find('select').first().trigger('focus');
+        },
+        onClosing: async popup => {
+            if (saving) return false;
+            if (popup.result !== POPUP_RESULT.AFFIRMATIVE) return true;
+            const controls = content.find('input, select, button').toArray();
+            const disabled = controls.map(control => control.disabled);
+            saving = true;
+            controls.forEach(control => { control.disabled = true; });
+            try {
+                if (!isCurrent()) throw new Error('The selected agents changed. Cancel and reopen bulk editing.');
+                return await applyBulkEdit(content, ids);
+            } catch (error) {
+                content.find('[data-ica-bulk-error]').text(error.message || String(error)).prop('hidden', false);
+                return false;
+            } finally {
+                saving = false;
+                controls.forEach((control, index) => { control.disabled = disabled[index]; });
+            }
+        },
+    }).show();
 }
 
 function getScrollContainer(element) {
@@ -2501,23 +2610,24 @@ function restoreAgentListScrollState(scrollState) {
     });
 }
 
-async function applyBulkEdit() {
-    const role = $('#ica--bulkEdit-role').val();
-    const phase = $('#ica--bulkEdit-phase').val();
-    const promptMode = $('#ica--bulkEdit-promptMode').val();
-    const promptEnabled = $('#ica--bulkEdit-promptEnabled').val();
-    const ppEnabled = $('#ica--bulkEdit-ppEnabled').val();
-    const scan = $('#ica--bulkEdit-scan').val();
+async function applyBulkEdit(root, ids) {
+    const role = root.find('#ica--bulkEdit-role').val();
+    const phase = root.find('#ica--bulkEdit-phase').val();
+    const promptMode = root.find('#ica--bulkEdit-promptMode').val();
+    const promptEnabled = root.find('#ica--bulkEdit-promptEnabled').val();
+    const ppEnabled = root.find('#ica--bulkEdit-ppEnabled').val();
+    const scan = root.find('#ica--bulkEdit-scan').val();
 
     if (!role && !phase && !promptMode && !promptEnabled && !ppEnabled && !scan) {
         toastr.info('No properties selected to change.');
-        return;
+        return false;
     }
 
-    let changed = 0;
-    for (const id of selectedAgentIds) {
-        const agent = getAgentById(id);
-        if (!agent) continue;
+    const changes = [];
+    for (const id of ids) {
+        const current = getAgentById(id);
+        if (!current) continue;
+        const agent = structuredClone(current);
         let dirty = false;
 
         if (role !== '') {
@@ -2566,18 +2676,19 @@ async function applyBulkEdit() {
 
         if (dirty) {
             lockBundledAgentCustomization(agent);
-            await saveAgent(agent);
-            changed++;
+            changes.push(agent);
         }
     }
 
-    closeBulkEditPopup();
-    if (changed > 0) {
-        toastr.success(`Updated ${changed} agent(s).`);
+    await saveAgentBatch(changes, 'Bulk properties');
+    await refreshSavedAgents(changes.map(agent => agent.id));
+    if (changes.length > 0) {
+        toastr.success(`Updated ${changes.length} agent(s).`);
     } else {
         toastr.info('No agents needed updating.');
     }
     exitSelectMode();
+    return true;
 }
 
 function updateFixTrackersButtonVisibility() {
@@ -2700,6 +2811,14 @@ function syncCategoryChips(activeCategory) {
             select.value = chip.dataset.category || '';
             renderAgentList();
         });
+        if (typeof window.matchMedia === 'function') {
+            const media = window.matchMedia('(max-width: 768px)');
+            const updateVisibility = () => {
+                if (!row.isConnected) media.removeEventListener('change', updateVisibility);
+                else row.hidden = !media.matches;
+            };
+            media.addEventListener('change', updateVisibility);
+        }
     }
 
     const wanted = String(activeCategory ?? select.value ?? '');
@@ -3041,7 +3160,7 @@ function renderAgentList() {
 
             card.find('.ica--card-drag-handle').on('click', stopEvent);
 
-            card.find('.ica--card-drag-handle').on('keydown', async event => {
+            card.find('.ica--card-drag-handle').on('keydown', agentAction(async event => {
                 if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
                     return;
                 }
@@ -3066,7 +3185,7 @@ function renderAgentList() {
                     .filter((_, el) => el.dataset.agentId === agent.id)
                     .find('.ica--card-drag-handle')
                     .trigger('focus');
-            });
+            }));
 
             // Prevent touch-punch (jQuery UI mouse widget polyfill) from
             // capturing touchstart on these buttons. Inside a .sortable()
@@ -3079,32 +3198,32 @@ function renderAgentList() {
             card.find('.ica--card-favorite').on('touchstart touchend', touchPassthrough);
             const quickItem = card;
 
-            card.find('.ica--card-toggle').on('click', async function (event) {
+            card.find('.ica--card-toggle').on('click', agentAction(async function (event) {
                 stopEvent(event);
                 await toggleAgentEnabled(agent);
-            });
+            }));
 
-            quickItem.find('.ica--quick-chip-pin').on('click', async function (event) {
+            quickItem.find('.ica--quick-chip-pin').on('click', agentAction(async function (event) {
                 stopEvent(event);
                 await toggleAgentFavorite(agent);
-            });
+            }));
 
-            card.find('.ica--card-pill--version-update').on('click', async event => {
+            card.find('.ica--card-pill--version-update').on('click', agentAction(async event => {
                 stopEvent(event);
                 await updateAgentFromSourceTemplate(agent);
-            });
+            }));
 
-            card.find('.ica--btn-edit').on('click', event => {
+            card.find('.ica--btn-edit').on('click', agentAction(async event => {
                 stopEvent(event);
-                openEditor(agent.id);
-            });
+                await openEditor(agent.id);
+            }));
 
-            card.find('.ica--btn-convert-execution').on('click', async event => {
+            card.find('.ica--btn-convert-execution').on('click', agentAction(async event => {
                 stopEvent(event);
                 await applyAgentExecutionConversion(agent, isCompanionAgent(agent) ? 'inline' : 'companion');
-            });
+            }));
 
-            quickItem.find('.ica--quick-chip-apply').on('click', async event => {
+            quickItem.find('.ica--quick-chip-apply').on('click', agentAction(async event => {
                 stopEvent(event);
                 const lastCharMessageIndex = getLastAssistantMessageIndex();
                 if (lastCharMessageIndex < 0) {
@@ -3112,9 +3231,9 @@ function renderAgentList() {
                     return;
                 }
                 await runAgentWithFeedback(agent, () => runAgentOnMessage(agent.id, lastCharMessageIndex));
-            });
+            }));
 
-            quickItem.find('.ica--quick-chip-apply-target').on('click', async event => {
+            quickItem.find('.ica--quick-chip-apply-target').on('click', agentAction(async event => {
                 stopEvent(event);
                 if (event.icaTargetHandled) {
                     return;
@@ -3125,9 +3244,9 @@ function renderAgentList() {
                     return;
                 }
                 await runAgentWithFeedback(agent, () => Promise.all(targets.map(target => runAgentOnTarget(agent.id, target))));
-            });
+            }));
 
-            card.find('.ica--btn-run-target').on('click', async event => {
+            card.find('.ica--btn-run-target').on('click', agentAction(async event => {
                 if (event.icaTargetHandled) {
                     return;
                 }
@@ -3138,17 +3257,17 @@ function renderAgentList() {
                     return;
                 }
                 await runAgentWithFeedback(agent, () => Promise.all(targets.map(target => runAgentOnTarget(agent.id, target))));
-            });
+            }));
 
-            card.find('.ica--btn-preview-prompt').on('click', async event => {
+            card.find('.ica--btn-preview-prompt').on('click', agentAction(async event => {
                 stopEvent(event);
                 await previewPreGenerationPrompt(agent);
-            });
+            }));
 
-            card.find('.ica--btn-preview-companion-feedback').on('click', async event => {
+            card.find('.ica--btn-preview-companion-feedback').on('click', agentAction(async event => {
                 stopEvent(event);
                 await previewCompanionFeedbackPrompt(agent);
-            });
+            }));
 
             card.find('.ica--btn-export').on('click', event => {
                 stopEvent(event);
@@ -3156,14 +3275,16 @@ function renderAgentList() {
                 if (data) download(JSON.stringify(data, null, 2), `${agent.name}.json`, 'application/json');
             });
 
-            card.find('.ica--btn-delete').on('click', async event => {
+            card.find('.ica--btn-delete').on('click', agentAction(async event => {
                 stopEvent(event);
+                const isCurrent = captureAgentSaveGuard([agent.id]);
                 const result = await new Popup('Delete agent "' + escapeHtml(agent.name) + '"?', POPUP_TYPE.CONFIRM).show();
                 if (result === POPUP_RESULT.AFFIRMATIVE) {
-                    await deleteAgent(agent.id);
+                    if (!isCurrent()) throw new Error('The agent changed. Reopen its deletion confirmation.');
+                    await deleteAgentBatch([agent.id]);
                     renderAgentList();
                 }
-            });
+            }));
 
             items.append(card);
         }
@@ -3317,6 +3438,8 @@ function getEditorSectionAvailability({ companion, phase, category, feedback }) 
 }
 
 async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker = false } = {}) {
+    const savedAgentIsCurrent = captureAgentSaveGuard(agentId ? [agentId] : []);
+    const accountIsCurrent = captureAgentSaveGuard();
     const existingAgent = agentId ? getAgentById(agentId) : null;
     if (agentId && !existingAgent) return;
     const agent = existingAgent ? structuredClone(existingAgent) : (draft ?? createDefaultAgent());
@@ -3336,12 +3459,45 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         : [];
 
     const html = await renderExtensionTemplateAsync(MODULE_NAME, 'editor');
+    if (!savedAgentIsCurrent()) throw new Error('The agent or account changed. Open the editor again.');
     if (!html) {
         toastr.error('Could not load the agent editor. Please refresh the page and try again.');
         return;
     }
 
     const editorEl = $(html);
+    let editorClosed = false;
+    let editorRevision = 0;
+    let editorRequest = null;
+    editorEl.on('input change', 'input, select, textarea', () => {
+        editorRevision++;
+        editorRequest?.abort();
+    });
+    function editorAiAction(action) {
+        return agentAction(async () => {
+            if (editorRequest || editorClosed) return;
+            const controller = new AbortController();
+            editorRequest = controller;
+            const revision = editorRevision;
+            const buttons = editorEl.find('#ica--tracker-builder-generate, #ica--editor-companion-maker, #ica--editor-refine');
+            buttons.prop('disabled', true);
+            const options = {
+                signal: controller.signal,
+                cancelRevision: getAgentGenerationCancelRevision(),
+                isCurrent: () => !editorClosed && editorRevision === revision && savedAgentIsCurrent(),
+                modelOverride: String(editorEl.find('#ica--editor-modelOverride').val() || '').trim(),
+                execution: isEditorCompanionExecution() ? 'companion' : 'inline',
+            };
+            try {
+                assertEditorRequest(options);
+                await action(options);
+            } finally {
+                controller.abort();
+                if (editorRequest === controller) editorRequest = null;
+                if (!editorClosed) buttons.prop('disabled', false);
+            }
+        });
+    }
     editorEl.find('#ica--editor-title').text(existingAgent ? `Edit ${agent.name}` : 'New agent');
 
     // Populate fields
@@ -3572,7 +3728,8 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
     function updateChatroomExtraCharacterOptions() {
         const select = editorEl.find('#ica--editor-chatroom-extra-character-avatars');
         const currentAvatars = normalizeChatroomExtraCharacterAvatars(select.val());
-        const selectedAvatars = currentAvatars.length ? currentAvatars : savedChatroomExtraCharacterAvatars;
+        const selectedAvatars = select.data('icaInitialised') ? currentAvatars : savedChatroomExtraCharacterAvatars;
+        select.data('icaInitialised', true);
         const selectedKeys = new Set(selectedAvatars.map(avatar => avatar.toLowerCase()));
         const selectableCharacters = getChatroomSelectableCharacters();
         const availableKeys = new Set(selectableCharacters.map(character => character.avatar.toLowerCase()));
@@ -3627,144 +3784,20 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         select.val(preferredName);
     }
 
-    function updateCompanionBatchAgentOptions() {
-        const select = editorEl.find('#ica--editor-companion-batchAgentIds');
-        const currentIds = normalizeStringIdList(select.val());
-        const selectedIds = currentIds.length ? currentIds : savedCompanionBatchAgentIds;
-        const selectedKeys = new Set(selectedIds.map(id => id.toLowerCase()));
-        const options = getCompanionBatchOptionsForAgent(agent);
-        const availableKeys = new Set(options.flatMap(option => option.referenceIds).map(id => id.toLowerCase()));
-
-        select.empty();
-        if (!options.length && !selectedIds.length) {
-            select.append($('<option>').val('').text('No enabled side companions').prop('disabled', true));
-            return;
-        }
-
-        for (const option of options) {
-            select.append(
-                $('<option>')
-                    .val(option.id)
-                    .text(option.label)
-                    .prop('selected', option.referenceIds.some(id => selectedKeys.has(id.toLowerCase()))),
-            );
-        }
-
-        for (const id of selectedIds) {
-            if (availableKeys.has(id.toLowerCase())) continue;
-
-            select.append(
-                $('<option>')
-                    .val(id)
-                    .text(`Unavailable or disabled: ${id}`)
-                    .prop('selected', true),
-            );
-        }
+    function updateCompanionBatchAgentOptions(selection) {
+        refreshAgentReferenceOptions(editorEl.find('#ica--editor-companion-batchAgentIds'), getCompanionBatchOptionsForAgent(agent), savedCompanionBatchAgentIds, selection);
     }
 
-    function updateCompanionContextRecipientOptions() {
-        const select = editorEl.find('#ica--editor-companion-contextRecipientAgentIds');
-        const currentIds = normalizeStringIdList(select.val());
-        const selectedIds = currentIds.length ? currentIds : savedCompanionContextRecipientAgentIds;
-        const selectedKeys = new Set(selectedIds.map(id => id.toLowerCase()));
-        const options = getCompanionContextRecipientOptionsForAgent(agent);
-        const availableKeys = new Set(options.flatMap(option => option.referenceIds).map(id => id.toLowerCase()));
-
-        select.empty();
-        if (!options.length && !selectedIds.length) {
-            select.append($('<option>').val('').text('No other companion agents').prop('disabled', true));
-            return;
-        }
-
-        for (const option of options) {
-            select.append(
-                $('<option>')
-                    .val(option.id)
-                    .text(option.label)
-                    .prop('selected', option.referenceIds.some(id => selectedKeys.has(id.toLowerCase()))),
-            );
-        }
-
-        for (const id of selectedIds) {
-            if (availableKeys.has(id.toLowerCase())) continue;
-
-            select.append(
-                $('<option>')
-                    .val(id)
-                    .text(`Unavailable: ${id}`)
-                    .prop('selected', true),
-            );
-        }
+    function updateCompanionContextRecipientOptions(selection) {
+        refreshAgentReferenceOptions(editorEl.find('#ica--editor-companion-contextRecipientAgentIds'), getCompanionContextRecipientOptionsForAgent(agent), savedCompanionContextRecipientAgentIds, selection);
     }
 
-    function updateCompanionOutputTargetOptions() {
-        const select = editorEl.find('#ica--editor-pp-companionTargets');
-        const currentIds = normalizeStringIdList(select.val());
-        const selectedIds = currentIds.length ? currentIds : savedCompanionOutputTargetAgentIds;
-        const selectedKeys = new Set(selectedIds.map(id => id.toLowerCase()));
-        const options = getCompanionOutputTargetOptionsForAgent(agent);
-        const availableKeys = new Set(options.flatMap(option => option.referenceIds).map(id => id.toLowerCase()));
-
-        select.empty();
-        if (!options.length && !selectedIds.length) {
-            select.append($('<option>').val('').text('No companion agents').prop('disabled', true));
-            return;
-        }
-
-        for (const option of options) {
-            select.append(
-                $('<option>')
-                    .val(option.id)
-                    .text(option.label)
-                    .prop('selected', option.referenceIds.some(id => selectedKeys.has(id.toLowerCase()))),
-            );
-        }
-
-        for (const id of selectedIds) {
-            if (availableKeys.has(id.toLowerCase())) continue;
-
-            select.append(
-                $('<option>')
-                    .val(id)
-                    .text(`Unavailable: ${id}`)
-                    .prop('selected', true),
-            );
-        }
+    function updateCompanionOutputTargetOptions(selection) {
+        refreshAgentReferenceOptions(editorEl.find('#ica--editor-pp-companionTargets'), getCompanionOutputTargetOptionsForAgent(agent), savedCompanionOutputTargetAgentIds, selection);
     }
 
-    function updateCompanionDependencyOptions() {
-        const select = editorEl.find('#ica--editor-companion-dependencies');
-        const currentIds = normalizeStringIdList(select.val());
-        const selectedIds = currentIds.length ? currentIds : savedCompanionDependencies;
-        const selectedKeys = new Set(selectedIds.map(id => id.toLowerCase()));
-        const options = getCompanionDependencyOptionsForAgent(agent);
-        const availableKeys = new Set(options.flatMap(option => option.referenceIds).map(id => id.toLowerCase()));
-
-        select.empty();
-        if (!options.length && !selectedIds.length) {
-            select.append($('<option>').val('').text('No other companion agents').prop('disabled', true));
-            return;
-        }
-
-        for (const option of options) {
-            select.append(
-                $('<option>')
-                    .val(option.id)
-                    .text(option.label)
-                    .prop('selected', option.referenceIds.some(id => selectedKeys.has(id.toLowerCase()))),
-            );
-        }
-
-        for (const id of selectedIds) {
-            if (availableKeys.has(id.toLowerCase())) continue;
-
-            select.append(
-                $('<option>')
-                    .val(id)
-                    .text(`Unavailable: ${id}`)
-                    .prop('selected', true),
-            );
-        }
+    function updateCompanionDependencyOptions(selection) {
+        refreshAgentReferenceOptions(editorEl.find('#ica--editor-companion-dependencies'), getCompanionDependencyOptionsForAgent(agent), savedCompanionDependencies, selection);
     }
 
     function updateCompanionEditorVisibility() {
@@ -3876,9 +3909,9 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         editorEl.find('#ica--editor-companion-batch').prop('checked', nextCompanion.batch);
         editorEl.find('#ica--editor-companion-sendContextToCompanions').prop('checked', nextCompanion.sendContextToCompanions);
         editorEl.find('#ica--editor-companion-waitForDependencies').prop('checked', nextCompanion.waitForDependencies);
-        updateCompanionBatchAgentOptions();
-        updateCompanionContextRecipientOptions();
-        updateCompanionDependencyOptions();
+        updateCompanionBatchAgentOptions(nextCompanion.batchAgentIds);
+        updateCompanionContextRecipientOptions(nextCompanion.contextRecipientAgentIds);
+        updateCompanionDependencyOptions(nextCompanion.dependencies);
         editorEl.find('#ica--editor-companion-rawPrompt').prop('checked', nextCompanion.rawPrompt);
         updateCompanionEditorVisibility();
     }
@@ -3969,7 +4002,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
     editorEl.find('#ica--editor-pp-promptEnabled, #ica--editor-pp-runOnCompanionOutputs, #ica--editor-pp-enabled, #ica--editor-pp-type').on('change', updatePPVisibility);
     updatePPVisibility();
 
-    editorEl.find('#ica--tracker-builder-generate').on('click', async () => {
+    editorEl.find('#ica--tracker-builder-generate').on('click', editorAiAction(async requestOptions => {
         const formatText = editorEl.find('#ica--tracker-builder-format').val()?.toString() ?? '';
         if (!parseTrackerFormat(formatText)) {
             toastr.warning('Paste a tracker example with at least one opening tag like [TRACKER|Field].');
@@ -3983,7 +4016,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         const styleNotes = editorEl.find('#ica--tracker-builder-style').val()?.toString() ?? '';
         const connectionProfile = editorEl.find('#ica--editor-connectionProfile').val()?.toString() || '';
 
-        toastr.info('Generating tracker kit...', '', { timeOut: 0, extendedTimeOut: 0 });
+        const generationToast = toastr.info('Generating tracker kit...', '', { timeOut: 0, extendedTimeOut: 0 });
 
         let generatedKit;
         try {
@@ -3995,16 +4028,15 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
                 rulesText,
                 styleNotes,
                 connectionProfile,
+                requestOptions,
             });
-        } catch (error) {
-            toastr.clear();
-            toastr.error(`Tracker generation failed: ${error instanceof Error ? error.message : String(error)}`);
-            return;
+        } finally {
+            toastr.clear(generationToast);
         }
-
-        toastr.clear();
+        assertEditorRequest(requestOptions);
 
         let latestGeneratedKit = generatedKit;
+        let previewOpen = true;
         const trackerPreviewPopup = new Popup(buildTrackerPreviewPopupContent(latestGeneratedKit, formatText), POPUP_TYPE.CONFIRM, '', {
             okButton: 'Apply',
             cancelButton: 'Discard',
@@ -4022,10 +4054,11 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
                         const extraInstructions = $(trackerPreviewPopup.content).find('#ica--tracker-builder-extra-instructions').val()?.toString().trim() ?? '';
                         button.setAttribute('aria-disabled', 'true');
                         button.classList.add('disabled');
-                        toastr.info('Regenerating tracker kit...', '', { timeOut: 0, extendedTimeOut: 0 });
+                        const regenerationToast = toastr.info('Regenerating tracker kit...', '', { timeOut: 0, extendedTimeOut: 0 });
 
                         try {
-                            latestGeneratedKit = await generateTrackerKitWithAI({
+                            assertEditorRequest(requestOptions);
+                            const regeneratedKit = await generateTrackerKitWithAI({
                                 agentName,
                                 description,
                                 currentPrompt: latestGeneratedKit.prompt || currentPrompt,
@@ -4034,15 +4067,18 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
                                 styleNotes,
                                 connectionProfile,
                                 extraInstructions,
+                                requestOptions,
                             });
+                            assertEditorRequest(requestOptions);
+                            if (!previewOpen) return;
+                            latestGeneratedKit = regeneratedKit;
                             trackerPreviewPopup.content.innerHTML = '';
                             $(trackerPreviewPopup.content).append(buildTrackerPreviewPopupContent(latestGeneratedKit, formatText, extraInstructions));
-                            toastr.clear();
                             toastr.success('Regenerated tracker preview.');
                         } catch (error) {
-                            toastr.clear();
-                            toastr.error(`Tracker regeneration failed: ${error instanceof Error ? error.message : String(error)}`);
+                            if (previewOpen) toastr.error(escapeHtml(error.message || String(error)));
                         } finally {
+                            toastr.clear(regenerationToast);
                             button.removeAttribute('aria-disabled');
                             button.classList.remove('disabled');
                         }
@@ -4051,12 +4087,14 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
             ],
             wide: true,
             large: true,
+            onClose: () => { previewOpen = false; },
         });
         const previewResult = await trackerPreviewPopup.show();
 
         if (previewResult !== POPUP_RESULT.AFFIRMATIVE) {
             return;
         }
+        assertEditorRequest(requestOptions);
 
         if (!agentName && latestGeneratedKit.name) {
             editorEl.find('#ica--editor-name').val(latestGeneratedKit.name);
@@ -4084,9 +4122,9 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
                 ? 'Built a starter tracker kit. Review and tweak it before saving.'
                 : 'Applied generated tracker kit. Review and save when ready.',
         );
-    });
+    }));
 
-    editorEl.find('#ica--editor-companion-maker').on('click', async () => {
+    editorEl.find('#ica--editor-companion-maker').on('click', editorAiAction(async requestOptions => {
         const currentPrompt = editorEl.find('#ica--editor-prompt').val()?.toString() || '';
         const agentName = editorEl.find('#ica--editor-name').val()?.toString().trim() || '';
         const description = editorEl.find('#ica--editor-description').val()?.toString().trim() || '';
@@ -4107,6 +4145,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         if (makerResult !== POPUP_RESULT.AFFIRMATIVE) {
             return;
         }
+        assertEditorRequest(requestOptions);
 
         const goalText = makerForm.find('#ica--companion-maker-goal').val()?.toString().trim() || '';
         if (!goalText && !currentPrompt.trim() && !description) {
@@ -4114,7 +4153,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
             return;
         }
 
-        toastr.info('Generating companion...', '', { timeOut: 0, extendedTimeOut: 0 });
+        const generationToast = toastr.info('Generating companion...', '', { timeOut: 0, extendedTimeOut: 0 });
 
         let generatedKit;
         try {
@@ -4124,15 +4163,17 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
                 currentPrompt,
                 goalText,
                 connectionProfile,
+                requestOptions,
             });
         } finally {
-            toastr.clear();
+            toastr.clear(generationToast);
         }
+        assertEditorRequest(requestOptions);
 
         const generatedCompanion = getCompanionConfig({ companion: generatedKit.companion });
         const previewHtml = $(`
             <div class="ica--regex-editor">
-                ${generatedKit.usedFallback ? '<div class="ica--regex-note"><strong>Fallback scaffold used.</strong> The builder produced a safe starter companion locally because the AI response was unavailable or invalid. You can still apply and tweak it.</div>' : ''}
+                ${generatedKit.usedFallback ? '<div class="ica--regex-note"><strong>Starter companion used.</strong> The response had an invalid format. Review this local starter before applying it.</div>' : ''}
                 <div class="ica--editor-section ica--regex-subsection">
                     <strong>${escapeHtml(generatedKit.name)}</strong>
                     <div class="ica--regex-note">${escapeHtml(generatedKit.description)}</div>
@@ -4157,6 +4198,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         if (previewResult !== POPUP_RESULT.AFFIRMATIVE) {
             return;
         }
+        assertEditorRequest(requestOptions);
 
         if (!agentName && generatedKit.name) {
             editorEl.find('#ica--editor-name').val(generatedKit.name);
@@ -4179,9 +4221,11 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
             keepInChatHistoryWhenHostHidden: currentCompanion.keepInChatHistoryWhenHostHidden,
         });
         toastr.success('Applied generated companion. Review and save when ready.');
-    });
+    }));
 
     function renderRegexList() {
+        editorRevision++;
+        editorRequest?.abort();
         const list = editorEl.find('#ica--regex-list');
         list.empty();
 
@@ -4261,16 +4305,17 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
     renderRegexList();
 
     // Refine with AI button
-    editorEl.find('#ica--editor-refine').on('click', async () => {
+    editorEl.find('#ica--editor-refine').on('click', editorAiAction(async requestOptions => {
         const currentPrompt = editorEl.find('#ica--editor-prompt').val()?.toString() || '';
         const category = editorEl.find('#ica--editor-category').val()?.toString() || 'custom';
         const phase = editorEl.find('#ica--editor-phase').val()?.toString() || 'pre';
         const connectionProfile = editorEl.find('#ica--editor-connectionProfile').val()?.toString() || '';
-        const refined = await refinePromptWithAI(currentPrompt, category, phase, connectionProfile);
+        const refined = await refinePromptWithAI(currentPrompt, category, phase, connectionProfile, requestOptions);
+        assertEditorRequest(requestOptions);
         if (refined) {
-            editorEl.find('#ica--editor-prompt').val(refined);
+            editorEl.find('#ica--editor-prompt').val(refined).trigger('input');
         }
-    });
+    }));
 
     editorEl.find('#ica--editor-preview-prompt').on('click', async () => {
         const previewAgent = {
@@ -4306,6 +4351,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
     }
 
     async function saveEditorChanges() {
+        if (!savedAgentIsCurrent()) throw new Error('The agent or account changed. Reopen the editor before saving.');
         // Read values back
         agent.name = editorEl.find('#ica--editor-name').val().toString().trim() || 'Untitled Agent';
         agent.category = editorEl.find('#ica--editor-category').val().toString();
@@ -4391,7 +4437,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
             lockBundledAgentCustomization(agent, template);
         }
 
-        await saveAgent(agent);
+        await saveAgent(agent, { isCurrent: () => !editorClosed && accountIsCurrent() });
         if (isCompanionAgent(agent) && await syncCompanionChatHistoryConfig(agent) > 0) {
             saveChatDebounced({ deferBackup: false });
         }
@@ -4429,6 +4475,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
             }
 
             saving = true;
+            editorRequest?.abort();
             const editableControls = editorEl.find('input:enabled, select:enabled, textarea:enabled, button:enabled');
             editableControls.prop('disabled', true);
             instance.dlg.setAttribute('aria-busy', 'true');
@@ -4443,7 +4490,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
                 return true;
             } catch (error) {
                 console.error('Could not save agent:', error);
-                errorElement.text('Could not save this agent. Your changes are still here. Try again.').attr('data-error-kind', 'save').prop('hidden', false);
+                errorElement.text(`Could not save this agent. Your changes are still here. ${error.message || 'Try again.'}`).attr('data-error-kind', 'save').prop('hidden', false);
                 errorElement[0]?.scrollIntoView({ block: 'nearest' });
                 return false;
             } finally {
@@ -4457,7 +4504,11 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
                 instance.okButton.textContent = 'Save';
             }
         },
-        onClose: () => document.body.classList.remove('ica--editor-fullscreen-active'),
+        onClose: () => {
+            editorClosed = true;
+            editorRequest?.abort();
+            document.body.classList.remove('ica--editor-fullscreen-active');
+        },
     });
     await decorateAgentControls(editorEl[0]);
     await popup.show();
@@ -5316,7 +5367,7 @@ function normalizeCompanionKitResponse(rawResult, fallbackKit) {
     };
 }
 
-async function generateCompanionKitWithAI({ agentName, description, currentPrompt, goalText, connectionProfile = '' }) {
+async function generateCompanionKitWithAI({ agentName, description, currentPrompt, goalText, connectionProfile = '', requestOptions = {} }) {
     const fallbackKit = buildCompanionFallbackKit({ agentName, description, currentPrompt, goalText });
     const systemPrompt = `You build companion agents for Neconyan's in-chat agents extension. Return strict JSON only, with no markdown fences and no explanation.
 
@@ -5357,8 +5408,8 @@ Requirements:
         currentPrompt || '(none)',
     ].join('\n');
 
+    const rawResponse = await refineLLMCall(systemPrompt, userPrompt, connectionProfile, requestOptions);
     try {
-        const rawResponse = await refineLLMCall(systemPrompt, userPrompt, connectionProfile);
         const parsedResponse = JSON.parse(extractJsonObject(rawResponse));
         return normalizeCompanionKitResponse(parsedResponse, fallbackKit);
     } catch (error) {
@@ -5414,7 +5465,8 @@ function parseChatInterceptSummaryMessages(value) {
             return { ok: false, reason: 'shape-error' };
         }
 
-        if (typeof message.role !== 'string' || typeof message.content !== 'string') {
+        if (typeof message.role !== 'string' || typeof message.content !== 'string'
+            || Object.keys(message).some(key => key !== 'role' && key !== 'content')) {
             return { ok: false, reason: 'shape-error' };
         }
 
@@ -5444,6 +5496,7 @@ export function summarizeChatInterceptChange(beforeText, afterText) {
     const afterMessages = afterResult.messages;
     const matchedBefore = new Set();
     const matchedAfter = new Set();
+    let previousMatch = -1;
 
     for (const beforeMessage of beforeMessages) {
         const afterMessage = afterMessages.find(candidate =>
@@ -5455,6 +5508,8 @@ export function summarizeChatInterceptChange(beforeText, afterText) {
         if (!afterMessage) {
             continue;
         }
+        if (afterMessage.index < previousMatch) return { ok: false, reason: 'message-order' };
+        previousMatch = afterMessage.index;
 
         matchedBefore.add(beforeMessage.index);
         matchedAfter.add(afterMessage.index);
@@ -5962,72 +6017,26 @@ function populateGlobalHelperPrefillField() {
 }
 
 /**
- * Makes an LLM call for prompt refinement, using CMRS if a profile is selected.
+ * Makes an isolated, cancellable request for an editor task.
  * @param {string} systemPrompt
  * @param {string} userPrompt
  * @returns {Promise<string>}
  */
-async function refineLLMCall(systemPrompt, userPrompt, connectionProfile = '') {
-    const profileId = resolveConnectionProfile(connectionProfile);
+async function refineLLMCall(systemPrompt, userPrompt, connectionProfile = '', options = {}) {
+    assertEditorRequest(options);
     const messages = appendHelperPrefillMessages([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
     ], getGlobalSettings().helperPrefillMessages);
 
-    if (!profileId) {
-        return await generateQuietPrompt({
-            quietPrompt: buildFallbackPromptText(messages),
-            skipWIAN: true,
-        });
-    }
-
-    const CMRS = getConnectionManagerRequestService();
-
-    if (!CMRS) {
-        return await generateQuietPrompt({
-            quietPrompt: buildFallbackPromptText(messages),
-            skipWIAN: true,
-        });
-    }
-
-    try {
-        const response = await CMRS.sendRequest(profileId, messages, DEFAULT_AGENT_MAX_TOKENS, {
-            extractData: true,
-            includePreset: true,
-            includeInstruct: true,
-            stream: false,
-        });
-        const responseText = extractProfileResponseText(response);
-        if (responseText.trim()) {
-            return responseText;
-        }
-    } catch (error) {
-        console.warn(`[InChatAgents] Prompt refinement via profile "${profileId}" failed, retrying with fallback prompt formatting.`, error);
-    }
-
-    let fallbackPrompt = '';
-    if (typeof CMRS.constructPrompt === 'function') {
-        try {
-            fallbackPrompt = CMRS.constructPrompt(messages, profileId) ?? '';
-        } catch (error) {
-            console.warn(`[InChatAgents] Failed to construct fallback prompt for profile "${profileId}" during prompt refinement.`, error);
-        }
-    }
-    const fallbackRequestPrompt = Array.isArray(fallbackPrompt)
-        ? fallbackPrompt
-        : (normalizeContentText(fallbackPrompt).trim() ? normalizeContentText(fallbackPrompt) : buildFallbackPromptText(messages));
-    const fallbackResponse = await CMRS.sendRequest(
-        profileId,
-        fallbackRequestPrompt,
-        DEFAULT_AGENT_MAX_TOKENS,
-        {
-            extractData: true,
-            includePreset: true,
-            includeInstruct: false,
-            stream: false,
-        },
-    );
-    return extractProfileResponseText(fallbackResponse);
+    const response = await requestPromptTransform({
+        category: 'custom', connectionProfile,
+        modelOverride: options.modelOverride || '', execution: options.execution || 'inline',
+    }, messages, DEFAULT_AGENT_MAX_TOKENS, options);
+    assertEditorRequest(options);
+    if (response.lengthLimited) throw new Error('The response reached its output limit. Try a shorter request.');
+    if (!response.output?.trim()) throw new Error('The model returned no output.');
+    return response.output;
 }
 
 async function generateTrackerKitWithAI({
@@ -6039,6 +6048,7 @@ async function generateTrackerKitWithAI({
     styleNotes,
     connectionProfile = '',
     extraInstructions = '',
+    requestOptions = {},
 }) {
     const fallbackKit = buildTrackerFallbackKit({ agentName, description, formatText, rulesText });
     if (!fallbackKit) {
@@ -6105,8 +6115,8 @@ Requirements:
         extraInstructions || '(none)',
     ].join('\n');
 
+    const rawResponse = await refineLLMCall(systemPrompt, userPrompt, connectionProfile, requestOptions);
     try {
-        const rawResponse = await refineLLMCall(systemPrompt, userPrompt, connectionProfile);
         const parsedResponse = JSON.parse(extractJsonObject(rawResponse));
         return normalizeTrackerKitResponse(parsedResponse, fallbackKit);
     } catch (error) {
@@ -6122,7 +6132,8 @@ Requirements:
  * @param {string} phase - Agent phase
  * @returns {Promise<string|null>} - Refined prompt or null if cancelled
  */
-async function refinePromptWithAI(currentPrompt, category, phase, connectionProfile = '') {
+async function refinePromptWithAI(currentPrompt, category, phase, connectionProfile = '', options = {}) {
+    assertEditorRequest(options);
     if (!currentPrompt.trim()) {
         toastr.warning('Write a prompt first before refining.');
         return null;
@@ -6154,6 +6165,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     }).show();
 
     if (result !== POPUP_RESULT.AFFIRMATIVE) return null;
+    assertEditorRequest(options);
 
     const selectedVal = html.find('input[name="ica-refine-mode"]:checked').val();
     let instruction;
@@ -6167,15 +6179,15 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         instruction = modes[Number(selectedVal)].instruction;
     }
 
-    const systemPrompt = 'You are a prompt engineering assistant for a roleplay chat application. The user has written a prompt module that will be injected into an LLM\'s context during roleplay generation. Improve it based on their request. Use {{char}} and {{user}} macros where appropriate. Be concise -- every token counts. Output ONLY the improved prompt text, nothing else.';
+    const systemPrompt = 'Improve the user\'s prompt instructions for a roleplay chat application. Preserve their intent and apply their requested change. Use {{char}} and {{user}} macros where appropriate. Write clear, direct instructions. Output ONLY the improved prompt text.';
 
     const userText = `Here is my current prompt:\n---\n${currentPrompt}\n---\nCategory: ${category}\nPhase: ${phase}\n\nRequest: ${instruction}`;
 
-    toastr.info('Refining prompt...', '', { timeOut: 0, extendedTimeOut: 0 });
+    const generationToast = toastr.info('Refining prompt...', '', { timeOut: 0, extendedTimeOut: 0 });
 
     try {
-        const refined = await refineLLMCall(systemPrompt, userText, connectionProfile);
-        toastr.clear();
+        const refined = await refineLLMCall(systemPrompt, userText, connectionProfile, options);
+        toastr.clear(generationToast);
 
         if (!refined || !refined.trim()) {
             toastr.error('AI returned an empty response.');
@@ -6197,15 +6209,14 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
             cancelButton: 'Discard',
             wide: true,
         }).show();
+        assertEditorRequest(options);
 
         if (acceptResult === POPUP_RESULT.AFFIRMATIVE) {
             return refined.trim();
         }
         return null;
-    } catch (e) {
-        toastr.clear();
-        toastr.error('Refinement failed: ' + e.message);
-        return null;
+    } finally {
+        toastr.clear(generationToast);
     }
 }
 
@@ -6421,44 +6432,44 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         updateCompanionButtonVisibility();
         toastr.info(enabled ? 'In-Chat Agents enabled.' : 'In-Chat Agents disabled.');
     });
-    $('#ica--addAgent').on('click', () => openEditor());
+    $('#ica--addAgent').on('click', agentAction(() => openEditor()));
     $('#ica--pathfinderSettings').on('click', () => {
         globalThis.NeconyanShell?.openTab?.('right', 'extensions');
         openPathfinderExtensionsDrawer(document.getElementById(PATHFINDER_EXTENSIONS_HOST_ID));
     });
-    $('#ica--updateAllAgents').on('click', () => updateAllAgentsFromSourceTemplates());
-    $('#ica--companionsDashboard').on('click', () => openCompanionDashboard());
-    $('#ica--convertAllTrackers').on('click', async () => {
-        const inlineTrackers = getAgents().filter(agent => agent.category === 'tracker' && !isCompanionAgent(agent) && !isPathfinderAgent(agent));
+    $('#ica--updateAllAgents').on('click', agentAction(() => updateAllAgentsFromSourceTemplates()));
+    $('#ica--companionsDashboard').on('click', agentAction(() => openCompanionDashboard()));
+    $('#ica--convertAllTrackers').on('click', agentAction(async () => {
+        const inlineTrackers = getAgents().filter(agent => agent.category === 'tracker' && !isCompanionAgent(agent) && !isPathfinderAgent(agent)).map(agent => structuredClone(agent));
         if (inlineTrackers.length === 0) {
             toastr.info('Every tracker already runs as a companion.');
             return;
         }
 
+        const isCurrent = captureAgentSaveGuard(inlineTrackers.map(agent => agent.id));
         const result = await new Popup(`Convert ${inlineTrackers.length} tracker agent(s) to companion execution? They will run automatically on their own model and show in the Tracker panel.`, POPUP_TYPE.CONFIRM).show();
         if (result !== POPUP_RESULT.AFFIRMATIVE) {
             return;
         }
 
-        let converted = 0;
+        if (!isCurrent()) throw new Error('The trackers changed. Reopen the conversion confirmation.');
+        const changes = [];
         for (const agent of inlineTrackers) {
             if (!convertAgentExecution(agent, 'companion')) {
                 continue;
             }
             lockBundledAgentCustomization(agent);
-            await saveAgent(agent);
-            refreshRegexSnapshotsForAgent(agent.id);
-            converted++;
+            changes.push(agent);
         }
 
-        syncToolAgentRegistrations();
-        renderAgentList();
-        toastr.success(`Converted ${converted} tracker(s) to companions. View their results in the Tracker panel.`);
-    });
+        await saveAgentBatch(changes, 'Convert trackers');
+        await refreshSavedAgents(changes.map(agent => agent.id));
+        toastr.success(`Converted ${changes.length} tracker(s) to companions. View their results in the Tracker panel.`);
+    }));
     $('#ica--importAgent').on('click', () => $('#ica--importFile').trigger('click'));
-    $('#ica--importFile').on('change', handleImport);
+    $('#ica--importFile').on('change', agentAction(handleImport));
     $('#ica--exportAll').on('click', handleExportAll);
-    $('#ica--templates').on('click', openTemplateBrowser);
+    $('#ica--templates').on('click', agentAction(openTemplateBrowser));
     $('#ica--fixTrackers').on('click', async function () {
         if (showFixTrackersUnavailableToast()) {
             updateFixTrackersButtonVisibility();
@@ -6473,7 +6484,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         }
         await runTrackerFixFromButton(messageIndex, this, { inlineMessageIndex, companionMessageIndex });
     });
-    $('#ica--templatesCallout').on('click', openTemplateBrowser);
+    $('#ica--templatesCallout').on('click', agentAction(openTemplateBrowser));
     $('#ica--templatesCalloutDismiss').on('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -6504,40 +6515,25 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         updateBulkBar();
         renderAgentList();
     });
-    $('#ica--bulkEnable').on('click', async () => {
-        let changed = false;
-        for (const id of selectedAgentIds) {
-            const agent = getAgentById(id);
-            if (agent && !isAgentEnabledForCurrentScope(agent)) {
-                setAgentEnabledForCurrentScope(agent, true);
-                await saveAgent(agent);
-                changed = true;
-            }
-        }
-        if (changed) {
-            persistExtensionState();
-            syncToolAgentRegistrations();
-        }
+    $('#ica--bulkEnable').on('click', agentAction(async () => {
+        const ids = [...selectedAgentIds];
+        await saveAgentEnabledState(ids, true);
+        await refreshSavedAgents(ids);
         exitSelectMode();
-    });
-    $('#ica--bulkEnableOnCompanions').on('click', async () => {
-        let changed = 0;
+    }));
+    $('#ica--bulkEnableOnCompanions').on('click', agentAction(async () => {
         let eligible = 0;
-        for (const id of selectedAgentIds) {
-            const agent = getAgentById(id);
+        const changed = await editSelectedAgents(agent => {
             if (!agent || isCompanionAgent(agent) || isToolAgent(agent) || !['post', 'both'].includes(agent.phase)) {
-                continue;
+                return false;
             }
             eligible++;
             agent.conditions ??= {};
             if (agent.conditions.runOnCompanionOutputs) {
-                continue;
+                return false;
             }
             agent.conditions.runOnCompanionOutputs = true;
-            lockBundledAgentCustomization(agent);
-            await saveAgent(agent);
-            changed++;
-        }
+        }, 'Run on companion outputs');
         if (changed > 0) {
             toastr.success(`Enabled ${changed} selected post-generation agent(s) on companion outputs.`);
         } else if (eligible > 0) {
@@ -6545,93 +6541,45 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         } else {
             toastr.warning('No selected post-generation agents can run on companion outputs.');
         }
+    }));
+    $('#ica--bulkDisable').on('click', agentAction(async () => {
+        const ids = [...selectedAgentIds];
+        await saveAgentEnabledState(ids, false);
+        if (ids.some(id => isPathfinderAgent(getAgentById(id)))) cancelPathfinderSummary();
+        await refreshSavedAgents(ids);
         exitSelectMode();
-    });
-    $('#ica--bulkDisable').on('click', async () => {
-        let changed = false;
-        for (const id of selectedAgentIds) {
-            const agent = getAgentById(id);
-            if (agent && isAgentEnabledForCurrentScope(agent)) {
-                setAgentEnabledForCurrentScope(agent, false);
-                if (isPathfinderAgent(agent)) cancelPathfinderSummary();
-                await saveAgent(agent);
-                changed = true;
-            }
-        }
-        if (changed) {
-            persistExtensionState();
-            syncToolAgentRegistrations();
-        }
-        exitSelectMode();
-    });
-    $('#ica--bulkDelete').on('click', async () => {
-        const count = selectedAgentIds.size;
+    }));
+    $('#ica--bulkDelete').on('click', agentAction(async () => {
+        const ids = [...selectedAgentIds];
+        const count = ids.length;
         if (count === 0) return;
+        const isCurrent = captureAgentSaveGuard(ids);
         const result = await new Popup(`Delete ${count} selected agent${count !== 1 ? 's' : ''}?`, POPUP_TYPE.CONFIRM).show();
         if (result === POPUP_RESULT.AFFIRMATIVE) {
-            for (const id of [...selectedAgentIds]) {
-                await deleteAgent(id);
-            }
+            if (!isCurrent()) throw new Error('The selected agents changed. Reopen the deletion confirmation.');
+            await deleteAgentBatch(ids);
+            await refreshSavedAgents(ids);
             exitSelectMode();
         }
-    });
-    $('#ica--bulkRoleSystem').on('click', async () => {
-        if (selectedAgentIds.size === 0) return;
-        for (const id of selectedAgentIds) {
-            const agent = getAgentById(id);
-            if (agent && agent.injection.role !== 0) {
-                agent.injection.role = 0;
-                lockBundledAgentCustomization(agent);
-                await saveAgent(agent);
-            }
-        }
-        toastr.success(`Set ${selectedAgentIds.size} agent(s) to System role.`);
-        exitSelectMode();
-    });
-    $('#ica--bulkRoleUser').on('click', async () => {
-        if (selectedAgentIds.size === 0) return;
-        for (const id of selectedAgentIds) {
-            const agent = getAgentById(id);
-            if (agent && agent.injection.role !== 1) {
-                agent.injection.role = 1;
-                lockBundledAgentCustomization(agent);
-                await saveAgent(agent);
-            }
-        }
-        toastr.success(`Set ${selectedAgentIds.size} agent(s) to User role.`);
-        exitSelectMode();
-    });
-    $('#ica--bulkConvertCompanion').on('click', async () => {
-        if (selectedAgentIds.size === 0) return;
-        let converted = 0;
-        for (const id of selectedAgentIds) {
-            const agent = getAgentById(id);
-            if (!agent || isPathfinderAgent(agent) || !convertAgentExecution(agent, 'companion')) {
-                continue;
-            }
-            lockBundledAgentCustomization(agent);
-            await saveAgent(agent);
-            refreshRegexSnapshotsForAgent(agent.id);
-            converted++;
-        }
+    }));
+    for (const [selector, role, label] of [['#ica--bulkRoleSystem', 0, 'System'], ['#ica--bulkRoleUser', 1, 'User']]) {
+        $(selector).on('click', agentAction(async () => {
+            const changed = await editSelectedAgents(agent => {
+                if (agent.injection.role === role) return false;
+                agent.injection.role = role;
+            }, 'Change injection roles');
+            toastr.success(`Set ${changed} agent(s) to ${label} role.`);
+        }));
+    }
+    $('#ica--bulkConvertCompanion').on('click', agentAction(async () => {
+        const converted = await editSelectedAgents(agent => !isPathfinderAgent(agent) && convertAgentExecution(agent, 'companion'), 'Convert companions');
         if (converted > 0) {
-            syncToolAgentRegistrations();
             toastr.success(`Converted ${converted} agent(s) to companion execution.`);
         } else {
             toastr.info('No selected agents could be converted to companions.');
         }
-        exitSelectMode();
-    });
-    $('#ica--bulkEditProps').on('click', () => {
-        if (selectedAgentIds.size === 0) return;
-        openBulkEditPopup();
-    });
-    $('#ica--bulkEditApply').on('click', async () => {
-        await applyBulkEdit();
-    });
-    $('#ica--bulkEditCancel').on('click', () => {
-        closeBulkEditPopup();
-    });
+    }));
+    $('#ica--bulkEditProps').on('click', agentAction(openBulkEditPopup));
 
     // Wire up filter
     $('#ica--agentViewSelect').on('change', function () {
@@ -6748,8 +6696,9 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         setGlobalSettings({ helperPrefillMessages: this.value });
         persistExtensionState();
     });
-    $('#ica--resetDefaults').on('click', async () => {
-        const agents = getVisibleInChatAgents();
+    $('#ica--resetDefaults').on('click', agentAction(async () => {
+        const agents = getVisibleInChatAgents().map(agent => structuredClone(agent));
+        const isCurrent = captureAgentSaveGuard(agents.map(agent => agent.id));
         const visibleDefaultBundledTemplates = getDefaultBundledTemplates()
             .filter(template => !HIDDEN_TEMPLATE_BROWSER_IDS.has(String(template?.id ?? '').trim()));
         const missingDefaultBundledTemplates = visibleDefaultBundledTemplates
@@ -6760,50 +6709,29 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
             return;
         }
         const result = await new Popup(
-            `Reset ${bundledCount} bundled agent${bundledCount !== 1 ? 's' : ''} to their original template defaults? Custom agents will not be affected. This cannot be undone.`,
+            `Reset ${bundledCount} bundled agent${bundledCount !== 1 ? 's' : ''} to their original template defaults? Their connection profiles and agent-specific settings will be kept.`,
             POPUP_TYPE.CONFIRM,
         ).show();
         if (result !== POPUP_RESULT.AFFIRMATIVE) return;
-        let resetCount = 0;
+        if (!isCurrent()) throw new Error('The agents changed. Reopen the reset confirmation.');
+        const changes = [];
         for (const agent of agents) {
             const template = findTemplateForAgent(agent);
             if (!template) continue;
-            const fresh = mergeTemplateDefaults(template);
-            agent.name = fresh.name ?? agent.name;
-            agent.description = fresh.description ?? agent.description;
-            agent.icon = fresh.icon ?? agent.icon;
-            agent.category = fresh.category ?? agent.category;
-            agent.tags = fresh.tags ?? agent.tags;
-            agent.author = fresh.author ?? agent.author;
-            agent.prompt = fresh.prompt ?? agent.prompt;
-            agent.phase = fresh.phase ?? 'pre';
-            agent.phaseLocked = false;
-            agent.injection = { ...agent.injection, ...fresh.injection };
-            agent.postProcess = { ...agent.postProcess, ...fresh.postProcess };
-            agent.regexScripts = Array.isArray(fresh.regexScripts) ? structuredClone(fresh.regexScripts) : agent.regexScripts;
-            // Reset companion settings (execution, batch, context flags) to template defaults too.
-            // Agent-level connectionProfile/modelOverride and per-agent settings live outside
-            // agent.companion, so they are preserved automatically.
-            if (fresh.companion && typeof fresh.companion === 'object') {
-                agent.companion = structuredClone(fresh.companion);
-            }
-            agent.execution = fresh.execution ?? agent.execution;
-            agent.sourceTemplateId = template.id;
-            await saveAgent(agent);
-            resetCount++;
+            changes.push(buildResetAgentFromTemplate(agent, template));
         }
         for (const template of missingDefaultBundledTemplates) {
             const freshAgent = buildAgentFromTemplate(template);
-            await saveAgent(freshAgent);
-            autoSeededTemplateIds.add(String(template.id ?? '').trim());
-            resetCount++;
+            changes.push(freshAgent);
         }
+        await saveAgentBatch(changes, 'Reset template defaults');
+        for (const template of missingDefaultBundledTemplates) autoSeededTemplateIds.add(String(template.id ?? '').trim());
         if (missingDefaultBundledTemplates.length > 0) {
             persistExtensionState();
         }
-        toastr.success(`Reset ${resetCount} bundled agent${resetCount !== 1 ? 's' : ''} to defaults.`);
-        renderAgentList();
-    });
+        await refreshSavedAgents(changes.map(agent => agent.id));
+        toastr.success(`Reset ${changes.length} bundled agent${changes.length !== 1 ? 's' : ''} to defaults.`);
+    }));
     // Refresh profiles when chat changes (profiles may have been added/removed)
     const refreshProfileUi = () => {
         refreshConnectionProfileUi();
@@ -6843,7 +6771,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     }
 
     // Listen for Prompt Manager "Send to Agents" events
-    window.addEventListener('PromptManagerSendToAgents', async (event) => {
+    window.addEventListener('PromptManagerSendToAgents', agentAction(async (event) => {
         const pm = event.detail.prompt;
         if (!pm) return;
 
@@ -6853,7 +6781,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         agent.injection.role = pm.role === 'user' ? 1 : pm.role === 'assistant' ? 2 : 0;
         agent.injection.position = pm.injection_position === 1 ? 1 : 0;
         agent.injection.depth = pm.injection_depth || 0;
-        agent.injection.order = pm.injection_order || 100;
+        agent.injection.order = pm.injection_order ?? 100;
         agent.enabled = false;
         agent.category = 'custom';
 
@@ -6867,7 +6795,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         await saveAgent(agent);
         renderAgentList();
         toastr.success(`Created agent "${agent.name}" from prompt.`);
-    });
+    }));
     // Sync tool agents when API settings change
     const apiSettingsEvents = [
         event_types.MAIN_API_CHANGED,

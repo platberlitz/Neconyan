@@ -3474,7 +3474,11 @@ export async function runAsInternalPromptTransform(requestFn, signal = null) {
 }
 
 export async function requestPromptTransform(agent, promptMessages, maxTokens, options = {}) {
-    const isRuntimeAllowed = () => isAgentRuntimeAllowed(agent) && (options.runtimeAgents ?? []).every(isAgentRuntimeAllowed);
+    const isRequestCurrent = () => !options.signal?.aborted
+        && (!options.isCurrent || options.isCurrent())
+        && (options.cancelRevision === undefined || options.cancelRevision === agentGenerationCancelRevision);
+    const isRuntimeAllowed = () => isRequestCurrent()
+        && isAgentRuntimeAllowed(agent) && (options.runtimeAgents ?? []).every(isAgentRuntimeAllowed);
     if (!isRuntimeAllowed()) {
         throw new DOMException('', 'AbortError');
     }
@@ -3483,27 +3487,35 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
     const context = getContext();
     const CMRS = context?.ConnectionManagerRequestService;
     const requestAbortController = new AbortController();
+    const abortFromCaller = () => requestAbortController.abort();
     const runAllowedRequest = requestFn => runAsInternalPromptTransform(() => {
         if (!isRuntimeAllowed()) throw new DOMException('', 'AbortError');
         return requestFn();
     }, requestAbortController.signal);
     activeAgentRequestAbortControllers.add(requestAbortController);
+    options.signal?.addEventListener('abort', abortFromCaller, { once: true });
 
     try {
+        let response;
         if (profileId) {
             if (!CMRS || typeof CMRS.sendRequest !== 'function') {
                 throw new Error(`${describePromptTransformTarget(profileId, 'profile')} is set, but Connection Manager is unavailable.`);
             }
 
-            return await runAllowedRequest(
+            response = await runAllowedRequest(
                 () => requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, promptMessages, maxTokens, modelOverride, requestAbortController.signal),
             );
+        } else {
+            response = await runAllowedRequest(
+                () => requestMainModelPromptTransform(context, promptMessages, maxTokens, options, requestAbortController.signal),
+            );
         }
-
-        return await runAllowedRequest(
-            () => requestMainModelPromptTransform(context, promptMessages, maxTokens, options, requestAbortController.signal),
-        );
+        // A combined response can still serve its remaining allowed members. Each caller
+        // checks eligibility before applying its part; ownership cancellation rejects all.
+        if (!isRequestCurrent() || requestAbortController.signal.aborted) throw new DOMException('', 'AbortError');
+        return response;
     } finally {
+        options.signal?.removeEventListener('abort', abortFromCaller);
         activeAgentRequestAbortControllers.delete(requestAbortController);
     }
 }
