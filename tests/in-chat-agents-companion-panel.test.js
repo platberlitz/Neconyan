@@ -85,18 +85,33 @@ describe('companion tracker panel', () => {
             isAgentHidden: jest.fn(agentId => hiddenAgentIds.has(String(agentId ?? '').trim())),
             isCompanionAgent: jest.fn(agent => agent?.execution === 'companion' || agent?.category === 'companion'),
             reorderAgentsIntoOrderSlots: jest.fn(async () => false),
-            saveAgent: jest.fn(async () => {}),
+            saveAgent: jest.fn(async (id, { update }) => {
+                const agent = agents.find(agent => agent.id === id);
+                Object.assign(agent, update(structuredClone(agent)));
+            }),
             setHiddenAgentIds: jest.fn(ids => {
                 hiddenAgentIds = new Set([...ids].map(id => String(id ?? '').trim()).filter(Boolean));
             }),
         }));
 
+        await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-runner.js', () => ({
+            captureMessageTargetState: jest.fn(message => ({ message, swipe: message?.swipe_id })),
+            isMessageTargetCurrent: jest.fn((message, target) => message === target.message && message.swipe_id === target.swipe),
+        }));
+
+        await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/view-state.js', () => ({
+            replaceCompanionView: jest.fn((root, html) => root.html(html)),
+            runCompanionViewAction: jest.fn((button, action) => action()),
+        }));
+
         await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js', () => ({
             COMPANION_RESULTS_UPDATED_EVENT: 'companion_results_updated',
+            captureCompanionResultTarget: jest.fn(() => () => true),
+            getCompanionCoveredMessageIndices: jest.fn((index, agentId) => companionResultsByMessage.get(chat[index])?.[agentId]?.contextCoverage ?? []),
             getCompanionResults: jest.fn(message => companionResultsByMessage.get(message) ?? {}),
             getLatestValidCompanionMessageIndex: jest.fn(() => chat.length - 1),
             meetsCompanionContextThreshold: jest.fn(agent => !agent?.companion?.minContextTokens || agent.companion.minContextTokens <= chatTokenEstimate),
-            runCompanionAgentOnMessage: jest.fn(async () => ({})),
+            runCompanionAgentOnMessage: jest.fn(async () => ({ status: 'done' })),
             runCompanionsOnMessage: jest.fn(async () => ({})),
         }));
 
@@ -382,7 +397,7 @@ describe('companion tracker panel', () => {
             addClass: jest.fn(() => panelElement),
         };
         const jqueryElements = new Map([['#ica--tracker-panel', panelElement]]);
-        globalThis.$ = jest.fn(selector => jqueryElements.get(selector) ?? { length: 0 });
+        globalThis.$ = jest.fn(selector => jqueryElements.get(selector) ?? { length: 0, attr: jest.fn() });
 
         panel.openCompanionPanel();
         panelNode.scrollTop = 320;
@@ -474,7 +489,7 @@ describe('companion tracker panel', () => {
         expect(waitingHtml).toContain('Memory Shard');
         expect(waitingHtml).toContain('No state yet');
 
-        // With a stored shard: section renders with the hide-history compaction button.
+        // Legacy shards have no record of which messages were actually summarised.
         const message0 = { is_user: false, is_system: false, mes: 'old reply' };
         const message1 = { is_user: false, is_system: false, mes: 'new reply' };
         chat.push(message0, message1);
@@ -484,7 +499,9 @@ describe('companion tracker panel', () => {
 
         const html = panel.buildPanelHtml();
         expect(html).toContain('Memory Shard');
-        expect(html).toContain('data-action="panel-hide-before"');
+        expect(html).not.toContain('data-action="panel-hide-before"');
+        companionResultsByMessage.get(message1)['memory-shard'].contextCoverage = [0];
+        expect(panel.buildPanelHtml()).toContain('data-action="panel-hide-before"');
 
         // Non-shard agents never offer compaction.
         agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true }];
@@ -590,7 +607,7 @@ describe('companion tracker panel', () => {
             addClass: jest.fn(() => panelElement),
             removeClass: jest.fn(() => panelElement),
         };
-        const handleElement = { toggle: jest.fn(() => handleElement) };
+        const handleElement = { toggle: jest.fn(() => handleElement), attr: jest.fn(() => handleElement) };
         const panelMenuElement = { toggle: jest.fn(() => panelMenuElement) };
         const dashboardMenuElement = { toggle: jest.fn(() => dashboardMenuElement) };
         globalThis.$ = jest.fn(arg => {
@@ -859,7 +876,7 @@ describe('companion tracker panel', () => {
         expect(button.prop).toHaveBeenCalledWith('disabled', false);
     });
 
-    test('sends Chat Only textbox input as private side-chat context', async () => {
+    test.each([true, false])('sends Chat Only input privately and clears it only on success (success=%s)', async succeeds => {
         agents = [{
             id: 'chat-only',
             name: 'Chat Only',
@@ -874,6 +891,7 @@ describe('companion tracker panel', () => {
         });
         const panel = await importPanel();
         const runner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        runner.runCompanionAgentOnMessage.mockResolvedValue(succeeds ? { status: 'done' } : { status: 'done', lastRunError: 'Request failed' });
         const panelElement = { on: jest.fn(() => panelElement), html: jest.fn(() => panelElement), toggle: jest.fn(() => panelElement), attr: jest.fn(() => panelElement), addClass: jest.fn(() => panelElement) };
         const handleElement = { on: jest.fn(() => handleElement), toggle: jest.fn(() => handleElement) };
         const button = { prop: jest.fn() };
@@ -925,7 +943,7 @@ describe('companion tracker panel', () => {
         expect(runner.runCompanionAgentOnMessage.mock.calls[0][2].extraContextSections[0].content).toContain('You: Are you actually okay?');
         expect(inputField.prop).toHaveBeenCalledWith('disabled', true);
         expect(inputField.prop).toHaveBeenCalledWith('disabled', false);
-        expect(inputField.val).toHaveBeenCalledWith('');
+        expect(inputField.val.mock.calls.filter(([value]) => value === '')).toHaveLength(succeeds ? 1 : 0);
         expect(button.prop).toHaveBeenCalledWith('disabled', true);
         expect(button.prop).toHaveBeenCalledWith('disabled', false);
     });
@@ -990,10 +1008,7 @@ describe('companion tracker panel', () => {
         await actionHandler({ preventDefault: jest.fn(), stopPropagation: jest.fn(), currentTarget: actionButton });
 
         expect(plotCompass.settings.plotCompassObjective).toBe('Reach the tower');
-        expect(store.saveAgent).toHaveBeenCalledWith(expect.objectContaining({
-            id: 'plot-compass',
-            settings: expect.objectContaining({ plotCompassObjective: 'Reach the tower' }),
-        }));
+        expect(store.saveAgent).toHaveBeenCalledWith('plot-compass', { update: expect.any(Function) });
         expect(runner.runCompanionAgentOnMessage).toHaveBeenCalledWith('plot-compass', 1);
         expect(inputField.prop).toHaveBeenCalledWith('disabled', true);
         expect(inputField.prop).toHaveBeenCalledWith('disabled', false);

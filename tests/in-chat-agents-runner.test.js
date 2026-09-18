@@ -386,6 +386,7 @@ describe('in-chat agent post-processing runner', () => {
         }));
 
         await jest.unstable_mockModule('../public/scripts/utils.js', () => ({
+            getStringHash: value => String(value),
             escapeHtml: jest.fn(value => String(value)),
             regexFromString: jest.fn(value => {
                 const match = String(value ?? '').match(/^\/([\s\S]*)\/([a-z]*)$/i);
@@ -1725,6 +1726,52 @@ describe('in-chat agent post-processing runner', () => {
             release({ worldInfoString: 'Loaded reference' });
             await running;
             expect(generateRawData).not.toHaveBeenCalled();
+        });
+
+        test('a shard can hide only unchanged messages that its request actually included', async () => {
+            const shard = createCompanionAgent({ sourceTemplateId: 'tpl-memory-shard-companion', companion: { contextMessages: 30 } });
+            const runtime = await setup([shard]);
+            chat.splice(0, chat.length, ...Array.from({ length: 100 }, (_, index) => ({
+                name: 'Assistant', mes: `Unique source message ${index}.`, is_user: false, extra: {},
+            })));
+            generateQuietPrompt.mockResolvedValue('Summary of the selected recent messages.');
+            await runtime.runCompanionAgentOnMessage(shard.id, 99);
+            expect(runtime.getCompanionCoveredMessageIndices(99, shard.id)).toEqual(Array.from({ length: 29 }, (_, index) => index + 70));
+            const prompt = generateQuietPrompt.mock.calls[0][0].quietPrompt;
+            expect(prompt).not.toContain('Unique source message 69.');
+            expect(prompt).toContain('Unique source message 70.');
+            chat[70].mes = 'Edited after the summary';
+            chat[71].swipe_id = 1;
+            expect(runtime.getCompanionCoveredMessageIndices(99, shard.id)).toEqual(Array.from({ length: 27 }, (_, index) => index + 72));
+            runtime.updateCompanionResult(chat[99], shard.id, { content: 'Manually replaced summary' });
+            expect(runtime.getCompanionCoveredMessageIndices(99, shard.id)).toEqual([]);
+        });
+
+        test('manual note validation preserves the old note and captures its exact revision', async () => {
+            const agent = createCompanionAgent();
+            const runtime = await setup([agent]);
+            runtime.setCompanionResult(chat[0], agent, { status: 'done', content: 'Original note' });
+            const isCurrent = runtime.captureCompanionResultTarget(0, agent.id);
+            expect(() => runtime.updateCompanionResult(chat[0], agent.id, { content: 'x'.repeat(65537) })).toThrow('65,536');
+            expect(runtime.getCompanionResults(chat[0])[agent.id].content).toBe('Original note');
+            expect(isCurrent()).toBe(true);
+            runtime.updateCompanionResult(chat[0], agent.id, { content: 'x'.repeat(65536) });
+            expect(isCurrent()).toBe(false);
+        });
+
+        test('a historical group companion receives its original speaker card', async () => {
+            const agent = createCompanionAgent({ companion: { includeCharacterCard: true } });
+            const runtime = await setup([agent]);
+            contextCharacters = [
+                { name: 'Alice', avatar: 'Alice.png', description: 'Only Alice knows this.' },
+                { name: 'Bob', avatar: 'Bob.png', description: 'Only Bob knows this.' },
+            ];
+            contextCharacterId = 1;
+            chat[0].name = 'Alice';
+            chat[0].original_avatar = 'Alice.png';
+            await runtime.runCompanionAgentOnMessage(agent.id, 0);
+            expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('Only Alice knows this.');
+            expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).not.toContain('Only Bob knows this.');
         });
 
         test('truncated companion output keeps the previous note', async () => {

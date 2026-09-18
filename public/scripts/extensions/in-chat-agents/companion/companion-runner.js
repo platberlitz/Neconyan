@@ -14,6 +14,7 @@ import { power_user } from '../../../power-user.js';
 import { extension_settings, getContext } from '../../../extensions.js';
 import { eventSource, event_types } from '../../../events.js';
 import { getWorldInfoPrompt } from '../../../world-info.js';
+import { getStringHash } from '../../../utils.js';
 import { getConnectionProfileDisplayName } from '../profile-utils.js';
 import {
     areAgentsGloballyEnabled,
@@ -50,6 +51,7 @@ import {
     CHATROOM_TEMPLATE_ID,
     COMPANION_RESULTS_EXTRA_KEY,
     DIRECTORS_COMMENTARY_TEMPLATE_ID,
+    MEMORY_SHARD_TEMPLATE_ID,
     PLOT_COMPASS_TEMPLATE_ID,
     getCompanionReferenceIds,
     holdsReadableCompanionResults,
@@ -557,6 +559,7 @@ export function updateCompanionResult(message, agentId, update = {}) {
     if (editsContent) {
         delete nextResults[agentId].previousResult;
         delete nextResults[agentId].lastRunError;
+        delete nextResults[agentId].contextCoverage;
     }
 
     setAgentExtraValue(message, COMPANION_RESULTS_EXTRA_KEY, nextResults);
@@ -758,7 +761,7 @@ function getMessageTokenEstimate(message) {
         : Math.ceil(String(message?.mes ?? '').length / 4);
 }
 
-function getRecentConversationSection(messageIndex, companion) {
+function getRecentConversationSection(messageIndex, companion, contextCapture = null) {
     const minMessages = Math.max(1, Number(companion.contextMessages) || 1);
     const minContextTokens = Math.max(0, Number(companion.minContextTokens) || 0);
     const selected = [];
@@ -770,7 +773,7 @@ function getRecentConversationSection(messageIndex, companion) {
             continue;
         }
 
-        selected.push(message);
+        selected.push({ message, index });
         tokenTotal += getMessageTokenEstimate(message);
 
         if (selected.length >= minMessages && (!minContextTokens || tokenTotal >= minContextTokens)) {
@@ -778,20 +781,45 @@ function getRecentConversationSection(messageIndex, companion) {
         }
     }
 
-    const lines = selected.reverse()
-        .map(getMessageLine)
+    selected.reverse();
+    if (contextCapture) {
+        contextCapture.coverage = selected.map(({ message, index }) => ({
+            index, swipe: message.swipe_id ?? 0, hash: getStringHash(getMessageLine(message)), length: String(message.mes ?? '').length,
+        }));
+    }
+    const lines = selected
+        .map(({ message }) => getMessageLine(message))
         .filter(line => line.trim());
     return lines.length ? lines.join('\n') : '';
 }
 
-function getCharacterCardSection(companion) {
+export function getCompanionCoveredMessageIndices(messageIndex, agentId) {
+    const result = getCompanionResults(chat[messageIndex])[agentId];
+    if (result?.status !== 'done' || !normalizeText(result.content) || isEmptyOutputSentinel(result.content)) return [];
+    return (Array.isArray(result.contextCoverage) ? result.contextCoverage : []).filter(entry => {
+        const message = chat[entry?.index];
+        return Number.isInteger(entry?.index) && entry.index >= 0 && entry.index < messageIndex && isValidCompanionMessage(message)
+            && (message.swipe_id ?? 0) === entry.swipe && String(message.mes ?? '').length === entry.length
+            && getStringHash(getMessageLine(message)) === entry.hash;
+    }).map(entry => entry.index).filter((index, position, indices) => indices.indexOf(index) === position).sort((a, b) => a - b);
+}
+
+function getCharacterCardSection(companion, messageIndex) {
     if (!companion.includeCharacterCard && !companion.includePersona) {
         return '';
     }
 
     const context = getContext();
+    const message = chat[messageIndex];
+    const characters = Array.isArray(context?.characters) ? context.characters : [];
+    const avatar = message?.original_avatar;
+    let characterIndex = avatar ? characters.findIndex(character => character.avatar === avatar) : -1;
+    if (characterIndex < 0 && message?.name) {
+        const matches = characters.flatMap((character, index) => character.name === message.name ? [index] : []);
+        if (matches.length === 1) characterIndex = matches[0];
+    }
     const fields = typeof context?.getCharacterCardFields === 'function'
-        ? context.getCharacterCardFields()
+        ? context.getCharacterCardFields(characterIndex >= 0 ? { chid: characterIndex } : {})
         : {};
     const parts = [];
 
@@ -916,15 +944,15 @@ function normalizeExtraContextSections(extraContextSections = []) {
         .filter(section => section.title && section.content);
 }
 
-async function buildCompanionContextSections(agent, messageIndex, { extraContextSections = [], includePreviousNotes = true } = {}) {
+async function buildCompanionContextSections(agent, messageIndex, { extraContextSections = [], includePreviousNotes = true, contextCapture = null } = {}) {
     const companion = getCompanionConfig(agent);
     const sections = [];
     const systemPrompt = getSystemPromptSection(companion);
-    const characterCard = getCharacterCardSection(companion);
+    const characterCard = getCharacterCardSection(companion, messageIndex);
     const worldInfo = await getWorldInfoSection(messageIndex, companion);
     const authorsNote = getAuthorsNoteSection(companion);
     const previousNotes = includePreviousNotes ? getPreviousNotesSection(agent, messageIndex, companion) : '';
-    const recentConversation = getRecentConversationSection(messageIndex, companion);
+    const recentConversation = getRecentConversationSection(messageIndex, companion, contextCapture);
 
     for (const [title, content] of [
         ['System Prompt', systemPrompt],
@@ -1264,10 +1292,10 @@ function expandCompanionPrompt(agent, messageIndex, generationType = 'normal', r
     return [prompt, getTemplateSettingsPromptBlock(agent, message), emptyOutputInstruction].filter(Boolean).join('\n\n').trim();
 }
 
-export async function buildCompanionPromptMessages(agent, messageIndex, generationType = 'normal', { repair = false, extraContextSections = [] } = {}) {
+export async function buildCompanionPromptMessages(agent, messageIndex, generationType = 'normal', { repair = false, extraContextSections = [], contextCapture = null } = {}) {
     const companion = getCompanionConfig(agent);
     const expandedPrompt = expandCompanionPrompt(agent, messageIndex, generationType, repair);
-    const contextSections = await buildCompanionContextSections(agent, messageIndex, { extraContextSections });
+    const contextSections = await buildCompanionContextSections(agent, messageIndex, { extraContextSections, contextCapture });
     // rawPrompt sends the agent prompt verbatim: tracker prompts define their own exact output
     // format and break when extra format instructions are appended around them. The guard
     // leads so the companion boundary is established before the agent's own instructions.
@@ -1680,7 +1708,8 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
             throw new DOMException('Companion run cancelled.', 'AbortError');
         }
 
-        const promptMessages = await buildCompanionPromptMessages(agent, messageIndex, generationType, { repair, extraContextSections });
+        const contextCapture = getCompanionReferenceIds(agent).includes(MEMORY_SHARD_TEMPLATE_ID) ? {} : null;
+        const promptMessages = await buildCompanionPromptMessages(agent, messageIndex, generationType, { repair, extraContextSections, contextCapture });
         if (!areAgentsGloballyEnabled() || !isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
             throw new DOMException('Companion run cancelled.', 'AbortError');
         }
@@ -1722,6 +1751,7 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
             profileId: response.profileId,
             profileLabel: getProfileLabel(agent, response.profileId),
             modelLabel: getModelLabel(agent),
+            contextCoverage: contextCapture?.coverage,
         });
     } catch (error) {
         if (!isAgentRuntimeAllowed(agent)) {
@@ -1783,7 +1813,8 @@ async function buildBatchInputTokenUsage(promptMessages, taskPayloads) {
 }
 
 async function buildBatchPromptPayload(agents, messageIndex, generationType, { extraContextSections = [] } = {}) {
-    const contextSections = await buildCompanionContextSections(agents[0], messageIndex, { extraContextSections, includePreviousNotes: false });
+    const contextCapture = agents.some(agent => getCompanionReferenceIds(agent).includes(MEMORY_SHARD_TEMPLATE_ID)) ? {} : null;
+    const contextSections = await buildCompanionContextSections(agents[0], messageIndex, { extraContextSections, includePreviousNotes: false, contextCapture });
     const taskPayloads = agents.map(agent => ({
         agentId: agent.id,
         content: buildBatchAgentTask(agent, messageIndex, generationType),
@@ -1800,7 +1831,7 @@ async function buildBatchPromptPayload(agents, messageIndex, generationType, { e
         },
     ];
 
-    return { promptMessages, taskPayloads };
+    return { promptMessages, taskPayloads, contextCapture };
 }
 
 async function cancelCompanionAgentResults(message, agents, messageIndex, profileId = '', runs = null) {
@@ -1840,7 +1871,7 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
         }
 
         const extraContextSections = getUnitExtraContextSections(agents, extraContextSectionsByAgentId);
-        const { promptMessages, taskPayloads } = await buildBatchPromptPayload(agents, messageIndex, generationType, { extraContextSections });
+        const { promptMessages, taskPayloads, contextCapture } = await buildBatchPromptPayload(agents, messageIndex, generationType, { extraContextSections });
         if (!isTargetCurrent()) return getResults();
         if (!areAgentsGloballyEnabled() || getAgentGenerationCancelRevision() !== cancelRevision) {
             await cancelCompanionAgentResults(message, agents, messageIndex, '', runs);
@@ -1915,6 +1946,7 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
                 profileId: response.profileId,
                 profileLabel: getProfileLabel(agent, response.profileId),
                 modelLabel: getModelLabel(agent),
+                contextCoverage: getCompanionReferenceIds(agent).includes(MEMORY_SHARD_TEMPLATE_ID) ? contextCapture?.coverage : undefined,
             });
             await emitCompanionResultsUpdated(messageIndex, agent.id);
         }

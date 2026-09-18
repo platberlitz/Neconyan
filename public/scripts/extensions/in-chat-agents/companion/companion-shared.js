@@ -175,7 +175,7 @@ function getActiveCompanionResults(message) {
         && Array.isArray(message?.swipe_info)
         ? message.swipe_info[message.swipe_id]
         : null;
-    const stored = swipeInfo?.extra
+    const stored = swipeInfo?.extra && Object.hasOwn(swipeInfo.extra, COMPANION_RESULTS_EXTRA_KEY)
         ? swipeInfo.extra[COMPANION_RESULTS_EXTRA_KEY]
         : message?.extra?.[COMPANION_RESULTS_EXTRA_KEY];
 

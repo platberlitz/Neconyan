@@ -111,6 +111,11 @@ describe('companion dashboard', () => {
             runCompanionsOnMessage: jest.fn(async () => ({})),
         }));
 
+        await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-runner.js', () => ({
+            captureMessageTargetState: jest.fn(message => ({ message })),
+            isMessageTargetCurrent: jest.fn(() => true),
+        }));
+
         await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/companion-panel.js', () => ({
             isConversationModeActive: jest.fn(() => conversationModeActive),
             openCompanionPanel: openCompanionPanelMock,

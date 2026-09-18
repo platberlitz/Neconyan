@@ -5,6 +5,8 @@ import { eventSource, event_types } from '../../../events.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../popup.js';
 import { escapeHtml } from '../../../utils.js';
 import { attachTextareaFullscreen } from '../textarea-fullscreen.js';
+import { captureMessageTargetState, isMessageTargetCurrent } from '../agent-runner.js';
+import { replaceCompanionView, runCompanionViewAction } from './view-state.js';
 import {
     areAgentsGloballyEnabled,
     getAgentById,
@@ -19,7 +21,10 @@ import { resolveCompanionContentMacros } from './companion-macros.js';
 import { isLorebookAgent, sendCompanionResultToLorebook } from './lorebook-sender.js';
 import {
     COMPANION_RESULTS_UPDATED_EVENT,
+    MAX_COMPANION_RESULT_CHARS,
+    captureCompanionResultTarget,
     deleteCompanionResult,
+    emitCompanionResultsUpdated,
     getCompanionResults,
     runCompanionAgentOnMessage,
     runCompanionsOnMessage,
@@ -31,6 +36,7 @@ import {
     CHATROOM_STYLE_VALUES,
     PLOT_COMPASS_OBJECTIVE_MAX_CHARS,
     appendChatOnlyUserMessage,
+    holdsReadableCompanionResults,
     isAssistantMessage,
     isChatOnlyAgent,
     isChatroomAgent,
@@ -178,12 +184,11 @@ function normalizeChatroomContent(content = '') {
 
 async function setAgentSetting(agent, key, value) {
     if (!agent) return;
-
-    agent.settings = agent.settings && typeof agent.settings === 'object' && !Array.isArray(agent.settings)
-        ? { ...agent.settings }
-        : {};
-    agent.settings[key] = value;
-    await saveAgent(agent);
+    await saveAgent(agent.id, { update: draft => {
+        if (!draft) return null;
+        draft.settings = { ...draft.settings, [key]: value };
+        return draft;
+    } });
 }
 
 function getMarkdownConverter() {
@@ -284,12 +289,8 @@ export function isHiddenCompanionResult(agentId, result = {}) {
         return true;
     }
 
-    if (OFF_LEDGER_DISPLAY_MODES.has(result.displayMode)) {
-        return true;
-    }
-
     const agent = getAgentById(agentId);
-    return Boolean(agent && OFF_LEDGER_DISPLAY_MODES.has(getCompanionConfig(agent).displayMode));
+    return OFF_LEDGER_DISPLAY_MODES.has(agent ? getCompanionConfig(agent).displayMode : result.displayMode);
 }
 
 export function isSilentCompanionAgent(agent = {}) {
@@ -447,7 +448,7 @@ export function decorateChoiceLines(html) {
     const container = document.createElement('div');
     container.innerHTML = html;
 
-    for (const item of container.querySelectorAll('li')) {
+    for (const item of container.querySelectorAll('ol > li')) {
         if (!item.querySelector('button, a, ul, ol') && item.textContent.trim()) {
             const button = document.createElement('button');
             button.type = 'button';
@@ -520,6 +521,8 @@ export function insertChoiceIntoMessageInput(rawText) {
 
 function buildCompanionCard(agentId, result, message) {
     const status = getResultStatus(result);
+    const runnable = Boolean(getAgentById(agentId)) && isValidCompanionMessage(message);
+    const runDisabled = !areAgentsGloballyEnabled() || status === 'pending' ? ' disabled' : '';
     const agentName = cleanCompanionAgentName(result.agentName);
     const icon = String(result.icon ?? '').trim() || 'fa-user-astronaut';
     const profileLabel = String(result.profileLabel ?? '').trim();
@@ -542,7 +545,7 @@ function buildCompanionCard(agentId, result, message) {
                 ${meta ? `<span class="ica--companion-meta">${escapeHtml(meta)}</span>` : ''}
                 <span class="ica--companion-status">${escapeHtml(getStatusLabel(status))}</span>
                 <span class="ica--companion-actions">
-                    <button type="button" class="ica--companion-action" data-action="regenerate" title="Regenerate companion note" aria-label="Regenerate companion note"><i class="fa-solid fa-rotate-right"></i></button>
+                    ${runnable ? `<button type="button" class="ica--companion-action" data-action="regenerate" title="Regenerate companion note" aria-label="Regenerate companion note"${runDisabled}><i class="fa-solid fa-rotate-right"></i></button>` : ''}
                     <button type="button" class="ica--companion-action" data-action="edit" title="Edit companion note" aria-label="Edit companion note"><i class="fa-solid fa-pen-to-square"></i></button>
                     ${lorebookButton}
                     <button type="button" class="ica--companion-action" data-action="copy" title="Copy companion note" aria-label="Copy companion note"><i class="fa-solid fa-copy"></i></button>
@@ -550,7 +553,7 @@ function buildCompanionCard(agentId, result, message) {
                 </span>
             </summary>
             <div class="ica--companion-body">${buildCompanionBody(agentId, result, message)}</div>
-            ${buildCompanionCardControls(agentId)}
+            ${runnable ? buildCompanionCardControls(agentId) : ''}
         </details>
     `;
 }
@@ -563,7 +566,7 @@ export function renderCompanionResultsForMessage(messageIndex) {
         return;
     }
 
-    const entries = isValidCompanionMessage(message) ? getRenderableCompanionEntries(message) : [];
+    const entries = holdsReadableCompanionResults(message) ? getRenderableCompanionEntries(message) : [];
     let ledger = messageElement.find('.ica--companion-ledger');
 
     if (entries.length === 0) {
@@ -581,7 +584,9 @@ export function renderCompanionResultsForMessage(messageIndex) {
         }
     }
 
-    ledger.html(entries.map(([agentId, result]) => buildCompanionCard(agentId, result, message)).join(''));
+    const target = captureMessageTargetState(message);
+    replaceCompanionView(ledger, entries.map(([agentId, result]) => buildCompanionCard(agentId, result, message)).join(''),
+        () => isMessageTargetCurrent(message, target, messageIndex, { text: false, revision: false }));
 }
 
 function renderAllCompanionResults() {
@@ -678,14 +683,14 @@ async function sendChatOnlyAside({ agentId, messageIndex, transcript = '', userI
     button?.prop?.('disabled', true);
     inputField?.prop?.('disabled', true);
     try {
-        await runCompanionAgentOnMessage(agentId, messageIndex, {
+        const result = await runCompanionAgentOnMessage(agentId, messageIndex, {
             pendingContent: nextTranscript,
             extraContextSections: [{
                 title: 'Chat Only side chat',
                 content: nextTranscript,
             }],
         });
-        inputField?.val?.('');
+        if (result?.status === 'done' && !result.lastRunError) inputField?.val?.('');
         renderCompanionResultsForMessage(messageIndex);
     } finally {
         button?.prop?.('disabled', false);
@@ -714,13 +719,13 @@ async function sendChatroomUserReply({ agentId, messageIndex, userInput = '', bu
     button?.prop?.('disabled', true);
     inputField?.prop?.('disabled', true);
     try {
-        await runCompanionAgentOnMessage(agentId, messageIndex, {
+        const result = await runCompanionAgentOnMessage(agentId, messageIndex, {
             extraContextSections: [{
                 title: 'Viewer reply',
                 content: normalizedInput,
             }],
         });
-        inputField?.val?.('');
+        if (result?.status === 'done' && !result.lastRunError) inputField?.val?.('');
         renderCompanionResultsForMessage(messageIndex);
     } finally {
         button?.prop?.('disabled', false);
@@ -741,12 +746,13 @@ async function savePlotCompassObjective({ agentId, messageIndex, objective = '',
     }
 
     const targetMessage = chat[messageIndex];
+    const target = captureMessageTargetState(targetMessage);
     button?.prop?.('disabled', true);
     inputField?.prop?.('disabled', true);
     try {
         const nextObjective = normalizePlotCompassObjective(objective);
         await setAgentSetting(agent, 'plotCompassObjective', nextObjective);
-        if (chat[messageIndex] !== targetMessage) {
+        if (!isMessageTargetCurrent(targetMessage, target, messageIndex)) {
             toastr.warning('The chat changed while saving, so the objective was saved but not run.');
             return;
         }
@@ -770,60 +776,53 @@ function getCompanionActionContext(element) {
 }
 
 export async function editCompanionResult(messageIndex, agentId, message, result) {
-    const swipeId = message?.swipe_id ?? 0;
+    const isCurrent = captureCompanionResultTarget(messageIndex, agentId);
     const editor = $(`
         <div class="ica--companion-edit-popup">
             <div class="ica--regex-note">Edit only this saved card. Regenerate to ask the model again.</div>
-            <textarea class="text_pole textarea_compact" rows="12">${escapeHtml(result?.content ?? '')}</textarea>
+            <textarea class="text_pole textarea_compact" rows="12" aria-label="Saved companion note">${escapeHtml(result?.content ?? '')}</textarea>
+            <div role="alert" data-role="note-error" hidden></div>
         </div>
     `);
     attachTextareaFullscreen(editor);
-    const popupResult = await new Popup(editor, POPUP_TYPE.CONFIRM, '', {
+    await new Popup(editor, POPUP_TYPE.CONFIRM, '', {
         okButton: 'Save Note',
         cancelButton: 'Cancel',
         wide: true,
         large: true,
+        onClosing: async popup => {
+            if (popup.result !== POPUP_RESULT.AFFIRMATIVE) return true;
+            const content = String(editor.find('textarea').val() ?? '');
+            const error = !isCurrent()
+                ? 'This note changed while you were editing. Copy your changes, then reopen it.'
+                : content.length > MAX_COMPANION_RESULT_CHARS
+                    ? 'Keep the note within 65,536 characters. Your draft is still here.'
+                    : '';
+            editor.find('[data-role="note-error"]').text(error).prop('hidden', !error);
+            if (error) return false;
+            updateCompanionResult(message, agentId, { status: 'done', content, error: '' });
+            saveChatDebounced({ deferBackup: false });
+            await emitCompanionResultsUpdated(messageIndex, agentId);
+            renderCompanionResultsForMessage(messageIndex);
+            return true;
+        },
     }).show();
-
-    if (popupResult !== POPUP_RESULT.AFFIRMATIVE) {
-        return;
-    }
-    if (!isCompanionNoteTargetCurrent(messageIndex, message, swipeId)) {
-        toastr.warning('That message changed while the editor was open, so the note was not saved.');
-        return;
-    }
-
-    updateCompanionResult(message, agentId, {
-        status: 'done',
-        content: editor.find('textarea').val()?.toString() ?? '',
-        error: '',
-    });
-    saveChatDebounced({ deferBackup: false });
-    renderCompanionResultsForMessage(messageIndex);
-}
-
-/**
- * True while the message object still sits at its index on the same swipe it had when a
- * confirmation opened. Chat switches replace the chat array, swipes replace message.extra,
- * so a stale confirmation must not write into whatever now occupies that slot.
- */
-function isCompanionNoteTargetCurrent(messageIndex, message, swipeId) {
-    return chat[messageIndex] === message && (message?.swipe_id ?? 0) === swipeId;
 }
 
 async function deleteCompanionCard(messageIndex, agentId, message) {
-    const swipeId = message?.swipe_id ?? 0;
+    const isCurrent = captureCompanionResultTarget(messageIndex, agentId);
     const popupResult = await new Popup('Delete this companion note?', POPUP_TYPE.CONFIRM).show();
     if (popupResult !== POPUP_RESULT.AFFIRMATIVE) {
         return;
     }
-    if (!isCompanionNoteTargetCurrent(messageIndex, message, swipeId)) {
+    if (!isCurrent()) {
         toastr.warning('That message changed while the confirmation was open, so the note was kept.');
         return;
     }
 
     deleteCompanionResult(message, agentId);
     saveChatDebounced({ deferBackup: false });
+    await emitCompanionResultsUpdated(messageIndex, agentId);
     renderCompanionResultsForMessage(messageIndex);
 }
 
@@ -833,7 +832,7 @@ async function handleCompanionAction(event) {
 
     const action = $(event.currentTarget).attr('data-action');
     const { messageIndex, agentId, message, result } = getCompanionActionContext(event.currentTarget);
-    if (!isValidCompanionMessage(message) || !agentId) {
+    if (!holdsReadableCompanionResults(message) || !agentId) {
         toastr.warning('Invalid companion note.');
         return;
     }
@@ -917,7 +916,7 @@ function persistCompanionCollapseState(event) {
     const agentId = $(details).attr('data-agent-id') || '';
     const message = chat[messageIndex];
 
-    if (!isValidCompanionMessage(message) || !agentId) {
+    if (!holdsReadableCompanionResults(message) || !agentId) {
         return;
     }
 
@@ -943,7 +942,8 @@ export function initCompanionCardUi() {
         }
         await runCompanionsFromMessageButton(messageIndex, this);
     });
-    $(document).on('click', '.ica--companion-action, .ica--companion-control-action', handleCompanionAction);
+    $(document).on('click', '.ica--companion-action, .ica--companion-control-action', event =>
+        runCompanionViewAction(event.currentTarget, () => handleCompanionAction(event)));
     // Document-level catch-all: covers cards and any other surface rendering companion
     // bodies. The panel binds its own element-level handler first (to close itself), and
     // its stopPropagation keeps this one from double-inserting.

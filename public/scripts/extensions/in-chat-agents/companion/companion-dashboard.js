@@ -2,6 +2,8 @@ import { chat } from '../../../../script.js';
 import { eventSource } from '../../../events.js';
 import { Popup, POPUP_TYPE } from '../../../popup.js';
 import { escapeHtml } from '../../../utils.js';
+import { captureMessageTargetState, isMessageTargetCurrent } from '../agent-runner.js';
+import { replaceCompanionView, runCompanionViewAction } from './view-state.js';
 import {
     areAgentsGloballyEnabled,
     getAgentById,
@@ -21,7 +23,7 @@ import { resolveCompanionContentMacros } from './companion-macros.js';
 import { isConversationModeActive, openCompanionPanel } from './companion-panel.js';
 import {
     isSuppressedCompanionResult,
-    isValidCompanionMessage,
+    holdsReadableCompanionResults,
 } from './companion-shared.js';
 
 const RECENT_NOTES_LIMIT = 20;
@@ -104,7 +106,7 @@ function buildCompanionTokenUsagePillsHtml(result = {}) {
 function getLatestDashboardResult(agentId) {
     for (let messageIndex = chat.length - 1; messageIndex >= 0; messageIndex--) {
         const message = chat[messageIndex];
-        if (!isValidCompanionMessage(message)) {
+        if (!holdsReadableCompanionResults(message)) {
             continue;
         }
 
@@ -128,6 +130,7 @@ export function buildCompanionAgentRowHtml(agent) {
         companion.feedback.enabled ? `feedback ×${companion.feedback.depth}` : '',
     ].filter(Boolean).map(label => `<span class="ica--card-pill">${escapeHtml(label)}</span>`).join('');
     const tokenPills = buildCompanionTokenUsagePillsHtml(getLatestDashboardResult(agent.id));
+    const runDisabled = !areAgentsGloballyEnabled() || getLatestDashboardResult(agent.id)?.status === 'pending' ? ' disabled' : '';
     const pills = `${configPills}${tokenPills}`;
 
     return `
@@ -140,7 +143,7 @@ export function buildCompanionAgentRowHtml(agent) {
                 <div class="ica--cdash-row-pills">${pills}</div>
             </div>
             <div class="ica--cdash-row-actions">
-                <button type="button" class="ica--cdash-action" data-action="run" title="Run this companion on the last assistant reply" aria-label="Run companion"><i class="fa-solid fa-play" aria-hidden="true"></i><span>Run</span></button>
+                <button type="button" class="ica--cdash-action" data-action="run" title="Run this companion on the last assistant reply" aria-label="Run companion"${runDisabled}><i class="fa-solid fa-play" aria-hidden="true"></i><span>Run</span></button>
                 <button type="button" class="ica--cdash-action" data-action="edit" title="Edit companion" aria-label="Edit companion"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span>Edit</span></button>
                 <button type="button" class="ica--cdash-action" data-action="to-inline" title="Convert back to inline execution" aria-label="Convert to inline"><i class="fa-solid fa-right-left" aria-hidden="true"></i><span>To inline</span></button>
             </div>
@@ -170,7 +173,7 @@ export function collectRecentNoteEntries(limit = RECENT_NOTES_LIMIT) {
 
     for (let messageIndex = chat.length - 1; messageIndex >= 0 && entries.length < limit; messageIndex--) {
         const message = chat[messageIndex];
-        if (!isValidCompanionMessage(message)) {
+        if (!holdsReadableCompanionResults(message)) {
             continue;
         }
 
@@ -393,7 +396,9 @@ export async function openCompanionDashboard() {
     const rerender = () => {
         const scrollContainer = root[0]?.closest?.('.popup-content');
         const scrollTop = scrollContainer?.scrollTop ?? 0;
-        root.html(buildDashboardHtml());
+        const scope = {};
+        const target = captureMessageTargetState(scope);
+        replaceCompanionView(root, buildDashboardHtml(), () => isMessageTargetCurrent(scope, target));
         if (scrollContainer) {
             scrollContainer.scrollTop = scrollTop;
         }
@@ -403,7 +408,7 @@ export async function openCompanionDashboard() {
     root.on('click', '[data-action]', async event => {
         event.preventDefault();
         event.stopPropagation();
-        await handleDashboardAction(event, root, rerender);
+        await runCompanionViewAction(event.currentTarget, () => handleDashboardAction(event, root, rerender));
     });
 
     let rerenderTimeout = null;

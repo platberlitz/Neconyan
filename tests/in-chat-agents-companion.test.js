@@ -105,14 +105,25 @@ describe('companion card ui', () => {
             getCompanionConfig: jest.fn(() => ({ displayMode: 'card' })),
             getEnabledAgents: jest.fn(() => [...agents]),
             isCompanionAgent: jest.fn(agent => agent?.execution === 'companion' || agent?.category === 'companion'),
-            saveAgent: jest.fn(async () => {}),
+            saveAgent: jest.fn(async (id, { update }) => {
+                const agent = agents.find(agent => agent.id === id);
+                Object.assign(agent, update(structuredClone(agent)));
+            }),
+        }));
+
+        await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-runner.js', () => ({
+            captureMessageTargetState: jest.fn(message => ({ message, swipe: message?.swipe_id })),
+            isMessageTargetCurrent: jest.fn((message, target) => message === target.message && message.swipe_id === target.swipe),
         }));
 
         await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js', () => ({
             COMPANION_RESULTS_UPDATED_EVENT: 'companion_results_updated',
+            MAX_COMPANION_RESULT_CHARS: 65536,
+            captureCompanionResultTarget: jest.fn(() => () => true),
+            emitCompanionResultsUpdated: jest.fn(async () => {}),
             deleteCompanionResult: jest.fn(),
             getCompanionResults: jest.fn(message => message?.extra?.inChatAgentCompanionResults ?? {}),
-            runCompanionAgentOnMessage: jest.fn(async () => ({})),
+            runCompanionAgentOnMessage: jest.fn(async () => ({ status: 'done' })),
             runCompanionsOnMessage: jest.fn(async () => ({})),
             updateCompanionResult: jest.fn(),
         }));
@@ -438,11 +449,12 @@ describe('companion card ui', () => {
         expect(html).toBe('<md>[STATUS|calm]</md>');
     });
 
-    test('keeps panel and hidden results out of the chat ledger', async () => {
+    test('uses live display settings and falls back to saved settings for deleted agents', async () => {
         const { isHiddenCompanionResult } = await importCompanionUi();
 
-        expect(isHiddenCompanionResult('companion-tracker', { displayMode: 'panel' })).toBe(true);
-        expect(isHiddenCompanionResult('companion-tracker', { displayMode: 'hidden' })).toBe(true);
+        expect(isHiddenCompanionResult('companion-tracker', { displayMode: 'panel' })).toBe(false);
+        expect(isHiddenCompanionResult('companion-tracker', { displayMode: 'hidden' })).toBe(false);
+        expect(isHiddenCompanionResult('deleted-agent', { displayMode: 'panel' })).toBe(true);
         expect(isHiddenCompanionResult('companion-tracker', { displayMode: 'card' })).toBe(false);
 
         const store = await import('../public/scripts/extensions/in-chat-agents/agent-store.js');
@@ -597,10 +609,7 @@ describe('companion card ui', () => {
         await actionHandler({ preventDefault: jest.fn(), stopPropagation: jest.fn(), currentTarget: actionButton });
 
         expect(plotCompass.settings.plotCompassObjective).toBe('Reach the tower');
-        expect(store.saveAgent).toHaveBeenCalledWith(expect.objectContaining({
-            id: 'plot-compass',
-            settings: expect.objectContaining({ plotCompassObjective: 'Reach the tower' }),
-        }));
+        expect(store.saveAgent).toHaveBeenCalledWith('plot-compass', { update: expect.any(Function) });
         expect(runner.runCompanionAgentOnMessage).toHaveBeenCalledWith('plot-compass', 0);
         expect(globalThis.toastr.success).toHaveBeenCalledWith('Plot Objective saved.');
     });

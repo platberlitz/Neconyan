@@ -135,6 +135,7 @@ beforeEach(async () => {
         onPathfinderWorldInfoUpdated: jest.fn(), onPathfinderWorldInfoRenamed: jest.fn(), onPathfinderWorldInfoDeleted: jest.fn(),
     }));
     jest.unstable_mockModule('../public/scripts/utils.js', () => ({
+        getStringHash: value => String(value),
         uuidv4: () => 'test-uuid',
         regexFromString: value => {
             const match = value.match(/^\/(.*)\/([a-z]*)$/);
