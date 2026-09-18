@@ -91,11 +91,12 @@ function createContext({ attachedBook = '', existingTitles = [], auxiliaryBooks 
             };
         }),
         // Real immediate saves resolve to the committed book name, or null when the host discards the write.
-        saveWorldInfo: jest.fn(async name => {
+        saveWorldInfo: jest.fn(async (name, data) => {
             if (remainingSaveFailures > 0) {
                 remainingSaveFailures--;
                 throw new Error('Simulated lorebook save failure.');
             }
+            books[name] = structuredClone(data);
             return name;
         }),
         charUpdateAddAuxWorld: jest.fn(async (avatar, name) => {
@@ -160,6 +161,8 @@ describe('Lorebook Scout sender', () => {
         expect(() => parseLorebookEntries('**Gate**\nKeys: gate\nA gate.')).toThrow('at least 2');
         expect(parseLorebookEntries('**Gate**\nKeys: one, two, three, four, five, six\nA gate.')[0].keys)
             .toEqual(['one', 'two', 'three', 'four', 'five']);
+        expect(parseLorebookEntries('**Keys of the Vault**\n**Keys:** vault, keyring\nA hidden keyring.')[0].title)
+            .toBe('Keys of the Vault');
     });
 
     test('writes new entries once and skips normalized duplicate titles on repeat sends', async () => {
@@ -190,7 +193,7 @@ describe('Lorebook Scout sender', () => {
             constant: false,
             disable: false,
         }));
-        expect(context.saveWorldInfo).toHaveBeenCalledWith('Campaign Lore', books['Campaign Lore'], true);
+        expect(context.saveWorldInfo).toHaveBeenCalledWith('Campaign Lore', books['Campaign Lore'], true, { conditional: true });
 
         await expect(sendCompanionResultToLorebook(content, context, notifier)).resolves.toEqual({
             bookName: 'Campaign Lore',
@@ -244,7 +247,7 @@ describe('Lorebook Scout sender', () => {
             .toBeLessThan(context.updateChatMetadata.mock.invocationCallOrder[0]);
         expect(books['Lorebook Scout'].entries[0].key).toEqual(['Sun Dial', 'rain omen']);
         expect(context.callGenericPopup).toHaveBeenCalledWith(
-            'Add Lorebook Scout as an Auxiliary Lorebook to the current chat automatically?',
+            'Attach \'Lorebook Scout\' to this chat and these characters: Scout.png? Character attachments also apply in their other chats.',
             'confirm',
         );
         expect(context.charUpdateAddAuxWorld).toHaveBeenCalledWith('Scout.png', 'Lorebook Scout');
@@ -274,8 +277,8 @@ describe('Lorebook Scout sender', () => {
         expect(context.charUpdateAddAuxWorld).not.toHaveBeenCalled();
     });
 
-    test('retries a failed fallback save before attaching its cached entry', async () => {
-        const { context } = createContext({ saveFailures: 1 });
+    test('a failed fallback save leaves the cached book untouched and can be retried', async () => {
+        const { books, context } = createContext({ saveFailures: 1 });
         const content = '**Sun Dial**\nKeys: Sun Dial, rain omen\nThe Sun Dial rings at noon when rain is coming.';
         const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -284,11 +287,12 @@ describe('Lorebook Scout sender', () => {
         expect(context.saveWorldInfo).toHaveBeenCalledTimes(1);
         expect(context.callGenericPopup).not.toHaveBeenCalled();
         expect(context.updateChatMetadata).not.toHaveBeenCalled();
+        expect(books['Lorebook Scout'].entries).toEqual({});
 
         await expect(sendCompanionResultToLorebook(content, context, notifier)).resolves.toEqual({
             bookName: 'Lorebook Scout',
-            created: 0,
-            duplicates: 1,
+            created: 1,
+            duplicates: 0,
         });
         expect(context.saveWorldInfo).toHaveBeenCalledTimes(2);
         expect(context.callGenericPopup).toHaveBeenCalledTimes(1);
@@ -358,7 +362,7 @@ describe('Lorebook Scout sender honours the host save contract', () => {
         notifier = { info: jest.fn(), success: jest.fn(), warning: jest.fn(), error: jest.fn() };
     });
 
-    test('a discarded save is reported as a failure and keeps the retry marker', async () => {
+    test('a discarded save is reported as a failure and can be retried from the original note', async () => {
         const { context } = createContext();
         context.saveWorldInfo.mockResolvedValueOnce(null);
         const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -369,7 +373,7 @@ describe('Lorebook Scout sender honours the host save contract', () => {
         expect(context.callGenericPopup).not.toHaveBeenCalled();
         expect(context.updateChatMetadata).not.toHaveBeenCalled();
 
-        // The next send retries the save even though the cached book already holds the entry.
+        // The failed private draft was never published into the cached book.
         await sendCompanionResultToLorebook(content, context, notifier);
         expect(context.saveWorldInfo).toHaveBeenCalledTimes(2);
         consoleError.mockRestore();
@@ -400,5 +404,38 @@ describe('Lorebook Scout sender honours the host save contract', () => {
         expect(context.chatMetadata.world_info).toBeUndefined();
         expect(context.charUpdateAddAuxWorld).not.toHaveBeenCalled();
         expect(notifier.warning).toHaveBeenCalledWith(expect.stringContaining('attaching it to the chat failed'));
+    });
+
+    test.each(['loadWorldInfo', 'saveWorldInfo', 'callGenericPopup'])('navigation during %s cannot attach to the next chat', async boundary => {
+        const { context } = createContext();
+        context.chatId = 'original';
+        const oldCall = context[boundary].getMockImplementation();
+        const nextMetadata = {};
+        context[boundary].mockImplementationOnce(async (...args) => {
+            const result = await oldCall(...args);
+            context.chatId = 'next';
+            context.chatMetadata = nextMetadata;
+            return result;
+        });
+        await sendCompanionResultToLorebook(content, context, notifier);
+        expect(context.updateChatMetadata).not.toHaveBeenCalled();
+        expect(context.charUpdateAddAuxWorld).not.toHaveBeenCalled();
+        expect(nextMetadata).toEqual({});
+    });
+
+    test('a failed attachment completing after navigation cannot roll back the next chat', async () => {
+        const { context } = createContext();
+        const originalMetadata = context.chatMetadata;
+        const nextMetadata = { world_info: 'New chat lore' };
+        context.saveMetadata.mockImplementationOnce(async () => {
+            context.chatId = 'next';
+            context.chatMetadata = nextMetadata;
+            return false;
+        });
+        await sendCompanionResultToLorebook(content, context, notifier);
+        expect(nextMetadata.world_info).toBe('New chat lore');
+        expect(originalMetadata.world_info).toBeUndefined();
+        expect(context.updateChatMetadata).toHaveBeenCalledTimes(1);
+        expect(context.charUpdateAddAuxWorld).not.toHaveBeenCalled();
     });
 });

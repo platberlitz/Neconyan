@@ -1,10 +1,9 @@
 const EMPTY_RESULT = 'lorebook has nothing durable this turn.';
 const FALLBACK_BOOK_NAME = 'Lorebook Scout';
-const TITLE_PATTERN = /^\s*\*\*(?!keys\b)(.+?)\*\*\s*$/i;
+const TITLE_PATTERN = /^\s*\*\*(?!keys\s*:?[ \t]*\*\*)(.+?)\*\*\s*$/i;
 const KEYS_PATTERN = /^\s*(?:\*\*Keys:\*\*|\*\*Keys\*\*:|Keys:)\s*(.*?)\s*$/i;
 
 let writeChain = Promise.resolve();
-const booksNeedingSaveRetry = new Set();
 
 export function isLorebookAgent(agent) {
     return Array.isArray(agent?.tags)
@@ -103,9 +102,9 @@ function getCurrentCharacters(context) {
     return Number.isInteger(characterId) && characters[characterId] ? [characters[characterId]] : [];
 }
 
-async function offerFallbackLorebookAttachment(context, requestedName, bookName, attachToChat, notifier) {
+async function offerFallbackLorebookAttachment(context, requestedName, bookName, attachToChat, notifier, isCurrent) {
     // The host may commit the fallback book under a different name; the offer keys off the requested title.
-    if (normalizeTitle(requestedName) !== normalizeTitle(FALLBACK_BOOK_NAME)) {
+    if (!isCurrent() || normalizeTitle(requestedName) !== normalizeTitle(FALLBACK_BOOK_NAME)) {
         return;
     }
 
@@ -133,16 +132,22 @@ async function offerFallbackLorebookAttachment(context, requestedName, bookName,
         return;
     }
 
+    const originalBook = context.chatMetadata?.world_info;
+    const labels = missingCharacters.map(character => character.name || character.avatar).join(', ');
+    const destinations = [attachToChat ? 'this chat' : '', labels ? `these characters: ${labels}` : ''].filter(Boolean);
+    const question = `Attach '${bookName}' to ${destinations.join(' and ')}?${labels ? ' Character attachments also apply in their other chats.' : ''}`;
     const confirmed = await context.callGenericPopup(
-        'Add Lorebook Scout as an Auxiliary Lorebook to the current chat automatically?',
+        question.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
         context.POPUP_TYPE.CONFIRM,
     );
-    if (confirmed !== (context.POPUP_RESULT?.AFFIRMATIVE ?? 1)) {
+    if (confirmed !== (context.POPUP_RESULT?.AFFIRMATIVE ?? 1)
+        || !isCurrent() || context.chatMetadata?.world_info !== originalBook) {
         return;
     }
 
     if (attachToChat) {
-        const previousBook = context.chatMetadata?.world_info;
+        const attachmentMetadata = context.chatMetadata;
+        const previousBook = attachmentMetadata?.world_info;
         if (typeof context.updateChatMetadata === 'function') {
             context.updateChatMetadata({ world_info: bookName });
         } else {
@@ -157,10 +162,10 @@ async function offerFallbackLorebookAttachment(context, requestedName, bookName,
             console.error('[In-Chat Agents] Could not save the lorebook attachment.', error);
         }
         if (!saved) {
-            if (typeof context.updateChatMetadata === 'function') {
+            if (isCurrent() && typeof context.updateChatMetadata === 'function') {
                 context.updateChatMetadata({ world_info: previousBook });
-            } else if (context.chatMetadata) {
-                context.chatMetadata.world_info = previousBook;
+            } else if (attachmentMetadata?.world_info === bookName) {
+                attachmentMetadata.world_info = previousBook;
             }
             notifier?.warning?.(`Entries were saved to "${bookName}", but attaching it to the chat failed. Attach it from the lorebook panel.`);
             return;
@@ -168,6 +173,7 @@ async function offerFallbackLorebookAttachment(context, requestedName, bookName,
     }
 
     for (const character of missingCharacters) {
+        if (!isCurrent()) return;
         await context.charUpdateAddAuxWorld(character.avatar, bookName);
     }
 }
@@ -196,7 +202,7 @@ async function getTargetBook(context) {
     return { bookName, attachToChat: true };
 }
 
-async function sendLorebookEntries(content, context, notifier) {
+async function sendLorebookEntries(content, context, notifier, isCurrent) {
     let entries;
     try {
         entries = parseLorebookEntries(content);
@@ -216,10 +222,14 @@ async function sendLorebookEntries(content, context, notifier) {
             throw new Error('Lorebook APIs are unavailable.');
         }
 
+        if (!isCurrent()) return null;
         const target = await getTargetBook(context);
+        if (!isCurrent()) return null;
         const { attachToChat } = target;
         let { bookName } = target;
-        const bookData = await context.loadWorldInfo(bookName);
+        const loadedData = await context.loadWorldInfo(bookName);
+        if (!isCurrent()) return null;
+        const bookData = structuredClone(loadedData);
         if (!bookData?.entries || typeof bookData.entries !== 'object') {
             throw new Error(`Lorebook "${bookName}" could not be loaded.`);
         }
@@ -259,18 +269,16 @@ async function sendLorebookEntries(content, context, notifier) {
         }
 
         let committedName = bookName;
-        if (created > 0 || booksNeedingSaveRetry.has(bookName)) {
-            booksNeedingSaveRetry.add(bookName);
+        if (created > 0) {
             // Immediate saves resolve to the committed name, or null when the host discarded the write.
-            const savedName = await context.saveWorldInfo(bookName, bookData, true);
+            const savedName = await context.saveWorldInfo(bookName, bookData, true, { conditional: true });
             if (typeof savedName !== 'string' || !savedName.trim()) {
                 throw new Error(`The host discarded the save of "${bookName}".`);
             }
-            booksNeedingSaveRetry.delete(bookName);
             committedName = savedName;
         }
 
-        await offerFallbackLorebookAttachment(context, bookName, committedName, attachToChat, notifier);
+        await offerFallbackLorebookAttachment(context, bookName, committedName, attachToChat, notifier, isCurrent);
         bookName = committedName;
         if (created > 0) {
             const duplicateNote = duplicates > 0 ? ` Skipped ${duplicates} duplicate${duplicates === 1 ? '' : 's'}.` : '';
@@ -288,7 +296,20 @@ async function sendLorebookEntries(content, context, notifier) {
 }
 
 export function sendCompanionResultToLorebook(content, context = globalThis.SillyTavern?.getContext?.(), notifier = globalThis.toastr) {
-    const run = writeChain.then(() => sendLorebookEntries(content, context, notifier));
+    const getContext = globalThis.SillyTavern?.getContext ?? (() => context);
+    const origin = {
+        chatId: context?.getCurrentChatId?.() ?? context?.chatId,
+        metadata: context?.chatMetadata,
+        characterId: context?.characterId,
+        groupId: context?.groupId,
+    };
+    const isCurrent = () => {
+        const current = getContext();
+        return current?.chatMetadata === origin.metadata
+            && (current?.getCurrentChatId?.() ?? current?.chatId) === origin.chatId
+            && current?.characterId === origin.characterId && current?.groupId === origin.groupId;
+    };
+    const run = writeChain.then(() => sendLorebookEntries(content, context, notifier, isCurrent));
     writeChain = run.then(() => undefined, () => undefined);
     return run;
 }

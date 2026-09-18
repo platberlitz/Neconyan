@@ -1117,7 +1117,7 @@ async function handlePanelAction(event) {
             if (!isCurrent()) return;
             const remaining = new Set(getCompanionCoveredMessageIndices(messageIndex, agentId));
             if (indices.some(index => index >= start && !remaining.has(index))) return;
-            await hideChatMessageRange(start, end, false);
+            if (await hideChatMessageRange(start, end, false) === false) return;
             hiddenCount += end - start + 1;
         }
         if (!isCurrent()) return;

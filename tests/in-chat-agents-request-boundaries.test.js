@@ -91,3 +91,55 @@ describe('real agent request boundaries', () => {
         expect(() => ctx.parseChatContext(JSON.stringify(messages))).toThrow();
     });
 });
+
+describe('message visibility save ownership', () => {
+    function visibilityRuntime() {
+        const ctx = vm.createContext({
+            console,
+            chat: [{ mes: 'Original story', is_system: false }], chat_metadata: {}, chatId: 'original',
+            getCurrentChatId: () => ctx.chatId,
+            $: () => ({ length: 1, attr: jest.fn() }),
+            refreshSwipeButtons: jest.fn(), saveChatConditional: jest.fn(async () => true),
+            event_types: { MESSAGE_UPDATED: 'updated' }, eventSource: { emit: jest.fn() },
+            toastr: { error: jest.fn() }, t: strings => strings.join(''),
+        });
+        load(ctx, 'scripts/chats.js', ['messageVisibilityOperations', 'hideChatMessageRange']);
+        return ctx;
+    }
+
+    test.each(['declined', 'thrown'])('a %s save restores visibility and reports failure', async failure => {
+        const ctx = visibilityRuntime();
+        ctx.saveChatConditional.mockImplementationOnce(async () => {
+            if (failure === 'thrown') throw new Error('Save unavailable');
+            return false;
+        });
+        await expect(ctx.hideChatMessageRange(0, 0, false)).resolves.toBe(false);
+        expect(ctx.chat[0].is_system).toBe(false);
+        expect(ctx.eventSource.emit).not.toHaveBeenCalled();
+        expect(ctx.toastr.error).toHaveBeenCalledTimes(1);
+    });
+
+    test('a completed save does not refresh a different chat', async () => {
+        const ctx = visibilityRuntime();
+        ctx.saveChatConditional.mockImplementationOnce(async () => {
+            ctx.chatId = 'next';
+            ctx.chat = [{ mes: 'Other story', is_system: false }];
+            ctx.chat_metadata = {};
+            return true;
+        });
+        await expect(ctx.hideChatMessageRange(0, 0, false)).resolves.toBe(false);
+        expect(ctx.chat[0].is_system).toBe(false);
+        expect(ctx.eventSource.emit).not.toHaveBeenCalled();
+    });
+
+    test('a failed older operation cannot undo a newer successful visibility change', async () => {
+        const ctx = visibilityRuntime();
+        let release;
+        ctx.saveChatConditional.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+        const first = ctx.hideChatMessageRange(0, 0, false);
+        await expect(ctx.hideChatMessageRange(0, 0, false)).resolves.toBe(true);
+        release(false);
+        await expect(first).resolves.toBe(false);
+        expect(ctx.chat[0].is_system).toBe(true);
+    });
+});

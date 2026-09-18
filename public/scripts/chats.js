@@ -137,24 +137,36 @@ function getConverter(type) {
     return key && converters[key];
 }
 
+const messageVisibilityOperations = new WeakMap();
+
 /**
  * Mark a range of messages as hidden ("is_system") or not.
  * @param {number} start Starting message ID
  * @param {number} end Ending message ID (inclusive)
  * @param {boolean} unhide If true, unhide the messages instead.
  * @param {string} nameFitler Optional name filter
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>} Whether the change was saved in the original chat.
  */
 export async function hideChatMessageRange(start, end, unhide, nameFitler = null) {
-    if (isNaN(start)) return;
-    if (!end) end = start;
+    start = Number(start);
+    end = end === undefined || end === null ? start : Number(end);
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start) return false;
+    end = Math.min(end, chat.length - 1);
     const hide = !unhide;
+    const originId = getCurrentChatId();
+    const originMetadata = chat_metadata;
+    const operation = {};
+    const changed = [];
+    const isCurrent = () => getCurrentChatId() === originId && chat_metadata === originMetadata
+        && changed.every(({ messageId, message }) => chat[messageId] === message);
 
     for (let messageId = start; messageId <= end; messageId++) {
         const message = chat[messageId];
         if (!message) continue;
         if (nameFitler && message.name !== nameFitler) continue;
 
+        changed.push({ messageId, message, previous: message.is_system });
+        messageVisibilityOperations.set(message, operation);
         message.is_system = hide;
 
         // Also toggle "hidden" state for all visible messages
@@ -166,10 +178,31 @@ export async function hideChatMessageRange(start, end, unhide, nameFitler = null
     // Reload swipes. Useful when a last message is hidden.
     refreshSwipeButtons();
 
-    await saveChatConditional();
+    let saved = false;
+    try {
+        saved = (await saveChatConditional()) !== false;
+    } catch (error) {
+        console.error('Could not save message visibility.', error);
+    }
+    const sameChat = isCurrent();
+    for (const { messageId, message, previous } of changed) {
+        if (messageVisibilityOperations.get(message) !== operation) continue;
+        messageVisibilityOperations.delete(message);
+        if (!saved && message.is_system === hide) {
+            message.is_system = previous;
+            if (sameChat) $(`.mes[mesid="${messageId}"]`).attr('is_system', String(Boolean(previous)));
+        }
+    }
+    if (!sameChat) return false;
+    if (!saved) {
+        refreshSwipeButtons();
+        toastr.error(t`The message visibility change could not be saved. Try again.`);
+        return false;
+    }
     // Neconyan: keep chat listeners in sync after range-hiding messages so the
     // shell and footer controls can refresh immediately.
     await eventSource.emit(event_types.MESSAGE_UPDATED, start);
+    return isCurrent();
 }
 
 /**
