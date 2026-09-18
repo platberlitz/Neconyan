@@ -3033,10 +3033,51 @@ function sanitizePreGenerationInterceptRunForStorage(result) {
     };
 }
 
+/**
+ * Intercept results belong to the generation (and chat) that produced them.
+ * A result that settles after a newer generation started, or after a chat
+ * change, must not be attached to whatever reply arrives next.
+ * @param {{ chatId: string, runId: number, cancelRevision: number }} origin
+ */
+function isInterceptOriginCurrent(origin) {
+    return Boolean(origin)
+        && origin.runId === postProcessingGenerationRunId
+        && origin.cancelRevision === agentGenerationCancelRevision
+        && origin.chatId === getCurrentSnapshotChatId();
+}
+
 function takePendingPreGenerationInterceptRuns() {
     const runs = pendingPreGenerationInterceptRuns;
     pendingPreGenerationInterceptRuns = [];
     return runs;
+}
+
+/** @type {WeakMap<object, object[]>} */
+const claimedInterceptRunsByMessage = new WeakMap();
+
+/**
+ * Moves the pending intercept results onto the reply that just arrived, so a
+ * later generation (for example the next group member) cannot clear or consume
+ * them before this reply's deferred post-processing runs.
+ * @param {object} message
+ */
+function claimPendingInterceptRunsForMessage(message) {
+    if (!message || pendingPreGenerationInterceptRuns.length === 0) {
+        return;
+    }
+
+    const existing = claimedInterceptRunsByMessage.get(message) ?? [];
+    claimedInterceptRunsByMessage.set(message, [...existing, ...takePendingPreGenerationInterceptRuns()]);
+}
+
+function takeInterceptRunsForMessage(message) {
+    const claimed = message ? claimedInterceptRunsByMessage.get(message) : null;
+    if (claimed) {
+        claimedInterceptRunsByMessage.delete(message);
+        return [...claimed, ...takePendingPreGenerationInterceptRuns()];
+    }
+
+    return takePendingPreGenerationInterceptRuns();
 }
 
 function storePreGenerationInterceptHistory(message, runs) {
@@ -3976,9 +4017,14 @@ async function onGenerationAfterCommands(generationType, options, dryRun) {
         return;
     }
 
+    // The generation-start snapshot is taken before the host inserts the new user
+    // message, so keyword triggers would look at the previous turn. Rebuild once
+    // here when the chat grew since generation start; this is the one activation
+    // decision that the rest of the run reuses.
+    const userMessageInsertedSinceStart = !dryRun && chat.length !== generationStartChatLength;
     const activationSnapshot = dryRun
         ? buildActivationSnapshot(normalizedGenerationType)
-        : pendingGenerationSnapshot?.generationType === normalizedGenerationType
+        : pendingGenerationSnapshot?.generationType === normalizedGenerationType && !userMessageInsertedSinceStart
             ? cloneActivationSnapshot(pendingGenerationSnapshot, normalizedGenerationType)
             : buildActivationSnapshot(normalizedGenerationType);
 
@@ -4151,7 +4197,7 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
                 ),
             );
 
-        if (storePreGenerationInterceptHistory(message, takePendingPreGenerationInterceptRuns())) {
+        if (storePreGenerationInterceptHistory(message, takeInterceptRunsForMessage(message))) {
             chatStateChanged = true;
             messageDisplayChanged = true;
         }
@@ -4353,14 +4399,22 @@ async function onMessageReceived(messageIndex, generationType) {
         return;
     }
 
-    if (internalPromptTransformDepth > 0) {
-        deferPostProcessing(Number(messageIndex), generationType, buildActivationSnapshot(generationType));
-        return;
-    }
-
     const numericMessageIndex = Number(messageIndex);
     const message = chat[numericMessageIndex];
     if (!message || message.is_user || message.is_system) {
+        return;
+    }
+
+    claimPendingInterceptRunsForMessage(message);
+
+    if (internalPromptTransformDepth > 0) {
+        // Keep this reply's original activation decision instead of rerolling
+        // probability and keyword checks while an unrelated helper is running.
+        const snapshot = pendingGenerationSnapshot?.generationType === normalizeGenerationType(generationType)
+            && isActivationSnapshotForCurrentChat(pendingGenerationSnapshot)
+            ? pendingGenerationSnapshot
+            : buildActivationSnapshot(generationType);
+        deferPostProcessing(numericMessageIndex, generationType, snapshot);
         return;
     }
 
@@ -5084,11 +5138,16 @@ async function onGenerateAfterCombinePrompts(eventData) {
         return;
     }
 
+    const origin = getAgentGenerationContext();
     const result = await runPreGenerationInterceptorsOnText(
         eventData.prompt,
         currentMainGenerationType,
         'text',
     );
+    if (!isInterceptOriginCurrent(origin)) {
+        return;
+    }
+
     eventData.prompt = result.text;
     pendingPreGenerationInterceptRuns.push(...result.runs);
 }
@@ -5103,7 +5162,12 @@ async function onChatCompletionPromptReady(eventData) {
     }
 
     const originalChat = eventData.chat;
+    const origin = getAgentGenerationContext();
     const result = await runPreGenerationInterceptorsOnChat(originalChat, currentMainGenerationType);
+    if (!isInterceptOriginCurrent(origin)) {
+        return;
+    }
+
     const nextChat = result.chat;
     pendingPreGenerationInterceptRuns.push(...result.runs);
     if (nextChat === originalChat || !result.runs.some(run => run.changed)) {
@@ -5152,10 +5216,11 @@ async function onMainGenerationOutputReady(eventData) {
         return;
     }
 
+    const origin = getAgentGenerationContext();
     const shouldShowMessageFirst = shouldShowPostMainInterceptMessageFirst();
     if (shouldShowMessageFirst) {
         const runPostMainIntercepts = await showPostMainInterceptReviewPopup(eventData.text);
-        if (generationStopRequested) {
+        if (generationStopRequested || !isInterceptOriginCurrent(origin)) {
             eventData.cancelled = true;
             return;
         }
@@ -5169,6 +5234,11 @@ async function onMainGenerationOutputReady(eventData) {
         activationSnapshot,
         skipChanges: false,
     });
+    if (!isInterceptOriginCurrent(origin)) {
+        eventData.cancelled = true;
+        return;
+    }
+
     pendingPreGenerationInterceptRuns.push(...result.runs);
 
     if (result.cancelled || generationStopRequested) {

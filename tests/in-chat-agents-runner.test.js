@@ -4793,6 +4793,55 @@ describe('in-chat agent post-processing runner', () => {
         expect(eventData.prompt).toBe('second output');
     });
 
+    test('a pre-generation intercept that finishes after a chat change does not touch the new chat', async () => {
+        enabledAgents = [createPreInterceptAgent()];
+        const quietResolvers = [];
+        generateQuietPrompt.mockImplementation(async () => await new Promise(resolve => quietResolvers.push(resolve)));
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+        const oldEventData = { prompt: 'Old chat prompt', dryRun: false };
+        const oldIntercept = eventSource.emit(eventTypes.GENERATE_AFTER_COMBINE_PROMPTS, oldEventData);
+        await waitFor(() => quietResolvers.length === 1);
+
+        currentChatId = 'chat-b';
+        await eventSource.emit(eventTypes.CHAT_CHANGED);
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        quietResolvers.shift()('Rewritten old prompt');
+        await oldIntercept;
+
+        expect(oldEventData.prompt).toBe('Old chat prompt');
+
+        chat.push({ name: 'Assistant', mes: 'New chat reply', is_user: false, is_system: false, extra: {} });
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, chat.length - 1, 'normal');
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length);
+        await new Promise(resolve => setTimeout(resolve, 5));
+
+        expect(chat[chat.length - 1].extra.inChatAgentPreGenerationInterceptHistory).toBeUndefined();
+    });
+
+    test('keyword conditions see the user message inserted after generation started', async () => {
+        useAppendPostAgent();
+        enabledAgents[0].conditions.triggerKeywords = ['urgent'];
+        chat.push({ name: 'User', mes: 'Nothing special here.', is_user: true, is_system: false, extra: {} });
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        chat.push({ name: 'User', mes: 'This one is urgent.', is_user: true, is_system: false, extra: {} });
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+        chat.push({ name: 'Assistant', mes: 'On it.', is_user: false, is_system: false, extra: {} });
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, chat.length - 1, 'normal');
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length);
+        await new Promise(resolve => setTimeout(resolve, 5));
+
+        expect(chat[chat.length - 1].mes).toContain('[post processed]');
+    });
+
     test('replaces chat completion prompts when intercept output is a message array', async () => {
         enabledAgents = [createPreInterceptAgent()];
         generateQuietPrompt.mockResolvedValue(JSON.stringify([
