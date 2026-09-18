@@ -1,5 +1,6 @@
 /* global globalThis */
 import { describe, test, expect, jest, beforeEach } from '@jest/globals';
+import { readFileSync } from 'node:fs';
 
 describe('in-chat agent scoped enabled state', () => {
     let context;
@@ -641,15 +642,32 @@ describe('in-chat agent scoped enabled state', () => {
             { id: 'note-companion', name: 'Note Companion', category: 'companion', execution: 'companion' },
         ]);
 
+        // The startup migration never overrides choices the user saved.
         const trackerCompanion = store.getAgentById('manual-card-tracker');
-        expect(store.applyTrackerCompanionAutoLoopDefaults(trackerCompanion)).toBe(true);
+        expect(store.applyTrackerCompanionAutoLoopDefaults(trackerCompanion)).toBe(false);
+        expect(trackerCompanion.companion).toEqual(expect.objectContaining({
+            trigger: 'manual',
+            displayMode: 'card',
+            feedback: { enabled: false, depth: 2 },
+        }));
+
+        // A deliberate conversion applies the whole loop.
+        expect(store.applyTrackerCompanionAutoLoopDefaults(trackerCompanion, { force: true })).toBe(true);
         expect(trackerCompanion.companion).toEqual(expect.objectContaining({
             trigger: 'auto',
             displayMode: 'panel',
             rawPrompt: true,
             feedback: { enabled: true, depth: 2 },
         }));
-        expect(store.applyTrackerCompanionAutoLoopDefaults(trackerCompanion)).toBe(false);
+        expect(store.applyTrackerCompanionAutoLoopDefaults(trackerCompanion, { force: true })).toBe(false);
+
+        // Absent choices are filled without force.
+        const bareTracker = { id: 'bare-tracker', name: 'Bare', category: 'tracker', execution: 'companion', companion: { maxTokens: 512 } };
+        expect(store.applyTrackerCompanionAutoLoopDefaults(bareTracker)).toBe(true);
+        expect(bareTracker.companion).toEqual(expect.objectContaining({ trigger: 'auto', rawPrompt: true, maxTokens: 512, feedback: expect.objectContaining({ enabled: true }) }));
+
+        const lockedTracker = { id: 'locked-tracker', name: 'Locked', category: 'tracker', execution: 'companion', phaseLocked: true, companion: {} };
+        expect(store.applyTrackerCompanionAutoLoopDefaults(lockedTracker)).toBe(false);
 
         expect(store.applyTrackerCompanionAutoLoopDefaults(store.getAgentById('inline-tracker'))).toBe(false);
         const noteCompanion = store.getAgentById('note-companion');
@@ -692,15 +710,25 @@ describe('in-chat agent scoped enabled state', () => {
             includeSystemPrompt: true,
         }));
 
-        expect(store.applyCompanionContextAccessDefaults(optedOut)).toBe(true);
-        expect(optedOut.companion).toEqual(expect.objectContaining({
-            includeCharacterCard: true,
-            includeAuthorsNote: true,
-            includeSystemPrompt: true,
-            includeHistory: true,
-        }));
+        // The migration must not undo an explicit opt-out: those choices decide what is sent to a model.
         expect(store.applyCompanionContextAccessDefaults(optedOut)).toBe(false);
+        expect(optedOut.companion).toEqual(expect.objectContaining({
+            includeCharacterCard: false,
+            includePersona: false,
+            includeWorldInfo: false,
+            includeAuthorsNote: false,
+            includeSystemPrompt: false,
+        }));
         expect(store.applyCompanionContextAccessDefaults(store.getAgentById('inline-agent'))).toBe(false);
+
+        // A record that never stored the keys picks up the defaults through normalisation; its own false stays.
+        const bare = { id: 'bare-companion', name: 'Bare', category: 'companion', execution: 'companion', companion: { includePersona: false } };
+        store.applyCompanionContextAccessDefaults(bare);
+        expect(bare.companion).toEqual(expect.objectContaining({ includePersona: false, includeCharacterCard: true, includeHistory: true }));
+
+        const locked = { id: 'locked-companion', name: 'Locked', category: 'companion', execution: 'companion', phaseLocked: true, companion: {} };
+        expect(store.applyCompanionContextAccessDefaults(locked)).toBe(false);
+        expect(store.applyCompanionPanelDisplayDefault({ ...locked, companion: { displayMode: 'card' } })).toBe(false);
     });
 
     test('moves card-mode companions into the panel once', async () => {
@@ -848,7 +876,7 @@ describe('in-chat agent scoped enabled state', () => {
         expect(store.getRedundantBundledAgentDuplicateIds(agents, templates)).toEqual(['duplicate-pathfinder']);
     });
 
-    test('removes same-template duplicates while keeping the current template prompt', async () => {
+    test('keeps an enabled same-template copy even when a fresh template copy exists', async () => {
         const store = await importStore();
         const templates = [{
             id: 'tpl-prose-polisher',
@@ -873,7 +901,55 @@ describe('in-chat agent scoped enabled state', () => {
             },
         ];
 
-        expect(store.getRedundantBundledAgentDuplicateIds(agents, templates)).toEqual(['old-prose-polisher']);
+        expect(store.getRedundantBundledAgentDuplicateIds(agents, templates)).toEqual([]);
+    });
+
+    test('startup cleanup never deletes deliberately added agent copies', async () => {
+        const store = await importStore();
+        const templates = [{
+            id: 'tpl-scene-tracker',
+            name: 'Scene Tracker',
+            prompt: 'bundled scene prompt',
+            author: 'SillyBunny',
+            category: 'companion',
+            execution: 'companion',
+            version: 1,
+        }];
+        const base = {
+            name: 'Scene Tracker',
+            prompt: 'bundled scene prompt',
+            author: 'SillyBunny',
+            category: 'companion',
+            execution: 'companion',
+            sourceTemplateId: 'tpl-scene-tracker',
+            version: 1,
+        };
+
+        const enabledSecond = [
+            { ...base, id: 'first-copy', enabled: false },
+            { ...base, id: 'second-copy', enabled: true },
+        ];
+        expect(store.getRedundantBundledAgentDuplicateIds(enabledSecond, templates)).toEqual([]);
+        expect(store.getBundledAgentLatestTemplatePlan(enabledSecond, templates).redundantIds).toEqual([]);
+
+        const lockedFirst = [
+            { ...base, id: 'first-copy', enabled: false, phaseLocked: true, prompt: 'my locked wording' },
+            { ...base, id: 'second-copy', enabled: false },
+        ];
+        expect(store.getRedundantBundledAgentDuplicateIds(lockedFirst, templates)).toEqual([]);
+        expect(store.getBundledAgentLatestTemplatePlan(lockedFirst, templates).redundantIds).toEqual([]);
+
+        const favouriteSecond = [
+            { ...base, id: 'first-copy', enabled: false },
+            { ...base, id: 'second-copy', enabled: false, favorite: true },
+        ];
+        expect(store.getRedundantBundledAgentDuplicateIds(favouriteSecond, templates)).toEqual([]);
+
+        const untouchedSeeds = [
+            { ...base, id: 'first-copy', enabled: false },
+            { ...base, id: 'second-copy', enabled: false },
+        ];
+        expect(store.getRedundantBundledAgentDuplicateIds(untouchedSeeds, templates)).toEqual(['second-copy']);
     });
 
     test('refreshes saved bundled agents from the latest template while preserving runtime state', async () => {
@@ -956,7 +1032,7 @@ describe('in-chat agent scoped enabled state', () => {
         ]));
     });
 
-    test('dedupes existing bundled setup copies while updating the keeper', async () => {
+    test('keeps customised bundled setup copies while updating the keeper', async () => {
         const store = await importStore();
         const templates = [{
             id: 'tpl-relationship-lens-companion',
@@ -1010,7 +1086,7 @@ describe('in-chat agent scoped enabled state', () => {
 
         const plan = store.getBundledAgentLatestTemplatePlan(agents, templates);
 
-        expect(plan.redundantIds).toEqual(['duplicate-relationship-lens']);
+        expect(plan.redundantIds).toEqual([]);
         expect(plan.updates).toHaveLength(1);
         expect(plan.updates[0].agent.id).toBe('old-relationship-lens');
         expect(plan.updates[0].agent.prompt).toBe('latest relationship prompt');
@@ -1183,5 +1259,16 @@ describe('in-chat agent scoped enabled state', () => {
         };
 
         expect(store.findTemplateForAgentSnapshot(agent, templates)).toBeNull();
+    });
+});
+
+describe('legacy kit migration keeps its source until every write is acknowledged', () => {
+    test('index.js only deletes the legacy groups after a successful migration', () => {
+        const source = readFileSync(new URL('../public/scripts/extensions/in-chat-agents/index.js', import.meta.url), 'utf8');
+        const persist = source.slice(source.indexOf('function persistExtensionState()'), source.indexOf('function restoreAutoSeededTemplateIds'));
+        expect(persist).toMatch(/if \(legacyGroupsRetired\) \{\s*delete extension_settings\.inChatAgents\.groups;/);
+        const migration = source.slice(source.indexOf('if (legacyGroups.length > 0) {'), source.indexOf('if (!areAgentsLoaded()) throw'));
+        expect(migration).toContain('initResults[1]?.status === \'fulfilled\'');
+        expect(migration.indexOf('await migrateLegacyGroups(legacyGroups)')).toBeLessThan(migration.indexOf('legacyGroupsRetired = true'));
     });
 });

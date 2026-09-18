@@ -817,13 +817,18 @@ function getTemplateAssetUrl(filename) {
     return `/scripts/extensions/${MODULE_NAME}/templates/${filename}?v=${encodeURIComponent(CLIENT_VERSION || 'dev')}`;
 }
 
+/** Set only once every legacy kit was written to the server; until then the legacy copy is the sole source. */
+let legacyGroupsRetired = false;
+
 function persistExtensionState() {
     extension_settings.inChatAgents = {
         ...(extension_settings.inChatAgents ?? {}),
         globalSettings: structuredClone(getGlobalSettings()),
         autoSeededTemplateIds: [...autoSeededTemplateIds],
     };
-    delete extension_settings.inChatAgents.groups;
+    if (legacyGroupsRetired) {
+        delete extension_settings.inChatAgents.groups;
+    }
     saveSettingsDebounced();
 }
 
@@ -6375,17 +6380,26 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     renderAgentSetupControls();
 
     if (legacyGroups.length > 0) {
+        // Only migrate when the server kit list actually loaded (else "already exists" checks are blind),
+        // and only retire the legacy copy after every write was acknowledged.
+        const customGroupsLoaded = initResults[1]?.status === 'fulfilled';
         try {
+            if (!customGroupsLoaded) throw new Error('The custom kit list did not load; legacy kits were kept for a later attempt.');
             const migratedCount = await migrateLegacyGroups(legacyGroups);
+            legacyGroupsRetired = true;
+            persistExtensionState();
             if (migratedCount > 0) {
                 toastr.success(`Migrated ${migratedCount} custom group(s) to backend storage.`);
             }
         } catch (error) {
             console.warn('[InChatAgents] Failed to migrate legacy groups:', error);
         }
+    } else if (savedState && Object.hasOwn(savedState, 'groups')) {
+        legacyGroupsRetired = true;
+        persistExtensionState();
     }
 
-    if (removedAutoSeededTemplateIds || (savedState && Object.hasOwn(savedState, 'groups'))) {
+    if (removedAutoSeededTemplateIds) {
         persistExtensionState();
     }
 

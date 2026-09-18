@@ -194,6 +194,18 @@ describe('Agent setup apply and recovery', () => {
         expect(runtime.store.isAgentEnabledForAnyScope(runtime.store.getAgentById('a'))).toBe(true);
     });
 
+    test('loading an older setup keeps migration markers forward and reports current only when apply would change nothing', async () => {
+        const runtime = await storeRuntime();
+        runtime.store.setGlobalSettings({ trackerCompanionAutoLoopVersion: 4, trackerCompanionAutoLoopApplied: true, connectionProfile: 'profile-x' });
+        const stale = { ...runtime.preset, globalSettings: { ...runtime.preset.globalSettings, trackerCompanionAutoLoopVersion: 1, trackerCompanionAutoLoopApplied: false } };
+        // A sparse setup that does not mention the profile would reset it to the default on apply, so it is not "current".
+        expect(runtime.store.isAgentSetupCurrent(stale)).toBe(false);
+        await expect(runtime.store.applyAgentSetupPreset(stale)).resolves.toBe(true);
+        expect(runtime.store.getGlobalSettings().trackerCompanionAutoLoopVersion).toBe(4);
+        expect(runtime.store.getGlobalSettings().trackerCompanionAutoLoopApplied).toBe(true);
+        expect(runtime.store.isAgentSetupCurrent(stale)).toBe(true);
+    });
+
     test('failed apply rolls back only its own writes and queues a concurrent new agent safely', async () => {
         const runtime = await storeRuntime();
         let release;

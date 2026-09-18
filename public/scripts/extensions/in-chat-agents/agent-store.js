@@ -213,13 +213,45 @@ export function createAgentSetupSnapshot() {
     };
 }
 
+/**
+ * Startup migrations record their progress in the global settings (keys ending in
+ * `Version` or `Applied`). A setup saved before a migration must not roll those markers
+ * back, or the migration would run again over the restored library.
+ * @param {object} previous
+ * @param {object} next
+ * @returns {object}
+ */
+function keepMigrationMarkersForward(previous, next) {
+    const result = { ...next };
+    for (const [key, value] of Object.entries(previous ?? {})) {
+        if (!/(Version|Applied)$/.test(key)) continue;
+        if (typeof value === 'number' && (typeof result[key] !== 'number' || result[key] < value)) result[key] = value;
+        if (value === true && result[key] !== true) result[key] = true;
+    }
+    return result;
+}
+
+/**
+ * The exact global settings that applying `preset` would produce, so the "current setup"
+ * check and the apply path cannot disagree.
+ * @param {{ globalSettings: object }} preset
+ * @returns {object}
+ */
+function buildAppliedGlobalSettings(preset) {
+    return keepMigrationMarkersForward(
+        globalSettings,
+        mergeAgentSetupRecord({ ...globalSettings, ...defaultGlobalSettings }, preset.globalSettings),
+    );
+}
+
 export function isAgentSetupCurrent(preset) {
     if (!preset) return false;
     const included = new Set(preset.agents.map(agent => agent.id));
     const matches = (current, saved) => current && JSON.stringify(current) === JSON.stringify(mergeAgentSetupRecord(current, saved));
+    const applied = buildAppliedGlobalSettings(preset);
     return preset.agents.every(agent => matches(getAgentById(agent.id), agent))
         && getAgents().every(agent => included.has(agent.id) || !isAgentEnabledForAnyScope(agent))
-        && matches(globalSettings, preset.globalSettings);
+        && JSON.stringify(globalSettings) === JSON.stringify(normalizeGlobalSettingsRecord(structuredClone(applied), applied));
 }
 
 export async function loadAgentSetupPresets({ canPersist = () => true } = {}) {
@@ -293,22 +325,34 @@ export function setGlobalSettings(update) {
     for (const [key, value] of Object.entries(update)) {
         Object.defineProperty(globalSettings, key, { value, enumerable: true, writable: true, configurable: true });
     }
-    globalSettings.pathfinderEnabled = globalSettings.pathfinderEnabled !== false;
-    globalSettings.postMainInterceptShowMessageFirst = globalSettings.postMainInterceptShowMessageFirst !== false;
-    globalSettings.enabledAgentIdsByChatType = normalizeScopedEnabledAgentIds(globalSettings.enabledAgentIdsByChatType);
-    globalSettings.helperPrefillMessages = typeof globalSettings.helperPrefillMessages === 'string'
-        ? globalSettings.helperPrefillMessages
-        : '';
-    globalSettings.hiddenCompanionAgentIds = normalizeAgentIdCollection(globalSettings.hiddenCompanionAgentIds);
+    normalizeGlobalSettingsRecord(globalSettings, update);
+}
 
-    if (!Object.hasOwn(update, 'scopedEnabledAgentIdsInitialized') && !globalSettings.scopedEnabledAgentIdsInitialized) {
+/**
+ * Normalises a global settings record in place, the same way setGlobalSettings does, so a
+ * predicted record (see isAgentSetupCurrent) matches what the store would actually hold.
+ * @param {object} settings
+ * @param {object} update The update that produced `settings`.
+ * @returns {object}
+ */
+function normalizeGlobalSettingsRecord(settings, update) {
+    settings.pathfinderEnabled = settings.pathfinderEnabled !== false;
+    settings.postMainInterceptShowMessageFirst = settings.postMainInterceptShowMessageFirst !== false;
+    settings.enabledAgentIdsByChatType = normalizeScopedEnabledAgentIds(settings.enabledAgentIdsByChatType);
+    settings.helperPrefillMessages = typeof settings.helperPrefillMessages === 'string'
+        ? settings.helperPrefillMessages
+        : '';
+    settings.hiddenCompanionAgentIds = normalizeAgentIdCollection(settings.hiddenCompanionAgentIds);
+
+    if (!Object.hasOwn(update, 'scopedEnabledAgentIdsInitialized') && !settings.scopedEnabledAgentIdsInitialized) {
         const scopedSetting = update.enabledAgentIdsByChatType;
-        globalSettings.scopedEnabledAgentIdsInitialized = Boolean(
+        settings.scopedEnabledAgentIdsInitialized = Boolean(
             scopedSetting &&
             typeof scopedSetting === 'object' &&
             AGENT_CHAT_SCOPE_KEYS.some(scope => Object.hasOwn(scopedSetting, scope)),
         );
     }
+    return settings;
 }
 
 function normalizeAgentIdCollection(value = []) {
@@ -802,6 +846,30 @@ function chooseBundledTemplateAgentToKeep(agents, template) {
         ?? null;
 }
 
+/**
+ * Automatic cleanup may only delete copies that are demonstrably leftovers of an
+ * automatic seed or migration: paused everywhere, not locked, not favourited, and
+ * either carrying the current template prompt (a fresh seed) or identical in name
+ * and prompt to the copy being kept. Anything else may be a deliberate 'Add another'.
+ */
+function isAutomaticDuplicateCopy(agent, keepAgent, template = null, templates = []) {
+    if (!agent?.id || agent.phaseLocked || agent.favorite) {
+        return false;
+    }
+    if (Boolean(agent.enabled) || isAgentEnabledForAnyScope(agent)) {
+        return false;
+    }
+
+    const agentPrompt = String(agent?.prompt ?? '').trim();
+    const templatePrompt = template ? String(template?.prompt ?? '').trim() : null;
+    if (templatePrompt !== null && agentPrompt === templatePrompt) {
+        return true;
+    }
+
+    const agentKey = getBundledAgentDuplicateKey(agent, templates);
+    return Boolean(agentKey) && agentKey === getBundledAgentDuplicateKey(keepAgent, templates);
+}
+
 function cloneSettings(settings = {}) {
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
         return {};
@@ -879,7 +947,7 @@ export function getBundledAgentLatestTemplatePlan(agentList = [], templateList =
         }
 
         for (const agent of grouped) {
-            if (agent?.id && agent.id !== keepAgent.id && !agent.phaseLocked) {
+            if (agent?.id && agent.id !== keepAgent.id && isAutomaticDuplicateCopy(agent, keepAgent, template, templateList)) {
                 redundantIds.add(agent.id);
             }
         }
@@ -956,7 +1024,7 @@ export function getRedundantBundledAgentDuplicateIds(agentList = [], templateLis
         }
 
         for (const agent of unsourced) {
-            if (agent?.id && !agent.phaseLocked) {
+            if (isAutomaticDuplicateCopy(agent, templateBacked[0], template, templateList)) {
                 redundantIds.add(agent.id);
             }
         }
@@ -984,7 +1052,7 @@ export function getRedundantBundledAgentDuplicateIds(agentList = [], templateLis
         const template = findTemplateForAgentSnapshot(grouped[0], templateList);
         const keepAgent = chooseSameTemplateAgentToKeep(grouped, template);
         for (const agent of grouped) {
-            if (agent?.id && agent.id !== keepAgent?.id && !agent.phaseLocked) {
+            if (agent?.id && agent.id !== keepAgent?.id && isAutomaticDuplicateCopy(agent, keepAgent, template, templateList)) {
                 redundantIds.add(agent.id);
             }
         }
@@ -1646,7 +1714,7 @@ function buildCompanionContextAccessDefaults() {
  * @returns {boolean} Whether the agent changed.
  */
 export function applyCompanionPanelDisplayDefault(agent) {
-    if (!agent || !isCompanionAgent(agent)) {
+    if (!agent || !isCompanionAgent(agent) || agent.phaseLocked) {
         return false;
     }
 
@@ -1661,18 +1729,37 @@ export function applyCompanionPanelDisplayDefault(agent) {
 }
 
 /**
+ * Raw (pre-normalisation) companion object, so a migration can tell "the user never chose"
+ * (key absent) from "the user chose false" (key present) before normalisation fills defaults.
+ * @param {InChatAgent} agent
+ * @returns {Record<string, unknown>}
+ */
+function getRawCompanionConfig(agent) {
+    const raw = agent?.companion;
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+}
+
+/**
  * Grants a companion the default context access (persona, character card, world info,
  * author's note, system prompt). Used by the one-time migration for existing companions.
+ * Only fills choices the user never made: a stored false stays false, and locked agents
+ * are left alone.
  * @param {InChatAgent} agent
  * @returns {boolean} Whether the agent changed.
  */
 export function applyCompanionContextAccessDefaults(agent) {
-    if (!agent || !isCompanionAgent(agent)) {
+    if (!agent || !isCompanionAgent(agent) || agent.phaseLocked) {
         return false;
     }
 
-    const companion = normalizeCompanionConfig(agent.companion);
-    const next = { ...companion, ...buildCompanionContextAccessDefaults() };
+    const raw = getRawCompanionConfig(agent);
+    const companion = normalizeCompanionConfig(raw);
+    const next = { ...companion };
+    for (const [key, value] of Object.entries(buildCompanionContextAccessDefaults())) {
+        if (raw[key] === undefined) {
+            next[key] = value;
+        }
+    }
 
     if (JSON.stringify(next) === JSON.stringify(companion)) {
         agent.companion = companion;
@@ -1687,27 +1774,39 @@ export function applyCompanionContextAccessDefaults(agent) {
  * Applies the tracker auto-loop defaults to a companion-execution tracker: run automatically
  * after each reply with the agent prompt sent as-is, feed the latest state back into the next
  * main generation, and show state in the slide-out tracker panel instead of chat cards.
+ * Without `force` (the startup migration) only choices the user never made are filled and
+ * locked agents are skipped; with `force` (a deliberate conversion) the loop is applied fully.
  * The editor can override any of it.
  * @param {InChatAgent} agent
+ * @param {{ force?: boolean }} [options]
  * @returns {boolean} Whether the agent changed.
  */
-export function applyTrackerCompanionAutoLoopDefaults(agent) {
+export function applyTrackerCompanionAutoLoopDefaults(agent, { force = false } = {}) {
     if (!agent || !isCompanionAgent(agent) || agent.category !== 'tracker') {
         return false;
     }
+    if (agent.phaseLocked && !force) {
+        return false;
+    }
 
-    const companion = normalizeCompanionConfig(agent.companion);
-    const next = {
-        ...companion,
+    const raw = getRawCompanionConfig(agent);
+    const rawFeedback = raw.feedback && typeof raw.feedback === 'object' && !Array.isArray(raw.feedback) ? raw.feedback : {};
+    const companion = normalizeCompanionConfig(raw);
+    const loopDefaults = {
         ...buildCompanionContextAccessDefaults(),
         trigger: 'auto',
         displayMode: 'panel',
         rawPrompt: true,
-        feedback: {
-            ...companion.feedback,
-            enabled: true,
-        },
     };
+    const next = { ...companion, feedback: { ...companion.feedback } };
+    for (const [key, value] of Object.entries(loopDefaults)) {
+        if (force || raw[key] === undefined) {
+            next[key] = value;
+        }
+    }
+    if (force || rawFeedback.enabled === undefined) {
+        next.feedback.enabled = true;
+    }
 
     if (JSON.stringify(next) === JSON.stringify(companion)) {
         agent.companion = companion;
@@ -1736,7 +1835,8 @@ export function convertAgentExecution(agent, targetExecution) {
         agent.companion = normalizeCompanionConfig(agent.companion);
         // Remember the inline phase so converting back restores it instead of leaving 'post'.
         agent.companion.inlinePhase = ['pre', 'post', 'both'].includes(agent.phase) ? agent.phase : '';
-        applyTrackerCompanionAutoLoopDefaults(agent);
+        // A deliberate conversion by the user gets the full tracker loop, unlike the startup migration.
+        applyTrackerCompanionAutoLoopDefaults(agent, { force: true });
         agent.phase = 'post';
         return true;
     }
@@ -1836,7 +1936,7 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
             }
             assertCurrent();
             if (JSON.stringify(globalSettings) !== JSON.stringify(previousGlobals)) throw new Error('Agent settings changed during the load; the setup was not applied.');
-            setGlobalSettings(mergeAgentSetupRecord({ ...globalSettings, ...defaultGlobalSettings }, preset.globalSettings));
+            setGlobalSettings(buildAppliedGlobalSettings(preset));
             appliedGlobals = structuredClone(globalSettings);
             persistAgentGlobalSettings();
             if (await saveSettings(0, { returnResult: true }) !== true) throw new Error('The setup settings could not be saved.');
