@@ -76,6 +76,7 @@ import {
     onAgentGenerationStateChanged,
     getPreGenerationInterceptHistoryForMessage,
     getAgentGenerationCancelRevision,
+    getPathfinderRuntimeAgent,
     getPromptTransformHistoryForMessage,
     refreshRegexSnapshotsForAgent,
     runAgentOnMessage,
@@ -5724,7 +5725,7 @@ async function openPromptTransformHistoryPopup(messageIndex) {
 // ===================== Pawthfinder Editor =====================
 
 function getPathfinderSettingsAgent() {
-    return getAgents().find(isPathfinderAgent) ?? null;
+    return getPathfinderRuntimeAgent() ?? getAgents().find(isPathfinderAgent) ?? null;
 }
 
 function removePathfinderExtensionsHost() {

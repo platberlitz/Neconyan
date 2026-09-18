@@ -58,7 +58,7 @@ function deferred() {
 }
 
 const events = new EventEmitter();
-const eventTypes = { CHAT_CHANGED: 'chat', SETTINGS_UPDATED: 'settings' };
+const eventTypes = { CHAT_CHANGED: 'chat', SETTINGS_UPDATED: 'settings', WORLDINFO_RENAMED: 'renamed', WORLDINFO_DELETED: 'deleted' };
 const summaryListeners = new Set();
 const generationListeners = new Set();
 const template = jest.fn(async () => new Control());
@@ -445,6 +445,46 @@ describe('Pathfinder settings persistence', () => {
         await panel.fire('change', '#pf--lorebook-list input', input);
         expect(store.getAgentById('agent-a').settings.bookPermissions['Book B']).toEqual({ enabled: false, read: 'readwrite', write: 'none', delete: false });
         expect(activeBooks()).not.toContain('Book B');
+    });
+
+    test('retrying a permission edit preserves restrictions on a renamed book', async () => {
+        store.getAgentById('agent-a').settings.bookPermissions = { 'Book A': { read: 'none', write: 'none', delete: 'none' } };
+        const panel = await ui.openPathfinderSettings(store.getAgentById('agent-a'));
+        const input = new Control();
+        input.parent = new Control().attr('data-book', 'Book B');
+        input.dataset.permission = 'write';
+        input.checked = false;
+        globalThis.fetch.mockResolvedValueOnce({ ok: false });
+        await panel.fire('change', '#pf--permission-matrix input[data-permission]', input);
+        events.emit('renamed', 'Book A', 'Renamed');
+        await backgroundSaves().onWorldInfoRenamedOrDeleted('Book A', 'Renamed');
+        await click(panel, '#pf--settings-retry');
+        expect(store.getAgentById('agent-a').settings.bookPermissions).toEqual({
+            Renamed: { read: 'none', write: 'none', delete: 'none' }, 'Book B': { write: 'none' },
+        });
+    });
+
+    test.each(['renamed', 'deleted'])('a queued permission edit follows a book that is %s', async event => {
+        const panel = await ui.openPathfinderSettings(store.getAgentById('agent-a'));
+        const request = deferred();
+        globalThis.fetch.mockReturnValueOnce(request.promise);
+        const first = setting(panel, 'connectionProfile', 'held');
+        await Promise.resolve();
+        const input = new Control();
+        input.parent = new Control().attr('data-book', 'Book A');
+        input.dataset.permission = 'read';
+        input.checked = false;
+        const editing = panel.fire('change', '#pf--permission-matrix input[data-permission]', input);
+        events.emit(event, 'Book A', event === 'renamed' ? 'Renamed' : undefined);
+        request.resolve({ ok: true });
+        await Promise.all([first, editing]);
+        expect(store.getAgentById('agent-a').settings.bookPermissions).toEqual(event === 'renamed' ? { Renamed: { read: 'none' } } : {});
+    });
+
+    test.each([false, true])('the master switch names its actual chat scope (separate: %s)', async separateRecentChats => {
+        store.setGlobalSettings({ separateRecentChats });
+        const panel = await ui.openPathfinderSettings(store.getAgentById('agent-a'));
+        expect(panel.find('#pf--master-scope').text()).toBe(`Enable Pawthfinder for ${separateRecentChats ? 'individual' : 'all'} chats`);
     });
 
     test('refreshes committed auto-sync selections without overwriting a summary draft', async () => {

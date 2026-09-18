@@ -434,7 +434,7 @@ describe('in-chat agent post-processing runner', () => {
             })),
             getAgentRegexScripts: jest.fn(agent => Array.isArray(agent?.regexScripts) ? agent.regexScripts : []),
             getEnabledAgents: jest.fn(() => [...enabledAgents]),
-            getEnabledToolAgents: jest.fn(() => [...enabledToolAgents]),
+            getEnabledToolAgents: jest.fn(() => [...enabledToolAgents, ...enabledAgents.filter(agent => agent.category === 'tool' && !enabledToolAgents.some(tool => tool.id === agent.id))]),
             getGlobalSettings: jest.fn(() => globalSettings),
             getHiddenAgentIds: jest.fn(() => new Set(globalSettings.hiddenCompanionAgentIds ?? [])),
             getPromptTransformMode: jest.fn(agent => agent?.postProcess?.promptTransformMode === 'append' ? 'append' : 'rewrite'),
@@ -4344,6 +4344,24 @@ describe('in-chat agent post-processing runner', () => {
         }));
     });
 
+    test('Pathfinder retrieval and tools select the same owner regardless of caller order', async () => {
+        const first = usePathfinderAgent({ sidecarEnabled: true, enabledLorebooks: ['First'] });
+        first.injection.order = 30;
+        const preferred = { ...structuredClone(first), id: 'preferred-owner', injection: { order: 10 }, settings: { sidecarEnabled: true, enabledLorebooks: ['Preferred'] } };
+        enabledAgents.push(preferred);
+        enabledToolAgents.push(preferred);
+        getToolAction.mockReturnValue(jest.fn(async () => 'ok'));
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        expect(runner.getPathfinderRuntimeAgent([preferred, first])).toBe(preferred);
+        expect(runner.getPathfinderRuntimeAgent([first, preferred])).toBe(preferred);
+        runner.syncToolAgentRegistrations();
+        expect(replacePathfinderSettings).toHaveBeenLastCalledWith(expect.objectContaining({ enabledLorebooks: ['Preferred'] }));
+        first.injection.order = 0;
+        runner.syncToolAgentRegistrations();
+        expect(runner.getPathfinderRuntimeAgent([preferred, first])).toBe(first);
+        expect(replacePathfinderSettings).toHaveBeenLastCalledWith(expect.objectContaining({ enabledLorebooks: ['First'] }));
+    });
+
     test('only the selected Pathfinder owns duplicate tool names and confirmation settings', async () => {
         const owner = usePathfinderAgent({ sidecarEnabled: true, confirmTools: { Pathfinder_Summarize: true } });
         const copy = { ...structuredClone(owner), id: 'locked-copy', phaseLocked: true, settings: { sidecarEnabled: true, confirmTools: {} } };
@@ -4761,7 +4779,7 @@ describe('in-chat agent post-processing runner', () => {
         ['disable', async runner => { pathfinderEnabled = false; runner.deactivatePathfinderRuntime(); }],
         ['ended', () => eventSource.emit(eventTypes.GENERATION_ENDED)],
         ['tool disabled', async runner => { enabledToolAgents[0].settings.toolStates = { Pathfinder_Summarize: false }; runner.syncToolAgentRegistrations(); }],
-        ['agent disabled', async runner => { enabledToolAgents = []; runner.syncToolAgentRegistrations(); }],
+        ['agent disabled', async runner => { enabledToolAgents = []; enabledAgents = enabledAgents.filter(agent => agent.category !== 'tool'); runner.syncToolAgentRegistrations(); }],
         ['lorebook replacement', () => eventSource.emit(eventTypes.WORLDINFO_UPDATED, 'Book A', { entries: {} }, { replaced: true })],
     ])('invalidates pending approval on %s, even if its old dialog later approves', async (_name, cancel) => {
         usePathfinderAgent({ sidecarEnabled: true, confirmTools: { Pathfinder_Summarize: true } });

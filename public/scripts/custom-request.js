@@ -720,6 +720,7 @@ export class ChatCompletionService {
         if (outputLimit !== undefined) {
             settings.openai_max_tokens = outputLimit;
         }
+        if (Number.isFinite(overridePayload.temperature)) settings.temp_openai = overridePayload.temperature;
         if (overridePayload.service_tier !== undefined) {
             const source = settings.chat_completion_source;
             if (['nanogpt', 'openrouter'].includes(source)) settings[`${source}_service_tier`] = overridePayload.service_tier;
@@ -827,6 +828,7 @@ export class ChatCompletionService {
             delete overridePayload.max_tokens;
             delete overridePayload.max_completion_tokens;
         }
+        if (Number.isFinite(overridePayload.temperature)) delete overridePayload.temperature;
 
         // apply overrides
         return this.createRequestData({ ...payload, ...overridePayload });

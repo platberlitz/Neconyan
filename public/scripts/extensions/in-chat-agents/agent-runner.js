@@ -645,7 +645,9 @@ export function getPathfinderRuntimeAgent(agents = getEnabledToolAgents()) {
         return null;
     }
 
-    return agents.find(agent => isPathfinderToolAgent(agent) && isAgentRuntimeAllowed(agent)) ?? null;
+    const owner = getEnabledToolAgents().filter(agent => isPathfinderToolAgent(agent) && isAgentRuntimeAllowed(agent))
+        .sort((a, b) => (Number(a.injection?.order) || 0) - (Number(b.injection?.order) || 0) || String(a.id).localeCompare(String(b.id)))[0];
+    return agents.find(agent => agent.id === owner?.id) ?? null;
 }
 
 function getAgentToolByName(agent, toolName) {
@@ -5458,7 +5460,7 @@ function onWorldInfoEntriesLoaded(data) {
     void data;
 }
 
-function onWorldInfoActivated(entries, generationContext) {
+async function onWorldInfoActivated(entries, generationContext) {
     const run = pathfinderRetrievalRun;
     // Native activation is emitted after retrieval, before either prompt builder
     // reads extension prompts. Untagged events cannot identify overlapping scans.
@@ -5469,7 +5471,7 @@ function onWorldInfoActivated(entries, generationContext) {
         return;
     }
     run.nativeApplied = true;
-    injectPathfinderRetrieval(run.result, run.writePrompt, extension_prompt_types, extension_prompt_roles, entries);
+    await injectPathfinderRetrieval(run.result, run.writePrompt, extension_prompt_types, extension_prompt_roles, entries);
 }
 
 let _onChatChangedToolSync = false;

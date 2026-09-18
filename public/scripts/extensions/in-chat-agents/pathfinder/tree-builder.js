@@ -1,4 +1,4 @@
-import { addEntryToNode, saveTree, getSettings, getTree, isEntryEligible, syncTrackerUidsForLorebook } from './tree-store.js';
+import { addEntryToNode, saveTree, getSettings, getTree, getAllEntryUids, isEntryEligible, syncTrackerUidsForLorebook } from './tree-store.js';
 import { createLayoutNode, getEntryPlacement, readTreeLayout } from './tree-layout.js';
 
 function getCategory(entry) {
@@ -124,6 +124,8 @@ Respond ONLY with the waypoint structure. Do not add commentary.`;
         }
     }
 
+    const covered = new Set(getAllEntryUids(tree));
+    if (entries.some(entry => !covered.has(entry.uid))) return buildTreeFromMetadata(bookName, bookData);
     saveTree(bookName, tree);
     syncTrackerUidsForLorebook(bookName, bookData);
     return tree;

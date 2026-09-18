@@ -8,6 +8,7 @@ import { logPathfinderRetrievalDetail, logSidecarRetrieval, logPipelineStart, lo
 import { buildTreeFromMetadata } from './tree-builder.js';
 import { loadRetrievalEntries, runPipeline } from './prompts/pipeline-runner.js';
 import { isSummaryMemoryEntry, markSummaryMemoryInjected } from './summary-memory-store.js';
+import { fitRetrievalEntries, formatRetrievalContext } from './retrieval-budget.js';
 
 const RETRIEVAL_PROMPT_KEY = 'pathfinder_sidecar_retrieval';
 const PIPELINE_RETRIEVAL_KEY = 'pathfinder_pipeline_retrieval';
@@ -36,7 +37,7 @@ function formatCollapsedGuide(tree) {
         let line = `${indent}${node.name}`;
         if (entries) line += ` (${entries} entries)`;
         if (subWaypoints) line += ` [${subWaypoints} sub-waypoints]`;
-        if (depth > 0 && node.id) line += ` [id: ${node.id}]`;
+        if ((depth > 0 || entries > 0) && node.id) line += ` [id: ${node.id}]`;
         lines.push(line);
         for (const child of node.children || []) walk(child, depth + 1);
     }
@@ -76,7 +77,7 @@ async function runPipelineRetrieval(books, chatMessages, signal) {
     logPipelineStart(pipelineId, 2);
     const result = await runPipeline(pipelineId, chatMessages, 10, signal, books);
     throwIfAborted(signal);
-    logPipelineComplete(pipelineId, result.selectedEntries?.length ?? 0, result.stageResults);
+    if (result.success) logPipelineComplete(pipelineId, result.selectedEntries?.length ?? 0, result.stageResults);
 
     if (!result.success) {
         console.warn('[Pawthfinder] Pipeline retrieval failed:', result.error);
@@ -124,8 +125,11 @@ async function runLegacySidecarRetrieval(books, chatMessages, signal) {
     };
 }
 
-export function injectPathfinderRetrieval(result, setExtensionPrompt, extensionPromptTypes, extensionPromptRoles, nativeEntries = []) {
-    if (!result?.success || !Array.isArray(result.selectedEntries)) return;
+export async function injectPathfinderRetrieval(result, setExtensionPrompt, extensionPromptTypes, extensionPromptRoles, nativeEntries = []) {
+    if (!result?.success || !Array.isArray(result.selectedEntries)) {
+        if (result) logPathfinderRetrievalDetail({ ...result, selectedEntries: [], injectedPrompt: '', metadata: { ...result.metadata, error: result.metadata?.error || 'Retrieval did not complete.' } });
+        return;
+    }
 
     const selectedEntries = [];
     const skippedNaturalEntries = [];
@@ -141,9 +145,10 @@ export function injectPathfinderRetrieval(result, setExtensionPrompt, extensionP
         }
     }
 
-    const injectedPrompt = selectedEntries.length
-        ? `<pathfinder_context>\n${selectedEntries.map(entry => `[${entry.name}]\n${entry.content}`).join('\n\n')}\n</pathfinder_context>`
-        : '';
+    const fitted = await fitRetrievalEntries(selectedEntries, nativeEntries);
+    const stillReadable = new Set(getReadableBooks());
+    selectedEntries.splice(0, selectedEntries.length, ...fitted.selected.filter(entry => stillReadable.has(entry.bookName)));
+    const injectedPrompt = formatRetrievalContext(selectedEntries);
     if (setExtensionPrompt(result.promptKey, injectedPrompt, extensionPromptTypes?.IN_PROMPT ?? 0, 4, false, extensionPromptRoles?.SYSTEM ?? 0) === false) {
         return;
     }
@@ -167,6 +172,8 @@ export function injectPathfinderRetrieval(result, setExtensionPrompt, extensionP
             candidateCount: result.selectedEntries.length,
             skippedNaturalActivationCount: skippedNaturalEntries.length,
             skippedNaturalEntries,
+            textBudget: fitted.budget,
+            budgetSkippedEntries: fitted.skipped,
         },
     });
 }
@@ -209,12 +216,13 @@ export async function runSidecarRetrieval(setExtensionPrompt, extensionPromptTyp
         if (!isCurrent()) return { success: false };
 
         const result = { ...selection, books, mode, promptKey, dedupeNaturalActivation: s.dedupeNaturalActivation };
-        injectPathfinderRetrieval(result, writePrompt, extensionPromptTypes, extensionPromptRoles);
+        await injectPathfinderRetrieval(result, writePrompt, extensionPromptTypes, extensionPromptRoles);
         return result;
     } catch (err) {
         if (!isAbortLikeError(err, signal)) {
             console.warn('[Pawthfinder] Retrieval failed:', err);
         }
+        logPathfinderRetrievalDetail({ mode, books: [], selectedEntries: [], stageResults: [], injectedPrompt: '', metadata: { error: isAbortLikeError(err, signal) ? 'Retrieval cancelled.' : String(err?.message || err) } });
         return { success: false };
     } finally {
         clearTimeout(timeoutId);

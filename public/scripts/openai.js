@@ -5897,14 +5897,15 @@ export async function createGenerationParameters(settings, model, type, messages
  * @returns {Promise<unknown>}
  * @throws {Error}
  */
-async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, cacheScope = null, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, generationContext = null } = {}) {
+async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, cacheScope = null, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, generationContext = null, temperature } = {}) {
     // Provide default abort signal
     if (!signal) {
         signal = new AbortController().signal;
     }
 
     const model = getChatCompletionModel(oai_settings);
-    let { generate_data, stream, canMultiSwipe } = await createGenerationParameters(oai_settings, model, type, messages, { jsonSchema, cacheScope });
+    const settings = Number.isFinite(temperature) ? { ...oai_settings, temp_openai: temperature } : oai_settings;
+    let { generate_data, stream, canMultiSwipe } = await createGenerationParameters(settings, model, type, messages, { jsonSchema, cacheScope });
 
     await eventSource.emit(event_types.CHAT_COMPLETION_SETTINGS_READY, generate_data, { type, isAuxiliaryGeneration: type === 'quiet', generationContext });
 

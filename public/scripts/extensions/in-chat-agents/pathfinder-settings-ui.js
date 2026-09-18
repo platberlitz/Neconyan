@@ -73,12 +73,34 @@ export function refreshPathfinderSettings() {
     if (!settingsSession) return;
     const saved = getAgentById(currentAgent.id);
     if (!saved) return;
-    const edits = Object.fromEntries([...settingsSession.dirtySettings].map(key => [key, currentAgent.settings[key]]));
+    const edits = Object.fromEntries([...settingsSession.dirtySettings].filter(key => key !== 'bookPermissions').map(key => [key, currentAgent.settings[key]]));
     currentAgent.settings = structuredClone({ ...SETTING_DEFAULTS, ...saved.settings, ...edits });
+    applyBookEdits(currentAgent.settings, settingsSession, settingsSession.permissionEdits);
+    settingsSession.permissionBaseline = structuredClone(currentAgent.settings.bookPermissions ?? {});
     if (!settingsSession.dirtySettings.has('toolStates')) currentAgent.tools = structuredClone(saved.tools ?? []);
     refreshLorebookList();
     updateModeCardStates();
     updateStatusBanner();
+}
+
+function applyBookEdits(settings, session, edits) {
+    if (!edits.size && !session.bookAliases.size) return;
+    const resolveName = name => session.bookAliases.has(name) ? session.bookAliases.get(name) : name;
+    const permissions = { ...settings.bookPermissions };
+    for (const [book, fields] of edits) {
+        const name = resolveName(book);
+        if (!name) continue;
+        const current = Object.hasOwn(permissions, name) ? permissions[name] : {};
+        const next = { ...current };
+        for (const [key, value] of Object.entries(fields)) {
+            if (value === undefined) delete next[key];
+            else Object.defineProperty(next, key, { value, enumerable: true, configurable: true, writable: true });
+        }
+        Object.defineProperty(permissions, name, { value: next, enumerable: true, configurable: true, writable: true });
+    }
+    settings.bookPermissions = permissions;
+    settings.enabledLorebooks = [...new Set((settings.enabledLorebooks ?? []).map(resolveName).filter(Boolean))];
+    settings.selectedLorebook = resolveName(settings.selectedLorebook) || '';
 }
 
 function safeGetAccountStorageItem(key) {
@@ -254,6 +276,9 @@ export async function openPathfinderSettings(agent) {
         contextRevision: 0,
         pending: 0,
         dirtySettings: new Set(),
+        permissionEdits: new Map(),
+        permissionBaseline: structuredClone(currentAgent.settings.bookPermissions ?? {}),
+        bookAliases: new Map(),
         cleanup: [],
         summaryDraft: null,
         summaryBusy: false,
@@ -268,6 +293,7 @@ export async function openPathfinderSettings(agent) {
         // A chat switch invalidates queued edits; the runner owns auto-sync.
         session.contextRevision++;
         session.dirtySettings.clear();
+        session.permissionEdits.clear();
         session.enabledChange = undefined;
         session.element.find('#pf--settings-save-status').text('');
         session.element.find('#pf--settings-retry').hide();
@@ -276,6 +302,19 @@ export async function openPathfinderSettings(agent) {
     };
     eventSource.on(event_types.CHAT_CHANGED, refreshContext);
     session.cleanup.push(() => eventSource.removeListener(event_types.CHAT_CHANGED, refreshContext));
+    for (const [event, deleted] of [[event_types.WORLDINFO_RENAMED, false], [event_types.WORLDINFO_DELETED, true]]) {
+        if (!event) continue;
+        const retarget = (oldName, newName) => {
+            const target = deleted ? null : newName;
+            for (const [source, name] of session.bookAliases) {
+                if (name === oldName) session.bookAliases.set(source, target);
+            }
+            session.bookAliases.set(oldName, target);
+            refreshPathfinderSettings();
+        };
+        eventSource.on(event, retarget);
+        session.cleanup.push(() => eventSource.removeListener(event, retarget));
+    }
     const refreshStatus = () => {
         updateStatusBanner();
         populateConnectionProfiles();
@@ -524,6 +563,8 @@ function loadSettingsIntoUI() {
     const s = currentAgent.settings;
 
     settingsEl.find('#pf--master-enable').prop('checked', settingsSession.enabledChange ?? isAgentEnabledForCurrentScope(getAgentById(currentAgent.id) ?? currentAgent));
+    const scope = getGlobalSettings().separateRecentChats ? `${getActiveAgentChatScope()} chats` : 'all chats';
+    settingsEl.find('#pf--master-scope').text(`Enable Pawthfinder for ${scope}`);
 
     // Pipeline settings
     settingsEl.find('#pf--enable-pipeline').prop('checked', s.pipelineEnabled || false);
@@ -1438,7 +1479,21 @@ function updateAgentSettings(keys = []) {
     const session = settingsSession;
     const agentId = currentAgent.id;
     keys.forEach(key => session.dirtySettings.add(key));
-    const changes = structuredClone(Object.fromEntries([...session.dirtySettings].map(key => [key, currentAgent.settings[key]])));
+    if (keys.includes('bookPermissions')) {
+        const current = currentAgent.settings.bookPermissions ?? {};
+        for (const book of new Set([...Object.keys(session.permissionBaseline), ...Object.keys(current)])) {
+            const before = Object.hasOwn(session.permissionBaseline, book) ? session.permissionBaseline[book] : {};
+            const after = Object.hasOwn(current, book) ? current[book] : {};
+            for (const key of new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])) {
+                if (before?.[key] !== after?.[key]) {
+                    session.permissionEdits.set(book, { ...session.permissionEdits.get(book), [key]: after?.[key] });
+                }
+            }
+        }
+        session.permissionBaseline = structuredClone(current);
+    }
+    const changes = structuredClone(Object.fromEntries([...session.dirtySettings].filter(key => key !== 'bookPermissions').map(key => [key, currentAgent.settings[key]])));
+    const permissionEdits = structuredClone(session.permissionEdits);
     const enabled = session.enabledChange;
     const scope = getActiveAgentChatScope();
     const contextRevision = session.contextRevision;
@@ -1453,6 +1508,7 @@ function updateAgentSettings(keys = []) {
         if (settingsSession !== session || session.contextRevision !== contextRevision) return null;
         if (!agent) throw new Error('Pawthfinder agent is not available. Reload In-Chat Agents or restore the bundled Pawthfinder template.');
         agent.settings = { ...agent.settings, ...changes };
+        applyBookEdits(agent.settings, session, permissionEdits);
         if (changes.toolStates) {
             agent.tools = (agent.tools ?? []).map(tool => Object.hasOwn(changes.toolStates, tool.name)
                 ? { ...tool, enabled: changes.toolStates[tool.name] !== false } : tool);
@@ -1483,8 +1539,10 @@ function updateAgentSettings(keys = []) {
         if (settingsSession !== session) return;
         if (revision === session.revision) {
             session.dirtySettings.clear();
+            session.permissionEdits.clear();
             session.enabledChange = undefined;
             session.agent.settings = structuredClone({ ...SETTING_DEFAULTS, ...agent.settings });
+            session.permissionBaseline = structuredClone(session.agent.settings.bookPermissions ?? {});
             session.agent.tools = structuredClone(agent.tools ?? []);
             status.text('Saved!').removeClass('error').addClass('success');
             session.element.find('#pf--prompt-status.error').text('');

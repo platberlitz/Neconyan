@@ -74,6 +74,10 @@ function getLastPipelineRunMessage(settings) {
         return `Enabled (${pipelineId} pipeline). Last run failed: ${metadata.error}.`;
     }
 
+    if (metadata.budgetSkippedEntries?.length) {
+        return `Enabled (${pipelineId} pipeline). Last run injected ${selectedCount} entries and skipped ${metadata.budgetSkippedEntries.length} to keep within ${metadata.textBudget} tokens of retrieval space.`;
+    }
+
     if (selectedCount === 0) {
         return `Enabled (${pipelineId} pipeline). Last run returned 0 entries${candidateCount > 0 ? ` from ${candidateCount} candidate(s)` : ''}.${getPipelineStageSummary(lastRun.stageResults)}`;
     }
@@ -227,9 +231,9 @@ export async function runDiagnostics() {
         };
     }
 
-    const readableBooks = activeBooks.filter(canReadBook);
-    const writableBooks = activeBooks.filter(canWriteBook);
-    const deletableBooks = activeBooks.filter(canDeleteBook);
+    const readableBooks = activeBooks.filter(book => canReadBook(book, s));
+    const writableBooks = activeBooks.filter(book => canWriteBook(book, s));
+    const deletableBooks = activeBooks.filter(book => canDeleteBook(book, s));
     results['Tool Permissions'] = {
         ok: activeBooks.length === 0 || readableBooks.length > 0,
         message: activeBooks.length === 0

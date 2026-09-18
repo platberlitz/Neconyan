@@ -7632,6 +7632,7 @@ export function createRawPrompt(prompt, api, instructOverride, quietToLoud, syst
  * @prop {boolean} [quietToLoud] true to generate a message in system mode, false to generate a message in character mode
  * @prop {string} [systemPrompt] System prompt to use.
  * @prop {number} [responseLength] Maximum response length. If unset, the global default value is used.
+ * @prop {number} [temperature] Request-local sampling temperature.
  * @prop {boolean} [preserveReasoningBudget=false] Keep the preset's total allowance for reasoning requests
  * @prop {boolean} [trimNames] Whether to allow trimming "{{user}}:" and "{{char}}:" from the response.
  * @prop {string} [prefill] An optional prefill for the prompt.
@@ -7646,7 +7647,7 @@ export function createRawPrompt(prompt, api, instructOverride, quietToLoud, syst
  * @param {GenerateRawParams} params Parameters for generating a message
  * @returns {Promise<object | string>} Raw API response data, or a JSON string extracted from the response when `jsonSchema` is provided.
  */
-export async function generateRawData({ prompt = '', api = null, instructOverride = false, quietToLoud = false, systemPrompt = '', responseLength = null, prefill = '', jsonSchema = null, signal = null, cacheScope = 'auxiliary', preserveReasoningBudget = false } = {}) {
+export async function generateRawData({ prompt = '', api = null, instructOverride = false, quietToLoud = false, systemPrompt = '', responseLength = null, prefill = '', jsonSchema = null, signal = null, cacheScope = 'auxiliary', preserveReasoningBudget = false, temperature } = {}) {
     if (!api) {
         api = main_api;
     }
@@ -7667,9 +7668,6 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
         ? { responseLength, preserveReasoningBudget }
         : {};
 
-    // construct final prompt from the input. Can either be a string or an array of chat-style messages.
-    prompt = createRawPrompt(prompt, api, instructOverride, quietToLoud, systemPrompt, prefill);
-
     // Allow extensions to stop generation before it happens
     const eventAbortController = new AbortController();
     const abortHook = () => {
@@ -7679,6 +7677,8 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
     eventSource.on(event_types.GENERATION_STOPPED, abortHook);
 
     try {
+        abortController.signal.throwIfAborted();
+        prompt = createRawPrompt(prompt, api, instructOverride, quietToLoud, systemPrompt, prefill);
         /** @type {object|any[]} */
         let generateData = {};
 
@@ -7729,13 +7729,14 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
 
         if (api !== 'openai') {
             generateData = applyGenerationRequestControls(generateData, { model: api === 'koboldhorde' ? horde_settings.models : api === main_api ? getGeneratingModel() : undefined, ...requestControls });
+            if (Number.isFinite(temperature)) generateData.temperature = temperature;
         }
         let data = {};
 
         if (api === 'koboldhorde') {
             data = await generateHorde(prompt.toString(), generateData, abortController.signal, false);
         } else if (api === 'openai') {
-            data = await sendOpenAIRequest('quiet', generateData, abortController.signal, { jsonSchema, cacheScope, ...requestControls });
+            data = await sendOpenAIRequest('quiet', generateData, abortController.signal, { jsonSchema, cacheScope, temperature, ...requestControls });
         } else {
             const generateUrl = getGenerateUrl(api);
             const response = await fetchResumable(generateUrl, {
@@ -7779,13 +7780,13 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
  * @param {GenerateRawParams} params Parameters for generating a message
  * @returns {Promise<string>} Generated output: a cleaned-up message string when `jsonSchema` is not provided, or an extracted JSON string conforming to `jsonSchema` when it is.
  */
-export async function generateRaw({ prompt = '', api = null, instructOverride = false, quietToLoud = false, systemPrompt = '', responseLength = null, trimNames = true, prefill = '', jsonSchema = null, signal = null, cacheScope = 'auxiliary', preserveReasoningBudget = false } = {}) {
+export async function generateRaw({ prompt = '', api = null, instructOverride = false, quietToLoud = false, systemPrompt = '', responseLength = null, trimNames = true, prefill = '', jsonSchema = null, signal = null, cacheScope = 'auxiliary', preserveReasoningBudget = false, temperature } = {}) {
     if (arguments.length > 0 && typeof arguments[0] !== 'object') {
         console.trace('generateRaw called with positional arguments. Please use an object instead.');
         [prompt, api, instructOverride, quietToLoud, systemPrompt, responseLength, trimNames, prefill, jsonSchema] = arguments;
     }
 
-    const data = await generateRawData({ prompt, api, instructOverride, quietToLoud, systemPrompt, responseLength, prefill, jsonSchema, signal, cacheScope, preserveReasoningBudget });
+    const data = await generateRawData({ prompt, api, instructOverride, quietToLoud, systemPrompt, responseLength, prefill, jsonSchema, signal, cacheScope, preserveReasoningBudget, temperature });
 
     // JSON string (matching the provided schema) will already be extracted.
     if (jsonSchema) {

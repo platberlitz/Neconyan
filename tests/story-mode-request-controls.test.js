@@ -223,6 +223,16 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
 }
 
 describe('request-local output controls', () => {
+    test.each(['openai', 'textgenerationwebui'])('%s helpers use request-local temperature, including zero', async api => {
+        const { context, requests } = makeRuntime({ api });
+        context.oai_settings.temp_openai = 0.9;
+        for (const temperature of [0, 0.4]) {
+            await context.generateRaw({ prompt: 'Only this task', api, responseLength: 128, temperature });
+        }
+        expect(requests.map(request => request.body.temperature)).toEqual([0, 0.4]);
+        expect(context.oai_settings.temp_openai).toBe(0.9);
+    });
+
     test.each(['openai', 'textgenerationwebui'])('raw %s helpers emit auxiliary events and receive only their supplied context', async api => {
         const { context, requests, eventSource } = makeRuntime({ api });
         load(context, 'script.js', ['createRawPrompt']);

@@ -66,6 +66,13 @@ describe('Pawthfinder diagnostics', () => {
         expect(results['Tool Registration'].message).toContain('Pawthfinder tool agent is not active');
     });
 
+    test('reports the actual denied read, write and delete permissions', async () => {
+        getSettings().bookPermissions = { 'Manual Book': { read: false, write: false, delete: false } };
+        const results = await runDiagnostics();
+        expect(results['Tool Permissions'].ok).toBe(false);
+        expect(results['Tool Permissions'].message).not.toContain('Manual Book');
+    });
+
     test('uses enabled tools from the active agent when no canonical tool state is configured', async () => {
         runtimeAgent.tools.forEach(tool => { tool.enabled = tool.name === 'Pathfinder_Summarize'; });
         getSettings().toolStates = {};

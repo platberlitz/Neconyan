@@ -73,6 +73,7 @@ export async function runPipeline(pipelineId, chatMessages, maxMessages = 10, si
 
     const stageResults = [];
     let currentEntries = [];
+    const maxCandidates = Math.max(1, Math.min(50, Math.floor(Number(settings.maxCandidates) || 20)));
 
     for (let i = 0; i < pipeline.stages.length; i++) {
         throwIfAborted(signal);
@@ -105,6 +106,10 @@ export async function runPipeline(pipelineId, chatMessages, maxMessages = 10, si
         logPipelineStageStart(pipeline.name, prompt.name, i + 1, pipeline.stages.length);
 
         try {
+            const readableBooks = new Set(getReadableBooks());
+            context.entriesByName = new Map([...context.entriesByName].filter(([, entry]) => readableBooks.has(entry.bookName)));
+            context.entry_names = [...context.entriesByName.keys()].map(name => `- ${name}`).join('\n');
+            currentEntries = currentEntries.filter(name => context.entriesByName.has(name));
             // Resolve input mappings
             const inputs = resolveInputMappings(stage.inputMapping, context, currentEntries, settings);
 
@@ -122,13 +127,19 @@ export async function runPipeline(pipelineId, chatMessages, maxMessages = 10, si
                 profileId,
                 maxTokens,
                 signal,
+                { temperature: prompt.settings?.temperature },
             );
             throwIfAborted(signal);
 
             // Parse the output
-            const parsed = parseOutput(response, prompt.outputFormat, context.entriesByName);
+            const mappings = Object.values(stage.inputMapping ?? {});
+            const filtersCandidates = mappings.includes('prev:candidate_entries') && !mappings.includes('source:entry_names');
+            const offeredEntries = filtersCandidates
+                ? new Map(currentEntries.map(name => [name, context.entriesByName.get(name)]))
+                : context.entriesByName;
+            const parsed = parseOutput(response, prompt.outputFormat, offeredEntries);
 
-            currentEntries = parsed.entries;
+            currentEntries = parsed.entries.filter(name => getReadableBooks().includes(context.entriesByName.get(name)?.bookName)).slice(0, maxCandidates);
             context.stageOutputs.set(stage.outputKey, {
                 entries: currentEntries,
                 raw: response,
@@ -196,7 +207,7 @@ export async function loadRetrievalEntries(bookName, signal = null) {
     }
     return Object.values(data.entries)
         .filter(isEntryEligible)
-        .map(entry => ({ ...entry, bookName, comment: entry.comment || entry.key?.[0] || '' }));
+        .map(entry => ({ ...entry, bookName, comment: String(entry.comment || entry.key?.[0] || `Entry ${entry.uid}`) }));
 }
 
 /**
@@ -362,54 +373,22 @@ function parseOutput(response, format, entriesByName) {
     const trimmed = response.trim();
 
     if (format === 'json_object' || format === 'json_array') {
-        // Try to extract JSON from response
-        const jsonMatch = trimmed.match(/```json\s*([\s\S]*?)```/) ||
-                          trimmed.match(/\{[\s\S]*\}/) ||
-                          trimmed.match(/\[[\s\S]*\]/);
-
-        if (jsonMatch) {
-            try {
-                const json = JSON.parse(jsonMatch[1] || jsonMatch[0]);
-
-                // Handle various output formats
-                let entries = [];
-                let reasoning = '';
-
-                if (Array.isArray(json)) {
-                    entries = json;
-                } else if (json.candidates) {
-                    entries = json.candidates;
-                    reasoning = json.reasoning;
-                } else if (json.selected) {
-                    entries = json.selected;
-                    reasoning = json.reasoning;
-                }
-
-                // Validate entries exist
-                const validEntries = [];
-                for (const name of entries) {
-                    const resolvedName = resolveEntryName(name, entriesByName);
-                    if (resolvedName) {
-                        if (!validEntries.includes(resolvedName)) validEntries.push(resolvedName);
-                    }
-                }
-
-                if (entries.length > 0 && validEntries.length === 0) {
-                    console.warn(`${PATHFINDER_LOG_PREFIX} Pipeline JSON returned candidates, but none matched loaded lorebook entries.`, {
-                        requestedEntries: entries,
-                        knownEntryCount: entriesByName.size,
-                        knownEntries: Array.from(entriesByName.keys()).slice(0, 50),
-                    });
-                    reasoning = [
-                        reasoning,
-                        `Pawthfinder warning: model returned ${entries.length} candidate(s), but none matched the ${entriesByName.size} loaded lorebook entry names.`,
-                    ].filter(Boolean).join('\n\n');
-                }
-
-                return { entries: validEntries, reasoning };
-            } catch (e) {
-                console.warn(`${PATHFINDER_LOG_PREFIX} Failed to parse pipeline JSON output.`, e);
+        const source = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)?.[1] ?? trimmed;
+        let json;
+        try {
+            json = JSON.parse(source);
+        } catch {
+            if (source.startsWith('{') || source.startsWith('[') || trimmed.startsWith('```')) {
+                throw new Error('The retrieval reply contains incomplete or invalid JSON.');
             }
+        }
+        if (json !== undefined) {
+            const entries = Array.isArray(json) ? json : json?.candidates ?? json?.selected;
+            if (!Array.isArray(entries) || entries.some(name => typeof name !== 'string')
+                || (json?.reasoning !== undefined && typeof json.reasoning !== 'string')) {
+                throw new Error('The retrieval reply must contain an array of entry names.');
+            }
+            return { entries: [...new Set(entries.map(name => resolveEntryName(name, entriesByName)).filter(Boolean))], reasoning: json.reasoning ?? '' };
         }
     }
 
@@ -419,5 +398,6 @@ function parseOutput(response, format, entriesByName) {
         .map(line => resolveEntryName(line, entriesByName))
         .filter(Boolean);
 
+    if (!lines.length) throw new Error('The retrieval reply did not contain a valid entry selection.');
     return { entries: [...new Set(lines)] };
 }

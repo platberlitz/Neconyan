@@ -161,6 +161,7 @@ beforeAll(async () => {
     }));
 
     await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-runner.js', () => ({
+        getPathfinderRuntimeAgent: jest.fn(() => null),
         cancelAgentGeneration: jest.fn(),
         buildPromptDynamicMacros: jest.fn(() => ({})),
         deactivatePathfinderRuntime: jest.fn(),

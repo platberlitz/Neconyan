@@ -1,4 +1,4 @@
-/* eslint-disable playwright/no-duplicate-hooks */
+/* eslint-disable playwright/no-duplicate-hooks, playwright/no-standalone-expect -- Jest hooks and table-driven tests. */
 /* global globalThis */
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 
@@ -34,8 +34,9 @@ const { runPipeline } = await import('../public/scripts/extensions/in-chat-agent
 const { initializePromptStore, savePrompt } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/prompts/prompt-store.js');
 const { getDefaultPrompts, getDefaultPipelines } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/prompts/default-prompts.js');
 const { replaceSettings, setSettings, getTree, clearAllTrees } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/tree-store.js');
-const { buildTreeFromMetadata } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/tree-builder.js');
-const { clearFeed } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/activity-feed.js');
+const { buildTreeFromMetadata, buildTreeWithLLM } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/tree-builder.js');
+const { clearFeed, getFeedItems } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/activity-feed.js');
+const { getRetrievalOutputLimit, fitRetrievalEntries, countRetrievalTokens, formatRetrievalContext } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/retrieval-budget.js');
 const promptTypes = { IN_PROMPT: 0 };
 const promptRoles = { SYSTEM: 0 };
 
@@ -64,7 +65,12 @@ describe('Pawthfinder retrieval with real pipeline and model transport stubs', (
         loadWorldInfo.mockReset().mockImplementation(async name => structuredClone(books[name]));
         sendRequest.mockReset().mockResolvedValue('{"candidates":["Town"]}');
         generateRaw.mockReset().mockResolvedValue('{"candidates":["Town"]}');
-        context = { chat, loadWorldInfo, ConnectionManagerRequestService: { sendRequest } };
+        context = {
+            chat, loadWorldInfo, ConnectionManagerRequestService: { sendRequest },
+            getMaxContextTokens: () => 128000,
+            getMaxPromptTokens: () => 120000,
+            getTokenCountAsync: async text => Math.ceil(String(text).length / 4),
+        };
         globalThis.window = { SillyTavern: { getContext: () => context } };
         globalThis.toastr = { warning: jest.fn(), error: jest.fn() };
         replaceSettings({
@@ -99,7 +105,7 @@ describe('Pawthfinder retrieval with real pipeline and model transport stubs', (
         expect(sendRequest).toHaveBeenCalledWith('custom-profile', [
             { role: 'system', content: custom.systemPrompt },
             { role: 'user', content: 'User: We enter the town.\n- ["Book A",1] Town' },
-        ], 64000, expect.objectContaining({ stream: false }));
+        ], 64000, expect.objectContaining({ stream: false }), { temperature: custom.settings.temperature });
     });
 
     test('keeps duplicate titles tied to their book and UID through both stages and injection', async () => {
@@ -115,7 +121,7 @@ describe('Pawthfinder retrieval with real pipeline and model transport stubs', (
         expect(result.selectedEntries).toEqual([expect.objectContaining({ bookName: 'Book B', uid: 1 })]);
         expect(prompts.pathfinder_pipeline_retrieval).toContain('The second town.');
         expect(prompts.pathfinder_pipeline_retrieval).not.toContain('The first town.');
-        injectPathfinderRetrieval(result, writePrompt, promptTypes, promptRoles, [{ world: 'Book A', uid: 1 }]);
+        await injectPathfinderRetrieval(result, writePrompt, promptTypes, promptRoles, [{ world: 'Book A', uid: 1 }]);
         expect(prompts.pathfinder_pipeline_retrieval).toContain('The second town.');
     });
 
@@ -137,7 +143,7 @@ describe('Pawthfinder retrieval with real pipeline and model transport stubs', (
         expect(prompts.pathfinder_pipeline_retrieval).toContain('The first town.');
         expect(prompts.pathfinder_pipeline_retrieval).toContain('Forest lore.');
         expect(prompts.pathfinder_pipeline_retrieval).toContain('Budget-rejected lore.');
-        injectPathfinderRetrieval(result, writePrompt, promptTypes, promptRoles, [{ world: 'Book A', uid: 1 }]);
+        await injectPathfinderRetrieval(result, writePrompt, promptTypes, promptRoles, [{ world: 'Book A', uid: 1 }]);
         expect(prompts.pathfinder_pipeline_retrieval).not.toContain('The first town.');
         expect(prompts.pathfinder_pipeline_retrieval).toContain('Forest lore.');
         expect(prompts.pathfinder_pipeline_retrieval).toContain('Budget-rejected lore.');
@@ -272,7 +278,7 @@ describe('Pawthfinder retrieval with real pipeline and model transport stubs', (
     test('keeps native duplicates when the existing de-duplication setting is off', async () => {
         setSettings({ dedupeNaturalActivation: false });
         const result = await runSidecarRetrieval(writePrompt, promptTypes, promptRoles);
-        injectPathfinderRetrieval(result, writePrompt, promptTypes, promptRoles, [{ world: 'Book A', uid: 1 }]);
+        await injectPathfinderRetrieval(result, writePrompt, promptTypes, promptRoles, [{ world: 'Book A', uid: 1 }]);
         expect(prompts.pathfinder_pipeline_retrieval).toContain('The first town.');
     });
 
@@ -298,5 +304,93 @@ describe('Pawthfinder retrieval with real pipeline and model transport stubs', (
         await expect(sidecarGenerateWithProfile('prompt', '', 'profile-a', 123, controller.signal)).rejects.toBe(controller.signal.reason);
         expect(sendRequest).not.toHaveBeenCalled();
         expect(generateRaw).not.toHaveBeenCalled();
+    });
+
+    test.each(['{"selected":', '{"selected":5}', 'null', 'unrelated prose'])('an invalid optional filter preserves earlier candidates: %s', async response => {
+        setSettings({ pipelineId: 'default' });
+        sendRequest.mockResolvedValueOnce('{"candidates":["Town"]}').mockResolvedValueOnce(response);
+        const result = await runSidecarRetrieval(writePrompt, promptTypes, promptRoles);
+        expect(result.cacheable).toBe(false);
+        expect(result.stageResults.map(stage => stage.success)).toEqual([true, false]);
+        expect(prompts.pathfinder_pipeline_retrieval).toContain('The first town.');
+    });
+
+    test('a complete JSON array preserves titles containing braces and escaped quotes', async () => {
+        const title = 'Town {North} "Gate"';
+        books['Book A'].entries[1].comment = title;
+        sendRequest.mockResolvedValue(JSON.stringify([title]));
+        expect((await runSidecarRetrieval(writePrompt, promptTypes, promptRoles)).selectedEntries[0].name).toBe(title);
+    });
+
+    test.each(['single-pass', 'skip', 'failure'])('candidate limits survive %s selection', async mode => {
+        books['Book A'].entries = Object.fromEntries(Array.from({ length: 6 }, (_, uid) => [uid, { uid, comment: `Entry${uid}`, content: `Lore${uid}` }]));
+        setSettings({ pipelineId: mode === 'single-pass' ? 'single-pass' : 'default', maxCandidates: 2, skipSecondPass: mode === 'skip' });
+        sendRequest.mockResolvedValueOnce(JSON.stringify({ candidates: Array.from({ length: 6 }, (_, uid) => `Entry${uid}`) })).mockResolvedValueOnce('invalid');
+        const result = await runSidecarRetrieval(writePrompt, promptTypes, promptRoles);
+        expect(result.selectedEntries.map(entry => entry.uid)).toEqual([0, 1]);
+    });
+
+    test('the relevance filter cannot introduce an entry it never received', async () => {
+        books['Book A'].entries[2] = { uid: 2, comment: 'Unrelated', content: 'Not offered.' };
+        setSettings({ pipelineId: 'default' });
+        sendRequest.mockResolvedValueOnce('{"candidates":["Town"]}').mockResolvedValueOnce('{"selected":["Unrelated"]}');
+        const result = await runSidecarRetrieval(writePrompt, promptTypes, promptRoles);
+        expect(sendRequest.mock.calls[1][1][1].content).not.toContain('Not offered.');
+        expect(result.selectedEntries).toEqual([]);
+    });
+
+    test('untitled entries remain selectable and root-held entries expose their node ID', async () => {
+        books['Book A'].entries[1] = { uid: 1, content: 'Untitled lore.', key: [] };
+        sendRequest.mockResolvedValue('{"candidates":["Entry 1"]}');
+        expect((await runSidecarRetrieval(writePrompt, promptTypes, promptRoles)).selectedEntries[0].uid).toBe(1);
+        setSettings({ pipelineEnabled: false, sidecarEnabled: true });
+        const root = getTree('Book A');
+        root.entries = [1]; root.children = [];
+        sendRequest.mockImplementation(async (_profile, messages) => {
+            expect(messages[1].content).toContain(`id: ${root.id}`);
+            return root.id;
+        });
+        expect((await runSidecarRetrieval(writePrompt, promptTypes, promptRoles)).selectedEntries[0].uid).toBe(1);
+    });
+
+    test('retrieval requests and final lore fit their available text budgets', async () => {
+        context.getMaxContextTokens = () => 600;
+        context.getMaxPromptTokens = () => 500;
+        context.getTokenCountAsync = async text => text.length;
+        expect(await getRetrievalOutputLimit([{ content: 'x'.repeat(300) }], 1000)).toBe(236);
+        await expect(getRetrievalOutputLimit([{ content: 'x'.repeat(600) }], 1000)).rejects.toThrow('context limit');
+        const entries = [200, 30, 30, 30].map((length, uid) => ({ uid, name: `E${uid}`, bookName: 'Book A', content: 'x'.repeat(length) }));
+        const fitted = await fitRetrievalEntries(entries);
+        expect(fitted.skipped.length).toBeGreaterThan(1);
+        expect(await countRetrievalTokens(formatRetrievalContext(fitted.selected))).toBeLessThanOrEqual(fitted.budget);
+        expect((await fitRetrievalEntries(entries, [{ content: 'native'.repeat(100) }])).selected).toEqual([]);
+        chat[0].mes = 'history'.repeat(100);
+        expect((await fitRetrievalEntries(entries)).selected).toEqual([]);
+    });
+
+    test('per-stage zero temperature reaches profile and main requests', async () => {
+        await sidecarGenerateWithProfile('prompt', 'system', 'profile-a', 50, null, { temperature: 0 });
+        expect(sendRequest.mock.calls[0][4]).toEqual({ temperature: 0 });
+        sendRequest.mockRejectedValueOnce(new Error('offline'));
+        await sidecarGenerateWithProfile('prompt', 'system', 'profile-a', 50, null, { temperature: 0 });
+        expect(generateRaw).toHaveBeenLastCalledWith(expect.objectContaining({ temperature: 0 }));
+    });
+
+    test('the latest failure replaces an older successful diagnostic result', async () => {
+        await runSidecarRetrieval(writePrompt, promptTypes, promptRoles);
+        sendRequest.mockRejectedValueOnce(new Error('offline'));
+        generateRaw.mockRejectedValueOnce(new Error('offline'));
+        await runSidecarRetrieval(writePrompt, promptTypes, promptRoles);
+        const last = getFeedItems().find(item => item.type === 'pathfinder_retrieval_detail');
+        expect(last.metadata.error).toBeTruthy();
+        expect(last.selectedEntries).toEqual([]);
+    });
+
+    test('a partial model-built tree falls back to complete metadata coverage', async () => {
+        books['Book A'].entries[2] = { uid: 2, comment: 'Forest', content: 'Forest lore.' };
+        sendRequest.mockResolvedValue('{"name":"Partial","entries":[1],"children":[]}');
+        const tree = await buildTreeWithLLM('Book A', books['Book A']);
+        const collect = node => [...(node.entries ?? []), ...(node.children ?? []).flatMap(collect)];
+        expect(new Set(collect(tree))).toEqual(new Set([1, 2]));
     });
 });

@@ -120,7 +120,7 @@ function createHost() {
             context.isGenerationInProgress = true;
         }
     });
-    events.on(event_types.GENERATION_AFTER_COMMANDS, (type, options, dryRun) => {
+    events.on(event_types.GENERATION_AFTER_COMMANDS, async (type, options, dryRun) => {
         if (dryRun || type === 'quiet' || options.isAuxiliaryGeneration || (context.selected_group && !context.is_group_generating)) return;
         const result = {
             success: true, promptKey: 'pathfinder_pipeline_retrieval', mode: 'pipeline', books: ['Lore'],
@@ -130,7 +130,7 @@ function createHost() {
             ...context.agentGenerationContextProvider(), result, isCurrent: () => true,
             writePrompt: context.setExtensionPrompt, nativeApplied: false,
         };
-        injectPathfinderRetrieval(result, context.setExtensionPrompt, context.extension_prompt_types, context.extension_prompt_roles);
+        await injectPathfinderRetrieval(result, context.setExtensionPrompt, context.extension_prompt_types, context.extension_prompt_roles);
     });
     events.on(event_types.WORLD_INFO_ACTIVATED, context.onWorldInfoActivated);
     events.on(event_types.GENERATION_STOPPED, () => { context.cancelRevision++; context.isGenerationInProgress = false; });

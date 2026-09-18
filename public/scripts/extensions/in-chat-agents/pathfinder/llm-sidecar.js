@@ -3,6 +3,8 @@ import { isAbortLikeError } from '../../../util/abort-error.js';
 import { extractProfileResponseText } from '../llm-utils.js';
 import { runAsInternalPromptTransform } from '../agent-runner.js';
 import { getSettings } from './tree-store.js';
+import { getRetrievalOutputLimit } from './retrieval-budget.js';
+import { isGenerationLengthFinish } from '../../../generation-request-controls.js';
 
 // Throttled so a multi-stage pipeline failure doesn't stack toasts
 let lastSidecarIssueToastAt = 0;
@@ -36,25 +38,29 @@ export async function sidecarGenerate(prompt, systemPrompt = '', signal = null) 
  * @param {AbortSignal?} [signal=null] - Optional abort signal
  * @returns {Promise<string>}
  */
-export async function sidecarGenerateWithProfile(prompt, systemPrompt = '', profileId = '', maxTokens = 2048, signal = null) {
+export async function sidecarGenerateWithProfile(prompt, systemPrompt = '', profileId = '', maxTokens = 2048, signal = null, { temperature } = {}) {
     signal?.throwIfAborted();
     const ctx = window?.SillyTavern?.getContext?.();
 
     const messages = [];
     if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
     messages.push({ role: 'user', content: prompt });
+    const temperatureOverride = Number.isFinite(temperature) ? { temperature } : {};
 
     // Try specified profile first
     if (ctx?.ConnectionManagerRequestService && profileId) {
         const CMRS = ctx.ConnectionManagerRequestService;
+        const outputLimit = await getRetrievalOutputLimit(messages, maxTokens, profileId);
+        signal?.throwIfAborted();
         try {
-            const result = await runAsInternalPromptTransform(() => CMRS.sendRequest(profileId, messages, maxTokens, {
+            const result = await runAsInternalPromptTransform(() => CMRS.sendRequest(profileId, messages, outputLimit, {
                 extractData: true,
                 includePreset: true,
                 stream: false,
                 signal,
-            }), signal);
+            }, temperatureOverride), signal);
             signal?.throwIfAborted();
+            if (result?.lengthLimited || isGenerationLengthFinish(result)) throw new Error('The retrieval reply reached its output limit.');
             const text = typeof result === 'string' ? result : extractProfileResponseText(result);
             if (!text.trim()) throw new Error('Sidecar generation failed; Pawthfinder retrieval was skipped.');
             return text;
@@ -68,16 +74,21 @@ export async function sidecarGenerateWithProfile(prompt, systemPrompt = '', prof
     }
 
     try {
-        const result = await runAsInternalPromptTransform(() => generateRaw({
+        const outputLimit = await getRetrievalOutputLimit(messages, maxTokens);
+        signal?.throwIfAborted();
+        const result = await runAsInternalPromptTransform(() => (ctx?.generateRawData ?? generateRaw)({
             prompt: messages,
-            responseLength: maxTokens,
+            responseLength: outputLimit,
             trimNames: false,
             signal,
             cacheScope: 'auxiliary',
+            ...temperatureOverride,
         }), signal);
         signal?.throwIfAborted();
-        if (!result.trim()) throw new Error('Sidecar generation failed; Pawthfinder retrieval was skipped.');
-        return result;
+        if (isGenerationLengthFinish(result)) throw new Error('The retrieval reply reached its output limit.');
+        const text = extractProfileResponseText(result);
+        if (!text.trim()) throw new Error('Sidecar generation failed; Pawthfinder retrieval was skipped.');
+        return text;
     } catch (err) {
         if (isAbortLikeError(err, signal)) {
             throw err;
