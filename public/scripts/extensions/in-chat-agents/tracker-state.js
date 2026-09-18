@@ -107,6 +107,32 @@ export function getTrackerMetadataKey(agent = {}) {
 }
 
 /**
+ * Writes an extracted tracker value where both readers can find it: the legacy
+ * top-level metadata key, and the host's local variable store so {{getvar::agent_x}}
+ * and /getvar resolve it. Passing an empty value removes both copies.
+ * @param {object} metadata chat metadata object
+ * @param {string} key metadata key from getTrackerMetadataKey
+ * @param {string} value extracted text, or '' to clear
+ * @returns {boolean} true when anything changed
+ */
+export function writeTrackerMetadataValue(metadata, key, value = '') {
+    if (!metadata || typeof metadata !== 'object' || !key) return false;
+    if (!metadata.variables || typeof metadata.variables !== 'object') {
+        metadata.variables = {};
+    }
+    if (value) {
+        if (metadata[key] === value && metadata.variables[key] === value) return false;
+        metadata[key] = value;
+        metadata.variables[key] = value;
+        return true;
+    }
+    const existed = Object.hasOwn(metadata, key) || Object.hasOwn(metadata.variables, key);
+    delete metadata[key];
+    delete metadata.variables[key];
+    return existed;
+}
+
+/**
  * Inspects tracker text using structural block boundaries first. The configured
  * extractor remains useful metadata, but a stale or invalid regex cannot make a
  * complete [TAG]...[/TAG] block look broken.

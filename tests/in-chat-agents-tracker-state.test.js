@@ -10,6 +10,7 @@ const {
     inspectTrackerState,
     mergeTrackerRepairPayload,
     normalizeCompanionTrackerRepairPayload,
+    writeTrackerMetadataValue,
 } = await import('../public/scripts/extensions/in-chat-agents/tracker-state.js');
 
 const statusAgent = {
@@ -167,5 +168,25 @@ describe('in-chat agent tracker state', () => {
 
         expect(result.text).toBe(`Story remains.\n\n${repaired}`);
         expect(getTrackerRepairPayload(statusAgent, result.text).payload).toBe(repaired);
+    });
+});
+
+describe('writeTrackerMetadataValue', () => {
+    test('extracted state lands in the host variable store as well as the legacy key', () => {
+        const metadata = {};
+        expect(writeTrackerMetadataValue(metadata, 'agent_status_data', '[STATUS|x]')).toBe(true);
+        expect(metadata.agent_status_data).toBe('[STATUS|x]');
+        expect(metadata.variables.agent_status_data).toBe('[STATUS|x]');
+        expect(writeTrackerMetadataValue(metadata, 'agent_status_data', '[STATUS|x]')).toBe(false);
+    });
+
+    test('clearing removes both copies and reports whether anything existed', () => {
+        const metadata = { agent_status_data: 'old', variables: { agent_status_data: 'old', other: 'keep' } };
+        expect(writeTrackerMetadataValue(metadata, 'agent_status_data', '')).toBe(true);
+        expect(metadata.agent_status_data).toBeUndefined();
+        expect(metadata.variables.agent_status_data).toBeUndefined();
+        expect(metadata.variables.other).toBe('keep');
+        expect(writeTrackerMetadataValue(metadata, 'agent_status_data', '')).toBe(false);
+        expect(writeTrackerMetadataValue(null, 'agent_status_data', 'x')).toBe(false);
     });
 });

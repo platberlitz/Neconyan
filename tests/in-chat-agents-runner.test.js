@@ -4160,6 +4160,32 @@ describe('in-chat agent post-processing runner', () => {
         expect(extensionPrompts.inchat_agent_saved.value).toBe('original prompt');
     });
 
+    test('tool sync drops tools whose action vanished and honours the saved registration flag', async () => {
+        enabledToolAgents = [{
+            id: 'custom-tools',
+            name: 'Custom tools',
+            category: 'tool',
+            settings: {},
+            tools: [
+                { name: 'Keep_Me', displayName: 'Keep', actionKey: 'keep', enabled: true, shouldRegister: true },
+                { name: 'Not_Registered', displayName: 'Hidden', actionKey: 'keep', enabled: true, shouldRegister: false },
+            ],
+        }];
+        const action = jest.fn(async () => 'ok');
+        getToolAction.mockReturnValue(action);
+
+        const { syncToolAgentRegistrations } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        syncToolAgentRegistrations();
+
+        expect(registeredTools.has('Keep_Me')).toBe(true);
+        expect(registeredTools.has('Not_Registered')).toBe(false);
+
+        getToolAction.mockReturnValue(null);
+        syncToolAgentRegistrations();
+
+        expect(registeredTools.has('Keep_Me')).toBe(false);
+    });
+
     test('forces tool use only when the recursion budget leaves a tool pass', async () => {
         enabledToolAgents = [{
             id: 'pathfinder-a',

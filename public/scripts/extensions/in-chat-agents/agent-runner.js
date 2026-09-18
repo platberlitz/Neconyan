@@ -79,6 +79,7 @@ import {
     inspectTrackerState,
     mergeTrackerRepairPayload,
     TRACKER_REPAIR_INSTRUCTION,
+    writeTrackerMetadataValue,
 } from './tracker-state.js';
 
 const PROMPT_KEY_PREFIX = 'inchat_agent_';
@@ -692,7 +693,21 @@ function getRegisterableAgentTools(agent) {
         return enabledTools.filter(tool => tool.name === PATHFINDER_SUMMARIZE_TOOL_NAME);
     }
 
-    return (agent.tools ?? []).filter(tool => tool.enabled !== false);
+    return (agent.tools ?? []).filter(tool => tool.enabled !== false && tool.shouldRegister !== false);
+}
+
+/**
+ * Tools whose action exists in the registry. Tools without a callable action
+ * must not enter the desired set, otherwise a stale registration survives sync.
+ */
+function getCallableAgentTools(agent) {
+    return getRegisterableAgentTools(agent).filter(tool => {
+        if (getToolAction(tool.actionKey)) {
+            return true;
+        }
+        console.warn(`[InChatAgents] Tool "${tool.name}" has actionKey "${tool.actionKey}" with no registered action. Skipping.`);
+        return false;
+    });
 }
 
 function isPathfinderSummarizeToolEnabled(agent) {
@@ -773,8 +788,7 @@ export function syncToolAgentRegistrations() {
     syncPathfinderRuntimeSettings(pathfinderAgent);
 
     for (const agent of enabledToolAgents) {
-        const enabledTools = getRegisterableAgentTools(agent);
-        for (const tool of enabledTools) {
+        for (const tool of getCallableAgentTools(agent)) {
             desiredTools.add(tool.name);
         }
     }
@@ -787,14 +801,8 @@ export function syncToolAgentRegistrations() {
     }
 
     for (const agent of enabledToolAgents) {
-        const enabledTools = getRegisterableAgentTools(agent);
-        for (const toolDef of enabledTools) {
+        for (const toolDef of getCallableAgentTools(agent)) {
             const action = getToolAction(toolDef.actionKey);
-            if (!action) {
-                console.warn(`[InChatAgents] Tool "${toolDef.name}" has actionKey "${toolDef.actionKey}" with no registered action. Skipping.`);
-                continue;
-            }
-
             const formatMessage = getToolFormatter(toolDef.formatMessageKey) ?? (async () => `Calling ${toolDef.displayName}...`);
 
             ToolManager.registerFunctionTool({
@@ -4359,7 +4367,7 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
                         const regex = new RegExp(postProcess.extractPattern, 'g');
                         const matches = message.mes.match(regex);
                         if (matches) {
-                            chat_metadata[`agent_${postProcess.extractVariable}`] = matches.join('\n');
+                            writeTrackerMetadataValue(chat_metadata, getTrackerMetadataKey(agent), matches.join('\n'));
                             chatStateChanged = true;
                         }
                     } catch (error) {
@@ -6081,14 +6089,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
             }
         }
 
-        if (latestValue) {
-            if (chat_metadata[metadataKey] !== latestValue) {
-                chat_metadata[metadataKey] = latestValue;
-                chatStateChanged = true;
-                trackerMetadataUpdates++;
-            }
-        } else if (Object.hasOwn(chat_metadata, metadataKey)) {
-            delete chat_metadata[metadataKey];
+        if (writeTrackerMetadataValue(chat_metadata, metadataKey, latestValue)) {
             chatStateChanged = true;
             trackerMetadataUpdates++;
         }
