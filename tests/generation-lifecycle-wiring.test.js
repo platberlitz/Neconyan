@@ -177,7 +177,7 @@ describe('generation lifecycle wiring', () => {
     test('runs main output intercept event before saveReply stores non-streaming replies', () => {
         const generateSource = getFunctionSource('Generate', { exported: true });
         const interceptIndex = generateSource.indexOf('await applyMainGenerationOutputInterceptors({');
-        const saveIndex = generateSource.indexOf('await saveReply({ type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens, isCurrent })');
+        const saveIndex = generateSource.indexOf('await saveReply({ type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens, isCurrent, generationContext: agentGenerationContext })');
 
         expect(interceptIndex).toBeGreaterThanOrEqual(0);
         expect(saveIndex).toBeGreaterThanOrEqual(0);

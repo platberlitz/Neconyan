@@ -7,6 +7,7 @@ test.use({ serviceWorkers: 'block' });
 test.setTimeout(180000);
 
 test.beforeEach(async ({ page }) => {
+    page.setDefaultTimeout(15000);
     await page.route('**/api/server-admin/**', route => route.fulfill({ status: 403, json: { error: 'Administration is disabled during agent UI checks.' } }));
     await page.route(/\/api\/.*\/generate-quiet(?:\?|$)/, route => route.fulfill({ status: 503, json: { error: 'Generation is disabled during agent UI checks.' } }));
 });
@@ -21,6 +22,8 @@ async function openAgents(page, withChat = false, navigate = action => action())
         await assistant.locator('input[value="miso-male"]').check();
         await assistant.locator('[data-assistant-open]').click();
         await page.waitForFunction(() => document.querySelector('[data-assistant-picker]')?.dataset.assistantBusy !== 'true');
+        const skipTour = page.getByRole('region', { name: 'Neconyan interactive tutorial' }).getByRole('button', { name: 'Skip', exact: true });
+        if (await skipTour.isVisible()) await skipTour.click();
     }
     await page.evaluate(() => window.SillyBunnyShell.openTab('left', 'agents'));
     await expect(page.locator('#ica--settings')).toBeVisible({ timeout: 45000 });
@@ -66,9 +69,9 @@ async function chooseEditorSection(page, section) {
     await page.locator(`[data-editor-tab="${section}"]`).click();
 }
 
-for (const width of [1280, 1024, 997, 768, 390, 320]) {
+for (const width of [1280, 1024, 997, 768, 390, 393, 320]) {
     test.describe(`Agents at ${width}px`, () => {
-        test.use({ viewport: { width, height: 1000 }, isMobile: width < 769, hasTouch: width < 769 });
+        test.use({ viewport: { width, height: width === 393 ? 852 : width === 1280 ? 900 : 1000 }, isMobile: width < 769, hasTouch: width < 769 });
         test('navigation, filters, library and recoverable editor save', async ({ page }, info) => {
             const createdIds = new Set();
             const modelRequests = [];

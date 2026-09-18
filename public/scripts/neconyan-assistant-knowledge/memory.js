@@ -65,8 +65,8 @@ export default [
     },
     {
         id: 'pathfinder.setup', title: 'Enabling Pawthfinder and choosing books', keys: ['Pawthfinder', 'Pathfinder', 'retrieval lorebooks', 'Select Lorebooks'],
-        sources: [agents + 'pathfinder-settings.html', agents + 'pathfinder/pathfinder-tool-bridge.js'], anchors: ['Enable Pawthfinder for this chat', 'Select Lorebooks'],
-        content: 'Open Included tools → Pawthfinder → Settings. Enable Pawthfinder for this chat is a per-chat switch; saving other settings does not turn it on. Select Lorebooks chooses its sources, with options for attached/contextual books and exclusions. Refresh List reloads available books. Disabled or agent-inaccessible entries are not ordinary readable sources. Pawthfinder works through Agents and is separate from the assistants\' automatically supplied product-help reference.',
+        sources: [agents + 'pathfinder-settings.html', agents + 'pathfinder/pathfinder-tool-bridge.js'], anchors: ['Enable Pawthfinder for all chats', 'Select Lorebooks'],
+        content: 'Open Included tools → Pawthfinder → Settings. The enable label states whether the switch affects all chats, individual chats or group chats, according to the separate chat-type setting; it is not a per-chat switch. Saving other settings does not turn it on. Select Lorebooks chooses its sources, with options for attached/contextual books and exclusions. Refresh List reloads available books. Disabled or agent-inaccessible entries are not ordinary readable sources. Pawthfinder works through Agents and is separate from the assistants\' automatically supplied product-help reference.',
     },
     {
         id: 'pathfinder.retrieval', title: 'Pawthfinder Tool Mode and Predictive Pipeline', keys: ['Predictive Pipeline', 'Tool Mode', 'Two-Stage', 'Single-Pass', 'retrieval timeout', 'Max Candidates'],

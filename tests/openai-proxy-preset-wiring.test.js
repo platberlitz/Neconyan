@@ -206,7 +206,7 @@ describe('OpenAI proxy preset wiring', () => {
 
     test('sends selected Custom endpoint secret id with chat requests', () => {
         const sendRequestSource = getFunctionSource('sendOpenAIRequest');
-        const settingsReadyIndex = sendRequestSource.indexOf('await eventSource.emit(event_types.CHAT_COMPLETION_SETTINGS_READY, generate_data);');
+        const settingsReadyIndex = sendRequestSource.indexOf('await eventSource.emit(event_types.CHAT_COMPLETION_SETTINGS_READY, generate_data,');
         const customSecretGuardIndex = sendRequestSource.indexOf('generate_data.chat_completion_source === chat_completion_sources.CUSTOM && selected_custom_endpoint_preset?.secretId');
         const secretIdIndex = sendRequestSource.indexOf('generate_data.secret_id = selected_custom_endpoint_preset.secretId;');
         const fetchIndex = sendRequestSource.indexOf('const response = await fetchResumable(generate_url, {');

@@ -318,7 +318,8 @@ describe('in-chat agents generation UI wiring', () => {
         expect(pickerSource).toContain('type="checkbox" name="ica--run-target"');
         expect(pickerSource).not.toContain('type="radio" name="ica--run-target"');
         expect(pickerSource).toContain("picker.find('input[name=\"ica--run-target\"]:checked').map((_, input) => String(input.value)).get()");
-        expect(pickerSource).toContain('return selected.flatMap(value => {');
+        expect(pickerSource).toContain('const targets = selected.flatMap(value => {');
+        expect(pickerSource).toContain('targets.some(target => !target.isCurrent())');
         expect(handlerSource).toContain('const targets = await pickManualAgentRunTargets(agent);');
         expect(handlerSource).toContain('Promise.all(targets.map(target => runAgentOnTarget(agent.id, target)))');
     });
@@ -351,7 +352,7 @@ describe('in-chat agents generation UI wiring', () => {
         expect(pickerSource).toContain('ica--run-target-message-range');
         expect(pickerSource).toContain('Last assistant reply #${lastAssistantIndex}');
         expect(pickerSource).toContain('getManualAgentRunMessageIndices(');
-        expect(pickerSource).toContain('return selected.flatMap(value => {');
+        expect(pickerSource).toContain('const targets = selected.flatMap(value => {');
         expect(extensionStyleSource).toContain('.ica--run-target-range');
     });
 });

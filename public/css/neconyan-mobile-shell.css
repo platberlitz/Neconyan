@@ -3280,6 +3280,20 @@ body.neconyan .popup:has(#ica--editor) .ica--editor-tab {
 }
 body.neconyan .popup:has(#ica--editor) .ica--editor-section-select-label { display: none; }
 
+/* Companion actions keep a full touch target even when their label is only an icon. */
+body.neconyan :is(.ica--cdash-action, .ica--chatonly-send, .ica--plot-objective-save) {
+    min-width: 44px;
+    min-height: 44px;
+}
+body.neconyan #ica--tracker-panel :is(.ica--tpanel-header, .ica--tpanel-agent-actions) {
+    flex-wrap: wrap;
+    max-width: 100%;
+}
+body.neconyan :is(.ica--chatonly-composer, .ica--plot-objective-composer) {
+    grid-template-columns: minmax(0, 1fr) 44px;
+}
+body.neconyan .ica--tpanel-history summary { min-height: 44px; }
+
 /* Characters: the tool row is a horizontal rail on phones, so it must claim the pan axis
    (the drawer's pan-y otherwise blocks finger scrolling) and its Filter summary matches
    the 12px labels of the buttons beside it. */
