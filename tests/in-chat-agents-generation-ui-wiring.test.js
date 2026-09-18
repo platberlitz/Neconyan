@@ -129,7 +129,7 @@ describe('in-chat agents generation UI wiring', () => {
         expect(indexSource).toContain("#ica--editor-companion-sendContextToCompanions");
         expect(indexSource).toContain("#ica--editor-companion-contextRecipientAgentIds");
         expect(readSource).toContain("sendContextToCompanions: root.find('#ica--editor-companion-sendContextToCompanions').prop('checked')");
-        expect(readSource).toContain("contextRecipientAgentIds: normalizeCompanionBatchAgentIds(root.find('#ica--editor-companion-contextRecipientAgentIds').val())");
+        expect(readSource).toContain("contextRecipientAgentIds: normalizeStringIdList(root.find('#ica--editor-companion-contextRecipientAgentIds').val())");
         expect(writeSource).toContain("editorEl.find('#ica--editor-companion-sendContextToCompanions').prop('checked', nextCompanion.sendContextToCompanions);");
         expect(writeSource).toContain('updateCompanionContextRecipientOptions();');
         expect(indexSource).toContain("#ica--editor-companion-waitForDependencies");

@@ -1089,7 +1089,15 @@ function clampNumber(value, fallback, min, max) {
     return Math.max(min, Math.min(max, Number(value)));
 }
 
-function normalizeStringIdList(value = [], limit = 50) {
+/**
+ * Normalises a list of agent IDs used by Companion links.
+ * IDs are compared exactly (agent lookup is case-sensitive) and never truncated,
+ * because a shortened or case-folded ID would point at nothing after reload.
+ * @param {string[]|string} value
+ * @param {number} limit
+ * @returns {string[]}
+ */
+export function normalizeStringIdList(value = [], limit = 500) {
     const rawValues = Array.isArray(value)
         ? value
         : String(value ?? '').split(/[\n,]/);
@@ -1097,11 +1105,10 @@ function normalizeStringIdList(value = [], limit = 50) {
     const ids = [];
 
     for (const rawValue of rawValues) {
-        const id = String(rawValue ?? '').trim().slice(0, 128);
-        const key = id.toLowerCase();
-        if (!id || seenIds.has(key)) continue;
+        const id = String(rawValue ?? '').trim();
+        if (!id || seenIds.has(id)) continue;
 
-        seenIds.add(key);
+        seenIds.add(id);
         ids.push(id);
         if (ids.length >= limit) break;
     }
@@ -2100,8 +2107,14 @@ export async function reorderAgentsIntoOrderSlots(orderedSubsetIds) {
             continue;
         }
 
-        agent.injection.order = desiredOrder;
-        await saveAgent(agent);
+        // Stage the new order on a copy; the live record only changes once the server accepts it.
+        await saveAgent(agent.id, {
+            update: draft => {
+                if (!draft) return null;
+                draft.injection = { ...(draft.injection ?? {}), order: desiredOrder };
+                return draft;
+            },
+        });
         changed = true;
     }
 
@@ -2135,7 +2148,14 @@ export async function deleteAgent(id) {
 export async function importAgents(data) {
     let agentsToImport = [];
 
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        throw new Error('Unrecognized agent format');
+    }
+
     if (data.format === 'sillybunny-inchat-agents' && Array.isArray(data.agents)) {
+        if (data.version !== undefined && Number(data.version) !== 1) {
+            throw new Error(`Unsupported agent pack version: ${String(data.version)}`);
+        }
         agentsToImport = data.agents;
     } else if (data.id && data.prompt !== undefined) {
         agentsToImport = [data];
@@ -2143,9 +2163,34 @@ export async function importAgents(data) {
         throw new Error('Unrecognized agent format');
     }
 
+    // Validate and normalise the whole pack before the first write so a broken later entry
+    // cannot leave an undisclosed partial import behind.
+    const idMap = new Map();
+    const prepared = agentsToImport.map((rawAgent, index) => {
+        if (!rawAgent || typeof rawAgent !== 'object' || Array.isArray(rawAgent)) {
+            throw new Error(`Agent ${index + 1} in the pack is not an object`);
+        }
+        const newId = uuidv4();
+        const oldId = String(rawAgent.id ?? '').trim();
+        if (oldId) idMap.set(oldId, newId);
+        // Imported agents start paused so they can be reviewed before they run.
+        return normalizeAgent({ ...createDefaultAgent(), ...rawAgent, id: newId, enabled: false });
+    });
+
+    const remap = ids => (Array.isArray(ids) ? ids.map(id => idMap.get(id) ?? id) : ids);
+    for (const agent of prepared) {
+        if (agent.companion) {
+            agent.companion.batchAgentIds = remap(agent.companion.batchAgentIds);
+            agent.companion.contextRecipientAgentIds = remap(agent.companion.contextRecipientAgentIds);
+            agent.companion.dependencies = remap(agent.companion.dependencies);
+        }
+        if (agent.conditions) {
+            agent.conditions.companionOutputTargetAgentIds = remap(agent.conditions.companionOutputTargetAgentIds);
+        }
+    }
+
     const imported = [];
-    for (const rawAgent of agentsToImport) {
-        const agent = normalizeAgent({ ...createDefaultAgent(), ...rawAgent, id: uuidv4() });
+    for (const agent of prepared) {
         await saveAgent(agent);
         imported.push(agent);
     }
@@ -2282,25 +2327,30 @@ export function loadCustomGroups(data) {
  */
 export async function saveGroup(group) {
     const normalizedGroup = normalizeGroup(group, { builtin: false });
-    const index = customGroups.findIndex(existingGroup => existingGroup.id === normalizedGroup.id);
+    // Kit writes share the agent save queue and publish only after the server accepts them,
+    // so a failed or out-of-order save cannot leave a kit that looks saved but is not.
+    const save = agentSaveChain.then(async () => {
+        const response = await fetch('/api/in-chat-agents/groups/save', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify(normalizedGroup),
+        });
 
-    if (index >= 0) {
-        customGroups[index] = normalizedGroup;
-    } else {
-        customGroups.push(normalizedGroup);
-    }
+        if (!response.ok) {
+            throw new Error('Failed to save group');
+        }
 
-    const response = await fetch('/api/in-chat-agents/groups/save', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify(normalizedGroup),
+        const index = customGroups.findIndex(existingGroup => existingGroup.id === normalizedGroup.id);
+        if (index >= 0) {
+            customGroups[index] = normalizedGroup;
+        } else {
+            customGroups.push(normalizedGroup);
+        }
+
+        return normalizedGroup;
     });
-
-    if (!response.ok) {
-        throw new Error('Failed to save group');
-    }
-
-    return normalizedGroup;
+    agentSaveChain = save.catch(() => {});
+    return save;
 }
 
 /**
@@ -2308,15 +2358,19 @@ export async function saveGroup(group) {
  * @param {string} id
  */
 export async function deleteGroup(id) {
-    customGroups = customGroups.filter(group => group.id !== id);
+    const deletion = agentSaveChain.then(async () => {
+        const response = await fetch('/api/in-chat-agents/groups/delete', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ id }),
+        });
 
-    const response = await fetch('/api/in-chat-agents/groups/delete', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({ id }),
+        if (!response.ok) {
+            throw new Error('Failed to delete group');
+        }
+
+        customGroups = customGroups.filter(group => group.id !== id);
     });
-
-    if (!response.ok) {
-        throw new Error('Failed to delete group');
-    }
+    agentSaveChain = deletion.catch(() => {});
+    return deletion;
 }

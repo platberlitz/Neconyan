@@ -1272,3 +1272,174 @@ describe('legacy kit migration keeps its source until every write is acknowledge
         expect(migration.indexOf('await migrateLegacyGroups(legacyGroups)')).toBeLessThan(migration.indexOf('legacyGroupsRetired = true'));
     });
 });
+
+describe('imports, kits and reorders are safe to fail', () => {
+    async function importStore() {
+        jest.resetModules();
+        let counter = 0;
+
+        await jest.unstable_mockModule('../public/script.js', () => ({
+            getRequestHeaders: jest.fn(() => ({})),
+            saveSettingsDebounced: jest.fn(),
+            saveSettings: jest.fn(async () => true),
+        }));
+        await jest.unstable_mockModule('../public/scripts/extensions.js', () => ({
+            extension_settings: {},
+            getContext: jest.fn(() => ({ groupId: null })),
+        }));
+        await jest.unstable_mockModule('../public/scripts/utils.js', () => ({
+            regexFromString: jest.fn(value => new RegExp(String(value ?? ''))),
+            uuidv4: jest.fn(() => `new-id-${++counter}`),
+        }));
+
+        return await import('../public/scripts/extensions/in-chat-agents/agent-store.js');
+    }
+
+    function mockFetch({ failOn = () => false } = {}) {
+        const calls = [];
+        globalThis.fetch = jest.fn(async (url, request) => {
+            const body = JSON.parse(request.body);
+            calls.push({ url, body });
+            return { ok: !failOn(url, body) };
+        });
+        return calls;
+    }
+
+    beforeEach(() => {
+        delete globalThis.fetch;
+    });
+
+    test('a pack with a malformed later entry writes nothing', async () => {
+        const store = await importStore();
+        store.loadAgents([]);
+        const calls = mockFetch();
+
+        await expect(store.importAgents({
+            format: 'sillybunny-inchat-agents',
+            version: 1,
+            agents: [
+                { id: 'a', name: 'A', prompt: 'prompt a' },
+                'not an agent',
+            ],
+        })).rejects.toThrow('Agent 2 in the pack is not an object');
+
+        expect(calls.filter(call => call.url.endsWith('/save'))).toHaveLength(0);
+        expect(store.getAgents()).toHaveLength(0);
+    });
+
+    test('an unsupported pack version is rejected before any write', async () => {
+        const store = await importStore();
+        store.loadAgents([]);
+        const calls = mockFetch();
+
+        await expect(store.importAgents({
+            format: 'sillybunny-inchat-agents',
+            version: 2,
+            agents: [{ id: 'a', name: 'A', prompt: 'prompt a' }],
+        })).rejects.toThrow('Unsupported agent pack version: 2');
+        expect(calls).toHaveLength(0);
+    });
+
+    test('imported agents start paused and keep their links to each other', async () => {
+        const store = await importStore();
+        store.loadAgents([]);
+        mockFetch();
+
+        const imported = await store.importAgents({
+            format: 'sillybunny-inchat-agents',
+            agents: [
+                {
+                    id: 'old-tracker',
+                    name: 'Tracker',
+                    prompt: 'track things',
+                    enabled: true,
+                    execution: { mode: 'companion' },
+                    companion: { batchAgentIds: ['old-notes'], dependencies: ['old-notes', 'outside-pack'] },
+                },
+                {
+                    id: 'old-notes',
+                    name: 'Notes',
+                    prompt: 'take notes',
+                    enabled: true,
+                    execution: { mode: 'companion' },
+                    companion: { contextRecipientAgentIds: ['old-tracker'] },
+                    conditions: { companionOutputTargetAgentIds: ['old-tracker'] },
+                },
+            ],
+        });
+
+        const [trackerId, notesId] = imported.map(agent => agent.id);
+        expect(trackerId).not.toBe('old-tracker');
+        expect(notesId).not.toBe('old-notes');
+        expect(trackerId).not.toBe(notesId);
+        expect(imported.every(agent => agent.enabled === false)).toBe(true);
+        expect(imported[0].companion.batchAgentIds).toEqual([notesId]);
+        expect(imported[0].companion.dependencies).toEqual([notesId, 'outside-pack']);
+        expect(imported[1].companion.contextRecipientAgentIds).toEqual([trackerId]);
+        expect(imported[1].conditions.companionOutputTargetAgentIds).toEqual([trackerId]);
+        expect(store.getAgents().filter(agent => agent.enabled)).toHaveLength(0);
+    });
+
+    test('reference lists keep case-sensitive, untruncated ids', async () => {
+        const store = await importStore();
+        const longId = 'setup-' + 'x'.repeat(200);
+        const ids = store.normalizeStringIdList(['Agent-A', 'agent-a', longId, ' Agent-A ']);
+        expect(ids).toEqual(['Agent-A', 'agent-a', longId]);
+    });
+
+    test('a failed reorder save leaves the live order untouched', async () => {
+        const store = await importStore();
+        store.loadAgents([
+            { id: 'first', name: 'First', prompt: 'p', injection: { order: 10 } },
+            { id: 'second', name: 'Second', prompt: 'p', injection: { order: 20 } },
+        ]);
+        mockFetch({ failOn: url => url.endsWith('/save') });
+
+        await expect(store.reorderAgentsIntoOrderSlots(['second', 'first'])).rejects.toThrow();
+
+        expect(store.getAgentById('first').injection.order).toBe(10);
+        expect(store.getAgentById('second').injection.order).toBe(20);
+    });
+
+    test('a kit only appears locally once the server accepts it', async () => {
+        const store = await importStore();
+        store.loadCustomGroups([]);
+        mockFetch({ failOn: url => url.endsWith('/groups/save') });
+
+        await expect(store.saveGroup({ id: 'kit-1', name: 'Kit' })).rejects.toThrow('Failed to save group');
+        expect(store.getCustomGroups()).toHaveLength(0);
+
+        mockFetch();
+        await store.saveGroup({ id: 'kit-1', name: 'Kit' });
+        expect(store.getCustomGroups().map(group => group.id)).toEqual(['kit-1']);
+    });
+
+    test('deleting a kit waits for its pending save so it cannot come back', async () => {
+        const store = await importStore();
+        store.loadCustomGroups([]);
+        const persisted = new Map();
+        let finishSave;
+        let started;
+        const saving = new Promise(resolve => { started = resolve; });
+        globalThis.fetch = jest.fn(async (url, request) => {
+            const body = JSON.parse(request.body);
+            if (url.endsWith('/groups/save')) {
+                await new Promise(resolve => { finishSave = resolve; started(); });
+                persisted.set(body.id, body);
+            } else {
+                persisted.delete(body.id);
+            }
+            return { ok: true };
+        });
+
+        const pending = store.saveGroup({ id: 'kit-2', name: 'Kit two' });
+        await saving;
+        const deletion = store.deleteGroup('kit-2');
+        finishSave();
+        await pending;
+        await deletion;
+
+        expect(persisted.has('kit-2')).toBe(false);
+        expect(store.getCustomGroups()).toHaveLength(0);
+    });
+});

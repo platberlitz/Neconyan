@@ -65,6 +65,7 @@ import {
     deleteGroup,
     createDefaultGroup,
     reorderAgentsIntoOrderSlots,
+    normalizeStringIdList,
 } from './agent-store.js';
 import {
     cancelAgentGeneration,
@@ -673,25 +674,6 @@ function getChatroomSelectableCharacters() {
         .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-function normalizeCompanionBatchAgentIds(value = []) {
-    const rawValues = Array.isArray(value)
-        ? value
-        : String(value ?? '').split(/[\n,]/);
-    const seenIds = new Set();
-    const ids = [];
-
-    for (const rawValue of rawValues) {
-        const id = String(rawValue ?? '').trim().slice(0, 128);
-        const key = id.toLowerCase();
-        if (!id || seenIds.has(key)) continue;
-
-        seenIds.add(key);
-        ids.push(id);
-    }
-
-    return ids;
-}
-
 function getCompanionAgentOptionLabel(agent) {
     const name = String(agent?.name ?? '').trim() || agent?.id || 'Companion';
     return `${name} (Order ${getAgentOrderValue(agent)})`;
@@ -1172,8 +1154,8 @@ function applyLevelUpStatsContextLinkDefault(agent) {
     }
 
     const companion = getCompanionConfig(agent);
-    const recipientIds = normalizeCompanionBatchAgentIds(companion.contextRecipientAgentIds);
-    const dependencyIds = normalizeCompanionBatchAgentIds(companion.dependencies);
+    const recipientIds = normalizeStringIdList(companion.contextRecipientAgentIds);
+    const dependencyIds = normalizeStringIdList(companion.dependencies);
     const templateId = String(agent?.sourceTemplateId || agent?.id || '').trim();
     const recipientKey = recipientTemplateId.toLowerCase();
     let changed = false;
@@ -3398,10 +3380,10 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
     editorEl.find('#ica--editor-companion-feedbackEnabled').prop('checked', companion.feedback.enabled);
     editorEl.find('#ica--editor-companion-feedbackDepth').val(companion.feedback.depth);
     editorEl.find('#ica--editor-companion-batch').prop('checked', companion.batch);
-    const savedCompanionBatchAgentIds = normalizeCompanionBatchAgentIds(companion.batchAgentIds);
-    const savedCompanionContextRecipientAgentIds = normalizeCompanionBatchAgentIds(companion.contextRecipientAgentIds);
-    const savedCompanionOutputTargetAgentIds = normalizeCompanionBatchAgentIds(agent.conditions.companionOutputTargetAgentIds);
-    const savedCompanionDependencies = normalizeCompanionBatchAgentIds(companion.dependencies);
+    const savedCompanionBatchAgentIds = normalizeStringIdList(companion.batchAgentIds);
+    const savedCompanionContextRecipientAgentIds = normalizeStringIdList(companion.contextRecipientAgentIds);
+    const savedCompanionOutputTargetAgentIds = normalizeStringIdList(agent.conditions.companionOutputTargetAgentIds);
+    const savedCompanionDependencies = normalizeStringIdList(companion.dependencies);
     editorEl.find('#ica--editor-companion-sendContextToCompanions').prop('checked', companion.sendContextToCompanions);
     editorEl.find('#ica--editor-companion-waitForDependencies').prop('checked', companion.waitForDependencies);
     editorEl.find('#ica--editor-companion-rawPrompt').prop('checked', companion.rawPrompt);
@@ -3648,7 +3630,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
 
     function updateCompanionBatchAgentOptions() {
         const select = editorEl.find('#ica--editor-companion-batchAgentIds');
-        const currentIds = normalizeCompanionBatchAgentIds(select.val());
+        const currentIds = normalizeStringIdList(select.val());
         const selectedIds = currentIds.length ? currentIds : savedCompanionBatchAgentIds;
         const selectedKeys = new Set(selectedIds.map(id => id.toLowerCase()));
         const options = getCompanionBatchOptionsForAgent(agent);
@@ -3683,7 +3665,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
 
     function updateCompanionContextRecipientOptions() {
         const select = editorEl.find('#ica--editor-companion-contextRecipientAgentIds');
-        const currentIds = normalizeCompanionBatchAgentIds(select.val());
+        const currentIds = normalizeStringIdList(select.val());
         const selectedIds = currentIds.length ? currentIds : savedCompanionContextRecipientAgentIds;
         const selectedKeys = new Set(selectedIds.map(id => id.toLowerCase()));
         const options = getCompanionContextRecipientOptionsForAgent(agent);
@@ -3718,7 +3700,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
 
     function updateCompanionOutputTargetOptions() {
         const select = editorEl.find('#ica--editor-pp-companionTargets');
-        const currentIds = normalizeCompanionBatchAgentIds(select.val());
+        const currentIds = normalizeStringIdList(select.val());
         const selectedIds = currentIds.length ? currentIds : savedCompanionOutputTargetAgentIds;
         const selectedKeys = new Set(selectedIds.map(id => id.toLowerCase()));
         const options = getCompanionOutputTargetOptionsForAgent(agent);
@@ -3753,7 +3735,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
 
     function updateCompanionDependencyOptions() {
         const select = editorEl.find('#ica--editor-companion-dependencies');
-        const currentIds = normalizeCompanionBatchAgentIds(select.val());
+        const currentIds = normalizeStringIdList(select.val());
         const selectedIds = currentIds.length ? currentIds : savedCompanionDependencies;
         const selectedKeys = new Set(selectedIds.map(id => id.toLowerCase()));
         const options = getCompanionDependencyOptionsForAgent(agent);
@@ -3862,10 +3844,10 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
                 depth: Number(root.find('#ica--editor-companion-feedbackDepth').val()) || current.feedback.depth,
             },
             batch: root.find('#ica--editor-companion-batch').prop('checked'),
-            batchAgentIds: normalizeCompanionBatchAgentIds(root.find('#ica--editor-companion-batchAgentIds').val()),
+            batchAgentIds: normalizeStringIdList(root.find('#ica--editor-companion-batchAgentIds').val()),
             sendContextToCompanions: root.find('#ica--editor-companion-sendContextToCompanions').prop('checked'),
-            contextRecipientAgentIds: normalizeCompanionBatchAgentIds(root.find('#ica--editor-companion-contextRecipientAgentIds').val()),
-            dependencies: normalizeCompanionBatchAgentIds(root.find('#ica--editor-companion-dependencies').val()),
+            contextRecipientAgentIds: normalizeStringIdList(root.find('#ica--editor-companion-contextRecipientAgentIds').val()),
+            dependencies: normalizeStringIdList(root.find('#ica--editor-companion-dependencies').val()),
             waitForDependencies: root.find('#ica--editor-companion-waitForDependencies').prop('checked'),
             maxTokens: Number(root.find('#ica--editor-companion-maxTokens').val()) || current.maxTokens,
         };
@@ -4393,7 +4375,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         agent.regexScripts = regexScripts.map(script => normalizeRegexScript(script));
         agent.conditions.runOnImpersonate = editorEl.find('#ica--editor-pp-runOnImpersonate').prop('checked');
         agent.conditions.runOnCompanionOutputs = editorEl.find('#ica--editor-pp-runOnCompanionOutputs').prop('checked');
-        agent.conditions.companionOutputTargetAgentIds = normalizeCompanionBatchAgentIds(editorEl.find('#ica--editor-pp-companionTargets').val());
+        agent.conditions.companionOutputTargetAgentIds = normalizeStringIdList(editorEl.find('#ica--editor-pp-companionTargets').val());
 
         agent.conditions.triggerProbability = Number(editorEl.find('#ica--editor-probability').val());
         const kwText = editorEl.find('#ica--editor-keywords').val().toString();

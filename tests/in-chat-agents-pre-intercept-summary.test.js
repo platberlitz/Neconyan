@@ -105,6 +105,7 @@ beforeAll(async () => {
         })),
         loadAgents: jest.fn(),
         reorderAgentsIntoOrderSlots: jest.fn(async () => false),
+        normalizeStringIdList: jest.fn((value = []) => (Array.isArray(value) ? value : [])),
         saveAgent: jest.fn(async () => {}),
         deleteAgent: jest.fn(async () => {}),
         createDefaultAgent: jest.fn(() => ({
