@@ -790,14 +790,20 @@ export function syncToolAgentRegistrations() {
                 displayName: toolDef.displayName,
                 description: toolDef.description,
                 parameters: toolDef.parameters,
-                action: async (args) => {
+                action: async (args, callerContext = {}) => {
                     if (!isAgentRuntimeAllowed(agent)) return '';
                     const { cancelRevision, runId, chatId } = getAgentGenerationContext();
                     const lorebookRevision = pathfinderToolRevision;
                     const controller = new AbortController();
+                    const callerSignal = callerContext?.signal ?? null;
+                    const callerIsCurrent = typeof callerContext?.isCurrent === 'function' ? callerContext.isCurrent : () => true;
+                    const abortFromCaller = () => controller.abort();
+                    if (callerSignal?.aborted) return 'The user declined this tool call. Continue the response without it and do not retry.';
+                    callerSignal?.addEventListener?.('abort', abortFromCaller, { once: true });
                     const isCurrent = () => {
                         const liveAgent = getEnabledToolAgents().find(item => item.id === agent.id);
-                        return !controller.signal.aborted && !generationStopRequested && areAgentsGloballyEnabled()
+                        return !controller.signal.aborted && !callerSignal?.aborted && callerIsCurrent()
+                            && !generationStopRequested && areAgentsGloballyEnabled()
                             && cancelRevision === agentGenerationCancelRevision && runId === postProcessingGenerationRunId
                             && lorebookRevision === pathfinderToolRevision
                             && chatId === getCurrentSnapshotChatId() && liveAgent && isAgentRuntimeAllowed(liveAgent)
@@ -818,6 +824,7 @@ export function syncToolAgentRegistrations() {
                         if (!isCurrent()) return declined;
                         return await action(args, { signal: controller.signal, isCurrent });
                     } finally {
+                        callerSignal?.removeEventListener?.('abort', abortFromCaller);
                         activeToolApprovals.delete(controller);
                     }
                 },
@@ -3404,7 +3411,25 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
         normalizedGenerationType,
         promptTransformMode,
     ));
-    const cancelRevision = agentGenerationCancelRevision;
+    // Reuse the caller's cancel revision so a Stop during an earlier stage of the same
+    // operation still cancels this one instead of being reset by a fresh capture.
+    const cancelRevision = Number.isInteger(options.cancelRevision) ? options.cancelRevision : agentGenerationCancelRevision;
+    if (cancelRevision !== agentGenerationCancelRevision) {
+        return {
+            agentId: agent.id,
+            agentName: agent.name,
+            changed: false,
+            status: 'cancelled',
+            mode: promptTransformMode,
+            profileId,
+            ...runMetadata,
+            runner: 'none',
+            timestamp: new Date().toISOString(),
+            outputText: '',
+            nextMessageText: currentMessageText,
+            beforeText: currentMessageText,
+        };
+    }
     const runningToast = showNotifications
         ? showPromptTransformRunningToast(agent, promptTransformMode, profileId)
         : null;
@@ -3572,6 +3597,7 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
                 const result = await runPromptTransformAgent(agent, message, generationType, currentMessageText, messageIndex, {
                     applyToMessage: false,
                     runtimeAgents,
+                    cancelRevision,
                 });
                 results.push(result);
                 if (isCancelled() || result.status === 'cancelled') {
@@ -3600,6 +3626,7 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
                     return await runPromptTransformAgent(agent, message, generationType, currentMessageText, messageIndex, {
                         applyToMessage: false,
                         runtimeAgents,
+                        cancelRevision,
                     });
                 } catch (error) {
                     return {
@@ -4139,8 +4166,12 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
         }
         let appendBatch = [];
         let staleTarget = false;
+        // One cancel revision for the whole operation: a Stop during any stage halts
+        // every later stage instead of letting the next agent capture a fresh revision.
+        const operationCancelRevision = agentGenerationCancelRevision;
+        const isOperationCancelled = () => agentGenerationCancelRevision !== operationCancelRevision;
         const flushAppendBatch = async () => {
-            if (appendBatch.length === 0 || staleTarget) {
+            if (appendBatch.length === 0 || staleTarget || isOperationCancelled()) {
                 appendBatch = [];
                 return;
             }
@@ -4154,7 +4185,7 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
                 generationType,
                 currentPromptTransformText,
                 messageIndex,
-                { postProcessingTarget },
+                { postProcessingTarget, cancelRevision: operationCancelRevision },
             );
             promptRuns.push(...batchResult.results);
             currentPromptTransformText = batchResult.nextMessageText;
@@ -4167,7 +4198,7 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
         };
 
         for (const agent of promptTransformAgents) {
-            if (staleTarget) {
+            if (staleTarget || isOperationCancelled()) {
                 break;
             }
 
@@ -4177,16 +4208,22 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
             }
 
             await flushAppendBatch();
-            if (staleTarget) {
+            if (staleTarget || isOperationCancelled()) {
                 break;
             }
 
             try {
-                const result = await runPromptTransformAgent(agent, message, generationType, currentPromptTransformText, messageIndex, { postProcessingTarget });
+                const result = await runPromptTransformAgent(agent, message, generationType, currentPromptTransformText, messageIndex, {
+                    postProcessingTarget,
+                    cancelRevision: operationCancelRevision,
+                });
                 promptRuns.push(result);
                 currentPromptTransformText = result.nextMessageText;
                 if (result.status === 'stale-target') {
                     staleTarget = true;
+                    break;
+                }
+                if (result.status === 'cancelled') {
                     break;
                 }
 
@@ -4223,7 +4260,8 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
             chatStateChanged = true;
         }
 
-        for (const agent of utilityAgents) {
+        const operationCancelled = isOperationCancelled();
+        for (const agent of operationCancelled ? [] : utilityAgents) {
             if (!isAgentRuntimeAllowed(agent)) {
                 continue;
             }
@@ -4280,6 +4318,8 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
 
         if (concurrentCompanionStage) {
             await concurrentCompanionStage;
+        } else if (operationCancelled) {
+            // Stop was requested during the passes: do not start the companion stage.
         } else if (companionRuntime?.runCompanionStage) {
             try {
                 await companionRuntime.runCompanionStage({ ...companionStageArgs, activeAgents: activeAgents.filter(isAgentRuntimeAllowed) });
@@ -4500,6 +4540,7 @@ async function runPromptTransformAgentsForText(promptTransformAgents, initialTex
             const result = await runPromptTransformAgent(agent, message, generationType, currentPromptTransformText, null, {
                 applyToMessage: false,
                 runtimeAgents,
+                ...(cancelRevision !== null ? { cancelRevision } : {}),
             });
             promptRuns.push(result);
 
@@ -5168,9 +5209,13 @@ async function onImpersonateReady(text = '') {
     // Impersonate produces user-side text; rewrite only the composer value, never the last assistant swipe.
     let transformedText = initialText;
     let changed = false;
+    const cancelRevision = agentGenerationCancelRevision;
 
     if (promptTransformAgents.length > 0) {
-        const result = await runPromptTransformAgentsForText(promptTransformAgents, transformedText, IMPERSONATE_GENERATION_TYPE);
+        const result = await runPromptTransformAgentsForText(promptTransformAgents, transformedText, IMPERSONATE_GENERATION_TYPE, { cancelRevision });
+        if (result.cancelled || agentGenerationCancelRevision !== cancelRevision) {
+            return;
+        }
         transformedText = result.text;
         changed = changed || result.changed;
     }
@@ -5616,7 +5661,8 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
     const messageIndex = runTarget.messageIndex;
     await commitOpenEditorForMessage(messageIndex);
 
-    if (!isAgentRuntimeAllowed(agent)) {
+    // A queued run whose Stop arrived while it waited must not send a request.
+    if (!isAgentRuntimeAllowed(agent) || agentGenerationCancelRevision !== cancelRevision) {
         return null;
     }
     const message = chat[messageIndex];
@@ -5643,6 +5689,7 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
     });
     const result = await runPromptTransformAgent(agent, message, generationType, null, messageIndex, {
         applyToMessage: false,
+        cancelRevision,
     });
     if (result.status === 'stale-target') {
         toastr.warning('The message changed while the agent was running, so its result was discarded.');

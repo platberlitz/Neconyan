@@ -1594,8 +1594,8 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
         }
 
         const promptMessages = await buildCompanionPromptMessages(agent, messageIndex, generationType, { repair, extraContextSections });
-        if (!isTargetCurrent() || !isAgentRuntimeAllowed(agent)) {
-            throw new DOMException('Companion target changed.', 'AbortError');
+        if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+            throw new DOMException('Companion run cancelled.', 'AbortError');
         }
         const response = await requestPromptTransform(agent, promptMessages, companion.maxTokens);
 
@@ -1761,6 +1761,10 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
         const extraContextSections = getUnitExtraContextSections(agents, extraContextSectionsByAgentId);
         const { promptMessages, taskPayloads } = await buildBatchPromptPayload(agents, messageIndex, generationType, { extraContextSections });
         if (!isTargetCurrent()) return getResults();
+        if (getAgentGenerationCancelRevision() !== cancelRevision) {
+            await cancelCompanionAgentResults(message, agents, messageIndex, '', runs);
+            return getResults();
+        }
         const maxTokens = Math.min(MAX_AGENT_MAX_TOKENS, agents.reduce((sum, agent) => sum + getCompanionConfig(agent).maxTokens, 0));
         const response = await requestPromptTransform(agents[0], promptMessages, maxTokens, { runtimeAgents: agents });
         if (!isTargetCurrent()) return getResults();

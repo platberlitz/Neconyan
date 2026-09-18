@@ -4462,6 +4462,52 @@ describe('in-chat agent post-processing runner', () => {
         expect(action).not.toHaveBeenCalled();
     });
 
+    test('a caller abort during approval declines the tool without any global Stop event', async () => {
+        usePathfinderAgent({ sidecarEnabled: true, confirmTools: { Pathfinder_Summarize: true } });
+        const action = jest.fn(async () => 'written');
+        getToolAction.mockReturnValue(action);
+        let approve;
+        const completeCancelled = jest.fn();
+        globalThis.window = { SillyTavern: { getContext: () => ({
+            Popup: class {
+                show() { return new Promise(resolve => { approve = resolve; }); }
+                completeCancelled = completeCancelled;
+            },
+            POPUP_TYPE: { CONFIRM: 2 },
+            POPUP_RESULT: { AFFIRMATIVE: 1 },
+        }) } };
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        runner.syncToolAgentRegistrations();
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        const callerController = new AbortController();
+        const pending = registeredTools.get('Pathfinder_Summarize').invoke(
+            { title: 'Memory', content: 'Original chat' },
+            { signal: callerController.signal, isCurrent: () => true },
+        );
+        await waitFor(() => typeof approve === 'function');
+        callerController.abort();
+        await expect(pending).resolves.toContain('The user declined this tool call.');
+        approve(1);
+        expect(action).not.toHaveBeenCalled();
+    });
+
+    test('a caller whose ownership lapsed cannot run the tool even when approved', async () => {
+        usePathfinderAgent({ confirmTools: { Pathfinder_Summarize: false } });
+        const action = jest.fn(async () => 'written');
+        getToolAction.mockReturnValue(action);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        runner.syncToolAgentRegistrations();
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        const result = await registeredTools.get('Pathfinder_Summarize').invoke(
+            { title: 'Memory', content: 'Original chat' },
+            { signal: null, isCurrent: () => false },
+        );
+        expect(result).toContain('The user declined this tool call.');
+        expect(action).not.toHaveBeenCalled();
+    });
+
     test.each([
         ['Stop', () => eventSource.emit(eventTypes.GENERATION_STOPPED)],
         ['chat change', async () => { currentChatId = 'chat-b'; await eventSource.emit(eventTypes.CHAT_CHANGED); }],
@@ -5227,6 +5273,49 @@ describe('in-chat agent post-processing runner', () => {
             agentId: 'agent-pre-intercept',
             outputText: 'visible plan',
         })]);
+    });
+
+    test('Stop during the first automatic rewrite prevents the second agent from sending a request', async () => {
+        useManualTransformAgents();
+        const quietResolvers = [];
+        generateQuietPrompt.mockImplementation(async () => await new Promise(resolve => quietResolvers.push(resolve)));
+        chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} });
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        const running = eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await waitFor(() => quietResolvers.length === 1);
+        await eventSource.emit(eventTypes.GENERATION_STOPPED);
+        quietResolvers.shift()('First rewrite');
+        await running;
+        await new Promise(resolve => setTimeout(resolve, 5));
+
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(chat[0].mes).toBe('Original reply');
+    });
+
+    test('a queued manual run that was stopped before it started sends nothing', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'sequential';
+        const quietResolvers = [];
+        generateQuietPrompt.mockImplementation(async () => await new Promise(resolve => quietResolvers.push(resolve)));
+        chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} });
+
+        const { initAgentRunner, runAgentOnMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        const first = runAgentOnMessage('agent-manual-a', 0);
+        await waitFor(() => quietResolvers.length === 1);
+        const second = runAgentOnMessage('agent-manual-b', 0);
+        await eventSource.emit(eventTypes.GENERATION_STOPPED);
+        quietResolvers.shift()('First rewrite');
+        await first;
+        await second;
+        await new Promise(resolve => setTimeout(resolve, 5));
+
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(chat[0].mes).toBe('Original reply');
     });
 
     test('queues manual agent runs while another manual agent is active in sequential mode', async () => {
@@ -6534,6 +6623,29 @@ Helper context.`;
         expect(textarea.dispatchEvent).toHaveBeenCalledTimes(1);
         expect(textarea.dispatchEvent.mock.calls[0][0].type).toBe('input');
         expect(saveChatDebounced).not.toHaveBeenCalled();
+    });
+
+    test('Stop during an impersonation rewrite leaves the composer untouched', async () => {
+        useImpersonateTransformAgent({ runOnImpersonate: true });
+        const quietResolvers = [];
+        generateQuietPrompt.mockImplementation(async () => await new Promise(resolve => quietResolvers.push(resolve)));
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        const textarea = { value: 'Draft impersonation', dispatchEvent: jest.fn() };
+        document.querySelector = jest.fn(selector => selector === '#send_textarea' ? textarea : null);
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'impersonate', {}, false);
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'impersonate', {}, false);
+        const ready = eventSource.emit(eventTypes.IMPERSONATE_READY, 'Draft impersonation');
+        await waitFor(() => quietResolvers.length === 1);
+        await eventSource.emit(eventTypes.GENERATION_STOPPED);
+        quietResolvers.shift()('<assistant_response>Polished impersonation</assistant_response>');
+        await ready;
+
+        expect(textarea.value).toBe('Draft impersonation');
+        expect(textarea.dispatchEvent).not.toHaveBeenCalled();
     });
 
     test('uses direct user-final chat helper for no-profile impersonation prompt transforms', async () => {
