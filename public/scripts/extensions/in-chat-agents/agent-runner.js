@@ -115,6 +115,9 @@ const BODY_GENERATING_FLAG_GRACE_MS = 1500;
 const DEFERRED_POST_PROCESSING_RETRY_MS = 50;
 const LATEST_ASSISTANT_POST_PROCESSING_FALLBACK_WINDOW_MS = 30000;
 const MISSED_GENERATION_END_RECOVERY_MS = 200;
+const POST_PROCESSING_RETRY_DELAY_MS = 1500;
+const POST_PROCESSING_MAX_RETRIES = 2;
+const POST_PROCESSING_RETRY_WAIT_WINDOW_MS = 30000;
 const PATHFINDER_SUMMARIZE_TOOL_NAME = 'Pathfinder_Summarize';
 const PRE_GENERATION_INTERCEPT_TIMING = 'pre-generation';
 const POST_MAIN_GENERATION_INTERCEPT_TIMING = 'post-main-generation';
@@ -352,6 +355,31 @@ function warnPostProcessingInterrupted(message, detail = '') {
         // A toast failure must not mask the original problem.
     }
 }
+// A failed or interrupted pipeline used to leave every enabled agent unapplied until the user
+// re-ran them one by one. Retry the whole run a couple of times instead, but only while the reply
+// it was working on is still the current one; a retry must never touch an edited, swiped or
+// replaced reply, and it must never fight a generation that is already running.
+function schedulePostProcessingRetry(messageIndex, generationType, activationSnapshot, message, { cancelRevision, targetState, retryAttempt, failureDetail, deadline }) {
+    const retryDeadline = deadline ?? Date.now() + POST_PROCESSING_RETRY_WAIT_WINDOW_MS;
+    setTimeout(() => {
+        if (generationStopRequested || agentGenerationCancelRevision !== cancelRevision || !areAgentsGloballyEnabled()) {
+            return;
+        }
+        if (chat[messageIndex] !== message || !isMessageTargetCurrent(message, targetState, messageIndex)) {
+            return;
+        }
+        if (isMainGenerationStillActive()) {
+            if (Date.now() < retryDeadline) {
+                schedulePostProcessingRetry(messageIndex, generationType, activationSnapshot, message, { cancelRevision, targetState, retryAttempt, failureDetail, deadline: retryDeadline });
+            } else {
+                warnPostProcessingInterrupted(message, failureDetail);
+            }
+            return;
+        }
+        processReceivedMessage(messageIndex, generationType, activationSnapshot, retryAttempt + 1);
+    }, POST_PROCESSING_RETRY_DELAY_MS);
+}
+
 const stoppedStreamingMessageIndexes = new Set();
 let stoppedGenerationRunId = -1;
 
@@ -4279,7 +4307,7 @@ async function onGenerationAfterCommands(generationType, options, dryRun) {
  * @param {string} generationType
  * @param {{ generationType: string, activeAgentIds: string[], chatId: string } | null} activationSnapshot
  */
-async function processReceivedMessage(messageIndex, generationType, activationSnapshot = null) {
+async function processReceivedMessage(messageIndex, generationType, activationSnapshot = null, retryAttempt = 0) {
     const message = chat[messageIndex];
     if (!message || message.is_user || message.is_system) {
         return;
@@ -4303,6 +4331,8 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
         && postProcessingTarget.valid && isMessageTargetCurrent(message, postProcessingTarget.state, messageIndex);
     postProcessingTargets.set(message, postProcessingTarget);
     let pipelineCompleted = false;
+    let alreadyProcessed = false;
+    let failureDetail = '';
     try {
         syncAssistantMessageTextToSwipe(message);
 
@@ -4312,6 +4342,7 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
         const runKey = getPostProcessingRunKey(message, generationType, resolvedActivationSnapshot);
         const indexRunKey = getPostProcessingIndexRunKey(message, messageIndex, generationType, resolvedActivationSnapshot);
         if (hasProcessedPostProcessingRun(message, runKey, messageIndex, indexRunKey)) {
+            alreadyProcessed = true;
             return;
         }
 
@@ -4540,11 +4571,21 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
         pipelineCompleted = true;
     } catch (error) {
         console.error('[InChatAgents] Agent post-processing failed:', error);
-        warnPostProcessingInterrupted(message, describeAgentError(error));
+        failureDetail = describeAgentError(error);
     } finally {
-        if (!pipelineCompleted && agentGenerationCancelRevision === operationCancelRevision
+        if (!pipelineCompleted && !alreadyProcessed && agentGenerationCancelRevision === operationCancelRevision
             && !generationStopRequested && postProcessingTarget.valid && chat[messageIndex] === message) {
-            warnPostProcessingInterrupted(message);
+            if (retryAttempt < POST_PROCESSING_MAX_RETRIES
+                && isMessageTargetCurrent(message, postProcessingTarget.state, messageIndex)) {
+                schedulePostProcessingRetry(messageIndex, generationType, activationSnapshot, message, {
+                    cancelRevision: operationCancelRevision,
+                    targetState: postProcessingTarget.state,
+                    retryAttempt,
+                    failureDetail,
+                });
+            } else {
+                warnPostProcessingInterrupted(message, failureDetail);
+            }
         }
         if (postProcessingTargets.get(message) === postProcessingTarget) postProcessingTargets.delete(message);
         postProcessingInFlightKeys.delete(inFlightKey);

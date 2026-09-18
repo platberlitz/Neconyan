@@ -2018,6 +2018,65 @@ describe('in-chat agent post-processing runner', () => {
                 .filter(call => call[1] === 'In-Chat Agents');
             expect(interruptedWarnings).toHaveLength(1);
         }, 20000);
+
+        test('a transient pipeline failure retries automatically instead of asking the user to rerun', async () => {
+            const agent = {
+                id: 'agent-retry-rewrite',
+                name: 'Retrying Rewriter',
+                category: 'content',
+                phase: 'post',
+                prompt: 'Rewrite the assistant reply to be more polished without changing its meaning.',
+                injection: { position: 0, depth: 4, scan: false, role: 0, order: 100 },
+                postProcess: {
+                    enabled: false,
+                    type: 'extract',
+                    promptTransformEnabled: true,
+                    promptTransformMode: 'rewrite',
+                    promptTransformMaxTokens: 1024,
+                    promptTransformShowNotifications: true,
+                },
+                conditions: { triggerKeywords: [], triggerProbability: 100, generationTypes: ['normal'] },
+            };
+            const runtime = await setup([agent]);
+            const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+            runner.registerCompanionRuntime({
+                runCompanionStage: runtime.runCompanionStage,
+                injectCompanionFeedbackPrompts: runtime.injectCompanionFeedbackPrompts,
+                stripAuxiliaryTrackerEchoes: runtime.stripAuxiliaryTrackerEchoes,
+                runCompanionAgentOnMessage: runtime.runCompanionAgentOnMessage,
+                applyAgentPostPassesToCompanionResult: runtime.applyAgentPostPassesToCompanionResult,
+            });
+            runner.initAgentRunner();
+
+            generateQuietPrompt.mockImplementation(async () => 'Rewritten reply.');
+
+            await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+            chat.push({ name: 'You', mes: 'Continue.', is_user: true, extra: {} });
+            await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+            chat.push({ name: 'Assistant', mes: 'The reply.', is_user: false, extra: {} });
+            const messageIndex = chat.length - 1;
+            const messageElement = { id: `message-${messageIndex}` };
+            document.querySelector = jest.fn(selector => selector === `.mes[mesid="${messageIndex}"]` ? messageElement : null);
+
+            // The first pass throws while syncing the message state; the retry must finish the job.
+            updateMessageMetaBadges.mockImplementationOnce(() => { throw new Error('Transient sync failure'); });
+
+            const generationContext = runner.getAgentGenerationContext();
+            await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length, generationContext);
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+
+            const message = chat[messageIndex];
+            const deadline = Date.now() + 8000;
+            while ((message.extra?.inChatAgentPostRuns ?? []).length === 0 && Date.now() < deadline) {
+                await new Promise(resolve => setTimeout(resolve, 25));
+            }
+
+            expect(generateQuietPrompt.mock.calls.length).toBeGreaterThanOrEqual(2);
+            expect(message.extra?.inChatAgentPostRuns?.length ?? 0).toBeGreaterThan(0);
+            const interruptedWarnings = globalThis.toastr.warning.mock.calls
+                .filter(call => call[1] === 'In-Chat Agents');
+            expect(interruptedWarnings).toHaveLength(0);
+        }, 20000);
     });
 
     test('injects the selected Chatroom style into companion prompts', async () => {
