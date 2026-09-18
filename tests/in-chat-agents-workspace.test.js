@@ -219,6 +219,7 @@ test('composer post passes preserve provider failure metadata without changing d
     const runner = readRepoFile('public/scripts/extensions/in-chat-agents/agent-runner.js');
     const source = runner.match(/^export async function runSingleAgentPostPassesOnText\([\s\S]*?^}/m)[0].replace('export ', '');
     const runtime = vm.createContext({
+        agentGenerationCancelRevision: 0,
         runPromptTransformAgentsForText: async () => ({ text: 'draft', changed: false, promptRuns: [{ status: 'error', error: 'Provider unavailable' }] }),
         isAgentRuntimeAllowed: () => true,
         getAgentRegexScripts: () => [],

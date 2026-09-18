@@ -85,6 +85,8 @@ describe('in-chat agent post-processing runner', () => {
             STREAM_TOKEN_RECEIVED: 'stream_token_received',
             MESSAGE_RECEIVED: 'message_received',
             MESSAGE_EDITED: 'message_edited',
+            MESSAGE_DELETED: 'message_deleted',
+            MESSAGE_SWIPE_DELETED: 'message_swipe_deleted',
             CHARACTER_MESSAGE_RENDERED: 'character_message_rendered',
             IMPERSONATE_READY: 'impersonate_ready',
             MESSAGE_SWIPED: 'message_swiped',
@@ -5478,6 +5480,127 @@ describe('in-chat agent post-processing runner', () => {
         })]);
     });
 
+    test.each(['deleted message', 'different chat', 'edit and revert'])('a delayed rewrite cannot outlive its %s target', async (change) => {
+        useManualTransformAgents();
+        let finish;
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+        const message = { name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const { initAgentRunner, runAgentOnMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        const run = runAgentOnMessage('agent-manual-a', 0);
+        await waitFor(() => typeof finish === 'function');
+        if (change === 'deleted message') chat.pop();
+        if (change === 'different chat') currentChatId = 'chat-b';
+        if (change === 'edit and revert') {
+            message.mes = 'Edited';
+            await eventSource.emit(eventTypes.MESSAGE_EDITED, 0);
+            message.mes = 'Original reply';
+        }
+        saveChatDebounced.mockClear();
+        finish('Late replacement');
+        await expect(run).resolves.toBeNull();
+        expect(message.mes).toBe('Original reply');
+        expect(message.extra.inChatAgentTransformHistory).toBeUndefined();
+        expect(saveChatDebounced).not.toHaveBeenCalled();
+    });
+
+    test('a queued target is not rebound to the message that replaces its position', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'sequential';
+        let finish;
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+        chat.push(...['First', 'Second', 'Third'].map(mes => ({ mes, is_user: false, is_system: false, extra: {} })));
+        const { runAgentOnMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const first = runAgentOnMessage('agent-manual-a', 0);
+        await waitFor(() => typeof finish === 'function');
+        const queued = runAgentOnMessage('agent-manual-b', 1);
+        chat.splice(1, 1);
+        finish('First rewritten');
+        await first;
+        await expect(queued).resolves.toBeNull();
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(chat[1].mes).toBe('Third');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test.each(['parallel', 'sequential'])('%s append batches, prepended trackers and utilities have one reversible applied change', async (mode) => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = mode;
+        for (const agent of enabledAgents) agent.postProcess.promptTransformMode = 'append';
+        enabledAgents[0].sourceTemplateId = 'tpl-scene-tracker';
+        enabledAgents.push({
+            id: 'utility', name: 'Utility', phase: 'post', prompt: '', injection: { order: 120 },
+            postProcess: { enabled: true, type: 'append', appendText: '\nUtility text' },
+            conditions: { triggerProbability: 100, generationTypes: ['normal'] },
+        });
+        generateQuietPrompt.mockResolvedValueOnce('[SCENE|Room]\nQuiet\n[/SCENE]').mockResolvedValueOnce('Another addition');
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: { display_text: 'Outdated display' } };
+        chat.push(message);
+        const { initAgentRunner, getPromptTransformHistoryForMessage, undoPromptTransform, redoPromptTransform } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        const finalText = message.mes;
+        expect(finalText).toBe('[SCENE|Room]\nQuiet\n[/SCENE]\n\nOriginal reply\n\nAnother addition\nUtility text');
+        expect(message.extra.display_text).toBeUndefined();
+        expect(message.swipe_info[0].extra.token_count).toBe(finalText.split(/\s+/).length);
+        expect(getPromptTransformHistoryForMessage(message)).toEqual([expect.objectContaining({ beforeText: 'Original reply', afterText: finalText })]);
+        await expect(undoPromptTransform(0)).resolves.toBe(true);
+        expect(message.mes).toBe('Original reply');
+        await expect(redoPromptTransform(0)).resolves.toBe(true);
+        expect(message.mes).toBe(finalText);
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('raw output rules run once on generation, then only on explicitly enabled edits', async () => {
+        useRegexOnlyAgent();
+        const script = enabledAgents[0].regexScripts[0];
+        Object.assign(script, { findRegex: '/word/g', replaceString: 'word!', markdownOnly: false, runOnEdit: false });
+        chat.push({ mes: 'word', is_user: false, is_system: false, extra: {} });
+        const { initAgentRunner, runAgentOnMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        expect(chat[0].mes).toBe('word!');
+        await eventSource.emit(eventTypes.CHARACTER_MESSAGE_RENDERED, 0, 'normal');
+        await eventSource.emit(eventTypes.MESSAGE_EDITED, 0);
+        expect(chat[0].mes).toBe('word!');
+        script.runOnEdit = true;
+        await eventSource.emit(eventTypes.MESSAGE_EDITED, 0);
+        expect(chat[0].mes).toBe('word!!');
+        await runAgentOnMessage('agent-regex-only', 0);
+        expect(chat[0].mes).toBe('word!!!');
+        expect(generateQuietPrompt).not.toHaveBeenCalled();
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('tracker variables follow current swipes, edits and deletions without model calls', async () => {
+        usePreExtractTracker();
+        const older = '[STATUS|Old]\nOne\n[/STATUS]';
+        const newer = '[STATUS|New]\nTwo\n[/STATUS]';
+        chat.push({ mes: older, is_user: false, is_system: false, extra: {} }, {
+            mes: newer, is_user: false, is_system: false, extra: {}, swipe_id: 0,
+            swipes: [newer, 'No tracker'], swipe_info: [{ extra: {} }, { extra: {} }],
+        });
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        await eventSource.emit(eventTypes.CHAT_CHANGED);
+        expect(chatMetadata.variables.agent_status_data).toBe(newer);
+        switchToSwipe(chat[1], 1);
+        await eventSource.emit(eventTypes.MESSAGE_SWIPED, 1);
+        expect(chatMetadata.variables.agent_status_data).toBe(older);
+        chat[1].mes = '[STATUS|Edited]\nThree\n[/STATUS]';
+        await eventSource.emit(eventTypes.MESSAGE_EDITED, 1);
+        expect(chatMetadata.variables.agent_status_data).toBe(chat[1].mes);
+        chat.pop();
+        await eventSource.emit(eventTypes.MESSAGE_DELETED, 1);
+        expect(chatMetadata.variables.agent_status_data).toBe(older);
+        chat[0].mes = 'Removed the last tracker';
+        await eventSource.emit(eventTypes.MESSAGE_EDITED, 0);
+        expect(chatMetadata.variables.agent_status_data).toBeUndefined();
+        expect(chatMetadata.agent_status_data).toBeUndefined();
+        expect(generateQuietPrompt).not.toHaveBeenCalled();
+    });
+
     test('Stop during the first automatic rewrite prevents the second agent from sending a request', async () => {
         useManualTransformAgents();
         const quietResolvers = [];
@@ -5896,7 +6019,7 @@ describe('in-chat agent post-processing runner', () => {
         await new Promise(resolve => setTimeout(resolve, 5));
     });
 
-    test('keeps the save and reload fallback for off-screen text mutations', async () => {
+    test('saves off-screen text mutations without reloading over newer edits', async () => {
         useRegexOnlyAgent();
 
         const { initAgentRunner, undoPromptTransform } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
@@ -5918,7 +6041,7 @@ describe('in-chat agent post-processing runner', () => {
         await new Promise(resolve => setTimeout(resolve, 5));
 
         expect(saveChat).toHaveBeenCalledTimes(1);
-        expect(reloadCurrentChat).toHaveBeenCalledTimes(1);
+        expect(reloadCurrentChat).not.toHaveBeenCalled();
     });
 
     test('a declined off-screen save never reloads the chat over unsaved work', async () => {
@@ -6003,7 +6126,7 @@ describe('in-chat agent post-processing runner', () => {
         await new Promise(resolve => setTimeout(resolve, 5));
 
         expect(saveChat).toHaveBeenCalledTimes(1);
-        expect(reloadCurrentChat).toHaveBeenCalledTimes(1);
+        expect(reloadCurrentChat).not.toHaveBeenCalled();
     });
 
     test('manual regex-only agent runs snapshot and refresh the target message', async () => {

@@ -85,7 +85,10 @@ export async function updateReasoningTokenAccounting(
         message.extra.reasoning_tokens = countedReasoningTokens;
     }
 
-    if (countedSwipeExtra) {
+    const storedSwipeUnchanged = countedSwipeExtra
+        && message.swipe_info?.[countedSwipeId]?.extra === countedSwipeExtra
+        && (message.swipe_id === countedSwipeId ? targetStillActive : message.swipes?.[countedSwipeId] === countedText);
+    if (storedSwipeUnchanged) {
         if (countOutput) {
             countedSwipeExtra.token_count = outputTokens;
         }

@@ -242,7 +242,7 @@ export function applyRegexScript(script, rawString, {
         const args = [...arguments];
         /* Trailing callback arguments are offset, source string and (optionally) named groups; only the leading entries are captures. */
         const namedGroups = args[args.length - 1] && typeof args[args.length - 1] === 'object' ? args[args.length - 1] : null;
-        const captureCount = args.length - 2 - (namedGroups ? 1 : 0);
+        const captureCount = args.length - 3 - (namedGroups ? 1 : 0);
         const replaceString = script.replaceString.replace(/{{match}}/gi, '$0');
         const interpolated = replaceString.replaceAll(/\$(\d+)|\$<([^>]+)>/g, (_, groupIndex, groupName) => {
             let replacement;

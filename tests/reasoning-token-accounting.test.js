@@ -1,3 +1,4 @@
+/* eslint-disable playwright/no-standalone-expect -- Jest table-driven tests. */
 import { describe, expect, jest, test } from '@jest/globals';
 import { formatTokenCounterText, updateReasoningTokenAccounting } from '../public/scripts/reasoning-token-accounting.js';
 
@@ -139,6 +140,23 @@ describe('reasoning token accounting', () => {
         expect(message.swipe_info[1].extra.reasoning_tokens).toBe(0);
         expect(message.swipe_info[0].extra.token_count).toBe(3);
         expect(message.swipe_info[0].extra.reasoning_tokens).toBe(2);
+    });
+
+    test.each(['edited', 'replaced'])('late counts never change a swipe that was %s during counting', async (change) => {
+        const originalExtra = { token_count: 10 };
+        const message = { mes: 'Original text', swipe_id: 0, swipes: ['Original text'], swipe_info: [{ extra: originalExtra }], extra: { token_count: 10 } };
+        await updateReasoningTokenAccounting(message, {
+            countTokens: async () => {
+                message.mes = 'New text';
+                message.swipes[0] = 'New text';
+                if (change === 'replaced') message.swipe_info[0] = { extra: { token_count: 20 } };
+                return 2;
+            },
+            reasoning: '',
+        });
+        expect(originalExtra.token_count).toBe(10);
+        expect(message.extra.token_count).toBe(10);
+        expect(message.swipe_info[0].extra.token_count).toBe(change === 'replaced' ? 20 : 10);
     });
 
     test('a swipe change during counting writes to the counted swipe, not the new one', async () => {
