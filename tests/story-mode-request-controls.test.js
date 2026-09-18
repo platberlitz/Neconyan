@@ -485,6 +485,24 @@ describe('owned host generation flow', () => {
         expect(context.amount_gen).toBe(8192);
     });
 
+    test.each(['openai', 'textgenerationwebui'])('overlapping %s helpers keep their own limits and never edit the shared setting', async api => {
+        const { context, requests } = makeRuntime({ api });
+        const release = [];
+        const original = context.fetchResumable;
+        context.fetchResumable = jest.fn((url, init) => new Promise(resolve => {
+            release.push(() => resolve(original(url, init)));
+        }));
+        const first = context.generateRaw({ prompt: 'first helper', responseLength: 128 });
+        const second = context.generateRaw({ prompt: 'second helper', responseLength: 256 });
+        while (release.length < 2) await new Promise(resolve => setTimeout(resolve, 0));
+        release[1]();
+        release[0]();
+        await Promise.all([first, second]);
+        expect(requests.map(request => request.body.max_tokens).sort((a, b) => a - b)).toEqual([128, 256]);
+        expect(context.amount_gen).toBe(8192);
+        expect(context.oai_settings.openai_max_tokens).toBe(8192);
+    });
+
     test('reserves a local prompt budget without mutating the OpenAI preset', async () => {
         const { context } = makeRuntime();
         const setTokenBudget = jest.fn();

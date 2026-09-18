@@ -6310,13 +6310,15 @@ export async function generateQuietPrompt({ quietPrompt = '', quietToLoud = fals
         [quietPrompt, quietToLoud, skipWIAN, quietImage, quietName, responseLength, forceChId, jsonSchema] = arguments;
     }
 
-    const responseLengthCustomized = !preserveReasoningBudget && typeof responseLength === 'number' && responseLength > 0;
+    // Neconyan: the output limit rides on the request itself (request controls) instead of
+    // temporarily editing the shared max-tokens setting, so overlapping helpers cannot swap
+    // limits or restore the wrong value.
+    const requestResponseLength = typeof responseLength === 'number' && responseLength > 0 ? responseLength : null;
     const externalSignal = signal instanceof AbortSignal ? signal : null;
     const quietAbortController = externalSignal ? new AbortController() : null;
     const abortFromExternalSignal = quietAbortController
         ? () => quietAbortController.abort(externalSignal.reason ?? new Error('Cancelled by external signal'))
         : null;
-    let eventHook = () => { };
 
     if (externalSignal) {
         if (externalSignal.aborted) {
@@ -6339,13 +6341,9 @@ export async function generateQuietPrompt({ quietPrompt = '', quietToLoud = fals
             jsonSchema: jsonSchema ?? null,
             signal: quietAbortController?.signal ?? null,
             cacheScope,
-            responseLength: preserveReasoningBudget ? responseLength : null,
+            responseLength: requestResponseLength,
             preserveReasoningBudget,
         };
-        if (responseLengthCustomized) {
-            TempResponseLength.save(main_api, responseLength);
-            eventHook = TempResponseLength.setupEventHook(main_api);
-        }
         if (quietAbortController) {
             abortController = quietAbortController;
         }
@@ -6356,10 +6354,6 @@ export async function generateQuietPrompt({ quietPrompt = '', quietToLoud = fals
     } finally {
         if (externalSignal && abortFromExternalSignal) {
             externalSignal.removeEventListener('abort', abortFromExternalSignal);
-        }
-        if (responseLengthCustomized && TempResponseLength.isCustomized()) {
-            TempResponseLength.restore(main_api);
-            TempResponseLength.removeEventHook(main_api, eventHook);
         }
         // Neconyan: guarantee the send buttons are reactivated after quiet
         // generation, regardless of whether Generate succeeded, failed, threw,
@@ -7663,10 +7657,11 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
             externalSignal.addEventListener('abort', abortFromExternalSignal, { once: true });
         }
     }
-    // Neconyan: route preserved budgets before TempResponseLength can overwrite the preset.
-    const responseLengthCustomized = !preserveReasoningBudget && typeof responseLength === 'number' && responseLength > 0;
-    const requestControls = preserveReasoningBudget ? { responseLength, preserveReasoningBudget } : {};
-    let eventHook = () => { };
+    // Neconyan: the output limit rides on the request (request controls) instead of temporarily
+    // editing the shared max-tokens setting, so overlapping helpers keep their own limits.
+    const requestControls = typeof responseLength === 'number' && responseLength > 0
+        ? { responseLength, preserveReasoningBudget }
+        : {};
 
     // construct final prompt from the input. Can either be a string or an array of chat-style messages.
     prompt = createRawPrompt(prompt, api, instructOverride, quietToLoud, systemPrompt, prefill);
@@ -7680,9 +7675,6 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
     eventSource.on(event_types.GENERATION_STOPPED, abortHook);
 
     try {
-        if (responseLengthCustomized) {
-            TempResponseLength.save(api, responseLength);
-        }
         /** @type {object|any[]} */
         let generateData = {};
 
@@ -7713,26 +7705,21 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
                     const koboldSettings = koboldai_settings[koboldai_setting_names[kai_settings.preset_settings]];
                     generateData = getKoboldGenerationData(prompt.toString(), koboldSettings, amount_gen, max_context, isHorde, 'quiet');
                 }
-                responseLengthCustomized && TempResponseLength.restore(api);
                 break;
             case 'novel': {
                 const novelSettings = novelai_settings[novelai_setting_names[nai_settings.preset_settings_novel]];
                 const maxLength = applyGenerationRequestControls({ max_length: amount_gen, model: nai_settings.model_novel }, requestControls).max_length;
                 generateData = getNovelGenerationData(prompt, novelSettings, maxLength, false, false, null, 'quiet');
                 requestControls.responseLength = null;
-                responseLengthCustomized && TempResponseLength.restore(api);
                 break;
             }
             case 'textgenerationwebui':
                 generateData = await getTextGenGenerationData(prompt, amount_gen, false, false, null, 'quiet', { cacheScope });
-                responseLengthCustomized && TempResponseLength.restore(api);
                 break;
             case 'openai': {
                 generateData = prompt;  // generateData is just the chat message object
-                if (responseLengthCustomized) {
-                    eventHook = TempResponseLength.setupEventHook(api);
-                }
-            } break;
+                break;
+            }
         }
 
         if (api !== 'openai') {
@@ -7777,10 +7764,6 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
         eventSource.removeListener(event_types.GENERATION_STOPPED, abortHook);
         if (externalSignal) {
             externalSignal.removeEventListener('abort', abortFromExternalSignal);
-        }
-        if (responseLengthCustomized && TempResponseLength.isCustomized()) {
-            TempResponseLength.restore(api);
-            TempResponseLength.removeEventHook(api, eventHook);
         }
     }
 }
