@@ -51,6 +51,8 @@ import {
     CHATROOM_TEMPLATE_ID,
     COMPANION_RESULTS_EXTRA_KEY,
     DIRECTORS_COMMENTARY_TEMPLATE_ID,
+    EMPTY_OUTPUT_SENTINEL_LINE_PATTERN,
+    EMPTY_OUTPUT_SENTINEL_LINE_PROBE,
     MEMORY_SHARD_TEMPLATE_ID,
     PLOT_COMPASS_TEMPLATE_ID,
     getCompanionReferenceIds,
@@ -1193,9 +1195,8 @@ const AUXILIARY_LABEL_LINE_PATTERN = new RegExp(AUXILIARY_LABEL_LINE_SOURCE, 'gi
 // blocks into chat metadata without removing anything from the reply, so a main model that follows
 // the instruction would leave the sentinel sitting in the story text. Only a line that is nothing
 // but the sentinel is removed; prose that merely contains the word is left alone.
-const EMPTY_OUTPUT_SENTINEL_LINE_SOURCE = String.raw`^[^\S\n]*(?:phone-none|tracker-none)[^\S\n]*$`;
-const EMPTY_OUTPUT_SENTINEL_LINE_PROBE = new RegExp(EMPTY_OUTPUT_SENTINEL_LINE_SOURCE, 'im');
-const EMPTY_OUTPUT_SENTINEL_LINE_PATTERN = new RegExp(EMPTY_OUTPUT_SENTINEL_LINE_SOURCE, 'gim');
+// The sentinel source, probe and pattern live in ./companion-shared.js so the message text,
+// the stored reasoning and the editor share one definition.
 
 function mergeTrackerRanges(ranges) {
     const merged = [];

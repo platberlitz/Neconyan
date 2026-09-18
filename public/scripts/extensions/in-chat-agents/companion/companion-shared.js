@@ -48,6 +48,26 @@ export function isEmptyOutputSentinel(content = '') {
     return EMPTY_OUTPUT_SENTINELS.has(String(content ?? '').trim());
 }
 
+// Neconyan: tracker prompts teach the empty-output sentinel, and the same prompt is injected into
+// the MAIN generation when the tracker runs inline. Only a line that is nothing but the sentinel is
+// removed; prose that merely contains the word is left alone.
+export const EMPTY_OUTPUT_SENTINEL_LINE_SOURCE = String.raw`^[^\S\n]*(?:phone-none|tracker-none)[^\S\n]*$`;
+export const EMPTY_OUTPUT_SENTINEL_LINE_PROBE = new RegExp(EMPTY_OUTPUT_SENTINEL_LINE_SOURCE, 'im');
+export const EMPTY_OUTPUT_SENTINEL_LINE_PATTERN = new RegExp(EMPTY_OUTPUT_SENTINEL_LINE_SOURCE, 'gim');
+
+export function stripEmptyOutputSentinelLines(text = '') {
+    const source = String(text ?? '');
+    if (!EMPTY_OUTPUT_SENTINEL_LINE_PROBE.test(source)) {
+        return source;
+    }
+
+    return source
+        .replaceAll(/\r\n?/g, '\n')
+        .replace(EMPTY_OUTPUT_SENTINEL_LINE_PATTERN, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
 /**
  * Whether a result should render as nothing at all rather than as a note.
  * @param {string} agentId

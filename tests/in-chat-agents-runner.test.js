@@ -1910,6 +1910,50 @@ describe('in-chat agent post-processing runner', () => {
             expect(message.mes).toBe('Rewritten reply.');
             expect(runtime.getCompanionResults(message)[companion.id]).toEqual(expect.objectContaining({ status: 'done' }));
         }, 20000);
+
+        test('an inline tracker reply that is only a sentinel is stripped from the message', async () => {
+            const tracker = {
+                id: 'agent-inline-scene-tracker',
+                name: 'Scene Tracker',
+                category: 'tracker',
+                phase: 'post',
+                prompt: 'Track the scene. When nothing qualifies this scene, output the single line tracker-none in place of the block.',
+                injection: { position: 0, depth: 4, scan: false, role: 0, order: 100 },
+                postProcess: { enabled: true, type: 'extract', promptTransformEnabled: false },
+                conditions: { triggerKeywords: [], triggerProbability: 100, generationTypes: ['normal'] },
+            };
+            const runtime = await setup([tracker]);
+            const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+            runner.registerCompanionRuntime({
+                runCompanionStage: runtime.runCompanionStage,
+                injectCompanionFeedbackPrompts: runtime.injectCompanionFeedbackPrompts,
+                stripAuxiliaryTrackerEchoes: runtime.stripAuxiliaryTrackerEchoes,
+                runCompanionAgentOnMessage: runtime.runCompanionAgentOnMessage,
+                applyAgentPostPassesToCompanionResult: runtime.applyAgentPostPassesToCompanionResult,
+            });
+            runner.initAgentRunner();
+
+            await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+            chat.push({ name: 'You', mes: 'Continue.', is_user: true, extra: {} });
+            await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+            chat.push({
+                name: 'Assistant',
+                mes: 'The scene unfolds.\n\ntracker-none\n\nLater prose.',
+                is_user: false,
+                extra: { reasoning: 'The scene did not change.\n\ntracker-none' },
+            });
+            const generationContext = runner.getAgentGenerationContext();
+            await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length, generationContext);
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, chat.length - 1, 'normal', generationContext);
+            await new Promise(resolve => setTimeout(resolve, 15));
+
+            const message = chat[chat.length - 1];
+            expect(message.mes).toBe('The scene unfolds.\n\nLater prose.');
+            expect(message.mes).not.toContain('tracker-none');
+            expect(message.extra.reasoning).toBe('The scene did not change.');
+            const transformHistory = message.extra?.inChatAgentTransformHistory ?? [];
+            expect(transformHistory.some(entry => String(entry?.beforeText ?? '').includes('tracker-none'))).toBe(false);
+        }, 20000);
     });
 
     test('injects the selected Chatroom style into companion prompts', async () => {

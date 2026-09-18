@@ -73,7 +73,7 @@ import { injectPathfinderRetrieval, PATHFINDER_RETRIEVAL_PROMPT_KEYS, runSidecar
 import { resetAutoSummaryCount, shouldAutoSummarize } from './pathfinder/auto-summary.js';
 import { buildRegexScriptRefsForAgent, cacheAgentRegexScripts, migrateLegacyRegexSnapshotsInMessages } from './regex-snapshot-store.js';
 import { AGENT_REGEX_PLACEMENT, applyRegexScriptList } from './regex-scripts.js';
-import { getCompanionReferenceIds } from './companion/companion-shared.js';
+import { getCompanionReferenceIds, stripEmptyOutputSentinelLines } from './companion/companion-shared.js';
 import {
     getTrackerMetadataKey,
     getTrackerRepairPayload,
@@ -4305,6 +4305,31 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
             typeof cleanedAuxiliaryEchoes === 'string' ? cleanedAuxiliaryEchoes : message.mes,
         );
 
+        // Neconyan: the tracker sentinel is agent bookkeeping, so it must not survive in the stored
+        // chain-of-thought either. The thinking block is shown in the reply, so a lone sentinel line
+        // there looks exactly like a failed tracker.
+        if (typeof message.extra?.reasoning === 'string') {
+            const cleanedReasoning = stripEmptyOutputSentinelLines(message.extra.reasoning);
+            if (cleanedReasoning !== message.extra.reasoning) {
+                message.extra.reasoning = cleanedReasoning;
+                chatStateChanged = true;
+                messageDisplayChanged = true;
+            }
+        }
+        const activeSwipeReasoningExtra = message.swipe_info?.[message.swipe_id]?.extra;
+        if (activeSwipeReasoningExtra && typeof activeSwipeReasoningExtra.reasoning === 'string') {
+            const cleanedSwipeReasoning = stripEmptyOutputSentinelLines(activeSwipeReasoningExtra.reasoning);
+            if (cleanedSwipeReasoning !== activeSwipeReasoningExtra.reasoning) {
+                activeSwipeReasoningExtra.reasoning = cleanedSwipeReasoning;
+                chatStateChanged = true;
+                messageDisplayChanged = true;
+            }
+        }
+
+        // The history baseline is the visible starting text (after the sentinel strip), so Undo never
+        // restores a sentinel and a strip-only reply is not recorded as an agent transformation.
+        const historyBaselineText = currentPromptTransformText;
+
         // Companions normally run last so they see the post-transform reply; the concurrent
         // option trades that for speed and runs them against the current reply alongside the passes.
         const companionStageArgs = { messageIndex, message, generationType };
@@ -4438,10 +4463,11 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
 
         // Commit the actual combined edit once. Per-agent outputs remain diagnostics,
         // while Undo records the text that was really applied (including raw regex and utilities).
-        const textChanged = currentPromptTransformText !== message.mes;
-        if (textChanged) {
+        const agentTextChanged = currentPromptTransformText !== historyBaselineText;
+        const textNeedsCommit = currentPromptTransformText !== message.mes;
+        if (textNeedsCommit) {
             if (!setPostProcessingText(message, currentPromptTransformText, postProcessingTarget)) return;
-            recordAppliedTransformation(message, initialText, promptRuns);
+            if (agentTextChanged) recordAppliedTransformation(message, historyBaselineText, promptRuns);
             chatStateChanged = true;
             messageDisplayChanged = true;
         }
@@ -4458,7 +4484,7 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
             messageDisplayChanged = true;
         }
 
-        if (textChanged && !await syncPromptTransformMessageStateAsync(message, messageIndex)) return;
+        if (textNeedsCommit && !await syncPromptTransformMessageStateAsync(message, messageIndex)) return;
         if (!isOperationCurrent()) return;
         if (chatStateChanged) {
             syncAssistantMessageStateToSwipe(message, messageIndex);
