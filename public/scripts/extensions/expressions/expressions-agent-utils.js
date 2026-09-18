@@ -5,6 +5,16 @@
  * browser-only modules.
  */
 
+/** Resolve the effective shared profile without changing the agent's saved choice. */
+export function resolveExpressionsAgentProfile(agent, settings = {}) {
+    const qig = settings['quick-image-gen'];
+    if (settings.expressions?.agentUseQigLlmProfile && qig?.llmOverrideEnabled) {
+        const shared = String(qig.llmOverrideProfileId ?? '').trim();
+        if (shared) return shared;
+    }
+    return String(agent?.connectionProfile ?? '');
+}
+
 /**
  * Clean the raw text returned by the expressions agent down to a single lowercase
  * expression label.

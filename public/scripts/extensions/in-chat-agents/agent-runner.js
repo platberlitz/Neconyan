@@ -18,7 +18,7 @@ import {
     syncMesToSwipe,
     updateMessageTokenAccounting,
 } from '../../../script.js';
-import { getContext } from '../../extensions.js';
+import { extension_settings, getContext } from '../../extensions.js';
 import { eventSource, event_types } from '../../events.js';
 import { is_group_generating } from '../../group-chats.js';
 import { POPUP_RESULT, POPUP_TYPE, callGenericPopup } from '../../popup.js';
@@ -47,6 +47,7 @@ import { regexFromString, uuidv4 } from '../../utils.js';
 import { resetChatBackupSequence } from '../../chat-backup-sequence.js';
 import { isKimiK3Model } from '../../openai-model-capabilities.js';
 import { isGenerationLengthFinish } from '../../generation-request-controls.js';
+import { resolveExpressionsAgentProfile } from '../expressions/expressions-agent-utils.js';
 import { buildFallbackPromptText, extractProfileResponseText } from './llm-utils.js';
 import { getConnectionProfileDisplayName, getConnectionProfileModelName } from './profile-utils.js';
 import {
@@ -2309,10 +2310,13 @@ export function refreshRegexSnapshotsForAgent(agentId, { generationType = 'norma
     return refreshed;
 }
 
-function resolveAgentConnectionProfile(agent) {
+export function resolveAgentConnectionProfile(agent) {
+    const profile = getCompanionReferenceIds(agent).includes('tpl-expressions-agent')
+        ? resolveExpressionsAgentProfile(agent, extension_settings)
+        : agent?.connectionProfile;
     return isCompanionAgent(agent)
-        ? resolveCompanionConnectionProfile(agent?.connectionProfile)
-        : resolveConnectionProfile(agent?.connectionProfile);
+        ? resolveCompanionConnectionProfile(profile)
+        : resolveConnectionProfile(profile);
 }
 
 function getPromptTransformAgents(activeAgents) {

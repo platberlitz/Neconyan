@@ -358,21 +358,25 @@ describe('in-chat agent bundled templates', () => {
         }
     });
 
-    test('keeps draft companion template versions at v1', () => {
+    test('gives companion templates valid update versions', () => {
         const companionFilenames = sourceFilenames.filter(filename => filename.includes('companion'));
 
         for (const filename of companionFilenames) {
             const template = readTemplate(filename);
-            expect(template.version).toBe(1);
+            expect(Number.isInteger(template.version) && template.version > 0).toBe(true);
         }
     });
 
-    test('ships every bundled agent template at V1', () => {
+    test('keeps template update versions in sync with their catalogue', () => {
         const catalog = readTemplate('index.json');
-        expect(catalog.every(template => template.version === 1)).toBe(true);
+        expect(catalog.every(template => Number.isInteger(template.version) && template.version > 0)).toBe(true);
         for (const filename of fs.readdirSync(templateDir).filter(name => name.endsWith('.json') && !['index.json', 'groups.json', 'regex-bundles.json'].includes(name))) {
-            expect(readTemplate(filename).version).toBe(1);
+            const template = readTemplate(filename);
+            expect(catalog.find(item => item.id === template.id).version).toBe(template.version);
         }
+        const expressions = catalog.find(template => template.id === 'tpl-expressions-agent');
+        expect(expressions.version).toBeGreaterThan(1);
+        expect(expressions.prompt).toContain('{{availableExpressions}}');
     });
 
     test('keeps choice-menu templates from including the system prompt by default', () => {

@@ -56,7 +56,7 @@ describe('exact expression history', () => {
         const message = { mes: 'same', swipe_id: 0, swipes: ['same', 'other'] };
         const chat = [message];
         const runtime = vm.createContext({ getContext: () => ({ chat }), getMessageExpressionAvatar: () => 'Cat.png' });
-        vm.runInContext(`let processedExpressions = new WeakMap();\n${['rememberExpressionMessage', 'seedExpressionHistory', 'needsExpression'].map(name => extract(expressions, name)).join('\n')}`, runtime);
+        vm.runInContext(`let processedExpressions = new WeakMap();\n${['getExpressionClassificationSnapshot', 'rememberExpressionMessage', 'seedExpressionHistory', 'needsExpression'].map(name => extract(expressions, name)).join('\n')}`, runtime);
         runtime.seedExpressionHistory();
         expect(runtime.needsExpression(message)).toBe(false);
         message.swipe_id = 1; message.mes = 'other';
@@ -74,7 +74,10 @@ describe('exact expression history', () => {
             const request = new Promise(resolve => { release = resolve; });
             const write = jest.fn();
             const runtime = vm.createContext({ chat: [message], getChatGeneration: () => 1, getCurrentChatId: () => 'chat',
+                captureMessageTargetState: message => ({ swipe: message.swipe_id }),
+                isMessageTargetCurrent: (message, state) => message.swipe_id === state.swipe,
                 getAgentPostProcessingTarget: () => undefined,
+                areAgentsGloballyEnabled: () => true, getCompanionReferenceIds: () => [], MEMORY_SHARD_TEMPLATE_ID: 'tpl-memory-shard',
                 isValidCompanionTargetMessage: () => true, isAgentRuntimeAllowed: () => true, getCompanionConfig: () => ({ maxTokens: 100 }),
                 getCompanionResultContent: () => '', getCompanionResults: () => ({}), getAgentGenerationCancelRevision: () => 0,
                 buildCompanionPromptMessages: async () => [], buildBatchPromptPayload: async () => ({ promptMessages: [], taskPayloads: [] }),
@@ -105,6 +108,9 @@ describe('sprite upload failures are not reported as success', () => {
             t: (strings, ...values) => String.raw({ raw: strings }, ...values),
             MODULE_NAME: 'expressions',
             spriteCache,
+            getChatGeneration: () => 1,
+            getCurrentChatId: () => 'chat',
+            $: () => ({ data: () => 'Cat' }),
             getRequestHeaders: () => ({}),
             fetchImagesNoCache: async () => {},
             validateImages: async () => {},

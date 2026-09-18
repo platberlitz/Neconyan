@@ -28,7 +28,6 @@ import {
     isAgentRuntimeAllowed,
     isCompanionAgent,
     isTrackerFixAgent,
-    resolveCompanionConnectionProfile,
 } from '../agent-store.js';
 import {
     buildPromptDynamicMacros,
@@ -40,6 +39,7 @@ import {
     getAgentPostProcessingTarget,
     isMessageTargetCurrent,
     registerCompanionRuntime,
+    resolveAgentConnectionProfile,
     requestPromptTransform,
     runCompanionOutputPostPasses,
     runSingleAgentPostPassesOnText,
@@ -474,7 +474,7 @@ function capResultContent(value = '') {
 }
 
 function getProfileLabel(agent, responseProfileId = '') {
-    const profileId = String(responseProfileId || resolveCompanionConnectionProfile(agent?.connectionProfile) || '').trim();
+    const profileId = String(responseProfileId || resolveAgentConnectionProfile(agent) || '').trim();
     if (!profileId) {
         return 'Main model';
     }
@@ -1322,7 +1322,7 @@ export async function buildCompanionPromptMessages(agent, messageIndex, generati
 function getBatchKey(agent, messageIndex) {
     const companion = getCompanionConfig(agent);
     return JSON.stringify({
-        profile: resolveCompanionConnectionProfile(agent.connectionProfile),
+        profile: resolveAgentConnectionProfile(agent),
         model: String(agent.modelOverride ?? '').trim(),
         contextMessages: companion.contextMessages,
         minContextTokens: companion.minContextTokens,

@@ -23,11 +23,11 @@ import {
     DEFAULT_EXPRESSION_SPRITE_PROMPT,
     LEGACY_DEFAULT_EXPRESSION_SPRITE_PROMPT,
     getAgentExpressionLabel,
-    isExpressionsAgentAvailable,
+    getAgentExpressionState,
+    getExpressionsAgentStatus,
     maybeGenerateExpressionSprite,
     maybeGenerateExpressionSpriteSheet,
     stopExpressionSpriteGeneration,
-    syncExpressionsAgentProfile,
     cleanupExpressionAgentSpinner,
 } from './expressions-agent.js';
 export { MODULE_NAME };
@@ -139,27 +139,57 @@ const SPRITE_CENTER_MIN_CONTENT_RATIO = 0.08;
 let expressionsList = null;
 let processedExpressions = new WeakMap();
 
+function getExpressionClassificationSnapshot(message, swipe = message.swipe_id ?? 0) {
+    const extra = message.swipe_info?.[swipe]?.extra;
+    const results = extra && Object.hasOwn(extra, 'inChatAgentCompanionResults')
+        ? extra.inChatAgentCompanionResults
+        : message.extra?.inChatAgentCompanionResults;
+    return Object.fromEntries(Object.entries(results ?? {}).map(([id, result]) => [id, JSON.stringify([result?.status, result?.content])]));
+}
+
 function rememberExpressionMessage(message) {
     if (!message) return;
     const swipes = processedExpressions.get(message) ?? new Map();
-    swipes.set(message.swipe_id ?? 0, message.mes);
+    swipes.set(message.swipe_id ?? 0, { text: message.mes, classifications: getExpressionClassificationSnapshot(message) });
     processedExpressions.set(message, swipes);
 }
 
 function seedExpressionHistory() {
     processedExpressions = new WeakMap();
     for (const message of getContext().chat) {
-        processedExpressions.set(message, new Map((message.swipes ?? [message.mes]).map((text, swipe) => [swipe, text])));
+        processedExpressions.set(message, new Map((message.swipes ?? [message.mes]).map((text, swipe) => [swipe, {
+            text, classifications: getExpressionClassificationSnapshot(message, swipe),
+        }])));
         rememberExpressionMessage(message);
     }
 }
 
 function needsExpression(message) {
     return getMessageExpressionAvatar(message) && message.mes && message.mes !== '...'
-        && processedExpressions.get(message)?.get(message.swipe_id ?? 0) !== message.mes;
+        && processedExpressions.get(message)?.get(message.swipe_id ?? 0)?.text !== message.mes;
+}
+
+async function onAgentExpressionUpdated({ messageIndex, agentId }, update) {
+    if (extension_settings.expressions.api !== EXPRESSION_API.agent) return;
+    const context = getContext();
+    const message = context.chat[messageIndex];
+    if (!message) return;
+    const generation = getChatGeneration();
+    const swipe = message.swipe_id ?? 0;
+    const state = await getAgentExpressionState(context, await getExpressionsList({ filterAvailable: false }), {
+        message, index: messageIndex, swipe, text: message.mes,
+    });
+    if (generation !== getChatGeneration() || getContext().chat[messageIndex] !== message || (message.swipe_id ?? 0) !== swipe) return;
+    if (agentId && state.agentId !== agentId) return;
+    if (state.status === 'pending' || state.status === 'stale') return;
+    const previous = processedExpressions.get(message)?.get(swipe);
+    if (previous?.classifications?.[state.agentId] === JSON.stringify([state.result?.status, state.result?.content])) return;
+    processedExpressions.get(message)?.delete(swipe);
+    await update();
 }
 /** @type {{[characterKey: string]: Expression[]}} */
 let spriteCache = {};
+let spriteListLoadRevision = 0;
 let inApiCall = false;
 let inSpriteGeneration = false;
 let expressionGenerationCancelRequested = false;
@@ -461,8 +491,30 @@ async function moduleWorker({ newChat = false } = {}) {
     // Persist only completed replies, rather than saving every streaming fragment.
     if (context.streamingProcessor && !context.streamingProcessor.isFinished) return;
     // ponytail: one linear scan per poll; use an event queue if very large chats need it.
-    const currentLastMessage = context.chat.find(needsExpression) ?? getLastCharacterMessage();
-    const target = needsExpression(currentLastMessage) ? captureExpressionTarget(currentLastMessage) : null;
+    const usingAgent = extension_settings.expressions.api === EXPRESSION_API.agent;
+    let currentLastMessage = context.chat.find(needsExpression) ?? getLastCharacterMessage();
+    let target = null;
+    let agentState = null;
+    if (usingAgent) {
+        const labels = await getExpressionsList({ filterAvailable: false });
+        for (const message of context.chat) {
+            if (!needsExpression(message)) continue;
+            const candidate = captureExpressionTarget(message);
+            const state = await getAgentExpressionState(context, labels, candidate);
+            if (!isExpressionTargetCurrent(candidate)) return;
+            if (state.status === 'pending') continue;
+            if (!state.label) {
+                rememberExpressionMessage(message);
+                continue;
+            }
+            currentLastMessage = message;
+            target = candidate;
+            agentState = state;
+            break;
+        }
+    } else {
+        target = needsExpression(currentLastMessage) ? captureExpressionTarget(currentLastMessage) : null;
+    }
     let spriteFolderName = getSpriteFolderName(currentLastMessage, currentLastMessage.name);
 
     // character has no expressions or it is not loaded
@@ -506,7 +558,8 @@ async function moduleWorker({ newChat = false } = {}) {
     }
 
     // Don't bother classifying if current char has no sprites and no default expressions are enabled
-    if ((!Array.isArray(spriteCache[spriteFolderName]) || spriteCache[spriteFolderName].length === 0) && !extension_settings.expressions.showDefault) {
+    if ((!Array.isArray(spriteCache[spriteFolderName]) || spriteCache[spriteFolderName].length === 0)
+        && !extension_settings.expressions.showDefault && !(usingAgent && extension_settings.expressions.agentAutoGenerateSprites)) {
         if (target && isExpressionTargetCurrent(target)) rememberExpressionMessage(currentLastMessage);
         return;
     }
@@ -521,12 +574,11 @@ async function moduleWorker({ newChat = false } = {}) {
         return;
     }
 
-    const usingAgent = extension_settings.expressions.api === EXPRESSION_API.agent;
     let shouldUpdateLastMessage = false;
 
     try {
         if (!usingAgent) inApiCall = true;
-        let expression = await getExpressionLabel(currentLastMessage.mes, extension_settings.expressions.api, { target });
+        let expression = usingAgent ? agentState.label : await getExpressionLabel(currentLastMessage.mes, extension_settings.expressions.api, { target });
         if (!isExpressionTargetCurrent(target)) return;
 
         // If we're not already overriding the folder name, account for group chats.
@@ -544,30 +596,32 @@ async function moduleWorker({ newChat = false } = {}) {
             return;
         }
 
+        const needsSprite = usingAgent && extension_settings.expressions.agentAutoGenerateSprites
+            && !spriteCache[spriteFolderName]?.some(item => item.label === expression);
+        // Leave the result unprocessed while another sprite is being generated; the next poll can retry it.
+        if (needsSprite && inSpriteGeneration) return;
         shouldUpdateLastMessage = await sendExpressionCall(spriteFolderName, expression, { force, vnMode, target });
 
         // SillyBunny divergence: optionally generate missing sprites via Quick Image Gen.
         // This runs after the expression is displayed so it never blocks the UI update.
-        if (usingAgent && expression && extension_settings.expressions.agentAutoGenerateSprites && !inSpriteGeneration) {
-            const hasSprite = spriteCache[spriteFolderName]?.some((e) => e.label === expression);
-            if (!hasSprite) {
-                setExpressionGenerationBusy(true);
-                maybeGenerateExpressionSprite(expression, currentLastMessage.name, currentLastMessage.original_avatar).then(async (imageUrl) => {
-                    throwIfExpressionGenerationStopped();
-                    if (imageUrl) {
-                        await uploadSpriteCommand({
-                            name: currentLastMessage.original_avatar || currentLastMessage.name,
-                            label: expression,
-                            folder: spriteFolderName,
-                        }, imageUrl);
-                    }
-                }).catch((error) => {
-                    if (isExpressionGenerationAbortError(error)) return;
-                    console.error('[Expressions Agent] Auto sprite generation failed:', error);
-                }).finally(() => {
-                    setExpressionGenerationBusy(false);
-                });
-            }
+        if (needsSprite && !inSpriteGeneration) {
+            setExpressionGenerationBusy(true);
+            const generationTarget = {
+                characterName: currentLastMessage.name,
+                characterAvatar: target.avatar,
+                uploadName: target.avatar || currentLastMessage.name,
+            };
+            generateAndUploadExpressionSprite(expression, spriteFolderName, { showToast: false, generationTarget }).then(async generated => {
+                throwIfExpressionGenerationStopped();
+                if (generated && isExpressionTargetCurrent(target)) {
+                    await sendExpressionCall(spriteFolderName, expression, { force: true, vnMode, target });
+                }
+            }).catch((error) => {
+                if (isExpressionGenerationAbortError(error)) return;
+                console.error('[Expressions Agent] Auto sprite generation failed:', error);
+            }).finally(() => {
+                setExpressionGenerationBusy(false);
+            });
         }
     } catch (error) {
         console.log(error);
@@ -869,6 +923,7 @@ async function uploadSpriteCommand({ name, label, folder = null, spriteName = nu
 
     try {
         const response = await fetch(imageUrl);
+        if (response.ok === false) throw new Error(`Could not download the sprite (${response.status}).`);
         const blob = await response.blob();
         const file = new File([blob], 'image.png', { type: 'image/png' });
 
@@ -949,7 +1004,7 @@ function getExpressionGenerationTarget(spriteFolderName) {
     };
 }
 
-async function generateAndUploadExpressionSprite(expression, spriteFolderName, { showToast = true, spriteName = null, replaceExisting = false } = {}) {
+async function generateAndUploadExpressionSprite(expression, spriteFolderName, { showToast = true, spriteName = null, replaceExisting = false, generationTarget = null } = {}) {
     if (!expression || !spriteFolderName) {
         toastr.warning(t`Open a chat before generating expression sprites.`, t`Sprite Generation`);
         return false;
@@ -964,7 +1019,7 @@ async function generateAndUploadExpressionSprite(expression, spriteFolderName, {
     const targetSpriteName = spriteName || (existingFiles.length > 0
         ? generateUniqueSpriteName(expression, existingFiles)
         : expression);
-    const { characterName, characterAvatar, uploadName } = getExpressionGenerationTarget(spriteFolderName);
+    const { characterName, characterAvatar, uploadName } = generationTarget ?? getExpressionGenerationTarget(spriteFolderName);
     throwIfExpressionGenerationStopped();
     const imageUrl = await maybeGenerateExpressionSprite(expression, characterName, characterAvatar);
     throwIfExpressionGenerationStopped();
@@ -989,6 +1044,7 @@ async function generateAndUploadExpressionSprite(expression, spriteFolderName, {
     }
 
     try {
+        throwIfExpressionGenerationStopped();
         let uploadedSpriteName = '';
         try {
             uploadedSpriteName = await uploadSpriteCommand({
@@ -2099,20 +2155,26 @@ async function validateImages(spriteFolderName, forceRedrawCached = false) {
         return;
     }
 
+    const revision = ++spriteListLoadRevision;
+    const generation = getChatGeneration();
+    const chatId = getCurrentChatId();
+    const isCurrent = () => revision === spriteListLoadRevision && generation === getChatGeneration() && chatId === getCurrentChatId();
     const labels = await getExpressionsList();
+    if (!isCurrent()) return;
 
     if (spriteCache[spriteFolderName]) {
         if (forceRedrawCached && $('#image_list').data('name') !== spriteFolderName) {
             console.debug('force redrawing character sprites list');
-            await drawSpritesList(spriteFolderName, labels, spriteCache[spriteFolderName]);
+            await drawSpritesList(spriteFolderName, labels, spriteCache[spriteFolderName], isCurrent);
         }
 
         return;
     }
 
     const sprites = await getSpritesList(spriteFolderName);
-    let validExpressions = await drawSpritesList(spriteFolderName, labels, sprites);
-    spriteCache[spriteFolderName] = validExpressions;
+    if (!isCurrent()) return;
+    const validExpressions = await drawSpritesList(spriteFolderName, labels, sprites, isCurrent);
+    if (isCurrent()) spriteCache[spriteFolderName] = validExpressions;
 }
 
 /**
@@ -2141,21 +2203,16 @@ function getExpressionImageData(sprite) {
  * @param {Expression[]} sprites - An array of sprites
  * @returns {Promise<Expression[]>} An array of valid expression labels
  */
-async function drawSpritesList(spriteFolderName, labels, sprites) {
+async function drawSpritesList(spriteFolderName, labels, sprites, isCurrent = () => true) {
     /** @type {Expression[]} */
     let validExpressions = [];
-
-    $('#no_chat_expressions').hide();
-    $('#open_chat_expressions').show();
-    $('#image_list').empty();
-    $('#image_list').data('name', spriteFolderName);
-    $('#image_list_header_name').text(spriteFolderName);
 
     if (!Array.isArray(labels)) {
         return [];
     }
 
-    for (const expression of labels.sort()) {
+    const items = [];
+    for (const expression of [...labels].sort()) {
         const isCustom = extension_settings.expressions.custom?.includes(expression);
         const images = sprites
             .filter(s => s.label === expression)
@@ -2167,7 +2224,7 @@ async function drawSpritesList(spriteFolderName, labels, sprites) {
                 isCustom,
                 images: [getPlaceholderImage(expression, isCustom)],
             });
-            $('#image_list').append(listItem);
+            items.push(listItem);
             continue;
         }
 
@@ -2178,8 +2235,13 @@ async function drawSpritesList(spriteFolderName, labels, sprites) {
             isCustom,
             images,
         });
-        $('#image_list').append(listItem);
+        items.push(listItem);
     }
+    if (!isCurrent()) return validExpressions;
+    $('#no_chat_expressions').hide();
+    $('#open_chat_expressions').show();
+    $('#image_list').empty().data('name', spriteFolderName).append(items);
+    $('#image_list_header_name').text(spriteFolderName);
     return validExpressions;
 }
 
@@ -2537,12 +2599,19 @@ async function updateExpressionsAgentStatus() {
     const statusEl = $('#expressions_agent_status_text');
     if (!statusEl.length) return;
 
-    const available = await isExpressionsAgentAvailable();
-    if (available) {
+    const { status } = await getExpressionsAgentStatus();
+    if (status === 'ready') {
         statusEl.text(t`Expressions Agent is enabled and ready.`);
         statusEl.removeClass('unavailable').addClass('available');
     } else {
-        statusEl.text(t`Expressions Agent template is not enabled. Open the In-Chat Agents dashboard to enable it.`);
+        const messages = {
+            missing: t`Add the Expressions Agent template from the Agents library.`,
+            disabled: t`Enable Agents and the Expressions Agent for this chat type.`,
+            inline: t`Set the Expressions Agent to Companion execution.`,
+            hidden: t`Unhide the Expressions Agent to allow automatic classification.`,
+            manual: t`Set the Expressions Agent to run automatically.`,
+        };
+        statusEl.text(messages[status]);
         statusEl.removeClass('available').addClass('unavailable');
     }
 }
@@ -2585,6 +2654,11 @@ async function onExpressionFallbackChanged() {
  * @returns {Promise<any>} - The response data from the server
  */
 async function handleFileUpload(url, formData) {
+    const generation = getChatGeneration();
+    const chatId = getCurrentChatId();
+    const listedFolder = $('#image_list').data('name');
+    const canRefresh = () => generation === getChatGeneration() && chatId === getCurrentChatId()
+        && listedFolder === $('#image_list').data('name');
     try {
         const result = await fetch(url, {
             method: 'POST',
@@ -2602,8 +2676,10 @@ async function handleFileUpload(url, formData) {
         // Refresh sprites list
         const name = formData.get('name').toString();
         delete spriteCache[name];
-        await fetchImagesNoCache();
-        await validateImages(name);
+        if (canRefresh() && listedFolder === name) {
+            await fetchImagesNoCache();
+            if (canRefresh()) await validateImages(name);
+        }
 
         return data ?? {};
     } catch (error) {
@@ -3001,12 +3077,6 @@ function migrateSettings() {
         extension_settings.expressions.agentSpritePrompt = DEFAULT_EXPRESSION_SPRITE_PROMPT;
         saveSettingsDebounced();
     }
-
-    // SillyBunny divergence: keep the expressions agent's connection profile in sync
-    // with the user's preference (share QIG LLM override profile or not).
-    syncExpressionsAgentProfile().catch((error) => {
-        console.debug('[Expressions Agent] Initial profile sync skipped:', error);
-    });
 }
 
 export async function init() {
@@ -3101,9 +3171,6 @@ export async function init() {
             .on('input', function () {
                 extension_settings.expressions.agentUseQigLlmProfile = !!$(this).prop('checked');
                 saveSettingsDebounced();
-                syncExpressionsAgentProfile().catch((error) => {
-                    console.error('[Expressions Agent] Profile sync failed:', error);
-                });
             });
         $('#expressions_agent_sprite_generation_mode')
             .val(getExpressionSpriteGenerationMode())
@@ -3173,6 +3240,7 @@ export async function init() {
     seedExpressionHistory();
     const wrapper = new ModuleWorkerWrapper(moduleWorker);
     const updateFunction = wrapper.update.bind(wrapper);
+    eventSource.on('in_chat_agent_companion_results_updated', event => onAgentExpressionUpdated(event, updateFunction));
     setInterval(updateFunction, UPDATE_INTERVAL);
     moduleWorker();
     dragElement($('#expression-holder'));
@@ -3511,8 +3579,12 @@ export async function init() {
         `,
     }));
 
-    const getAvailableExpressionsList = () => {
+    const getAvailableExpressionsList = (includeMissing = false) => {
         const expressions = getCachedExpressions();
+
+        if (includeMissing && extension_settings.expressions.agentAutoGenerateSprites) {
+            return expressions.length ? expressions : [...DEFAULT_EXPRESSIONS, ...(extension_settings.expressions.custom ?? [])].filter(onlyUnique);
+        }
 
         const currentLastMessage = selected_group ? getLastCharacterMessage() : null;
         const spriteFolderName = getSpriteFolderName(currentLastMessage, currentLastMessage?.name);
@@ -3537,6 +3609,6 @@ export async function init() {
     }, 'Returns a comma-separated list of expressions that have available sprites for the current character.');
 
     MacrosParser.registerMacro('availableExpressions', () => {
-        return getAvailableExpressionsList().join(', ');
-    }, 'Returns a comma-separated list of expressions that have available sprites for the current character.');
+        return getAvailableExpressionsList(true).join(', ');
+    }, 'Returns expression labels, including missing sprites when automatic sprite generation is enabled.');
 }

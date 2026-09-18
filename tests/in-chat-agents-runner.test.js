@@ -6829,6 +6829,24 @@ describe('in-chat agent post-processing runner', () => {
         })]);
     });
 
+    test('expression requests resolve the current shared profile without changing the independent selection', async () => {
+        const agent = createCompanionAgent({ id: 'expression-copy', sourceTemplateId: 'tpl-expressions-agent' });
+        agent.connectionProfile = 'independent';
+        enabledAgents = [agent];
+        extensionSettings.expressions = { agentUseQigLlmProfile: true };
+        extensionSettings['quick-image-gen'] = { llmOverrideEnabled: true, llmOverrideProfileId: 'shared-a' };
+        connectionManagerRequestService = { sendRequest: jest.fn(async () => ({ content: 'joy' })) };
+        const { requestPromptTransform } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const messages = [{ role: 'user', content: 'Classify this reply.' }];
+        await requestPromptTransform(agent, messages, 100);
+        extensionSettings['quick-image-gen'].llmOverrideProfileId = 'shared-b';
+        await requestPromptTransform(agent, messages, 100);
+        extensionSettings.expressions.agentUseQigLlmProfile = false;
+        await requestPromptTransform(agent, messages, 100);
+        expect(connectionManagerRequestService.sendRequest.mock.calls.map(call => call[0])).toEqual(['shared-a', 'shared-b', 'independent']);
+        expect(agent.connectionProfile).toBe('independent');
+    });
+
     test('shows the resolved profile model in prompt-transform running toasts', async () => {
         usePromptTransformPostAgent();
         enabledAgents[0].connectionProfile = 'profile-cc';

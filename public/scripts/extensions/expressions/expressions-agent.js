@@ -13,10 +13,9 @@
 
 import { getContext, extension_settings } from '../../extensions.js';
 import { system_message_types } from '../../../script.js';
-import { normalizeAgentExpressionLabel } from './expressions-agent-utils.js';
+import { normalizeAgentExpressionLabel, resolveExpressionsAgentProfile as resolveProfile } from './expressions-agent-utils.js';
 
 const EXPRESSIONS_AGENT_TEMPLATE_ID = 'tpl-expressions-agent';
-const QIG_EXTENSION_NAME = 'quick-image-gen';
 const CHARACTER_CARD_PROMPT_LIMIT = 2400;
 const CHARACTER_CARD_FIELD_LIMITS = {
     description: 1400,
@@ -244,7 +243,7 @@ export async function getExpressionsAgent() {
     const agentStore = await getAgentStore();
     if (!agentStore) return null;
 
-    const { getEnabledAgents, getAgentById } = agentStore;
+    const { getEnabledAgents } = agentStore;
     if (typeof getEnabledAgents !== 'function') return null;
 
     const enabledAgents = getEnabledAgents();
@@ -255,15 +254,19 @@ export async function getExpressionsAgent() {
         ? companionShared.isExpressionsAgent.bind(companionShared)
         : (agent) => (agent?.sourceTemplateId || agent?.id) === EXPRESSIONS_AGENT_TEMPLATE_ID;
 
-    let agent = enabledAgents.find(isExpressionsAgent);
+    return enabledAgents.find(isExpressionsAgent) ?? null;
+}
 
-    // If not found by template id, try a direct id lookup as a fallback.
-    if (!agent && typeof getAgentById === 'function') {
-        agent = getAgentById(EXPRESSIONS_AGENT_TEMPLATE_ID);
-        if (agent && !isExpressionsAgent(agent)) agent = null;
-    }
-
-    return agent;
+export async function getExpressionsAgentStatus() {
+    const store = await getAgentStore();
+    const enabled = await getExpressionsAgent();
+    const agent = enabled ?? store?.getAgents?.().find(item => (item.sourceTemplateId || item.id) === EXPRESSIONS_AGENT_TEMPLATE_ID);
+    if (!agent) return { status: 'missing', agent: null };
+    if (!enabled) return { status: 'disabled', agent };
+    if (!store.isCompanionAgent(agent)) return { status: 'inline', agent };
+    if (store.isAgentHidden(agent.id)) return { status: 'hidden', agent };
+    if (store.getCompanionConfig(agent).trigger !== 'auto') return { status: 'manual', agent };
+    return { status: 'ready', agent };
 }
 
 /**
@@ -271,18 +274,7 @@ export async function getExpressionsAgent() {
  * @returns {Promise<boolean>}
  */
 export async function isExpressionsAgentAvailable() {
-    const agent = await getExpressionsAgent();
-    return Boolean(agent);
-}
-
-/**
- * Returns the Quick Image Gen LLM override Connection Manager profile id, if any.
- * @returns {string}
- */
-function getQigLlmOverrideProfileId() {
-    const qigSettings = extension_settings?.[QIG_EXTENSION_NAME];
-    if (!qigSettings?.llmOverrideEnabled) return '';
-    return String(qigSettings.llmOverrideProfileId || '').trim();
+    return (await getExpressionsAgentStatus()).status === 'ready';
 }
 
 /**
@@ -296,39 +288,31 @@ function getQigLlmOverrideProfileId() {
  * @returns {string}
  */
 export function resolveExpressionsAgentProfile(agent) {
-    if (!agent) return '';
-    if (extension_settings.expressions.agentUseQigLlmProfile) {
-        const qigProfileId = getQigLlmOverrideProfileId();
-        if (qigProfileId) return qigProfileId;
-    }
-    return String(agent.connectionProfile || '');
+    return resolveProfile(agent, extension_settings);
 }
 
 /**
- * Keep the Expressions Agent's connectionProfile in sync with the user's preference.
- * If sharing with QIG is enabled, the agent adopts QIG's LLM override profile. If not,
- * any previously-synced value is cleared so the agent falls back to its own setting.
+ * Compatibility entrypoint. The effective profile is resolved for each request;
+ * sharing never changes the independently saved agent profile.
  *
- * @returns {Promise<boolean>} True if the agent was found and updated.
+ * @returns {Promise<boolean>} True if an enabled agent was found.
  */
 export async function syncExpressionsAgentProfile() {
-    const agent = await getExpressionsAgent();
-    if (!agent?.id) return false;
+    return Boolean(await getExpressionsAgent());
+}
 
-    const agentStore = await getAgentStore();
-    if (!agentStore?.saveAgent) return false;
-
-    const targetProfile = extension_settings.expressions.agentUseQigLlmProfile
-        ? getQigLlmOverrideProfileId()
-        : '';
-
-    const currentProfile = String(agent.connectionProfile || '');
-    if (currentProfile === targetProfile) return true;
-
-    agent.connectionProfile = targetProfile;
-    await agentStore.saveAgent(agent);
-    console.debug('[Expressions Agent] Synced connection profile to:', targetProfile || '(none)');
-    return true;
+export async function getAgentExpressionState(context, allowedExpressions, target = null) {
+    const ctx = context || getContext();
+    const message = target?.message ?? getLatestAssistantMessage(ctx);
+    const { status, agent } = await getExpressionsAgentStatus();
+    if (!message || !agent || status === 'disabled' || status === 'inline') return { status: 'unavailable', label: null };
+    const shared = await getCompanionShared();
+    if (target && (ctx.chat[target.index] !== message || (message.swipe_id ?? 0) !== target.swipe || message.mes !== target.text)) {
+        return { status: 'stale', label: null };
+    }
+    const result = shared?.getActiveCompanionResults(message)?.[agent.id];
+    const label = result?.status === 'done' ? normalizeAgentExpressionLabel(result.content, allowedExpressions) : null;
+    return { agentId: agent.id, result, label, status: result?.status ?? (status === 'ready' ? 'pending' : 'unavailable') };
 }
 
 /**
@@ -339,21 +323,7 @@ export async function syncExpressionsAgentProfile() {
  * @returns {Promise<string|null>} The classified expression label, or null if not ready.
  */
 export async function getAgentExpressionLabel(context, allowedExpressions, target = null) {
-    const ctx = context || getContext();
-    const message = target?.message ?? getLatestAssistantMessage(ctx);
-    if (!message?.extra?.inChatAgentCompanionResults) return null;
-
-    const agent = await getExpressionsAgent();
-    if (!agent?.id) return null;
-
-    if (target && (ctx.chat[target.index] !== message || (message.swipe_id ?? 0) !== target.swipe || message.mes !== target.text)) return null;
-    const extra = Array.isArray(message.swipe_info) ? message.swipe_info[message.swipe_id ?? 0]?.extra : message.extra;
-    const result = extra?.inChatAgentCompanionResults?.[agent.id];
-    if (!result || result.status !== 'done' || typeof result.content !== 'string') {
-        return null;
-    }
-
-    return normalizeAgentExpressionLabel(result.content, allowedExpressions);
+    return (await getAgentExpressionState(context, allowedExpressions, target)).label;
 }
 
 /**
