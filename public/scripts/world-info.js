@@ -4897,6 +4897,11 @@ async function _save(name, data, { snapshot, notify = true, revision, conditiona
         try {
             // Resolve the guard revision after queued saves settle so this client's own writes never conflict with it.
             const guardRevision = revision !== undefined ? revision : (conditional ? worldInfoKnownRevisions.get(name) : undefined);
+            if (conditional && guardRevision === undefined) {
+                const error = new Error('Reload the lorebook before saving; its server revision is unavailable.');
+                error.status = 409;
+                throw error;
+            }
             const response = await fetch('/api/worldinfo/edit', {
                 method: 'POST',
                 headers: getRequestHeaders(),
@@ -4969,7 +4974,7 @@ async function settleWorldInfoSave(name) {
     while (true) {
         const pending = cancelPendingWorldInfoSave(name);
         if (pending) {
-            await _save(name, pending.data, { snapshot: pending.snapshot });
+            await _save(name, pending.data, { snapshot: pending.snapshot, conditional: pending.conditional });
         }
         const pendingSave = worldInfoSaveQueues.get(name);
         if (!pendingSave) {
@@ -5060,7 +5065,7 @@ export async function saveWorldInfo(name, data, immediately = false, { condition
     const pending = cancelPendingWorldInfoSave(name);
     if (pending && pending.snapshot.source !== source) {
         // Another writer's draft must reach disk even if this replacement snapshot fails.
-        _save(name, pending.data, { snapshot: pending.snapshot }).catch(error => {
+        _save(name, pending.data, { snapshot: pending.snapshot, conditional: pending.conditional }).catch(error => {
             console.error(`Failed to save World Info ${name}:`, error);
             toastr.error(String(error), t`World Info Save Failed`);
         });
@@ -5087,7 +5092,7 @@ export async function saveWorldInfo(name, data, immediately = false, { condition
             toastr.error(String(error), t`World Info Save Failed`);
         });
     }, debounce_timeout.relaxed);
-    pendingWorldInfoSaves.set(name, { timer, data, snapshot });
+    pendingWorldInfoSaves.set(name, { timer, data, snapshot, conditional });
 }
 
 export async function replaceWorldInfoData(name, data, revision) {

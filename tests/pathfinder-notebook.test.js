@@ -102,4 +102,23 @@ describe('Pathfinder notebook baseline', () => {
         expect(await action({ action: 'write', key: 'Blocked', content: 'not saved' })).toContain('Notebook is still available for reading');
         expect(context.chatMetadata.pathfinder_notebook.entries).toHaveLength(1);
     });
+
+    test('a failed earlier write cannot erase a newer successful notebook change', async () => {
+        let finishFirst;
+        context.saveMetadata = jest.fn()
+            .mockImplementationOnce(() => new Promise(resolve => { finishFirst = resolve; }))
+            .mockResolvedValue(true);
+        const action = getToolAction('pathfinder_notebook');
+        const first = action({ action: 'write', key: 'Plan', content: 'old attempt' });
+        while (!finishFirst) await new Promise(resolve => setTimeout(resolve, 0));
+        const second = action({ action: 'write', key: 'Plan', content: 'new accepted note' });
+        await Promise.resolve();
+        expect(context.saveMetadata).toHaveBeenCalledTimes(1);
+        finishFirst(false);
+        expect(await first).toContain('could not be saved');
+        expect(await second).toContain('Wrote "Plan"');
+        expect(context.chatMetadata.pathfinder_notebook.entries).toEqual([
+            expect.objectContaining({ key: 'Plan', content: 'new accepted note' }),
+        ]);
+    });
 });

@@ -229,7 +229,9 @@ async function sendLorebookEntries(content, context, notifier, isCurrent) {
         let { bookName } = target;
         const loadedData = await context.loadWorldInfo(bookName);
         if (!isCurrent()) return null;
-        const bookData = structuredClone(loadedData);
+        // The host returns a private copy with a tracked load baseline. Keep that identity
+        // so a concurrent native edit can be merged rather than replaced by an old book.
+        const bookData = loadedData;
         if (!bookData?.entries || typeof bookData.entries !== 'object') {
             throw new Error(`Lorebook "${bookName}" could not be loaded.`);
         }

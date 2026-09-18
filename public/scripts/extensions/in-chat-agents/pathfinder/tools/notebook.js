@@ -3,6 +3,7 @@ import { registerToolAction, registerToolFormatter } from '../../tool-action-reg
 import { logToolCallStarted, logToolCallCompleted, logToolCallError } from '../activity-feed.js';
 
 const NOTEBOOK_KEY = 'pathfinder_notebook';
+const notebookWrites = new WeakMap();
 
 const COMPACT_DESCRIPTION = 'Write to or read from a private AI scratchpad for plans, follow-ups, and narrative threads.';
 
@@ -48,6 +49,22 @@ async function saveNotebookData(chatId) {
 const SAVE_FAILED_MESSAGE = 'Error: The notebook change could not be saved, so it was not kept. Try again.';
 
 async function notebookAction(args, options = {}) {
+    const context = window?.SillyTavern?.getContext?.();
+    const metadata = context?.chatMetadata ?? context?.chat_metadata;
+    const origin = { chatId: context?.chatId ?? null, metadata };
+    if (!metadata || String(args?.action ?? '').trim().toLowerCase() === 'read') return executeNotebookAction(args, options, origin);
+    getNotebookData(context);
+    const previous = notebookWrites.get(metadata) ?? Promise.resolve();
+    const write = previous.catch(() => undefined).then(() => executeNotebookAction(args, options, origin));
+    notebookWrites.set(metadata, write);
+    try {
+        return await write;
+    } finally {
+        if (notebookWrites.get(metadata) === write) notebookWrites.delete(metadata);
+    }
+}
+
+async function executeNotebookAction(args, options, origin) {
     const argumentError = getToolArgumentError(args, getDefinition().parameters);
     if (argumentError) return argumentError;
     if (options.signal?.aborted || (options.isCurrent && !options.isCurrent())) return 'Notebook request cancelled.';
@@ -64,6 +81,7 @@ async function notebookAction(args, options = {}) {
     }
 
     const ctx = window?.SillyTavern?.getContext?.();
+    if ((ctx?.chatId ?? null) !== origin.chatId || (ctx?.chatMetadata ?? ctx?.chat_metadata) !== origin.metadata) return SAVE_FAILED_MESSAGE;
     const notebook = getNotebookData(ctx);
     if (!notebook) {
         logToolCallError(TOOL_NAMES.NOTEBOOK, 'No chat metadata');

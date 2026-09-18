@@ -42,7 +42,7 @@ function createContext({ attachedBook = '', existingTitles = [], auxiliaryBooks 
         }),
         updateChatMetadata: jest.fn(values => Object.assign(context.chatMetadata, values)),
         saveMetadata: jest.fn(async () => {}),
-        loadWorldInfo: jest.fn(async name => books[name] ?? null),
+        loadWorldInfo: jest.fn(async name => books[name] ? structuredClone(books[name]) : null),
         createWorldInfoEntry: jest.fn((_name, data) => {
             const uid = Object.keys(data.entries).length;
             const entry = {

@@ -8,6 +8,7 @@ import { event_types } from '../public/scripts/events.js';
 import { StructuredCloneMap } from '../public/scripts/util/StructuredCloneMap.js';
 import { escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharacterBookPosition, serializeWorldInfoEntry } from '../public/scripts/world-info-character-book.js';
 import { NECONYAN_LOREBOOK_FOLDERS_KEY, normalizeNeconyanLorebookFolders, renameNeconyanLorebookAssignment, unfileNeconyanLorebook } from '../public/scripts/neconyan-lorebook-folders.js';
+import { sendCompanionResultToLorebook } from '../public/scripts/extensions/in-chat-agents/companion/lorebook-sender.js';
 
 const source = readFileSync(new URL('../public/scripts/world-info.js', import.meta.url), 'utf8');
 
@@ -101,11 +102,12 @@ function createHost(initialBook = book()) {
         let result;
         switch (url) {
             case '/api/worldinfo/get':
-                return { ok: Boolean(readData), json: async () => readData };
+                return { ok: Boolean(readData), json: async () => readData, headers: { get: () => readData ? JSON.stringify(readData) : null } };
             case '/api/worldinfo/edit': {
                 const name = body.name.replace(/[/?]/g, '');
+                if (body.revision !== undefined && body.revision !== JSON.stringify(books.get(name))) return { ok: false, status: 409 };
                 books.set(name, structuredClone(body.data));
-                result = { ok: true, name };
+                result = { ok: true, name, revision: JSON.stringify(body.data) };
                 break;
             }
             case '/api/worldinfo/rename':
@@ -178,6 +180,51 @@ afterEach(() => {
 });
 
 describe('shared World Info saves', () => {
+    test('conditional saves reject missing revisions and changes from another client', async () => {
+        const { context, books } = createHost();
+        const original = await context.loadWorldInfo('Lore');
+        original.entries[0].content = 'Local edit';
+        books.get('Lore').entries[1].content = 'Another client saved this';
+        await expect(context.saveWorldInfo('Lore', original, true, { conditional: true })).rejects.toMatchObject({ status: 409 });
+        expect(books.get('Lore').entries[0].content).toBe('Original');
+        expect(books.get('Lore').entries[1].content).toBe('Another client saved this');
+
+        const refreshed = await context.loadWorldInfo('Lore');
+        refreshed.entries[0].content = 'New attempt';
+        vm.runInContext('worldInfoKnownRevisions.clear()', context);
+        context.fetch.mockClear();
+        await expect(context.saveWorldInfo('Lore', refreshed, true, { conditional: true })).rejects.toMatchObject({ status: 409 });
+        expect(context.fetch).not.toHaveBeenCalled();
+        expect(books.get('Lore').entries[0].content).toBe('Original');
+    });
+
+    test('sending a companion entry retains the load baseline and preserves a concurrent native edit', async () => {
+        const { context, books } = createHost();
+        const started = deferred();
+        const release = deferred();
+        const sender = {
+            chatMetadata: { world_info: 'Lore' },
+            getWorldInfoNames: () => ['Lore'],
+            loadWorldInfo: async (...args) => {
+                const data = await context.loadWorldInfo(...args);
+                started.resolve();
+                await release.promise;
+                return data;
+            },
+            saveWorldInfo: context.saveWorldInfo,
+            createWorldInfoEntry: context.createWorldInfoEntry,
+        };
+        const sending = sendCompanionResultToLorebook('**A new entry**\nKeys: new, entry\nNew content', sender, { success: jest.fn(), error: jest.fn() });
+        await Promise.race([started.promise, sending.then(() => { throw new Error('The sender completed before reading its target book.'); })]);
+        const native = await context.loadWorldInfo('Lore');
+        native.entries[0].content = 'Latest native edit';
+        await context.saveWorldInfo('Lore', native, true);
+        release.resolve();
+        expect(await sending).toMatchObject({ bookName: 'Lore', created: 1 });
+        expect(books.get('Lore').entries[0].content).toBe('Latest native edit');
+        expect(Object.values(books.get('Lore').entries).some(entry => entry.comment === 'A new entry')).toBe(true);
+    });
+
     test.each(['create', 'duplicate'])('stale native %s avoids card IDs reserved in the latest cache', async operation => {
         const host = createHost();
         const { context } = host;
