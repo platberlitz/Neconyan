@@ -71,8 +71,8 @@
     {
       "id": "4db3f379-1f43-4c1b-b93a-50f1a36ff17a",
       "scriptName": "Replace NPC Upgrade",
-      "findRegex": "/\\[NPC:UP\\|(.*?)\\|(.*?)\\]\\n*b:\\s*(.*?)\\n+a:\\s*(.*?)\\n+p:\\s*(.*?)\\n+h:\\s*(.*?)(?:\\n*\\[\\/NPC\\])?(?=\\n|$)/g",
-      "replaceString": "<details style=\"margin:10px 0\"><summary style=\"padding:9px 12px;background:linear-gradient(135deg,rgba(20,28,22,0.97),rgba(35,104,56,0.62));border-radius:11px;border:1px solid rgba(80,250,123,0.48);box-shadow:0 10px 24px rgba(0,0,0,0.24);color:#87ffae;font-family:monospace;font-size:10px;cursor:pointer\">⬆️ $1 → $2 ▼</summary><div style=\"padding:12px;background:linear-gradient(180deg,rgba(20,22,28,0.97),rgba(34,37,46,0.96));border-radius:0 0 11px 11px;border:1px solid rgba(80,250,123,0.34);border-top:none;font-size:10px;line-height:1.62;color:#f8f8f2\"><div style=\"margin-bottom:7px;padding:8px 10px;background:rgba(255,121,198,0.07);border-left:3px solid #ff79c6;border-radius:7px\"><span style=\"color:#ff92d1\">⬡ Basics</span><br><span>$3</span></div><div style=\"margin-bottom:7px;padding:8px 10px;background:rgba(255,184,108,0.07);border-left:3px solid #ffb86c;border-radius:7px\"><span style=\"color:#ffc78d\">⬡ Appearance</span><br><span>$4</span></div><div style=\"margin-bottom:7px;padding:8px 10px;background:rgba(80,250,123,0.07);border-left:3px solid #50fa7b;border-radius:7px\"><span style=\"color:#88ffab\">⬡ Personality</span><br><span>$5</span></div><div style=\"padding:8px 10px;background:rgba(241,250,140,0.07);border-left:3px solid #f1fa8c;border-radius:7px\"><span style=\"color:#f4ffab\">⬡ History</span><br><span>$6</span></div></div></details>",
+      "findRegex": "/\\[NPC:UP\\|([^\\r\\n|]+)\\|([^\\r\\n\\]]+)\\][ \\t]*(?:\\r?\\n)*b:[ \\t]*([^\\r\\n\\[]*)(?:\\r?\\n)+a:[ \\t]*([^\\r\\n\\[]*)(?:\\r?\\n)+p:[ \\t]*([^\\r\\n\\[]*)(?:\\r?\\n)+h:[ \\t]*([^\\r\\n\\[]*)(?:(?:\\r?\\n)+r:[ \\t]*([^\\r\\n\\[]*))?(?:(?:\\r?\\n)*\\[\\/NPC\\])?(?=\\r?\\n|$)/g",
+      "replaceString": "<details style=\"margin:10px 0\"><summary style=\"padding:9px 12px;background:linear-gradient(135deg,rgba(20,28,22,0.97),rgba(35,104,56,0.62));border-radius:11px;border:1px solid rgba(80,250,123,0.48);box-shadow:0 10px 24px rgba(0,0,0,0.24);color:#87ffae;font-family:monospace;font-size:10px;cursor:pointer\">⬆️ $1 → $2 ▼</summary><div style=\"padding:12px;background:linear-gradient(180deg,rgba(20,22,28,0.97),rgba(34,37,46,0.96));border-radius:0 0 11px 11px;border:1px solid rgba(80,250,123,0.34);border-top:none;font-size:10px;line-height:1.62;color:#f8f8f2\"><div style=\"margin-bottom:7px;padding:8px 10px;background:rgba(255,121,198,0.07);border-left:3px solid #ff79c6;border-radius:7px\"><span style=\"color:#ff92d1\">⬡ Basics</span><br><span>$3</span></div><div style=\"margin-bottom:7px;padding:8px 10px;background:rgba(255,184,108,0.07);border-left:3px solid #ffb86c;border-radius:7px\"><span style=\"color:#ffc78d\">⬡ Appearance</span><br><span>$4</span></div><div style=\"margin-bottom:7px;padding:8px 10px;background:rgba(80,250,123,0.07);border-left:3px solid #50fa7b;border-radius:7px\"><span style=\"color:#88ffab\">⬡ Personality</span><br><span>$5</span></div><div style=\"padding:8px 10px;background:rgba(241,250,140,0.07);border-left:3px solid #f1fa8c;border-radius:7px\"><span style=\"color:#f4ffab\">⬡ History</span><br><span>$6</span></div><div>Relationship: <span>$7</span></div></div></details>",
       "trimStrings": [],
       "placement": [
         2
@@ -196,7 +196,7 @@
     {
       "id": "ad25f07e-e86c-480e-9a8f-ffe90ce33e85",
       "scriptName": "Replace Scene Tracker",
-      "findRegex": "/\\[SCENE\\|([^|\\]]+)\\|([^|\\]]+)\\|([^|\\]]+)\\]\\n*(?:detail:\\s*)?((?:(?!\\[(?:REP|SECRET|STATUS|EVENT|SCENE|ACH|ITEM|TIME|METER|NPC|CHOICES|WORLD|PARALLEL)\\b)[^\\[])*?)(?:\\n*\\[\\/SCENE\\])?(?=\\n|$)/g",
+      "findRegex": "/\\[SCENE\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\]\\n*(?:detail:[ \\t]*)?([^\\[]*(?=\\[\\/SCENE\\])|[^\\r\\n\\[]*)(?:\\[\\/SCENE\\])?/g",
       "replaceString": "<details style=\"margin:10px 0\" open><summary style=\"padding:10px 13px;background:linear-gradient(135deg,rgba(24,26,32,0.97),rgba(83,52,134,0.66));border-radius:12px;border:1px solid rgba(189,147,249,0.52);box-shadow:0 10px 24px rgba(0,0,0,0.28);color:#d6b8ff;font-family:monospace;font-size:11px;cursor:pointer\">📍 $1 · 🕐 $2 · $3</summary><div style=\"padding:13px;background:linear-gradient(180deg,rgba(20,22,28,0.97),rgba(34,37,46,0.96));border-radius:0 0 12px 12px;border:1px solid rgba(189,147,249,0.34);border-top:none;font-size:11px;line-height:1.68;color:#f8f8f2;white-space:pre-line\"><div style=\"padding:9px 11px;background:rgba(255,255,255,0.04);border-left:3px solid #bd93f9;border-radius:8px\">$4</div></div></details>",
       "trimStrings": [],
       "placement": [
@@ -215,7 +215,7 @@
     {
       "id": "ad1d4f9f-8a1b-4f84-9ce2-b92dc9bbb345",
       "scriptName": "Replace Time Tracker",
-      "findRegex": "/\\[TIME\\|([^|\\]]+)\\|([^|\\]]+)\\|([^|\\]]+)\\]\\n*(?:note:\\s*)?((?:(?!\\[(?:REP|SECRET|STATUS|EVENT|SCENE|ACH|ITEM|TIME|METER|NPC|CHOICES|WORLD|PARALLEL)\\b)[^\\[])*?)(?:\\n*\\[\\/TIME\\])?(?=\\n|$)/g",
+      "findRegex": "/\\[TIME\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\]\\n*(?:note:[ \\t]*)?([^\\[]*(?=\\[\\/TIME\\])|[^\\r\\n\\[]*)(?:\\[\\/TIME\\])?/g",
       "replaceString": "<details style=\"margin:10px 0\"><summary style=\"padding:10px 13px;background:linear-gradient(135deg,rgba(22,28,33,0.97),rgba(28,88,113,0.66));border-radius:12px;border:1px solid rgba(139,233,253,0.5);box-shadow:0 10px 24px rgba(0,0,0,0.28);color:#a6f2ff;font-family:monospace;font-size:11px;cursor:pointer\">🕐 $1 · $2 · $3</summary><div style=\"padding:13px;background:linear-gradient(180deg,rgba(20,22,28,0.97),rgba(34,37,46,0.96));border-radius:0 0 12px 12px;border:1px solid rgba(139,233,253,0.34);border-top:none;font-size:11px;line-height:1.68;color:#f8f8f2;white-space:pre-line\"><div style=\"padding:9px 11px;background:rgba(255,255,255,0.04);border-left:3px solid #8be9fd;border-radius:8px\"><span style=\"color:#a6f2ff\">⬢ Context:</span> $4</div></div></details>",
       "trimStrings": [],
       "placement": [
@@ -253,7 +253,7 @@
     {
       "id": "2ed3a072-ebe8-48aa-a36b-62b7c284ae8a",
       "scriptName": "Replace Relationship Tracker",
-      "findRegex": "/\\[METER\\|([^|\\]]+)\\|([^|\\]]+)\\|([^|\\]]+)\\|([^|\\]]+)\\|([^|\\]]+)\\]\\n*((?:(?!\\[(?:REP|SECRET|STATUS|EVENT|SCENE|ACH|ITEM|TIME|METER|NPC|CHOICES|WORLD|PARALLEL)\\b)[^\\[])*?)(?:\\n*\\[\\/METER\\])?(?=\\n|$)/g",
+      "findRegex": "/\\[METER\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\]\\n*([^\\[]*(?=\\[\\/METER\\])|[^\\r\\n\\[]*)(?:\\[\\/METER\\])?/g",
       "replaceString": "<details style=\"margin:10px 0\"><summary style=\"padding:10px 13px;background:linear-gradient(135deg,rgba(32,20,32,0.97),rgba(100,34,77,0.72));border-radius:12px;border:1px solid rgba(255,121,198,0.55);box-shadow:0 10px 24px rgba(0,0,0,0.30);color:#ffb4df;font-family:monospace;font-size:11px;cursor:pointer\">💞$1 · $4</summary><div style=\"padding:13px;background:linear-gradient(180deg,rgba(20,22,28,0.97),rgba(34,37,46,0.96));border-radius:0 0 12px 12px;border:1px solid rgba(255,121,198,0.38);border-top:none;font-size:11px;line-height:1.68;color:#f8f8f2\"><div style=\"display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:11px\"><div style=\"padding:9px 10px;background:rgba(255,121,198,0.12);border:1px solid rgba(255,121,198,0.22);border-radius:8px\"><div style=\"color:#ffb4df;font-size:10px;margin-bottom:4px\">❤ AFFECTION</div><div style=\"color:#fff0f8;font-weight:bold;font-size:12px\">$2</div></div><div style=\"padding:9px 10px;background:rgba(139,233,253,0.12);border:1px solid rgba(139,233,253,0.22);border-radius:8px\"><div style=\"color:#aaf2ff;font-size:10px;margin-bottom:4px\">◆ TRUST</div><div style=\"color:#eefcff;font-weight:bold;font-size:12px\">$3</div></div></div><div style=\"margin-bottom:10px;padding:9px 11px;background:rgba(255,255,255,0.04);border-left:3px solid #ff79c6;border-radius:8px\"><span style=\"color:#ffb4df\">⬢ Condition:</span> <span style=\"display:inline-block;padding:3px 8px;margin-top:4px;border-radius:999px;border:1px solid rgba(255,121,198,0.26);background:rgba(255,121,198,0.18);color:#ffd6eb\">$5</span></div><div style=\"padding:9px 11px;background:rgba(255,255,255,0.04);border-left:3px solid #ff79c6;border-radius:8px;white-space:pre-line\"><span style=\"color:#ffb4df\">⬢ Change:</span> $6</div></div></details>",
       "trimStrings": [],
       "placement": [
@@ -272,7 +272,7 @@
     {
       "id": "a7f9df62-7674-4406-9eb0-86910c77eb3d",
       "scriptName": "Replace Status/Conditions Tracker",
-      "findRegex": "/\\[STATUS\\|([^|\\]]+)\\|([^|\\]]+)\\|([^|\\]]+)\\]\\n*(?:note:\\s*)?((?:(?!\\[(?:REP|SECRET|STATUS|EVENT|SCENE|ACH|ITEM|TIME|METER|NPC|CHOICES|WORLD|PARALLEL)\\b)[^\\[])*?)(?:\\n*\\[\\/STATUS\\])?(?=\\n|$)/g",
+      "findRegex": "/\\[STATUS\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\]\\n*(?:note:[ \\t]*)?([^\\[]*(?=\\[\\/STATUS\\])|[^\\r\\n\\[]*)(?:\\[\\/STATUS\\])?/g",
       "replaceString": "<details style=\"margin:10px 0\"><summary style=\"padding:10px 13px;background:linear-gradient(135deg,rgba(34,20,20,0.97),rgba(120,38,38,0.7));border-radius:12px;border:1px solid rgba(255,110,110,0.5);box-shadow:0 10px 24px rgba(0,0,0,0.28);color:#ffadad;font-family:monospace;font-size:11px;cursor:pointer\">🩹 $1 · $2</summary><div style=\"padding:13px;background:linear-gradient(180deg,rgba(20,22,28,0.97),rgba(34,37,46,0.96));border-radius:0 0 12px 12px;border:1px solid rgba(255,110,110,0.34);border-top:none;font-size:11px;line-height:1.68;color:#f8f8f2\"><div style=\"margin-bottom:9px;padding:9px 11px;background:rgba(255,255,255,0.04);border-left:3px solid #ff6e6e;border-radius:8px\"><span style=\"color:#ffadad\">⬢ Severity:</span> $3</div><div style=\"padding:9px 11px;background:rgba(255,255,255,0.04);border-left:3px solid #ff6e6e;border-radius:8px;white-space:pre-line\"><span style=\"color:#ffadad\">⬢ Note:</span> $4</div></div></details>",
       "trimStrings": [],
       "placement": [
@@ -291,7 +291,7 @@
     {
       "id": "6675f320-6ffe-44fc-a73a-735b17d235c2",
       "scriptName": "Replace Pending Events Tracker",
-      "findRegex": "/\\[EVENT\\|([^|\\]]+)\\|([^|\\]]+)\\|([^|\\]]+)\\]\\n*(?:context:\\s*)?((?:(?!\\[(?:REP|SECRET|STATUS|EVENT|SCENE|ACH|ITEM|TIME|METER|NPC|CHOICES|WORLD|PARALLEL)\\b)[^\\[])*?)(?:\\n*\\[\\/EVENT\\])?(?=\\n|$)/g",
+      "findRegex": "/\\[EVENT\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\]\\n*(?:context:[ \\t]*)?([^\\[]*(?=\\[\\/EVENT\\])|[^\\r\\n\\[]*)(?:\\[\\/EVENT\\])?/g",
       "replaceString": "<details style=\"margin:10px 0\"><summary style=\"padding:10px 13px;background:linear-gradient(135deg,rgba(34,34,18,0.97),rgba(110,112,34,0.68));border-radius:12px;border:1px solid rgba(241,250,140,0.48);box-shadow:0 10px 24px rgba(0,0,0,0.28);color:#f6ffb5;font-family:monospace;font-size:11px;cursor:pointer\">$1 $2 · ⏳ $3</summary><div style=\"padding:13px;background:linear-gradient(180deg,rgba(20,22,28,0.97),rgba(34,37,46,0.96));border-radius:0 0 12px 12px;border:1px solid rgba(241,250,140,0.32);border-top:none;font-size:11px;line-height:1.68;color:#f8f8f2\"><div style=\"padding:9px 11px;background:rgba(255,255,255,0.04);border-left:3px solid #f1fa8c;border-radius:8px;white-space:pre-line\">$4</div></div></details>",
       "trimStrings": [],
       "placement": [
@@ -310,7 +310,7 @@
     {
       "id": "12fd0ac4-e9d1-4e4a-ac9a-24ed111d217a",
       "scriptName": "Replace Achievement Tracker",
-      "findRegex": "/\\[ACH\\|([^|\\]]+)\\|([^|\\]]+)\\|([^|\\]]+)\\]\\n*(?:unlocked:\\s*)?((?:(?!\\[(?:REP|SECRET|STATUS|EVENT|SCENE|ACH|ITEM|TIME|METER|NPC|CHOICES|WORLD|PARALLEL)\\b)[^\\[])*?)(?:\\n*\\[\\/ACH\\])?(?=\\n|$)/g",
+      "findRegex": "/\\[ACH\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\]\\n*(?:unlocked:[ \\t]*)?([^\\[]*(?=\\[\\/ACH\\])|[^\\r\\n\\[]*)(?:\\[\\/ACH\\])?/g",
       "replaceString": "<details style=\"margin:10px 0\" open><summary style=\"padding:10px 13px;background:linear-gradient(135deg,rgba(38,24,14,0.97),rgba(148,85,20,0.72));border-radius:12px;border:1px solid rgba(255,140,66,0.52);box-shadow:0 10px 24px rgba(0,0,0,0.28);color:#ffbf8f;font-family:monospace;font-size:11px;cursor:pointer\">🏆 $1 · $2</summary><div style=\"padding:13px;background:linear-gradient(180deg,rgba(20,22,28,0.97),rgba(34,37,46,0.96));border-radius:0 0 12px 12px;border:1px solid rgba(255,140,66,0.34);border-top:none;font-size:11px;line-height:1.68;color:#f8f8f2\"><div style=\"margin-bottom:9px;padding:9px 11px;background:rgba(255,140,66,0.12);border-left:3px solid #ff8c42;border-radius:8px\"><span style=\"color:#ffbf8f\">⬢ Description:</span> $3</div><div style=\"padding:9px 11px;background:rgba(255,255,255,0.04);border-left:3px solid #ff8c42;border-radius:8px;white-space:pre-line\">$4</div></div></details>",
       "trimStrings": [],
       "placement": [
@@ -329,7 +329,7 @@
     {
       "id": "26f01a16-8260-4e89-849c-e00e44b71442",
       "scriptName": "Replace Reputation Tracker",
-      "findRegex": "/\\[REP\\|([^|\\]]+)\\|([^|\\]]+)\\|([^|\\]]+)\\]\\n*(?:cause:\\s*)?((?:(?!\\[(?:REP|SECRET|STATUS|EVENT|SCENE|ACH|ITEM|TIME|METER|NPC|CHOICES|WORLD|PARALLEL)\\b)[^\\[])*?)(?:\\n*\\[\\/REP\\])?(?=\\n|$)/g",
+      "findRegex": "/\\[REP\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\]\\n*(?:cause:[ \\t]*)?([^\\[]*(?=\\[\\/REP\\])|[^\\r\\n\\[]*)(?:\\[\\/REP\\])?/g",
       "replaceString": "<details style=\"margin:10px 0\"><summary style=\"padding:10px 13px;background:linear-gradient(135deg,rgba(38,30,18,0.97),rgba(118,83,34,0.7));border-radius:12px;border:1px solid rgba(255,200,124,0.5);box-shadow:0 10px 24px rgba(0,0,0,0.28);color:#ffd7a3;font-family:monospace;font-size:11px;cursor:pointer\">👥 Source: $1 · 👁 Perception: $2</summary><div style=\"padding:13px;background:linear-gradient(180deg,rgba(20,22,28,0.97),rgba(34,37,46,0.96));border-radius:0 0 12px 12px;border:1px solid rgba(255,200,124,0.34);border-top:none;font-size:11px;line-height:1.68;color:#f8f8f2\"><div style=\"margin-bottom:9px;padding:9px 11px;background:rgba(255,255,255,0.04);border-left:3px solid #ffc87c;border-radius:8px\"><span style=\"color:#ffd7a3\">⬢ Direction:</span> $3</div><div style=\"padding:9px 11px;background:rgba(255,255,255,0.04);border-left:3px solid #ffc87c;border-radius:8px;white-space:pre-line\"><span style=\"color:#ffd7a3\">⬢ Cause:</span> $4</div></div></details>",
       "trimStrings": [],
       "placement": [
@@ -348,7 +348,7 @@
     {
       "id": "f9c4458e-3072-405a-94b2-07662fed10dd",
       "scriptName": "Replace Secret Tracker",
-      "findRegex": "/\\[SECRET\\|([^|\\]]+)\\|([^|\\]]+)\\|([^|\\]]+)\\]\\n*(?:context:\\s*)?((?:(?!\\[(?:REP|SECRET|STATUS|EVENT|SCENE|ACH|ITEM|TIME|METER|NPC|CHOICES|WORLD|PARALLEL)\\b)[^\\[])*?)(?:\\n*\\[\\/SECRET\\])?(?=\\n|$)/g",
+      "findRegex": "/\\[SECRET\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\]\\n*(?:context:[ \\t]*)?([^\\[]*(?=\\[\\/SECRET\\])|[^\\r\\n\\[]*)(?:\\[\\/SECRET\\])?/g",
       "replaceString": "<details style=\"margin:10px 0\"><summary style=\"padding:10px 13px;background:linear-gradient(135deg,rgba(24,26,32,0.97),rgba(84,49,126,0.72));border-radius:12px;border:1px solid rgba(189,147,249,0.52);box-shadow:0 10px 24px rgba(0,0,0,0.28);color:#d6b8ff;font-family:monospace;font-size:11px;cursor:pointer\">🔒 $1 · $2</summary><div style=\"padding:13px;background:linear-gradient(180deg,rgba(20,22,28,0.97),rgba(34,37,46,0.96));border-radius:0 0 12px 12px;border:1px solid rgba(189,147,249,0.34);border-top:none;font-size:11px;line-height:1.68;color:#f8f8f2\"><div style=\"margin-bottom:9px;padding:9px 11px;background:rgba(255,255,255,0.04);border-left:3px solid #bd93f9;border-radius:8px\"><span style=\"color:#d6b8ff\">⬢ Also Know:</span> $3</div><div style=\"padding:9px 11px;background:rgba(255,255,255,0.04);border-left:3px solid #bd93f9;border-radius:8px;white-space:pre-line\"><span style=\"color:#d6b8ff\">⬢ Context:</span> $4</div></div></details>",
       "trimStrings": [],
       "placement": [
@@ -367,7 +367,7 @@
     {
       "id": "5c667ee9-0037-4eb5-a93d-a578c5b78048",
       "scriptName": "Replace Item Tracker",
-      "findRegex": "/\\[ITEM\\|([^|\\]]+)\\|([^|\\]]+)\\|([^|\\]]+)\\]\\n*(?:note:\\s*)?((?:(?!\\[(?:REP|SECRET|STATUS|EVENT|SCENE|ACH|ITEM|TIME|METER|NPC|CHOICES|WORLD|PARALLEL)\\b)[^\\[])*?)(?:\\n*\\[\\/ITEM\\])?(?=\\n|$)/g",
+      "findRegex": "/\\[ITEM\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\]\\n*(?:note:[ \\t]*)?([^\\[]*(?=\\[\\/ITEM\\])|[^\\r\\n\\[]*)(?:\\[\\/ITEM\\])?/g",
       "replaceString": "<details style=\"margin:10px 0\"><summary style=\"padding:10px 13px;background:linear-gradient(135deg,rgba(21,28,34,0.97),rgba(31,92,111,0.68));border-radius:12px;border:1px solid rgba(139,233,253,0.5);box-shadow:0 10px 24px rgba(0,0,0,0.28);color:#a6f2ff;font-family:monospace;font-size:11px;cursor:pointer\">$1 $2 · $3</summary><div style=\"padding:13px;background:linear-gradient(180deg,rgba(20,22,28,0.97),rgba(34,37,46,0.96));border-radius:0 0 12px 12px;border:1px solid rgba(139,233,253,0.34);border-top:none;font-size:11px;line-height:1.68;color:#f8f8f2\"><div style=\"padding:9px 11px;background:rgba(255,255,255,0.04);border-left:3px solid #8be9fd;border-radius:8px;white-space:pre-line\">$4</div></div></details>",
       "trimStrings": [],
       "placement": [
@@ -386,7 +386,7 @@
     {
       "id": "a0c2d813-1d47-4250-bd53-cd8fac504259",
       "scriptName": "Replace World Detail",
-      "findRegex": "/\\[WORLD\\|([^|\\]]+)\\|([^|\\]]+)\\]\\n*(?:detail:\\s*)?((?:(?!\\[(?:REP|SECRET|STATUS|EVENT|SCENE|ACH|ITEM|TIME|METER|NPC|CHOICES|WORLD|PARALLEL)\\b)[^\\[])*?)(?:\\n*\\[\\/WORLD\\])?(?=\\n|$)/g",
+      "findRegex": "/\\[WORLD\\|([^|\\]\\r\\n]+)\\|([^|\\]\\r\\n]+)\\]\\n*(?:detail:[ \\t]*)?([^\\[]*(?=\\[\\/WORLD\\])|[^\\r\\n\\[]*)(?:\\[\\/WORLD\\])?/g",
       "replaceString": "<details style=\"margin:10px 0\"><summary style=\"padding:10px 13px;background:linear-gradient(135deg,rgba(18,34,28,0.97),rgba(28,104,84,0.68));border-radius:12px;border:1px solid rgba(126,219,194,0.48);box-shadow:0 10px 24px rgba(0,0,0,0.28);color:#a8f0db;font-family:monospace;font-size:11px;cursor:pointer\">🌐 World · $1 · $2</summary><div style=\"padding:13px;background:linear-gradient(180deg,rgba(20,22,28,0.97),rgba(34,37,46,0.96));border-radius:0 0 12px 12px;border:1px solid rgba(126,219,194,0.32);border-top:none;font-size:11px;line-height:1.68;color:#f8f8f2\"><div style=\"padding:9px 11px;background:rgba(255,255,255,0.04);border-left:3px solid #3d8b7a;border-radius:8px\">$3</div></div></details>",
       "trimStrings": [],
       "placement": [

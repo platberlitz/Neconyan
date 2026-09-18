@@ -9,7 +9,7 @@
     "pov",
     "user"
   ],
-  "version": 1,
+  "version": 2,
   "author": "Purachina",
   "prompt": "{{setvar::writefor::Write for every character including <user>, treating <user> as a fully realized scene character. Write <user>'s dialogue, actions, and inner thoughts. Continue directly from the current moment through fresh dialogue, action, inference, and reaction that changes pressure, relation, or available options. Comprehension surfaces through behavior, timing, choice, and consequence. Stop the scene at the first moment a character must decide, respond, or act. Cut mid-tension. The response is a single scene beat; it ends when the next meaningful choice arrives, and the next meaningful choice always arrives quickly.}}{{trim}}Write for every character including {{user}}, treating {{user}} as a fully realized scene character. Write {{user}}'s dialogue, actions, and inner thoughts. Continue directly from the current moment through fresh dialogue, action, inference, and reaction that changes pressure, relation, or available options. Comprehension surfaces through behavior, timing, choice, and consequence. Stop the scene at the first moment a character must decide, respond, or act. Cut mid-tension. The response is a single scene beat; it ends when the next meaningful choice arrives, and the next meaningful choice always arrives quickly.",
   "phase": "pre",

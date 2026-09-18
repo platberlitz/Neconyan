@@ -835,7 +835,7 @@ describe('in-chat agent scoped enabled state', () => {
         ]));
     });
 
-    test('removes duplicate Pathfinder template agents while keeping the bundled automatic entry', async () => {
+    test('preserves all deliberately added Pathfinder copies', async () => {
         const store = await importStore();
         const templates = [{
             id: 'tpl-pathfinder',
@@ -873,7 +873,7 @@ describe('in-chat agent scoped enabled state', () => {
             },
         ];
 
-        expect(store.getRedundantBundledAgentDuplicateIds(agents, templates)).toEqual(['duplicate-pathfinder']);
+        expect(store.getRedundantBundledAgentDuplicateIds(agents, templates)).toEqual([]);
     });
 
     test('keeps an enabled same-template copy even when a fresh template copy exists', async () => {
@@ -949,7 +949,8 @@ describe('in-chat agent scoped enabled state', () => {
             { ...base, id: 'first-copy', enabled: false },
             { ...base, id: 'second-copy', enabled: false },
         ];
-        expect(store.getRedundantBundledAgentDuplicateIds(untouchedSeeds, templates)).toEqual(['second-copy']);
+        expect(store.getRedundantBundledAgentDuplicateIds(untouchedSeeds, templates)).toEqual([]);
+        expect(store.getBundledAgentLatestTemplatePlan(untouchedSeeds, templates).redundantIds).toEqual([]);
     });
 
     test('refreshes saved bundled agents from the latest template while preserving runtime state', async () => {
@@ -1032,7 +1033,7 @@ describe('in-chat agent scoped enabled state', () => {
         ]));
     });
 
-    test('keeps customised bundled setup copies while updating the keeper', async () => {
+    test('updates every unlocked outdated template copy without deleting any copy', async () => {
         const store = await importStore();
         const templates = [{
             id: 'tpl-relationship-lens-companion',
@@ -1087,7 +1088,8 @@ describe('in-chat agent scoped enabled state', () => {
         const plan = store.getBundledAgentLatestTemplatePlan(agents, templates);
 
         expect(plan.redundantIds).toEqual([]);
-        expect(plan.updates).toHaveLength(1);
+        expect(plan.updates).toHaveLength(2);
+        expect(plan.updates.map(update => update.agent.id)).toEqual(['old-relationship-lens', 'duplicate-relationship-lens']);
         expect(plan.updates[0].agent.id).toBe('old-relationship-lens');
         expect(plan.updates[0].agent.prompt).toBe('latest relationship prompt');
         expect(plan.updates[0].agent.companion).toEqual(expect.objectContaining({
@@ -1097,7 +1099,7 @@ describe('in-chat agent scoped enabled state', () => {
         }));
     });
 
-    test('does not refresh same-version bundled agents while still removing duplicates', async () => {
+    test('keeps same-version bundled copies without refreshing or deleting them', async () => {
         const store = await importStore();
         const templates = [{
             id: 'tpl-current-agent',
@@ -1137,7 +1139,7 @@ describe('in-chat agent scoped enabled state', () => {
         const plan = store.getBundledAgentLatestTemplatePlan(agents, templates);
 
         expect(plan.updates).toEqual([]);
-        expect(plan.redundantIds).toEqual(['duplicate-current-agent']);
+        expect(plan.redundantIds).toEqual([]);
     });
 
     test('does not mark phase-locked same-template duplicates redundant', async () => {
@@ -1295,12 +1297,19 @@ describe('imports, kits and reorders are safe to fail', () => {
         return await import('../public/scripts/extensions/in-chat-agents/agent-store.js');
     }
 
-    function mockFetch({ failOn = () => false } = {}) {
+    function mockFetch({ failOn = () => false, initial = [] } = {}) {
         const calls = [];
+        const agents = new Map(initial.map(agent => [agent.id, structuredClone(agent)]));
+        const presets = new Map();
         globalThis.fetch = jest.fn(async (url, request) => {
             const body = JSON.parse(request.body);
             calls.push({ url, body });
-            return { ok: !failOn(url, body) };
+            if (failOn(url, body)) return { ok: false };
+            if (url === '/api/settings/get') return { ok: true, json: async () => ({ inChatAgents: [...agents.values()] }) };
+            const collection = url.includes('/presets/') ? presets : agents;
+            if (url.endsWith('/save')) collection.set(body.id, structuredClone(body));
+            if (url.endsWith('/delete')) collection.delete(body.id);
+            return { ok: true, json: async () => body };
         });
         return calls;
     }
@@ -1389,11 +1398,12 @@ describe('imports, kits and reorders are safe to fail', () => {
 
     test('a failed reorder save leaves the live order untouched', async () => {
         const store = await importStore();
-        store.loadAgents([
+        const initial = [
             { id: 'first', name: 'First', prompt: 'p', injection: { order: 10 } },
             { id: 'second', name: 'Second', prompt: 'p', injection: { order: 20 } },
-        ]);
-        mockFetch({ failOn: url => url.endsWith('/save') });
+        ];
+        store.loadAgents(initial);
+        mockFetch({ initial, failOn: url => url === '/api/in-chat-agents/save' });
 
         await expect(store.reorderAgentsIntoOrderSlots(['second', 'first'])).rejects.toThrow();
 

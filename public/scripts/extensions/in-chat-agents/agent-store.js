@@ -849,101 +849,6 @@ export function isBundledPathfinderAgentSnapshot(agent, templates = []) {
         (agentAuthor === 'sillybunny' || hasPathfinderToolMetadata(agent));
 }
 
-function getBundledAgentDuplicateKey(agent, templates = []) {
-    if (isBundledPathfinderAgentSnapshot(agent, templates)) {
-        return `template\u0000${PATHFINDER_TEMPLATE_ID}`;
-    }
-
-    const agentName = String(agent?.name ?? '').trim().toLowerCase();
-    const agentPrompt = String(agent?.prompt ?? '').trim();
-    if (!agentName || !agentPrompt) {
-        return '';
-    }
-
-    return `${agentName}\u0000${agentPrompt}`;
-}
-
-function getPathfinderKeepRank(agent) {
-    const sourceTemplateId = String(agent?.sourceTemplateId ?? '').trim();
-    if (sourceTemplateId === PATHFINDER_TEMPLATE_ID && !agent?.phaseLocked) {
-        return 0;
-    }
-    if (sourceTemplateId === PATHFINDER_TEMPLATE_ID) {
-        return 1;
-    }
-    if (!agent?.phaseLocked) {
-        return 2;
-    }
-    return 3;
-}
-
-function choosePathfinderAgentToKeep(agents) {
-    return [...agents].sort((a, b) => getPathfinderKeepRank(a) - getPathfinderKeepRank(b))[0] ?? null;
-}
-
-function chooseSameTemplateAgentToKeep(agents, template) {
-    const templatePrompt = template ? String(template?.prompt ?? '').trim() : null;
-    if (templatePrompt !== null) {
-        const currentTemplatePromptAgent = agents.find(agent => String(agent?.prompt ?? '').trim() === templatePrompt);
-        if (currentTemplatePromptAgent) {
-            return currentTemplatePromptAgent;
-        }
-    }
-
-    return agents.find(agent => agent?.enabled) ?? agents[0] ?? null;
-}
-
-function chooseBundledTemplateAgentToKeep(agents, template) {
-    const templateId = String(template?.id ?? '').trim();
-    const templatePrompt = String(template?.prompt ?? '').trim();
-    const withCurrentPrompt = agents.find(agent =>
-        String(agent?.sourceTemplateId ?? '').trim() === templateId &&
-        String(agent?.prompt ?? '').trim() === templatePrompt,
-    );
-    if (withCurrentPrompt) {
-        return withCurrentPrompt;
-    }
-
-    const currentPromptAgent = agents.find(agent => String(agent?.prompt ?? '').trim() === templatePrompt);
-    if (currentPromptAgent) {
-        return currentPromptAgent;
-    }
-
-    const sourceBackedEnabled = agents.find(agent => String(agent?.sourceTemplateId ?? '').trim() === templateId && agent?.enabled);
-    if (sourceBackedEnabled) {
-        return sourceBackedEnabled;
-    }
-
-    return agents.find(agent => String(agent?.sourceTemplateId ?? '').trim() === templateId)
-        ?? agents.find(agent => agent?.enabled)
-        ?? agents[0]
-        ?? null;
-}
-
-/**
- * Automatic cleanup may only delete copies that are demonstrably leftovers of an
- * automatic seed or migration: paused everywhere, not locked, not favourited, and
- * either carrying the current template prompt (a fresh seed) or identical in name
- * and prompt to the copy being kept. Anything else may be a deliberate 'Add another'.
- */
-function isAutomaticDuplicateCopy(agent, keepAgent, template = null, templates = []) {
-    if (!agent?.id || agent.phaseLocked || agent.favorite) {
-        return false;
-    }
-    if (Boolean(agent.enabled) || isAgentEnabledForAnyScope(agent)) {
-        return false;
-    }
-
-    const agentPrompt = String(agent?.prompt ?? '').trim();
-    const templatePrompt = template ? String(template?.prompt ?? '').trim() : null;
-    if (templatePrompt !== null && agentPrompt === templatePrompt) {
-        return true;
-    }
-
-    const agentKey = getBundledAgentDuplicateKey(agent, templates);
-    return Boolean(agentKey) && agentKey === getBundledAgentDuplicateKey(keepAgent, templates);
-}
-
 function cloneSettings(settings = {}) {
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
         return {};
@@ -989,150 +894,29 @@ function normalizedAgentJson(agent) {
 }
 
 export function getBundledAgentLatestTemplatePlan(agentList = [], templateList = []) {
-    const groupsByTemplateId = new Map();
-    const templatesById = new Map();
-
+    const updates = [];
     for (const agent of agentList) {
-        if (!agent || agent.phaseLocked) {
-            continue;
-        }
-
+        if (!agent?.id || agent.phaseLocked) continue;
         const template = findTemplateForAgentSnapshot(agent, templateList);
         const templateId = String(template?.id ?? '').trim();
-        if (!templateId) {
-            continue;
-        }
-
-        templatesById.set(templateId, template);
-        if (!groupsByTemplateId.has(templateId)) {
-            groupsByTemplateId.set(templateId, []);
-        }
-        groupsByTemplateId.get(templateId).push(agent);
-    }
-
-    const redundantIds = new Set(getRedundantBundledAgentDuplicateIds(agentList, templateList));
-    const updates = [];
-
-    for (const [templateId, grouped] of groupsByTemplateId.entries()) {
-        const template = templatesById.get(templateId);
-        const keepAgent = chooseBundledTemplateAgentToKeep(grouped, template);
-        if (!keepAgent?.id) {
-            continue;
-        }
-
-        for (const agent of grouped) {
-            if (agent?.id && agent.id !== keepAgent.id && isAutomaticDuplicateCopy(agent, keepAgent, template, templateList)) {
-                redundantIds.add(agent.id);
-            }
-        }
-
-        const keepAgentVersion = Number(keepAgent?.version ?? 1);
+        if (!templateId) continue;
+        const agentVersion = Number(agent.version ?? 1);
         const templateVersion = Number(template?.version ?? 1);
         if (
-            (Number.isFinite(keepAgentVersion) ? keepAgentVersion : 1) >=
+            (Number.isFinite(agentVersion) ? agentVersion : 1) >=
             (Number.isFinite(templateVersion) ? templateVersion : 1)
-        ) {
-            continue;
-        }
-
-        const latestAgent = buildLatestBundledAgentSnapshot(keepAgent, template);
-        if (normalizedAgentJson(latestAgent) !== normalizedAgentJson(keepAgent)) {
-            updates.push({
-                agentId: keepAgent.id,
-                templateId,
-                agent: latestAgent,
-            });
+        ) continue;
+        const latestAgent = buildLatestBundledAgentSnapshot(agent, template);
+        if (normalizedAgentJson(latestAgent) !== normalizedAgentJson(agent)) {
+            updates.push({ agentId: agent.id, templateId, agent: latestAgent });
         }
     }
-
-    return {
-        updates,
-        redundantIds: [...redundantIds].filter(id => !updates.some(update => update.agentId === id)),
-    };
+    return { updates, redundantIds: [] };
 }
 
-export function getRedundantBundledAgentDuplicateIds(agentList = [], templateList = []) {
-    const groupedAgents = new Map();
-
-    for (const agent of agentList) {
-        const key = getBundledAgentDuplicateKey(agent, templateList);
-        if (!key) {
-            continue;
-        }
-
-        if (!groupedAgents.has(key)) {
-            groupedAgents.set(key, []);
-        }
-
-        groupedAgents.get(key).push(agent);
-    }
-
-    const redundantIds = new Set();
-
-    for (const grouped of groupedAgents.values()) {
-        if (grouped.length < 2) {
-            continue;
-        }
-
-        const pathfinderAgents = grouped.filter(agent => isBundledPathfinderAgentSnapshot(agent, templateList));
-        if (pathfinderAgents.length > 1) {
-            const keepAgent = choosePathfinderAgentToKeep(pathfinderAgents);
-            for (const agent of pathfinderAgents) {
-                if (agent?.id && agent.id !== keepAgent?.id && !agent.phaseLocked) {
-                    redundantIds.add(agent.id);
-                }
-            }
-            continue;
-        }
-
-        const templateBacked = grouped.filter(agent => String(agent?.sourceTemplateId ?? '').trim());
-        const unsourced = grouped.filter(agent => !String(agent?.sourceTemplateId ?? '').trim());
-
-        if (templateBacked.length !== 1 || unsourced.length === 0) {
-            continue;
-        }
-
-        const template = findTemplateForAgentSnapshot(templateBacked[0], templateList);
-        if (!template) {
-            continue;
-        }
-
-        for (const agent of unsourced) {
-            if (isAutomaticDuplicateCopy(agent, templateBacked[0], template, templateList)) {
-                redundantIds.add(agent.id);
-            }
-        }
-    }
-
-    const agentsByTemplateId = new Map();
-    for (const agent of agentList) {
-        const sourceTemplateId = String(agent?.sourceTemplateId ?? '').trim();
-        if (!sourceTemplateId) {
-            continue;
-        }
-
-        if (!agentsByTemplateId.has(sourceTemplateId)) {
-            agentsByTemplateId.set(sourceTemplateId, []);
-        }
-
-        agentsByTemplateId.get(sourceTemplateId).push(agent);
-    }
-
-    for (const grouped of agentsByTemplateId.values()) {
-        if (grouped.length < 2) {
-            continue;
-        }
-
-        const template = findTemplateForAgentSnapshot(grouped[0], templateList);
-        const keepAgent = chooseSameTemplateAgentToKeep(grouped, template);
-        for (const agent of grouped) {
-            if (agent?.id && agent.id !== keepAgent?.id && isAutomaticDuplicateCopy(agent, keepAgent, template, templateList)) {
-                redundantIds.add(agent.id);
-            }
-        }
-    }
-
-    return [...redundantIds];
+export function getRedundantBundledAgentDuplicateIds() {
+    // Similarity cannot distinguish automatic seeds from deliberately added copies.
+    return [];
 }
 
 export function getPromptTransformMode(agent) {
@@ -2013,7 +1797,7 @@ function isSameStoredAgentRecord(current, written) {
 }
 
 /** All setup writes share the agent queue; a restore point exists before the first write. */
-export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPersist = () => true, confirmExtras = async () => true } = {}) {
+export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPersist = () => true, confirmExtras = async () => true, updateAgents = null } = {}) {
     const preset = normalizeAgentSetupPreset(rawPreset);
     if (!preset) return Promise.reject(new Error('Invalid agent setup.'));
     const context = storageContext;
@@ -2047,10 +1831,11 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
             const extras = previousAgents.filter(agent => !included.has(agent.id));
             if (!await confirmExtras(extras.filter(isAgentEnabledForAnyScope))) return false;
             assertCurrent();
-            const nextAgents = [
+            const nextAgents = updateAgents ? updateAgents(previousAgents) : [
                 ...preset.agents.map(agent => normalizeAgent(mergeAgentSetupRecord(previousById.get(agent.id) ?? {}, agent))),
                 ...extras.map(agent => ({ ...structuredClone(agent), enabled: false })),
             ];
+            if (!normalizeAgentSetupPreset({ ...preset, agents: nextAgents, globalSettings: previousGlobals })) throw new Error('The complete agent change exceeds the setup storage limits or contains invalid references.');
             recovery = await saveAgentSetupPreset(`Recovery before ${preset.name}`.slice(0, 120), {
                 snapshot: { agents: previousAgents, globalSettings: previousGlobals, recoveryFor: preset.id },
                 canPersist,
@@ -2066,10 +1851,12 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
             }
             assertCurrent();
             if (JSON.stringify(globalSettings) !== JSON.stringify(previousGlobals)) throw new Error('Agent settings changed during the load; the setup was not applied.');
-            setGlobalSettings(buildAppliedGlobalSettings(preset));
-            appliedGlobals = structuredClone(globalSettings);
-            persistAgentGlobalSettings();
-            if (await saveSettings(0, { returnResult: true }) !== true) throw new Error('The setup settings could not be saved.');
+            if (!updateAgents) {
+                setGlobalSettings(buildAppliedGlobalSettings(preset));
+                appliedGlobals = structuredClone(globalSettings);
+                persistAgentGlobalSettings();
+                if (await saveSettings(0, { returnResult: true }) !== true) throw new Error('The setup settings could not be saved.');
+            }
             assertCurrent();
             loadAgents(nextAgents, { fromServer: false });
         } catch (error) {
@@ -2149,6 +1936,26 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
     return operation;
 }
 
+/** Use the existing recoverable setup operation for a batch, without changing other agents or global settings. */
+export function saveAgentBatch(snapshots, name = 'Agent changes') {
+    if (getAgentLibraryErrors().length || hasPendingAgentRecovery()) return Promise.reject(new Error('Load a complete agent library or finish setup recovery before making batch changes.'));
+    const changes = snapshots.map(snapshot => normalizeAgent(structuredClone(snapshot)));
+    if (!changes.length) return Promise.resolve(false);
+    const expected = new Map(changes.map(agent => [agent.id, structuredClone(storedRecords.agent.get(agent.id) ?? null)]));
+    return applyAgentSetupPreset({ id: uuidv4(), name, version: 1, agents: changes, globalSettings: {} }, {
+        updateAgents: previous => {
+            const byId = new Map(previous.map(agent => [agent.id, agent]));
+            for (const agent of changes) {
+                const current = byId.get(agent.id) ?? null;
+                const original = expected.get(agent.id);
+                if ((current || original) && !isSameStoredAgentRecord(current, original)) throw new Error(`Agent ${agent.name || agent.id} changed elsewhere. Reload it before retrying.`);
+                byId.set(agent.id, agent);
+            }
+            return [...byId.values()];
+        },
+    });
+}
+
 /**
  * Saves an agent to the server. Updates local array.
  * @param {InChatAgent|string} agent Agent snapshot, or ID when updating the latest saved state
@@ -2218,7 +2025,7 @@ export async function reorderAgentsIntoOrderSlots(orderedSubsetIds) {
             return nextId;
         });
 
-    let changed = false;
+    const changes = [];
     for (let i = 0; i < finalOrderIds.length; i++) {
         const agent = getAgentById(finalOrderIds[i]);
         if (!agent) {
@@ -2230,18 +2037,9 @@ export async function reorderAgentsIntoOrderSlots(orderedSubsetIds) {
             continue;
         }
 
-        // Stage the new order on a copy; the live record only changes once the server accepts it.
-        await saveAgent(agent.id, {
-            update: draft => {
-                if (!draft) return null;
-                draft.injection = { ...(draft.injection ?? {}), order: desiredOrder };
-                return draft;
-            },
-        });
-        changed = true;
+        changes.push({ ...structuredClone(agent), injection: { ...agent.injection, order: desiredOrder } });
     }
-
-    return changed;
+    return await saveAgentBatch(changes, 'Agent order');
 }
 
 /**
@@ -2288,10 +2086,23 @@ export async function importAgents(data) {
         throw new Error('Unrecognized agent format');
     }
 
-    // Validate and normalise the whole pack before the first write so a broken later entry
-    // cannot leave an undisclosed partial import behind.
+    const prepared = prepareAgentCopies(agentsToImport);
+    await saveAgentBatch(prepared, 'Imported agents');
+    return prepared;
+}
+
+function remapAgentReferences(agent, idMap) {
+    for (const [parent, key] of [[agent.companion, 'batchAgentIds'], [agent.companion, 'contextRecipientAgentIds'],
+        [agent.companion, 'dependencies'], [agent.conditions, 'companionOutputTargetAgentIds']]) {
+        if (Array.isArray(parent?.[key])) parent[key] = parent[key].map(id => idMap.get(id) ?? id);
+    }
+    return agent;
+}
+
+function prepareAgentCopies(snapshots, knownIds = new Map()) {
+    if (snapshots.length > AGENT_STORAGE_LIMITS.agentCount) throw new Error('Too many agents in this pack.');
     const idMap = new Map();
-    const prepared = agentsToImport.map((rawAgent, index) => {
+    const prepared = snapshots.map((rawAgent, index) => {
         if (!rawAgent || typeof rawAgent !== 'object' || Array.isArray(rawAgent)) {
             throw new Error(`Agent ${index + 1} in the pack is not an object`);
         }
@@ -2301,28 +2112,55 @@ export async function importAgents(data) {
         if (oldId && idMap.has(oldId)) throw new Error(`The imported pack repeats agent identifier ${oldId}.`);
         if (oldId) idMap.set(oldId, newId);
         // Imported agents start paused so they can be reviewed before they run.
-        return normalizeAgent({ ...createDefaultAgent(), ...rawAgent, id: newId, enabled: false });
+        const agent = normalizeAgent({ ...createDefaultAgent(), ...rawAgent, id: newId, enabled: false,
+            sourceTemplateId: rawAgent.sourceTemplateId || (oldId.startsWith('tpl-') ? oldId : '') });
+        delete agent.kitOrigin;
+        return agent;
     });
+    for (const [source, target] of knownIds) idMap.set(source, target);
+    return prepared.map(agent => remapAgentReferences(agent, idMap));
+}
 
-    const remap = ids => (Array.isArray(ids) ? ids.map(id => idMap.get(id) ?? id) : ids);
-    for (const agent of prepared) {
-        if (agent.companion) {
-            agent.companion.batchAgentIds = remap(agent.companion.batchAgentIds);
-            agent.companion.contextRecipientAgentIds = remap(agent.companion.contextRecipientAgentIds);
-            agent.companion.dependencies = remap(agent.companion.dependencies);
+export function getUnresolvedAgentReferences(records) {
+    const available = new Set([...getAgents(), ...records].flatMap(agent => [agent.id, agent.sourceTemplateId]).filter(Boolean));
+    return [...new Set(records.flatMap(agent => [agent.companion?.batchAgentIds, agent.companion?.contextRecipientAgentIds,
+        agent.companion?.dependencies, agent.conditions?.companionOutputTargetAgentIds].flatMap(ids => ids ?? [])))].filter(id => !available.has(id));
+}
+
+function comparableKitAgent(agent) {
+    const copy = normalizeAgent(structuredClone(agent));
+    for (const key of ['id', 'enabled', 'favorite', 'kitOrigin']) delete copy[key];
+    return serializeAgentRecord(copy);
+}
+
+/** Preserve a kit's local identities and copy count; repeat installation reuses an unchanged complete set. */
+export async function installAgentGroup(group, snapshots) {
+    const source = snapshots.map((agent, index) => ({ ...agent, id: agent.id ?? `kit-agent-${index}` }));
+    let prepared;
+    if (group.builtin) {
+        const installed = new Map(source.flatMap(agent => {
+            const existing = getAgents().find(item => item.sourceTemplateId === (agent.sourceTemplateId || agent.id));
+            return existing ? [[agent.id, existing.id]] : [];
+        }));
+        prepared = prepareAgentCopies(source.filter(agent => !installed.has(agent.id)), installed);
+    } else {
+        const installations = new Map();
+        for (const agent of getAgents()) {
+            if (agent.kitOrigin?.kitId !== group.id) continue;
+            const key = agent.kitOrigin.installationId;
+            if (!installations.has(key)) installations.set(key, new Map());
+            installations.get(key).set(agent.kitOrigin.agentId, agent);
         }
-        if (agent.conditions) {
-            agent.conditions.companionOutputTargetAgentIds = remap(agent.conditions.companionOutputTargetAgentIds);
+        for (const existing of installations.values()) {
+            const idMap = new Map(source.flatMap(agent => existing.has(agent.id) ? [[agent.id, existing.get(agent.id).id]] : []));
+            if (source.length === idMap.size && source.every(agent => comparableKitAgent(remapAgentReferences(structuredClone(agent), idMap)) === comparableKitAgent(existing.get(agent.id)))) return [];
         }
+        prepared = prepareAgentCopies(source);
+        const installationId = uuidv4();
+        prepared.forEach((agent, index) => { agent.kitOrigin = { kitId: group.id, installationId, agentId: source[index].id }; });
     }
-
-    const imported = [];
-    for (const agent of prepared) {
-        await saveAgent(agent);
-        imported.push(agent);
-    }
-
-    return imported;
+    await saveAgentBatch(prepared, `Install ${group.name}`.slice(0, 120));
+    return prepared;
 }
 
 /**
@@ -2406,7 +2244,7 @@ function normalizeGroup(rawGroup = {}, { builtin = false } = {}) {
             ? rawGroup.agentTemplateIds.map(id => String(id ?? '').trim()).filter(Boolean)
             : [],
         customAgents: Array.isArray(rawGroup.customAgents)
-            ? rawGroup.customAgents.map(agent => normalizeGroupAgentSnapshot(agent ?? {}))
+            ? rawGroup.customAgents.map((agent, index) => normalizeGroupAgentSnapshot({ ...agent, id: agent.id ?? `kit-agent-${index}` }))
             : [],
         builtin: builtin || Boolean(rawGroup.builtin),
     };

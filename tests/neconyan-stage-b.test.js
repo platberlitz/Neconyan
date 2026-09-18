@@ -357,6 +357,73 @@ describe('Agent setup apply and recovery', () => {
         expect(runtime.writes).toHaveLength(writes);
     });
 
+    test('a later import failure rolls back earlier copies and a retry installs exactly one linked set', async () => {
+        const runtime = await storeRuntime();
+        const globals = structuredClone(runtime.store.getGlobalSettings());
+        const pack = { format: 'sillybunny-inchat-agents', version: 1, agents: [
+            { id: 'tpl-first', name: 'Imported first', prompt: 'first', enabled: true, companion: { dependencies: ['second'] } },
+            { id: 'second', name: 'Imported second', prompt: 'second', enabled: true, companion: { contextRecipientAgentIds: ['tpl-first'] } },
+        ] };
+        runtime.state.hook = async (_url, payload) => { if (payload.name === 'Imported second') throw new Error('Second write failed'); };
+        await expect(runtime.store.importAgents(pack)).rejects.toThrow('Second write failed');
+        expect([...runtime.agents.values()]).toEqual(runtime.initial);
+        expect(runtime.store.getGlobalSettings()).toEqual(globals);
+        expect(runtime.presets.size).toBe(0);
+        runtime.state.hook = async () => {};
+        const [first, second] = await runtime.store.importAgents(pack);
+        expect(runtime.agents.size).toBe(4);
+        expect(first).toMatchObject({ enabled: false, sourceTemplateId: 'tpl-first', companion: { dependencies: [second.id] } });
+        expect(second).toMatchObject({ enabled: false, companion: { contextRecipientAgentIds: [first.id] } });
+        expect(runtime.store.getGlobalSettings()).toEqual(globals);
+        expect(runtime.agents.get('extra')).toEqual(runtime.initial[1]);
+    });
+
+    test('a failed middle reorder restores all previous orders', async () => {
+        const runtime = await storeRuntime();
+        const initial = runtime.initial.map((agent, index) => ({ ...agent, injection: { order: 10 + index * 10 } }));
+        runtime.agents.clear();
+        initial.forEach(agent => runtime.agents.set(agent.id, structuredClone(agent)));
+        runtime.store.loadAgents(initial);
+        runtime.state.hook = async (_url, payload) => { if (payload.id === 'extra' && payload.injection.order === 0) throw new Error('Order write failed'); };
+        await expect(runtime.store.reorderAgentsIntoOrderSlots(['extra', 'a'])).rejects.toThrow('Order write failed');
+        expect([...runtime.agents.values()]).toEqual(initial);
+        expect(runtime.store.getAgentById('a').injection.order).toBe(10);
+        expect(runtime.store.getAgentById('extra').injection.order).toBe(20);
+    });
+
+    test('custom kits preserve same-template variants, local links and repeat installation', async () => {
+        const runtime = await storeRuntime();
+        const group = { id: 'linked-kit', name: 'Linked kit', builtin: false };
+        const snapshots = [
+            { id: 'local-a', name: 'First variant', sourceTemplateId: 'tpl-tracker', prompt: 'track A', companion: { dependencies: ['local-b'] } },
+            { id: 'local-b', name: 'Second variant', sourceTemplateId: 'tpl-tracker', prompt: 'track B', companion: { contextRecipientAgentIds: ['local-a'] } },
+        ];
+        const [first, second] = await runtime.store.installAgentGroup(group, snapshots);
+        expect(first.companion.dependencies).toEqual([second.id]);
+        expect(second.companion.contextRecipientAgentIds).toEqual([first.id]);
+        expect(runtime.agents.size).toBe(4);
+        const writes = runtime.writes.length;
+        await expect(runtime.store.installAgentGroup(group, snapshots)).resolves.toEqual([]);
+        expect(runtime.writes).toHaveLength(writes);
+        expect(runtime.agents.get('a')).toEqual(runtime.initial[0]);
+        expect(runtime.agents.get('extra')).toEqual(runtime.initial[1]);
+        runtime.store.loadCustomGroups([{ ...group, customAgents: snapshots }]);
+        expect(runtime.store.getCustomGroups()[0].customAgents.map(agent => agent.id)).toEqual(['local-a', 'local-b']);
+    });
+
+    test('a failed kit installation leaves no partial copies, and malformed packs write nothing', async () => {
+        const runtime = await storeRuntime();
+        runtime.state.hook = async (_url, payload) => { if (payload.name === 'Second') throw new Error('Kit write failed'); };
+        await expect(runtime.store.installAgentGroup({ id: 'kit', name: 'Kit' }, [
+            { id: 'first', name: 'First', prompt: 'one' }, { id: 'second', name: 'Second', prompt: 'two' },
+        ])).rejects.toThrow('Kit write failed');
+        expect([...runtime.agents.values()]).toEqual(runtime.initial);
+        const writes = runtime.writes.length;
+        await expect(runtime.store.importAgents({ format: 'sillybunny-inchat-agents', agents: [{ id: 'same' }, { id: 'same' }] })).rejects.toThrow('repeats agent identifier');
+        expect(runtime.writes).toHaveLength(writes);
+        expect(runtime.presets.size).toBe(0);
+    });
+
     test('tool registrations recover after setup success, rollback and cancellation even when selection persistence fails', async () => {
         for (const outcome of ['success', 'rollback', 'cancel']) {
             const runtime = await storeRuntime();

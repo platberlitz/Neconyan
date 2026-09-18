@@ -111,6 +111,10 @@ beforeAll(async () => {
         reorderAgentsIntoOrderSlots: jest.fn(async () => false),
         normalizeStringIdList: jest.fn((value = []) => (Array.isArray(value) ? value : [])),
         saveAgent: jest.fn(async () => {}),
+        saveAgentBatch: jest.fn(async () => {}),
+        installAgentGroup: jest.fn(async () => []),
+        getUnresolvedAgentReferences: jest.fn(() => []),
+        buildLatestBundledAgentSnapshot: jest.fn(agent => agent),
         deleteAgent: jest.fn(async () => {}),
         createDefaultAgent: jest.fn(() => ({
             id: 'agent-id',

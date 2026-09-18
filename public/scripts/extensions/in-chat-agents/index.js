@@ -20,6 +20,9 @@ import {
     getAgentRegexScripts,
     loadAgents,
     saveAgent,
+    saveAgentBatch,
+    installAgentGroup,
+    getUnresolvedAgentReferences,
     deleteAgent,
     createDefaultAgent,
     importAgents,
@@ -47,6 +50,7 @@ import {
     isPathfinderSubmoduleEnabled,
     findTemplateForAgentSnapshot,
     getBundledAgentLatestTemplatePlan,
+    buildLatestBundledAgentSnapshot,
     getRedundantBundledAgentDuplicateIds,
     reconcileScopedEnabledAgentIdsFromLegacyFlags,
     resolveConnectionProfile,
@@ -1680,18 +1684,7 @@ function buildAgentFromTemplate(template) {
 }
 
 function buildUpdatedAgentFromTemplate(agent, template) {
-    const updatedAgent = buildAgentFromTemplate(template);
-    updatedAgent.id = agent.id;
-    updatedAgent.enabled = Boolean(agent.enabled);
-    updatedAgent.favorite = Boolean(agent.favorite);
-    updatedAgent.connectionProfile = typeof agent.connectionProfile === 'string' ? agent.connectionProfile : '';
-    updatedAgent.modelOverride = typeof agent.modelOverride === 'string' ? agent.modelOverride : '';
-    updatedAgent.injection = {
-        ...updatedAgent.injection,
-        order: getAgentOrderValue(agent),
-    };
-    updatedAgent.phaseLocked = false;
-    return updatedAgent;
+    return buildLatestBundledAgentSnapshot(agent, mergeTemplateDefaults(template));
 }
 
 async function updateAgentFromSourceTemplate(agent) {
@@ -1703,7 +1696,7 @@ async function updateAgentFromSourceTemplate(agent) {
     const agentVersion = getAgentVersionValue(agent);
     const templateVersion = getTemplateVersionValue(template);
     const result = await new Popup(
-        `Update "${escapeHtml(agent.name || template.name)}" from template v${escapeHtml(agentVersion)} to v${escapeHtml(templateVersion)}? Enabled state, quick toggle pin, order, and profile overrides will be kept.`,
+        `Update "${escapeHtml(agent.name || template.name)}" from template v${escapeHtml(agentVersion)} to v${escapeHtml(templateVersion)}? Your companion settings, context choices, enabled state, pin, order and profile overrides will be kept.`,
         POPUP_TYPE.CONFIRM,
     ).show();
 
@@ -1711,7 +1704,7 @@ async function updateAgentFromSourceTemplate(agent) {
         return;
     }
 
-    await saveAgent(buildUpdatedAgentFromTemplate(agent, template));
+    await saveAgent(agent.id, { update: current => current ? buildUpdatedAgentFromTemplate(current, template) : null });
     renderAgentList();
     toastr.success(`Updated "${template.name}" to v${templateVersion}.`);
 }
@@ -1730,7 +1723,7 @@ async function updateAllAgentsFromSourceTemplates() {
         })
         .join('');
     const result = await new Popup(
-        `Update ${outdatedAgents.length} agent(s) to their latest templates? Enabled state, quick toggle pin, order, and profile overrides will be kept.<ul class="ica--update-all-list">${names}</ul>`,
+        `Update ${outdatedAgents.length} agent(s) to their latest templates? Your companion settings, context choices, enabled state, pin, order and profile overrides will be kept.<ul class="ica--update-all-list">${names}</ul>`,
         POPUP_TYPE.CONFIRM,
     ).show();
 
@@ -1738,19 +1731,21 @@ async function updateAllAgentsFromSourceTemplates() {
         return;
     }
 
-    let updated = 0;
-    for (const agent of outdatedAgents) {
+    const changes = [];
+    for (const oldAgent of outdatedAgents) {
+        const agent = getAgentById(oldAgent.id);
+        if (!agent || agent.phaseLocked) continue;
         const template = findSourceTemplateForAgent(agent);
         if (!template) {
             continue;
         }
-        await saveAgent(buildUpdatedAgentFromTemplate(agent, template));
-        updated++;
+        changes.push(buildUpdatedAgentFromTemplate(agent, template));
     }
+    await saveAgentBatch(changes, 'Template updates');
 
     syncToolAgentRegistrations();
     renderAgentList();
-    toastr.success(`Updated ${updated} agent(s) to their latest templates.`);
+    toastr.success(`Updated ${changes.length} agent(s) to their latest templates.`);
 }
 
 function updateUpdateAllButtonVisibility() {
@@ -1759,15 +1754,6 @@ function updateUpdateAllButtonVisibility() {
     button.toggle(outdatedCount > 0);
     button.find('span').text(`Update All (${outdatedCount})`);
     button.attr('title', `Update ${outdatedCount} agent(s) whose bundled template has a newer version`);
-}
-
-function buildAgentFromSnapshot(snapshot) {
-    return {
-        ...createDefaultAgent(),
-        ...structuredClone(snapshot),
-        id: uuidv4(),
-        enabled: false,
-    };
 }
 
 const neconyanAgents = Object.assign(globalThis.NeconyanAgents || globalThis.SillyBunnyAgents || {}, {
@@ -4495,30 +4481,27 @@ async function loadTemplates() {
             fetch(getTemplateAssetUrl('groups.json')),
         ]);
 
-        if (!templateResponse.ok) throw new Error('The template library is unavailable');
-        const rawTemplates = await templateResponse.json();
-        templateRegexBundles = regexBundleResponse.ok ? await regexBundleResponse.json() : {};
-        templates = Array.isArray(rawTemplates)
-            ? rawTemplates
-                .filter(template => !REMOVED_BUNDLED_TEMPLATE_IDS.has(String(template?.id ?? '').trim()))
-                .map(template => mergeTemplateDefaults(template))
-            : [];
+        if (!templateResponse.ok || !regexBundleResponse.ok || !groupResponse.ok) throw new Error('The complete template library is unavailable');
+        const [rawTemplates, regexBundles, rawGroups] = await Promise.all([templateResponse.json(), regexBundleResponse.json(), groupResponse.json()]);
+        if (!Array.isArray(rawTemplates) || !Array.isArray(rawGroups) || !regexBundles || typeof regexBundles !== 'object' || Array.isArray(regexBundles)) throw new Error('Invalid template library data');
+        templateRegexBundles = regexBundles;
+        const nextTemplates = rawTemplates
+            .filter(template => !REMOVED_BUNDLED_TEMPLATE_IDS.has(String(template?.id ?? '').trim()))
+            .map(template => mergeTemplateDefaults(template));
 
-        if (groupResponse.ok) {
-            const rawGroups = await groupResponse.json();
-            const builtinGroups = Array.isArray(rawGroups)
-                ? rawGroups
-                    .filter(group => !REMOVED_BUNDLED_GROUP_IDS.has(String(group?.id ?? '').trim()))
-                    .map(group => ({
-                        ...group,
-                        agentTemplateIds: Array.isArray(group?.agentTemplateIds)
-                            ? group.agentTemplateIds.filter(id => !REMOVED_BUNDLED_TEMPLATE_IDS.has(String(id ?? '').trim()))
-                            : [],
-                    }))
-                : [];
-            loadBuiltinGroups(builtinGroups);
-        }
+        const builtinGroups = rawGroups
+            .filter(group => !REMOVED_BUNDLED_GROUP_IDS.has(String(group?.id ?? '').trim()))
+            .map(group => ({
+                ...group,
+                agentTemplateIds: Array.isArray(group?.agentTemplateIds)
+                    ? group.agentTemplateIds.filter(id => !REMOVED_BUNDLED_TEMPLATE_IDS.has(String(id ?? '').trim()))
+                    : [],
+            }));
+        loadBuiltinGroups(builtinGroups);
+        templates = nextTemplates;
     } catch (e) {
+        templates = [];
+        templateRegexBundles = {};
         templateLoadError = e;
         console.warn('[InChatAgents] Failed to load templates:', e);
     }
@@ -4831,46 +4814,18 @@ async function openTemplateBrowser() {
  * @param {import('./agent-store.js').AgentGroup} group
  */
 async function applyGroup(group) {
-    let added = 0;
-
-    for (const tplId of group.agentTemplateIds) {
-        const tpl = findTemplateById(tplId);
-        if (!tpl) continue;
-
-        const newAgent = buildAgentFromTemplate(tpl);
-        if (hasMatchingAgentSnapshot(newAgent)) continue;
-        await saveAgent(newAgent);
-        added++;
-    }
-
-    if (Array.isArray(group.customAgents)) {
-        for (const customAgent of group.customAgents) {
-            const newAgent = buildAgentFromSnapshot(customAgent);
-            if (hasMatchingAgentSnapshot(newAgent)) continue;
-            await saveAgent(newAgent);
-            added++;
-        }
-    }
-
-    if (!group.builtin && (!Array.isArray(group.customAgents) || group.customAgents.length === 0)) {
-        for (const legacyAgentId of group.agentTemplateIds) {
-            if (findTemplateById(legacyAgentId)) continue;
-            const sourceAgent = getAgentById(legacyAgentId);
-            if (!sourceAgent) continue;
-
-            const snapshot = structuredClone(sourceAgent);
-            delete snapshot.id;
-            snapshot.enabled = false;
-
-            if (hasMatchingAgentSnapshot(snapshot)) continue;
-            await saveAgent(buildAgentFromSnapshot(snapshot));
-            added++;
-        }
-    }
-
+    const snapshots = group.agentTemplateIds.map(id => {
+        const template = findTemplateById(id);
+        const source = template ? { ...buildAgentFromTemplate(template), id } : getAgentById(id);
+        if (!source) throw new Error(`Kit agent ${id} is unavailable. Reload the library before trying again.`);
+        return source;
+    }).concat(group.customAgents ?? []);
+    const added = await installAgentGroup(group, snapshots);
     renderAgentList();
-    if (added > 0) {
-        toastr.success(`Applied "${group.name}" -- added ${added} new agent(s).`);
+    const unresolved = getUnresolvedAgentReferences(added);
+    if (unresolved.length) toastr.warning(`Some links refer to agents outside this kit: ${unresolved.join(', ')}`);
+    if (added.length > 0) {
+        toastr.success(`Installed "${group.name}" with ${added.length} new agent(s).`);
     } else {
         toastr.info(`"${group.name}" is already applied.`);
     }
@@ -4947,7 +4902,6 @@ async function createCustomGroup() {
     group.agentTemplateIds = [];
     group.customAgents = selectedAgents.map(agent => {
         const snapshot = structuredClone(agent);
-        delete snapshot.id;
         snapshot.enabled = false;
         return snapshot;
     });
@@ -4979,6 +4933,8 @@ async function handleImport(event) {
         const imported = await importAgents(data);
         renderAgentList();
         toastr.success(`Imported ${imported.length} agent(s).`);
+        const unresolved = getUnresolvedAgentReferences(imported);
+        if (unresolved.length) toastr.warning(`Some imported links refer to unavailable agents: ${unresolved.join(', ')}`);
     } catch (e) {
         toastr.error('Failed to import: ' + e.message);
     }

@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import vm from 'node:vm';
+import { parse } from 'acorn';
 import { createHash } from 'node:crypto';
 import { describe, expect, jest, test } from '@jest/globals';
 
@@ -173,6 +175,68 @@ function expectExistingStatsSectionOnStatsTemplate(levelUp, stats) {
 }
 
 describe('in-chat agent bundled templates', () => {
+    test('closed tracker blocks include every body line while legacy blocks leave following prose alone', () => {
+        const bundles = readTemplate('regex-bundles.json');
+        for (const [id, tag, fields] of [
+            ['scene-tracker', 'SCENE', 'A|B|C'], ['time-tracker', 'TIME', 'A|B|C'],
+            ['relationship-tracker', 'METER', 'A|B|C|D|E'], ['status-tracker', 'STATUS', 'A|B|C'],
+            ['event-tracker', 'EVENT', 'A|B|C'], ['achievements-tracker', 'ACH', 'A|B|C'],
+            ['reputation-tracker', 'REP', 'A|B|C'], ['secrets-tracker', 'SECRET', 'A|B|C'],
+            ['item-tracker', 'ITEM', 'A|B|C'], ['world-detail', 'WORLD', 'A|B'],
+        ]) {
+            const suffix = '\nNarrative outside.\n[NEXT]untouched[/NEXT]';
+            const render = text => applyRegexScriptList(text, bundles[`tpl-${id}`], AGENT_REGEX_PLACEMENT.AI_OUTPUT, { isMarkdown: true });
+            const closed = render(`[${tag}|${fields}]\nfirst detail\nsecond detail\n[/${tag}]${suffix}`);
+            expect(closed).toContain('first detail\nsecond detail');
+            expect(closed).not.toContain(`[/${tag}]`);
+            expect(closed.endsWith(suffix)).toBe(true);
+            expect(render(`[${tag}|${fields}]\nfirst detail${suffix}`).endsWith(suffix)).toBe(true);
+            expect(readTemplate(`${id}.json`).version).toBeGreaterThan(1);
+        }
+    });
+
+    test('NPC upgrades keep the relationship inside the card and consume the closing tag', () => {
+        const script = readTemplate('regex-bundles.json')['tpl-npc-profiles'].filter(script => script.scriptName === 'Replace NPC Upgrade');
+        const body = '[NPC:UP|Alice|MAJOR]\nb: basics\na: appearance\np: personality\nh: history';
+        const render = text => applyRegexScriptList(text, script, AGENT_REGEX_PLACEMENT.AI_OUTPUT, { isMarkdown: true });
+        const html = render(`${body}\nr: trusted friend\n[/NPC]\nFollowing narrative.`);
+        expect(html).toContain('Relationship: <span>trusted friend</span>');
+        expect(html).not.toContain('[/NPC]');
+        expect(html.endsWith('</details>\nFollowing narrative.')).toBe(true);
+        expect(render(`${body}\n[/NPC]`).endsWith('</details>')).toBe(true);
+    });
+
+    test('Chat Only recognises long and non-ASCII speaker names as separate turns', () => {
+        const names = ['You', '美咲', 'Михаил', 'Élodie', `Captain ${'Longname'.repeat(12)}`];
+        const html = applyRegexScriptList(names.map(name => `${name}: greeting`).join('\n'), readTemplate('chat-only-companion.json').regexScripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, { isMarkdown: true });
+        expect(html.match(/ica--chatonly-turn/g)).toHaveLength(names.length);
+        for (const name of names) expect(html).toContain(`>${name}</b>`);
+    });
+
+    test('an incomplete template asset load can retry without publishing unformatted templates', async () => {
+        const source = fs.readFileSync(indexSourceUrl, 'utf8');
+        const fn = parse(source, { ecmaVersion: 'latest', sourceType: 'module' }).body.find(node => node.type === 'FunctionDeclaration' && node.id.name === 'loadTemplates');
+        for (const failedAsset of ['index.json', 'regex-bundles.json', 'groups.json']) {
+            let fail = true;
+            const assets = { 'index.json': [{ id: 'tpl-example' }], 'regex-bundles.json': { 'tpl-example': [{ id: 'rule' }] }, 'groups.json': [] };
+            const runtime = { templates: [], templateRegexBundles: {}, templateLoadError: null, console: { warn: jest.fn() },
+                REMOVED_BUNDLED_TEMPLATE_IDS: new Set(), REMOVED_BUNDLED_GROUP_IDS: new Set(),
+                getTemplateAssetUrl: name => name, loadBuiltinGroups: jest.fn(),
+                fetch: jest.fn(async name => ({ ok: !fail || name !== failedAsset, json: async () => assets[name] })),
+            };
+            runtime.mergeTemplateDefaults = template => ({ ...template, regexScripts: runtime.templateRegexBundles[template.id] });
+            vm.createContext(runtime);
+            vm.runInContext(source.slice(fn.start, fn.end), runtime);
+            await runtime.loadTemplates();
+            expect(runtime.templates).toEqual([]);
+            expect(runtime.templateLoadError).not.toBeNull();
+            fail = false;
+            await runtime.loadTemplates();
+            expect(runtime.templates[0].regexScripts).toEqual([{ id: 'rule' }]);
+            expect(runtime.templateLoadError).toBeNull();
+        }
+    });
+
     test('keeps source files synced with the template browser catalog', () => {
         const catalog = readTemplate('index.json');
 
