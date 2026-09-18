@@ -203,7 +203,7 @@ function getMessageIndexFromElement(element) {
     return Number.isFinite(messageIndex) ? messageIndex : -1;
 }
 
-function sanitizeCompanionHtml(html = '', { prefix = '.ica--companion-body ' } = {}) {
+export function sanitizeCompanionHtml(html = '', { prefix = '.ica--companion-body ' } = {}) {
     const encoded = encodeStyleTags(String(html ?? ''));
     const sanitized = DOMPurify.sanitize(encoded, {
         MESSAGE_SANITIZE: true,

@@ -2476,7 +2476,7 @@ function showPromptTransformRunningToast(agent, mode, profileId = '', options = 
         </button>
     `;
 
-    const toast = toastr.info(messageHtml, agentName, {
+    const toast = toastr.info(messageHtml, escapeToastHtml(agentName), {
         timeOut: 0,
         extendedTimeOut: 0,
         tapToDismiss: false,

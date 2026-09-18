@@ -47,6 +47,7 @@ import {
     convertTextToBase64,
     isSameFile,
     clamp,
+    escapeHtml,
 } from './utils.js';
 import { extension_settings, renderExtensionTemplateAsync, saveMetadataDebounced } from './extensions.js';
 import { POPUP_RESULT, POPUP_TYPE, Popup, callGenericPopup } from './popup.js';
@@ -621,9 +622,10 @@ export function decodeStyleTags(text, { prefix } = { prefix: '.mes_text ' }) {
             if (sheet) {
                 sanitizeRuleSet(ast.stylesheet);
             }
-            return `<style>${css.stringify(ast)}</style>`;
+            // A '</' inside a comment or string would end the style element after sanitisation ran.
+            return `<style>${css.stringify(ast).replaceAll('</', '<\\/')}</style>`;
         } catch (error) {
-            return `CSS ERROR: ${error}`;
+            return `CSS ERROR: ${escapeHtml(String(error))}`;
         }
     });
 }

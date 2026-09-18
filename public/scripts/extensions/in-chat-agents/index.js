@@ -103,7 +103,7 @@ import {
 } from './profile-utils.js';
 import { collectRecentCompanionResults, getCompanionResults, initCompanionRunner, getLatestValidCompanionMessageIndex, runTrackerCompanionsOnMessage, syncCompanionChatHistoryConfig } from './companion/companion-runner.js';
 import { getCompanionReferenceIds } from './companion/companion-shared.js';
-import { initCompanionCardUi, updateCompanionButtonVisibility } from './companion/companion-ui.js';
+import { initCompanionCardUi, sanitizeCompanionHtml, updateCompanionButtonVisibility } from './companion/companion-ui.js';
 import { configureCompanionDashboard, initCompanionWandMenuItem, openCompanionDashboard } from './companion/companion-dashboard.js';
 import { configureCompanionPanel, initCompanionPanel, refreshCompanionPanel, updateCompanionPanelHandleVisibility } from './companion/companion-panel.js';
 import { attachTextareaFullscreen } from './textarea-fullscreen.js';
@@ -4898,7 +4898,7 @@ async function createCustomGroup() {
     for (const agent of currentAgents) {
         agentList.append(`
             <label class="checkbox_label">
-                <input type="checkbox" value="${agent.id}" checked />
+                <input type="checkbox" value="${escapeHtml(agent.id)}" checked />
                 <span>${escapeHtml(agent.name)}</span>
             </label>
         `);
@@ -5263,8 +5263,9 @@ function buildTrackerHtmlPreviewNode(generatedKit, sampleText) {
     const previewFrame = previewNode.find('.ica--tracker-preview-frame').get(0);
 
     if (previewFrame) {
+        // Model-generated regex output is untrusted: sanitise it the same way companion notes are.
         previewFrame.innerHTML = hasRenderedPreview
-            ? renderedOutput
+            ? sanitizeCompanionHtml(renderedOutput, { prefix: '.ica--tracker-preview-frame ' })
             : `<pre class="ica--tracker-preview-source">${escapeHtml(sampleOutput || '(empty tracker sample)')}</pre>`;
     }
 
