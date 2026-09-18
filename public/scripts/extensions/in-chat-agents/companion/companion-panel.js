@@ -1054,10 +1054,15 @@ async function handlePanelAction(event) {
             return;
         }
 
+        const runTarget = chat[runIndex];
         button.prop('disabled', true);
         inputField.prop('disabled', true);
         try {
             await savePlotCompassObjective(agent, objective);
+            if (chat[runIndex] !== runTarget) {
+                toastr.warning('The chat changed while saving, so the objective was saved but not run.');
+                return;
+            }
             await runCompanionAgentOnMessage(agentId, runIndex);
             toastr.success(objective ? 'Plot Objective saved.' : 'Plot Objective cleared.');
         } finally {
@@ -1077,11 +1082,16 @@ async function handlePanelAction(event) {
             return;
         }
 
+        const shardMessage = chat[messageIndex];
         const result = await new Popup(
             `Exclude messages #0–#${messageIndex - 1} from prompts? The shard carries that history from here on; messages stay visible in the chat and can be unhidden later.`,
             POPUP_TYPE.CONFIRM,
         ).show();
         if (result !== POPUP_RESULT.AFFIRMATIVE) {
+            return;
+        }
+        if (chat[messageIndex] !== shardMessage) {
+            toastr.warning('The chat changed while the confirmation was open, so nothing was hidden.');
             return;
         }
 

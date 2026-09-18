@@ -936,8 +936,15 @@ async function pickManualAgentRunTargets(agent) {
         }
     });
 
+    const lastAssistantMessage = lastAssistantIndex >= 0 ? chat[lastAssistantIndex] : null;
     const popupResult = await new Popup(picker, POPUP_TYPE.CONFIRM, '', { okButton: 'Apply', cancelButton: 'Cancel' }).show();
     if (popupResult !== POPUP_RESULT.AFFIRMATIVE) {
+        return null;
+    }
+    // The picker described a specific chat state; a chat switch or a new reply while it was
+    // open would make the listed numbers point at different messages.
+    if (lastAssistantMessage && chat[lastAssistantIndex] !== lastAssistantMessage) {
+        toastr.warning('The chat changed while the picker was open. Please choose the targets again.');
         return null;
     }
 
@@ -5688,8 +5695,17 @@ async function openPromptTransformHistoryPopup(messageIndex) {
         ${postGenerationEntries ? `<section class="ica-transform-history-section"><h4>Post-Generation Changes</h4>${postGenerationEntries}</section>` : ''}
     </div>`);
 
+    // Undo/redo must act on the message this history was opened for, not whatever
+    // occupies that index after a chat switch or deletion.
+    const historyMessage = chat[messageIndex];
+    const isHistoryTargetCurrent = idx => chat[idx] === historyMessage;
+
     html.find('.ica-undo-btn').on('click', async function () {
         const idx = Number($(this).data('mesid'));
+        if (!isHistoryTargetCurrent(idx)) {
+            toastr.warning('The chat changed; reopen the history for this message.');
+            return;
+        }
         if (await undoPromptTransform(idx)) {
             toastr.success('Transform undone.');
         } else {
@@ -5699,6 +5715,10 @@ async function openPromptTransformHistoryPopup(messageIndex) {
 
     html.find('.ica-redo-btn').on('click', async function () {
         const idx = Number($(this).data('mesid'));
+        if (!isHistoryTargetCurrent(idx)) {
+            toastr.warning('The chat changed; reopen the history for this message.');
+            return;
+        }
         if (await redoPromptTransform(idx)) {
             toastr.success('Transform redone.');
         } else {

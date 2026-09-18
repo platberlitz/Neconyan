@@ -333,7 +333,7 @@ describe('in-chat agents generation UI wiring', () => {
     // Inline cards deliberately have no editor hook: opening agent settings from a chat message
     // would be a Layer 1 config entry point and a nested modal chain.
     test('does not wire inline Companion cards to the shared editor', () => {
-        expect(indexSource).toContain("import { initCompanionCardUi, updateCompanionButtonVisibility } from './companion/companion-ui.js';");
+        expect(indexSource).toContain("import { initCompanionCardUi, sanitizeCompanionHtml, updateCompanionButtonVisibility } from './companion/companion-ui.js';");
         expect(indexSource).not.toContain('configureCompanionCardUi');
     });
 

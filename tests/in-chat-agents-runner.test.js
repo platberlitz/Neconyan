@@ -3045,7 +3045,8 @@ describe('in-chat agent post-processing runner', () => {
         }
         await running;
 
-        expect(chat[1].mes).toContain('Rewritten reply');
+        // A rewrite that lands after the user edited the message must not overwrite the edit.
+        expect(chat[1].mes).toContain(completionOrder === 'manual-edit' ? 'Manually edited reply' : 'Rewritten reply');
         await new Promise(resolve => setTimeout(resolve, 5));
         expect(connectionManagerRequestService.sendRequest).toHaveBeenCalledTimes(3);
         expect(companionsFinishedFirst).toBe(completionOrder === 'companions-first');
@@ -5274,6 +5275,60 @@ describe('in-chat agent post-processing runner', () => {
         expect(isAgentGenerationActive()).toBe(false);
     });
 
+    test('a manual rewrite that finishes after a swipe change does not overwrite the new swipe', async () => {
+        useManualTransformAgents();
+        const quietResolvers = [];
+        generateQuietPrompt.mockImplementation(async () => await new Promise(resolve => quietResolvers.push(resolve)));
+        chat.push({
+            name: 'Assistant',
+            mes: 'Swipe A text',
+            is_user: false,
+            is_system: false,
+            swipe_id: 0,
+            swipes: ['Swipe A text', 'Swipe B text'],
+            swipe_info: [{ extra: {} }, { extra: {} }],
+            extra: {},
+        });
+
+        const { runAgentOnMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+
+        const run = runAgentOnMessage('agent-manual-a', 0);
+        await waitFor(() => quietResolvers.length === 1);
+
+        switchToSwipe(chat[0], 1);
+        quietResolvers.shift()('Rewrite of swipe A');
+        const result = await run;
+
+        expect(result).toBeNull();
+        expect(chat[0].mes).toBe('Swipe B text');
+        expect(chat[0].swipes).toEqual(['Swipe A text', 'Swipe B text']);
+    });
+
+    test('a manual rewrite that finishes after a manual edit keeps the edit', async () => {
+        useManualTransformAgents();
+        const quietResolvers = [];
+        generateQuietPrompt.mockImplementation(async () => await new Promise(resolve => quietResolvers.push(resolve)));
+        chat.push({
+            name: 'Assistant',
+            mes: 'Original reply',
+            is_user: false,
+            is_system: false,
+            extra: {},
+        });
+
+        const { runAgentOnMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+
+        const run = runAgentOnMessage('agent-manual-a', 0);
+        await waitFor(() => quietResolvers.length === 1);
+
+        chat[0].mes = 'User edited reply';
+        quietResolvers.shift()('Late rewrite');
+        const result = await run;
+
+        expect(result).toBeNull();
+        expect(chat[0].mes).toBe('User edited reply');
+    });
+
     test('starts manual agent runs immediately in parallel mode', async () => {
         useManualTransformAgents();
         globalSettings.appendAgentsExecutionMode = 'parallel';
@@ -5305,8 +5360,10 @@ describe('in-chat agent post-processing runner', () => {
         const secondResult = await secondRun;
 
         expect(firstResult.status).toBe('changed');
-        expect(secondResult.status).toBe('changed');
-        expect(chat[0].mes).toBe('Second rewrite');
+        // The second rewrite was produced from the original text, which the first rewrite already replaced.
+        expect(secondResult).toBeNull();
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith('The message changed while the agent was running, so its result was discarded.');
+        expect(chat[0].mes).toBe('First rewrite');
         expect(isAgentGenerationActive()).toBe(false);
     });
 
@@ -5517,6 +5574,34 @@ describe('in-chat agent post-processing runner', () => {
         expect(updateMessageBlock).toHaveBeenCalledWith(0, chat[0]);
         expect(saveChat).not.toHaveBeenCalled();
         expect(reloadCurrentChat).not.toHaveBeenCalled();
+    });
+
+    test('redo restores the transformation that undo just reverted', async () => {
+        useRegexOnlyAgent();
+
+        const { initAgentRunner, undoPromptTransform, redoPromptTransform } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        chat.push({
+            name: 'Assistant',
+            mes: 'Rewritten text',
+            is_user: false,
+            is_system: false,
+            extra: {
+                inChatAgentTransformHistory: [{ beforeText: 'Original text', afterText: 'Rewritten text' }],
+            },
+        });
+
+        await expect(redoPromptTransform(0)).resolves.toBe(false);
+        await expect(undoPromptTransform(0)).resolves.toBe(true);
+        expect(chat[0].mes).toBe('Original text');
+        await expect(redoPromptTransform(0)).resolves.toBe(true);
+        expect(chat[0].mes).toBe('Rewritten text');
+
+        chat[0].mes = 'Something the user typed';
+        await expect(redoPromptTransform(0)).resolves.toBe(false);
+        expect(chat[0].mes).toBe('Something the user typed');
+        await new Promise(resolve => setTimeout(resolve, 5));
     });
 
     test('keeps the save and reload fallback for off-screen text mutations', async () => {

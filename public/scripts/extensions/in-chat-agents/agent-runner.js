@@ -277,6 +277,26 @@ function setPostProcessingText(message, text, target = null) {
     }
     message.mes = text;
 }
+
+// A request outlives the state it was built from. Capture the text and swipe the agent
+// read, and refuse to apply its output once the user (or another run) moved on.
+function captureMessageTargetState(message) {
+    return { mes: message?.mes, swipeId: message?.swipe_id };
+}
+
+function isMessageTargetCurrent(message, captured, messageIndex = null) {
+    if (!message || !captured) {
+        return true;
+    }
+    if (message.mes !== captured.mes || message.swipe_id !== captured.swipeId) {
+        return false;
+    }
+    const numericIndex = Number(messageIndex);
+    if (messageIndex !== null && messageIndex !== undefined && Number.isInteger(numericIndex) && chat[numericIndex] && chat[numericIndex] !== message) {
+        return false;
+    }
+    return true;
+}
 const stoppedStreamingMessageIndexes = new Set();
 let stoppedGenerationRunId = -1;
 
@@ -1108,10 +1128,12 @@ function cloneAgentExtraValue(value) {
 
 export function getAgentExtraValue(message, key) {
     const swipeInfo = getActiveSwipeInfo(message);
-    if (swipeInfo?.extra) {
+    if (swipeInfo?.extra && key in swipeInfo.extra) {
         return swipeInfo.extra[key];
     }
 
+    // Messages saved before swipe_info existed get a backfilled empty swipe extra; the
+    // history still lives on message.extra, so fall back to it rather than losing it.
     return message?.extra?.[key];
 }
 
@@ -3317,6 +3339,7 @@ function getProtectedKimiPartialPrefill(message, messageIndex, messageText) {
 
 async function runPromptTransformAgent(agent, message, generationType, messageTextOverride = null, messageIndex = null, options = {}) {
     const applyToMessage = options.applyToMessage !== false;
+    const targetState = captureMessageTargetState(message);
     const currentMessageText = unwrapAssistantResponseWrapper(
         messageTextOverride !== null ? messageTextOverride : message?.mes,
     );
@@ -3424,12 +3447,16 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
             ? appendPromptTransformOutput(transformMessageText, promptOutputText)
             : promptOutputText;
         const nextMessageText = protectedPartialPrefill + transformedMessageText;
-        if (agentGenerationCancelRevision !== cancelRevision || !isRuntimeAllowed()) {
+        const staleTarget = !isMessageTargetCurrent(message, targetState, messageIndex);
+        if (staleTarget || agentGenerationCancelRevision !== cancelRevision || !isRuntimeAllowed()) {
+            if (staleTarget) {
+                console.info(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" finished after the message changed; result discarded.`);
+            }
             return {
                 agentId: agent.id,
                 agentName: agent.name,
                 changed: false,
-                status: agentGenerationCancelRevision !== cancelRevision ? 'cancelled' : 'skipped-runtime-filter',
+                status: staleTarget ? 'stale-target' : agentGenerationCancelRevision !== cancelRevision ? 'cancelled' : 'skipped-runtime-filter',
                 mode: promptTransformMode,
                 profileId: response.profileId,
                 ...getPromptTransformRunMetadata(agent, response.profileId),
@@ -3515,6 +3542,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
 }
 
 async function runPromptTransformAppendBatch(agents, message, generationType, messageTextOverride = null, messageIndex = null, { applyToMessage = true, cancelRevision = null, runtimeAgents = [], postProcessingTarget = null } = {}) {
+    const targetState = captureMessageTargetState(message);
     const currentMessageText = unwrapAssistantResponseWrapper(
         messageTextOverride !== null ? messageTextOverride : message?.mes,
     );
@@ -3599,6 +3627,16 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
             nextMessageText: currentMessageText,
             beforeText: currentMessageText,
             cancelled: true,
+        };
+    }
+
+    if (!isMessageTargetCurrent(message, targetState, messageIndex) || results.some(result => result?.status === 'stale-target')) {
+        return {
+            results,
+            changed: false,
+            nextMessageText: currentMessageText,
+            beforeText: currentMessageText,
+            staleTarget: true,
         };
     }
 
@@ -4100,8 +4138,10 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
             messageDisplayChanged = true;
         }
         let appendBatch = [];
+        let staleTarget = false;
         const flushAppendBatch = async () => {
-            if (appendBatch.length === 0) {
+            if (appendBatch.length === 0 || staleTarget) {
+                appendBatch = [];
                 return;
             }
 
@@ -4118,6 +4158,7 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
             );
             promptRuns.push(...batchResult.results);
             currentPromptTransformText = batchResult.nextMessageText;
+            staleTarget = staleTarget || batchResult.staleTarget === true;
 
             if (batchResult.changed) {
                 chatStateChanged = true;
@@ -4126,17 +4167,28 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
         };
 
         for (const agent of promptTransformAgents) {
+            if (staleTarget) {
+                break;
+            }
+
             if (getPromptTransformMode(agent) === 'append') {
                 appendBatch.push(agent);
                 continue;
             }
 
             await flushAppendBatch();
+            if (staleTarget) {
+                break;
+            }
 
             try {
                 const result = await runPromptTransformAgent(agent, message, generationType, currentPromptTransformText, messageIndex, { postProcessingTarget });
                 promptRuns.push(result);
                 currentPromptTransformText = result.nextMessageText;
+                if (result.status === 'stale-target') {
+                    staleTarget = true;
+                    break;
+                }
 
                 if (result.changed) {
                     chatStateChanged = true;
@@ -5335,14 +5387,22 @@ export async function redoPromptTransform(messageIndex) {
         return false;
     }
 
-    const history = getPromptTransformHistoryForMessage(message);
+    // After an undo the message text equals some entry's beforeText, and the scoped chain
+    // (which ends at the current text) no longer contains that entry. Look it up in the
+    // stored history instead: the newest entry that starts from the current text.
+    const storedHistory = getAgentExtraValue(message, PROMPT_TRANSFORM_HISTORY_KEY);
+    const currentText = normalizeContentText(message.mes);
+    const redoEntry = (Array.isArray(storedHistory) ? storedHistory : [])
+        .filter(entry => entry && typeof entry === 'object')
+        .reverse()
+        .find(entry => normalizeContentText(entry.beforeText) === currentText
+            && normalizeContentText(entry.afterText) !== currentText);
 
-    if (history.length === 0) {
+    if (!redoEntry) {
         return false;
     }
 
-    const lastEntry = history[history.length - 1];
-    message.mes = lastEntry.afterText;
+    message.mes = redoEntry.afterText;
     await syncPromptTransformMessageStateAsync(message, messageIndex);
     saveChatDebouncedForAgent();
     scheduleMessageRefresh(messageIndex, message);
@@ -5584,6 +5644,10 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
     const result = await runPromptTransformAgent(agent, message, generationType, null, messageIndex, {
         applyToMessage: false,
     });
+    if (result.status === 'stale-target') {
+        toastr.warning('The message changed while the agent was running, so its result was discarded.');
+        return null;
+    }
     if (agentGenerationCancelRevision !== cancelRevision) {
         return null;
     }
@@ -5704,6 +5768,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     }
 
     let appendBatch = [];
+    let fixStaleTarget = false;
     const flushAppendBatch = async () => {
         if (appendBatch.length === 0) {
             return;
@@ -5721,6 +5786,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
             { applyToMessage: false, cancelRevision: fixCancelRevision },
         );
         if (!isFixTargetCurrent()) return;
+        fixStaleTarget = fixStaleTarget || batchResult.staleTarget === true;
         promptRuns.push(...batchResult.results);
         currentPromptTransformText = batchResult.nextMessageText;
 
@@ -5731,7 +5797,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     };
 
     for (const agent of trackerTransformAgents) {
-        if (isFixCancelled()) break;
+        if (isFixCancelled() || fixStaleTarget) break;
 
         if (getPromptTransformMode(agent) === 'append') {
             appendBatch.push(agent);
@@ -5744,7 +5810,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
             const result = await runPromptTransformAgent(agent, message, generationType, currentPromptTransformText, messageIndex, {
                 applyToMessage: false,
             });
-            if (!isFixTargetCurrent()) return;
+            if (!isFixTargetCurrent() || result.status === 'stale-target') return;
             promptRuns.push(result);
             currentPromptTransformText = result.nextMessageText;
 
@@ -5767,7 +5833,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     }
 
     await flushAppendBatch();
-    if (!isFixTargetCurrent()) return;
+    if (!isFixTargetCurrent() || fixStaleTarget) return;
 
     if (currentPromptTransformText !== message.mes) {
         message.mes = currentPromptTransformText;
@@ -5804,7 +5870,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
             const result = await runPromptTransformAgent(repairAgent, message, generationType, message.mes, messageIndex, {
                 applyToMessage: false,
             });
-            if (!isFixTargetCurrent()) return;
+            if (!isFixTargetCurrent() || result.status === 'stale-target') return;
             if (!String(result.outputText ?? '').trim() || result.status === 'error' || result.status === 'cancelled') {
                 trackerRepairErrors++;
                 continue;

@@ -140,4 +140,27 @@ describe('reasoning token accounting', () => {
         expect(message.swipe_info[0].extra.token_count).toBe(3);
         expect(message.swipe_info[0].extra.reasoning_tokens).toBe(2);
     });
+
+    test('a swipe change during counting writes to the counted swipe, not the new one', async () => {
+        const message = {
+            mes: 'one two three',
+            swipe_id: 0,
+            swipes: ['one two three', 'four'],
+            swipe_info: [{ extra: {} }, { extra: { token_count: 1, reasoning_tokens: 0 } }],
+            extra: { token_count: 1, reasoning_tokens: 0 },
+        };
+        const countTokens = jest.fn(async (text) => {
+            // Simulate the user swiping while the count is in flight.
+            message.swipe_id = 1;
+            message.mes = 'four';
+            message.extra = { token_count: 1, reasoning_tokens: 0 };
+            return text.split(/\s+/).filter(Boolean).length;
+        });
+
+        await updateReasoningTokenAccounting(message, { countTokens, reasoning: '' });
+
+        expect(message.swipe_info[0].extra.token_count).toBe(3);
+        expect(message.swipe_info[1].extra.token_count).toBe(1);
+        expect(message.extra.token_count).toBe(1);
+    });
 });

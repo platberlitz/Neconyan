@@ -2260,6 +2260,13 @@ export async function applyAgentPostPassesToCompanionResult(transformerAgentId, 
         return null;
     }
 
+    // The note may have been swiped, edited, deleted or regenerated while the request ran.
+    const currentResult = chat[messageIndex] === message ? getCompanionResults(message)[companionAgentId] : null;
+    if (currentResult?.status !== 'done' || currentResult.content !== result.content) {
+        toastr.warning('The companion note changed while the agent was running, so its result was discarded.');
+        return null;
+    }
+
     if (!passResult.changed) {
         toastr.info(`"${transformer.name}" made no changes to the companion note.`, 'In-Chat Agents');
         return passResult;

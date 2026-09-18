@@ -58,10 +58,15 @@ export async function updateReasoningTokenAccounting(
         message.extra = {};
     }
 
+    // Resolve the swipe being counted before any await: a swipe change mid-count must not
+    // make these numbers land on whichever swipe is active afterwards.
+    const countedSwipeId = message.swipe_id;
+    const countedText = message.mes ?? '';
+    const countedSwipeExtra = getActiveSwipeExtra(message);
+
     let outputTokens = getPositiveTokenCount(message.extra.token_count);
     if (countOutput) {
-        outputTokens = await countTokens(message.mes ?? '');
-        message.extra.token_count = outputTokens;
+        outputTokens = await countTokens(countedText);
     }
 
     const providerReasoningTokens = getPositiveTokenCount(reasoningTokens);
@@ -72,12 +77,19 @@ export async function updateReasoningTokenAccounting(
         countedReasoningTokens = Math.max(providerReasoningTokens, localReasoningTokens);
     }
 
-    message.extra.reasoning_tokens = countedReasoningTokens;
+    const targetStillActive = message.swipe_id === countedSwipeId && (message.mes ?? '') === countedText;
+    if (targetStillActive) {
+        if (countOutput) {
+            message.extra.token_count = outputTokens;
+        }
+        message.extra.reasoning_tokens = countedReasoningTokens;
+    }
 
-    const activeSwipeExtra = getActiveSwipeExtra(message);
-    if (activeSwipeExtra) {
-        activeSwipeExtra.token_count = outputTokens;
-        activeSwipeExtra.reasoning_tokens = countedReasoningTokens;
+    if (countedSwipeExtra) {
+        if (countOutput) {
+            countedSwipeExtra.token_count = outputTokens;
+        }
+        countedSwipeExtra.reasoning_tokens = countedReasoningTokens;
     }
 
     return { outputTokens, reasoningTokens: countedReasoningTokens };

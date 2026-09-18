@@ -733,11 +733,16 @@ async function savePlotCompassObjective({ agentId, messageIndex, objective = '',
         return;
     }
 
+    const targetMessage = chat[messageIndex];
     button?.prop?.('disabled', true);
     inputField?.prop?.('disabled', true);
     try {
         const nextObjective = normalizePlotCompassObjective(objective);
         await setAgentSetting(agent, 'plotCompassObjective', nextObjective);
+        if (chat[messageIndex] !== targetMessage) {
+            toastr.warning('The chat changed while saving, so the objective was saved but not run.');
+            return;
+        }
         await runCompanionAgentOnMessage(agentId, messageIndex);
         renderCompanionResultsForMessage(messageIndex);
         toastr.success(nextObjective ? 'Plot Objective saved.' : 'Plot Objective cleared.');
@@ -758,6 +763,7 @@ function getCompanionActionContext(element) {
 }
 
 export async function editCompanionResult(messageIndex, agentId, message, result) {
+    const swipeId = message?.swipe_id ?? 0;
     const editor = $(`
         <div class="ica--companion-edit-popup">
             <div class="ica--regex-note">Edit only this saved card. Regenerate to ask the model again.</div>
@@ -775,6 +781,10 @@ export async function editCompanionResult(messageIndex, agentId, message, result
     if (popupResult !== POPUP_RESULT.AFFIRMATIVE) {
         return;
     }
+    if (!isCompanionNoteTargetCurrent(messageIndex, message, swipeId)) {
+        toastr.warning('That message changed while the editor was open, so the note was not saved.');
+        return;
+    }
 
     updateCompanionResult(message, agentId, {
         status: 'done',
@@ -785,9 +795,23 @@ export async function editCompanionResult(messageIndex, agentId, message, result
     renderCompanionResultsForMessage(messageIndex);
 }
 
+/**
+ * True while the message object still sits at its index on the same swipe it had when a
+ * confirmation opened. Chat switches replace the chat array, swipes replace message.extra,
+ * so a stale confirmation must not write into whatever now occupies that slot.
+ */
+function isCompanionNoteTargetCurrent(messageIndex, message, swipeId) {
+    return chat[messageIndex] === message && (message?.swipe_id ?? 0) === swipeId;
+}
+
 async function deleteCompanionCard(messageIndex, agentId, message) {
+    const swipeId = message?.swipe_id ?? 0;
     const popupResult = await new Popup('Delete this companion note?', POPUP_TYPE.CONFIRM).show();
     if (popupResult !== POPUP_RESULT.AFFIRMATIVE) {
+        return;
+    }
+    if (!isCompanionNoteTargetCurrent(messageIndex, message, swipeId)) {
+        toastr.warning('That message changed while the confirmation was open, so the note was kept.');
         return;
     }
 
