@@ -71,7 +71,7 @@ export async function commitConversationEffect(context, target, effectId, mutate
     return result;
 }
 
-export function appendConversationJobMessage(context, target, effectId, value) {
+export function appendConversationJobMessage(context, target, effectId, value, { mutate } = {}) {
     return commitConversationEffect(context, target, effectId, branch => {
         const message = createConversationMessage({ ...value, id: `job_${digest([context.job.id, effectId]).slice(0, 32)}` });
         if (!message) throw Object.assign(new Error('The generated Conversation message is invalid.'), { status: 400 });
@@ -82,8 +82,39 @@ export function appendConversationJobMessage(context, target, effectId, value) {
             branch.followupCount = 0;
         }
         refreshBranchPreview(branch);
+        mutate?.(branch);
         return { id: message.id };
     });
+}
+
+/**
+ * Apply an autonomous occurrence's bookkeeping once. The claim marker lives on
+ * the branch so a delivered occurrence stays consumed even after its job is
+ * pruned from the bounded ledger, and so two sibling participants cannot both
+ * increment the same counter.
+ */
+export function applyConversationBookkeeping(branch, store, patch, occurrenceKey, now = Date.now()) {
+    if (!patch || !occurrenceKey) return false;
+    branch.automationClaims ??= {};
+    if (Object.hasOwn(branch.automationClaims, occurrenceKey)) return false;
+    branch.automationClaims[occurrenceKey] = now;
+    if (patch.reminder?.id) {
+        const reminder = (store.reminders || []).find(item => item?.id === patch.reminder.id);
+        if (reminder) {
+            reminder.fired = true;
+            reminder.firedAt = patch.reminder.firedAt || now;
+            delete reminder.retryAfter;
+        }
+    }
+    for (const key of patch.scheduleTriggers || []) {
+        branch.scheduleTriggers = { ...(branch.scheduleTriggers || {}), [key]: now };
+    }
+    if (patch.sessionMarkers && typeof patch.sessionMarkers === 'object') {
+        branch.sessionMarkers = { ...(branch.sessionMarkers || {}), ...patch.sessionMarkers };
+    }
+    if (Number.isFinite(patch.followupCount)) branch.followupCount = patch.followupCount;
+    if (Number.isFinite(patch.lastAutoMessageAt)) branch.lastAutoMessageAt = patch.lastAutoMessageAt;
+    return true;
 }
 
 /**

@@ -6,7 +6,7 @@ import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { acceptChildJobs, acceptJob, getJob, listJobs, releaseChildJobs, releaseJob, requestCancellation, setJobResume, updateJob } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { createMacroEnvironment } from '../macros/index.js';
-import { appendConversationJobMessage, captureConversationTarget, commitConversationEffect, commitConversationJobCommands, commitConversationReplyNotice, readConversationTarget } from './conversation-effects.js';
+import { appendConversationJobMessage, applyConversationBookkeeping, captureConversationTarget, commitConversationEffect, commitConversationJobCommands, commitConversationReplyNotice, readConversationTarget } from './conversation-effects.js';
 import { captureChatProfile } from './profiles.js';
 import { runChatProfile } from './service.js';
 import { createConversationImageGenerator, conversationReplyWantsImage, lastUserMessageText } from './conversation-images.js';
@@ -55,13 +55,18 @@ function normalizeInputMessages(raw) {
  * profile binding, system prompt and macro environment. The first participant is
  * also the top-level snapshot so the legacy single-speaker path keeps working.
  */
-async function buildConversationSnapshot(request, target, directive, timeZone, { force = false } = {}) {
+async function buildConversationSnapshot(request, target, directive, timeZone, { force = false, plan = null, automation = null } = {}) {
     const current = readConversationTarget(request, target);
     const now = Date.now();
-    const plan = await buildConversationParticipantPlan(request, current, target, { force, now, timeZone });
     const participants = [];
-    for (const item of plan) {
-        participants.push(await buildConversationParticipantSnapshot(request, current, target, item, { directive, timeZone, force, now }));
+    // An autonomous occurrence freezes its own participants; a normal reply lets
+    // the selection policy choose them from the captured thread.
+    const selected = Array.isArray(plan) ? plan : await buildConversationParticipantPlan(request, current, target, { force, now, timeZone });
+    for (const item of selected) {
+        participants.push(await buildConversationParticipantSnapshot(request, current, target, item, {
+            directive: item.directive || directive, timeZone, force: force || item.force === true, now,
+            extra: item.extra, automation: automation || item.automation || null,
+        }));
     }
     const primary = participants[0];
     if (Buffer.byteLength(JSON.stringify(participants)) > 16 * 1024 * 1024) fail('The Conversation request snapshot is too large.', 413);
@@ -123,7 +128,9 @@ export async function finalizeConversationSubmission(request, job) {
     if (!readArtifact(directories, job.id, 'request')) {
         try {
             const target = captureConversationTarget(request, job.intent.target);
-            const built = await buildConversationSnapshot(request, target, job.intent.directive, job.intent.timeZone, { force: job.intent.force === true });
+            const built = await buildConversationSnapshot(request, target, job.intent.directive, job.intent.timeZone, {
+                force: job.intent.force === true, plan: job.intent.plan, automation: job.intent.automation,
+            });
             if (Buffer.byteLength(JSON.stringify(built.snapshot)) > 16 * 1024 * 1024) fail('The Conversation request snapshot is too large.', 413);
             writeArtifact(directories, job.id, 'request', built.snapshot);
         } catch (error) {
@@ -241,6 +248,47 @@ export async function acceptConversationReply(request, body = {}) {
 }
 
 /**
+ * Queue a server-decided autonomous message (reminder, schedule, idle, proactive,
+ * chime or character chat). The occurrence carries its own participants and
+ * directive; its deterministic key is the submission key, so the same occurrence
+ * is accepted once. No composer message is appended and no batch is joined.
+ */
+export async function acceptConversationAutonomousReply(request, occurrence) {
+    const owner = request.user?.profile?.handle;
+    const directories = request.user?.directories;
+    if (!owner || !directories?.root) fail('An authenticated account is required.', 401);
+    if (!occurrence || typeof occurrence !== 'object' || typeof occurrence.key !== 'string' || !occurrence.key || occurrence.key.length > 256) fail('The automatic Conversation occurrence key is invalid.', 400);
+    if (typeof occurrence.directive !== 'string' || !occurrence.directive) fail('The automatic Conversation directive is invalid.', 400);
+    if (!Array.isArray(occurrence.participants) || !occurrence.participants.length) fail('The automatic Conversation participants are missing.', 400);
+    const target = captureConversationTarget(request, occurrence.target);
+    const current = readConversationTarget(request, target);
+    const settings = getConversationSettings(request, current.store, occurrence.participants[0].avatar, target.groupId, {}, { personaId: target.personaId });
+    const binding = captureChatProfile(directories, settings.connection_profile);
+    const intent = {
+        mode: 'auto',
+        target: { avatar: target.avatar, groupId: target.groupId, personaId: target.personaId, branchId: target.branchId },
+        directive: occurrence.directive, timeZone: occurrence.timeZone || 'UTC', force: true,
+        plan: occurrence.participants.map(participant => ({
+            avatar: participant.avatar, purpose: participant.purpose || 'auto',
+            directive: participant.directive || occurrence.directive, extra: participant.extra || null,
+        })),
+        automation: { key: occurrence.key, kind: occurrence.kind || 'auto', patch: occurrence.bookkeeping || null },
+    };
+    const existing = findSubmission(directories, owner, occurrence.key);
+    if (existing) {
+        if (existing.job.type !== 'conversation.reply' || hash(existing.job.intent) !== hash(intent)) fail('This occurrence key already belongs to another operation.');
+        return { job: existing.job, created: false };
+    }
+    const accepted = acceptJob(directories, { owner, type: 'conversation.reply', submissionKey: occurrence.key, intent, automatic: true, paused: true,
+        coalesce: { deadline: 0, members: [] },
+        target: { kind: 'conversation', id: getConversationThreadKey(target.avatar, target.groupId, target.personaId), branchId: target.branchId },
+        credentialRef: binding, config: {}, label: 'Conversation automatic message' });
+    noteOwner(owner);
+    await finalizeConversationSubmission(request, accepted.job);
+    return { job: getJob(directories, accepted.job.id), created: accepted.created };
+}
+
+/**
  * Persist an abortable delay so a restart waits only the remaining time. The
  * deadline is written once, before waiting, and reused on every retry.
  */
@@ -301,12 +349,15 @@ async function runConversationParticipantJob(context, deps) {
     if (readArtifact(directories, context.job.id, 'result')) return { artifact: true };
     const { target, binding, speaker, settings, userName } = snapshot;
     const force = snapshot.force === true;
+    // An autonomous message was already chosen by the server's policy, so it
+    // skips the interactive availability gate and writes with its own metadata.
+    const automation = snapshot.automation || null;
     // A snapshot accepted before participant support already passed the browser's
     // own gate; re-gating it here would skip or auto-answer work it chose to do.
     const legacy = snapshot.activity === undefined && snapshot.gate === undefined;
     const activity = snapshot.activity || manualActivity(settings);
     const solo = snapshot.gate !== false;
-    const decision = legacy ? { action: 'reply', status: activity.status } : getConversationAvailabilityDecision({ settings, activity, force, solo });
+    const decision = automation || legacy ? { action: 'reply', status: activity.status } : getConversationAvailabilityDecision({ settings, activity, force, solo });
     if (decision.action === 'skip') {
         writeArtifact(directories, context.job.id, 'result', { skipped: 'offline' });
         return { artifact: true };
@@ -327,7 +378,7 @@ async function runConversationParticipantJob(context, deps) {
     // The browser posts the "replies may be slow" notice for a schedule-driven
     // dnd/offline speaker, but not when the manual availability already says so.
     const manualSuppressed = activity.source === 'manual' && ['dnd', 'offline'].includes(String(settings.availability || ''));
-    if (!legacy && ['dnd', 'offline'].includes(decision.status) && !manualSuppressed) {
+    if (!legacy && !automation && ['dnd', 'offline'].includes(decision.status) && !manualSuppressed) {
         await commitConversationReplyNotice(context, target, speaker, activity, {
             noticeText: buildDelayedReplyNoticeText(speaker.name, activity.activity), now: deps.now(),
         });
@@ -343,6 +394,8 @@ async function runConversationParticipantJob(context, deps) {
     if (Buffer.byteLength(response.text) > 256 * 1024) fail('The model reply exceeded the Conversation message limit.', 502);
     setJobResume(directories, context.job.id, 'delivery');
     let imageDelivered = false;
+    let bookkeepingApplied = false;
+    const metadata = snapshot.extra && typeof snapshot.extra === 'object' ? snapshot.extra : {};
     const result = await deliverConversationReply(response.text, settings, {
         fallbackSpeaker: speaker, groupId: target.groupId, splitEveryLine: speaker.avatar !== target.avatar,
         getSpeakers: () => snapshot.speakers,
@@ -354,8 +407,14 @@ async function runConversationParticipantJob(context, deps) {
             if (target.groupId && (!group?.members?.includes(author.avatar) || group.disabled_members?.includes(author.avatar))) fail('The reply participant is no longer available.');
             return appendConversationJobMessage(context, target, `bubble:${delivery.chunk}:${delivery.bubble}`, {
                 role: author.avatar === target.avatar ? 'character' : 'partner', name: author.name, mes: text,
-                extra: { ...delivery.extra, ...(author.avatar !== target.avatar ? { partner_avatar: author.avatar } : {}),
+                extra: { ...metadata, ...delivery.extra, ...(author.avatar !== target.avatar ? { partner_avatar: author.avatar } : {}),
                     ...(delivery.attachReplyReference && snapshot.replyReference ? { conversation_reply_to: snapshot.replyReference } : {}) },
+            }, {
+                // The first committed bubble consumes the occurrence and applies
+                // its counters in the same native write as the message.
+                mutate: automation && !bookkeepingApplied
+                    ? (branch, store) => { applyConversationBookkeeping(branch, store, automation.patch, automation.key, deps.now()); bookkeepingApplied = true; }
+                    : undefined,
             });
         },
         commitCommands: (parts, avatar, delivery) => commitConversationJobCommands(context, target, `commands:${delivery.chunk}`, parts, avatar, snapshot.timeZone || context.job.intent.timeZone, snapshot.now),
@@ -365,8 +424,11 @@ async function runConversationParticipantJob(context, deps) {
             return saved;
         },
     });
-    // The browser also sends a keyword/spontaneous selfie after an ordinary reply.
-    if (!imageDelivered && conversationReplyWantsImage(settings, lastUserMessageText(snapshot.macros?.extra?.chat || []))) {
+    // The browser also sends a keyword/spontaneous selfie after an ordinary reply,
+    // reminder, schedule, idle or proactive message; chimes and character chat do
+    // not, so an old user message cannot force a selfie on them.
+    const imageEligible = ['reply', 'reminder', 'schedule', 'idle-followup', 'idle-spontaneous', 'proactive'].includes(snapshot.purpose || 'reply');
+    if (imageEligible && !imageDelivered && conversationReplyWantsImage(settings, lastUserMessageText(snapshot.macros?.extra?.chat || []))) {
         await deps.generateImage(context, snapshot, '', speaker, { chunk: 'spontaneous', image: 0, attachReplyReference: false, extra: {} });
     }
     writeArtifact(directories, context.job.id, 'result', result);

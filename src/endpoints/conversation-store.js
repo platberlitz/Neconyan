@@ -106,6 +106,8 @@ export function ensureConversationStore(settings, normalizeConversationGroupReco
     store.groups = Array.isArray(current.groups) ? current.groups.map(normalizeConversationGroupRecord).filter(Boolean) : [];
     store.legacyThreadPersonaAssignments = getSafeRecord(current.legacyThreadPersonaAssignments);
     store.reminders = Array.isArray(current.reminders) ? current.reminders : [];
+    // Server-owned automation configuration; left absent for browser-owned accounts.
+    if (current.automation !== undefined) store.automation = getOwnRecord(current.automation);
 
     settings.extension_settings[CONVERSATION_STORE_KEY] = store;
     return store;

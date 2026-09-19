@@ -351,6 +351,31 @@ router.post('/store/save', asyncRoute(async (request, response) => {
     return respondSaveResult(response, saveResult, { store: saveResult.store || store });
 }));
 
+/**
+ * Switch Conversation background behaviour between browser and server ownership
+ * and persist the user's timezone outside general settings, which the browser
+ * overwrites wholesale.
+ */
+router.post('/automation/configure', asyncRoute(async (request, response) => {
+    const mode = request.body?.mode;
+    if (mode !== 'browser' && mode !== 'server') {
+        return response.status(400).send({ error: 'invalid_automation_mode' });
+    }
+    const timeZone = typeof request.body?.timeZone === 'string' && request.body.timeZone.trim() ? request.body.timeZone.trim() : 'UTC';
+    try {
+        new Intl.DateTimeFormat('en-GB', { timeZone }).format();
+    } catch {
+        return response.status(400).send({ error: 'invalid_timezone' });
+    }
+    const result = readConversationStoreForWrite(request, request.body?.version, normalizeGroupRecord);
+    if (!result.ok) {
+        return response.status(result.status).send(result.body);
+    }
+    result.store.automation = { ...(result.store.automation || {}), mode, timeZone };
+    const saveResult = await saveConversationStore(request, result.store, result.version, { trustedConversationEffects: true });
+    return respondSaveResult(response, saveResult, { automation: saveResult.store?.automation || result.store.automation });
+}));
+
 router.post('/group/list', (request, response) => {
     const scopeValidation = validateConversationScope('', getRequestPersonaId(request));
     if (!scopeValidation.valid) {

@@ -308,6 +308,48 @@ describe('SillyBunny Conversation REST API', () => {
         expect(readConversationStore().reminders).toHaveLength(1);
     });
 
+    test('an autonomous occurrence runs as a family and claims its bookkeeping once', async () => {
+        const { testExports: { runJob }, setDirectoriesResolver } = await import('../src/jobs/runner.js');
+        const { getJob } = await import('../src/jobs/store.js');
+        const { acceptConversationAutonomousReply } = await import('../src/generation/conversation-jobs.js');
+        const { reconcileConversationJob } = (await import('../src/generation/conversation-worker.js')).testExports;
+        await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [{ role: 'user', name: 'User', mes: 'Are you there?' }] });
+        const saved = readSettings();
+        saved.extension_settings.connectionManager = { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o', proxy: 'fixture' }] };
+        saved.proxies = [{ name: 'fixture', url: upstreamUrl.replace(/\/$/, ''), password: 'fixture-private-token' }];
+        saved.oai_settings = { chat_completion_source: 'openai', temp_openai: 0.2, top_p_openai: 1, n: 1 };
+        saved.extension_settings[CONVERSATION_STORE_KEY].settings.connection_profile = 'saved';
+        saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].settings.connection_profile = 'saved';
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(saved));
+
+        const request = { user: { profile: { handle: userHandle }, directories: userDirectories } };
+        const occurrence = {
+            kind: 'idle-followup', key: 'conv-auto|idle|test', directive: '[System directive: ping.]',
+            target: { avatar: 'nova.png', branchId: 'main' },
+            participants: [{ avatar: 'nova.png', purpose: 'idle', extra: { conversation_mode_auto: true, idle_action: 'followup' } }],
+            bookkeeping: { sessionMarkers: { sb_conv_last_idle_session_followup: '123' }, lastAutoMessageAt: 4242 },
+        };
+        upstreamReplyText = 'Autonomous hello.';
+        const accepted = await acceptConversationAutonomousReply(request, occurrence);
+        expect(accepted.created).toBe(true);
+        expect(upstreamRequests).toHaveLength(0);
+        const duplicate = await acceptConversationAutonomousReply(request, occurrence);
+        expect(duplicate.created).toBe(false);
+        expect(duplicate.job.id).toBe(accepted.job.id);
+
+        setDirectoriesResolver(() => userDirectories);
+        await runJob(getJob(userDirectories, accepted.job.id));
+        for (const childId of getJob(userDirectories, accepted.job.id).children || []) await runJob(getJob(userDirectories, childId));
+        await reconcileConversationJob(userDirectories, getJob(userDirectories, accepted.job.id));
+        expect(getJob(userDirectories, accepted.job.id).state).toBe('completed');
+        expect(upstreamRequests).toHaveLength(1);
+        const branch = readConversationStore().characters['nova.png'].branches.main;
+        expect(branch.messages.map(message => message.role)).toEqual(['user', 'character']);
+        expect(branch.messages[1].extra.conversation_mode_auto).toBe(true);
+        expect(branch.sessionMarkers.sb_conv_last_idle_session_followup).toBe('123');
+        expect(branch.lastAutoMessageAt).toBe(4242);
+    });
+
     test('a composer send appends its user messages natively before any provider call and is idempotent', async () => {
         const { getJob, updateJob } = await import('../src/jobs/store.js');
         const { readArtifact } = await import('../src/jobs/artifacts.js');

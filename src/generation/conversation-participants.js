@@ -188,7 +188,7 @@ export async function buildConversationParticipantPlan(request, current, target,
 }
 
 /** Build one participant's frozen request. The native target stays the thread's, only the speaker changes. */
-export async function buildConversationParticipantSnapshot(request, current, target, plan, { directive, timeZone, force = false, now = Date.now() } = {}) {
+export async function buildConversationParticipantSnapshot(request, current, target, plan, { directive, timeZone, force = false, now = Date.now(), extra = {}, automation = null } = {}) {
     const directories = request.user.directories;
     const avatar = plan.avatar;
     const settings = getConversationSettings(request, current.store, avatar, target.groupId, {}, { personaId: target.personaId });
@@ -229,8 +229,11 @@ export async function buildConversationParticipantSnapshot(request, current, tar
         target, binding, settings, force, purpose: plan.purpose || 'reply', timeZone,
         speaker: { avatar, name: character.name }, speakers: savedContext.speakers, userName, now,
         activity, gate: plan.gate === true, assistantKnowledgeTokens,
+        extra: plan.extra && typeof plan.extra === 'object' ? plan.extra : extra,
+        automation,
         messages: [{ role: 'system', content: system }, ...messages],
-        replyReference: buildConversationMessageReplyReference([...current.branch.messages].reverse().find(message => message.role !== 'system')),
+        // An autonomous message starts a topic; it must not quote the last chat.
+        replyReference: automation ? null : buildConversationMessageReplyReference([...current.branch.messages].reverse().find(message => message.role !== 'system')),
         macros: { names: { user: userName, char: character.name }, extra: { chat: current.branch.messages, chatMetadata: {}, powerUser: current.settings.power_user || {} } },
     };
 }

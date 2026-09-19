@@ -1,8 +1,62 @@
 import { getJob, listJobs, updateJob } from '../jobs/store.js';
-import { finalizeConversationSubmission } from './conversation-jobs.js';
+import { getConversationSettings, normalizeConversationSettings } from '../endpoints/conversation-generation.js';
+import { normalizeConversationGroupRecord } from '../endpoints/conversation-groups.js';
+import { ensureConversationStore, readUserSettingsWithStatus, saveConversationStore } from '../endpoints/conversation-store.js';
+import { unScopeConversationStorageKey } from '../endpoints/conversation-utils.js';
+import { getCharacterData } from '../endpoints/conversation-generation.js';
+import { getSettingsVersion } from '../settings-version.js';
+import { acceptConversationAutonomousReply, finalizeConversationSubmission } from './conversation-jobs.js';
+import { resolveAutomationActivity, selectConversationReminder, selectNextConversationThreadAutomation } from './conversation-auto-policy.js';
 
 const DEFAULT_INTERVAL_MS = 1000;
+const AUTO_SCAN_INTERVAL_MS = 30000;
 const TERMINAL_STATES = new Set(['completed', 'cancelled', 'failed', 'interrupted', 'conflict']);
+const normalizeGroup = group => normalizeConversationGroupRecord(group, normalizeConversationSettings);
+
+/** Decode a saved character slot key into its avatar and destination group. */
+function splitThreadKey(localKey) {
+    if (typeof localKey !== 'string' || !localKey) return null;
+    if (!localKey.startsWith('group:')) return { avatar: localKey, groupId: '' };
+    const rest = localKey.slice('group:'.length);
+    const separator = rest.indexOf(':');
+    if (separator === -1) return { avatar: rest, groupId: '' };
+    return { avatar: rest.slice(separator + 1), groupId: rest.slice(0, separator) };
+}
+
+/** Every active branch for a persona, with settings and partner records resolved. */
+async function buildAutomationFrames(request, store, personaId) {
+    const characters = {};
+    for (const [key, value] of Object.entries(store.characters || {})) {
+        const local = unScopeConversationStorageKey(key, personaId);
+        if (local !== null) characters[local] = value;
+    }
+    const frames = [];
+    for (const [key, characterStore] of Object.entries(store.characters || {})) {
+        const local = unScopeConversationStorageKey(key, personaId);
+        const split = splitThreadKey(local);
+        if (!split || !characterStore) continue;
+        const branchId = characterStore.activeBranchId;
+        const branch = characterStore.branches?.[branchId];
+        if (!branch || !Array.isArray(branch.messages)) continue;
+        const target = { avatar: split.avatar, groupId: split.groupId, personaId, branchId };
+        const settings = getConversationSettings(request, store, target.avatar, target.groupId, {}, { personaId });
+        const partners = [];
+        if (target.groupId) {
+            const group = (store.groups || []).find(item => String(item.id) === String(target.groupId));
+            for (const avatar of [...new Set(group?.members || [])]) {
+                if (avatar === target.avatar || group?.disabled_members?.includes(avatar)) continue;
+                const member = await getCharacterData(request, avatar, { allowOverride: false });
+                partners.push({ avatar, name: member.name, status: 'online' });
+            }
+        }
+        frames.push({
+            target, branch, settings, partners,
+            activity: resolveAutomationActivity(characters, target.avatar, personaId, store.runtimeStatusOverrides, Date.now(), store.automation?.timeZone || 'UTC'),
+        });
+    }
+    frames.sort((a, b) => (Number(b.branch.updatedAt) || 0) - (Number(a.branch.updatedAt) || 0));
+    return { characters, frames };
+}
 
 /**
  * Close a Conversation family whose participants have all stopped. The root
@@ -68,15 +122,103 @@ export async function runConversationWorkerTick({ directoriesFor, owners, now = 
     }
 }
 
+/**
+ * Decide and accept at most one autonomous message per owner. Only owners that
+ * switched native automation on are considered, and only when no Conversation
+ * family is still open. A reminder is handled (or invalidated) before threads.
+ */
+export async function scanConversationAutonomy({ directoriesFor, owners, now = Date.now(), random = Math.random } = {}) {
+    const ownerList = typeof owners === 'function' ? await owners() : owners;
+    if (!Array.isArray(ownerList)) return { accepted: [], invalidated: [] };
+    const accepted = [];
+    const invalidated = [];
+    for (const owner of ownerList) {
+        let directories;
+        try { directories = directoriesFor(owner); } catch { continue; }
+        const request = { user: { profile: { handle: owner }, directories } };
+        let jobs;
+        try { jobs = listJobs(directories, { owner, includeDismissed: true }); } catch { continue; }
+        if (jobs.some(job => job.type === 'conversation.reply' && !TERMINAL_STATES.has(job.state))) continue;
+        let saved;
+        try { saved = readUserSettingsWithStatus(request); } catch { continue; }
+        if (!saved.ok || !saved.data) continue;
+        let store;
+        try { store = ensureConversationStore(saved.data, normalizeGroup); } catch { continue; }
+        if (store.automation?.mode !== 'server') continue;
+        const timeZone = store.automation?.timeZone || 'UTC';
+        const personaId = String(saved.data.user_avatar || '');
+        const userStatus = String(store.userStatus || 'online');
+        const { characters, frames } = await buildAutomationFrames(request, store, personaId);
+        const byBranch = new Map();
+        const byThread = new Map();
+        for (const frame of frames) {
+            byBranch.set(`${frame.target.avatar}\u001f${frame.target.groupId}\u001f${frame.target.branchId}`, frame);
+            const thread = `${frame.target.avatar}\u001f${frame.target.groupId}`;
+            if (!byThread.has(thread)) byThread.set(thread, frame);
+        }
+        const targets = new Map();
+        for (const reminder of store.reminders || []) {
+            const fallback = byThread.get(`${reminder.avatar}\u001f${reminder.groupId || ''}`);
+            const branchId = reminder.branchId || fallback?.target.branchId;
+            const frame = byBranch.get(`${reminder.avatar}\u001f${reminder.groupId || ''}\u001f${branchId}`);
+            if (frame && branchId) targets.set(reminder, { target: { ...frame.target, branchId }, settings: frame.settings });
+        }
+        let occurrence = selectConversationReminder({ reminders: store.reminders || [], targets, personaId, now });
+        if (occurrence?.action === 'invalidate' || occurrence?.action === 'skip') {
+            const reminder = (store.reminders || []).find(item => item.id === occurrence.reminderId);
+            if (reminder) {
+                if (occurrence.action === 'invalidate') {
+                    reminder.invalidAt = now;
+                    reminder.invalidReason = occurrence.reason;
+                } else {
+                    reminder.fired = true;
+                    reminder.skippedAt = now;
+                }
+                try {
+                    const savedResult = await saveConversationStore(request, store, getSettingsVersion(saved.data), { trustedConversationEffects: true });
+                    if (savedResult.ok) invalidated.push(reminder.id);
+                } catch (error) {
+                    console.error(`[Conversation] Could not update reminder ${reminder.id}:`, error?.message ?? error);
+                }
+            }
+            continue;
+        }
+        if (!occurrence) {
+            for (const frame of frames) {
+                occurrence = selectNextConversationThreadAutomation({
+                    settings: frame.settings, branch: frame.branch, target: frame.target, partners: frame.partners,
+                    characters, personaId, overrides: store.runtimeStatusOverrides || {}, userStatus, now, timeZone, random,
+                });
+                if (occurrence) break;
+            }
+        }
+        if (!occurrence || !occurrence.target) continue;
+        try {
+            await acceptConversationAutonomousReply(request, { ...occurrence, timeZone });
+            accepted.push(occurrence.key);
+        } catch (error) {
+            console.error('[Conversation] Could not accept automatic message:', error?.message ?? error);
+        }
+    }
+    return { accepted, invalidated };
+}
+
 /** Start the reconciler. Returns a stop function. Overlapping ticks are skipped. */
-export function startConversationWorker({ directoriesFor, owners, intervalMs = DEFAULT_INTERVAL_MS } = {}) {
+export function startConversationWorker({ directoriesFor, owners, intervalMs = DEFAULT_INTERVAL_MS, autoIntervalMs = AUTO_SCAN_INTERVAL_MS } = {}) {
     const list = async () => (typeof owners === 'function' ? await owners() : owners || []);
     let ticking = false;
+    let lastScan = 0;
     const tick = async () => {
         if (ticking) return;
         ticking = true;
         try {
-            await runConversationWorkerTick({ directoriesFor, owners: await list(), now: Date.now() });
+            const listNow = await list();
+            await runConversationWorkerTick({ directoriesFor, owners: listNow, now: Date.now() });
+            const now = Date.now();
+            if (now - lastScan >= autoIntervalMs) {
+                lastScan = now;
+                await scanConversationAutonomy({ directoriesFor, owners: listNow, now });
+            }
         } catch (error) {
             console.error('[Conversation] Scan failed:', error);
         } finally {
@@ -89,4 +231,4 @@ export function startConversationWorker({ directoriesFor, owners, intervalMs = D
     return () => clearInterval(timer);
 }
 
-export const testExports = { runConversationWorkerTick, reconcileConversationJob };
+export const testExports = { runConversationWorkerTick, reconcileConversationJob, scanConversationAutonomy };
