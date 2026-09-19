@@ -313,7 +313,7 @@ export async function acceptConversationAside(request, body = {}) {
     if (!owner || !directories?.root) fail('An authenticated account is required.', 401);
     const submission = normalizeConversationAsideSubmission(body);
     const target = captureConversationTarget(request, { ...submission.target, groupId: '' });
-    const current = readConversationTarget(request, target);
+    readConversationTarget(request, target);
     const key = getConversationAsideOccurrenceKey(owner, submission);
     const existing = findSubmission(directories, owner, key);
     if (existing) {
@@ -322,21 +322,24 @@ export async function acceptConversationAside(request, body = {}) {
     }
     // Eligibility and the shared cooldown are checked against the fresh store
     // after the async character read: two submissions that started together must
-    // not both slip past the persona + group + recipient cooldown.
+    // not both slip past the persona + group + recipient cooldown, and a settings
+    // change during the read must still be honoured. Group asides follow the
+    // browser and read the source group's settings; their delivery stays a solo DM.
     const character = await getCharacterData(request, target.avatar, { allowOverride: false, requireExisting: true });
-    const settings = getConversationSettings(request, current.store, target.avatar, '', {}, { personaId: target.personaId });
-    if (settings.enabled === false || settings.roleplay_reactions !== true) {
+    const fresh = readConversationTarget(request, target);
+    const isGroup = submission.source.locator.group === true;
+    const settings = getConversationSettings(request, fresh.store, target.avatar, isGroup ? submission.source.groupId : '', {}, { personaId: target.personaId });
+    if (settings.enabled === false || (isGroup && settings.roleplay_reactions !== true)) {
         return { job: null, created: false, skipped: 'disabled' };
     }
-    const activity = resolveParticipantActivity(
-        { [target.avatar]: current.store.characters?.[getConversationThreadKey(target.avatar, '', target.personaId)] },
-        target.avatar, target.personaId, current.store.runtimeStatusOverrides, Date.now(), current.store.automation?.timeZone || 'UTC',
-    ) || manualActivity(settings);
-    if (activity.status === 'offline') {
-        return { job: null, created: false, skipped: 'offline' };
+    if (isGroup) {
+        const activity = resolveParticipantActivity(
+            { [target.avatar]: fresh.store.characters?.[getConversationThreadKey(target.avatar, '', target.personaId)] },
+            target.avatar, target.personaId, fresh.store.runtimeStatusOverrides, Date.now(), fresh.store.automation?.timeZone || 'UTC',
+        ) || manualActivity(settings);
+        if (activity.status === 'offline') return { job: null, created: false, skipped: 'offline' };
     }
-    const fresh = readConversationTarget(request, target);
-    const cooldownKey = submission.source.locator.group
+    const cooldownKey = isGroup
         ? JSON.stringify([submission.target.personaId, submission.source.groupId, submission.target.avatar])
         : '';
     if (cooldownKey) {
@@ -348,7 +351,7 @@ export async function acceptConversationAside(request, body = {}) {
             .some(job => job.intent?.automation?.groupAsideKey === cooldownKey && !TERMINAL_JOB_STATES.has(job.state));
         if (busy) return { job: null, created: false, skipped: 'busy' };
     }
-    const userName = String(current.settings?.power_user?.personas?.[target.personaId] || current.settings?.name1 || 'User');
+    const userName = String(fresh.settings?.power_user?.personas?.[target.personaId] || fresh.settings?.name1 || 'User');
     const captured = captureConversationRoleplaySource(request, submission, { characterName: character?.name || 'Character', userName });
     return acceptConversationAutonomousReply(request, {
         key,
@@ -497,6 +500,11 @@ async function runConversationParticipantJob(context, deps) {
         append: async (text, author, delivery) => {
             const delayMs = getReplyDelayMsForStatus(text, settings, activity.status);
             await waitForConversationJobDelay(context, `bubble-delay:${delivery.chunk}:${delivery.bubble}`, delayMs, deps);
+            // Reassert the saved source after each delivery delay, including a
+            // resumed delivery: the source chat or its group may have changed.
+            if (automation?.roleplaySource) {
+                captureConversationRoleplaySource({ user: { directories } }, automation.roleplaySource, { characterName: speaker.name, userName });
+            }
             const group = readConversationTarget({ user: { directories } }, target).group;
             if (target.groupId && (!group?.members?.includes(author.avatar) || group.disabled_members?.includes(author.avatar))) fail('The reply participant is no longer available.');
             return appendConversationJobMessage(context, target, `bubble:${delivery.chunk}:${delivery.bubble}`, {

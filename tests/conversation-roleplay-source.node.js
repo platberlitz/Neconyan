@@ -33,7 +33,7 @@ function writeSettings(directories) {
             connectionManager: { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o' }] },
             [CONVERSATION_STORE_KEY]: {
                 version: 1,
-                settings: { connection_profile: 'saved' },
+                settings: { connection_profile: 'saved', enabled: true, roleplay_reactions: true },
                 characters: {
                     'nova.png': {
                         settings: { enabled: true, roleplay_reactions: true }, activeBranchId: 'main',

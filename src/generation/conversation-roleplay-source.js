@@ -68,7 +68,10 @@ export function normalizeConversationAsideSubmission(body = {}) {
     const avatar = identifier(body.target.avatar, 'character');
     const personaId = optionalIdentifier(body.target.personaId, 'persona');
     const branchId = identifier(body.target.branchId, 'branch');
-    const chat = identifier(body.source.locator.chat, 'chat name').replace(/\.jsonl$/i, '');
+    let chat = identifier(body.source.locator.chat, 'chat name');
+    // Strip every trailing suffix so `crew`, `crew.jsonl` and `crew.jsonl.jsonl`
+    // stay one identity through file resolution and the occurrence key.
+    while (/\.jsonl$/i.test(chat)) chat = chat.replace(/\.jsonl$/i, '');
     if (!chat || sanitize(chat) !== chat) {
         throw fail('Invalid aside chat name.', 400, 'invalid_aside_submission');
     }
