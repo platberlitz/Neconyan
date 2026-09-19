@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { deliverConversationReply } from '../../public/scripts/neconyan-conversation/reply-delivery.js';
-import { getConversationSettings, getDefaultDirective } from '../endpoints/conversation-generation.js';
+import { getCharacterData, getConversationSettings, getDefaultDirective } from '../endpoints/conversation-generation.js';
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { acceptChildJobs, acceptJob, getJob, listJobs, releaseChildJobs, releaseJob, requestCancellation, setJobResume, updateJob } from '../jobs/store.js';
@@ -11,8 +11,10 @@ import { captureChatProfile } from './profiles.js';
 import { runChatProfile } from './service.js';
 import { createConversationImageGenerator, conversationReplyWantsImage, lastUserMessageText } from './conversation-images.js';
 import { buildConversationParticipantPlan, buildConversationParticipantSnapshot, buildAvailabilityAutoResponderText, buildDelayedReplyNoticeText, getConversationAvailabilityDecision, getInitialAvailabilityDelayMs, getReplyDelayMsForStatus, manualActivity } from './conversation-participants.js';
+import { captureConversationRoleplaySource, getConversationAsideOccurrenceKey, getConversationGroupAsideCooldownMs, getConversationGroupAsideLastSent, normalizeConversationAsideSubmission } from './conversation-roleplay-source.js';
 
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const TERMINAL_JOB_STATES = new Set(['completed', 'cancelled', 'failed', 'interrupted', 'conflict']);
 const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }); };
 
 const MAX_INPUT_MESSAGES = 64;
@@ -131,6 +133,13 @@ export async function finalizeConversationSubmission(request, job) {
             const built = await buildConversationSnapshot(request, target, job.intent.directive, job.intent.timeZone, {
                 force: job.intent.force === true, plan: job.intent.plan, automation: job.intent.automation,
             });
+            if (Number.isFinite(built.snapshot.automation?.delayMs) && built.snapshot.automation.delayMs > 0 && !built.snapshot.automation.delayUntil) {
+                const delayUntil = Number(job.createdAt || Date.now()) + built.snapshot.automation.delayMs;
+                built.snapshot.automation.delayUntil = delayUntil;
+                for (const participant of Array.isArray(built.snapshot.participants) ? built.snapshot.participants : []) {
+                    participant.automation = { ...(participant.automation || {}), delayUntil };
+                }
+            }
             if (Buffer.byteLength(JSON.stringify(built.snapshot)) > 16 * 1024 * 1024) fail('The Conversation request snapshot is too large.', 413);
             writeArtifact(directories, job.id, 'request', built.snapshot);
         } catch (error) {
@@ -272,7 +281,9 @@ export async function acceptConversationAutonomousReply(request, occurrence) {
             avatar: participant.avatar, purpose: participant.purpose || 'auto',
             directive: participant.directive || occurrence.directive, extra: participant.extra || null,
         })),
-        automation: { key: occurrence.key, kind: occurrence.kind || 'auto', patch: occurrence.bookkeeping || null },
+        automation: { key: occurrence.key, kind: occurrence.kind || 'auto', patch: occurrence.bookkeeping || null,
+            delayMs: Number.isFinite(occurrence.delayMs) && occurrence.delayMs > 0 ? occurrence.delayMs : 0,
+            groupAsideKey: typeof occurrence.groupAsideKey === 'string' ? occurrence.groupAsideKey : '' },
     };
     const existing = findSubmission(directories, owner, occurrence.key);
     if (existing) {
@@ -286,6 +297,53 @@ export async function acceptConversationAutonomousReply(request, occurrence) {
     noteOwner(owner);
     await finalizeConversationSubmission(request, accepted.job);
     return { job: getJob(directories, accepted.job.id), created: accepted.created };
+}
+
+/**
+ * Accept a Roleplay group aside or solo side DM. The browser keeps the event
+ * sampling but sends only the saved source locator and revisions; the directive
+ * is rebuilt here from the saved chat, and the source is reasserted before
+ * generation and delivery. A group cooldown is keyed by persona + source group +
+ * recipient, never by branch, and is claimed when the first bubble is delivered.
+ */
+export async function acceptConversationAside(request, body = {}) {
+    const owner = request.user?.profile?.handle;
+    const directories = request.user?.directories;
+    if (!owner || !directories?.root) fail('An authenticated account is required.', 401);
+    const submission = normalizeConversationAsideSubmission(body);
+    const target = captureConversationTarget(request, { ...submission.target, groupId: '' });
+    const current = readConversationTarget(request, target);
+    const key = getConversationAsideOccurrenceKey(owner, submission);
+    const existing = findSubmission(directories, owner, key);
+    if (existing) {
+        if (existing.job.type !== 'conversation.reply') fail('This aside key already belongs to another operation.');
+        return { job: existing.job, created: false };
+    }
+    const cooldownKey = submission.source.locator.group
+        ? JSON.stringify([submission.target.personaId, submission.source.groupId, submission.target.avatar])
+        : '';
+    if (cooldownKey) {
+        const lastSent = getConversationGroupAsideLastSent(current.store, cooldownKey);
+        if (Date.now() - lastSent < getConversationGroupAsideCooldownMs(submission.reason)) {
+            return { job: null, created: false, skipped: 'cooldown' };
+        }
+        const busy = listJobs(directories, { owner, includeDismissed: false })
+            .some(job => job.intent?.automation?.groupAsideKey === cooldownKey && !TERMINAL_JOB_STATES.has(job.state));
+        if (busy) return { job: null, created: false, skipped: 'busy' };
+    }
+    const character = await getCharacterData(request, target.avatar, { allowOverride: false, requireExisting: true });
+    const userName = String(current.settings?.power_user?.personas?.[target.personaId] || current.settings?.name1 || 'User');
+    const captured = captureConversationRoleplaySource(request, submission, { characterName: character?.name || 'Character', userName });
+    return acceptConversationAutonomousReply(request, {
+        key,
+        directive: captured.directive,
+        target: { avatar: target.avatar, groupId: '', personaId: target.personaId, branchId: target.branchId },
+        participants: [{ avatar: target.avatar, purpose: captured.kind, directive: captured.directive, extra: captured.extra }],
+        kind: captured.kind,
+        delayMs: captured.delayMs,
+        groupAsideKey: cooldownKey || null,
+        bookkeeping: cooldownKey ? { groupAside: { key: cooldownKey } } : {},
+    });
 }
 
 /**
@@ -374,6 +432,10 @@ async function runConversationParticipantJob(context, deps) {
     }
     if (decision.action === 'delay') {
         await waitForConversationJobDelay(context, 'initial', getInitialAvailabilityDelayMs(decision.status, deps.random), deps);
+    }
+    if (automation?.delayUntil) {
+        const remaining = Number(automation.delayUntil) - deps.now();
+        if (remaining > 0) await waitForConversationJobDelay(context, 'automation-delay', remaining, deps);
     }
     // The browser posts the "replies may be slow" notice for a schedule-driven
     // dnd/offline speaker, but not when the manual availability already says so.

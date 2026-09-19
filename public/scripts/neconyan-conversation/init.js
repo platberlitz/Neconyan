@@ -21,7 +21,6 @@ import { scheduleInterfaceRefresh } from './render-scheduler.js';
 import { closeConversationSettings } from './settings-panel.js';
 import { getSettings, hasAnyConversationModeUsage } from './settings-store.js';
 import { conversationState, setExternalConversationGenerationActive } from './state.js';
-import { setConversationTimeout } from './timers.js';
 
 function hasConversationRuntimeUsage() {
     return conversationState.conversationWorkspaceOpen || hasAnyConversationModeUsage();
@@ -95,7 +94,7 @@ export function init() {
                         sourceMessageId: messageId,
                     });
                     if (request) {
-                        setConversationTimeout(() => void triggerGroupAsideDM(chosenMember.character, request), 2000);
+                        void triggerGroupAsideDM(chosenMember.character, request);
                     }
                 }
             } else {
@@ -107,7 +106,7 @@ export function init() {
                 }
                 const request = captureRoleplayDMRequest({ avatar, personaId, sourceMessageId: messageId });
                 if (request) {
-                    setConversationTimeout(() => void triggerRoleplayDM(request), 2000);
+                    void triggerRoleplayDM(request);
                 }
             }
         }

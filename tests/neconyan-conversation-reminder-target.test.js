@@ -15,7 +15,7 @@ const reminder = {
     fired: false,
 };
 
-await jest.unstable_mockModule('../public/script.js', () => ({ chat: [], is_send_press: false, name1: 'User' }));
+await jest.unstable_mockModule('../public/script.js', () => ({ chat: [], getCurrentChatId: () => 'chat', getRequestHeaders: () => ({}), is_send_press: false, name1: 'User', saveChatConditional: async () => true }));
 await jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ selected_group: null }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.js', () => ({
     getActiveConversationBranch: () => null,

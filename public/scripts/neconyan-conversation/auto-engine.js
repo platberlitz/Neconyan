@@ -1,4 +1,4 @@
-import { chat, is_send_press } from '../../script.js';
+import { chat, getCurrentChatId, getRequestHeaders, is_send_press, saveChatConditional } from '../../script.js';
 import { selected_group } from '../group-chats.js';
 import {
     DEFAULT_INACTIVITY_THRESHOLD,
@@ -48,6 +48,7 @@ import {
 } from './partners.js';
 import { getConversationPersonaName, getUserStatus, safeParseWeeklySchedule } from './personas.js';
 import { clamp, getCurrentActivityFromSchedule, getStoredSchedule } from './schedule.js';
+import { getRoleplayGroupRevision, getRoleplaySourceMessageRevision } from './roleplay-source.js';
 import { buildConversationRoleplayContext } from './shared-helpers.js';
 import {
     getAutoCharacterChatCooldownMs,
@@ -68,7 +69,7 @@ import {
     partnerReplyBusyKeys,
     sendQueue,
 } from './state.js';
-import { clearConversationTimeouts, setConversationTimeout } from './timers.js';
+import { clearConversationTimeouts } from './timers.js';
 import { getConversationThread, getImageCooldownRemainingSeconds, markImageGenerated, resolveConversationReminderBranchId } from './thread-store.js';
 import { getConversationActivityContext, withTypingParticipant } from './typing.js';
 
@@ -693,23 +694,20 @@ export async function checkAutoCharacterChat(avatar, settings, now, { branchId =
     return triggered;
 }
 
-export function getRoleplaySourceMessageRevision(message) {
-    return JSON.stringify({
-        id: message?.id ?? '',
-        is_user: Boolean(message?.is_user),
-        mes: message?.mes || '',
-        name: message?.name || '',
-        original_avatar: message?.original_avatar || message?.extra?.original_avatar || message?.extra?.avatar || '',
-        role: message?.role || '',
-    });
-}
+export { getRoleplaySourceMessageRevision };
 
-function getRoleplayGroupRevision(group) {
-    return JSON.stringify({
-        disabled_members: Array.isArray(group?.disabled_members) ? group.disabled_members : [],
-        id: group?.id || '',
-        members: Array.isArray(group?.members) ? group.members : [],
+async function submitConversationAside(body) {
+    const response = await fetch('/api/neconyan-conversation/aside/submit', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: getRequestHeaders(),
+        body: JSON.stringify(body),
     });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+        throw Object.assign(new Error(payload?.error || `Aside request failed (${response.status}).`), { status: response.status });
+    }
+    return payload;
 }
 
 function isCapturedRoleplaySourceValid({ avatar = '', sourceGroupId = '', sourceGroupRevision = '', sourceMessageId = null, sourceMessageRevision = '' } = {}) {
@@ -774,7 +772,7 @@ export async function checkGroupChatMention(messageId) {
     }
 
     const message = chat[messageId];
-    if (!message || message.role !== 'user' || !message.mes) {
+    if (!message || !(message.is_user === true || message.role === 'user') || !message.mes) {
         return;
     }
 
@@ -794,12 +792,8 @@ export async function checkGroupChatMention(messageId) {
             request: captureGroupAsideRequest(character, { personaId, reason: 'mention', sourceGroup: roleplayGroup, sourceGroupId, sourceMessageId: messageId }),
         }))
         .filter(item => item.request);
-    if (requests.length) {
-        setConversationTimeout(() => {
-            for (const { character, request } of requests) {
-                void triggerGroupAsideDM(character, request);
-            }
-        }, 900);
+    for (const { character, request } of requests) {
+        void triggerGroupAsideDM(character, request);
     }
 }
 
@@ -808,7 +802,7 @@ export async function triggerGroupAsideDM(character, options = {}) {
     if (!captured || !isCapturedRoleplaySourceValid({ ...captured, avatar: character?.avatar })) {
         return false;
     }
-    const { branchId, groupContext, personaId, reason, sourceGroupId, sourceMessageId } = captured;
+    const { branchId, personaId, reason, sourceGroupId, sourceMessageId, sourceGroupRevision, sourceMessageRevision } = captured;
     const groupId = String(sourceGroupId || '');
     const group = getRoleplayGroupById(groupId);
     if (!group || !character?.avatar || !group.members?.includes(character.avatar) || group.disabled_members?.includes(character.avatar)) {
@@ -840,65 +834,39 @@ export async function triggerGroupAsideDM(character, options = {}) {
     if (!threadStore?.branches?.[branchId]) {
         return false;
     }
-    const validateTarget = () => Boolean(
-        getConversationThreadStore(character.avatar, { create: false, groupId: '', personaId })?.branches?.[branchId]
-        && isCapturedRoleplaySourceValid({ ...captured, avatar: character.avatar }),
-    );
-
     groupAsideBusyKeys.add(key);
     try {
-        const userName = getConversationPersonaName(personaId, 'User');
-        const characterName = character.name || 'Character';
-        const reasonLine = reason === 'mention'
-            ? `${userName} just mentioned or addressed you in the group chat. Send them a private aside DM about it.`
-            : 'Send a private aside DM while the group chat is ongoing. React to the group if there is something worth reacting to; otherwise start a natural casual DM topic.';
-        const directive = `[System directive: You are ${characterName}, currently present in the active group chat. ${reasonLine} This message goes only to ${userName} in Conversation Mode, not into the group chat. Keep it short, casual, in-character, and suitable as one or two chat bubbles. Output only your DM body, without a name prefix.\n\nRecent group chat context:\n${groupContext}]`;
-        const response = await generateConversationReply(directive, settings, {
-            speakerName: characterName,
-            trimNames: false,
-            avatar: character.avatar,
-            branchId,
-            groupId: null,
-            personaId,
-        });
-
-        if (response?.trim() && validateTarget()) {
-            const extra = {
-                conversation_mode_group_aside: true,
-                conversation_mode_gossip: true,
-                gossip_source_group: true,
-                group_aside_reason: reason,
-                source_group_id: group.id,
-            };
-            if (sourceMessageId !== null && typeof sourceMessageId !== 'undefined') {
-                extra.source_group_message_id = sourceMessageId;
-            }
-
-            const postedText = await withTypingParticipant(character, () => postCharacterReply(response.trim(), settings, {
-                extra,
-                branchId,
-                groupId: null,
-                personaId,
-                validateTarget,
-            }, character.avatar), character.avatar, { branchId, groupId: null, personaId });
-            if (postedText) {
-                groupAsideLastSent.set(key, Date.now());
-                return true;
-            }
+        await saveChatConditional({ throwOnError: true });
+        if (!isCapturedRoleplaySourceValid({ ...captured, avatar: character.avatar })) {
+            return false;
         }
+        const result = await submitConversationAside({
+            target: { avatar: character.avatar, personaId, branchId },
+            source: {
+                locator: { chat: String(getCurrentChatId() || ''), avatar: '', group: true },
+                groupId: group.id,
+            },
+            messageIndex: sourceMessageId,
+            messageRevision: sourceMessageRevision,
+            groupRevision: sourceGroupRevision,
+            reason,
+        });
+        if (result?.created) {
+            groupAsideLastSent.set(key, Date.now());
+        }
+        return Boolean(result?.created);
     } catch (err) {
         reportConversationGenerationError('group aside DM', err, { toast: false });
+        return false;
     } finally {
         groupAsideBusyKeys.delete(key);
     }
-
-    return false;
 }
 
 export async function triggerRoleplayDM(options = {}) {
     const captured = options.branchId ? options : captureRoleplayDMRequest(options);
     if (!captured || !isCapturedRoleplaySourceValid(captured)) return false;
-    const { avatar, branchId, personaId, roleplayContext } = captured;
+    const { avatar, branchId, personaId, sourceMessageId, sourceMessageRevision } = captured;
     const character = getCharacterForAvatar(avatar);
     if (!character || !avatar) return false;
 
@@ -911,38 +879,23 @@ export async function triggerRoleplayDM(options = {}) {
         return false;
     }
 
-    const chatText = String(roleplayContext).trim();
-    if (!chatText) return false;
-    const validateTarget = () => Boolean(
-        getConversationThreadStore(avatar, { create: false, groupId: '', personaId })?.branches?.[branchId]
-        && isCapturedRoleplaySourceValid(captured),
-    );
-    const directive = `[System directive: You are sending a private direct message (DM) to {{user}} to comment on the ongoing roleplay/story scene. Step out of the main scene and send a short, private, personal DM sharing your inner thoughts, a side-comment, or a private reaction to what just happened. Keep it short, casual, and completely in-character. Do not continue the roleplay scene; write a private side-message.\n\nRoleplay context:\n${chatText}]`;
-
     try {
-        const response = await generateConversationReply(directive, settings, {
-            speakerName: character.name || 'Character',
-            trimNames: true,
-            avatar,
-            branchId,
-            groupId: '',
-            personaId,
-        });
-
-        if (response?.trim() && validateTarget()) {
-            const postedText = await postCharacterReply(response.trim(), settings, {
-                extra: { conversation_mode_gossip: true, gossip_source_roleplay: true },
-                branchId,
-                groupId: '',
-                personaId,
-                validateTarget,
-            }, avatar);
-            return Boolean(postedText);
+        await saveChatConditional({ throwOnError: true });
+        if (!isCapturedRoleplaySourceValid(captured)) {
+            return false;
         }
+        const result = await submitConversationAside({
+            target: { avatar, personaId, branchId },
+            source: { locator: { chat: String(getCurrentChatId() || ''), avatar, group: false } },
+            messageIndex: sourceMessageId,
+            messageRevision: sourceMessageRevision,
+            reason: 'reaction',
+        });
+        return Boolean(result?.created);
     } catch (err) {
         reportConversationGenerationError('roleplay side DM', err, { toast: false });
+        return false;
     }
-    return false;
 }
 
 export async function checkConversationReminders(now) {

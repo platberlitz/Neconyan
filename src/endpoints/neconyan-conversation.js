@@ -65,7 +65,7 @@ import {
     extractGeneratedText,
     getSafeConversationGenerationStatus,
 } from './conversation-generation.js';
-import { acceptConversationSubmission } from '../generation/conversation-jobs.js';
+import { acceptConversationAside, acceptConversationSubmission } from '../generation/conversation-jobs.js';
 import { acceptConversationSchedule, acceptConversationSummary } from '../generation/conversation-maintenance.js';
 
 const PREFER_REAL_IP_HEADER = getConfigValue('rateLimiting.preferRealIpHeader', false, 'boolean');
@@ -137,10 +137,11 @@ const CONVERSATION_API_INFO = {
             { method: 'POST', path: '/thread/save', purpose: 'Replace a solo or group DM thread.' },
             { method: 'POST', path: '/message/append', purpose: 'Append one message without generating a reply.' },
             { method: 'POST', path: '/message/send', purpose: 'Append a user message, generate a reply, and persist both.' },
+            { method: 'POST', path: '/aside/submit', purpose: 'Accept a Roleplay group aside or solo side DM from a saved source locator and revisions.' },
         ],
     },
     caveats: [
-        'Browser-only automation is not run by the REST API: idle followups, scheduled messages, proactive messages, partner chimes, group aside DMs, and reminder timers.',
+        'Browser-only automation is not run by the REST API: idle followups, scheduled messages, proactive messages, partner chimes, and reminder timers. Roleplay aside sampling stays in the browser, but /aside/submit accepts and generates the message server-side.',
         'Bracket commands are extracted into reply metadata by /message/send, but REST does not run image generation, schedule edits, or reminder side effects.',
         'REST callers must provide the backend generation payload shape used by the existing completion endpoints.',
     ],
@@ -591,6 +592,13 @@ router.post('/reply/submit', asyncRoute(async (request, response) => {
     if (!await consumeMessageSendLimit(response, messageSendIpLimiter, getIpAddress(request, PREFER_REAL_IP_HEADER))) return;
     if (!await consumeMessageSendLimit(response, messageSendUserLimiter, request.user.profile.handle)) return;
     const accepted = await acceptConversationSubmission(request, request.body || {});
+    return response.status(accepted.created ? 202 : 200).send(accepted);
+}));
+
+router.post('/aside/submit', asyncRoute(async (request, response) => {
+    if (!await consumeMessageSendLimit(response, messageSendIpLimiter, getIpAddress(request, PREFER_REAL_IP_HEADER))) return;
+    if (!await consumeMessageSendLimit(response, messageSendUserLimiter, request.user.profile.handle)) return;
+    const accepted = await acceptConversationAside(request, request.body || {});
     return response.status(accepted.created ? 202 : 200).send(accepted);
 }));
 

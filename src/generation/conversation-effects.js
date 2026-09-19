@@ -119,6 +119,10 @@ export function applyConversationBookkeeping(branch, store, patch, occurrenceKey
     if (Number.isFinite(patch.followupCount)) branch.followupCount = patch.followupCount;
     if (patch.markAutoMessage) branch.lastAutoMessageAt = now;
     if (Number.isFinite(patch.lastAutoMessageAt)) branch.lastAutoMessageAt = patch.lastAutoMessageAt;
+    if (patch.groupAside?.key) {
+        store.groupAsideLastSent = { ...(store.groupAsideLastSent || {}) };
+        store.groupAsideLastSent[String(patch.groupAside.key)] = now;
+    }
     return true;
 }
 
