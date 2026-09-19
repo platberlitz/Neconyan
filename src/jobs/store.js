@@ -265,6 +265,11 @@ export function acceptJob(directories, input) {
     // (private captures, native input writes) can finish before the runner sees
     // it, and a crash mid-preparation leaves a resumable record, not a paid call.
     const paused = input.paused === true;
+    // Optional server-side coalescing record: a paused Conversation submission
+    // carries the moment its batch closes and the member submissions merged into
+    // it. Written in the same mutation as the paused state so a crash cannot
+    // leave a paused job the reconciler would never finish.
+    const coalesce = input.coalesce == null ? null : validatePart('coalesce', input.coalesce, JOB_PART_MAX_BYTES);
     const label = input.label == null ? null : String(input.label).slice(0, JOB_LABEL_MAX);
     const intentHash = submissionKey(owner, key, { type, intent, target, config, credentialRef, automatic, mutating });
     return mutateJobs(directories, store => {
@@ -297,6 +302,7 @@ export function acceptJob(directories, input) {
             label,
             state: paused ? 'waiting' : 'queued',
             stage: paused ? 'preparing' : null,
+            coalesce,
             progress: { completed: 0, total: null },
             target,
             config,

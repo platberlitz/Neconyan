@@ -298,6 +298,8 @@ describe('SillyBunny Conversation REST API', () => {
     test('a composer send appends its user messages natively before any provider call and is idempotent', async () => {
         const { getJob, updateJob } = await import('../src/jobs/store.js');
         const { readArtifact } = await import('../src/jobs/artifacts.js');
+        const { runConversationWorkerTick } = await import('../src/generation/conversation-worker.js');
+        const tick = () => runConversationWorkerTick({ directoriesFor: () => userDirectories, owners: [userHandle], now: Date.now() + 60000 });
         await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [{ role: 'user', name: 'User', mes: 'First' }] });
         const saved = readSettings();
         saved.extension_settings.connectionManager = { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o' }] };
@@ -312,14 +314,14 @@ describe('SillyBunny Conversation REST API', () => {
         const response = await postJson('/reply/submit', input);
         expect(response.status).toBe(202);
         const accepted = await response.json();
-        expect(accepted).toMatchObject({ created: true, inputDurable: true });
+        expect(accepted).toMatchObject({ created: true, inputDurable: true, job: { state: 'waiting', stage: 'preparing' } });
         expect(accepted.userMessageIds).toHaveLength(1);
         expect(upstreamRequests).toHaveLength(0);
         const branch = readConversationStore().characters['nova.png'].branches.main;
         expect(branch.messages.map(message => message.mes)).toEqual(['First', 'Second']);
         expect(branch.messages[1]).toMatchObject({ id: accepted.userMessageIds[0], role: 'user', extra: { files: [{ name: 'notes.txt' }] } });
-        expect(readArtifact(userDirectories, accepted.job.id, 'request')).toMatchObject({ userName: 'User' });
-        expect(JSON.stringify(readArtifact(userDirectories, accepted.job.id, 'request'))).not.toContain('fixture-private-token');
+        // The batch stays open for its coalescing window: no snapshot, no dispatch.
+        expect(readArtifact(userDirectories, accepted.job.id, 'request')).toBeUndefined();
 
         const duplicate = await postJson('/reply/submit', input);
         expect(duplicate.status).toBe(200);
@@ -329,6 +331,13 @@ describe('SillyBunny Conversation REST API', () => {
         const changed = await postJson('/reply/submit', { ...input, messages: [{ role: 'user', mes: 'Different' }] });
         expect(changed.status).toBe(409);
 
+        // A later message joins the open batch instead of starting a second request.
+        const joined = await postJson('/reply/submit', { ...input, submissionKey: 'composer-send-1b', messages: [{ role: 'user', mes: 'Third' }] });
+        expect(joined.status).toBe(200);
+        const joinedJson = await joined.json();
+        expect(joinedJson).toMatchObject({ created: false, inputDurable: true, job: { id: accepted.job.id } });
+        expect(readConversationStore().characters['nova.png'].branches.main.messages.map(message => message.mes)).toEqual(['First', 'Second', 'Third']);
+
         // A crash between input append and snapshot/release leaves a paused job;
         // the same submission repairs it without duplicating the message.
         updateJob(userDirectories, accepted.job.id, { state: 'waiting', stage: 'preparing', resume: null });
@@ -337,11 +346,48 @@ describe('SillyBunny Conversation REST API', () => {
         const repairedJson = await repaired.json();
         expect(repairedJson.job.id).toBe(accepted.job.id);
         expect(repairedJson.userMessageIds).toEqual(accepted.userMessageIds);
+        expect(getJob(userDirectories, accepted.job.id).state).toBe('waiting');
+        expect(readConversationStore().characters['nova.png'].branches.main.messages).toHaveLength(3);
+
+        // Closing the window freezes the batch into one request and releases it.
+        await tick();
         expect(getJob(userDirectories, accepted.job.id).state).toBe('queued');
-        expect(readConversationStore().characters['nova.png'].branches.main.messages).toHaveLength(2);
+        const artifact = readArtifact(userDirectories, accepted.job.id, 'request');
+        expect(artifact).toMatchObject({ userName: 'User' });
+        expect(JSON.stringify(artifact)).toContain('Third');
+        expect(JSON.stringify(artifact)).not.toContain('fixture-private-token');
+        expect(readConversationStore().characters['nova.png'].branches.main.messages).toHaveLength(3);
 
         const rejected = await postJson('/reply/submit', { ...input, submissionKey: 'composer-send-2', messages: [{ role: 'system', mes: 'No' }] });
         expect(rejected.status).toBe(400);
+    });
+
+    test('a send on a different saved profile does not join an open batch', async () => {
+        const { getJob } = await import('../src/jobs/store.js');
+        await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [] });
+        const saved = readSettings();
+        saved.extension_settings.connectionManager = { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o' }, { id: 'other', api: 'openai', model: 'gpt-4o' }] };
+        saved.proxies = [{ name: 'fixture', url: upstreamUrl.replace(/\/$/, ''), password: 'fixture-private-token' }];
+        saved.oai_settings = { chat_completion_source: 'openai', temp_openai: 0.2, top_p_openai: 1, n: 1 };
+        saved.extension_settings[CONVERSATION_STORE_KEY].settings.connection_profile = 'saved';
+        saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].settings.connection_profile = 'saved';
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(saved));
+        const target = { avatar: 'nova.png', branchId: 'main' };
+
+        const first = await postJson('/reply/submit', { submissionKey: 'batch-a', mode: 'send', target, messages: [{ role: 'user', mes: 'One' }] });
+        expect(first.status).toBe(202);
+        const firstJob = (await first.json()).job.id;
+
+        const switched = readSettings();
+        switched.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].settings.connection_profile = 'other';
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(switched));
+
+        const second = await postJson('/reply/submit', { submissionKey: 'batch-b', mode: 'send', target, messages: [{ role: 'user', mes: 'Two' }] });
+        expect(second.status).toBe(202);
+        const secondJob = (await second.json()).job.id;
+        expect(secondJob).not.toBe(firstJob);
+        expect(getJob(userDirectories, secondJob).credentialRef.profileId).toBe('other');
+        expect(readConversationStore().characters['nova.png'].branches.main.messages.map(message => message.mes)).toEqual(['One', 'Two']);
     });
 
     test('info describes browser-primary and curl-capable REST paths', async () => {

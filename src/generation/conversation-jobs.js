@@ -6,7 +6,7 @@ import { buildConversationMessageReplyReference } from '../endpoints/conversatio
 import { buildConversationPromptMessages, buildConversationSystemPrompt, getCharacterData, getConversationSettings, getDefaultDirective } from '../endpoints/conversation-generation.js';
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
-import { acceptJob, getJob, listJobs, releaseJob, setJobResume } from '../jobs/store.js';
+import { acceptJob, getJob, listJobs, releaseJob, setJobResume, updateJob } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { appendConversationJobMessage, captureConversationTarget, commitConversationEffect, commitConversationJobCommands, readConversationTarget } from './conversation-effects.js';
@@ -20,6 +20,9 @@ const fail = (message, status = 409) => { throw Object.assign(new Error(message)
 const MAX_INPUT_MESSAGES = 64;
 const MAX_INPUT_MESSAGE_BYTES = 256 * 1024;
 const MAX_INPUT_TOTAL_BYTES = 2 * 1024 * 1024;
+// Mirrors the browser's SEND_QUEUE_COALESCE_MS: a burst of composer messages
+// stays one batch until the user goes quiet for this long.
+const COALESCE_WINDOW_MS = 5000;
 
 /** Validate composer-supplied user messages. Only display fields survive; nothing routing-related is accepted. */
 function normalizeInputMessages(raw) {
@@ -81,31 +84,94 @@ async function buildConversationSnapshot(request, target, directive, timeZone, b
  */
 async function prepareConversationSubmission(request, job, { mode, messages, directive, timeZone }) {
     const directories = request.user.directories;
+    const appended = await appendSubmissionMessages(request, job, messages, job.submissionKey);
+    // A send batch stays paused until its coalescing window closes, so a burst of
+    // composer messages becomes one request. A reply is a forced barrier and goes
+    // straight out; the zero deadline only lets the reconciler repair a crash.
+    if (mode === 'send') {
+        updateJob(directories, job.id, { coalesce: { ...(job.coalesce || {}), deadline: Date.now() + COALESCE_WINDOW_MS } });
+        return { job: getJob(directories, job.id), created: false, inputDurable: true, userMessageIds: appended.userMessageIds, native: appended.native };
+    }
+    await finalizeConversationSubmission(request, job);
+    return { job: getJob(directories, job.id), created: false, inputDurable: true, userMessageIds: appended.userMessageIds, native: appended.native };
+}
+
+/** Append a submission's user messages under a job with per-submission effect ids. */
+async function appendSubmissionMessages(request, job, messages, submissionKey) {
+    const directories = request.user.directories;
     const context = { owner: job.owner, directories, job, signal: { throwIfAborted() {} } };
     const target = captureConversationTarget(request, job.intent.target);
     const current = readConversationTarget(request, target);
     const userName = String(current.settings.power_user?.personas?.[target.personaId] || current.settings.name1 || 'User');
+    const tag = hash(submissionKey).slice(0, 12);
     const userMessageIds = [];
-    if (mode === 'send') {
-        for (const [index, message] of messages.entries()) {
-            const appended = await appendConversationJobMessage(context, target, `input:${index}`, {
-                role: 'user', name: userName, mes: message.mes, extra: { ...message.extra, conversation_mode_user: true },
-            });
-            userMessageIds.push(appended.id);
-        }
+    for (const [index, message] of messages.entries()) {
+        const appended = await appendConversationJobMessage(context, target, `input:${tag}:${index}`, {
+            role: 'user', name: userName, mes: message.mes, extra: { ...message.extra, conversation_mode_user: true },
+        });
+        userMessageIds.push(appended.id);
     }
+    const fresh = readConversationTarget(request, target);
+    return {
+        userMessageIds,
+        native: { threadKey: getConversationThreadKey(target.avatar, target.groupId, target.personaId), branchId: target.branchId, revision: fresh.version },
+    };
+}
+
+/**
+ * Build the frozen request snapshot for a prepared job and let the dispatcher see
+ * it. Safe to repeat: the artifact is written once and releasing a queued job does
+ * nothing. A cancelled job is never released.
+ */
+export async function finalizeConversationSubmission(request, job) {
+    const directories = request.user.directories;
     if (!readArtifact(directories, job.id, 'request')) {
-        const built = await buildConversationSnapshot(request, target, directive, timeZone, job.credentialRef);
+        const target = captureConversationTarget(request, job.intent.target);
+        const built = await buildConversationSnapshot(request, target, job.intent.directive, job.intent.timeZone, job.credentialRef);
         if (Buffer.byteLength(JSON.stringify(built.snapshot)) > 16 * 1024 * 1024) fail('The Conversation request snapshot is too large.', 413);
         writeArtifact(directories, job.id, 'request', built.snapshot);
     }
     releaseJob(directories, job.id);
-    const released = getJob(directories, job.id);
-    const fresh = readConversationTarget(request, target);
-    return {
-        job: released, created: false, inputDurable: true, userMessageIds,
-        native: { threadKey: getConversationThreadKey(target.avatar, target.groupId, target.personaId), branchId: target.branchId, revision: fresh.version },
-    };
+    return getJob(directories, job.id);
+}
+
+/** Find the job a submission key belongs to, whether it led a batch or joined one. */
+function findSubmission(directories, owner, key) {
+    for (const job of listJobs(directories, { owner, includeDismissed: true })) {
+        if (job.submissionKey === key) return { job, member: null };
+        const member = Array.isArray(job.coalesce?.members) ? job.coalesce.members.find(entry => entry?.key === key) : null;
+        if (member) return { job, member };
+    }
+    return null;
+}
+
+/** The open send batch this submission can still join, or null. */
+function findCoalesceLeader(directories, owner, target, binding, now) {
+    const threadKey = getConversationThreadKey(target.avatar, target.groupId, target.personaId);
+    return listJobs(directories, { owner, includeDismissed: true }).find(job => job.type === 'conversation.reply'
+        && job.intent?.mode === 'send'
+        && job.state === 'waiting' && job.stage === 'preparing'
+        && !job.cancellation?.requested
+        && job.target?.id === threadKey && job.target?.branchId === target.branchId
+        && job.credentialRef?.profileId === binding?.profileId
+        && job.credentialRef?.fingerprint === binding?.fingerprint
+        && Number(job.coalesce?.deadline) > now) || null;
+}
+
+/**
+ * Merge a later composer message into an open send batch. The message is saved
+ * under the leader's receipts, so repeating the submission cannot duplicate it,
+ * and the window is pushed out so a burst keeps extending the batch.
+ *
+ * ponytail: a message landing in the same moment the window closes can miss that
+ * batch. It is still saved; the browser has the same late-message behaviour.
+ */
+async function joinCoalesceLeader(request, leader, { messages, submissionKey }) {
+    const directories = request.user.directories;
+    const appended = await appendSubmissionMessages(request, leader, messages, submissionKey);
+    const members = [...(leader.coalesce?.members || []).filter(member => member?.key !== submissionKey), { key: submissionKey, hash: hash(messages), userMessageIds: appended.userMessageIds }];
+    updateJob(directories, leader.id, { coalesce: { ...(leader.coalesce || {}), deadline: Date.now() + COALESCE_WINDOW_MS, members } });
+    return { job: getJob(directories, leader.id), created: false, inputDurable: true, userMessageIds: appended.userMessageIds, native: appended.native };
 }
 
 /**
@@ -131,20 +197,29 @@ export async function acceptConversationSubmission(request, body = {}) {
         directive: getDefaultDirective(body), timeZone,
         ...(mode === 'send' ? { inputHash: hash(messages) } : {}),
     };
-    const existing = listJobs(directories, { owner, includeDismissed: true }).find(job => job.submissionKey === body.submissionKey);
+    const existing = findSubmission(directories, owner, body.submissionKey);
     if (existing) {
-        if (existing.type !== 'conversation.reply' || hash(existing.intent) !== hash(intent)) fail('This submission key already belongs to another operation.');
+        const matches = existing.member ? existing.member.hash === hash(messages) : hash(existing.job.intent) === hash(intent);
+        if (existing.job.type !== 'conversation.reply' || !matches) fail('This submission key already belongs to another operation.');
         // A job still preparing is repaired, not duplicated. Anything else is already durable.
-        if (existing.state === 'waiting' && existing.stage === 'preparing') {
-            return prepareConversationSubmission(request, existing, { mode, messages, directive: intent.directive, timeZone });
+        if (existing.job.state === 'waiting' && existing.job.stage === 'preparing') {
+            return existing.member
+                ? joinCoalesceLeader(request, existing.job, { messages, submissionKey: body.submissionKey })
+                : prepareConversationSubmission(request, existing.job, { mode, messages, directive: intent.directive, timeZone });
         }
-        return { job: existing, created: false, inputDurable: true, userMessageIds: [] };
+        if (existing.member && !existing.member.userMessageIds?.length) fail('This submission finished before its message could be saved. Send it again.');
+        return { job: existing.job, created: false, inputDurable: true, userMessageIds: existing.member?.userMessageIds || [] };
     }
     const target = captureConversationTarget(request, intent.target);
     const current = readConversationTarget(request, target);
     const settings = getConversationSettings(request, current.store, target.avatar, target.groupId, {}, { personaId: target.personaId });
     const binding = captureChatProfile(directories, settings.connection_profile);
+    if (mode === 'send') {
+        const leader = findCoalesceLeader(directories, owner, target, binding, Date.now());
+        if (leader) return joinCoalesceLeader(request, leader, { messages, submissionKey: body.submissionKey });
+    }
     const accepted = acceptJob(directories, { owner, type: 'conversation.reply', submissionKey: body.submissionKey, intent, paused: true,
+        coalesce: { deadline: mode === 'send' ? Date.now() + COALESCE_WINDOW_MS : 0, members: [] },
         target: { kind: 'conversation', id: getConversationThreadKey(target.avatar, target.groupId, target.personaId), branchId: target.branchId },
         credentialRef: binding, config: {}, label: 'Conversation reply' });
     noteOwner(owner);

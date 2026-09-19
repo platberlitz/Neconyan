@@ -768,6 +768,11 @@ async function postSetupTasks(result) {
         directoriesFor: handle => getUserDirectories(handle),
         owners: () => getAllUserHandles(),
     });
+    const { startConversationWorker } = await import('./generation/conversation-worker.js');
+    startConversationWorker({
+        directoriesFor: handle => getUserDirectories(handle),
+        owners: () => getAllUserHandles(),
+    });
 }
 
 /**
