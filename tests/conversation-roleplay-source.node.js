@@ -17,6 +17,7 @@ const { testExports: { reconcileConversationJob } } = await import('../src/gener
 const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
 const { getRoleplayGroupRevision, getRoleplaySourceMessageRevision } = await import('../public/scripts/neconyan-conversation/roleplay-source.js');
 const { write: writeCard } = await import('../src/character-card-parser.js');
+const { createConversationImageGenerator } = await import('../src/generation/conversation-images.js');
 
 after(() => cancelAutoSaves());
 
@@ -278,4 +279,29 @@ test('the aside delay is resumable across a restart', async () => {
 
     assert.ok(observed.includes('automation-delay'), JSON.stringify(observed));
     assert.equal(getJob(directories, jobId).state, 'completed');
+});
+
+test('image delivery revalidates the Roleplay aside source before any image work', async () => {
+    const directories = makeDirectories();
+    writeSettings(directories);
+    const generateImage = createConversationImageGenerator();
+    const staleSource = {
+        target: { avatar: 'nova.png', personaId: '', branchId: 'main' },
+        source: { locator: { chat: 'missing', avatar: '', group: true }, groupId: 'g1' },
+        messageIndex: 0, messageRevision: 'stale', groupRevision: 'stale', reason: 'random',
+    };
+    await assert.rejects(
+        () => generateImage(
+            { directories, job: { id: 'job-1' }, signal: new AbortController().signal },
+            {
+                settings: { image_gen_enabled: true },
+                automation: { roleplaySource: staleSource },
+                target: { avatar: 'nova.png', personaId: '', branchId: 'main' },
+                userName: 'User',
+            },
+            'show me',
+            { avatar: 'nova.png', name: 'Nova' },
+        ),
+        error => error.apiError === 'roleplay_chat_not_found',
+    );
 });

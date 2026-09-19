@@ -5,6 +5,7 @@ import { buildSelfieImagePromptTemplate } from '../../public/scripts/neconyan-co
 import { parsePositiveInt } from '../endpoints/conversation-utils.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { appendConversationJobMessage, commitConversationEffect, readConversationTarget } from './conversation-effects.js';
+import { captureConversationRoleplaySource } from './conversation-roleplay-source.js';
 import { generateQuickImageGenImage, saveQuickImageToUserImages } from './quick-image-gen.js';
 
 const IMAGE_KEYWORDS = /\b(send\s*pic|selfie|photo|image|picture|show\s*me)\b/i;
@@ -58,6 +59,15 @@ export function createConversationImageGenerator() {
         const directories = context.directories;
         const effectName = `image:${delivery.chunk ?? 0}:${delivery.image ?? 0}`;
         const request = { user: { directories } };
+        // A Roleplay aside must still match its saved source before an image is
+        // produced or delivered; this callback can run for any reply that asks
+        // for a picture, outside the post-reply eligibility gate above.
+        const assertSource = () => {
+            if (snapshot?.automation?.roleplaySource) {
+                captureConversationRoleplaySource(request, snapshot.automation.roleplaySource, { characterName: speaker.name, userName: snapshot.userName || 'User' });
+            }
+        };
+        assertSource();
         const cached = readArtifact(directories, context.job.id, effectName);
         let imageUrl = typeof cached?.url === 'string' ? cached.url : '';
         let prompt = typeof cached?.prompt === 'string' ? cached.prompt : '';
@@ -91,6 +101,7 @@ export function createConversationImageGenerator() {
             });
         }
         const partner = speaker.avatar !== snapshot.target.avatar;
+        assertSource();
         await appendConversationJobMessage(context, snapshot.target, effectName, {
             role: partner ? 'partner' : 'character',
             name: speaker.name,
