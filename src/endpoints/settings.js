@@ -37,6 +37,14 @@ const AUTOSAVE_INTERVAL = 10 * 60 * 1000;
  */
 const AUTOSAVE_FUNCTIONS = new Map();
 
+/** Cancel pending autosave throttles. Used when a process is winding down. */
+export function cancelAutoSaves() {
+    for (const scheduled of AUTOSAVE_FUNCTIONS.values()) {
+        scheduled?.cancel?.();
+    }
+    AUTOSAVE_FUNCTIONS.clear();
+}
+
 function logBackupEvent(action, details = {}) {
     if (!isBackupLoggingEnabled) {
         return;
@@ -74,7 +82,11 @@ export function triggerAutoSave(handle) {
     const functionToCall = AUTOSAVE_FUNCTIONS.get(handle);
     if (functionToCall && typeof functionToCall === 'function') {
         logBackupEvent('settings-autosave-requested', { handle });
-        functionToCall();
+        try {
+            functionToCall();
+        } catch (error) {
+            logBackupEvent('settings-autosave-failed', { handle, error: error?.message });
+        }
     }
 }
 

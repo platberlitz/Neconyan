@@ -6,6 +6,7 @@ import { unScopeConversationStorageKey } from '../endpoints/conversation-utils.j
 import { getCharacterData } from '../endpoints/conversation-generation.js';
 import { getSettingsVersion } from '../settings-version.js';
 import { acceptConversationAutonomousReply, finalizeConversationSubmission } from './conversation-jobs.js';
+import { acceptConversationSummary } from './conversation-maintenance.js';
 import { resolveAutomationActivity, selectConversationReminder, selectNextConversationThreadAutomation } from './conversation-auto-policy.js';
 
 const DEFAULT_INTERVAL_MS = 1000;
@@ -192,12 +193,31 @@ export async function scanConversationAutonomy({ directoriesFor, owners, now = D
                 if (occurrence) break;
             }
         }
-        if (!occurrence || !occurrence.target) continue;
-        try {
-            await acceptConversationAutonomousReply(request, { ...occurrence, timeZone });
-            accepted.push(occurrence.key);
-        } catch (error) {
-            console.error('[Conversation] Could not accept automatic message:', error?.message ?? error);
+        if (occurrence?.target) {
+            try {
+                await acceptConversationAutonomousReply(request, { ...occurrence, timeZone });
+                accepted.push(occurrence.key);
+                continue;
+            } catch (error) {
+                console.error('[Conversation] Could not accept automatic message:', error?.message ?? error);
+            }
+        }
+        for (const frame of frames) {
+            const messages = (frame.branch.messages || []).filter(message => message.role !== 'system' && String(message.mes || '').trim());
+            const throughId = messages.at(-1)?.id;
+            if (!throughId) continue;
+            try {
+                const summary = await acceptConversationSummary(request, {
+                    submissionKey: `summary:${frame.target.avatar}:${frame.target.groupId}:${frame.target.branchId}:${throughId}`,
+                    target: frame.target,
+                }, { automatic: true });
+                if (summary.created) {
+                    accepted.push(summary.job?.id || throughId);
+                    break;
+                }
+            } catch (error) {
+                console.error('[Conversation] Could not accept automatic summary:', error?.message ?? error);
+            }
         }
     }
     return { accepted, invalidated };

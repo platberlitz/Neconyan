@@ -68,7 +68,7 @@ router.get('/:id/result', (request, response) => {
 
 // Conversation work needs native preparation (input writes, private captures)
 // that this generic route cannot perform. Its own endpoint owns acceptance.
-const RESERVED_JOB_TYPES = new Set(['conversation.reply', 'conversation.participant']);
+const RESERVED_JOB_TYPES = new Set(['conversation.reply', 'conversation.participant', 'conversation.summary', 'conversation.schedule']);
 
 router.post('/submit', (request, response) => {
     try {

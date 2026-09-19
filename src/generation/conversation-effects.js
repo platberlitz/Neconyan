@@ -157,3 +157,36 @@ export function commitConversationJobCommands(context, target, effectId, parts, 
         return { reminders };
     });
 }
+
+/** Save a native memory summary on the branch, receipt-protected like any other effect. */
+export function commitConversationMemorySummary(context, target, { summary, throughId = '', count = 0 } = {}) {
+    const text = String(summary || '').trim();
+    if (!text) throw conflict('The new memory summary was empty.');
+    return commitConversationEffect(context, target, 'memory-summary', branch => {
+        branch.memorySummary = text;
+        branch.memoryMessageCount = Number.isFinite(count) && count > 0 ? count : (branch.messages || []).length;
+        branch.memoryUpdatedAt = Date.now();
+        if (throughId) branch.memorySummaryThrough = String(throughId);
+        return { summary: text };
+    });
+}
+
+/** Branch-independent store effect for character-scoped writes such as a generated schedule. */
+export async function commitConversationStoreEffect(context, effectId, mutate) {
+    context.signal?.throwIfAborted();
+    const job = getJob(context.directories, context.job.id);
+    if (!job || job.owner !== context.owner) throw conflict('The job no longer belongs to this account.');
+    if (job.cancellation?.requested) {
+        const error = new Error('The job was cancelled.');
+        error.name = 'AbortError';
+        throw error;
+    }
+    const scopedRequest = { user: { directories: context.directories, profile: { handle: context.owner } } };
+    const saved = readUserSettingsWithStatus(scopedRequest);
+    if (!saved?.ok) throw conflict(saved?.error || 'Settings could not be read.');
+    const store = ensureConversationStore(saved.data, normalizeGroup);
+    const result = mutate(store, saved.data);
+    if (result && typeof result.then === 'function') throw new TypeError('Conversation effects must be synchronous.');
+    await saveConversationStore(scopedRequest, store, getSettingsVersion(saved.data), { trustedConversationEffects: true });
+    return result;
+}
