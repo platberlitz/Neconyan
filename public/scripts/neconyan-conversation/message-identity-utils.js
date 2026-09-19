@@ -21,6 +21,7 @@ export function getConversationMessageRevision(message) {
         created_at: message?.created_at || '',
         extra: {
             attachments: extra.attachments || [],
+            conversation_attachment_context: extra.conversation_attachment_context || '',
             conversation_reply_to: extra.conversation_reply_to || null,
             files: extra.files || [],
             image_url: extra.image_url || '',
@@ -35,4 +36,14 @@ export function getConversationMessageRevision(message) {
 
 export function getConversationMessagesRevision(messages) {
     return JSON.stringify((Array.isArray(messages) ? messages : []).map(getConversationMessageRevision));
+}
+
+/** Capture message identities for the server: the id plus the revision seen. */
+export function createConversationMessageAnchors(messages) {
+    return (Array.isArray(messages) ? messages : [])
+        .filter(message => message?.id)
+        .map(message => ({
+            messageId: String(message.id),
+            revision: getConversationMessageRevision(message),
+        }));
 }

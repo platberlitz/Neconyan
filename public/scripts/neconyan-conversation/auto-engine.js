@@ -63,7 +63,6 @@ import {
     conversationState,
     groupAsideBusyKeys,
     partnerReplyBusyKeys,
-    sendQueue,
 } from './state.js';
 import { clearConversationTimeouts } from './timers.js';
 import { getConversationThread, getImageCooldownRemainingSeconds, markImageGenerated, resolveConversationReminderBranchId } from './thread-store.js';
@@ -965,7 +964,7 @@ export async function conversationModeAutoMessageWorker({ signal = conversationS
         return;
     }
 
-    if (conversationState.autoWorkerBusy || conversationState.conversationReplyBusy || conversationState.sendQueueProcessing || sendQueue.length || is_send_press) {
+    if (conversationState.autoWorkerBusy || conversationState.conversationReplyBusy || conversationState.conversationUploadActive || is_send_press) {
         return;
     }
 

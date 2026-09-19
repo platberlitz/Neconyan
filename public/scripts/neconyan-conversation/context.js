@@ -1,5 +1,6 @@
 import { normalizeChatroomPromptSettings } from './shared-helpers.js';
 import { characters, saveSettingsDebounced, this_chid } from '../../script.js';
+import { persistConversationStoreDebounced } from './store-sync.js';
 import { extension_settings } from '../extensions.js';
 import { editGroup, groups, selected_group } from '../group-chats.js';
 import { user_avatar } from '../personas.js';
@@ -789,6 +790,10 @@ export function getConversationStore() {
 }
 
 export function persistConversationStore() {
+    // Conversation content goes through the version-checked store save, not the
+    // general settings save (which now omits the Conversation block). The
+    // acknowledged baseline only moves once the server confirms the write.
+    persistConversationStoreDebounced();
     saveSettingsDebounced();
 }
 

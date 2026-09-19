@@ -27,47 +27,78 @@ function canonicalize(value) {
     return value;
 }
 
-function stripServerOperations(conversation) {
-    if (!conversation || typeof conversation !== 'object' || Array.isArray(conversation)) {
+function isPlainObject(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasEntries(value) {
+    return isPlainObject(value) && Object.keys(value).length > 0;
+}
+
+/**
+ * Copy a conversation with every server-owned record removed. Used to compare
+ * what the user actually changed: receipts, automation bookkeeping and runtime
+ * overrides are written by the server and must not count as a browser edit.
+ */
+function stripProtectedConversationState(conversation) {
+    if (!isPlainObject(conversation)) {
         return conversation;
     }
-    const characters = conversation.characters;
-    if (!characters || typeof characters !== 'object' || Array.isArray(characters)) {
-        return conversation;
+    const stripped = { ...conversation };
+    delete stripped.serverOperations;
+    delete stripped.groupAsideLastSent;
+    delete stripped.runtimeStatusOverrides;
+
+    const characters = stripped.characters;
+    if (!isPlainObject(characters)) {
+        return stripped;
     }
     const nextCharacters = {};
     for (const [key, thread] of Object.entries(characters)) {
-        if (!thread || typeof thread !== 'object' || !thread.branches || typeof thread.branches !== 'object') {
+        if (!isPlainObject(thread) || !isPlainObject(thread.branches)) {
             nextCharacters[key] = thread;
             continue;
         }
         const branches = {};
         for (const [id, branch] of Object.entries(thread.branches)) {
-            if (!branch || typeof branch !== 'object' || Array.isArray(branch)) {
+            if (!isPlainObject(branch)) {
                 branches[id] = branch;
                 continue;
             }
             const rest = { ...branch };
             delete rest.serverOperations;
+            delete rest.automationClaims;
             branches[id] = rest;
         }
         nextCharacters[key] = { ...thread, branches };
     }
-    return { ...conversation, characters: nextCharacters };
+    return { ...stripped, characters: nextCharacters };
 }
 
+/**
+ * True when the Conversation store currently holds state the server owns, so a
+ * browser replacement of it must be treated as destructive. This must not depend
+ * on a single property: a store whose last managed branch was deleted still has
+ * records worth protecting.
+ */
 function isConversationManaged(conversation) {
-    const characters = conversation?.characters;
-    if (!characters || typeof characters !== 'object' || Array.isArray(characters)) {
+    if (!isPlainObject(conversation)) {
+        return false;
+    }
+    if (hasEntries(conversation.serverOperations) || hasEntries(conversation.groupAsideLastSent) || hasEntries(conversation.runtimeStatusOverrides)) {
+        return true;
+    }
+    const characters = conversation.characters;
+    if (!isPlainObject(characters)) {
         return false;
     }
     for (const thread of Object.values(characters)) {
         const branches = thread?.branches;
-        if (!branches || typeof branches !== 'object' || Array.isArray(branches)) {
+        if (!isPlainObject(branches)) {
             continue;
         }
         for (const branch of Object.values(branches)) {
-            if (branch && typeof branch === 'object' && !Array.isArray(branch) && branch.serverOperations) {
+            if (isPlainObject(branch) && (branch.serverOperations || hasEntries(branch.automationClaims))) {
                 return true;
             }
         }
@@ -75,26 +106,95 @@ function isConversationManaged(conversation) {
     return false;
 }
 
-function conversationChanged(incoming, current) {
-    return JSON.stringify(canonicalize(stripServerOperations(incoming)))
-        !== JSON.stringify(canonicalize(stripServerOperations(current)));
+/**
+ * Server-owned records that a browser payload must not be allowed to drop. A
+ * browser replacement that leaves the protected shape behind (even with an empty
+ * branch list) is destructive and must not pass as "unchanged".
+ */
+function missingProtectedConversationState(incoming, current) {
+    if (!isConversationManaged(current)) {
+        return false;
+    }
+    return JSON.stringify(canonicalize(protectedConversationShape(incoming)))
+        !== JSON.stringify(canonicalize(protectedConversationShape(current)));
 }
 
-function restoreServerOperations(conversation, currentConversation) {
+function protectedConversationShape(conversation) {
+    if (!isPlainObject(conversation)) {
+        return null;
+    }
+    const shape = {};
+    for (const key of ['serverOperations', 'groupAsideLastSent', 'runtimeStatusOverrides']) {
+        shape[key] = conversation[key] ?? null;
+    }
+    const characters = conversation.characters;
+    const receipts = {};
+    if (isPlainObject(characters)) {
+        for (const [key, thread] of Object.entries(characters)) {
+            if (!isPlainObject(thread?.branches)) continue;
+            for (const [id, branch] of Object.entries(thread.branches)) {
+                if (!isPlainObject(branch)) continue;
+                if (branch.serverOperations !== undefined || hasEntries(branch.automationClaims)) {
+                    receipts[`${key}\u001f${id}`] = {
+                        serverOperations: branch.serverOperations ?? null,
+                        automationClaims: branch.automationClaims ?? null,
+                    };
+                }
+            }
+        }
+    }
+    shape.branches = receipts;
+    return shape;
+}
+
+function conversationChanged(incoming, current) {
+    return JSON.stringify(canonicalize(stripProtectedConversationState(incoming)))
+        !== JSON.stringify(canonicalize(stripProtectedConversationState(current)));
+}
+
+/**
+ * Restore server-owned records the browser must not overwrite.
+ *
+ * For a surviving branch (same key, id and createdAt) its records are copied
+ * back even when the message list changed, so a legitimate edit does not lose
+ * the receipts that make native delivery repeat-safe. A branch that was deleted
+ * or genuinely reset is not resurrected, and receipts supplied for it are
+ * stripped: copying a branch does not copy another branch's execution history.
+ * Store-level bookkeeping always comes from the server.
+ */
+function restoreProtectedConversationState(conversation, currentConversation) {
+    if (!isPlainObject(conversation)) {
+        return conversation;
+    }
     const currentCharacters = currentConversation?.characters;
+    const restored = { ...conversation };
+    for (const key of ['serverOperations', 'groupAsideLastSent', 'runtimeStatusOverrides']) {
+        if (currentConversation?.[key] !== undefined) {
+            restored[key] = currentConversation[key];
+        } else {
+            delete restored[key];
+        }
+    }
+    if (!isPlainObject(conversation.characters)) {
+        return restored;
+    }
     const characters = Object.fromEntries(Object.entries(conversation.characters).map(([key, thread]) => {
-        if (!thread?.branches) return [key, thread];
+        if (!isPlainObject(thread) || !isPlainObject(thread.branches)) return [key, thread];
         const branches = Object.fromEntries(Object.entries(thread.branches).map(([id, branch]) => {
-            if (!branch || typeof branch !== 'object' || Array.isArray(branch)) return [id, branch];
+            if (!isPlainObject(branch)) return [id, branch];
             const previous = currentCharacters?.[key]?.branches?.[id];
             const updated = { ...branch };
             delete updated.serverOperations;
-            if (previous?.serverOperations && previous.createdAt === branch?.createdAt) updated.serverOperations = previous.serverOperations;
+            delete updated.automationClaims;
+            if (isPlainObject(previous) && String(previous.createdAt || '') === String(branch.createdAt || '')) {
+                if (previous.serverOperations) updated.serverOperations = previous.serverOperations;
+                if (hasEntries(previous.automationClaims)) updated.automationClaims = previous.automationClaims;
+            }
             return [id, updated];
         }));
         return [key, { ...thread, branches }];
     }));
-    return { ...conversation, characters };
+    return { ...restored, characters };
 }
 
 /**
@@ -108,7 +208,7 @@ function restoreServerOperations(conversation, currentConversation) {
  * @param {object} currentSettings Settings currently on disk.
  * @param {{trustedConversationEffects?: boolean, conversationOnly?: boolean}} [options]
  *   `trustedConversationEffects` - server-owned Conversation effect write; Conversation may change freely.
- *   `conversationOnly` - native Conversation store replacement; Conversation may change, revision holds.
+ *   `conversationOnly` - explicit version-checked Conversation store save; message content may change but server records are restored.
  */
 export function prepareSettingsSave(incomingSettings, currentSettings = {}, { trustedConversationEffects = false, conversationOnly = false } = {}) {
     const incomingVersion = getSettingsVersion(incomingSettings);
@@ -136,8 +236,21 @@ export function prepareSettingsSave(incomingSettings, currentSettings = {}, { tr
     let settingsRevision = currentRevision;
     let settings;
 
-    if (trustedConversationEffects || conversationOnly) {
+    if (trustedConversationEffects) {
         settings = incomingSettings;
+    } else if (conversationOnly) {
+        // An explicit, version-checked Conversation store save may intentionally
+        // edit or delete messages, but it may not forge the server's records or
+        // drop its bookkeeping. A deleted or reset branch is left as supplied.
+        settings = isPlainObject(incomingConversation)
+            ? {
+                ...incomingSettings,
+                extension_settings: {
+                    ...incomingSettings.extension_settings,
+                    sillybunny_conversation: restoreProtectedConversationState(incomingConversation, currentConversation),
+                },
+            }
+            : incomingSettings;
     } else if (incomingSettings._conversationOmitted === true || conversationOnlyDrift) {
         // The client intentionally left the authoritative Conversation block out (or is only behind
         // on Conversation). Keep the server copy and apply the client's non-Conversation settings.
@@ -149,7 +262,8 @@ export function prepareSettingsSave(incomingSettings, currentSettings = {}, { tr
                 sillybunny_conversation: currentConversation,
             },
         };
-    } else if (isConversationManaged(currentConversation) && conversationChanged(incomingConversation, currentConversation)) {
+    } else if ((isConversationManaged(currentConversation) && conversationChanged(incomingConversation, currentConversation))
+        || missingProtectedConversationState(incomingConversation, currentConversation)) {
         // A legacy whole-settings write may not replace server-managed Conversation content.
         return {
             ok: false,
@@ -159,12 +273,12 @@ export function prepareSettingsSave(incomingSettings, currentSettings = {}, { tr
     } else {
         settingsRevision += 1;
         settings = incomingSettings;
-        if (incomingConversation?.characters) {
+        if (isPlainObject(incomingConversation)) {
             settings = {
                 ...incomingSettings,
                 extension_settings: {
                     ...incomingSettings.extension_settings,
-                    sillybunny_conversation: restoreServerOperations(incomingConversation, currentConversation),
+                    sillybunny_conversation: restoreProtectedConversationState(incomingConversation, currentConversation),
                 },
             };
         }

@@ -2,6 +2,9 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 
 const CSRF_HEADERS = { 'Content-Type': 'application/json', 'X-CSRF-Token': 'csrf-value' };
+// Restore the real fetch afterwards. Deleting it leaks into later test files,
+// which made a sibling suite read a stale cache entry and fail intermittently.
+const nativeFetch = globalThis.fetch;
 let fetchCalls = [];
 
 function jsonResponse(body, status = 200) {
@@ -26,7 +29,7 @@ describe('browser jobs observer sends the CSRF header and keeps caller headers',
     });
 
     afterEach(() => {
-        delete globalThis.fetch;
+        globalThis.fetch = nativeFetch;
     });
 
     test('submitJob sends the CSRF token and a JSON content type', async () => {
@@ -52,5 +55,64 @@ describe('browser jobs observer sends the CSRF header and keeps caller headers',
         const { submitJob } = await import('../public/scripts/jobs.js');
         await expect(submitJob({ type: 'roleplay', intent: { a: 1 }, submissionKey: 'k1' }))
             .rejects.toMatchObject({ status: 409, message: 'The job ledger needs recovery.' });
+    });
+});
+
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+describe('browser jobs observer snapshot callbacks', () => {
+    beforeEach(() => {
+        jest.resetModules();
+        fetchCalls = [];
+        jest.unstable_mockModule('../public/script.js', () => ({
+            getRequestHeaders: jest.fn(() => ({ ...CSRF_HEADERS })),
+        }));
+    });
+
+    afterEach(() => {
+        globalThis.fetch = nativeFetch;
+    });
+
+    test('onSnapshot runs on every poll while onUpdate runs only when the job JSON changes', async () => {
+        let call = 0;
+        globalThis.fetch = jest.fn(async () => {
+            call += 1;
+            return jsonResponse({ job: { id: 'job-1', state: call < 3 ? 'queued' : 'completed' } });
+        });
+        const { observeJob } = await import('../public/scripts/jobs.js');
+        const updates = [];
+        const snapshots = [];
+        observeJob('job-1', {
+            intervalMs: 1,
+            onUpdate: job => updates.push(job.state),
+            onSnapshot: job => snapshots.push(job.state),
+        });
+        await wait(60);
+        // The root job JSON is unchanged across the first two polls, so onUpdate
+        // sees one 'queued'; native child bubbles still need every poll, so
+        // onSnapshot sees each one.
+        expect(updates).toEqual(['queued', 'completed']);
+        expect(snapshots.filter(state => state === 'queued').length).toBeGreaterThanOrEqual(2);
+        expect(snapshots[snapshots.length - 1]).toBe('completed');
+    });
+
+    test('an already-aborted signal starts no polling', async () => {
+        globalThis.fetch = jest.fn(async () => jsonResponse({ job: { id: 'job-1', state: 'queued' } }));
+        const { observeJob } = await import('../public/scripts/jobs.js');
+        const controller = new AbortController();
+        controller.abort();
+        observeJob('job-1', { intervalMs: 1, signal: controller.signal, onSnapshot: () => {} });
+        await wait(30);
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    test('a completed job stops polling and does not read again', async () => {
+        globalThis.fetch = jest.fn(async () => jsonResponse({ job: { id: 'job-1', state: 'completed' } }));
+        const { observeJob } = await import('../public/scripts/jobs.js');
+        observeJob('job-1', { intervalMs: 1, onSnapshot: () => {} });
+        await wait(40);
+        const reads = globalThis.fetch.mock.calls.length;
+        await wait(40);
+        expect(globalThis.fetch.mock.calls.length).toBe(reads);
     });
 });

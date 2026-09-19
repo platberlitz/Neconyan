@@ -9,7 +9,7 @@ export async function composeConversationPromptMessages(messages, directive, spe
 } = {}) {
     const imageUrls = [];
     const rows = messages.slice(-TRANSCRIPT_MESSAGE_LIMIT).map((message, index) => {
-        const parts = [formatPromptText(message.mes, 1800), getConversationAttachmentSummary(message)].filter(Boolean);
+        const parts = [formatPromptText(message.mes, 1800), getConversationAttachmentSummary(message), formatPromptText(message.extra?.conversation_attachment_context, 2800)].filter(Boolean);
         const media = getConversationPromptMediaAttachments(message);
         if (!parts.length && !media.length) return null;
         const text = parts.length ? `${message.name || 'Speaker'}: ${parts.join(' ')}` : `${message.name || 'Speaker'} sent an attachment.`;

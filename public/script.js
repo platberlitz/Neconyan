@@ -228,6 +228,7 @@ import {
 import { debounce_timeout, GENERATION_TYPE_TRIGGERS, IGNORE_SYMBOL, inject_ids, MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, OVERSWIPE_BEHAVIOR, SCROLL_BEHAVIOR, SWIPE_DIRECTION, SWIPE_SOURCE, SWIPE_STATE } from './scripts/constants.js';
 
 import { cancelDebouncedMetadataSave, doDailyExtensionUpdatesCheck, extension_settings, initExtensions, loadExtensionSettings, runGenerationInterceptors } from './scripts/extensions.js';
+import { CONVERSATION_STORE_KEY } from './scripts/neconyan-conversation/constants.js';
 import { COMMENT_NAME_DEFAULT, CONNECT_API_MAP, executeSlashCommandsOnChatInput, executeSlashCommandsWithOptions, initDefaultSlashCommands, initSlashCommandAutoComplete, isExecutingCommandsFromChatInput, pauseScriptExecution, stopScriptExecution, UNIQUE_APIS } from './scripts/slash-commands.js';
 import { initMacroAutoComplete } from './scripts/autocomplete/MacroAutoComplete.js';
 import {
@@ -13190,6 +13191,16 @@ export async function saveSettings(loopCounter = 0, { returnResult = false } = {
     return returnResult ? saved : undefined;
 }
 
+// Neconyan: Conversation content is written through its own versioned store
+// endpoint. General settings saves leave the block out and say so, so the server
+// keeps its authoritative copy instead of one tab overwriting newer native work.
+function buildSettingsPayloadExtensionSettings() {
+    const source = extension_settings && typeof extension_settings === 'object' ? extension_settings : {};
+    const payload = { ...source };
+    delete payload[CONVERSATION_STORE_KEY];
+    return payload;
+}
+
 async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle()) {
     if (!settingsReady) {
         console.warn('Settings not ready, scheduling another save');
@@ -13216,6 +13227,7 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
     const payload = {
         _version: lastServerSettingsVersion,
         _settingsRevision: lastServerSettingsRevision,
+        _conversationOmitted: true,
         firstRun: firstRun,
         accountStorage: accountStorage.getState(),
         currentVersion: currentVersion,
@@ -13231,7 +13243,7 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
         swipes: swipes,
         horde_settings: horde_settings,
         power_user: power_user,
-        extension_settings: extension_settings,
+        extension_settings: buildSettingsPayloadExtensionSettings(),
         tags: tags,
         tag_map: tag_map,
         nai_settings: nai_settings,

@@ -486,24 +486,29 @@ export function isSafeConversationMessageId(value) {
         && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
 }
 
-function validateStoredMessage(message, { strictMessages }) {
+function validateStoredMessage(message, { strictMessages, baselineMessages = null }) {
     if (!isObject(message)) {
         return { valid: false, error: 'invalid_stored_message' };
     }
+    // A message carried forward byte-for-byte from the server's own store is
+    // preserved legacy data: the whole-store save must not reject it just
+    // because it predates the stricter id and length rules. New or edited
+    // content is still held to the strict rules.
+    const strict = strictMessages && !(baselineMessages && baselineMessages.has(JSON.stringify(message)));
     if (message.id !== undefined) {
         const validLegacyId = typeof message.id === 'string'
             || (typeof message.id === 'number' && Number.isFinite(message.id));
         if (!validLegacyId) {
             return { valid: false, error: 'invalid_stored_message' };
         }
-        if (strictMessages && !isSafeConversationMessageId(message.id)) {
+        if (strict && !isSafeConversationMessageId(message.id)) {
             return { valid: false, error: 'invalid_message_id' };
         }
     }
     for (const field of ['name', 'send_date']) {
         if (message[field] !== undefined
             && (typeof message[field] !== 'string'
-                || (strictMessages && message[field].length > MAX_CONVERSATION_MESSAGE_FIELD_LENGTH))) {
+                || (strict && message[field].length > MAX_CONVERSATION_MESSAGE_FIELD_LENGTH))) {
             return { valid: false, error: 'invalid_stored_message' };
         }
     }
@@ -512,7 +517,7 @@ function validateStoredMessage(message, { strictMessages }) {
     }
     if (message.mes !== undefined
         && (typeof message.mes !== 'string'
-            || (strictMessages && message.mes.length > MAX_CONVERSATION_MESSAGE_TEXT_LENGTH))) {
+            || (strict && message.mes.length > MAX_CONVERSATION_MESSAGE_TEXT_LENGTH))) {
         return { valid: false, error: 'invalid_stored_message' };
     }
     if (message.created_at !== undefined) {
@@ -536,10 +541,11 @@ function validateStoredMessage(message, { strictMessages }) {
     return hasContent ? { valid: true } : { valid: false, error: 'invalid_stored_message' };
 }
 
-function validateStoredThread(threadStore, { strictMessages }) {
+function validateStoredThread(threadStore, { strictMessages, baselineThreadStore = null }) {
     if (!isObject(threadStore)) {
         return { valid: false, error: 'invalid_thread' };
     }
+    const baselineBranches = getObject(getObject(baselineThreadStore)?.branches);
     if (threadStore.settings !== undefined && !isObject(threadStore.settings)) {
         return { valid: false, error: 'invalid_thread_settings' };
     }
@@ -566,12 +572,17 @@ function validateStoredThread(threadStore, { strictMessages }) {
             return { valid: false, error: 'too_many_thread_messages' };
         }
         const messageIds = new Set();
+        const baselineMessages = new Set(
+            (Array.isArray(getObject(baselineBranches[branchId])?.messages) ? baselineBranches[branchId].messages : [])
+                .map(entry => JSON.stringify(entry)),
+        );
         for (const message of branch.messages || []) {
-            const messageValidation = validateStoredMessage(message, { strictMessages });
+            const messageValidation = validateStoredMessage(message, { strictMessages, baselineMessages });
             if (!messageValidation.valid) {
                 return messageValidation;
             }
-            if (strictMessages && message.id && messageIds.has(message.id)) {
+            const preservedLegacy = baselineMessages.has(JSON.stringify(message));
+            if (strictMessages && message.id && messageIds.has(message.id) && !preservedLegacy) {
                 return { valid: false, error: 'duplicate_message_id' };
             }
             if (message.id) {
@@ -593,10 +604,11 @@ function validateStoredThread(threadStore, { strictMessages }) {
 /**
  * Validate Conversation Mode store structure without discarding future fields.
  */
-export function validateStoreStructure(store, { strictMessages = true } = {}) {
+export function validateStoreStructure(store, { strictMessages = true, baseline = null } = {}) {
     if (!isObject(store)) {
         return { valid: false, error: 'invalid_store' };
     }
+    const baselineCharacters = getObject(getObject(baseline)?.characters);
 
     const payloadValidation = validateConversationPayload(store, {
         maxPayloadBytes: MAX_CONVERSATION_STORE_BYTES,
@@ -686,7 +698,7 @@ export function validateStoreStructure(store, { strictMessages = true } = {}) {
         if (!isSafeConversationPropertyKey(threadKey)) {
             return { valid: false, error: 'unsafe_thread_key' };
         }
-        const threadValidation = validateStoredThread(threadStore, { strictMessages });
+        const threadValidation = validateStoredThread(threadStore, { strictMessages, baselineThreadStore: baselineCharacters[threadKey] });
         if (!threadValidation.valid) {
             return threadValidation;
         }

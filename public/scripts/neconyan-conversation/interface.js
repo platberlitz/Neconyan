@@ -469,7 +469,9 @@ export function refreshConversationInterface({ syncControls = false } = {}) {
                     : 'Pick or start a DM from the Pals rail...';
         }
         if (send instanceof HTMLButtonElement) {
-            send.disabled = !avatar;
+            // An accepted send is still in flight: keep the button disabled even
+            // though a refresh would otherwise re-enable it.
+            send.disabled = !avatar || conversationState.conversationUploadActive;
         }
     }
 

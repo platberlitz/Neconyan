@@ -15,11 +15,13 @@ import { disableConversationModeForCurrentCharacter, ensureConversationStyleshee
 import { GROUP_ASIDE_RANDOM_CHANCE } from './constants.js';
 import { getConversationGroupById, getConversationPersonaId, getRoleplayCurrentCharacter, getRoleplayGroupById, migrateConversationLocalStorage } from './context.js';
 import { loadCurrentPanelSettings } from './interface.js';
+import { resumeNativeConversationObservation } from './native-jobs.js';
 import { sanitizeConversationUnreadCounts, updateConversationNotificationIndicators } from './notifications.js';
 import { getCharacterForGroupChatMessage, getCurrentGroupConversationMembers } from './pals-rail.js';
 import { scheduleInterfaceRefresh } from './render-scheduler.js';
 import { closeConversationSettings } from './settings-panel.js';
 import { getSettings, hasAnyConversationModeUsage } from './settings-store.js';
+import { initConversationStoreSync } from './store-sync.js';
 import { conversationState, setExternalConversationGenerationActive } from './state.js';
 
 function hasConversationRuntimeUsage() {
@@ -52,6 +54,17 @@ export function init() {
     ensureConversationStylesheet();
     migrateConversationLocalStorage();
     sanitizeConversationUnreadCounts();
+    initConversationStoreSync();
+    // Reattach to native roots accepted before this page loaded, so a reload
+    // during generation still shows the remaining saved bubbles.
+    void resumeNativeConversationObservation();
+    if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                void resumeNativeConversationObservation();
+            }
+        });
+    }
     window.addEventListener('sb:frontend-icon-changed', updateConversationNotificationIndicators);
     eventSource.on(event_types.USER_MESSAGE_RENDERED, (messageId) => {
         if (!hasConversationRuntimeUsage()) {

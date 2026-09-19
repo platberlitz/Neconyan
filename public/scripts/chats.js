@@ -232,7 +232,7 @@ export async function unhideChatMessage(messageId, _messageBlock) {
  * @param {ChatMessage} message Message object
  * @returns {Promise<void>} A promise that resolves when file is uploaded.
  */
-export async function populateFileAttachment(message, inputId = 'file_form_input') {
+export async function populateFileAttachment(message, inputId = 'file_form_input', { resetForm = true } = {}) {
     try {
         if (!message) return;
         if (!message.extra || typeof message.extra !== 'object') message.extra = {};
@@ -298,7 +298,9 @@ export async function populateFileAttachment(message, inputId = 'file_form_input
         console.error('Could not upload file', error);
         toastr.error(t`Either the file is corrupted or its format is not supported.`, t`Could not upload the file`);
     } finally {
-        $('#file_form').trigger('reset');
+        if (resetForm) {
+            $('#file_form').trigger('reset');
+        }
     }
 }
 

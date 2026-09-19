@@ -195,7 +195,7 @@ export async function saveConversationStore(request, store, version, { trustedCo
             ok: false,
             status: 409,
             body: {
-                error: 'settings_conflict',
+                error: preparedSave.conversationConflict ? 'conversation_conflict' : 'settings_conflict',
                 version: preparedSave.currentVersion,
             },
         };

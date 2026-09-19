@@ -58,6 +58,7 @@ const conversationTtsSource = readConversationSource('tts.js');
 const extensionTtsSource = normalizeSource(readFileSync(path.join(repoRoot, 'public', 'scripts', 'extensions', 'tts', 'index.js'), 'utf8'));
 const pollinationsTtsSource = normalizeSource(readFileSync(path.join(repoRoot, 'public', 'scripts', 'extensions', 'tts', 'pollinations.js'), 'utf8'));
 const speechEndpointSource = normalizeSource(readFileSync(path.join(repoRoot, 'src', 'endpoints', 'speech.js'), 'utf8'));
+const conversationParticipantsSource = normalizeSource(readFileSync(path.join(repoRoot, 'src', 'generation', 'conversation-participants.js'), 'utf8'));
 const serverEndpointSource = normalizeSource(readFileSync(path.join(repoRoot, 'src', 'endpoints', 'neconyan-conversation.js'), 'utf8'));
 const conversationGenerationSource = normalizeSource(readFileSync(path.join(repoRoot, 'src', 'endpoints', 'conversation-generation.js'), 'utf8'));
 const serverStartupSource = normalizeSource(readFileSync(path.join(repoRoot, 'src', 'server-startup.js'), 'utf8'));
@@ -126,8 +127,8 @@ describe('conversation mode scoped connection profile', () => {
         expect(sharedHelpersSource).toContain('last non-user speaker before it');
         expect(sharedHelpersSource).toContain('do not assume every you means');
         expect(generationSource).toContain('buildConversationPromptMessages(messages, directive, speakerName, { groupId, personaId })');
-        expect(attachmentsSource).toContain('getImplicitGroupReplyCandidate');
-        expect(attachmentsSource).toContain('isBroadGroupAddress');
+        expect(conversationParticipantsSource).toContain('isBroadGroupAddress');
+        expect(conversationParticipantsSource).toContain('chooseGroupReplyCandidates');
     });
 
     test('adds device date time and timezone context to Conversation prompts', () => {
@@ -318,8 +319,9 @@ describe('conversation mode scoped connection profile', () => {
     });
 
     test('waits around five seconds for rapid follow-up messages before replying', () => {
-        expect(constantsSource).toContain('SEND_QUEUE_COALESCE_MS = 5000');
-        expect(attachmentsSource).toContain('windowMs: SEND_QUEUE_COALESCE_MS');
-        expect(readConversationSource('send-queue-utils.js')).toContain('DEFAULT_COALESCE_WINDOW_MS = 5000');
+        const serverJobsSource = normalizeSource(readFileSync(path.join(repoRoot, 'src', 'generation', 'conversation-jobs.js'), 'utf8'));
+        expect(serverJobsSource).toContain('COALESCE_WINDOW_MS = 5000');
+        expect(serverJobsSource).toContain('deadline: Date.now() + COALESCE_WINDOW_MS');
+        expect(attachmentsSource).not.toContain('SEND_QUEUE_COALESCE_MS');
     });
 });

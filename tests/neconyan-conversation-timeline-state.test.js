@@ -85,6 +85,17 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/render-u
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/schedule.js', () => ({ getConversationReplyMaxTokens: () => 100 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/settings-store.js', () => ({ getSettings: () => ({}) }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({
+    captureConversationStore: jest.fn(),
+    flushConversationStore: jest.fn(async () => true),
+    getConversationSavedSnapshot: jest.fn(() => null),
+    getConversationSavedVersion: jest.fn(() => 0),
+    getConversationSyncState: jest.fn(() => ({})),
+    initConversationStoreSync: jest.fn(),
+    persistConversationStoreDebounced: jest.fn(),
+    persistConversationStoreNow: jest.fn(async () => true),
+    refreshConversationStore: jest.fn(async () => null),
+}));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/timeline-search.js', () => ({ getConversationTimelineMessages: messages => messages }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/timeline-slash-commands.js', () => ({
     appendConversationOocNote: jest.fn(),

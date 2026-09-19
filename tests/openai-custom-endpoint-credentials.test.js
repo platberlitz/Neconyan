@@ -20,7 +20,7 @@ const syncSource = source.match(/export function syncCustomEndpointPresetSelecti
 const POPUP_TYPE = { CONFIRM: 'confirm' };
 const POPUP_RESULT = { AFFIRMATIVE: 1, CANCEL: 0 };
 const scriptSource = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const saverSource = ['saveSettings', 'saveSettingsInner', 'normalizeSettingsVersion', 'normalizeSettingsRevision']
+const saverSource = ['buildSettingsPayloadExtensionSettings', 'saveSettings', 'saveSettingsInner', 'normalizeSettingsVersion', 'normalizeSettingsRevision']
     .map(name => scriptSource.match(new RegExp(`(?:async )?function ${name}\\([\\s\\S]*?\\n\\}`))[0]).join('\n');
 const sources = Object.fromEntries([...source.matchAll(/chat_completion_sources\.([A-Z0-9_]+)/g)].map(([, name]) => [name, name.toLowerCase()]));
 const keys = Object.fromEntries(Object.keys(sources).map(name => [name, `api_key_${name.toLowerCase()}`]));
@@ -49,9 +49,11 @@ function createHarness({ profile = normalizeCustomEndpointPreset({ name: 'Saved 
         ...Object.fromEntries([
             'firstRun', 'currentVersion', 'name1', 'active_character', 'active_group', 'user_avatar',
             'amount_gen', 'max_context', 'main_api', 'textgen_settings', 'swipes', 'horde_settings',
-            'power_user', 'extension_settings', 'tags', 'tag_map', 'nai_settings', 'kai_settings',
+            'power_user', 'tags', 'tag_map', 'nai_settings', 'kai_settings',
             'background_settings', 'proxies', 'selected_proxy',
         ].map(name => [name, null])),
+        extension_settings: { sillybunny_conversation: { characters: {} }, otherExtension: { enabled: true } },
+        CONVERSATION_STORE_KEY: 'sillybunny_conversation',
         settingsSaveQueue: Promise.resolve(),
         settingsReady: true,
         settingsConflictReloadRequired: false,

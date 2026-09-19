@@ -417,6 +417,33 @@ describe('SillyBunny Conversation REST API', () => {
         expect(rejected.status).toBe(400);
     });
 
+    test('a submission cannot be repaired into a replaced branch', async () => {
+        await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [{ role: 'user', name: 'User', mes: 'First' }] });
+        const saved = readSettings();
+        saved.extension_settings.connectionManager = { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o' }] };
+        saved.proxies = [{ name: 'fixture', url: upstreamUrl.replace(/\/$/, ''), password: 'fixture-private-token' }];
+        saved.oai_settings = { chat_completion_source: 'openai', temp_openai: 0.2, top_p_openai: 1, n: 1 };
+        saved.extension_settings[CONVERSATION_STORE_KEY].settings.connection_profile = 'saved';
+        saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].settings.connection_profile = 'saved';
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(saved));
+        const branchCreatedAt = readConversationStore().characters['nova.png'].branches.main.createdAt;
+
+        const input = { submissionKey: 'reset-send-1', mode: 'send', target: { avatar: 'nova.png', branchId: 'main' }, branchCreatedAt,
+            messages: [{ role: 'user', mes: 'Second' }] };
+        const response = await postJson('/reply/submit', input);
+        expect(response.status).toBe(202);
+
+        // Replace the branch identity: same key, new createdAt.
+        const reset = readSettings();
+        reset.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].branches.main.createdAt = 'replaced';
+        reset.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].branches.main.messages = [];
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(reset));
+
+        const retry = await postJson('/reply/submit', input);
+        expect(retry.status).toBe(409);
+        expect(readConversationStore().characters['nova.png'].branches.main.messages).toHaveLength(0);
+    });
+
     test('a send on a different saved profile does not join an open batch', async () => {
         const { getJob } = await import('../src/jobs/store.js');
         await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [] });
@@ -445,6 +472,148 @@ describe('SillyBunny Conversation REST API', () => {
         expect(readConversationStore().characters['nova.png'].branches.main.messages.map(message => message.mes)).toEqual(['One', 'Two']);
     });
 
+    test('a reply validates its captured triggers, reply target and branch before accepting', async () => {
+        const { getConversationMessageRevision } = await import('../public/scripts/neconyan-conversation/message-identity-utils.js');
+        const { getJob } = await import('../src/jobs/store.js');
+        await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [
+            { id: 'u1', role: 'user', name: 'User', mes: 'One' },
+            { id: 'c1', role: 'character', name: 'Nova', mes: 'Two' },
+            { id: 'u2', role: 'user', name: 'User', mes: 'Three' },
+        ] });
+        const saved = readSettings();
+        saved.extension_settings.connectionManager = { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o', proxy: 'fixture' }] };
+        saved.proxies = [{ name: 'fixture', url: upstreamUrl.replace(/\/$/, ''), password: 'fixture-private-token' }];
+        saved.oai_settings = { chat_completion_source: 'openai', temp_openai: 0.2, top_p_openai: 1, n: 1 };
+        saved.extension_settings[CONVERSATION_STORE_KEY].settings.connection_profile = 'saved';
+        saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].settings.connection_profile = 'saved';
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(saved));
+
+        const branch = readConversationStore().characters['nova.png'].branches.main;
+        const byId = Object.fromEntries(branch.messages.map(message => [message.id, message]));
+        const target = { avatar: 'nova.png', branchId: 'main' };
+        const base = {
+            submissionKey: 'anchored-reply', mode: 'reply', target,
+            branchCreatedAt: String(branch.createdAt),
+            triggers: [{ messageId: 'u2', revision: getConversationMessageRevision(byId.u2) }],
+            replyTarget: { messageId: 'c1', revision: getConversationMessageRevision(byId.c1) },
+        };
+        const accepted = await postJson('/reply/submit', base);
+        expect(accepted.status).toBe(202);
+        const acceptedJob = (await accepted.json()).job;
+        expect(getJob(userDirectories, acceptedJob.id).intent.anchors).toMatchObject({
+            branchCreatedAt: String(branch.createdAt),
+            replyTarget: { messageId: 'c1', revision: getConversationMessageRevision(byId.c1) },
+        });
+
+        const staleTrigger = await postJson('/reply/submit', { ...base, submissionKey: 'anchored-reply-stale',
+            triggers: [{ messageId: 'u2', revision: 'stale' }] });
+        expect(staleTrigger.status).toBe(409);
+        const missingTrigger = await postJson('/reply/submit', { ...base, submissionKey: 'anchored-reply-missing',
+            triggers: [{ messageId: 'gone', revision: 'anything' }] });
+        expect(missingTrigger.status).toBe(409);
+        const userTarget = await postJson('/reply/submit', { ...base, submissionKey: 'anchored-reply-user',
+            replyTarget: { messageId: 'u2', revision: getConversationMessageRevision(byId.u2) } });
+        expect(userTarget.status).toBe(409);
+        const staleTarget = await postJson('/reply/submit', { ...base, submissionKey: 'anchored-reply-target-stale',
+            replyTarget: { messageId: 'c1', revision: 'stale' } });
+        expect(staleTarget.status).toBe(409);
+        const replaced = await postJson('/reply/submit', { ...base, submissionKey: 'anchored-reply-replaced',
+            branchCreatedAt: 'someone-elses-branch' });
+        expect(replaced.status).toBe(409);
+    });
+
+    test('a solo thread accepts a reply target naming a partner who already spoke', async () => {
+        const { getConversationMessageRevision } = await import('../public/scripts/neconyan-conversation/message-identity-utils.js');
+        await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [
+            { id: 'u1', role: 'user', name: 'User', mes: 'Hello' },
+            { id: 'p1', role: 'partner', name: 'Kit', mes: 'Hi there', extra: { partner_avatar: 'kit.png' } },
+        ] });
+        const saved = readSettings();
+        saved.extension_settings.connectionManager = { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o', proxy: 'fixture' }] };
+        saved.proxies = [{ name: 'fixture', url: upstreamUrl.replace(/\/$/, ''), password: 'fixture-private-token' }];
+        saved.oai_settings = { chat_completion_source: 'openai', temp_openai: 0.2, top_p_openai: 1, n: 1 };
+        saved.extension_settings[CONVERSATION_STORE_KEY].settings.connection_profile = 'saved';
+        saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].settings.connection_profile = 'saved';
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(saved));
+        const branch = readConversationStore().characters['nova.png'].branches.main;
+        const byId = Object.fromEntries(branch.messages.map(message => [message.id, message]));
+        const target = { avatar: 'nova.png', branchId: 'main' };
+        const accepted = await postJson('/reply/submit', { submissionKey: 'solo-partner-reply', mode: 'reply', target,
+            branchCreatedAt: String(branch.createdAt),
+            triggers: [{ messageId: 'u1', revision: getConversationMessageRevision(byId.u1) }],
+            replyTarget: { messageId: 'p1', revision: getConversationMessageRevision(byId.p1) } });
+        expect(accepted.status).toBe(202);
+    });
+
+    test('a send with a different explicit reply target does not join an open batch', async () => {
+        const { getConversationMessageRevision } = await import('../public/scripts/neconyan-conversation/message-identity-utils.js');
+        const { getJob } = await import('../src/jobs/store.js');
+        await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [
+            { id: 'c1', role: 'character', name: 'Nova', mes: 'One' },
+            { id: 'c2', role: 'character', name: 'Nova', mes: 'Two' },
+        ] });
+        const saved = readSettings();
+        saved.extension_settings.connectionManager = { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o', proxy: 'fixture' }] };
+        saved.proxies = [{ name: 'fixture', url: upstreamUrl.replace(/\/$/, ''), password: 'fixture-private-token' }];
+        saved.oai_settings = { chat_completion_source: 'openai', temp_openai: 0.2, top_p_openai: 1, n: 1 };
+        saved.extension_settings[CONVERSATION_STORE_KEY].settings.connection_profile = 'saved';
+        saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].settings.connection_profile = 'saved';
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(saved));
+        const byId = Object.fromEntries(readConversationStore().characters['nova.png'].branches.main.messages.map(message => [message.id, message]));
+        const target = { avatar: 'nova.png', branchId: 'main' };
+        const first = await postJson('/reply/submit', { submissionKey: 'target-a', mode: 'send', target,
+            messages: [{ role: 'user', mes: 'First' }],
+            replyTarget: { messageId: 'c1', revision: getConversationMessageRevision(byId.c1) } });
+        expect(first.status).toBe(202);
+        const firstJob = (await first.json()).job.id;
+        const second = await postJson('/reply/submit', { submissionKey: 'target-b', mode: 'send', target,
+            messages: [{ role: 'user', mes: 'Second' }],
+            replyTarget: { messageId: 'c2', revision: getConversationMessageRevision(byId.c2) } });
+        expect(second.status).toBe(202);
+        expect((await second.json()).job.id).not.toBe(firstJob);
+        expect(getJob(userDirectories, firstJob).coalesce.members).toHaveLength(0);
+    });
+
+    test('a later accepted send does not invalidate an earlier accepted reply', async () => {
+        const { getConversationMessageRevision } = await import('../public/scripts/neconyan-conversation/message-identity-utils.js');
+        const { testExports: { runJob }, setDirectoriesResolver } = await import('../src/jobs/runner.js');
+        const { getJob } = await import('../src/jobs/store.js');
+        const { reconcileConversationJob } = (await import('../src/generation/conversation-worker.js')).testExports;
+        await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [
+            { id: 'u1', role: 'user', name: 'User', mes: 'Please reply' },
+        ] });
+        const saved = readSettings();
+        saved.extension_settings.connectionManager = { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o', proxy: 'fixture' }] };
+        saved.proxies = [{ name: 'fixture', url: upstreamUrl.replace(/\/$/, ''), password: 'fixture-private-token' }];
+        saved.oai_settings = { chat_completion_source: 'openai', temp_openai: 0.2, top_p_openai: 1, n: 1 };
+        saved.extension_settings[CONVERSATION_STORE_KEY].settings.connection_profile = 'saved';
+        saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].settings.connection_profile = 'saved';
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(saved));
+        const branch = readConversationStore().characters['nova.png'].branches.main;
+        const trigger = branch.messages.find(message => message.id === 'u1');
+        const target = { avatar: 'nova.png', branchId: 'main' };
+        const reply = await postJson('/reply/submit', { submissionKey: 'append-reply', mode: 'reply', target,
+            branchCreatedAt: String(branch.createdAt),
+            triggers: [{ messageId: 'u1', revision: getConversationMessageRevision(trigger) }] });
+        expect(reply.status).toBe(202);
+        const replyJob = (await reply.json()).job.id;
+
+        // A second composer send lands while the reply is still queued.
+        const send = await postJson('/reply/submit', { submissionKey: 'append-send', mode: 'send', target,
+            messages: [{ role: 'user', mes: 'One more thing' }] });
+        expect(send.status).toBe(202);
+
+        upstreamReplyText = 'Answer.';
+        setDirectoriesResolver(() => userDirectories);
+        await runJob(getJob(userDirectories, replyJob));
+        for (const childId of getJob(userDirectories, replyJob).children || []) await runJob(getJob(userDirectories, childId));
+        const child = getJob(userDirectories, getJob(userDirectories, replyJob).children[0]);
+        expect(child.state).toBe('completed');
+        await reconcileConversationJob(userDirectories, getJob(userDirectories, replyJob));
+        expect(readConversationStore().characters['nova.png'].branches.main.messages.map(message => message.mes))
+            .toEqual(['Please reply', 'One more thing', 'Answer.']);
+    });
+
     test('info describes browser-primary and curl-capable REST paths', async () => {
         const response = await postJson('/info', {});
 
@@ -452,16 +621,17 @@ describe('SillyBunny Conversation REST API', () => {
         const json = await response.json();
         expect(json.primaryPath).toMatchObject({
             type: 'browser-client',
-            usesRestApiAsPrimaryDriver: false,
+            usesRestApiAsPrimaryDriver: true,
         });
         expect(json.primaryPath.flow.map(step => step.function)).toEqual(expect.arrayContaining([
             'submitConversationInput',
-            'appendConversationThreadMessage',
-            'processSendQueue',
-            'generateConversationRaw',
+            'submitAcceptedSend',
+            'acceptConversationSubmission',
+            'runConversationParticipantJob',
+            'observeNativeConversationJob',
         ]));
-        expect(json.primaryPath.flow.find(step => step.step === 'queue-reply')?.file)
-            .toBe('public/scripts/neconyan-conversation/attachments.js');
+        expect(json.primaryPath.flow.find(step => step.step === 'durable-accept')?.file)
+            .toBe('src/generation/conversation-jobs.js');
         const repositoryRoot = fileURLToPath(new URL('..', import.meta.url));
         expect(json.primaryPath.flow.every(step => fs.existsSync(path.join(repositoryRoot, step.file)))).toBe(true);
         expect(json.restPath).toMatchObject({
@@ -1261,15 +1431,39 @@ describe('SillyBunny Conversation REST API', () => {
             mes: longMessage,
         });
 
-        const strictReplacementResponse = await postJson('/store/save', { store: legacyStore, version: 0 });
-        expect(strictReplacementResponse.status).toBe(400);
-        await expect(strictReplacementResponse.json()).resolves.toMatchObject({ error: 'invalid_message_id' });
+        // A preserved legacy record is carried forward, not rejected: the whole
+        // store must not block every save. A genuinely new invalid message in the
+        // same save is still refused.
+        const preservedSave = await postJson('/store/save', { store: legacyStore, version: 0 });
+        expect(preservedSave.status).toBe(200);
+        const versionAfterPreserved = readSettings()._version;
+
+        const invalidNewStore = {
+            ...legacyStore,
+            characters: {
+                'nova.png': {
+                    activeBranchId: DEFAULT_BRANCH_ID,
+                    branches: {
+                        [DEFAULT_BRANCH_ID]: {
+                            id: DEFAULT_BRANCH_ID,
+                            messages: [
+                                ...legacyStore.characters['nova.png'].branches[DEFAULT_BRANCH_ID].messages,
+                                { id: 'bad id!', role: 'user', mes: 'new unsafe' },
+                            ],
+                        },
+                    },
+                },
+            },
+        };
+        const invalidNewResponse = await postJson('/store/save', { store: invalidNewStore, version: versionAfterPreserved });
+        expect(invalidNewResponse.status).toBe(400);
+        await expect(invalidNewResponse.json()).resolves.toMatchObject({ error: 'invalid_message_id' });
 
         const appendResponse = await postJson('/message/append', {
             avatar: 'nova.png',
             id: 'new-safe-id',
             text: 'new message',
-            version: 0,
+            version: versionAfterPreserved,
         });
         expect(appendResponse.status).toBe(200);
 
@@ -1286,11 +1480,11 @@ describe('SillyBunny Conversation REST API', () => {
             avatar: 'nova.png',
             id: 'duplicate-id',
             text: 'new duplicate',
-            version: 1,
+            version: versionAfterPreserved + 1,
         });
         expect(duplicateNewResponse.status).toBe(400);
         await expect(duplicateNewResponse.json()).resolves.toEqual({ error: 'duplicate_message_id' });
-        expect(readSettings()._version).toBe(1);
+        expect(readSettings()._version).toBe(versionAfterPreserved + 1);
     });
 
     test('thread/save rejects invalid nested attachment entries', async () => {

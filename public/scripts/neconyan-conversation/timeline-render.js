@@ -40,6 +40,7 @@ import { registerConversationRenderer, scheduleInterfaceRefresh, schedulePalsRai
 import { escapeHtmlAttribute, escapeHtmlText, getConversationMessageExtraFingerprint, hashConversationRenderFingerprint } from './render-utils.js';
 import { getConversationReplyMaxTokens } from './schedule.js';
 import { getSettings } from './settings-store.js';
+import { flushConversationStore } from './store-sync.js';
 import {
     beginConversationGenerationOperation,
     conversationState,
@@ -1138,7 +1139,7 @@ export async function regenerateConversationMessage(messageId) {
     }
 }
 
-export function branchConversationFromMessage(messageId) {
+export async function branchConversationFromMessage(messageId) {
     const context = getConversationMessageById(messageId);
     if (!context) {
         return;
@@ -1191,23 +1192,41 @@ export function branchConversationFromMessage(messageId) {
     scheduleTimelineRender();
     schedulePalsRailRender();
 
-    if (context.message.role === 'user') {
-        const replyText = String(context.message.mes || '').trim() || getConversationAttachmentSummary(context.message);
-        if (replyText) {
-            window.dispatchEvent(new CustomEvent('sb:queue-conversation-reply', {
-                detail: {
-                    avatar: context.avatar,
-                    branchId: branch.id,
-                    groupId: context.groupId || null,
-                    messageIds: [context.message.id],
-                    personaId: context.personaId,
-                    text: replyText,
-                    createdAt: Date.now(),
-                    force: true,
-                },
-            }));
-        }
+    if (context.message.role !== 'user') {
+        return;
     }
+
+    const replyText = String(context.message.mes || '').trim() || getConversationAttachmentSummary(context.message);
+    // The new branch must exist on the server before the reply is accepted,
+    // because the server captures the branch by its creation identity.
+    await flushConversationStore();
+    if (!replyText) {
+        return;
+    }
+    window.dispatchEvent(new CustomEvent('sb:queue-conversation-reply', {
+        detail: {
+            avatar: context.avatar,
+            branchId: branch.id,
+            groupId: context.groupId || null,
+            messageIds: [context.message.id],
+            personaId: context.personaId,
+            text: replyText,
+            createdAt: Date.now(),
+            force: true,
+            submissionKey: createConversationSubmissionKey(),
+        },
+    }));
+}
+
+function createConversationSubmissionKey() {
+    try {
+        if (globalThis.crypto?.randomUUID) {
+            return globalThis.crypto.randomUUID();
+        }
+    } catch {
+        /* fall through to a timestamp key */
+    }
+    return `branch_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
 export async function quickConversationSelfie() {

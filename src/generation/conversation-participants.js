@@ -156,8 +156,12 @@ function localCharacters(current, personaId) {
  * same people. Group members need a real card; a missing card drops the member
  * rather than inventing a fallback character.
  */
-export async function buildConversationParticipantPlan(request, current, target, { force = false, now = Date.now(), timeZone = 'UTC', random = Math.random } = {}) {
-    if (!target.groupId) return [{ avatar: target.avatar, purpose: 'reply', gate: true }];
+export async function buildConversationParticipantPlan(request, current, target, { force = false, now = Date.now(), timeZone = 'UTC', random = Math.random, explicitSpeaker = '' } = {}) {
+    const explicit = String(explicitSpeaker || '').trim();
+    if (!target.groupId) return [{ avatar: explicit || target.avatar, purpose: 'reply', gate: true }];
+    // An explicit reply target replaces mention-weighted selection: the user
+    // named the speaker, so exactly that member answers.
+    if (explicit) return [{ avatar: explicit, purpose: 'reply', gate: false }];
     const group = current.group;
     const characters = localCharacters(current, target.personaId);
     const candidates = [];
@@ -189,7 +193,7 @@ export async function buildConversationParticipantPlan(request, current, target,
 }
 
 /** Build one participant's frozen request. The native target stays the thread's, only the speaker changes. */
-export async function buildConversationParticipantSnapshot(request, current, target, plan, { directive, timeZone, force = false, now = Date.now(), extra = {}, automation = null } = {}) {
+export async function buildConversationParticipantSnapshot(request, current, target, plan, { directive, timeZone, force = false, now = Date.now(), extra = {}, automation = null, referenceMessageId = '' } = {}) {
     const directories = request.user.directories;
     const avatar = plan.avatar;
     const settings = getConversationSettings(request, current.store, avatar, target.groupId, {}, { personaId: target.personaId });
@@ -234,7 +238,12 @@ export async function buildConversationParticipantSnapshot(request, current, tar
         automation,
         messages: [{ role: 'system', content: system }, ...messages],
         // An autonomous message starts a topic; it must not quote the last chat.
-        replyReference: automation ? null : buildConversationMessageReplyReference([...current.branch.messages].reverse().find(message => message.role !== 'system')),
+        // An explicit reply target quotes the exact message the user replied to,
+        // not whichever message happens to be newest when the reply is written.
+        replyReference: automation ? null : buildConversationMessageReplyReference(
+            (referenceMessageId && current.branch.messages.find(message => String(message?.id || '') === String(referenceMessageId)))
+            || [...current.branch.messages].reverse().find(message => message.role !== 'system'),
+        ),
         macros: { names: { user: userName, char: character.name }, extra: { chat: current.branch.messages, chatMetadata: {}, powerUser: current.settings.power_user || {} } },
     };
 }

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { deliverConversationReply } from '../../public/scripts/neconyan-conversation/reply-delivery.js';
+import { getConversationMessageRevision } from '../../public/scripts/neconyan-conversation/message-identity-utils.js';
 import { getCharacterData, getConversationSettings, getDefaultDirective } from '../endpoints/conversation-generation.js';
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
@@ -52,22 +53,106 @@ function normalizeInputMessages(raw) {
     return messages;
 }
 
+const MAX_ANCHOR_REVISION_BYTES = MAX_INPUT_MESSAGE_BYTES;
+
+/** One message identity the browser captured: the id plus the revision it saw. */
+function normalizeMessageAnchor(raw, label) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) fail(`The Conversation ${label} is invalid.`, 400);
+    const messageId = typeof raw.messageId === 'string' ? raw.messageId.trim() : '';
+    const revision = typeof raw.revision === 'string' ? raw.revision : '';
+    if (!messageId || messageId.length > 256) fail(`The Conversation ${label} is invalid.`, 400);
+    if (!revision || Buffer.byteLength(revision) > MAX_ANCHOR_REVISION_BYTES) fail(`The Conversation ${label} revision is invalid.`, 400);
+    return { messageId, revision };
+}
+
+/**
+ * Validate the browser's captured identities. `triggers` are the user messages a
+ * reply was drawn from; `replyTarget` is the message the user explicitly replied
+ * to. A send has neither and only carries the branch identity it landed on.
+ */
+function normalizeSubmissionAnchors(body) {
+    const branchCreatedAt = body.branchCreatedAt === undefined || body.branchCreatedAt === null ? '' : String(body.branchCreatedAt);
+    if (branchCreatedAt.length > 128) fail('The Conversation branch identity is invalid.', 400);
+    const replyTarget = body.replyTarget === undefined || body.replyTarget === null ? null : normalizeMessageAnchor(body.replyTarget, 'reply target');
+    let triggers = [];
+    if (body.triggers !== undefined) {
+        if (!Array.isArray(body.triggers) || body.triggers.length > MAX_INPUT_MESSAGES) fail('The Conversation triggers are invalid.', 400);
+        triggers = body.triggers.map(entry => normalizeMessageAnchor(entry, 'trigger'));
+    }
+    return { branchCreatedAt, triggers, replyTarget };
+}
+
+function findAnchoredMessage(branch, messageId) {
+    return (branch.messages || []).find(message => String(message?.id || '') === String(messageId));
+}
+
+/** Re-check every captured identity against the fresh branch. Appends are fine; edits and deletions are not. */
+function verifyConversationAnchors(current, target, anchors) {
+    if (!anchors) return;
+    if (anchors.branchCreatedAt && String(target.createdAt) !== String(anchors.branchCreatedAt)) {
+        fail('The Conversation branch was replaced. Try again.', 409);
+    }
+    for (const trigger of anchors.triggers || []) {
+        const message = findAnchoredMessage(current.branch, trigger.messageId);
+        if (!message || getConversationMessageRevision(message) !== trigger.revision) {
+            fail('A message this reply depends on changed. Try again.', 409);
+        }
+    }
+}
+
+/** The speaker an explicit reply target names, or '' when the user did not target one. */
+function resolveExplicitSpeaker(current, target, replyTarget) {
+    if (!replyTarget) return '';
+    const message = findAnchoredMessage(current.branch, replyTarget.messageId);
+    if (!message || getConversationMessageRevision(message) !== replyTarget.revision) {
+        fail('The message you replied to changed. Try again.', 409);
+    }
+    if (['user', 'system'].includes(String(message.role || ''))) fail('That message cannot be replied to.', 409);
+    const speaker = message.role === 'partner'
+        ? String(message.extra?.partner_avatar || '').trim()
+        : String(target.avatar || '').trim();
+    if (!speaker) fail('The reply target no longer names a speaker.', 409);
+    if (!target.groupId) {
+        if (speaker === target.avatar) return speaker;
+        // A solo thread has no membership list, but a partner who has already
+        // spoken there is a known participant: allow the explicit reply.
+        const spoke = (current.branch.messages || []).some(message => message?.role === 'partner'
+            && String(message.extra?.partner_avatar || '').trim() === speaker);
+        if (spoke) return speaker;
+        fail('That reply target is not available in this thread.', 409);
+    }
+    const members = new Set((current.group?.members || []).map(member => String(member || '').trim()));
+    if (!members.has(speaker) || (current.group?.disabled_members || []).includes(speaker)) {
+        fail('The reply target is no longer part of this group.', 409);
+    }
+    return speaker;
+}
+
+/** The last captured trigger message, so a reply quotes what the user sent, not the newest bubble. */
+function lastTriggerId(anchors) {
+    const triggers = anchors?.triggers || [];
+    return triggers.length ? String(triggers[triggers.length - 1].messageId) : '';
+}
+
 /**
  * Freeze the whole request: pick the participants, then build each one's card,
  * profile binding, system prompt and macro environment. The first participant is
  * also the top-level snapshot so the legacy single-speaker path keeps working.
  */
-async function buildConversationSnapshot(request, target, directive, timeZone, { force = false, plan = null, automation = null } = {}) {
+async function buildConversationSnapshot(request, target, directive, timeZone, { force = false, plan = null, automation = null, anchors = null } = {}) {
     const current = readConversationTarget(request, target);
+    verifyConversationAnchors(current, target, anchors);
+    const explicitSpeaker = anchors ? resolveExplicitSpeaker(current, target, anchors.replyTarget) : '';
     const now = Date.now();
     const participants = [];
     // An autonomous occurrence freezes its own participants; a normal reply lets
     // the selection policy choose them from the captured thread.
-    const selected = Array.isArray(plan) ? plan : await buildConversationParticipantPlan(request, current, target, { force, now, timeZone });
+    const selected = Array.isArray(plan) ? plan : await buildConversationParticipantPlan(request, current, target, { force, now, timeZone, explicitSpeaker });
     for (const item of selected) {
         participants.push(await buildConversationParticipantSnapshot(request, current, target, item, {
             directive: item.directive || directive, timeZone, force: force || item.force === true, now,
             extra: item.extra, automation: automation || item.automation || null,
+            referenceMessageId: lastTriggerId(anchors),
         }));
     }
     const primary = participants[0];
@@ -87,15 +172,20 @@ async function buildConversationSnapshot(request, target, directive, timeZone, {
 async function prepareConversationSubmission(request, job, { mode, messages, directive, timeZone }) {
     const directories = request.user.directories;
     const appended = await appendSubmissionMessages(request, job, messages, job.submissionKey);
+    // Every submitted message must have a saved completion record before this
+    // submission is acknowledged as durable; a partial append is repaired by the
+    // next retry because the effect ids are deterministic per submission key.
+    const durable = appended.userMessageIds.length === messages.length;
+    updateJob(directories, job.id, { submissionUserMessageIds: appended.userMessageIds, inputDurable: durable });
     // A send batch stays paused until its coalescing window closes, so a burst of
     // composer messages becomes one request. A reply is a forced barrier and goes
     // straight out; the zero deadline only lets the reconciler repair a crash.
     if (mode === 'send') {
         updateJob(directories, job.id, { coalesce: { ...(job.coalesce || {}), deadline: Date.now() + COALESCE_WINDOW_MS } });
-        return { job: getJob(directories, job.id), created: false, inputDurable: true, userMessageIds: appended.userMessageIds, native: appended.native };
+        return { job: getJob(directories, job.id), created: false, inputDurable: durable, userMessageIds: appended.userMessageIds, native: appended.native };
     }
     await finalizeConversationSubmission(request, job);
-    return { job: getJob(directories, job.id), created: false, inputDurable: true, userMessageIds: appended.userMessageIds, native: appended.native };
+    return { job: getJob(directories, job.id), created: false, inputDurable: durable, userMessageIds: appended.userMessageIds, native: appended.native };
 }
 
 /** Append a submission's user messages under a job with per-submission effect ids. */
@@ -103,6 +193,13 @@ async function appendSubmissionMessages(request, job, messages, submissionKey) {
     const directories = request.user.directories;
     const context = { owner: job.owner, directories, job, signal: { throwIfAborted() {} } };
     const target = captureConversationTarget(request, job.intent.target);
+    // The frozen branch identity must still hold: a reset branch recreates the
+    // same key with a new createdAt, and appending into it would silently attach
+    // this submission to the replacement branch.
+    const expectedCreatedAt = String(job.intent?.anchors?.branchCreatedAt || '');
+    if (expectedCreatedAt && String(target.createdAt) !== expectedCreatedAt) {
+        fail('The Conversation branch was replaced. Send it again.', 409);
+    }
     const current = readConversationTarget(request, target);
     const userName = String(current.settings.power_user?.personas?.[target.personaId] || current.settings.name1 || 'User');
     const tag = hash(submissionKey).slice(0, 12);
@@ -121,6 +218,34 @@ async function appendSubmissionMessages(request, job, messages, submissionKey) {
 }
 
 /**
+ * Re-append the messages of any coalesced member that did not finish saving, so a
+ * crash between membership and append cannot lose a message or let the batch
+ * generate without it. Members record their bounded input before appending.
+ */
+async function repairBatchMembers(request, job) {
+    const members = Array.isArray(job.coalesce?.members) ? job.coalesce.members : [];
+    if (!members.length) return job;
+    let membersChanged = false;
+    let updated = null;
+    for (const member of members) {
+        if (Array.isArray(member?.userMessageIds) && member.userMessageIds.length) continue;
+        const messages = Array.isArray(member?.messages) ? member.messages : null;
+        if (!member?.key || !messages?.length) {
+            fail('A submitted Conversation message could not be recovered. Send it again.', 409);
+        }
+        const appended = await appendSubmissionMessages(request, job, messages, member.key);
+        if (!updated) updated = getJob(request.user.directories, job.id);
+        updated.coalesce.members = (updated.coalesce.members || []).map(entry => entry?.key === member.key
+            ? { ...entry, userMessageIds: appended.userMessageIds }
+            : entry);
+        membersChanged = true;
+    }
+    if (!membersChanged) return job;
+    updateJob(request.user.directories, job.id, { coalesce: updated.coalesce });
+    return getJob(request.user.directories, job.id);
+}
+
+/**
  * Build the frozen request snapshot for a prepared job and let the dispatcher see
  * it. Safe to repeat: the artifact is written once and releasing a queued job does
  * nothing. A cancelled job is never released.
@@ -129,9 +254,11 @@ export async function finalizeConversationSubmission(request, job) {
     const directories = request.user.directories;
     if (!readArtifact(directories, job.id, 'request')) {
         try {
+            job = await repairBatchMembers(request, job);
             const target = captureConversationTarget(request, job.intent.target);
             const built = await buildConversationSnapshot(request, target, job.intent.directive, job.intent.timeZone, {
                 force: job.intent.force === true, plan: job.intent.plan, automation: job.intent.automation,
+                anchors: job.intent.anchors || null,
             });
             if (Number.isFinite(built.snapshot.automation?.delayMs) && built.snapshot.automation.delayMs > 0 && !built.snapshot.automation.delayUntil) {
                 const delayUntil = Number(job.createdAt || Date.now()) + built.snapshot.automation.delayMs;
@@ -167,12 +294,14 @@ function findSubmission(directories, owner, key) {
 }
 
 /** The open send batch this submission can still join, or null. */
-function findCoalesceLeader(directories, owner, target, binding, now, { force, timeZone }) {
+function findCoalesceLeader(directories, owner, target, binding, now, { force, timeZone, replyTargetId = '' }) {
     const threadKey = getConversationThreadKey(target.avatar, target.groupId, target.personaId);
     return listJobs(directories, { owner, includeDismissed: true }).find(job => job.type === 'conversation.reply'
         && job.intent?.mode === 'send'
         && (job.intent?.force === true) === (force === true)
         && job.intent?.timeZone === timeZone
+        // A batch answers one target: an explicit reply to a different message is its own reply.
+        && String(job.intent?.anchors?.replyTarget?.messageId || '') === String(replyTargetId || '')
         && job.state === 'waiting' && job.stage === 'preparing'
         && !job.cancellation?.requested
         && job.target?.id === threadKey && job.target?.branchId === target.branchId
@@ -189,12 +318,21 @@ function findCoalesceLeader(directories, owner, target, binding, now, { force, t
  * ponytail: a message landing in the same moment the window closes can miss that
  * batch. It is still saved; the browser has the same late-message behaviour.
  */
-async function joinCoalesceLeader(request, leader, { messages, submissionKey }) {
+async function joinCoalesceLeader(request, leader, { messages, submissionKey, anchors = null }) {
     const directories = request.user.directories;
+    // Record membership, with the bounded input, before appending. A crash then
+    // leaves a recoverable member rather than an orphaned message that a later
+    // retry could append again under a fresh batch.
+    const members = [...(leader.coalesce?.members || []).filter(member => member?.key !== submissionKey), { key: submissionKey, hash: hash({ messages, anchors }), messages, userMessageIds: [] }];
+    updateJob(directories, leader.id, { coalesce: { ...(leader.coalesce || {}), members } });
     const appended = await appendSubmissionMessages(request, leader, messages, submissionKey);
-    const members = [...(leader.coalesce?.members || []).filter(member => member?.key !== submissionKey), { key: submissionKey, hash: hash(messages), userMessageIds: appended.userMessageIds }];
-    updateJob(directories, leader.id, { coalesce: { ...(leader.coalesce || {}), deadline: Date.now() + COALESCE_WINDOW_MS, members } });
-    return { job: getJob(directories, leader.id), created: false, inputDurable: true, userMessageIds: appended.userMessageIds, native: appended.native };
+    updateJob(directories, leader.id, {
+        coalesce: {
+            ...(leader.coalesce || {}), deadline: Date.now() + COALESCE_WINDOW_MS,
+            members: members.map(member => member.key === submissionKey ? { ...member, userMessageIds: appended.userMessageIds } : member),
+        },
+    });
+    return { job: getJob(directories, leader.id), created: false, inputDurable: appended.userMessageIds.length === messages.length, userMessageIds: appended.userMessageIds, native: appended.native };
 }
 
 /**
@@ -215,32 +353,47 @@ export async function acceptConversationSubmission(request, body = {}) {
     const mode = body.mode === undefined || body.mode === 'reply' ? 'reply' : body.mode === 'send' ? 'send' : null;
     if (!mode) fail('The Conversation submission mode is invalid.', 400);
     const messages = mode === 'send' ? normalizeInputMessages(body.messages) : [];
+    const anchors = normalizeSubmissionAnchors(body);
     const intent = {
         mode,
         target: { avatar: body.target.avatar, groupId: body.target.groupId || '', personaId: body.target.personaId || '', branchId: body.target.branchId },
-        directive: getDefaultDirective(body), timeZone, force: body.force === true,
+        directive: getDefaultDirective(body), timeZone, force: body.force === true, anchors,
         ...(mode === 'send' ? { inputHash: hash(messages) } : {}),
     };
     const existing = findSubmission(directories, owner, body.submissionKey);
     if (existing) {
-        const matches = existing.member ? existing.member.hash === hash(messages) : hash(existing.job.intent) === hash(intent);
+        const matches = existing.member ? existing.member.hash === hash({ messages, anchors }) : hash(existing.job.intent) === hash(intent);
         if (existing.job.type !== 'conversation.reply' || !matches) fail('This submission key already belongs to another operation.');
-        // A job still preparing is repaired, not duplicated. Anything else is already durable.
+        // A job still preparing is repaired, not duplicated. Anything else must
+        // already have every submitted message saved to be acknowledged.
         if (existing.job.state === 'waiting' && existing.job.stage === 'preparing') {
             return existing.member
-                ? joinCoalesceLeader(request, existing.job, { messages, submissionKey: body.submissionKey })
+                ? joinCoalesceLeader(request, existing.job, { messages, submissionKey: body.submissionKey, anchors })
                 : prepareConversationSubmission(request, existing.job, { mode, messages, directive: intent.directive, timeZone });
         }
-        if (existing.member && !existing.member.userMessageIds?.length) fail('This submission finished before its message could be saved. Send it again.');
-        return { job: existing.job, created: false, inputDurable: true, userMessageIds: existing.member?.userMessageIds || [] };
+        // A send's user messages must all be saved before it is acknowledged;
+        // a reply submits no messages, so it has nothing further to wait for.
+        if (existing.job.intent?.mode === 'send') {
+            const recordedIds = existing.member?.userMessageIds || existing.job.submissionUserMessageIds;
+            if (!Array.isArray(recordedIds) || !recordedIds.length) fail('This submission finished before its message could be saved. Send it again.');
+            return { job: existing.job, created: false, inputDurable: true, userMessageIds: recordedIds };
+        }
+        return {
+            job: existing.job, created: false, inputDurable: true,
+            userMessageIds: existing.member?.userMessageIds || [],
+        };
     }
     const target = captureConversationTarget(request, intent.target);
     const current = readConversationTarget(request, target);
+    // Refuse a stale or edited source before any partial write: the branch, its
+    // triggers and the explicit reply target must all still match what was seen.
+    verifyConversationAnchors(current, target, anchors);
+    resolveExplicitSpeaker(current, target, anchors.replyTarget);
     const settings = getConversationSettings(request, current.store, target.avatar, target.groupId, {}, { personaId: target.personaId });
     const binding = captureChatProfile(directories, settings.connection_profile);
     if (mode === 'send') {
-        const leader = findCoalesceLeader(directories, owner, target, binding, Date.now(), { force: intent.force, timeZone });
-        if (leader) return joinCoalesceLeader(request, leader, { messages, submissionKey: body.submissionKey });
+        const leader = findCoalesceLeader(directories, owner, target, binding, Date.now(), { force: intent.force, timeZone, replyTargetId: anchors.replyTarget?.messageId || '' });
+        if (leader) return joinCoalesceLeader(request, leader, { messages, submissionKey: body.submissionKey, anchors });
     }
     const accepted = acceptJob(directories, { owner, type: 'conversation.reply', submissionKey: body.submissionKey, intent, paused: true,
         coalesce: { deadline: mode === 'send' ? Date.now() + COALESCE_WINDOW_MS : 0, members: [] },

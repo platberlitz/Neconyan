@@ -32,7 +32,11 @@ export function readConversationTarget(request, target) {
 export function captureConversationTarget(request, target) {
     const normalized = { avatar: target.avatar, groupId: target.groupId || '', personaId: target.personaId || '', branchId: target.branchId };
     const { branch } = readConversationTarget(request, normalized);
-    return { ...normalized, createdAt: branch.createdAt, messagesHash: digest(branch.messages) };
+    // messageCount freezes the length the hash covers. An effect then verifies
+    // that prefix instead of the whole array, so a later accepted send may
+    // append user bubbles without invalidating an earlier reply, while an edit
+    // or deletion inside the captured prefix is still a conflict.
+    return { ...normalized, createdAt: branch.createdAt, messageCount: branch.messages.length, messagesHash: digest(branch.messages) };
 }
 
 /** Write a native effect and its receipt in the same settings-file replacement. */
@@ -56,13 +60,39 @@ export async function commitConversationEffect(context, target, effectId, mutate
     const effectKey = currentJob.parentId ? digest([currentJob.id, effectId]) : digest(effectId);
     const receipt = current.branch.serverOperations?.[jobKey];
     if (receipt && Object.hasOwn(receipt.effects, effectKey)) return receipt.effects[effectKey];
-    if (digest(current.branch.messages) !== (receipt?.messagesHash || target.messagesHash)) {
+    const currentMessages = current.branch.messages;
+    // Verify both the frozen request's captured prefix and this family's
+    // advancing receipt. The receipt can be shorter than the frozen request when
+    // an earlier send extended the thread before this job froze it, so checking
+    // only the receipt would miss an edit of those later messages. A receipt
+    // written before messageCount existed falls back to the whole-array hash.
+    const prefixMatches = (count, hashValue) => {
+        if (!Number.isInteger(count)) {
+            return digest(currentMessages) === hashValue;
+        }
+        if (currentMessages.length < count) return false;
+        if (digest(currentMessages.slice(0, count)) === hashValue) return true;
+        // Automatic retention trims the oldest messages from the front, so a
+        // captured prefix can shift forward while staying contiguous. Match it
+        // wherever it now sits; if it was trimmed away, no window matches and
+        // the effect is still refused.
+        // ponytail: O(n^2) hashing on the fallback path only; n is bounded by
+        // MAX_THREAD_MESSAGES (250), so no index is worth keeping.
+        for (let start = 1; start + count <= currentMessages.length; start += 1) {
+            if (digest(currentMessages.slice(start, start + count)) === hashValue) return true;
+        }
+        return false;
+    };
+    const unchanged = prefixMatches(target.messageCount, target.messagesHash)
+        && (!receipt || prefixMatches(receipt.messageCount, receipt.messagesHash));
+    if (!unchanged) {
         conflict('The Conversation messages changed before this reply could be saved.');
     }
     const result = mutate(current.branch, current.store, current.settings);
     if (result?.then) throw new TypeError('A Conversation effect must finish before releasing its settings write.');
     current.branch.serverOperations ??= {};
     current.branch.serverOperations[jobKey] = {
+        messageCount: current.branch.messages.length,
         messagesHash: digest(current.branch.messages),
         effects: { ...receipt?.effects, [effectKey]: result ?? null },
     };

@@ -590,7 +590,6 @@ function isNeconyanModeBusy() {
         || conversationState.generationActive
         || conversationState.conversationReplyBusy
         || conversationState.conversationUploadActive
-        || conversationState.sendQueueProcessing
         || lifecycles.some(lifecycle => lifecycle?.isBusy?.()),
     );
 }

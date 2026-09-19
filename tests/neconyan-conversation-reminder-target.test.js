@@ -89,7 +89,6 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js
     groupAsideBusyKeys: new Set(),
     groupAsideLastSent: new Map(),
     partnerReplyBusyKeys: new Set(),
-    sendQueue: [],
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/timers.js', () => ({
     clearConversationTimeouts: jest.fn(),

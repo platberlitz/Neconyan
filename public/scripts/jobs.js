@@ -62,10 +62,12 @@ const TERMINAL = new Set(['completed', 'cancelled', 'failed', 'interrupted', 'co
 
 /**
  * Observe a job until it reaches a terminal state. onUpdate receives the
- * authoritative job snapshot on every change. Stop observing with the returned
- * function; that is not cancellation.
+ * authoritative job snapshot on every change; onSnapshot receives it on every
+ * successful poll, because individual native effects do not necessarily change
+ * the root job. Stop observing with the returned function; that is not
+ * cancellation.
  */
-export function observeJob(id, { onUpdate, base = '', intervalMs = DEFAULT_INTERVAL_MS, signal } = {}) {
+export function observeJob(id, { onUpdate, onSnapshot, onDone, base = '', intervalMs = DEFAULT_INTERVAL_MS, signal } = {}) {
     let stopped = false;
     let timer = null;
     let delay = intervalMs;
@@ -73,18 +75,25 @@ export function observeJob(id, { onUpdate, base = '', intervalMs = DEFAULT_INTER
 
     const stop = () => { stopped = true; if (timer) clearTimeout(timer); };
 
-    const schedule = () => { if (!stopped) timer = setTimeout(tickOnce, delay); };
+    const schedule = () => { if (!stopped && !signal?.aborted) timer = setTimeout(tickOnce, delay); };
 
     const tickOnce = async () => {
-        if (stopped) return;
+        if (stopped || signal?.aborted) return;
         try {
             const body = await getJob(id, { base });
+            if (stopped || signal?.aborted) return;
             const job = body?.job ?? null;
-            if (job && JSON.stringify(job) !== JSON.stringify(previous)) {
-                previous = job;
-                onUpdate?.(job);
+            if (job) {
+                if (JSON.stringify(job) !== JSON.stringify(previous)) {
+                    previous = job;
+                    await onUpdate?.(job);
+                }
+                await onSnapshot?.(job);
+                if (stopped || signal?.aborted) return;
+                // A terminal job stops the job poll, but a failed readback must
+                // still be retried, so only stop once the snapshot succeeded.
+                if (TERMINAL.has(job.state)) { stop(); await onDone?.(job); return; }
             }
-            if (job && TERMINAL.has(job.state)) { stop(); return; }
             delay = Math.min(MAX_INTERVAL_MS, Math.round(delay * 1.3));
         } catch {
             delay = Math.min(MAX_INTERVAL_MS, Math.round(delay * 1.5));
@@ -92,6 +101,7 @@ export function observeJob(id, { onUpdate, base = '', intervalMs = DEFAULT_INTER
         schedule();
     };
 
+    if (signal?.aborted) return stop;
     if (signal) signal.addEventListener('abort', stop, { once: true });
     void tickOnce();
     return stop;

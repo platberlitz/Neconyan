@@ -96,7 +96,7 @@ const CONVERSATION_API_INFO = {
     feature: 'Conversation Mode',
     primaryPath: {
         type: 'browser-client',
-        summary: 'The running app drives live Conversation Mode from browser-side JavaScript, not this REST router.',
+        summary: 'The app submits composer sends and reply requests to this router, which saves the user messages and runs generation server-side; the browser only observes and reads the authoritative store.',
         flow: [
             {
                 step: 'submit',
@@ -104,22 +104,27 @@ const CONVERSATION_API_INFO = {
                 function: 'submitConversationInput',
             },
             {
-                step: 'store-thread-message',
-                file: 'public/scripts/neconyan-conversation/thread-store.js',
-                function: 'appendConversationThreadMessage',
+                step: 'accept',
+                file: 'public/scripts/neconyan-conversation/attachments.js',
+                function: 'submitAcceptedSend',
             },
             {
-                step: 'queue-reply',
-                file: 'public/scripts/neconyan-conversation/attachments.js',
-                function: 'processSendQueue',
+                step: 'durable-accept',
+                file: 'src/generation/conversation-jobs.js',
+                function: 'acceptConversationSubmission',
             },
             {
                 step: 'generate-reply',
-                file: 'public/scripts/neconyan-conversation/generation.js',
-                function: 'generateConversationRaw',
+                file: 'src/generation/conversation-jobs.js',
+                function: 'runConversationParticipantJob',
+            },
+            {
+                step: 'observe',
+                file: 'public/scripts/neconyan-conversation/native-jobs.js',
+                function: 'observeNativeConversationJob',
             },
         ],
-        usesRestApiAsPrimaryDriver: false,
+        usesRestApiAsPrimaryDriver: true,
     },
     restPath: {
         type: 'json-rest',
@@ -137,12 +142,14 @@ const CONVERSATION_API_INFO = {
             { method: 'POST', path: '/thread/save', purpose: 'Replace a solo or group DM thread.' },
             { method: 'POST', path: '/message/append', purpose: 'Append one message without generating a reply.' },
             { method: 'POST', path: '/message/send', purpose: 'Append a user message, generate a reply, and persist both.' },
+            { method: 'POST', path: '/reply/submit', purpose: 'Accept a composer send or forced reply, append the user messages durably, and generate server-side.' },
             { method: 'POST', path: '/aside/submit', purpose: 'Accept a Roleplay group aside or solo side DM from a saved source locator and revisions.' },
         ],
     },
     caveats: [
+        'Accepted replies and composer sends run server-side; the browser only observes job status and reads the authoritative store. The browser auto worker (idle followups, scheduled and proactive messages) still runs in the browser, and the WebLLM and browser Kokoro providers require the page open.',
         'Browser-only automation is not run by the REST API: idle followups, scheduled messages, proactive messages, partner chimes, and reminder timers. Roleplay aside sampling stays in the browser, but /aside/submit accepts and generates the message server-side.',
-        'Bracket commands are extracted into reply metadata by /message/send, but REST does not run image generation, schedule edits, or reminder side effects.',
+        'Bracket commands are extracted into reply metadata by accepted replies, which also run image generation, schedule edits, and reminder side effects server-side.',
         'REST callers must provide the backend generation payload shape used by the existing completion endpoints.',
     ],
 };
@@ -316,6 +323,12 @@ router.post('/store/save', (request, response, next) => {
 });
 
 router.use((request, response, next) => {
+    // A tab loaded under one account must not read or write another account's
+    // Conversation store after a different sign-in in the same browser.
+    const account = request.get('X-Neconyan-Account');
+    if (account && account !== request.user?.profile?.handle) {
+        return response.status(409).send({ error: 'account_changed' });
+    }
     const validation = request[STORE_SAVE_PAYLOAD_VALIDATED]
         ? { valid: true }
         : validateConversationPayload(request.body);
@@ -333,14 +346,18 @@ router.post('/store/get', (request, response) => {
 });
 
 router.post('/store/save', asyncRoute(async (request, response) => {
-    const validation = validateStoreStructure(request.body?.store);
-    if (!validation.valid) {
-        return response.status(400).send({ error: validation.error, details: validation.keys });
-    }
-
     const context = readConversationStoreMutation(request, response);
     if (!context) {
         return;
+    }
+    // The whole-store save carries legacy records forward. A message that is
+    // byte-identical to the server's current copy is preserved legacy data and is
+    // exempt from the strict id and length rules, so an old unsafe or duplicate id
+    // in an unrelated thread cannot block every save. New or edited content is
+    // still validated strictly.
+    const validation = validateStoreStructure(request.body?.store, { baseline: context.store });
+    if (!validation.valid) {
+        return response.status(400).send({ error: validation.error, details: validation.keys });
     }
 
     const incomingSettings = {

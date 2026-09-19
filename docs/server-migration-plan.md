@@ -108,8 +108,10 @@ acceptance case is unproven), `pending` (not started).
   saved image cooldown and receipt-protected so a retry does not re-bill a saved
   image. A provider with no server implementation, including ComfyUI, is refused
   with a recoverable error that names it; Horde, Google Imagen and OpenRouter image
-  routes are never substituted. The main browser queue still executes replies;
-  switching it remains pending. Roleplay prompt assembly remains pending.
+  routes are never substituted. The main composer, forced reply and
+  branch-from-message reply now submit to durable acceptance, the browser
+  append/selection/coalescing queue is removed, and observation reads authoritative
+  saved results. Roleplay prompt assembly remains pending.
 
 ## Phase 3 onward
 
@@ -129,9 +131,13 @@ acceptance case is unproven), `pending` (not started).
   character chat through the reply family, plus native memory summaries and manual
   schedule generation, using deterministic occurrence keys and one-time bookkeeping
   claims. The Roleplay group-aside and solo side-DM bridge runs natively through
-  `POST /aside/submit` with a saved source guard. Remaining: the main composer
-  queue, explicit reply targets and disabling the browser worker after ownership
-  handover.
+  `POST /aside/submit` with a saved source guard. The composer and the
+  branch-from-message reply event submit to durable acceptance with trigger
+  revisions and explicit reply-target anchors, browser observation merges
+  authoritative results, and a version-checked Conversation save path plus a
+  strengthened settings guard protect server-owned messages and records from old
+  whole-store writes. Remaining: disabling the browser worker after ownership
+  handover, and text-completion/active-connection profile support.
 - `pending` Meower.
 - `pending` Prompting Lab, Distiller, LoreStitch, World Info Lab.
 - `pending` remaining bundled model and file workflows.
@@ -153,13 +159,15 @@ acceptance case is unproven), `pending` (not started).
 ## Current checkpoint
 
 This is a saved implementation checkpoint, not a release-ready full migration.
-Production has not been changed. Conversation's accepted-reply API is exercised through saved provider
-settings, native completion and recovery tests, but the main browser interface
-does not use it yet. Participant selection, group concurrency, assistant context
-and the image boundary now run natively; text-completion profiles, instruct
-formatting, real image delivery, explicit reply targets, partner chimes and
-autonomous scheduling remain required before switching that interface. The other
-pending workflows above remain part of the requested scope.
+Production has not been changed. The main Conversation composer, forced reply and
+branch-from-message reply now submit to the accepted-reply API and the browser
+queue is removed; observation reads authoritative saved results, a version-checked
+Conversation save path keeps browser edits honest, and the settings guard protects
+server-owned messages and records. Participant selection, group concurrency,
+assistant context and the image boundary run natively. Text-completion profiles,
+instruct formatting and disabling the browser's own 30-second worker after
+ownership handover remain required; autonomous scheduling already runs on the
+server worker. The other pending workflows above remain part of the requested scope.
 
 - Full Jest run: 331 suites passed; 4,266 tests passed and two skipped.
 - All Node tests after the Step 5 image work: 144 passed. `tests/quick-image-gen.node.js`

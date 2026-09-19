@@ -9,8 +9,6 @@ export const conversationState = {
     generationActive: false,
     conversationReplyBusy: false,
     conversationUploadActive: false,
-    sendQueueProcessing: false,
-    sendQueueNeedsProcessing: false,
     scheduleGenerationBusy: false,
     conversationWorkspaceOpen: false,
     conversationSelectedAvatar: null,
@@ -32,7 +30,6 @@ export const conversationState = {
     faviconUpdateToken: 0,
 };
 
-export const sendQueue = [];
 export const runtimeStatusOverrides = new Map();
 export const memorySummaryBusyAvatars = new Set();
 export const memorySummaryTimers = new Map();

@@ -1,75 +1,37 @@
-import { is_send_press } from '../../script.js';
+import { getRequestHeaders, is_send_press } from '../../script.js';
 import { MEDIA_DISPLAY } from '../constants.js';
-import { checkMultiCharacterChime, handleAvailabilityAutoResponder } from './auto-engine.js';
 import {
-    AUTO_WORKER_WAIT_POLL_MS,
-    AUTO_WORKER_WAIT_TIMEOUT_MS,
     CHROME_IDS,
     CONVERSATION_ATTACHMENT_ALLOWED_EXTENSIONS,
     CONVERSATION_ATTACHMENT_MAX_BYTES,
     CONVERSATION_ATTACHMENT_MAX_FILES,
-    DEFAULT_SETTINGS,
-    GROUP_MAX_CONCURRENT_SPEAKERS,
-    GROUP_SECOND_REPLY_CHANCE,
     SAFE_TOAST_OPTIONS,
-    SEND_QUEUE_BATCH_MS,
-    SEND_QUEUE_COALESCE_MS,
 } from './constants.js';
 import {
-    getConversationGroupById,
     getConversationGroupIdForAvatar,
     getConversationPersonaId,
-    getConversationThreadKey,
     getConversationThreadStore,
     getCurrentCharAvatar,
-    getCurrentCharName,
 } from './context.js';
-import { generateConversationReply, postCharacterReply, postPartnerConversationReply, reportConversationGenerationError } from './generation.js';
-import { buildCharacterImagePrompt, generateConversationImage, getCharacterForAvatar, getConversationPartnerAvatars } from './media.js';
-import { getAllowedPartnerCharacters, getConversationPartnerSettings, isCharacterMentionedInText } from './partners.js';
+import { createConversationMessageAnchors, getConversationMessageRevision } from './message-identity-utils.js';
+import { observeNativeConversationJob } from './native-jobs.js';
 import { getConversationPersonaName } from './personas.js';
 import { formatConversationFileSize } from './prompt.js';
-import { formatPromptText } from './shared-helpers.js';
 import { scheduleInterfaceRefresh } from './render-scheduler.js';
 import { escapeHtmlText } from './render-utils.js';
 import { getSettings, saveSettings } from './settings-store.js';
+import { formatPromptText } from './shared-helpers.js';
+import { conversationState } from './state.js';
+import { flushConversationStore, refreshConversationStore } from './store-sync.js';
 import {
-    beginConversationGenerationOperation,
-    conversationState,
-    endConversationGenerationOperation,
-    partnerReplyBusyKeys,
-    sendQueue,
-} from './state.js';
-import { consumeConversationReplyTarget } from './timeline-render.js';
-import {
-    appendConversationThreadMessage,
-    buildConversationMessageReplyReference,
     getConversationAttachmentSummary,
     getConversationFileAttachments,
     getConversationMediaAttachments,
     getConversationThread,
-    getImageCooldownRemainingSeconds,
-    markImageGenerated,
-    updateLastUserActivity,
 } from './thread-store.js';
+import { clearConversationReplyTarget, getActiveConversationReplyTarget } from './timeline-render.js';
 import { handleConversationSlashAction } from './timeline-slash-commands.js';
-import { getConversationActivityContext, maybePostDelayedReplyNotice, splitChatroomMessages, withTypingParticipant } from './typing.js';
-import { appendConversationMessage } from './message-writer.js';
-import {
-    coalesceConversationQueueItems,
-    createConversationMessageRevisionEntries,
-    createConversationQueueItem,
-    createConversationQueueReplyTarget,
-    createForcedConversationQueueItem,
-    getLastConversationQueueUserMessage,
-    requeueConversationQueueItem,
-    resolveConversationQueueReplyTarget,
-    resolveConversationQueueTriggerMessages,
-} from './send-queue-utils.js';
-
-export { appendConversationMessage };
-
-const CONVERSATION_QUEUE_RETRY = 'retry';
+import { splitChatroomMessages } from './typing.js';
 
 function buildConversationUserMessageExtra(replyTarget = null) {
     return {
@@ -211,8 +173,10 @@ export async function populateConversationUserAttachments(messageInput) {
         return;
     }
 
-    const { populateFileAttachment } = await import('./chats.js');
-    await populateFileAttachment(messageInput, CHROME_IDS.fileInput);
+    const { populateFileAttachment } = await import('../chats.js');
+    // Conversation clears its own file input after the send is accepted; do not
+    // let the shared helper reset the Roleplay attachment form here.
+    await populateFileAttachment(messageInput, CHROME_IDS.fileInput, { resetForm: false });
     if (getConversationMediaAttachments(messageInput).length) {
         messageInput.extra.media_display = MEDIA_DISPLAY.LIST;
         messageInput.extra.inline_image = true;
@@ -228,7 +192,7 @@ export async function buildConversationAttachmentPromptContext(messageInput, vis
     const parts = [summary];
     if (getConversationFileAttachments(messageInput).length) {
         try {
-            const { appendFileContent } = await import('./chats.js');
+            const { appendFileContent } = await import('../chats.js');
             const promptMessage = {
                 ...messageInput,
                 extra: { ...messageInput.extra },
@@ -254,499 +218,6 @@ export function focusConversationInput() {
     }
 }
 
-export async function waitForAutoWorker() {
-    const startTime = Date.now();
-
-    while (conversationState.autoWorkerBusy) {
-        if (Date.now() - startTime >= AUTO_WORKER_WAIT_TIMEOUT_MS) {
-            console.warn('Conversation Mode auto worker wait timed out; continuing queued reply.');
-            break;
-        }
-
-        await new Promise(resolve => setTimeout(resolve, AUTO_WORKER_WAIT_POLL_MS));
-    }
-}
-
-export async function waitForRoleplayGeneration() {
-    const startTime = Date.now();
-    while (is_send_press && Date.now() - startTime < AUTO_WORKER_WAIT_TIMEOUT_MS) {
-        await new Promise(resolve => setTimeout(resolve, AUTO_WORKER_WAIT_POLL_MS));
-    }
-    return !is_send_press;
-}
-
-function getConversationSpeakerAvatar(message, threadAvatar) {
-    if (!message || ['user', 'system'].includes(message.role || '')) {
-        return '';
-    }
-
-    return message.role === 'partner'
-        ? String(message.extra?.partner_avatar || '')
-        : String(threadAvatar || '');
-}
-
-function isBroadGroupAddress(text) {
-    return /\b(everyone|everybody|anyone|someone|you\s+all|you\s+guys|y['’]?all|yall|both\s+of\s+you|all\s+of\s+you)\b/i.test(String(text || ''));
-}
-
-function getImplicitGroupReplyCandidate(thread, threadAvatar, candidates, latestUserText) {
-    if (!String(latestUserText || '').trim() || isBroadGroupAddress(latestUserText)) {
-        return null;
-    }
-
-    for (let index = thread.length - 1; index >= 0; index--) {
-        const speakerAvatar = getConversationSpeakerAvatar(thread[index], threadAvatar);
-        const candidate = candidates.find(item => item.character.avatar === speakerAvatar);
-        if (candidate) {
-            return candidate;
-        }
-    }
-
-    return null;
-}
-
-function getGroupReplyCandidates(threadAvatar, groupId, personaId) {
-    const group = getConversationGroupById(groupId, { personaId });
-    if (!group?.members?.length) {
-        return [];
-    }
-
-    return group.members
-        .filter(avatar => avatar && !group.disabled_members?.includes(avatar))
-        .map((avatar) => {
-            const character = getCharacterForAvatar(avatar);
-            return character?.avatar
-                ? { character, settings: getSettings(character.avatar, { groupId, personaId }) }
-                : null;
-        })
-        .filter(Boolean);
-}
-
-function getGroupReplyBusyKey(threadAvatar, groupId, replyAvatar) {
-    return ['group-reply', groupId || '', threadAvatar || '', replyAvatar || ''].join(':');
-}
-
-function addUniqueGroupReplyCandidate(candidates, candidate) {
-    if (!candidate?.character?.avatar || candidates.some(item => item.character.avatar === candidate.character.avatar)) {
-        return;
-    }
-
-    candidates.push(candidate);
-}
-
-function pickWeightedGroupReplyCandidate(candidates) {
-    const totalWeight = candidates.reduce((sum, candidate) => sum + Math.max(0, Number(candidate.weight || 0)), 0);
-    if (totalWeight <= 0) {
-        return candidates[Math.floor(Math.random() * candidates.length)] || null;
-    }
-
-    let roll = Math.random() * totalWeight;
-    for (const candidate of candidates) {
-        roll -= Math.max(0, Number(candidate.weight || 0));
-        if (roll <= 0) {
-            return candidate;
-        }
-    }
-
-    return candidates[candidates.length - 1] || null;
-}
-
-function chooseGroupReplyCandidates(threadAvatar, groupId, queueItem, { force = false } = {}) {
-    const candidates = getGroupReplyCandidates(threadAvatar, groupId, queueItem?.personaId);
-    if (!candidates.length) {
-        return [];
-    }
-
-    const availableCandidates = force
-        ? candidates
-        : candidates.filter(({ character, settings }) => getConversationActivityContext(settings, character.avatar, new Date(), { personaId: queueItem?.personaId }).status !== 'offline');
-    const pool = availableCandidates.length ? availableCandidates : candidates;
-    const candidateCharacters = pool.map(item => item.character).filter(Boolean);
-    const latestUserText = [queueItem?.text, queueItem?.attachmentContext].filter(Boolean).join('\n');
-    const thread = getConversationThread(threadAvatar, {
-        branchId: queueItem?.branchId,
-        create: false,
-        groupId,
-        personaId: queueItem?.personaId,
-    });
-
-    // Build a cache of lastSpeakerIndex for all avatars in one pass
-    const lastSpeakerIndexCache = new Map();
-    for (let index = thread.length - 1; index >= 0; index--) {
-        const speakerAvatar = getConversationSpeakerAvatar(thread[index], threadAvatar);
-        if (speakerAvatar && !lastSpeakerIndexCache.has(speakerAvatar)) {
-            lastSpeakerIndexCache.set(speakerAvatar, index);
-        }
-    }
-
-    const weightedPool = pool.map((item) => {
-        const lastSpeakerIndex = lastSpeakerIndexCache.get(item.character.avatar) ?? -1;
-        const messagesSinceSpeaking = lastSpeakerIndex < 0
-            ? thread.length + 1
-            : Math.max(1, thread.length - lastSpeakerIndex);
-        return {
-            ...item,
-            lastSpeakerIndex,
-            weight: 1 + messagesSinceSpeaking,
-        };
-    });
-    const selected = [];
-    const mentionedCandidates = weightedPool
-        .filter(({ character }) => isCharacterMentionedInText(character, latestUserText, candidateCharacters))
-        .slice(0, GROUP_MAX_CONCURRENT_SPEAKERS);
-    for (const candidate of mentionedCandidates) {
-        if (selected.length >= GROUP_MAX_CONCURRENT_SPEAKERS) {
-            break;
-        }
-        addUniqueGroupReplyCandidate(selected, candidate);
-    }
-
-    if (!selected.length) {
-        addUniqueGroupReplyCandidate(selected, getImplicitGroupReplyCandidate(thread, threadAvatar, weightedPool, latestUserText));
-    }
-
-    const drawRandomCandidate = () => {
-        const remaining = weightedPool.filter(candidate => !selected.some(item => item.character.avatar === candidate.character.avatar));
-        addUniqueGroupReplyCandidate(selected, pickWeightedGroupReplyCandidate(remaining));
-    };
-
-    if (!selected.length) {
-        drawRandomCandidate();
-    }
-
-    if (selected.length < GROUP_MAX_CONCURRENT_SPEAKERS && Math.random() < GROUP_SECOND_REPLY_CHANCE) {
-        drawRandomCandidate();
-    }
-
-    return selected;
-}
-
-async function waitForConversationSpeakerAvailability(queueItem, settings, avatar, groupId) {
-    const personaId = queueItem?.personaId || getConversationPersonaId();
-    if (!queueItem?.force) {
-        if (getConversationActivityContext(settings, avatar, new Date(), { personaId }).status === 'offline') {
-            return false;
-        }
-
-        if (!groupId && await handleAvailabilityAutoResponder(settings, avatar, {
-            branchId: queueItem?.branchId,
-            groupId,
-            personaId: queueItem?.personaId,
-        })) {
-            return false;
-        }
-    }
-
-    const status = getConversationActivityContext(settings, avatar, new Date(), { personaId }).status || 'online';
-    if (!queueItem?.force && (status === 'idle' || status === 'dnd')) {
-        const initialDelayMs = status === 'idle'
-            ? (Math.random() * 1.5 + 1.5) * 1000
-            : (Math.random() * 3 + 3) * 1000;
-        await new Promise(resolve => setTimeout(resolve, initialDelayMs));
-    }
-
-    return true;
-}
-
-async function processConversationSpeakerReply(queueItem, { threadAvatar, groupId, threadSettings, replyCandidate = null, skipAvailabilityWait = false } = {}) {
-    const branchId = queueItem?.branchId || '';
-    const personaId = queueItem?.personaId || '';
-    const replyCharacter = replyCandidate?.character || getCharacterForAvatar(threadAvatar);
-    const replyAvatar = replyCharacter?.avatar || threadAvatar;
-    const replySettings = replyCandidate?.settings || threadSettings;
-    const validateTarget = () => {
-        const messages = getConversationThread(threadAvatar, { branchId, create: false, groupId, personaId });
-        if (resolveConversationQueueTriggerMessages(queueItem, messages) === null) {
-            return false;
-        }
-        const replyTarget = resolveConversationQueueReplyTarget(queueItem, messages, threadAvatar);
-        return !replyTarget.explicit || replyTarget.valid;
-    };
-    if (!skipAvailabilityWait && !await waitForConversationSpeakerAvailability(queueItem, replySettings, replyAvatar, groupId)) {
-        return false;
-    }
-    if (!validateTarget()) {
-        return false;
-    }
-
-    maybePostDelayedReplyNotice(threadAvatar, replySettings, { branchId, groupId, personaId, statusAvatar: replyAvatar });
-
-    const speakerName = replyCharacter?.name || (replyAvatar === threadAvatar ? getCurrentCharName() : 'Character');
-    const attachmentContext = formatPromptText(queueItem?.attachmentContext, 3200);
-    const systemDirective = queueItem?.force
-        ? '[System directive: Generate a response/reply to the user in the Conversation Mode thread.]'
-        : '[System directive: The user sent the latest DM(s). Reply directly to them in the Conversation Mode thread.]';
-    const response = await withTypingParticipant(replyCharacter || { avatar: replyAvatar, name: speakerName }, () => generateConversationReply(
-        [
-            systemDirective,
-            attachmentContext ? `Latest user attachment context:\n${attachmentContext}` : '',
-        ].filter(Boolean).join('\n\n'),
-        replySettings,
-        {
-            avatar: replyAvatar,
-            threadAvatar,
-            speakerAvatar: replyAvatar,
-            speakerName,
-            branchId,
-            groupId,
-            personaId,
-        },
-    ), threadAvatar, { branchId, groupId, personaId });
-    if (!validateTarget()) {
-        return false;
-    }
-
-    const replyExtra = {
-        conversation_mode_reply: true,
-        ...(queueItem.replyReference ? { conversation_reply_to: queueItem.replyReference } : {}),
-    };
-    let posted = false;
-    if (response?.trim()) {
-        if (replyAvatar === threadAvatar) {
-            const postedText = await postCharacterReply(response.trim(), replySettings, {
-                extra: {
-                    ...replyExtra,
-                },
-                branchId,
-                groupId,
-                personaId,
-                validateTarget,
-            }, threadAvatar);
-            posted = Boolean(postedText);
-        } else {
-            posted = await postPartnerConversationReply(response.trim(), replyCharacter, replySettings, {
-                avatar: threadAvatar,
-                branchId,
-                extra: {
-                    ...replyExtra,
-                    partner_avatar: replyAvatar,
-                },
-                groupId,
-                personaId,
-                validateTarget,
-            });
-        }
-    }
-
-    const imageKeywords = /\b(send\s*pic|selfie|photo|image|picture|show\s*me)\b/i;
-    const wantsImage = replySettings.image_gen_enabled
-        && (replySettings.spontaneous_selfies || imageKeywords.test(queueItem.text || ''));
-    if (wantsImage && getImageCooldownRemainingSeconds(replyAvatar, replySettings, Date.now(), { branchId, groupId, personaId }) === 0) {
-        if (!validateTarget()) {
-            return posted;
-        }
-        const prompt = buildCharacterImagePrompt(
-            replySettings.image_gen_prompt_template || DEFAULT_SETTINGS.image_gen_prompt_template,
-            'the current DM conversation',
-            replyAvatar,
-        );
-        const imageUrl = await generateConversationImage(prompt, replySettings.image_gen_negative || '', { avatar: replyAvatar, character: replyCharacter });
-        if (imageUrl && validateTarget()) {
-            markImageGenerated(replyAvatar, Date.now(), { branchId, groupId, personaId });
-            await appendConversationMessage('Here, I can show you.', {
-                name: speakerName,
-                role: replyAvatar === threadAvatar ? 'character' : 'partner',
-                extra: {
-                    conversation_mode_image: true,
-                    image_url: imageUrl,
-                    image_prompt: prompt,
-                    ...(replyAvatar === threadAvatar ? {} : { partner_avatar: replyAvatar }),
-                },
-                branchId,
-                groupId,
-                personaId,
-            }, threadAvatar);
-            posted = true;
-        }
-    }
-
-    return posted;
-}
-
-async function processGroupConversationSpeakerReply(queueItem, options) {
-    const replyAvatar = options?.replyCandidate?.character?.avatar;
-    const busyKey = getGroupReplyBusyKey(options?.threadAvatar, options?.groupId, replyAvatar);
-    if (!replyAvatar || partnerReplyBusyKeys.has(busyKey)) {
-        return false;
-    }
-
-    partnerReplyBusyKeys.add(busyKey);
-    try {
-        return await processConversationSpeakerReply(queueItem, options);
-    } finally {
-        partnerReplyBusyKeys.delete(busyKey);
-    }
-}
-
-export async function processQueuedConversationReply(queueItem) {
-    const avatar = queueItem?.avatar;
-    if (!avatar) {
-        return;
-    }
-    if (is_send_press) {
-        return CONVERSATION_QUEUE_RETRY;
-    }
-
-    const groupId = queueItem?.groupId || '';
-    const personaId = queueItem?.personaId || getConversationPersonaId();
-    const branchId = queueItem?.branchId || '';
-    const threadKey = getConversationThreadKey(avatar, groupId, { personaId });
-    if (!threadKey || queueItem?.threadKey !== threadKey) {
-        return;
-    }
-    const threadStore = getConversationThreadStore(avatar, { create: false, groupId, personaId });
-    if (!branchId || !threadStore?.branches?.[branchId]) {
-        return;
-    }
-    const branchMessages = getConversationThread(avatar, { branchId, create: false, groupId, personaId });
-    const triggerMessages = resolveConversationQueueTriggerMessages(queueItem, branchMessages);
-    if (!triggerMessages) {
-        return;
-    }
-
-    await waitForAutoWorker();
-
-    if (is_send_press) {
-        return CONVERSATION_QUEUE_RETRY;
-    }
-
-    const currentBranchMessages = getConversationThread(avatar, {
-        branchId,
-        create: false,
-        groupId,
-        personaId,
-    });
-    const currentTriggerMessages = resolveConversationQueueTriggerMessages(queueItem, currentBranchMessages);
-    if (!currentTriggerMessages) {
-        return;
-    }
-    const triggeringUserMessage = getLastConversationQueueUserMessage(queueItem, currentBranchMessages);
-    queueItem.replyReference = buildConversationMessageReplyReference(triggeringUserMessage);
-    const replyTarget = resolveConversationQueueReplyTarget(queueItem, currentBranchMessages, avatar);
-    if (replyTarget.explicit && !replyTarget.valid) {
-        return;
-    }
-
-    const threadSettings = getSettings(avatar, { groupId, personaId });
-    if (!threadSettings.enabled) {
-        return;
-    }
-
-    const operation = beginConversationGenerationOperation();
-    scheduleInterfaceRefresh({ syncControls: false });
-
-    try {
-        if (replyTarget.explicit) {
-            const replyCandidate = groupId
-                ? getGroupReplyCandidates(avatar, groupId, personaId).find(candidate => candidate.character.avatar === replyTarget.speakerAvatar)
-                : replyTarget.speakerAvatar === avatar
-                    ? { character: getCharacterForAvatar(avatar), settings: threadSettings }
-                    : getAllowedPartnerCharacters(threadSettings.multi_char_names, avatar, threadSettings, {
-                        branchId,
-                        groupId,
-                        includeThreadPartners: true,
-                        personaId,
-                    }).filter(character => character.avatar === replyTarget.speakerAvatar)
-                        .map(character => ({
-                            character,
-                            settings: getConversationPartnerSettings(character.avatar, threadSettings, { groupId, personaId }),
-                        }))[0];
-            if (!replyCandidate?.character?.avatar) {
-                return;
-            }
-
-            if (groupId) {
-                await processGroupConversationSpeakerReply(queueItem, { threadAvatar: avatar, groupId, threadSettings, replyCandidate });
-            } else {
-                await processConversationSpeakerReply(queueItem, { threadAvatar: avatar, groupId, threadSettings, replyCandidate });
-            }
-            return;
-        }
-
-        if (groupId) {
-            const replyCandidates = chooseGroupReplyCandidates(avatar, groupId, queueItem, { force: Boolean(queueItem?.force) });
-            await Promise.allSettled(replyCandidates.map(replyCandidate => processGroupConversationSpeakerReply(queueItem, {
-                threadAvatar: avatar,
-                groupId,
-                threadSettings,
-                replyCandidate,
-            }).catch((error) => {
-                reportConversationGenerationError('group reply', error);
-                return false;
-            })));
-            return;
-        }
-
-        if (!await waitForConversationSpeakerAvailability(queueItem, threadSettings, avatar, groupId)) {
-            return;
-        }
-
-        const partnerChimePromise = getConversationPartnerAvatars(avatar, threadSettings, { branchId, groupId, includeThreadPartners: true, personaId }).length
-            ? checkMultiCharacterChime(avatar, threadSettings, Date.now(), { branchId, groupId, personaId }).catch((error) => {
-                console.error('Conversation partner chime error:', error);
-                return false;
-            })
-            : Promise.resolve(false);
-
-        await processConversationSpeakerReply(queueItem, {
-            threadAvatar: avatar,
-            groupId,
-            threadSettings,
-            skipAvailabilityWait: true,
-        });
-
-        await partnerChimePromise;
-    } catch (error) {
-        reportConversationGenerationError('reply', error);
-    } finally {
-        endConversationGenerationOperation(operation);
-        scheduleInterfaceRefresh({ syncControls: false });
-    }
-}
-
-async function collectConversationQueueItem(firstItem) {
-    return coalesceConversationQueueItems(firstItem, sendQueue, {
-        windowMs: SEND_QUEUE_COALESCE_MS,
-    });
-}
-
-export async function processSendQueue({ processItem = processQueuedConversationReply, waitForRoleplay = waitForRoleplayGeneration } = {}) {
-    if (conversationState.sendQueueProcessing) {
-        conversationState.sendQueueNeedsProcessing = true;
-        return;
-    }
-
-    conversationState.sendQueueProcessing = true;
-    try {
-        do {
-            conversationState.sendQueueNeedsProcessing = false;
-            while (sendQueue.length) {
-                const queueItem = await collectConversationQueueItem(sendQueue.shift());
-                if (!queueItem) {
-                    continue;
-                }
-                const result = await processItem(queueItem);
-                if (result === CONVERSATION_QUEUE_RETRY) {
-                    requeueConversationQueueItem(sendQueue, queueItem);
-                    if (!await waitForRoleplay()) {
-                        conversationState.sendQueueNeedsProcessing = false;
-                        setTimeout(() => void processSendQueue(), AUTO_WORKER_WAIT_POLL_MS);
-                        break;
-                    }
-                    continue;
-                }
-                if (sendQueue.length) {
-                    await new Promise(resolve => setTimeout(resolve, SEND_QUEUE_BATCH_MS));
-                }
-            }
-        } while (conversationState.sendQueueNeedsProcessing && sendQueue.length);
-    } finally {
-        conversationState.sendQueueNeedsProcessing = false;
-        conversationState.sendQueueProcessing = false;
-        focusConversationInput();
-    }
-}
-
 export async function submitConversationInput() {
     if (is_send_press || conversationState.conversationUploadActive) {
         return;
@@ -758,6 +229,10 @@ export async function submitConversationInput() {
     }
 
     const avatar = getCurrentCharAvatar();
+    if (!avatar) {
+        return;
+    }
+
     const groupId = getConversationGroupIdForAvatar(avatar);
     const personaId = getConversationPersonaId();
     const threadStore = getConversationThreadStore(avatar, { groupId, personaId });
@@ -768,25 +243,16 @@ export async function submitConversationInput() {
     if (!pendingFiles) {
         return;
     }
-    if (!avatar) {
-        return;
-    }
 
+    // A blank composer with no files only means "force a reply" when there is
+    // already a user message to answer.
     if (!text && !pendingFiles.length) {
-        const branchMessages = getConversationThread(avatar, { branchId, create: false, groupId, personaId });
-        if (!branchMessages.some(message => message?.role === 'user')) {
+        const branchMessages = getConversationThread(avatar, { branchId, create: false, groupId, personaId }) || [];
+        const lastUser = [...branchMessages].reverse().find(message => message?.role === 'user');
+        if (!lastUser) {
             return;
         }
-
-        sendQueue.push(createForcedConversationQueueItem({
-            avatar,
-            branchId,
-            groupId,
-            personaId,
-            threadKey: getConversationThreadKey(avatar, groupId, { personaId }),
-            createdAt: Date.now(),
-        }, branchMessages));
-        void processSendQueue();
+        await submitAcceptedReply({ avatar, branchId, groupId, personaId, force: true, triggers: [lastUser] });
         return;
     }
 
@@ -798,110 +264,299 @@ export async function submitConversationInput() {
     if (text.startsWith('/') && !pendingFiles.length) {
         const handled = await handleConversationSlashAction(text, { avatar, branchId, settings, groupId, personaId });
         if (handled) {
-            input.value = '';
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            clearConversationAttachmentInput();
+            clearConversationComposer(input);
             return;
         }
     }
 
-    conversationState.conversationUploadActive = true;
-    const sendButton = document.getElementById(CHROME_IDS.send);
-    if (sendButton instanceof HTMLButtonElement) {
-        sendButton.disabled = true;
+    await submitAcceptedSend({ avatar, branchId, groupId, personaId, text, input });
+}
+
+/** A stable identity for the currently selected files, used to tell a retry
+ *  apart from newly picked files. */
+function getPendingFileSignature() {
+    return getConversationPendingFiles()
+        .map(file => [file?.name || '', file?.size ?? 0, file?.lastModified ?? 0].join(':'))
+        .join('|');
+}
+
+/** The browser's timezone, so an interactive reply is not scheduled as UTC. */
+function getDeviceTimeZone() {
+    try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    } catch {
+        return 'UTC';
+    }
+}
+
+/** Clear the exact draft that was submitted, leaving anything the user typed or
+ *  selected since. Attachments picked while acceptance was in flight survive. */
+function clearConversationComposer(input, submittedText = null, { hadAttachments = false, fileSignature = '' } = {}) {
+    if (submittedText !== null && input.value.trim() !== submittedText) {
+        return;
+    }
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    if (hadAttachments && getPendingFileSignature() === fileSignature) {
+        clearConversationAttachmentInput();
+    }
+}
+
+function buildConversationReplyReference(target) {
+    if (!target) {
+        return null;
+    }
+    const reference = { ...target };
+    delete reference.avatar;
+    delete reference.branchId;
+    delete reference.groupId;
+    delete reference.personaId;
+    return reference;
+}
+
+function getBranchRecord(avatar, branchId, { groupId, personaId }) {
+    const threadStore = getConversationThreadStore(avatar, { create: false, groupId, personaId });
+    return threadStore?.branches?.[branchId] || null;
+}
+
+/** Send new composer content: the server appends the user bubbles itself. */
+async function submitAcceptedSend({ avatar, branchId, groupId, personaId, text, input }) {
+    if (conversationState.conversationUploadActive) {
+        return;
+    }
+    const branch = getBranchRecord(avatar, branchId, { groupId, personaId });
+    if (!branch) {
+        toastr.warning('The Conversation thread is no longer available.');
+        return;
     }
 
+    const userName = getConversationPersonaName(personaId, 'You');
+    const replyTarget = getActiveConversationReplyTarget(avatar, { branchId, groupId, personaId });
+    const replyReference = buildConversationReplyReference(replyTarget);
+    const replyTargetAnchor = resolveReplyTargetAnchor(replyTarget, branch.messages);
+    if (replyTarget?.messageId && !replyTargetAnchor) {
+        toastr.warning('The message you replied to is no longer available.');
+        return;
+    }
+
+    const pendingFiles = getValidatedConversationPendingFiles({ notify: true });
+    if (!pendingFiles) {
+        return;
+    }
+    const fileSignature = getPendingFileSignature();
+    const branchCreatedAt = String(branch.createdAt ?? '');
+    const draftSignature = JSON.stringify(['send', avatar, groupId, personaId, branchId, branchCreatedAt, text, fileSignature, replyTargetAnchor?.messageId || '', replyTargetAnchor?.revision || '']);
+
+    // Guard before the async upload so a second tap cannot submit the same draft
+    // twice while the first upload is still in flight.
+    conversationState.conversationUploadActive = true;
     try {
-        const userName = getConversationPersonaName(personaId, 'You');
-        const hasAttachments = pendingFiles.length > 0;
-        const attachmentContextParts = [];
-        const messageIds = [];
-        const triggerMessages = [];
-
-        if (hasAttachments) {
-            const messageInput = {
-                role: 'user',
-                name: userName,
-                mes: text,
-                extra: buildConversationUserMessageExtra(),
-            };
-            await populateConversationUserAttachments(messageInput);
-            const attachmentContext = await buildConversationAttachmentPromptContext(messageInput, text);
-            if (attachmentContext) {
-                attachmentContextParts.push(attachmentContext);
-            }
-            if (!String(messageInput.mes || '').trim() && !getConversationMediaAttachments(messageInput).length && !getConversationFileAttachments(messageInput).length) {
-                toastr.warning('No attachments were added. Try a different file.');
-                return;
-            }
-
-            const replyTarget = consumeConversationReplyTarget(avatar, { branchId, groupId, personaId });
-            if (replyTarget) {
-                messageInput.extra.conversation_reply_to = replyTarget;
-            }
-            const message = appendConversationThreadMessage(avatar, messageInput, { branchId, create: false, groupId, personaId });
-            if (message?.id) {
-                messageIds.push(message.id);
-                triggerMessages.push(message);
-            }
+        let payload;
+        if (pendingSubmission && pendingSubmission.draftSignature === draftSignature) {
+            // A prior attempt with this exact draft failed uncertainly: replay the
+            // frozen request (and its uploaded attachment URLs) rather than
+            // re-uploading the files under a new key.
+            payload = pendingSubmission.payload;
         } else {
-            const replyTarget = consumeConversationReplyTarget(avatar, { branchId, groupId, personaId });
-            let includeReplyTarget = true;
-            for (const messageText of splitChatroomMessages(text)) {
-                const message = appendConversationThreadMessage(avatar, {
-                    role: 'user',
-                    name: userName,
-                    mes: messageText,
-                    extra: buildConversationUserMessageExtra(includeReplyTarget ? replyTarget : null),
-                }, { branchId, create: false, groupId, personaId });
-                if (message?.id) {
-                    messageIds.push(message.id);
-                    triggerMessages.push(message);
+            const messages = [];
+            if (pendingFiles.length) {
+                const messageInput = { role: 'user', name: userName, mes: text, extra: buildConversationUserMessageExtra(replyReference) };
+                await populateConversationUserAttachments(messageInput);
+                if (!String(messageInput.mes || '').trim() && !getConversationMediaAttachments(messageInput).length && !getConversationFileAttachments(messageInput).length) {
+                    toastr.warning('No attachments were added. Try a different file.');
+                    return;
                 }
-                includeReplyTarget = false;
+                const attachmentContext = await buildConversationAttachmentPromptContext(messageInput, text);
+                if (attachmentContext) {
+                    messageInput.extra.conversation_attachment_context = attachmentContext;
+                }
+                messages.push({ mes: String(messageInput.mes || ''), extra: messageInput.extra });
+            } else {
+                let includeReplyTarget = true;
+                for (const messageText of splitChatroomMessages(text)) {
+                    messages.push({ mes: messageText, extra: buildConversationUserMessageExtra(includeReplyTarget ? replyReference : null) });
+                    includeReplyTarget = false;
+                }
             }
+            payload = {
+                mode: 'send',
+                target: { avatar, groupId, personaId, branchId },
+                messages,
+                replyTarget: replyTargetAnchor,
+                branchCreatedAt,
+                timeZone: getDeviceTimeZone(),
+            };
+            payload.submissionKey = resolveSubmissionKey(payload);
         }
 
-        input.value = '';
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        clearConversationAttachmentInput();
-        updateLastUserActivity(avatar, { branchId, groupId, personaId });
+        const accepted = await acceptConversationSubmission(payload, { draftSignature });
+        if (!accepted) {
+            return;
+        }
+        try {
+            await refreshConversationStore();
+        } catch {
+            // The acceptance is durable; observation retries the authoritative
+            // read rather than the user resending and duplicating the message.
+        }
         scheduleInterfaceRefresh({ syncControls: false });
-
-        const queuedText = text || attachmentContextParts.join('\n') || 'Sent an attachment.';
-        const branchMessages = getConversationThread(avatar, { branchId, create: false, groupId, personaId });
-        sendQueue.push(createConversationQueueItem({
-            avatar,
-            branchId,
-            groupId,
-            messageIds,
-            messageRevisions: createConversationMessageRevisionEntries(triggerMessages),
-            personaId,
-            replyTarget: createConversationQueueReplyTarget(triggerMessages, branchMessages),
-            threadKey: getConversationThreadKey(avatar, groupId, { personaId }),
-            text: queuedText,
-            attachmentContext: attachmentContextParts.join('\n'),
-            createdAt: Date.now(),
-        }));
-        void processSendQueue();
+        clearConversationComposer(input, text, { hadAttachments: pendingFiles.length > 0, fileSignature });
+        pendingSubmission = null;
+        if (replyTargetAnchor && getActiveConversationReplyTarget(avatar, { branchId, groupId, personaId })?.messageId === replyTargetAnchor.messageId) {
+            clearConversationReplyTarget();
+        }
+        observeNativeConversationJob(accepted.job.id);
     } finally {
         conversationState.conversationUploadActive = false;
-        if (sendButton instanceof HTMLButtonElement) {
-            sendButton.disabled = false;
-        }
+        // Clear the busy flag even on the failure paths, then repaint so Send is
+        // re-enabled instead of staying disabled after a rejected submission.
+        scheduleInterfaceRefresh({ syncControls: true });
     }
+}
+
+/** Ask for a reply to messages the browser already saved (force response, branch-from-message). */
+export async function submitAcceptedReply({ avatar, branchId, groupId, personaId, force, triggers, submissionKey = '' }) {
+    if (conversationState.conversationUploadActive) {
+        return;
+    }
+    const branch = getBranchRecord(avatar, branchId, { groupId, personaId });
+    if (!branch) {
+        return;
+    }
+    const triggerMessages = (Array.isArray(triggers) ? triggers : []).filter(message => message?.id);
+    // A forced reply may answer an empty thread; a plain reply needs a source.
+    if (!triggerMessages.length && !force) {
+        return;
+    }
+    const replyTargetAnchor = resolveReplyTargetAnchor(
+        getActiveConversationReplyTarget(avatar, { branchId, groupId, personaId }) || replyTargetFromTriggers(triggerMessages, branch.messages),
+        branch.messages,
+    );
+    const payload = {
+        mode: 'reply',
+        target: { avatar, groupId, personaId, branchId },
+        triggers: createConversationMessageAnchors(triggerMessages),
+        replyTarget: replyTargetAnchor,
+        branchCreatedAt: String(branch.createdAt ?? ''),
+        force: Boolean(force),
+        timeZone: getDeviceTimeZone(),
+    };
+    payload.submissionKey = submissionKey || resolveSubmissionKey(payload);
+    conversationState.conversationUploadActive = true;
+    try {
+        const accepted = await acceptConversationSubmission(payload);
+        if (accepted) {
+            pendingSubmission = null;
+            try {
+                await refreshConversationStore();
+            } catch {
+                // The acceptance is durable; observation retries the read.
+            }
+            scheduleInterfaceRefresh({ syncControls: false });
+            observeNativeConversationJob(accepted.job.id);
+        }
+    } finally {
+        conversationState.conversationUploadActive = false;
+        // Clear the busy flag even on the failure paths, then repaint so Send is
+        // re-enabled instead of staying disabled after a rejected submission.
+        scheduleInterfaceRefresh({ syncControls: true });
+    }
+}
+
+function replyTargetFromTriggers(triggerMessages, messages) {
+    const lastUser = [...triggerMessages].reverse().find(message => message?.role === 'user');
+    const messageId = String(lastUser?.extra?.conversation_reply_to?.messageId || '').trim();
+    return messageId ? { messageId } : null;
+}
+
+function resolveReplyTargetAnchor(replyTarget, messages) {
+    const messageId = String(replyTarget?.messageId || '').trim();
+    if (!messageId) {
+        return null;
+    }
+    const targetMessage = (Array.isArray(messages) ? messages : []).find(message => String(message?.id || '') === messageId);
+    return targetMessage ? { messageId, revision: getConversationMessageRevision(targetMessage) } : null;
+}
+
+let pendingSubmission = null;
+
+function createSubmissionKey() {
+    try {
+        if (globalThis.crypto?.randomUUID) {
+            return globalThis.crypto.randomUUID();
+        }
+    } catch {
+        /* fall through to a timestamp key */
+    }
+    return `sub_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
+/** Reuse the key of a submission whose response was lost, so a retry cannot duplicate it. */
+function resolveSubmissionKey(payload) {
+    const signature = JSON.stringify([payload.mode, payload.target, payload.branchCreatedAt, payload.messages, payload.triggers, payload.replyTarget, payload.force, payload.timeZone]);
+    if (pendingSubmission && pendingSubmission.signature === signature) {
+        return pendingSubmission.key;
+    }
+    return createSubmissionKey();
+}
+
+async function acceptConversationSubmission(payload, meta = {}) {
+    const signature = JSON.stringify([payload.mode, payload.target, payload.branchCreatedAt, payload.messages, payload.triggers, payload.replyTarget, payload.force, payload.timeZone]);
+    let flushed = false;
+    try {
+        flushed = await flushConversationStore();
+    } catch {
+        flushed = false;
+    }
+    if (!flushed) {
+        toastr.error('Conversation changes could not be saved. Check the server connection and try again.', 'Reply not sent');
+        return null;
+    }
+    try {
+        const accepted = await postConversationSubmission(payload);
+        if (!accepted?.job || accepted.inputDurable !== true) {
+            toastr.warning('The Conversation reply was not accepted. Try again.', 'Reply not sent');
+            return null;
+        }
+        return accepted;
+    } catch (error) {
+        // An uncertain failure may have been accepted already, so keep the exact
+        // request (and its key and uploaded payload); the next identical send
+        // replays rather than duplicates.
+        pendingSubmission = { key: payload.submissionKey, signature, payload, draftSignature: meta.draftSignature || '' };
+        const detail = error?.body?.error || error?.message || 'The Conversation reply could not be sent.';
+        toastr.error(detail, 'Reply not sent');
+        return null;
+    }
+}
+
+async function postConversationSubmission(payload) {
+    const response = await fetch('/api/neconyan-conversation/reply/submit', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { ...getRequestHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    const text = await response.text();
+    let body = null;
+    try { body = text ? JSON.parse(text) : null; } catch { body = null; }
+    if (!response.ok) {
+        const error = new Error(body?.error || `Conversation submit failed with ${response.status}.`);
+        error.status = response.status;
+        error.body = body;
+        throw error;
+    }
+    return body;
 }
 
 if (typeof window !== 'undefined') {
     window.addEventListener('sb:queue-conversation-reply', (event) => {
         const detail = event?.detail || {};
         const avatar = String(detail.avatar || '').trim();
-        const text = String(detail.text || '').trim();
-        if (!avatar || !text) {
+        if (!avatar) {
             return;
         }
 
-        const createdAt = Number(detail.createdAt);
         const personaId = String(detail.personaId || getConversationPersonaId()).trim();
         const groupId = detail.groupId || '';
         const threadStore = getConversationThreadStore(avatar, { create: false, groupId, personaId });
@@ -909,23 +564,21 @@ if (typeof window !== 'undefined') {
         if (!branchId) {
             return;
         }
-        const messageIds = Array.isArray(detail.messageIds) ? detail.messageIds.filter(Boolean) : [];
-        const messages = getConversationThread(avatar, { branchId, create: false, groupId, personaId });
-        const triggerMessages = messageIds.map(messageId => messages.find(message => message?.id === messageId)).filter(Boolean);
-        sendQueue.push(createConversationQueueItem({
+        const messageIds = Array.isArray(detail.messageIds) ? detail.messageIds.filter(Boolean).map(String) : [];
+        const messages = getConversationThread(avatar, { branchId, create: false, groupId, personaId }) || [];
+        const triggers = messageIds.map(messageId => messages.find(message => String(message?.id || '') === messageId)).filter(Boolean);
+        if (messageIds.length && triggers.length !== messageIds.length) {
+            toastr.warning('A message this reply depends on is no longer available.');
+            return;
+        }
+        void submitAcceptedReply({
             avatar,
             branchId,
             groupId,
-            messageIds,
-            messageRevisions: createConversationMessageRevisionEntries(triggerMessages),
             personaId,
-            replyTarget: createConversationQueueReplyTarget(triggerMessages, messages),
-            threadKey: getConversationThreadKey(avatar, groupId, { personaId }),
-            text,
-            attachmentContext: String(detail.attachmentContext || '').trim(),
-            createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
             force: Boolean(detail.force),
-        }));
-        void processSendQueue();
+            triggers,
+            submissionKey: String(detail.submissionKey || '').trim(),
+        });
     });
 }

@@ -89,6 +89,12 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/settings
     getSettings: avatar => ({ roleplay_reactions: avatar === 'roleplay.png' }),
     hasAnyConversationModeUsage: () => hasUsage,
 }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({
+    initConversationStoreSync: jest.fn(),
+}));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/native-jobs.js', () => ({
+    resumeNativeConversationObservation: jest.fn(),
+}));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js', () => ({
     conversationState,
     setExternalConversationGenerationActive: (active) => {

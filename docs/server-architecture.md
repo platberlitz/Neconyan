@@ -8,7 +8,7 @@ The application is not fully server-owned. Provider requests reaching a server e
 - Internal model requests preserve their parent request's resumable behaviour and cancellation signal. Saved Mewmory connection profiles use that shared path rather than maintaining a second cancellation implementation.
 - The Conversation send API saves the user's message before contacting the model. Failed requests retain that message. A completed reply merges into the latest store when its original branch is unchanged, preserving unrelated settings and other threads. Concurrent changes to the same branch still produce a conflict instead of overwriting messages. Failed regeneration keeps the previous reply.
 - Manual Mewmory recall and complete index rebuilds now use saved jobs and private provider-result files. The real index control has been tested through acceptance, page unload and saved completion before reopening.
-- A separate accepted Conversation reply API captures saved context and a named chat profile, then saves reply bubbles and command effects with native completion records. It is not yet used by the main interface.
+- A separate accepted Conversation reply API captures saved context and a named chat profile, then saves reply bubbles and command effects with native completion records. The main composer, the forced-reply action and the branch-from-message action now submit through it; the browser appends no messages of its own and only observes saved results.
 
 ## Ownership and remaining work
 
@@ -17,9 +17,9 @@ The application is not fully server-owned. Provider requests reaching a server e
 | Mewmory extraction, interviews and backfill | Server scheduling, model calls, credentials, accepted-source checks, saved progress and restart recovery | An interrupted provider request can run again. Four extraction jobs can run at once; scanning is periodic. |
 | Mewmory recall, indexing and prompt preparation | Manual controls submit saved jobs; server retrieval, token counting, memory assembly and full index batching; fresh automatic recall runs independently of the page | Final Roleplay prompt construction remains in the browser. Legacy non-background endpoints remain available during migration. |
 | Roleplay replies | Server provider calls and resumable response buffering | Buffers live in process memory. Browser recovery applies the reply to the chat; server restart can lose an unfinished reply. |
-| Conversation send API | Server prompt assembly, provider call and thread persistence | The main Conversation interface does not use this endpoint as its primary generation path. |
-| Accepted Conversation reply API | Saved chat-profile binding, captured prompt context, provider-result recovery and repeat-safe native bubbles, reminders and status effects | Main-interface routing, text profiles, image delivery, complete participant behaviour and autonomous scheduling remain unfinished. |
-| Conversation interface | Saved state on the server | Send queues, idle/proactive replies, reminders and surrounding workflows still run in the browser. |
+| Conversation send API | Server prompt assembly, provider call and thread persistence | The main composer instead submits accepted sends and replies, which save the user message durably before generation; this older resumable endpoint remains available. |
+| Accepted Conversation reply API | Saved chat-profile binding, captured prompt context, trigger and reply-target checks, durable user-message acceptance, provider-result recovery and repeat-safe native bubbles, reminders and status effects | Text-completion profiles, image delivery, complete participant behaviour and autonomous scheduling remain unfinished. |
+| Conversation interface | Saved state on the server; composer sends, forced replies and branch-from-message replies are accepted and generated server-side, and the browser only observes and reads | The browser's own 30-second auto worker (idle followups, scheduled and proactive messages, reminders) still runs; disabling it is part of the ownership handover, not done in this step. |
 | Meower | Native server storage | Feed generation and its surrounding workflow remain browser-owned. |
 | Story Mode | Shared backend model requests | Story progression and generation coordination remain browser-owned. |
 | Agents | Native server collection storage and backend model requests | Agent execution, transformations and multi-step coordination remain browser-owned. |
@@ -44,6 +44,8 @@ src/endpoints/mewmory.js
 src/request-cancellation.js
 src/endpoints/conversation-generation.js
 src/endpoints/neconyan-conversation.js
+public/scripts/neconyan-conversation/native-jobs.js
+public/scripts/neconyan-conversation/store-sync.js
 public/scripts/mewmory/index.js
 tests/mewmory.node.js
 tests/mewmory-selection.test.js

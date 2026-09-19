@@ -6,7 +6,7 @@ import { getUserAvatar } from '../personas.js';
 import { loadMovingUIState, power_user } from '../power-user.js';
 import { dragElement, shouldSendOnEnter } from '../RossAscends-mods.js';
 import { debounce } from '../utils.js';
-import { addConversationFilesToInput, clearConversationAttachmentInput, processSendQueue, submitConversationInput, updateConversationAttachmentPreview } from './attachments.js';
+import { addConversationFilesToInput, clearConversationAttachmentInput, submitAcceptedReply, submitConversationInput, updateConversationAttachmentPreview } from './attachments.js';
 import { CHROME_IDS, DEFAULT_GROUNDED_DIALOGUE_RULES, DEFAULT_CHATROOM_PROMPT } from './constants.js';
 import {
     createConversationBranchForAvatar,
@@ -14,7 +14,6 @@ import {
     getConversationBranches,
     getConversationGroupIdForAvatar,
     getConversationPersonaId,
-    getConversationThreadKey,
     getConversationThreadStore,
     getCurrentCharacter,
     getCurrentCharAvatar,
@@ -68,8 +67,7 @@ import {
     togglePalsRail,
 } from './settings-panel.js';
 import { getSettings, resetFollowupCount, saveSettings } from './settings-store.js';
-import { conversationState, sendQueue } from './state.js';
-import { createForcedConversationQueueItem } from './send-queue-utils.js';
+import { conversationState } from './state.js';
 import { getConversationThread, updateLastUserActivity } from './thread-store.js';
 import {
     branchConversationFromMessage,
@@ -730,7 +728,7 @@ export function bindConversationChromeControls(sheld) {
                 reactConversationMessage(target.dataset.messageId, target.dataset.reaction);
                 break;
             case 'branch-from-message':
-                branchConversationFromMessage(target.dataset.messageId);
+                await branchConversationFromMessage(target.dataset.messageId);
                 break;
             case 'regenerate-message':
                 await regenerateConversationMessage(target.dataset.messageId);
@@ -763,16 +761,9 @@ export function bindConversationChromeControls(sheld) {
                     const personaId = getConversationPersonaId();
                     const threadStore = getConversationThreadStore(avatar, { create: false, groupId, personaId });
                     const branchId = threadStore?.activeBranchId || '';
-                    const messages = getConversationThread(avatar, { branchId, create: false, groupId, personaId });
-                    sendQueue.push(createForcedConversationQueueItem({
-                        avatar,
-                        branchId,
-                        groupId,
-                        personaId,
-                        threadKey: getConversationThreadKey(avatar, groupId, { personaId }),
-                        createdAt: Date.now(),
-                    }, messages));
-                    void processSendQueue();
+                    const messages = getConversationThread(avatar, { branchId, create: false, groupId, personaId }) || [];
+                    const lastUser = [...messages].reverse().find(message => message?.role === 'user');
+                    await submitAcceptedReply({ avatar, branchId, groupId, personaId, force: true, triggers: lastUser ? [lastUser] : [] });
                 }
                 break;
             }
