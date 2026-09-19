@@ -128,8 +128,10 @@ acceptance case is unproven), `pending` (not started).
   reminders, weekly and legacy schedules, idle and proactive messages, chimes and
   character chat through the reply family, plus native memory summaries and manual
   schedule generation, using deterministic occurrence keys and one-time bookkeeping
-  claims. Remaining: the main composer queue, explicit reply targets, the Roleplay
-  aside bridge and disabling the browser worker after ownership handover.
+  claims. The Roleplay group-aside and solo side-DM bridge runs natively through
+  `POST /aside/submit` with a saved source guard. Remaining: the main composer
+  queue, explicit reply targets and disabling the browser worker after ownership
+  handover.
 - `pending` Meower.
 - `pending` Prompting Lab, Distiller, LoreStitch, World Info Lab.
 - `pending` remaining bundled model and file workflows.
