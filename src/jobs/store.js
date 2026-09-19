@@ -152,7 +152,25 @@ function readStore(directories) {
     return store;
 }
 
-const removable = job => ['completed', 'cancelled'].includes(job.state) || (isTerminal(job) && job.dismissed);
+const baseRemovable = job => ['completed', 'cancelled'].includes(job.state) || (isTerminal(job) && job.dismissed);
+
+/**
+ * A conversation family is retained or dropped together: a finished child must
+ * outlive its root so reconciliation can still read it, and a root must outlive
+ * its unfinished children. Any other family member keeps the whole job alive.
+ */
+function familyLocked(job, jobs) {
+    const parent = job.parentId ? jobs[jobKey(job.parentId)] : null;
+    // A dismissed member is the user saying "gone"; it stops pinning the family.
+    if (parent && !baseRemovable(parent) && !parent.dismissed) return true;
+    for (const childId of job.children ?? []) {
+        const child = jobs[jobKey(childId)];
+        if (child && !baseRemovable(child) && !child.dismissed) return true;
+    }
+    return false;
+}
+
+const removable = (job, jobs = {}) => baseRemovable(job) && !familyLocked(job, jobs);
 
 function pruneJobs(jobs, protectedId) {
     const entries = Object.entries(jobs);
@@ -160,9 +178,9 @@ function pruneJobs(jobs, protectedId) {
     // Never discard work that is still queued, running or waiting. Among the
     // terminal records, keep the newest; retention is finite and documented.
     const keep = new Set();
-    const nonTerminal = entries.filter(([, job]) => job.id === protectedId || !removable(job));
+    const nonTerminal = entries.filter(([, job]) => job.id === protectedId || !removable(job, jobs));
     const terminal = entries
-        .filter(([, job]) => job.id !== protectedId && removable(job))
+        .filter(([, job]) => job.id !== protectedId && removable(job, jobs))
         .sort(([, left], [, right]) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
     for (const [key] of nonTerminal) keep.add(key);
     for (const [key, job] of terminal) {
@@ -181,7 +199,7 @@ function writeStore(directories, store, protectedId) {
     let text = JSON.stringify(ordered);
     for (const [key, job] of Object.entries(ordered.jobs).sort(([, a], [, b]) => a.updatedAt - b.updatedAt)) {
         if (Buffer.byteLength(text) <= JOB_LEDGER_MAX_BYTES) break;
-        if (job.id === protectedId || !removable(job)) continue;
+        if (job.id === protectedId || !removable(job, ordered.jobs)) continue;
         delete ordered.jobs[key];
         text = JSON.stringify(ordered);
     }
@@ -283,8 +301,8 @@ export function acceptJob(directories, input) {
         // Refuse before persisting when this record could not be saved, rather
         // than throwing away the caller's just-accepted identity.
         if (Object.keys(store.jobs).length >= JOB_LIMIT) {
-            const removable = Object.values(store.jobs).some(job => ['completed', 'cancelled'].includes(job.state) || (isTerminal(job) && job.dismissed));
-            if (!removable) {
+            const hasRemovable = Object.values(store.jobs).some(job => removable(job, store.jobs));
+            if (!hasRemovable) {
                 throw fail(503, 'JOB_STORE_FULL', 'Too many unfinished or unresolved jobs for this account. Finish work or dismiss resolved failures before starting more.');
             }
         }
@@ -326,6 +344,97 @@ export function acceptJob(directories, input) {
         };
         store.jobs[jobKey(id)] = job;
         return { job, created: true };
+    });
+}
+
+/**
+ * Materialise a parent job's participants as child jobs in one ledger mutation.
+ * Children start paused so the parent can freeze each participant request before
+ * any provider work; repeating materialisation with the same keys returns the
+ * existing children instead of duplicating them. Only server-side callers use
+ * this: the public submission endpoint never accepts a parent id.
+ */
+export function acceptChildJobs(directories, parentId, inputs) {
+    if (!Array.isArray(inputs) || inputs.length === 0) return [];
+    return mutateJobs(directories, store => {
+        const parent = store.jobs[jobKey(parentId)];
+        if (!parent) throw fail(404, 'JOB_NOT_FOUND', 'The parent job no longer exists.');
+        const children = [];
+        for (const input of inputs) {
+            const participantKey = input?.participantKey;
+            if (typeof participantKey !== 'string' || !participantKey || participantKey.length > 256) {
+                throw fail(400, 'JOB_INVALID', 'A participant key is required.');
+            }
+            const key = `child:${parentId}:${participantKey}`;
+            const existing = Object.values(store.jobs).find(job => job.owner === parent.owner && job.submissionKey === key);
+            if (existing) {
+                if (existing.parentId !== parentId) throw fail(409, 'JOB_SUBMISSION_CONFLICT', 'A participant key was already used for different work.');
+                children.push(existing);
+                continue;
+            }
+            const intent = validatePart('intent', input.intent ?? {}, JOB_INTENT_MAX_BYTES) ?? {};
+            const target = validateTarget(input.target ?? parent.target ?? null);
+            const config = validatePart('config', input.config ?? null, JOB_PART_MAX_BYTES);
+            const credentialRef = validatePart('credentialRef', input.credentialRef ?? null, JOB_PART_MAX_BYTES);
+            const id = newJobId();
+            const job = {
+                schema: JOB_SCHEMA, id, owner: parent.owner, type: 'conversation.participant',
+                mutating: true, automatic: parent.automatic === true, parentId,
+                submissionKey: key,
+                intentHash: submissionKey(parent.owner, key, { type: 'conversation.participant', intent, target, config, credentialRef }),
+                intent, label: parent.label, state: 'waiting', stage: 'preparing', coalesce: null,
+                progress: { completed: 0, total: null }, target, config, credentialRef,
+                resume: null, recoverability: 'resumable', children: [], receipts: [],
+                artifact: null, result: null, error: null,
+                cancellation: { requested: false, requestedAt: null, reason: null },
+                dismissed: false, createdAt: now(), updatedAt: now(), startedAt: null, finishedAt: null, attempt: 0,
+            };
+            store.jobs[jobKey(id)] = job;
+            children.push(job);
+        }
+        parent.children = [...new Set([...(parent.children ?? []), ...children.map(child => child.id)])];
+        parent.updatedAt = now();
+        return { children, job: parent };
+    }).children;
+}
+
+/**
+ * Release a parent's frozen children for dispatch and park the parent at
+ * `waiting/children`. The parent holds its target but consumes no running slot,
+ * so its children can take the account's provider slots. Safe to repeat.
+ */
+export function releaseChildJobs(directories, parentId) {
+    return mutateJobs(directories, store => {
+        const parent = store.jobs[jobKey(parentId)];
+        if (!parent) throw fail(404, 'JOB_NOT_FOUND', 'The parent job no longer exists.');
+        // A cancellation that landed during preparation still stops the children:
+        // queueing them here would dispatch work the user already cancelled.
+        const cancelled = parent.cancellation?.requested === true;
+        for (const childId of parent.children ?? []) {
+            const child = store.jobs[jobKey(childId)];
+            if (!child || TERMINAL_STATES.includes(child.state)) continue;
+            if (cancelled) {
+                child.cancellation = { requested: true, requestedAt: now(), reason: parent.cancellation?.reason ?? null };
+                child.state = 'cancelled';
+                child.finishedAt = now();
+                child.updatedAt = now();
+            } else if (child.state === 'waiting' && child.stage === 'preparing') {
+                child.state = 'queued';
+                child.stage = null;
+                child.updatedAt = now();
+            }
+        }
+        if (cancelled) {
+            parent.state = 'cancelled';
+            parent.stage = null;
+            parent.finishedAt = now();
+            parent.updatedAt = now();
+        } else if (parent.state === 'running' || parent.state === 'queued' || parent.state === 'waiting') {
+            parent.state = 'waiting';
+            parent.stage = 'children';
+            parent.updatedAt = now();
+        }
+        return { job: parent };
     });
 }
 
@@ -389,6 +498,18 @@ export function requestCancellation(directories, id, { reason = null } = {}) {
             job.state = 'cancelled';
             job.finishedAt = now();
         }
+        // Cancelling a family cancels its unfinished children in the same write.
+        // Committed child effects stay intact; only pending work stops.
+        for (const childId of job.children ?? []) {
+            const child = store.jobs[jobKey(childId)];
+            if (!child || TERMINAL_STATES.includes(child.state)) continue;
+            child.cancellation = { requested: true, requestedAt: now(), reason };
+            child.updatedAt = now();
+            if (child.state === 'queued' || child.state === 'waiting') {
+                child.state = 'cancelled';
+                child.finishedAt = now();
+            }
+        }
         // The request is durable before it is acknowledged. The runner observes
         // it before starting, between stages, and after any late provider reply.
         return { job };
@@ -396,7 +517,56 @@ export function requestCancellation(directories, id, { reason = null } = {}) {
 }
 
 export function dismissJob(directories, id) {
-    return updateJob(directories, id, { dismissed: true });
+    return mutateJobs(directories, store => {
+        const job = store.jobs[jobKey(id)];
+        if (!job) throw fail(404, 'JOB_NOT_FOUND', 'No such job.');
+        job.dismissed = true;
+        job.updatedAt = now();
+        // The client only ever sees the root, so dismissing it must also dismiss
+        // the participants that would otherwise keep the family in the ledger.
+        for (const childId of job.children ?? []) {
+            const child = store.jobs[jobKey(childId)];
+            if (!child) continue;
+            child.dismissed = true;
+            child.updatedAt = now();
+        }
+        return { job };
+    });
+}
+
+/**
+ * Reopen a Conversation family after an explicit retry. Only failed or unknown
+ * participants are requeued; completed ones keep their saved output. The root
+ * returns to `waiting/children` so the worker aggregates again.
+ */
+export function retryConversationFamily(directories, id) {
+    return mutateJobs(directories, store => {
+        const root = store.jobs[jobKey(id)];
+        if (!root) throw fail(404, 'JOB_NOT_FOUND', 'No such job.');
+        let changed = false;
+        for (const childId of root.children ?? []) {
+            const child = store.jobs[jobKey(childId)];
+            if (!child || !['failed', 'interrupted'].includes(child.state)) continue;
+            child.state = 'queued';
+            child.stage = null;
+            child.error = null;
+            child.result = null;
+            child.recoverability = 'resumable';
+            child.recoveryStep = null;
+            child.attempt += 1;
+            child.updatedAt = now();
+            changed = true;
+        }
+        if (!changed) throw fail(409, 'JOB_NOT_RETRYABLE', 'No participant in this Conversation reply can be retried.');
+        root.state = 'waiting';
+        root.stage = 'children';
+        root.error = null;
+        root.result = null;
+        root.finishedAt = null;
+        root.recoverability = 'resumable';
+        root.updatedAt = now();
+        return { job: root };
+    });
 }
 
 export function recordReceipt(directories, id, receipt) {

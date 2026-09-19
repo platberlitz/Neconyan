@@ -95,9 +95,17 @@ acceptance case is unproven), `pending` (not started).
 - `partial` Conversation transcript, system-prompt composition, persona notes and
   reply splitting share pure functions. The accepted-reply API captures saved
   persona, group-memory and schedule context, then saves bubbles and reminder or
-  status changes together with repeat-safe native receipts. The main browser
-  queue, complete participant behaviour and image delivery are not migrated.
-  Roleplay prompt assembly remains pending.
+  status changes together with repeat-safe native receipts. A native root job now
+  selects participants (group weighted/mention choice, solo single speaker), builds
+  each participant's card, saved profile binding, activity, assistant knowledge and
+  reply reference, and materialises one sibling child job per participant. Children
+  can run concurrently, share the root's message-hash checkpoint, apply the browser
+  availability/autoresponder/delay policy, and reconcile into one root result;
+  retries, cancellation and dismissals are family-aware. Image delivery is still a
+  deliberate recoverable boundary: a reply that requests an image keeps its text and
+  model result and returns a 409. The main browser queue still executes replies;
+  switching it and real image generation remain pending. Roleplay prompt assembly
+  remains pending.
 
 ## Phase 3 onward
 
@@ -108,7 +116,9 @@ acceptance case is unproven), `pending` (not started).
   and Agents execution remain pending.
 - `pending` Roleplay, Story, Guided Generations, Deep Swipe callers.
 - `pending` Quick Image Gen and media pipelines.
-- `pending` Conversation send queue and scheduler.
+- `partial` Conversation participant selection, availability, assistant context and
+  the image boundary run natively (see Phase 2). The main composer queue, explicit
+  reply targets, send-triggered partner chimes and the autonomous scheduler remain.
 - `pending` Meower.
 - `pending` Prompting Lab, Distiller, LoreStitch, World Info Lab.
 - `pending` remaining bundled model and file workflows.
@@ -132,13 +142,22 @@ acceptance case is unproven), `pending` (not started).
 This is a saved implementation checkpoint, not a release-ready full migration.
 Production has not been changed. Conversation's accepted-reply API is exercised through saved provider
 settings, native completion and recovery tests, but the main browser interface
-does not use it yet. Text-completion profiles, instruct formatting, image
-delivery, full participant behaviour and autonomous scheduling remain required
-before switching that interface. The other pending workflows above remain part
-of the requested scope.
+does not use it yet. Participant selection, group concurrency, assistant context
+and the image boundary now run natively; text-completion profiles, instruct
+formatting, real image delivery, explicit reply targets, partner chimes and
+autonomous scheduling remain required before switching that interface. The other
+pending workflows above remain part of the requested scope.
 
-- Full Jest run: 331 suites passed; 4,260 tests passed and two skipped.
-- All Node tests after checkpoint review fixes: 122 passed; 13 affected frontend unit tests also passed.
+- Full Jest run: 331 suites passed; 4,266 tests passed and two skipped.
+- All Node tests after the Step 4 family work: 133 passed. The focused
+  `tests/conversation-reply-policy.node.js` covers selection, availability/delay
+  policy and family store behaviour; the Conversation API suite covers root+child
+  completion and recovery.
+- Reviewer findings on the Step 4 diff (child timezone, family retention/dismiss,
+  root retry, child cancellation, cancellation during preparation, orphaned
+  children, selection/notice divergence, legacy gating, permanent finalise loop,
+  reconcile clock default) were fixed and re-verified.
+- Older checkpoint record: all Node tests at that time 122 passed; 13 affected frontend unit tests also passed.
 - After the last full run, all 50 Conversation API tests passed again with the
   added case for recovering native delivery after its saved profile is removed.
 - Root lint, frontend budgets and whitespace checks passed.

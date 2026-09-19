@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { MAX_THREAD_MESSAGES } from '../../public/scripts/neconyan-conversation/constants.js';
+import { MAX_THREAD_MESSAGES, STATUS_NOTICE_COOLDOWN_MS } from '../../public/scripts/neconyan-conversation/constants.js';
 import { resolveConversationScheduleUpdate } from '../../public/scripts/neconyan-conversation/generation-utils.js';
 import { parseReminderDelayToMs } from '../../public/scripts/neconyan-conversation/reminder-time.js';
 import { authorizeConversationGroup, normalizeConversationGroupRecord } from '../endpoints/conversation-groups.js';
@@ -41,11 +41,19 @@ export async function commitConversationEffect(context, target, effectId, mutate
     const currentJob = getJob(context.directories, context.job.id);
     if (!currentJob || currentJob.owner !== context.owner) conflict('The Conversation job is no longer available.');
     if (currentJob.cancellation?.requested) throw Object.assign(new Error('The Conversation job was cancelled.'), { name: 'AbortError' });
+    // A participant child shares its root's message checkpoint: the root records
+    // the expected thread hash, so two siblings can append without seeing each
+    // other as a conflicting third-party edit, while a user edit still fails.
+    const rootJob = currentJob.parentId ? getJob(context.directories, currentJob.parentId) : currentJob;
+    if (!rootJob || rootJob.owner !== context.owner) conflict('The Conversation job family is no longer available.');
+    if (rootJob.cancellation?.requested) throw Object.assign(new Error('The Conversation job was cancelled.'), { name: 'AbortError' });
     const request = { user: { directories: context.directories, profile: { handle: context.owner } } };
     const current = readConversationTarget(request, target);
     if (current.branch.createdAt !== target.createdAt) conflict('The Conversation branch was replaced.');
-    const jobKey = digest(context.job.id);
-    const effectKey = digest(effectId);
+    const jobKey = digest(rootJob.id);
+    // The root keeps its historical effect key so already-saved receipts remain
+    // valid; a child namespaces its own effects below the shared checkpoint.
+    const effectKey = currentJob.parentId ? digest([currentJob.id, effectId]) : digest(effectId);
     const receipt = current.branch.serverOperations?.[jobKey];
     if (receipt && Object.hasOwn(receipt.effects, effectKey)) return receipt.effects[effectKey];
     if (digest(current.branch.messages) !== (receipt?.messagesHash || target.messagesHash)) {
@@ -73,6 +81,26 @@ export function appendConversationJobMessage(context, target, effectId, value) {
             branch.lastActivity = Date.now();
             branch.followupCount = 0;
         }
+        refreshBranchPreview(branch);
+        return { id: message.id };
+    });
+}
+
+/**
+ * Post the one "replies may be slow" notice a busy branch is allowed within the
+ * cooldown. Eligibility is checked inside the same write that saves the notice,
+ * so two participants sharing a branch cannot both decide the coast is clear.
+ */
+export function commitConversationReplyNotice(context, target, speaker, activity, { noticeText, now = Date.now() }) {
+    return commitConversationEffect(context, target, `notice:${speaker.avatar}`, branch => {
+        const last = Number(branch.lastReplyNoticeAt) || 0;
+        if (last && now - last < STATUS_NOTICE_COOLDOWN_MS) return { skipped: true };
+        const message = createConversationMessage({ role: 'system', name: 'Status', mes: noticeText,
+            extra: { conversation_mode_notice: true, availability: activity.status, partner_avatar: speaker.avatar } });
+        if (!message) return { skipped: true };
+        branch.messages.push(message);
+        branch.messages = branch.messages.slice(-MAX_THREAD_MESSAGES);
+        branch.lastReplyNoticeAt = now;
         refreshBranchPreview(branch);
         return { id: message.id };
     });

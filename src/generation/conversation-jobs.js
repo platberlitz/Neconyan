@@ -1,18 +1,15 @@
 import { createHash } from 'node:crypto';
 import { deliverConversationReply } from '../../public/scripts/neconyan-conversation/reply-delivery.js';
-import { composePersonaDescription, conversationPersonaSelection } from '../../public/scripts/neconyan-conversation/persona-description.js';
-import { AVAILABILITY_COPY } from '../../public/scripts/neconyan-conversation/constants.js';
-import { buildConversationMessageReplyReference } from '../endpoints/conversation-messages.js';
-import { buildConversationPromptMessages, buildConversationSystemPrompt, getCharacterData, getConversationSettings, getDefaultDirective } from '../endpoints/conversation-generation.js';
+import { getConversationSettings, getDefaultDirective } from '../endpoints/conversation-generation.js';
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
-import { acceptJob, getJob, listJobs, releaseJob, setJobResume, updateJob } from '../jobs/store.js';
+import { acceptChildJobs, acceptJob, getJob, listJobs, releaseChildJobs, releaseJob, requestCancellation, setJobResume, updateJob } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { createMacroEnvironment } from '../macros/index.js';
-import { appendConversationJobMessage, captureConversationTarget, commitConversationEffect, commitConversationJobCommands, readConversationTarget } from './conversation-effects.js';
+import { appendConversationJobMessage, captureConversationTarget, commitConversationEffect, commitConversationJobCommands, commitConversationReplyNotice, readConversationTarget } from './conversation-effects.js';
 import { captureChatProfile } from './profiles.js';
 import { runChatProfile } from './service.js';
-import { buildSavedConversationContext } from './conversation-context.js';
+import { buildConversationParticipantPlan, buildConversationParticipantSnapshot, buildAvailabilityAutoResponderText, buildDelayedReplyNoticeText, getConversationAvailabilityDecision, getInitialAvailabilityDelayMs, getReplyDelayMsForStatus, manualActivity } from './conversation-participants.js';
 
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }); };
@@ -23,6 +20,14 @@ const MAX_INPUT_TOTAL_BYTES = 2 * 1024 * 1024;
 // Mirrors the browser's SEND_QUEUE_COALESCE_MS: a burst of composer messages
 // stays one batch until the user goes quiet for this long.
 const COALESCE_WINDOW_MS = 5000;
+
+const defaultSleep = (ms, signal) => new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    if (!signal) return;
+    const onAbort = () => { clearTimeout(timer); const error = new Error('Aborted'); error.name = 'AbortError'; reject(error); };
+    if (signal.aborted) return onAbort();
+    signal.addEventListener('abort', onAbort, { once: true });
+});
 
 /** Validate composer-supplied user messages. Only display fields survive; nothing routing-related is accepted. */
 function normalizeInputMessages(raw) {
@@ -44,35 +49,24 @@ function normalizeInputMessages(raw) {
     return messages;
 }
 
-async function buildConversationSnapshot(request, target, directive, timeZone, binding) {
-    const directories = request.user.directories;
+/**
+ * Freeze the whole request: pick the participants, then build each one's card,
+ * profile binding, system prompt and macro environment. The first participant is
+ * also the top-level snapshot so the legacy single-speaker path keeps working.
+ */
+async function buildConversationSnapshot(request, target, directive, timeZone, { force = false } = {}) {
     const current = readConversationTarget(request, target);
-    const settings = getConversationSettings(request, current.store, target.avatar, target.groupId, {}, { personaId: target.personaId });
-    const character = await getCharacterData(request, target.avatar, { allowOverride: false });
-    const userName = String(current.settings.power_user?.personas?.[target.personaId] || current.settings.name1 || 'User');
-    const messages = await buildConversationPromptMessages(current.branch.messages, directive, character.name, {
-        groupId: target.groupId, userName, userDirectories: directories,
-    });
     const now = Date.now();
-    const timeContext = `Current system time context: ${new Intl.DateTimeFormat('en-GB', { timeZone, dateStyle: 'full', timeStyle: 'long' }).format(now)}. Timezone: ${timeZone}.`;
-    const descriptor = current.settings.power_user?.persona_descriptions?.[target.personaId];
-    const personaContext = composePersonaDescription(descriptor, conversationPersonaSelection(descriptor,
-        getConversationThreadKey(target.avatar, target.groupId, target.personaId), getConversationThreadKey(target.avatar, target.groupId, '')));
-    const savedContext = await buildSavedConversationContext(request, current, target, character, settings, timeZone, now);
-    const system = buildConversationSystemPrompt({ settings, character, userName, groupId: target.groupId, branch: current.branch, context: {
-        ...savedContext.context, timeContext, personaContext,
-        availability: (AVAILABILITY_COPY[current.store.userStatus] || AVAILABILITY_COPY.online).label.toLowerCase(),
-        personaStatus: String(current.store.userPersonaStatus || '').replace(/\s+/g, ' ').trim().slice(0, 80),
-    } });
+    const plan = await buildConversationParticipantPlan(request, current, target, { force, now, timeZone });
+    const participants = [];
+    for (const item of plan) {
+        participants.push(await buildConversationParticipantSnapshot(request, current, target, item, { directive, timeZone, force, now }));
+    }
+    const primary = participants[0];
+    if (Buffer.byteLength(JSON.stringify(participants)) > 16 * 1024 * 1024) fail('The Conversation request snapshot is too large.', 413);
     return {
-        settings, character, userName, now,
-        snapshot: {
-            target, binding, settings, speaker: { avatar: target.avatar, name: character.name }, speakers: savedContext.speakers, userName, now,
-            messages: [{ role: 'system', content: system }, ...messages],
-            replyReference: buildConversationMessageReplyReference([...current.branch.messages].reverse().find(message => message.role !== 'system')),
-            macros: { names: { user: userName, char: character.name }, extra: { chat: current.branch.messages, chatMetadata: {}, powerUser: current.settings.power_user || {} } },
-        },
-        branch: current.branch,
+        settings: primary.settings, userName: primary.userName, now: primary.now,
+        snapshot: { ...primary, participants }, branch: current.branch,
     };
 }
 
@@ -126,10 +120,20 @@ async function appendSubmissionMessages(request, job, messages, submissionKey) {
 export async function finalizeConversationSubmission(request, job) {
     const directories = request.user.directories;
     if (!readArtifact(directories, job.id, 'request')) {
-        const target = captureConversationTarget(request, job.intent.target);
-        const built = await buildConversationSnapshot(request, target, job.intent.directive, job.intent.timeZone, job.credentialRef);
-        if (Buffer.byteLength(JSON.stringify(built.snapshot)) > 16 * 1024 * 1024) fail('The Conversation request snapshot is too large.', 413);
-        writeArtifact(directories, job.id, 'request', built.snapshot);
+        try {
+            const target = captureConversationTarget(request, job.intent.target);
+            const built = await buildConversationSnapshot(request, target, job.intent.directive, job.intent.timeZone, { force: job.intent.force === true });
+            if (Buffer.byteLength(JSON.stringify(built.snapshot)) > 16 * 1024 * 1024) fail('The Conversation request snapshot is too large.', 413);
+            writeArtifact(directories, job.id, 'request', built.snapshot);
+        } catch (error) {
+            // A snapshot that can never be built would be retried every second;
+            // fail it so the user can see the reason and retry or dismiss.
+            updateJob(directories, job.id, {
+                state: 'failed', stage: null, finishedAt: Date.now(), recoverability: 'needs-retry',
+                error: { message: error.message, code: error.code ?? null, status: error.status ?? null },
+            });
+            return getJob(directories, job.id);
+        }
     }
     releaseJob(directories, job.id);
     return getJob(directories, job.id);
@@ -146,10 +150,12 @@ function findSubmission(directories, owner, key) {
 }
 
 /** The open send batch this submission can still join, or null. */
-function findCoalesceLeader(directories, owner, target, binding, now) {
+function findCoalesceLeader(directories, owner, target, binding, now, { force, timeZone }) {
     const threadKey = getConversationThreadKey(target.avatar, target.groupId, target.personaId);
     return listJobs(directories, { owner, includeDismissed: true }).find(job => job.type === 'conversation.reply'
         && job.intent?.mode === 'send'
+        && (job.intent?.force === true) === (force === true)
+        && job.intent?.timeZone === timeZone
         && job.state === 'waiting' && job.stage === 'preparing'
         && !job.cancellation?.requested
         && job.target?.id === threadKey && job.target?.branchId === target.branchId
@@ -186,6 +192,7 @@ export async function acceptConversationSubmission(request, body = {}) {
     if (typeof body.submissionKey !== 'string' || !body.submissionKey || body.submissionKey.length > 256) fail('A submission key is required.', 400);
     if (!body.target || typeof body.target !== 'object' || Array.isArray(body.target)) fail('A saved Conversation target is required.', 400);
     if (body.directive !== undefined && (typeof body.directive !== 'string' || body.directive.length > 20000)) fail('The reply directive is invalid.', 400);
+    if (body.force !== undefined && typeof body.force !== 'boolean') fail('The forced-reply flag is invalid.', 400);
     const timeZone = typeof body.timeZone === 'string' ? body.timeZone : 'UTC';
     try { new Intl.DateTimeFormat('en-GB', { timeZone }).format(); } catch { fail('The reply timezone is invalid.', 400); }
     const mode = body.mode === undefined || body.mode === 'reply' ? 'reply' : body.mode === 'send' ? 'send' : null;
@@ -194,7 +201,7 @@ export async function acceptConversationSubmission(request, body = {}) {
     const intent = {
         mode,
         target: { avatar: body.target.avatar, groupId: body.target.groupId || '', personaId: body.target.personaId || '', branchId: body.target.branchId },
-        directive: getDefaultDirective(body), timeZone,
+        directive: getDefaultDirective(body), timeZone, force: body.force === true,
         ...(mode === 'send' ? { inputHash: hash(messages) } : {}),
     };
     const existing = findSubmission(directories, owner, body.submissionKey);
@@ -215,7 +222,7 @@ export async function acceptConversationSubmission(request, body = {}) {
     const settings = getConversationSettings(request, current.store, target.avatar, target.groupId, {}, { personaId: target.personaId });
     const binding = captureChatProfile(directories, settings.connection_profile);
     if (mode === 'send') {
-        const leader = findCoalesceLeader(directories, owner, target, binding, Date.now());
+        const leader = findCoalesceLeader(directories, owner, target, binding, Date.now(), { force: intent.force, timeZone });
         if (leader) return joinCoalesceLeader(request, leader, { messages, submissionKey: body.submissionKey });
     }
     const accepted = acceptJob(directories, { owner, type: 'conversation.reply', submissionKey: body.submissionKey, intent, paused: true,
@@ -232,49 +239,138 @@ export async function acceptConversationReply(request, body = {}) {
     return acceptConversationSubmission(request, { ...body, mode: 'reply' });
 }
 
-/** A completed provider response and every native bubble can be resumed independently. */
-export function registerConversationReplyJob({ generate = runChatProfile, generateImage } = {}) {
-    registerHandler('conversation.reply', async context => {
-        const snapshot = readArtifact(context.directories, context.job.id, 'request');
-        if (!snapshot) fail('The accepted Conversation snapshot is unavailable. Resubmit the request.');
-        if (readArtifact(context.directories, context.job.id, 'result')) return { artifact: true };
-        const { target, binding, speaker, settings, userName } = snapshot;
-        // A receipt-only checkpoint validates current ownership and the source before any model call.
-        await commitConversationEffect(context, target, 'accepted', () => null);
-        const current = readConversationTarget({ user: { directories: context.directories } }, target);
-        const receipt = current.branch.serverOperations?.[hash(context.job.id)];
-        if (hash(current.branch.messages) !== (receipt?.messagesHash || target.messagesHash)) fail('The Conversation messages changed before generation.');
-        let response = readArtifact(context.directories, context.job.id, 'reply');
-        if (!response) {
-            response = await generate({ context, jobContext: context, binding, messages: snapshot.messages,
-                maxTokens: settings.reply_max_tokens, userName, characterName: speaker.name,
-                macroEnvironment: createMacroEnvironment(snapshot.macros) });
-            writeArtifact(context.directories, context.job.id, 'reply', response);
+/**
+ * Persist an abortable delay so a restart waits only the remaining time. The
+ * deadline is written once, before waiting, and reused on every retry.
+ */
+export async function waitForConversationJobDelay(context, effectId, delayMs, { now = Date.now, sleep = defaultSleep } = {}) {
+    if (!Number.isFinite(delayMs) || delayMs <= 0) return;
+    const name = `delay:${hash(effectId).slice(0, 16)}`;
+    let saved = readArtifact(context.directories, context.job.id, name);
+    if (!saved) {
+        saved = { deadline: now() + Math.round(delayMs) };
+        writeArtifact(context.directories, context.job.id, name, saved);
+    }
+    const remaining = saved.deadline - now();
+    if (remaining <= 0) return;
+    context.signal?.throwIfAborted();
+    await sleep(remaining, context.signal);
+}
+
+/** The root coordinates its frozen participants and holds the thread without a slot. */
+async function runConversationRootJob(context, deps) {
+    const directories = context.directories;
+    const snapshot = readArtifact(directories, context.job.id, 'request');
+    if (!snapshot) fail('The accepted Conversation snapshot is unavailable. Resubmit the request.');
+    if (readArtifact(directories, context.job.id, 'result')) return { artifact: true };
+    if (!Array.isArray(snapshot.participants)) {
+        // A job accepted before participant support ran its own single reply.
+        return runConversationParticipantJob(context, deps);
+    }
+    setJobResume(directories, context.job.id, 'children');
+    const threadKey = getConversationThreadKey(snapshot.target.avatar, snapshot.target.groupId, snapshot.target.personaId);
+    try {
+        const children = acceptChildJobs(directories, context.job.id, snapshot.participants.map(participant => ({
+            participantKey: participant.speaker.avatar,
+            intent: { participantKey: participant.speaker.avatar, purpose: participant.purpose || 'reply' },
+            target: { kind: 'conversation', id: threadKey, branchId: snapshot.target.branchId },
+            credentialRef: participant.binding,
+            config: { speakerAvatar: participant.speaker.avatar, speakerName: participant.speaker.name },
+        })));
+        for (const child of children) {
+            if (readArtifact(directories, child.id, 'request')) continue;
+            const participant = snapshot.participants.find(item => item.speaker.avatar === child.intent.participantKey);
+            if (participant) writeArtifact(directories, child.id, 'request', participant);
         }
-        if (typeof response.text !== 'string' || !response.text.trim()) fail('The model returned an empty Conversation reply.', 502);
-        if (Buffer.byteLength(response.text) > 256 * 1024) fail('The model reply exceeded the Conversation message limit.', 502);
-        setJobResume(context.directories, context.job.id, 'delivery');
-        const result = await deliverConversationReply(response.text, settings, {
-            fallbackSpeaker: speaker, groupId: target.groupId, getSpeakers: () => snapshot.speakers,
-            validateTarget: () => { context.signal.throwIfAborted(); return true; },
-            append: (text, author, delivery) => {
-                const group = readConversationTarget({ user: { directories: context.directories } }, target).group;
-                if (target.groupId && (!group?.members?.includes(author.avatar) || group.disabled_members?.includes(author.avatar))) fail('The reply participant is no longer available.');
-                return appendConversationJobMessage(context, target, `bubble:${delivery.chunk}:${delivery.bubble}`, {
-                    role: author.avatar === target.avatar ? 'character' : 'partner', name: author.name, mes: text,
-                    extra: { ...delivery.extra, ...(author.avatar !== target.avatar ? { partner_avatar: author.avatar } : {}),
-                        ...(delivery.attachReplyReference && snapshot.replyReference ? { conversation_reply_to: snapshot.replyReference } : {}) },
-                });
-            },
-            commitCommands: (parts, avatar, delivery) => commitConversationJobCommands(context, target, `commands:${delivery.chunk}`, parts, avatar, context.job.intent.timeZone, snapshot.now),
-            generateImage: async (...args) => {
-                if (!generateImage) throw Object.assign(new Error('This reply needs server image delivery before it can finish. Its text and model response have been saved.'), { status: 409, recoverable: true });
-                return generateImage(context, snapshot, ...args);
-            },
-        });
-        writeArtifact(context.directories, context.job.id, 'result', result);
+        releaseChildJobs(directories, context.job.id);
+        return { children: children.map(child => child.id) };
+    } catch (error) {
+        // A child created but not released would wait forever; cancel the family
+        // so the ledger stays consistent and the failure is actionable.
+        try { requestCancellation(directories, context.job.id, { reason: 'Participant preparation failed.' }); } catch { /* the original error is the real failure */ }
+        throw error;
+    }
+}
+
+/** One participant: evaluate availability, then model and delivery, each receipt-protected. */
+async function runConversationParticipantJob(context, deps) {
+    const directories = context.directories;
+    const snapshot = readArtifact(directories, context.job.id, 'request');
+    if (!snapshot) fail('The accepted Conversation snapshot is unavailable. Resubmit the request.');
+    if (readArtifact(directories, context.job.id, 'result')) return { artifact: true };
+    const { target, binding, speaker, settings, userName } = snapshot;
+    const force = snapshot.force === true;
+    // A snapshot accepted before participant support already passed the browser's
+    // own gate; re-gating it here would skip or auto-answer work it chose to do.
+    const legacy = snapshot.activity === undefined && snapshot.gate === undefined;
+    const activity = snapshot.activity || manualActivity(settings);
+    const solo = snapshot.gate !== false;
+    const decision = legacy ? { action: 'reply', status: activity.status } : getConversationAvailabilityDecision({ settings, activity, force, solo });
+    if (decision.action === 'skip') {
+        writeArtifact(directories, context.job.id, 'result', { skipped: 'offline' });
         return { artifact: true };
+    }
+    // A receipt-only checkpoint validates ownership and the source before any work.
+    await commitConversationEffect(context, target, 'accepted', () => null);
+    if (decision.action === 'autoresponder') {
+        await appendConversationJobMessage(context, target, 'autoresponder', {
+            role: 'character', name: speaker.name, mes: buildAvailabilityAutoResponderText(settings, speaker.name, userName),
+            extra: { conversation_mode_auto_responder: true, availability: settings.availability, ...(speaker.avatar !== target.avatar ? { partner_avatar: speaker.avatar } : {}) },
+        });
+        writeArtifact(directories, context.job.id, 'result', { skipped: 'autoresponder' });
+        return { artifact: true };
+    }
+    if (decision.action === 'delay') {
+        await waitForConversationJobDelay(context, 'initial', getInitialAvailabilityDelayMs(decision.status, deps.random), deps);
+    }
+    // The browser posts the "replies may be slow" notice for a schedule-driven
+    // dnd/offline speaker, but not when the manual availability already says so.
+    const manualSuppressed = activity.source === 'manual' && ['dnd', 'offline'].includes(String(settings.availability || ''));
+    if (!legacy && ['dnd', 'offline'].includes(decision.status) && !manualSuppressed) {
+        await commitConversationReplyNotice(context, target, speaker, activity, {
+            noticeText: buildDelayedReplyNoticeText(speaker.name, activity.activity), now: deps.now(),
+        });
+    }
+    let response = readArtifact(directories, context.job.id, 'reply');
+    if (!response) {
+        response = await deps.generate({ context, jobContext: context, binding, messages: snapshot.messages,
+            maxTokens: settings.reply_max_tokens, userName, characterName: speaker.name,
+            macroEnvironment: createMacroEnvironment(snapshot.macros) });
+        writeArtifact(directories, context.job.id, 'reply', response);
+    }
+    if (typeof response.text !== 'string' || !response.text.trim()) fail('The model returned an empty Conversation reply.', 502);
+    if (Buffer.byteLength(response.text) > 256 * 1024) fail('The model reply exceeded the Conversation message limit.', 502);
+    setJobResume(directories, context.job.id, 'delivery');
+    const result = await deliverConversationReply(response.text, settings, {
+        fallbackSpeaker: speaker, groupId: target.groupId, splitEveryLine: speaker.avatar !== target.avatar,
+        getSpeakers: () => snapshot.speakers,
+        validateTarget: () => { context.signal.throwIfAborted(); return true; },
+        append: async (text, author, delivery) => {
+            const delayMs = getReplyDelayMsForStatus(text, settings, activity.status);
+            await waitForConversationJobDelay(context, `bubble-delay:${delivery.chunk}:${delivery.bubble}`, delayMs, deps);
+            const group = readConversationTarget({ user: { directories } }, target).group;
+            if (target.groupId && (!group?.members?.includes(author.avatar) || group.disabled_members?.includes(author.avatar))) fail('The reply participant is no longer available.');
+            return appendConversationJobMessage(context, target, `bubble:${delivery.chunk}:${delivery.bubble}`, {
+                role: author.avatar === target.avatar ? 'character' : 'partner', name: author.name, mes: text,
+                extra: { ...delivery.extra, ...(author.avatar !== target.avatar ? { partner_avatar: author.avatar } : {}),
+                    ...(delivery.attachReplyReference && snapshot.replyReference ? { conversation_reply_to: snapshot.replyReference } : {}) },
+            });
+        },
+        commitCommands: (parts, avatar, delivery) => commitConversationJobCommands(context, target, `commands:${delivery.chunk}`, parts, avatar, snapshot.timeZone || context.job.intent.timeZone, snapshot.now),
+        generateImage: async (...args) => {
+            if (!deps.generateImage) throw Object.assign(new Error('This reply needs server image delivery before it can finish. Its text and model response have been saved.'), { status: 409, recoverable: true });
+            return deps.generateImage(context, snapshot, ...args);
+        },
     });
+    writeArtifact(directories, context.job.id, 'result', result);
+    return { artifact: true };
+}
+
+/** Register the Conversation root coordinator and its sibling participant worker. */
+export function registerConversationReplyJob({ generate = runChatProfile, generateImage, now = Date.now, random = Math.random, sleep = defaultSleep } = {}) {
+    const deps = { generate, generateImage, now, random, sleep };
+    registerHandler('conversation.reply', context => runConversationRootJob(context, deps));
+    registerHandler('conversation.participant', context => runConversationParticipantJob(context, deps), { allowSiblingConcurrency: true });
 }
 
 registerConversationReplyJob();

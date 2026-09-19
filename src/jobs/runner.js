@@ -82,7 +82,13 @@ function targetBusy(job) {
     const key = targetKey(job);
     if (key === null) return false;
     for (const runningJob of running.values()) {
-        if (targetKey(runningJob) === key) return true;
+        if (targetKey(runningJob) !== key) continue;
+        // Sibling participants of one accepted request share the thread on
+        // purpose; they were selected together and each owns its own receipts.
+        // Any other job on the same target stays mutually exclusive.
+        if (job.parentId && runningJob.parentId === job.parentId
+            && handlerEntry(job.type)?.allowSiblingConcurrency && handlerEntry(runningJob.type)?.allowSiblingConcurrency) continue;
+        return true;
     }
     return false;
 }
@@ -94,9 +100,13 @@ function targetBusy(job) {
  */
 const handlers = new Map();
 
-export function registerHandler(type, handler) {
+function handlerEntry(type) {
+    return handlers.get(type);
+}
+
+export function registerHandler(type, handler, { allowSiblingConcurrency = false } = {}) {
     if (typeof handler !== 'function') throw new Error('A job handler must be a function.');
-    handlers.set(type, handler);
+    handlers.set(type, { handler, allowSiblingConcurrency });
 }
 
 export function setDirectoriesResolver(resolver) {
@@ -115,7 +125,7 @@ async function runJob(job) {
             await settleQuietly(() => setJobState(directories, job.id, 'cancelled'));
             return;
         }
-        const handler = handlers.get(saved.type);
+        const handler = handlerEntry(saved.type)?.handler;
         if (!handler) {
             await settleQuietly(() => setJobState(directories, job.id, 'failed', { error: { message: `No handler is registered for ${saved.type}.`, code: 'JOB_NO_HANDLER' } }));
             return;

@@ -274,21 +274,34 @@ describe('SillyBunny Conversation REST API', () => {
         expect(JSON.stringify(readArtifact(userDirectories, job.id, 'request'))).not.toContain('fixture-private-token');
         upstreamReplyText = 'First reply. [reminder: 1h | Saved reminder]\n\nSecond reply.';
         setDirectoriesResolver(() => userDirectories);
-        await runJob(job);
-        expect(getJob(userDirectories, job.id).error).toBeNull();
-        expect(getJob(userDirectories, job.id)).toMatchObject({ state: 'completed', result: { artifact: true } });
+        const { reconcileConversationJob } = (await import('../src/generation/conversation-worker.js')).testExports;
+        const runFamily = async rootId => {
+            await runJob(getJob(userDirectories, rootId));
+            for (const childId of getJob(userDirectories, rootId).children || []) await runJob(getJob(userDirectories, childId));
+        };
+        await runFamily(job.id);
+        let root = getJob(userDirectories, job.id);
+        expect(root.children).toHaveLength(1);
+        expect(root.error).toBeNull();
+        await reconcileConversationJob(userDirectories, root);
+        root = getJob(userDirectories, job.id);
+        expect(root.state).toBe('completed');
+        expect(root.result.participants).toHaveLength(1);
         const branch = readConversationStore().characters['nova.png'].branches.main;
         expect(branch.messages.map(message => message.mes)).toEqual(['Please reply', 'First reply.', 'Second reply.']);
         expect(readConversationStore().reminders).toHaveLength(1);
         expect(upstreamRequests).toHaveLength(1);
-        // Model work and native effects survived, but the final completion marker did not.
-        writeArtifact(userDirectories, job.id, 'result', null);
+        // Model work and native effects survived, but the participant's final marker did not.
+        const childId = root.children[0];
+        writeArtifact(userDirectories, childId, 'result', null);
         const changed = readSettings();
         changed.extension_settings.connectionManager.profiles = [];
         fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(changed));
-        updateJob(userDirectories, job.id, { state: 'running', resume: 'delivery', recoverability: 'resumable' });
+        updateJob(userDirectories, childId, { state: 'running', resume: 'delivery', recoverability: 'resumable' });
         recoverJobs(userDirectories);
-        await runJob(getJob(userDirectories, job.id));
+        await runJob(getJob(userDirectories, childId));
+        expect(getJob(userDirectories, childId).state).toBe('completed');
+        await reconcileConversationJob(userDirectories, getJob(userDirectories, job.id));
         expect(getJob(userDirectories, job.id).state).toBe('completed');
         expect(upstreamRequests).toHaveLength(1);
         expect(readConversationStore().characters['nova.png'].branches.main.messages).toHaveLength(3);

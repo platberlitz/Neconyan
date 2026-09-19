@@ -52,6 +52,21 @@ export function captureChatProfile(directories, profileId) {
     return { profileId, fingerprint };
 }
 
+/**
+ * The completion preset's context window for a saved binding, or null when the
+ * preset does not declare one. Used to size assistant knowledge; never falls
+ * back to the active browser profile.
+ */
+export function getChatProfileContextLimit(directories, binding) {
+    const { preset, fingerprint } = readProfile(directories, binding?.profileId);
+    if (!binding?.fingerprint || fingerprint !== binding.fingerprint) fail('The saved connection settings changed after this operation was accepted. Retry with the current settings.', 409);
+    for (const key of ['openai_max_context', 'max_context']) {
+        const value = Number(preset?.[key]);
+        if (Number.isFinite(value) && value > 0) return Math.floor(value);
+    }
+    return null;
+}
+
 /** Resolve controls through the same preset/profile builders used by the browser. */
 export async function buildChatProfileRequest(directories, binding, messages, maxTokens, generate, { modelOverride = '', overridePayload = {} } = {}) {
     const material = readProfile(directories, binding?.profileId);

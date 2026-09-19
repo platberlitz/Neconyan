@@ -1,6 +1,6 @@
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { acceptJob, dismissJob, getJob, listJobs, requestCancellation, updateJob, validateOwner } from '../jobs/store.js';
+import { acceptJob, dismissJob, getJob, listJobs, requestCancellation, retryConversationFamily, updateJob, validateOwner } from '../jobs/store.js';
 import { abortJob, capacity, noteOwner, ownerCount } from '../jobs/runner.js';
 import { readArtifact } from '../jobs/artifacts.js';
 import { startOperation } from '../mewmory/operations.js';
@@ -68,7 +68,7 @@ router.get('/:id/result', (request, response) => {
 
 // Conversation work needs native preparation (input writes, private captures)
 // that this generic route cannot perform. Its own endpoint owns acceptance.
-const RESERVED_JOB_TYPES = new Set(['conversation.reply']);
+const RESERVED_JOB_TYPES = new Set(['conversation.reply', 'conversation.participant']);
 
 router.post('/submit', (request, response) => {
     try {
@@ -104,6 +104,9 @@ router.post('/:id/cancel', (request, response) => {
         const job = getJob(directories, request.params.id);
         if (!job || job.owner !== owner) return response.status(404).json({ error: 'No such job.' });
         const requested = requestCancellation(directories, job.id, { reason: request.body?.reason ?? null });
+        // A family root's participants hold their own controllers; stop them too
+        // so an in-flight provider call or delay does not run to completion.
+        for (const childId of requested.job.children ?? []) abortJob(childId);
         abortJob(job.id);
         return response.json({ job: requested.job });
     } catch (error) {
@@ -128,6 +131,9 @@ router.post('/:id/retry', async (request, response) => {
         const job = getJob(directories, request.params.id);
         if (!job || job.owner !== owner) return response.status(404).json({ error: 'No such job.' });
         if (!['failed', 'interrupted'].includes(job.state)) return response.status(409).json({ error: 'Only failed or interrupted work can be retried.' });
+        if (job.type === 'conversation.reply' && (job.children ?? []).length) {
+            return response.json({ job: retryConversationFamily(directories, job.id).job });
+        }
         if (job.error?.status === 409 && ['mewmory.index', 'mewmory.recall'].includes(job.type)) {
             const accepted = await startOperation(directories, owner, job.type.split('.')[1], {
                 ...job.intent, reset: false, submissionKey: randomUUID(),

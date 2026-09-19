@@ -61,24 +61,30 @@ export function normalizeCharacterData(rawCharacter, avatar = '') {
 /**
  * Load character data from request body or disk
  */
-export async function getCharacterData(request, avatar, { allowOverride = true } = {}) {
+export async function getCharacterData(request, avatar, { allowOverride = true, requireExisting = false } = {}) {
     if (allowOverride && isObject(request.body?.character)) {
         return normalizeCharacterData(request.body.character, avatar);
     }
+
+    const missing = () => {
+        if (requireExisting) throw Object.assign(new Error('A selected participant’s character card no longer exists.'), { status: 409 });
+        return normalizeCharacterData({}, avatar);
+    };
 
     try {
         const avatarFile = sanitize(path.basename(avatar));
         const avatarPath = path.join(request.user.directories.characters, avatarFile);
         if (path.extname(avatarFile).toLowerCase() !== '.png' || !fs.existsSync(avatarPath)) {
-            return normalizeCharacterData({}, avatar);
+            return missing();
         }
 
         recoverFileWriteSync(avatarPath);
         const cardText = await parseCharacterCard(avatarPath, 'png');
         return normalizeCharacterData(JSON.parse(cardText), avatar);
     } catch (error) {
+        if (error?.status) throw error;
         console.warn('Conversation REST API: failed to read character card', error);
-        return normalizeCharacterData({}, avatar);
+        return missing();
     }
 }
 
