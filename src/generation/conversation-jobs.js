@@ -9,6 +9,7 @@ import { createMacroEnvironment } from '../macros/index.js';
 import { appendConversationJobMessage, captureConversationTarget, commitConversationEffect, commitConversationJobCommands, commitConversationReplyNotice, readConversationTarget } from './conversation-effects.js';
 import { captureChatProfile } from './profiles.js';
 import { runChatProfile } from './service.js';
+import { createConversationImageGenerator, conversationReplyWantsImage, lastUserMessageText } from './conversation-images.js';
 import { buildConversationParticipantPlan, buildConversationParticipantSnapshot, buildAvailabilityAutoResponderText, buildDelayedReplyNoticeText, getConversationAvailabilityDecision, getInitialAvailabilityDelayMs, getReplyDelayMsForStatus, manualActivity } from './conversation-participants.js';
 
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -341,6 +342,7 @@ async function runConversationParticipantJob(context, deps) {
     if (typeof response.text !== 'string' || !response.text.trim()) fail('The model returned an empty Conversation reply.', 502);
     if (Buffer.byteLength(response.text) > 256 * 1024) fail('The model reply exceeded the Conversation message limit.', 502);
     setJobResume(directories, context.job.id, 'delivery');
+    let imageDelivered = false;
     const result = await deliverConversationReply(response.text, settings, {
         fallbackSpeaker: speaker, groupId: target.groupId, splitEveryLine: speaker.avatar !== target.avatar,
         getSpeakers: () => snapshot.speakers,
@@ -357,17 +359,22 @@ async function runConversationParticipantJob(context, deps) {
             });
         },
         commitCommands: (parts, avatar, delivery) => commitConversationJobCommands(context, target, `commands:${delivery.chunk}`, parts, avatar, snapshot.timeZone || context.job.intent.timeZone, snapshot.now),
-        generateImage: async (...args) => {
-            if (!deps.generateImage) throw Object.assign(new Error('This reply needs server image delivery before it can finish. Its text and model response have been saved.'), { status: 409, recoverable: true });
-            return deps.generateImage(context, snapshot, ...args);
+        generateImage: async (requestText, imageSpeaker, delivery) => {
+            const saved = await deps.generateImage(context, snapshot, requestText, imageSpeaker, delivery);
+            imageDelivered = imageDelivered || saved === true;
+            return saved;
         },
     });
+    // The browser also sends a keyword/spontaneous selfie after an ordinary reply.
+    if (!imageDelivered && conversationReplyWantsImage(settings, lastUserMessageText(snapshot.macros?.extra?.chat || []))) {
+        await deps.generateImage(context, snapshot, '', speaker, { chunk: 'spontaneous', image: 0, attachReplyReference: false, extra: {} });
+    }
     writeArtifact(directories, context.job.id, 'result', result);
     return { artifact: true };
 }
 
 /** Register the Conversation root coordinator and its sibling participant worker. */
-export function registerConversationReplyJob({ generate = runChatProfile, generateImage, now = Date.now, random = Math.random, sleep = defaultSleep } = {}) {
+export function registerConversationReplyJob({ generate = runChatProfile, generateImage = createConversationImageGenerator(), now = Date.now, random = Math.random, sleep = defaultSleep } = {}) {
     const deps = { generate, generateImage, now, random, sleep };
     registerHandler('conversation.reply', context => runConversationRootJob(context, deps));
     registerHandler('conversation.participant', context => runConversationParticipantJob(context, deps), { allowSiblingConcurrency: true });

@@ -101,11 +101,15 @@ acceptance case is unproven), `pending` (not started).
   reply reference, and materialises one sibling child job per participant. Children
   can run concurrently, share the root's message-hash checkpoint, apply the browser
   availability/autoresponder/delay policy, and reconcile into one root result;
-  retries, cancellation and dismissals are family-aware. Image delivery is still a
-  deliberate recoverable boundary: a reply that requests an image keeps its text and
-  model result and returns a 409. The main browser queue still executes replies;
-  switching it and real image generation remain pending. Roleplay prompt assembly
-  remains pending.
+  retries, cancellation and dismissals are family-aware. Image delivery now runs
+  natively through the account's own Quick Image Gen provider only
+  (`src/generation/quick-image-gen.js`): together, gptimage, routeway, navy, zai,
+  fal, arliai, stability, pollinations and local A1111 are implemented, gated by the
+  saved image cooldown and receipt-protected so a retry does not re-bill a saved
+  image. A provider with no server implementation, including ComfyUI, is refused
+  with a recoverable error that names it; Horde, Google Imagen and OpenRouter image
+  routes are never substituted. The main browser queue still executes replies;
+  switching it remains pending. Roleplay prompt assembly remains pending.
 
 ## Phase 3 onward
 
@@ -115,9 +119,12 @@ acceptance case is unproven), `pending` (not started).
   retries preserve completed provider results. Final Roleplay prompt integration
   and Agents execution remain pending.
 - `pending` Roleplay, Story, Guided Generations, Deep Swipe callers.
-- `pending` Quick Image Gen and media pipelines.
+- `partial` Quick Image Gen provider calls run natively for the providers listed
+  above (see Phase 2); the remaining QIG provider branches, the scoped prompt
+  pipeline (styles, quality tags, ST-style and contextual filters) and the other
+  media pipelines remain browser-side or unimplemented server-side.
 - `partial` Conversation participant selection, availability, assistant context and
-  the image boundary run natively (see Phase 2). The main composer queue, explicit
+  image delivery run natively (see Phase 2). The main composer queue, explicit
   reply targets, send-triggered partner chimes and the autonomous scheduler remain.
 - `pending` Meower.
 - `pending` Prompting Lab, Distiller, LoreStitch, World Info Lab.
@@ -149,14 +156,23 @@ autonomous scheduling remain required before switching that interface. The other
 pending workflows above remain part of the requested scope.
 
 - Full Jest run: 331 suites passed; 4,266 tests passed and two skipped.
-- All Node tests after the Step 4 family work: 133 passed. The focused
-  `tests/conversation-reply-policy.node.js` covers selection, availability/delay
-  policy and family store behaviour; the Conversation API suite covers root+child
-  completion and recovery.
+- All Node tests after the Step 5 image work: 144 passed. `tests/quick-image-gen.node.js`
+  covers provider dispatch, refusal of unsupported providers and untrusted image
+  URLs, the A1111 sampler/checkpoint body, the image cooldown and the prompt/keyword
+  policy. The focused `tests/conversation-reply-policy.node.js` covers selection,
+  availability/delay policy and family store behaviour; the Conversation API suite
+  covers root+child completion and recovery.
 - Reviewer findings on the Step 4 diff (child timezone, family retention/dismiss,
   root retry, child cancellation, cancellation during preparation, orphaned
   children, selection/notice divergence, legacy gating, permanent finalise loop,
   reconcile clock default) were fixed and re-verified.
+- Reviewer findings on the Step 5 diff (keyword detection reading the directive
+  instead of the user message, missing image cooldown, unmapped A1111 sampler and
+  checkpoint, unbounded provider reads and no fetch deadline, untrusted image URL
+  fetch, prototype-key provider lookup, abort wrapping, image message reply
+  reference, retry re-billing) were fixed and re-verified. The scoped prompt
+  pipeline (styles, quality tags, ST-style/contextual filters) and the remaining
+  QIG provider branches are deliberately not implemented yet.
 - Older checkpoint record: all Node tests at that time 122 passed; 13 affected frontend unit tests also passed.
 - After the last full run, all 50 Conversation API tests passed again with the
   added case for recovering native delivery after its saved profile is removed.
