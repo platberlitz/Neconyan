@@ -117,9 +117,10 @@ export async function runConversationWorkerTick({ directoriesFor, owners, now = 
             if (!['conversation.reply', 'conversation.summary', 'conversation.schedule'].includes(job.type)) continue;
             try {
                 if (job.stage === 'preparing' && job.state === 'waiting' && !job.cancellation?.requested && !(Number(job.coalesce?.deadline) > now)
-                    // A reply batch must have every submitted message saved before it
-                    // is finalised; a crash mid-append leaves it waiting for repair.
-                    && (job.type !== 'conversation.reply' || job.inputDurable === true)) {
+                    // A composer send batch must have every submitted message saved
+                    // before it is finalised; a crash mid-append leaves it waiting for
+                    // repair. Autonomous/reply jobs submit no composer messages.
+                    && (job.intent?.mode !== 'send' || job.inputDurable === true)) {
                     const scopedRequest = { user: { profile: { handle: owner }, directories } };
                     if (job.type === 'conversation.reply') await finalizeConversationSubmission(scopedRequest, job);
                     else await finalizeConversationMaintenanceSubmission(scopedRequest, job);
