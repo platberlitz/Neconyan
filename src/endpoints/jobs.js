@@ -66,10 +66,17 @@ router.get('/:id/result', (request, response) => {
     }
 });
 
+// Conversation work needs native preparation (input writes, private captures)
+// that this generic route cannot perform. Its own endpoint owns acceptance.
+const RESERVED_JOB_TYPES = new Set(['conversation.reply']);
+
 router.post('/submit', (request, response) => {
     try {
         const { owner, directories } = directoriesFor(request);
         const body = request.body ?? {};
+        if (RESERVED_JOB_TYPES.has(body.type)) {
+            return response.status(400).json({ error: 'This job type must be submitted through its Conversation endpoint.' });
+        }
         const accepted = acceptJob(directories, {
             owner,
             type: body.type,

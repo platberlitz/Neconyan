@@ -65,7 +65,7 @@ import {
     extractGeneratedText,
     getSafeConversationGenerationStatus,
 } from './conversation-generation.js';
-import { acceptConversationReply } from '../generation/conversation-jobs.js';
+import { acceptConversationSubmission } from '../generation/conversation-jobs.js';
 
 const PREFER_REAL_IP_HEADER = getConfigValue('rateLimiting.preferRealIpHeader', false, 'boolean');
 const MESSAGE_SEND_RATE_LIMIT = getConfigValue('rateLimiting.conversationMessageSendPoints', 20, 'number');
@@ -564,7 +564,7 @@ router.post('/message/append', asyncRoute(async (request, response) => {
 router.post('/reply/submit', asyncRoute(async (request, response) => {
     if (!await consumeMessageSendLimit(response, messageSendIpLimiter, getIpAddress(request, PREFER_REAL_IP_HEADER))) return;
     if (!await consumeMessageSendLimit(response, messageSendUserLimiter, request.user.profile.handle)) return;
-    const accepted = await acceptConversationReply(request, request.body || {});
+    const accepted = await acceptConversationSubmission(request, request.body || {});
     return response.status(accepted.created ? 202 : 200).send(accepted);
 }));
 

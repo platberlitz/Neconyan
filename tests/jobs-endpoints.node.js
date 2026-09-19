@@ -61,6 +61,13 @@ function submit(owner, { key = 'h1', intent = { operation: 'roleplay' } } = {}) 
     return request('POST', '/api/jobs/submit', { account: owner, body: { type: 'roleplay', submissionKey: key, intent } });
 }
 
+test('reserved Conversation work cannot bypass its own acceptance endpoint', async () => {
+    const bypass = await request('POST', '/api/jobs/submit', {
+        account: 'alice', body: { type: 'conversation.reply', submissionKey: 'bypass', intent: {} },
+    });
+    assert.equal(bypass.status, 400, 'the generic route refuses a reserved job type');
+});
+
 test('an oversized or ill-typed job request cannot crash the server', async () => {
     const huge = await request('POST', '/api/jobs/submit', {
         body: { type: 'roleplay', submissionKey: 'big', intent: { blob: 'x'.repeat(JOB_INTENT_LIMIT_BYTES + 1024) } },

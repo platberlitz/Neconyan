@@ -261,6 +261,10 @@ export function acceptJob(directories, input) {
     const credentialRef = validatePart('credentialRef', input.credentialRef ?? null, JOB_PART_MAX_BYTES);
     const automatic = input.automatic === true;
     const mutating = input.mutating !== false;
+    // A paused job is not dispatchable. It exists so server-side preparation
+    // (private captures, native input writes) can finish before the runner sees
+    // it, and a crash mid-preparation leaves a resumable record, not a paid call.
+    const paused = input.paused === true;
     const label = input.label == null ? null : String(input.label).slice(0, JOB_LABEL_MAX);
     const intentHash = submissionKey(owner, key, { type, intent, target, config, credentialRef, automatic, mutating });
     return mutateJobs(directories, store => {
@@ -291,8 +295,8 @@ export function acceptJob(directories, input) {
             intentHash,
             intent,
             label,
-            state: 'queued',
-            stage: null,
+            state: paused ? 'waiting' : 'queued',
+            stage: paused ? 'preparing' : null,
             progress: { completed: 0, total: null },
             target,
             config,
@@ -345,6 +349,24 @@ export function setJobState(directories, id, state, { error = null, stuck = null
         }
         if (stuck) patch.stuck = stuck;
         return patch;
+    });
+}
+
+/**
+ * Move a job that finished its server-side preparation into the dispatch queue.
+ * A job cancelled while it was preparing stays cancelled; releasing never
+ * resurrects it.
+ */
+export function releaseJob(directories, id) {
+    return mutateJobs(directories, store => {
+        const key = jobKey(id);
+        const job = store.jobs[key];
+        if (!job) throw fail(404, 'JOB_NOT_FOUND', 'No such job.');
+        if (job.state !== 'waiting' || job.stage !== 'preparing' || job.cancellation?.requested) return { job, changed: false };
+        job.state = 'queued';
+        job.stage = null;
+        job.updatedAt = now();
+        return { job };
     });
 }
 

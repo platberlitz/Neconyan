@@ -295,6 +295,55 @@ describe('SillyBunny Conversation REST API', () => {
         expect(readConversationStore().reminders).toHaveLength(1);
     });
 
+    test('a composer send appends its user messages natively before any provider call and is idempotent', async () => {
+        const { getJob, updateJob } = await import('../src/jobs/store.js');
+        const { readArtifact } = await import('../src/jobs/artifacts.js');
+        await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [{ role: 'user', name: 'User', mes: 'First' }] });
+        const saved = readSettings();
+        saved.extension_settings.connectionManager = { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o' }] };
+        saved.proxies = [{ name: 'fixture', url: upstreamUrl.replace(/\/$/, ''), password: 'fixture-private-token' }];
+        saved.oai_settings = { chat_completion_source: 'openai', temp_openai: 0.2, top_p_openai: 1, n: 1 };
+        saved.extension_settings[CONVERSATION_STORE_KEY].settings.connection_profile = 'saved';
+        saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].settings.connection_profile = 'saved';
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(saved));
+
+        const input = { submissionKey: 'composer-send-1', mode: 'send', target: { avatar: 'nova.png', branchId: 'main' }, timeZone: 'Asia/Manila',
+            messages: [{ role: 'user', mes: 'Second', extra: { files: [{ name: 'notes.txt', url: '/user/files/notes.txt' }] } }] };
+        const response = await postJson('/reply/submit', input);
+        expect(response.status).toBe(202);
+        const accepted = await response.json();
+        expect(accepted).toMatchObject({ created: true, inputDurable: true });
+        expect(accepted.userMessageIds).toHaveLength(1);
+        expect(upstreamRequests).toHaveLength(0);
+        const branch = readConversationStore().characters['nova.png'].branches.main;
+        expect(branch.messages.map(message => message.mes)).toEqual(['First', 'Second']);
+        expect(branch.messages[1]).toMatchObject({ id: accepted.userMessageIds[0], role: 'user', extra: { files: [{ name: 'notes.txt' }] } });
+        expect(readArtifact(userDirectories, accepted.job.id, 'request')).toMatchObject({ userName: 'User' });
+        expect(JSON.stringify(readArtifact(userDirectories, accepted.job.id, 'request'))).not.toContain('fixture-private-token');
+
+        const duplicate = await postJson('/reply/submit', input);
+        expect(duplicate.status).toBe(200);
+        expect((await duplicate.json()).job.id).toBe(accepted.job.id);
+        expect(readConversationStore().characters['nova.png'].branches.main.messages).toHaveLength(2);
+
+        const changed = await postJson('/reply/submit', { ...input, messages: [{ role: 'user', mes: 'Different' }] });
+        expect(changed.status).toBe(409);
+
+        // A crash between input append and snapshot/release leaves a paused job;
+        // the same submission repairs it without duplicating the message.
+        updateJob(userDirectories, accepted.job.id, { state: 'waiting', stage: 'preparing', resume: null });
+        const repaired = await postJson('/reply/submit', input);
+        expect(repaired.status).toBe(200);
+        const repairedJson = await repaired.json();
+        expect(repairedJson.job.id).toBe(accepted.job.id);
+        expect(repairedJson.userMessageIds).toEqual(accepted.userMessageIds);
+        expect(getJob(userDirectories, accepted.job.id).state).toBe('queued');
+        expect(readConversationStore().characters['nova.png'].branches.main.messages).toHaveLength(2);
+
+        const rejected = await postJson('/reply/submit', { ...input, submissionKey: 'composer-send-2', messages: [{ role: 'system', mes: 'No' }] });
+        expect(rejected.status).toBe(400);
+    });
+
     test('info describes browser-primary and curl-capable REST paths', async () => {
         const response = await postJson('/info', {});
 

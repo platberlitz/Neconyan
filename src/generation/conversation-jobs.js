@@ -6,7 +6,7 @@ import { buildConversationMessageReplyReference } from '../endpoints/conversatio
 import { buildConversationPromptMessages, buildConversationSystemPrompt, getCharacterData, getConversationSettings, getDefaultDirective } from '../endpoints/conversation-generation.js';
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
-import { acceptJob, listJobs, setJobResume } from '../jobs/store.js';
+import { acceptJob, getJob, listJobs, releaseJob, setJobResume } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { appendConversationJobMessage, captureConversationTarget, commitConversationEffect, commitConversationJobCommands, readConversationTarget } from './conversation-effects.js';
@@ -17,32 +17,37 @@ import { buildSavedConversationContext } from './conversation-context.js';
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }); };
 
-/** Accept a reply to an already-saved native branch. No credentials or browser prompt are accepted. */
-export async function acceptConversationReply(request, body) {
-    const owner = request.user?.profile?.handle;
-    const directories = request.user?.directories;
-    if (!owner || !directories?.root) fail('An authenticated account is required.', 401);
-    if (typeof body.submissionKey !== 'string' || !body.submissionKey || body.submissionKey.length > 256) fail('A submission key is required.', 400);
-    if (!body.target || typeof body.target !== 'object' || Array.isArray(body.target)) fail('A saved Conversation target is required.', 400);
-    if (body.directive !== undefined && (typeof body.directive !== 'string' || body.directive.length > 20000)) fail('The reply directive is invalid.', 400);
-    const timeZone = typeof body.timeZone === 'string' ? body.timeZone : 'UTC';
-    try { new Intl.DateTimeFormat('en-GB', { timeZone }).format(); } catch { fail('The reply timezone is invalid.', 400); }
-    const intent = {
-        target: { avatar: body.target.avatar, groupId: body.target.groupId || '', personaId: body.target.personaId || '', branchId: body.target.branchId },
-        directive: getDefaultDirective(body), timeZone,
-    };
-    const existing = listJobs(directories, { owner, includeDismissed: true }).find(job => job.submissionKey === body.submissionKey);
-    if (existing) {
-        if (existing.type !== 'conversation.reply' || hash(existing.intent) !== hash(intent)) fail('This submission key already belongs to another operation.');
-        return { job: existing, created: false };
+const MAX_INPUT_MESSAGES = 64;
+const MAX_INPUT_MESSAGE_BYTES = 256 * 1024;
+const MAX_INPUT_TOTAL_BYTES = 2 * 1024 * 1024;
+
+/** Validate composer-supplied user messages. Only display fields survive; nothing routing-related is accepted. */
+function normalizeInputMessages(raw) {
+    if (!Array.isArray(raw) || raw.length === 0) fail('A Conversation send needs at least one message.', 400);
+    if (raw.length > MAX_INPUT_MESSAGES) fail('Too many Conversation messages were submitted at once.', 413);
+    const messages = [];
+    let total = 0;
+    for (const item of raw) {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) fail('A submitted Conversation message is invalid.', 400);
+        if (item.role !== undefined && item.role !== 'user') fail('Only user messages can be submitted.', 400);
+        const mes = String(item.mes ?? '');
+        const extra = item.extra && typeof item.extra === 'object' && !Array.isArray(item.extra) ? item.extra : {};
+        const size = Buffer.byteLength(mes) + Buffer.byteLength(JSON.stringify(extra));
+        if (size > MAX_INPUT_MESSAGE_BYTES) fail('A submitted Conversation message is too large.', 413);
+        total += size;
+        if (total > MAX_INPUT_TOTAL_BYTES) fail('The submitted Conversation messages are too large.', 413);
+        messages.push({ mes, extra });
     }
-    const target = captureConversationTarget(request, intent.target);
+    return messages;
+}
+
+async function buildConversationSnapshot(request, target, directive, timeZone, binding) {
+    const directories = request.user.directories;
     const current = readConversationTarget(request, target);
     const settings = getConversationSettings(request, current.store, target.avatar, target.groupId, {}, { personaId: target.personaId });
-    const binding = captureChatProfile(directories, settings.connection_profile);
     const character = await getCharacterData(request, target.avatar, { allowOverride: false });
     const userName = String(current.settings.power_user?.personas?.[target.personaId] || current.settings.name1 || 'User');
-    const messages = await buildConversationPromptMessages(current.branch.messages, intent.directive, character.name, {
+    const messages = await buildConversationPromptMessages(current.branch.messages, directive, character.name, {
         groupId: target.groupId, userName, userDirectories: directories,
     });
     const now = Date.now();
@@ -56,21 +61,100 @@ export async function acceptConversationReply(request, body) {
         availability: (AVAILABILITY_COPY[current.store.userStatus] || AVAILABILITY_COPY.online).label.toLowerCase(),
         personaStatus: String(current.store.userPersonaStatus || '').replace(/\s+/g, ' ').trim().slice(0, 80),
     } });
-    if (hash(captureConversationTarget(request, target)) !== hash(target)) fail('The Conversation branch changed during acceptance.');
-    const snapshot = {
-        target, binding, settings, speaker: { avatar: target.avatar, name: character.name }, speakers: savedContext.speakers, userName, now,
-        messages: [{ role: 'system', content: system }, ...messages],
-        replyReference: buildConversationMessageReplyReference([...current.branch.messages].reverse().find(message => message.role !== 'system')),
-        macros: { names: { user: userName, char: character.name }, extra: { chat: current.branch.messages, chatMetadata: {}, powerUser: current.settings.power_user || {} } },
+    return {
+        settings, character, userName, now,
+        snapshot: {
+            target, binding, settings, speaker: { avatar: target.avatar, name: character.name }, speakers: savedContext.speakers, userName, now,
+            messages: [{ role: 'system', content: system }, ...messages],
+            replyReference: buildConversationMessageReplyReference([...current.branch.messages].reverse().find(message => message.role !== 'system')),
+            macros: { names: { user: userName, char: character.name }, extra: { chat: current.branch.messages, chatMetadata: {}, powerUser: current.settings.power_user || {} } },
+        },
+        branch: current.branch,
     };
-    // Both writes are synchronous. An interruption between them leaves an explicit missing-snapshot job, never a paid request.
-    if (Buffer.byteLength(JSON.stringify(snapshot)) > 16 * 1024 * 1024) fail('The Conversation request snapshot is too large.', 413);
-    const accepted = acceptJob(directories, { owner, type: 'conversation.reply', submissionKey: body.submissionKey, intent,
+}
+
+/**
+ * Finish server-side preparation for an accepted submission: append the submitted
+ * user messages and the request snapshot under one job, then release the job for
+ * dispatch. Every write is receipt-protected, so repeating a crashed preparation
+ * repairs it instead of duplicating messages.
+ */
+async function prepareConversationSubmission(request, job, { mode, messages, directive, timeZone }) {
+    const directories = request.user.directories;
+    const context = { owner: job.owner, directories, job, signal: { throwIfAborted() {} } };
+    const target = captureConversationTarget(request, job.intent.target);
+    const current = readConversationTarget(request, target);
+    const userName = String(current.settings.power_user?.personas?.[target.personaId] || current.settings.name1 || 'User');
+    const userMessageIds = [];
+    if (mode === 'send') {
+        for (const [index, message] of messages.entries()) {
+            const appended = await appendConversationJobMessage(context, target, `input:${index}`, {
+                role: 'user', name: userName, mes: message.mes, extra: { ...message.extra, conversation_mode_user: true },
+            });
+            userMessageIds.push(appended.id);
+        }
+    }
+    if (!readArtifact(directories, job.id, 'request')) {
+        const built = await buildConversationSnapshot(request, target, directive, timeZone, job.credentialRef);
+        if (Buffer.byteLength(JSON.stringify(built.snapshot)) > 16 * 1024 * 1024) fail('The Conversation request snapshot is too large.', 413);
+        writeArtifact(directories, job.id, 'request', built.snapshot);
+    }
+    releaseJob(directories, job.id);
+    const released = getJob(directories, job.id);
+    const fresh = readConversationTarget(request, target);
+    return {
+        job: released, created: false, inputDurable: true, userMessageIds,
+        native: { threadKey: getConversationThreadKey(target.avatar, target.groupId, target.personaId), branchId: target.branchId, revision: fresh.version },
+    };
+}
+
+/**
+ * Accept a Conversation submission. `send` appends the composer's user messages
+ * natively before the reply is queued; `reply` targets messages the browser has
+ * already appended. Neither accepts credentials or a browser-built prompt.
+ */
+export async function acceptConversationSubmission(request, body = {}) {
+    const owner = request.user?.profile?.handle;
+    const directories = request.user?.directories;
+    if (!owner || !directories?.root) fail('An authenticated account is required.', 401);
+    if (typeof body.submissionKey !== 'string' || !body.submissionKey || body.submissionKey.length > 256) fail('A submission key is required.', 400);
+    if (!body.target || typeof body.target !== 'object' || Array.isArray(body.target)) fail('A saved Conversation target is required.', 400);
+    if (body.directive !== undefined && (typeof body.directive !== 'string' || body.directive.length > 20000)) fail('The reply directive is invalid.', 400);
+    const timeZone = typeof body.timeZone === 'string' ? body.timeZone : 'UTC';
+    try { new Intl.DateTimeFormat('en-GB', { timeZone }).format(); } catch { fail('The reply timezone is invalid.', 400); }
+    const mode = body.mode === undefined || body.mode === 'reply' ? 'reply' : body.mode === 'send' ? 'send' : null;
+    if (!mode) fail('The Conversation submission mode is invalid.', 400);
+    const messages = mode === 'send' ? normalizeInputMessages(body.messages) : [];
+    const intent = {
+        mode,
+        target: { avatar: body.target.avatar, groupId: body.target.groupId || '', personaId: body.target.personaId || '', branchId: body.target.branchId },
+        directive: getDefaultDirective(body), timeZone,
+        ...(mode === 'send' ? { inputHash: hash(messages) } : {}),
+    };
+    const existing = listJobs(directories, { owner, includeDismissed: true }).find(job => job.submissionKey === body.submissionKey);
+    if (existing) {
+        if (existing.type !== 'conversation.reply' || hash(existing.intent) !== hash(intent)) fail('This submission key already belongs to another operation.');
+        // A job still preparing is repaired, not duplicated. Anything else is already durable.
+        if (existing.state === 'waiting' && existing.stage === 'preparing') {
+            return prepareConversationSubmission(request, existing, { mode, messages, directive: intent.directive, timeZone });
+        }
+        return { job: existing, created: false, inputDurable: true, userMessageIds: [] };
+    }
+    const target = captureConversationTarget(request, intent.target);
+    const current = readConversationTarget(request, target);
+    const settings = getConversationSettings(request, current.store, target.avatar, target.groupId, {}, { personaId: target.personaId });
+    const binding = captureChatProfile(directories, settings.connection_profile);
+    const accepted = acceptJob(directories, { owner, type: 'conversation.reply', submissionKey: body.submissionKey, intent, paused: true,
         target: { kind: 'conversation', id: getConversationThreadKey(target.avatar, target.groupId, target.personaId), branchId: target.branchId },
         credentialRef: binding, config: {}, label: 'Conversation reply' });
-    if (accepted.created) writeArtifact(directories, accepted.job.id, 'request', snapshot);
     noteOwner(owner);
-    return accepted;
+    const prepared = await prepareConversationSubmission(request, accepted.job, { mode, messages, directive: intent.directive, timeZone });
+    return { ...prepared, created: accepted.created };
+}
+
+/** Accept a reply to an already-saved native branch. No credentials or browser prompt are accepted. */
+export async function acceptConversationReply(request, body = {}) {
+    return acceptConversationSubmission(request, { ...body, mode: 'reply' });
 }
 
 /** A completed provider response and every native bubble can be resumed independently. */
