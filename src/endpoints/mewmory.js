@@ -6,12 +6,15 @@ import {
 } from '../mewmory/core.js';
 import { activeReferences, assemblyFingerprint, currentOverviews, generationFingerprint } from '../mewmory/context.js';
 import { publicConfig, readConfig, roleVersion, saveConfig } from '../mewmory/models.js';
-import { addUsage, pendingSources, processBatch, processingVersion } from '../mewmory/processing.js';
+import { addUsage, pendingSources, processingVersion } from '../mewmory/processing.js';
+import { cancelProcessing, startProcessing, waitForProcessing } from '../mewmory/worker.js';
 import { recall } from '../mewmory/retrieval.js';
 import { lexicalSearch, searchDocuments, updateIndex } from '../mewmory/search.js';
 import { loadCurrentState, purgeMissingContextSources, readContextSources } from '../mewmory/sources.js';
 import { commitRecovery, listStories, MAX_ARCHIVE_BYTES, mutateState, normalizeLocator, readChat, recoveryState } from '../mewmory/store.js';
 import { getCounter } from '../mewmory/tokens.js';
+import { startOperation } from '../mewmory/operations.js';
+import { listJobs } from '../jobs/store.js';
 
 export const router = express.Router();
 
@@ -22,7 +25,7 @@ function route(url, handler) {
         try {
             if (!request.user?.directories?.root) return response.sendStatus(401);
             if (Buffer.byteLength(JSON.stringify(request.body || {})) > MAX_ARCHIVE_BYTES + 1024 * 1024) fail('Mewmory request is too large.', 413);
-            const result = await handler(request.user.directories, request.body || {}, controller.signal);
+            const result = await handler(request.user.directories, request.body || {}, controller.signal, request.user.profile?.handle);
             if (!response.destroyed) response.json(result);
         } catch (error) {
             if (!response.destroyed) response.status(error.status || 500).json({
@@ -73,6 +76,7 @@ export function inspectState(state, config, { query = '', kind = '', ownerId = '
                 text: source.text.slice(0, 240), eligible: sourceEligible(state, ref), excluded: state.excludedSources.includes(ref.id) };
         }),
         health: {
+            processing: state.processing || null,
             pending: pendingSources(state, config).length, totalMessages: state.timeline.length,
             preservedThrough: watermark, checkpointPending: pendingSources(state, config, { checkpoint: true }).length,
             indexVersion: state.index.version, indexPending: state.index.pending, jobs: state.jobs.slice(-10),
@@ -92,7 +96,15 @@ route('/config/save', (directories, body) => ({ config: saveConfig(directories, 
 route('/inspect', async (directories, body) => {
     const locator = normalizeLocator(body.locator);
     const state = await loadCurrentState(directories, locator);
-    return inspectState(state, readConfig(directories), body);
+    const inspection = { ...inspectState(state, readConfig(directories), body), operations: [] };
+    try {
+        inspection.operations = listJobs(directories)
+            .filter(job => job.type.startsWith('mewmory.') && job.intent?.locator && hash(job.intent.locator) === hash(locator))
+            .slice(0, 5).map(job => ({ id: job.id, label: job.label, state: job.state, error: job.error, warning: job.result?.warning, progress: job.progress }));
+    } catch {
+        inspection.operationsError = 'Saved job history is unavailable. Memory remains readable; the job ledger needs recovery before more jobs can run.';
+    }
+    return inspection;
 });
 
 route('/enabled', async (directories, body) => {
@@ -173,11 +185,19 @@ route('/source/exclude', async (directories, body) => {
     return inspectState(state, readConfig(directories));
 });
 
-route('/process', async (directories, body, signal) => {
+route('/process', async (directories, body) => {
     const locator = normalizeLocator(body.locator);
-    const state = await processBatch(directories, locator, { checkpoint: body.checkpoint === true, signal });
+    let state = await startProcessing(directories, locator, { all: body.all === true, checkpoint: body.checkpoint === true });
+    if (body.background !== true && state.processing?.status === 'running') {
+        state = await waitForProcessing(directories, locator);
+        if (state.processing?.status === 'failed') fail(state.processing.error, state.processing.errorStatus || 500);
+    }
     return inspectState(state, readConfig(directories));
 });
+
+route('/process/cancel', async (directories, body) => inspectState(
+    await cancelProcessing(directories, normalizeLocator(body.locator)), readConfig(directories),
+));
 
 route('/search', async (directories, body) => {
     const state = await loadCurrentState(directories, normalizeLocator(body.locator));
@@ -185,9 +205,9 @@ route('/search', async (directories, body) => {
     return { matches: lexicalSearch(searchDocuments(state), query, 40).map(({ document }) => document) };
 });
 
-route('/recall', (directories, body, signal) => recall(directories, normalizeLocator(body.locator), {
-    query: body.query || '', tokenizer: body.tokenizer || {}, signal,
-}));
+route('/recall', (directories, body, signal, owner) => body.background === true
+    ? startOperation(directories, owner, 'recall', body)
+    : recall(directories, normalizeLocator(body.locator), { query: body.query || '', tokenizer: body.tokenizer || {}, signal }));
 
 route('/validate', async (directories, body) => {
     const state = await loadCurrentState(directories, normalizeLocator(body.locator));
@@ -204,7 +224,8 @@ route('/tokens', async (directories, body) => {
         .map(value => counter.count(text(value, 'Token input', 2000000, true))) };
 });
 
-route('/index', async (directories, body, signal) => {
+route('/index', async (directories, body, signal, owner) => {
+    if (body.background === true) return startOperation(directories, owner, 'index', body);
     const locator = normalizeLocator(body.locator);
     const state = await loadCurrentState(directories, locator);
     if (body.reset === true) state.index = { version: '', vectors: {}, pending: true };

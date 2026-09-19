@@ -23,6 +23,7 @@ import { APP_NAME, isBunRuntime } from './runtime.js';
 import { serverDirectory } from './server-directory.js';
 import { getServerBootId } from './server-boot-marker.js';
 import { AGENT_STORAGE_LIMITS } from '../public/scripts/extensions/in-chat-agents/setup-presets.js';
+import { JOB_INTENT_LIMIT_BYTES } from './jobs/store.js';
 
 import { serverEvents, EVENT_NAMES } from './server-events.js';
 import { getLoadedServerPlugins, loadPlugins } from './plugin-loader.js';
@@ -121,6 +122,9 @@ app.use(responseTime());
 
 app.use('/api/auth', express.json({ limit: '32kb' }), express.urlencoded({ extended: false, limit: '32kb' }));
 app.use('/api/in-chat-agents', express.json({ limit: AGENT_STORAGE_LIMITS.presetBytes }), express.urlencoded({ extended: false, limit: AGENT_STORAGE_LIMITS.presetBytes }));
+// A job intent is bounded before the general parser so one account cannot feed
+// the dispatcher a ledger-sized body that would later break the read limit.
+app.use('/api/jobs', express.json({ limit: JOB_INTENT_LIMIT_BYTES }), express.urlencoded({ extended: false, limit: JOB_INTENT_LIMIT_BYTES }));
 app.use(express.json({ limit: '500mb' }));
 app.use(express.urlencoded({ extended: true, limit: '500mb' }));
 
@@ -754,6 +758,16 @@ async function postSetupTasks(result) {
     serverEvents.emit(EVENT_NAMES.SERVER_STARTED, { url: browserLaunchUrl });
     notifyServerStartup(getLoadedServerPlugins());
     void runDeferredStartupTasks();
+    const { startMewmoryWorker } = await import('./mewmory/worker.js');
+    startMewmoryWorker(getUserDirectoriesList);
+    const [{ startJobsRunner }, { getUserDirectories, getAllUserHandles }] = await Promise.all([
+        import('./jobs/runner.js'),
+        import('./users.js'),
+    ]);
+    startJobsRunner({
+        directoriesFor: handle => getUserDirectories(handle),
+        owners: () => getAllUserHandles(),
+    });
 }
 
 /**

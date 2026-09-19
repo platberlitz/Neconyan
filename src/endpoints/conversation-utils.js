@@ -231,6 +231,13 @@ export function scopeConversationStorageKey(storageKey, personaId = '') {
     return `${PERSONA_CONVERSATION_STORE_PREFIX}${encodeConversationStoragePart(persona)}:${key}`;
 }
 
+/** Return a key within this persona only, without admitting another persona's memory. */
+export function unScopeConversationStorageKey(storageKey, personaId = '') {
+    const prefix = personaId ? `${PERSONA_CONVERSATION_STORE_PREFIX}${encodeConversationStoragePart(personaId)}:` : '';
+    if (prefix) return storageKey.startsWith(prefix) ? storageKey.slice(prefix.length) : null;
+    return storageKey.startsWith(PERSONA_CONVERSATION_STORE_PREFIX) ? null : storageKey;
+}
+
 /**
  * Validate avatar parameter
  */

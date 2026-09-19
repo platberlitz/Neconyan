@@ -10,6 +10,7 @@ import {
 } from '../public/scripts/openai-model-capabilities.js';
 
 const openAiSource = fs.readFileSync(fileURLToPath(new URL('../public/scripts/openai.js', import.meta.url)), 'utf8');
+const providerSource = fs.readFileSync(fileURLToPath(new URL('../public/scripts/chat-provider-parameters.js', import.meta.url)), 'utf8');
 const chatCompletionsSource = fs.readFileSync(fileURLToPath(new URL('../src/endpoints/backends/chat-completions.js', import.meta.url)), 'utf8');
 const indexSource = fs.readFileSync(fileURLToPath(new URL('../public/index.html', import.meta.url)), 'utf8');
 const powerUserSource = fs.readFileSync(fileURLToPath(new URL('../public/scripts/power-user.js', import.meta.url)), 'utf8');
@@ -57,9 +58,8 @@ describe('OpenAI-compatible Claude model capabilities', () => {
     });
 
     test('applies Claude model constraints while building generation parameters', () => {
-        expect(openAiSource).toContain('applyClaudeModelParameterConstraints, applyKimiK3ModelParameterConstraints, isKimiK3Model');
-        expect(openAiSource).toContain('applyClaudeModelParameterConstraints(generate_data, {');
-        expect(openAiSource).toContain('preserveReasoning: [chat_completion_sources.CLAUDE, chat_completion_sources.LINKAPI].includes(settings.chat_completion_source)');
+        expect(openAiSource).toContain('return createChatGenerationParameters(');
+        expect(providerSource).toContain("applyClaudeModelParameterConstraints(data, { preserveReasoning: ['claude', 'linkapi'].includes(source) });");
     });
 });
 
@@ -162,9 +162,9 @@ describe('Kimi K3 model capabilities', () => {
     });
 
     test('applies K3 constraints while building Custom, Moonshot, NanoGPT and OpenRouter generation parameters', () => {
-        expect(openAiSource).toContain('const isKimiK3Request = [chat_completion_sources.CUSTOM, chat_completion_sources.MOONSHOT, chat_completion_sources.NANOGPT, chat_completion_sources.OPENROUTER]');
-        expect(openAiSource).toContain('applyKimiK3ModelParameterConstraints(generate_data);');
-        expect(openAiSource).toContain('&& !isKimiK3Request;');
+        expect(providerSource).toContain("['custom', 'moonshot', 'nanogpt', 'openrouter'].includes(source) && isKimiK3Model(model)");
+        expect(providerSource).toContain('applyKimiK3ModelParameterConstraints(data);');
+        expect(providerSource).toContain('!kimi');
     });
 
     test('exposes a dedicated Partial Prefill control only for K3 models', () => {

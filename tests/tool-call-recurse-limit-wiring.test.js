@@ -2,6 +2,7 @@ import { describe, expect, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { settingsToUpdate } from '../public/scripts/chat-preset-mapping.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const openAiSource = readFileSync(path.join(repoRoot, 'public', 'scripts', 'openai.js'), 'utf8');
@@ -39,7 +40,7 @@ describe('tool call recurse limit wiring', () => {
     });
 
     test('maps the control through OpenAI preset settings', () => {
-        expect(openAiSource).toContain("tool_call_recurse_limit: ['#tool_call_recurse_limit', 'tool_call_recurse_limit', false, false]");
+        expect(settingsToUpdate.tool_call_recurse_limit).toEqual(['#tool_call_recurse_limit', 'tool_call_recurse_limit', false, false]);
         expect(openAiSource).toContain('tool_call_recurse_limit: TOOL_CALL_RECURSE_LIMIT_DEFAULT');
     });
 

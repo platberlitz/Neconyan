@@ -1952,7 +1952,7 @@ async function sendAzureOpenAIRequest(request, response) {
 
 export const router = express.Router();
 
-router.post('/status', async function (request, statusResponse) {
+export async function handleChatCompletionsStatus(request, statusResponse) {
     try {
         if (!request.body) return statusResponse.sendStatus(400);
 
@@ -2340,14 +2340,14 @@ router.post('/status', async function (request, statusResponse) {
             modelsUrl.searchParams.append(key, queryParams[key]);
         });
         const isCustomSource = request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.CUSTOM;
-        const response = await fetch(modelsUrl, {
+        const response = await (request.fetch || fetch)(modelsUrl, {
             method: 'GET',
             headers: {
                 'Authorization': 'Bearer ' + apiKey,
                 ...headers,
             },
             // Neconyan: a hanging custom endpoint must not leave the Connect button stuck forever.
-            signal: isCustomSource ? AbortSignal.timeout(CUSTOM_STATUS_TIMEOUT_MS) : undefined,
+            signal: request.generationSignal || (isCustomSource ? AbortSignal.timeout(CUSTOM_STATUS_TIMEOUT_MS) : undefined),
         });
 
         if (isCustomSource && !response.ok) {
@@ -2451,9 +2451,10 @@ router.post('/status', async function (request, statusResponse) {
             statusResponse.end();
         }
     }
-});
+}
+router.post('/status', handleChatCompletionsStatus);
 
-router.post('/bias', async function (request, response) {
+export async function handleChatCompletionsBias(request, response) {
     if (!request.body || !Array.isArray(request.body))
         return response.sendStatus(400);
 
@@ -2535,7 +2536,8 @@ router.post('/bias', async function (request, response) {
         console.error(error);
         return response.send({});
     }
-});
+}
+router.post('/bias', handleChatCompletionsBias);
 
 /**
  * Converts Chat Completions messages array to Responses API input format.

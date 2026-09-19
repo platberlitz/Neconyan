@@ -60,6 +60,7 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     const configResult = await post('/api/mewmory/config/get');
     const config = configResult.config;
     config.autoUpdate = false;
+    config.excludeHistory = true;
     config.batchMessages = 3;
     config.writerTokenizer = 'cl100k_base';
     for (const role of Object.values(config.roles)) {
@@ -320,12 +321,30 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     expect(textWriter.prompt).toContain('Mewmory: active NPC reference');
     expect(textWriter.prompt).toContain('Owner: Mara');
     expect(textWriter.prompt).not.toContain('INSPECT ONLY');
+    await page.locator('#neconyan-workspace-rail [data-neconyan-route="mewmory"]').click();
+    await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
+    const rebuild = workspace.getByRole('button', { name: 'Rebuild search index', exact: true });
+    await expect(rebuild).toBeEnabled();
+    await page.request.post(fixtureUrl + '/fixture/hold', { data: { model: 'text-embedding-3-small' } });
+    let indexJob;
+    try {
+        const accepted = page.waitForResponse(response => response.url().endsWith('/api/mewmory/index'));
+        await rebuild.click();
+        indexJob = (await (await accepted).json()).job;
+        expect(indexJob.id).toBeTruthy();
+        await page.goto('about:blank');
+    } finally {
+        await page.request.post(fixtureUrl + '/fixture/release', { data: {} });
+    }
+    // Inspect saved completion without reopening the application.
+    await expect.poll(async () => (await (await page.request.get('/api/jobs/' + indexJob.id, { headers })).json()).job.state,
+        { timeout: 30000 }).toBe('completed');
+    expect((await post('/api/mewmory/inspect', { locator })).health.indexPending).toBe(false);
     const automatic = (await post('/api/mewmory/config/get')).config;
     automatic.autoUpdate = true;
     await post('/api/mewmory/config/save', { config: automatic });
-    const backgroundRequest = page.waitForRequest(request => request.url().endsWith('/api/mewmory/process'));
-    await page.evaluate(() => window.dispatchEvent(new Event('mewmory:configured')));
-    expect((await backgroundRequest).postDataJSON().checkpoint).toBe(true);
+    // No browser event or processing request: the server discovers pending saved messages.
+    await page.goto('about:blank');
     await expect.poll(async () => (await post('/api/mewmory/inspect', { locator })).health.checkpointPending, { timeout: 60000 }).toBe(0);
     expect(errors).toEqual([]);
 });

@@ -17,6 +17,8 @@ import { getConversationSessionMarker, resetFollowupCount, setConversationSessio
 import { stripPreviewText } from './typing.js';
 import { getConversationAttachmentLabels, getConversationAttachmentSummary, safeParseThread } from './thread-store-utils.js';
 import { narrateConversationMessage } from './tts.js';
+import { parseReminderDelayToMs } from './reminder-time.js';
+export { parseReminderDelayToMs } from './reminder-time.js';
 
 export {
     getConversationAttachmentLabels,
@@ -58,43 +60,6 @@ export function getImageCooldownRemainingSeconds(avatar, settings, now = Date.no
 
 export function markImageGenerated(avatar, timestamp = Date.now(), { branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {
     setConversationSessionMarker(avatar, 'image_at', timestamp, { branchId, groupId, personaId });
-}
-
-export function parseReminderDelayToMs(rawDelay) {
-    const delay = String(rawDelay || '').trim().toLowerCase();
-    if (!delay) {
-        return 0;
-    }
-
-    const match = delay.match(/^(\d+(?:\.\d+)?)\s*(s|m|h|d|secs?|mins?|hours?|days?)$/);
-    if (match) {
-        const value = parseFloat(match[1]);
-        const unit = match[2];
-        if (unit.startsWith('s')) return value * 1000;
-        if (unit.startsWith('m')) return value * 60 * 1000;
-        if (unit.startsWith('h')) return value * 60 * 60 * 1000;
-        if (unit.startsWith('d')) return value * 24 * 60 * 60 * 1000;
-    }
-
-    const numeric = parseFloat(delay);
-    if (Number.isFinite(numeric) && numeric > 0) {
-        return numeric * 60 * 1000;
-    }
-
-    const timeMatch = delay.match(/^(\d{1,2}):(\d{2})$/);
-    if (timeMatch) {
-        const hours = parseInt(timeMatch[1], 10);
-        const minutes = parseInt(timeMatch[2], 10);
-        const now = new Date();
-        const target = new Date();
-        target.setHours(hours, minutes, 0, 0);
-        if (target.getTime() <= now.getTime()) {
-            target.setDate(target.getDate() + 1);
-        }
-        return target.getTime() - now.getTime();
-    }
-
-    return 0;
 }
 
 export function addConversationReminder(avatar, groupId, delayText, memoText, { branchId = '', personaId = getConversationPersonaId() } = {}) {

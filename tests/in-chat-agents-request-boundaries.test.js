@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { parse } from 'acorn';
 import { isGenerationLengthFinish } from '../public/scripts/generation-request-controls.js';
+import { buildChatPresetPayload, createChatRequestData } from '../public/scripts/chat-preset-request.js';
 
 function load(context, file, names) {
     const source = readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8');
@@ -20,6 +21,7 @@ function runtime() {
     const context = vm.createContext({
         console, structuredClone, AbortController, Error,
         isGenerationLengthFinish,
+        buildChatPresetPayload, createChatRequestData,
         getGenerateUrl: () => '/generate', getRequestHeaders: () => ({}),
         getNanoGptServiceTier: async () => '',
         extractReasoningFromData: () => 'reasoning stays separate',
@@ -33,7 +35,7 @@ function runtime() {
     load(context, 'script.js', ['stringifyUnknown', 'normalizeContentText', 'extractMessageFromData']);
     load(context, 'scripts/utils.js', ['escapeRegex']);
     load(context, 'scripts/reasoning.js', ['AUTO_APPEND_REASONING_TAGS', 'getAutoAppendReasoningTagOrder', 'getAutoAppendReasoningTemplates', 'getReasoningParseTemplates', 'isReasoningAutoParseEnabled', 'removeReasoningFromString']);
-    load(context, 'scripts/custom-request.js', ['BOOLEAN_CHAT_COMPLETION_FIELDS', 'coerceRequestBoolean', 'normalizeChatCompletionBooleanFields', 'ChatCompletionService', 'TextCompletionService']);
+    load(context, 'scripts/custom-request.js', ['ChatCompletionService', 'TextCompletionService']);
     load(context, 'scripts/extensions/in-chat-agents/agent-runner.js', ['serializeChatContext', 'parseChatContext']);
     return context;
 }

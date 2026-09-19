@@ -1,23 +1,13 @@
-import { seedrandom, droll } from '../../../lib.js';
-import { chat_metadata, main_api, getMaxPromptTokens, getMaxContextTokens, getMaxResponseTokens, extension_prompts, getCurrentChatId } from '../../../script.js';
-import { getStringHash, isFalseBoolean } from '../../utils.js';
-import { textgenerationwebui_banned_in_macros } from '../../textgen-settings.js';
+import { seedrandom, droll } from '../engine/macro-vendor.js';
+import { getStringHash, isFalseBoolean } from '../../macro-primitives.js';
 import { inject_ids } from '../../constants.js';
 import { MacroRegistry, MacroCategory, MacroValueType } from '../engine/MacroRegistry.js';
 import { MACRO_VARIABLE_SHORTHAND_PATTERN } from '../engine/MacroLexer.js';
 import { MacroParser } from '../engine/MacroParser.js';
 import { MacroCstWalker } from '../engine/MacroCstWalker.js';
+import { ELSE_MARKER } from '../engine/macro-console.js';
 
-/**
- * Marker used by {{else}} to split content in {{if}} blocks.
- * Uses control characters to minimize collision with real content.
- *
- * This marker is used internally by the macro engine to separate if/else branches.
- * It should never appear in user-generated content.
- *
- * @type {string}
- */
-export const ELSE_MARKER = '\u0000\u001FELSE\u001F\u0000';
+export { ELSE_MARKER };
 
 /**
  * Registers SillyTavern's core built-in macros in the MacroRegistry.
@@ -229,7 +219,10 @@ export function registerCoreMacros() {
         category: MacroCategory.UTILITY,
         description: 'Current text from the send textarea.',
         returns: 'Current text from the send textarea.',
-        handler: () => (/** @type {HTMLTextAreaElement} */(document.querySelector('#send_textarea')))?.value ?? '',
+        handler: ({ env }) => {
+            const getInput = env.extra?.getInput;
+            return typeof getInput === 'function' ? getInput() ?? '' : '';
+        },
     });
 
     // {{maxPrompt}} -> max context size (context minus response)
@@ -239,7 +232,9 @@ export function registerCoreMacros() {
         description: 'Maximum prompt context size.',
         returns: 'Maximum prompt context size.',
         returnType: MacroValueType.INTEGER,
-        handler: () => String(getMaxPromptTokens()),
+        handler: ({ env }) => {
+            return String(env.extra.getMaxPromptTokens());
+        },
     });
 
     // {{maxContext}} -> max context token limit
@@ -249,7 +244,9 @@ export function registerCoreMacros() {
         description: 'Maximum context token limit.',
         returns: 'Maximum context token limit.',
         returnType: MacroValueType.INTEGER,
-        handler: () => String(getMaxContextTokens()),
+        handler: ({ env }) => {
+            return String(env.extra.getMaxContextTokens());
+        },
     });
 
     // {{maxResponse}} -> max response token limit
@@ -259,7 +256,9 @@ export function registerCoreMacros() {
         description: 'Maximum response token limit.',
         returns: 'Maximum response token limit.',
         returnType: MacroValueType.INTEGER,
-        handler: () => String(getMaxResponseTokens()),
+        handler: ({ env }) => {
+            return String(env.extra.getMaxResponseTokens());
+        },
     });
 
     // String utilities
@@ -385,7 +384,7 @@ export function registerCoreMacros() {
             // When changing the hashing logic, make sure to update unit test functionality
             // in registerTestablePick() to be identical.
 
-            const chatIdHash = getChatIdHash();
+            const chatIdHash = getChatIdHash(env);
 
             // Use the full original input string for deterministic behavior
             const rawContentHash = env.contentHash;
@@ -396,7 +395,7 @@ export function registerCoreMacros() {
             const offset = globalOffset;
 
             // Reroll seed allows users to reset all picks in the chat via /reroll-pick command
-            const rerollSeed = chat_metadata.pick_reroll_seed || null;
+            const rerollSeed = env.extra?.chatMetadata?.pick_reroll_seed || null;
 
             const combinedSeedString = [chatIdHash, rawContentHash, offset, rerollSeed].filter(it => it !== null).join('-');
             const finalSeed = getStringHash(combinedSeedString);
@@ -435,12 +434,15 @@ export function registerCoreMacros() {
         description: 'Bans a word for Text Completion backend. (Strips quotes surrounding the banned word, if present)',
         returns: '',
         exampleUsage: ['{{banned::delve}}'],
-        handler: ({ unnamedArgs: [bannedWord] }) => {
+        handler: ({ unnamedArgs: [bannedWord], env }) => {
             // Strip quotes via regex, which were allowed in legacy syntax
             bannedWord = bannedWord.replace(/^"|"$/g, '');
-            if (main_api === 'textgenerationwebui') {
+            if (env.extra?.mainApi === 'textgenerationwebui') {
                 console.log('Found banned word in macros: ' + bannedWord);
-                textgenerationwebui_banned_in_macros.push(bannedWord);
+                const bannedWords = env.extra.bannedWords;
+                if (Array.isArray(bannedWords)) {
+                    bannedWords.push(bannedWord);
+                }
             }
             return '';
         },
@@ -460,22 +462,34 @@ export function registerCoreMacros() {
         description: 'Returns the world info outlet prompt for a given outlet key.',
         returns: 'World info outlet prompt.',
         exampleUsage: ['{{outlet::character-achievements}}'],
-        handler: ({ unnamedArgs: [outlet] }) => {
+        handler: ({ unnamedArgs: [outlet], env }) => {
             if (!outlet) return '';
-            const value = extension_prompts[inject_ids.CUSTOM_WI_OUTLET(outlet)]?.value;
+            const extensionPrompts = env.extra?.extensionPrompts;
+            if (!extensionPrompts) return '';
+            const value = extensionPrompts[inject_ids.CUSTOM_WI_OUTLET(outlet)]?.value;
             return value || '';
         },
     });
 }
 
-function getChatIdHash() {
-    const cachedIdHash = chat_metadata.chat_id_hash;
-    if (typeof cachedIdHash === 'number') {
+/**
+ * Resolves the stable chat id hash used to seed {{pick}}.
+ * Reads the operation-scoped metadata from env.extra so that registration
+ * stays process-wide and free of per-user captures.
+ *
+ * @param {import('../engine/MacroEnv.types.js').MacroEnv} env
+ * @returns {number}
+ */
+function getChatIdHash(env) {
+    const chatMetadata = env.extra.chatMetadata;
+
+    const cachedIdHash = chatMetadata.chat_id_hash;
+    if (cachedIdHash) {
         return cachedIdHash;
     }
 
-    const chatId = chat_metadata.main_chat ?? getCurrentChatId();
+    const chatId = chatMetadata.main_chat ?? env.extra.getCurrentChatId();
     const chatIdHash = getStringHash(chatId);
-    chat_metadata.chat_id_hash = chatIdHash;
+    env.extra.setChatIdHash(chatIdHash);
     return chatIdHash;
 }

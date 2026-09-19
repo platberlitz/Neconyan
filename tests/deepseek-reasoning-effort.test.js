@@ -1,6 +1,7 @@
 import { describe, expect, test } from '@jest/globals';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { resolveChatReasoningEffort } from '../public/scripts/chat-request-controls.js';
 
 const readSource = (relativePath) => fs.readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), 'utf8');
 
@@ -23,10 +24,7 @@ describe('DeepSeek reasoning effort', () => {
     });
 
     test('keeps DeepSeek out of the string-effort resolver so max is not collapsed to high', () => {
-        const sources = openAiSource.match(/const reasoningEffortSources = \[([\s\S]*?)\];/);
-
-        expect(sources).not.toBeNull();
-        expect(sources[1]).not.toContain('DEEPSEEK');
+        expect(resolveChatReasoningEffort({ chat_completion_source: 'deepseek', reasoning_effort: 'max' }, 'deepseek-v4-flash')).toBe('max');
     });
 
     test('forwards the effort to DeepSeek for thinking models only, mapping min to low', () => {

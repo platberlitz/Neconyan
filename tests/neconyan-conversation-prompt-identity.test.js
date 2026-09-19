@@ -24,7 +24,6 @@ const getConversationSoloMemorySummary = jest.fn(() => ({ summary: 'captured sol
 const saveConversationMemorySummary = jest.fn();
 
 await jest.unstable_mockModule('../public/script.js', () => ({ name1: 'User' }));
-await jest.unstable_mockModule('../public/scripts/constants.js', () => ({ MEDIA_DISPLAY: { GALLERY: 'gallery', LIST: 'list' } }));
 await jest.unstable_mockModule('../public/scripts/personas.js', () => ({ user_avatar: 'persona-b.png' }));
 await jest.unstable_mockModule('../public/scripts/power-user.js', () => ({ power_user: { persona_description: 'active persona fallback' } }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.js', () => ({

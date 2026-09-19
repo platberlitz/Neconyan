@@ -5,9 +5,11 @@ import path from 'node:path';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const openAiSource = readFileSync(path.join(repoRoot, 'public', 'scripts', 'openai.js'), 'utf8');
+const providerSource = readFileSync(path.join(repoRoot, 'public', 'scripts', 'chat-provider-parameters.js'), 'utf8');
 
 describe('OpenAI prompt logging wiring', () => {
     test('passes the existing prompt-log preference to backend request metadata', () => {
-        expect(openAiSource).toContain('\'log_prompts\': Boolean(power_user.console_log_prompts),');
+        expect(openAiSource).toContain('logPrompts: power_user.console_log_prompts,');
+        expect(providerSource).toContain('log_prompts: Boolean(context.logPrompts)');
     });
 });

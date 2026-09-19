@@ -2,6 +2,7 @@ import { describe, expect, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isFalseBoolean } from '../public/scripts/macro-primitives.js';
 
 import {
     booleanOperandToString,
@@ -154,8 +155,8 @@ describe('boolean callers retain upstream semantics', () => {
 });
 
 // The helpers above only prove the pieces behave; they say nothing about evalBoolean
-// actually calling them. variables.js and utils.js both import script.js, so neither can
-// be imported here. Lift the two functions out as source and run them for real, the same
+// actually calling them. variables.js imports script.js, so it cannot be imported here.
+// Lift evalBoolean out as source and run it with the shared helpers, the same
 // way the *-wiring tests reach logic stranded inside script.js.
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -179,10 +180,6 @@ function getFunctionSource(source, name) {
 
     throw new Error(`Unable to find function source for ${name}`);
 }
-
-const isFalseBoolean = new Function(`${getFunctionSource(
-    readFileSync(path.join(repoRoot, 'public', 'scripts', 'utils.js'), 'utf8'), 'isFalseBoolean',
-)}; return isFalseBoolean;`)();
 
 const evalBoolean = new Function(
     'isTrueBoolean', 'isFalseBoolean', 'isNumericOperand', 'isNumericZero', 'booleanOperandToString',

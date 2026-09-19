@@ -1,8 +1,7 @@
 import { MacroParser } from './MacroParser.js';
 import { MacroCstWalker } from './MacroCstWalker.js';
 import { MacroRegistry, MacroValueType } from './MacroRegistry.js';
-import { logMacroGeneralError, logMacroInternalError, logMacroRuntimeWarning, logMacroSyntaxWarning } from './MacroDiagnostics.js';
-import { ELSE_MARKER } from '../definitions/core-macros.js';
+import { ELSE_MARKER, logMacroGeneralError, logMacroInternalError, logMacroRuntimeWarning, logMacroSyntaxWarning } from './macro-console.js';
 
 /** @typedef {import('./MacroCstWalker.js').MacroCall} MacroCall */
 /** @typedef {import('./MacroEnv.types.js').MacroEnv} MacroEnv */

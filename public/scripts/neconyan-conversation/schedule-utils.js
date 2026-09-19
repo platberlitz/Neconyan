@@ -281,7 +281,7 @@ export function parseScheduleTimeRange(range) {
     return { startMinutes, endMinutes };
 }
 
-export function getCurrentActivityFromSchedule(schedule, avatar = '', now = new Date(), runtimeStatusOverrides = new Map()) {
+export function getCurrentActivityFromSchedule(schedule, avatar = '', now = new Date(), runtimeStatusOverrides = new Map(), timeZone = '') {
     if (avatar && runtimeStatusOverrides.has(avatar)) {
         const override = runtimeStatusOverrides.get(avatar);
         if (override.expiresAt > now.getTime()) {
@@ -294,8 +294,11 @@ export function getCurrentActivityFromSchedule(schedule, avatar = '', now = new 
         return { status: 'online', activity: 'free time', source: 'default' };
     }
 
-    const day = now.getDay();
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const parts = timeZone ? Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+        timeZone, weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(now).map(part => [part.type, part.value])) : null;
+    const day = parts ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(parts.weekday) : now.getDay();
+    const nowMinutes = parts ? Number(parts.hour) * 60 + Number(parts.minute) : now.getHours() * 60 + now.getMinutes();
     const blocks = Array.isArray(schedule.days[day]) ? schedule.days[day] : [];
 
     for (const block of blocks) {

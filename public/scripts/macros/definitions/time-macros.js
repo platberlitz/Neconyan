@@ -1,7 +1,6 @@
-import { moment } from '../../../lib.js';
-import { chat } from '../../../script.js';
-import { timestampToMoment } from '../../utils.js';
+import { moment } from '../engine/macro-vendor.js';
 import { MacroRegistry, MacroCategory, MacroValueType } from '../engine/MacroRegistry.js';
+import { parseTimestamp } from '../../message-timestamp.js';
 
 /**
  * Registers time/date related macros and utilities.
@@ -87,7 +86,7 @@ export function registerTimeMacros() {
         category: MacroCategory.TIME,
         description: 'Human-readable duration since the last user message.',
         returns: 'Human-readable duration since the last user message.',
-        handler: () => getTimeSinceLastMessage(),
+        handler: ({ env }) => getTimeSinceLastMessage(env),
     });
 
     // Time difference between two values
@@ -118,8 +117,9 @@ export function registerTimeMacros() {
     });
 }
 
-function getTimeSinceLastMessage() {
+function getTimeSinceLastMessage(env) {
     const now = moment();
+    const chat = env.extra?.chat;
 
     if (Array.isArray(chat) && chat.length > 0) {
         let lastMessage;
@@ -141,7 +141,10 @@ function getTimeSinceLastMessage() {
         }
 
         if (lastMessage?.send_date) {
-            const lastMessageDate = timestampToMoment(lastMessage.send_date);
+            const timestampToMoment = env.extra?.timestampToMoment;
+            const lastMessageDate = typeof timestampToMoment === 'function'
+                ? timestampToMoment(lastMessage.send_date)
+                : moment(parseTimestamp(lastMessage.send_date));
             const duration = moment.duration(now.diff(lastMessageDate));
             return duration.humanize();
         }

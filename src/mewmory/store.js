@@ -218,7 +218,8 @@ export function listStories(directories) {
         try {
             const state = readJson(path.join(directory, name), null);
             return state?.format === 1 && fs.existsSync(chatPath(directories, state.locator))
-                ? [{ locator: state.locator, storyId: state.storyId, branchId: state.branchId, enabled: state.enabled, updatedAt: state.updatedAt }]
+                ? [{ locator: state.locator, storyId: state.storyId, branchId: state.branchId, enabled: state.enabled, updatedAt: state.updatedAt,
+                    processing: state.processing ? { status: state.processing.status, automatic: state.processing.automatic } : null }]
                 : [];
         } catch {
             return [];

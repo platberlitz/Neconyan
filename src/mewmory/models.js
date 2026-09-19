@@ -1,7 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import net from 'node:net';
-import { EventEmitter } from 'node:events';
 import ipaddr from 'ipaddr.js';
 import fetch from 'node-fetch';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
@@ -191,7 +190,7 @@ export function roleVersion(config, name) {
         const { endpoint, model, modelRevision, queryPrefix, documentPrefix, profileId } = config.roles.embedding;
         return hash({ endpoint, model, modelRevision, queryPrefix, documentPrefix, profileId });
     }
-    return hash([config.localOnly, config.roles[name]]);
+    return hash([config.localOnly, { ...config.roles[name], timeoutMs: undefined }]);
 }
 
 function authorizeRole(config, name, dataTypes) {
@@ -237,21 +236,14 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
         let data;
         if (role.connection && name !== 'embedding') {
             const { runBackendGeneration, extractGeneratedText } = await import('../endpoints/conversation-generation.js');
-            const request = Object.assign(new EventEmitter(), { user: { directories }, headers: {}, socket: new EventEmitter() });
-            const cancel = () => { request.emit('aborted'); request.socket.emit('close'); };
-            controller.signal.addEventListener('abort', cancel, { once: true });
-            let result;
-            try {
-                const connection = { ...role.connection.payload };
-                if (role.connection.api === 'custom') connection.custom_url = endpoint;
-                else if (connection.reverse_proxy) connection.reverse_proxy = endpoint;
-                else if (connection.azure_base_url) connection.azure_base_url = endpoint;
-                result = await runBackendGeneration(request, 'chat', { ...connection, ...payload }, {
-                    signal: controller.signal, fetch: send, anonymousCustom: role.connection.api === 'custom' && !role.connection.secretId,
-                });
-            } finally {
-                controller.signal.removeEventListener('abort', cancel);
-            }
+            const request = { user: { directories }, headers: {} };
+            const connection = { ...role.connection.payload };
+            if (role.connection.api === 'custom') connection.custom_url = endpoint;
+            else if (connection.reverse_proxy) connection.reverse_proxy = endpoint;
+            else if (connection.azure_base_url) connection.azure_base_url = endpoint;
+            const result = await runBackendGeneration(request, 'chat', { ...connection, ...payload }, {
+                signal: controller.signal, fetch: send, anonymousCustom: role.connection.api === 'custom' && !role.connection.secretId,
+            });
             data = { ...result, choices: [{ ...(result.choices?.[0] || {}), message: { content: extractGeneratedText(result) } }] };
         } else {
             const response = await send(url, {

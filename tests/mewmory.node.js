@@ -12,7 +12,7 @@ import { setConfigFilePath } from '../src/util.js';
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const {
     continueState, eligibleRecords, forkState, hash, newState, putRecord, recordEligible,
-    ROLE_NAMES, sourceAt, syncSources, undoRecord, validateRecord,
+    POLICY_VERSION, ROLE_NAMES, sourceAt, syncSources, undoRecord, validateRecord,
 } = await import('../src/mewmory/core.js');
 const { activeReferences, assembleContext, generationFingerprint } = await import('../src/mewmory/context.js');
 const { callJsonRole, defaultConfig, embed, isLocalEndpoint, validateEndpoint, saveConfig } = await import('../src/mewmory/models.js');
@@ -25,9 +25,232 @@ const { ensureMewmoryMessageIds } = await import('../public/scripts/mewmory/mess
 const { getCounter, getTokenizerModel } = await import('../src/mewmory/tokens.js');
 const { inspectState, restoreRecords } = await import('../src/endpoints/mewmory.js');
 const { createMewmoryProvider } = await import('./mewmory-provider.js');
-const { readConfig, publicConfig } = await import('../src/mewmory/models.js');
+const { readConfig, publicConfig, roleVersion } = await import('../src/mewmory/models.js');
 const { readSecret, writeSecret, SecretManager, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
 const { resolveModelProfile } = await import('../src/mewmory/connection-profiles.js');
+const { startProcessing, waitForProcessing, cancelProcessing, scanProcessing, startMewmoryWorker } = await import('../src/mewmory/worker.js');
+const { startOperation, registerMewmoryOperations } = await import('../src/mewmory/operations.js');
+const { getJob: getSavedJob, recoverJobs, updateJob } = await import('../src/jobs/store.js');
+const { setDirectoriesResolver, testExports: jobRunner } = await import('../src/jobs/runner.js');
+const { readArtifact } = await import('../src/jobs/artifacts.js');
+
+test('manual index rebuild owns every batch, persists its result and does not replay completed calls', async t => {
+    const messages = Array.from({ length: 80 }, (_, index) => ({ name: 'Mara', mes: 'Saved passage ' + index, is_user: false }));
+    const { directories, write } = disk(t, messages);
+    const config = defaultConfig();
+    config.autoUpdate = false;
+    Object.assign(config.roles.embedding, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    let calls = 0;
+    registerMewmoryOperations({ embedFn: async (_dirs, _config, inputs) => {
+        calls++;
+        if (calls === 2) write([...messages, { name: 'Mara', mes: 'Arrived while rebuilding', is_user: false }]);
+        return { vectors: inputs.map(() => [1, 0]), usage: { role: 'embedding' } };
+    } });
+    t.after(() => registerMewmoryOperations());
+    setDirectoriesResolver(() => directories);
+    const request = { locator, reset: true, submissionKey: 'index-all' };
+    const first = await startOperation(directories, 'test', 'index', request);
+    assert.equal(first.job.state, 'queued');
+    assert.equal((await startOperation(directories, 'test', 'index', request)).job.id, first.job.id);
+    await jobRunner.runJob(first.job);
+    assert.equal(getSavedJob(directories, first.job.id).state, 'completed');
+    assert.deepEqual(readArtifact(directories, first.job.id, 'result'), { remaining: 0 });
+    assert.ok(calls >= 5, 'all batches run without any browser continuation');
+    assert.equal(readState(directories, locator).index.pending, false);
+    assert.equal(readState(directories, locator).timeline.length, 81);
+    const before = calls;
+    updateJob(directories, first.job.id, { state: 'running' });
+    recoverJobs(directories);
+    await jobRunner.runJob(getSavedJob(directories, first.job.id));
+    assert.equal(calls, before, 'saved result prevents re-execution after a completion-status crash');
+    const changed = await startOperation(directories, 'test', 'index', { ...request, submissionKey: 'index-stale' });
+    mutateState(directories, locator, state => { state.enabled = false; });
+    await jobRunner.runJob(changed.job);
+    assert.equal(getSavedJob(directories, changed.job.id).state, 'failed');
+    assert.equal(calls, before, 'changed source scope is rejected before any provider call');
+});
+
+test('server processing owns the whole backfill, deduplicates starts and resumes persisted work', async t => {
+    const { directories } = disk(t);
+    const config = defaultConfig();
+    config.autoUpdate = false;
+    config.batchMessages = 1;
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    let release;
+    const hold = new Promise(resolve => { release = resolve; });
+    let calls = 0;
+    const call = async () => {
+        calls++;
+        await hold;
+        return { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role: 'extractor' } };
+    };
+    const started = await startProcessing(directories, locator, { all: true, checkpoint: true }, call);
+    assert.equal(started.processing.status, 'running');
+    const duplicate = await startProcessing(directories, locator, { all: true }, call);
+    assert.equal(duplicate.processing.id, started.processing.id);
+    release();
+    const completed = await waitForProcessing(directories, locator);
+    assert.equal(completed.processing.status, 'complete');
+    assert.equal(pendingSources(completed, readConfig(directories), { checkpoint: true }).length, 0);
+    assert.equal(calls, completed.timeline.length);
+    const savedConfig = readConfig(directories);
+    const legacyPolicy = hash([POLICY_VERSION, ...['extractor', 'pawspective'].map(name => hash([savedConfig.localOnly, savedConfig.roles[name]]))]);
+    mutateState(directories, locator, state => {
+        for (const coverage of [state.coverage, state.checkpoints]) {
+            for (const key of Object.keys(coverage)) coverage[key] = legacyPolicy;
+        }
+        state.coverage.unrelated = 'different-policy';
+    });
+    const migrated = await loadCurrentState(directories, locator);
+    assert.equal(pendingSources(migrated, savedConfig, { checkpoint: true }).length, 0);
+    assert.equal(migrated.coverage.unrelated, 'different-policy');
+    mutateState(directories, locator, state => {
+        state.coverage = {};
+        state.checkpoints = {};
+        state.processing.status = 'running';
+    });
+    await scanProcessing(directories, call);
+    const resumed = await waitForProcessing(directories, locator);
+    assert.equal(resumed.processing.status, 'complete');
+    assert.notEqual(resumed.processing.id, started.processing.id);
+    assert.equal(pendingSources(resumed, readConfig(directories), { checkpoint: true }).length, 0);
+    assert.equal(forkState(started, { ...locator, chat: 'Fork' }, 0, fixture.messages.slice(0, 1)).processing, null);
+    assert.equal(continueState(started, { ...locator, chat: 'Continued' }, []).processing, null);
+});
+
+test('server automatic processing works without a browser and explicit cancellation stays stopped', async t => {
+    const { directories, write } = disk(t);
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    let entered;
+    const active = new Promise(resolve => { entered = resolve; });
+    let calls = 0;
+    const held = async (_directories, _config, _role, _contract, _input, { signal }) => {
+        calls++;
+        entered();
+        await new Promise((resolve, reject) => {
+            if (signal.aborted) return reject(new Error('cancelled'));
+            signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true });
+        });
+    };
+    await scanProcessing(directories, held);
+    await active;
+    await cancelProcessing(directories, locator);
+    const cancelled = await waitForProcessing(directories, locator);
+    assert.equal(cancelled.processing.status, 'cancelled');
+    assert.equal(Object.keys(cancelled.coverage).length, 0);
+    await scanProcessing(directories, held);
+    assert.equal(calls, 1);
+    write([...fixture.messages, { name: 'Mara', mes: 'A new message.', is_user: false }]);
+    await scanProcessing(directories, async () => ({ value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role: 'extractor' } }));
+    const completed = await waitForProcessing(directories, locator);
+    assert.equal(completed.processing.status, 'complete');
+    assert.equal(pendingSources(completed, readConfig(directories), { checkpoint: true }).length, 0);
+});
+
+test('an overlapping start cannot silently downgrade requested backfill or preservation', async t => {
+    const { directories } = disk(t);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    let release;
+    const hold = new Promise(resolve => { release = resolve; });
+    await startProcessing(directories, locator, {}, async () => {
+        await hold;
+        return { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role: 'extractor' } };
+    });
+    try {
+        await assert.rejects(startProcessing(directories, locator, { all: true }), { status: 409 });
+        await assert.rejects(startProcessing(directories, locator, { checkpoint: true }), { status: 409 });
+    } finally {
+        release();
+        await waitForProcessing(directories, locator);
+    }
+});
+
+test('startup clears interrupted jobs that are now disabled and skips idle source reconciliation', async t => {
+    const { directories } = disk(t);
+    const config = defaultConfig();
+    config.autoUpdate = false;
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => {
+        state.enabled = true;
+        state.processing = { status: 'running', automatic: true };
+    });
+    await scanProcessing(directories);
+    assert.equal(readState(directories, locator).processing.status, 'complete');
+    mutateState(directories, locator, state => {
+        state.enabled = false;
+        state.processing = { status: 'running', automatic: false };
+    });
+    await scanProcessing(directories);
+    assert.equal(readState(directories, locator).processing.status, 'complete');
+    mutateState(directories, locator, state => { state.enabled = true; });
+    const read = t.mock.method(fs, 'readFileSync');
+    await scanProcessing(directories);
+    assert.equal(read.mock.calls.filter(call => call.arguments[0] === chatPath(directories, locator)).length, 0);
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    config.autoUpdate = true;
+    saveConfig(directories, { ...config, revision: readConfig(directories).revision });
+    await scanProcessing(directories, async () => ({ value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role: 'extractor' } }));
+    const completed = await waitForProcessing(directories, locator);
+    assert.equal(pendingSources(completed, readConfig(directories), { checkpoint: true }).length, 0);
+});
+
+test('changing a timeout preserves extraction coverage but changing the provider invalidates it', () => {
+    const config = defaultConfig();
+    const original = roleVersion(config, 'extractor');
+    config.roles.extractor.timeoutMs++;
+    assert.equal(roleVersion(config, 'extractor'), original);
+    config.roles.extractor.endpoint = 'http://127.0.0.1:1234/v1';
+    assert.notEqual(roleVersion(config, 'extractor'), original);
+});
+
+test('finished jobs wake the queue and automatic work leaves capacity for a manual request', async t => {
+    const { directories } = disk(t);
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    saveConfig(directories, config);
+    const stories = Array.from({ length: 6 }, (_, index) => ({ ...locator, chat: `Queued ${index}` }));
+    for (const story of stories) {
+        fs.copyFileSync(chatPath(directories, locator), chatPath(directories, story));
+        await loadCurrentState(directories, story);
+        mutateState(directories, story, state => { state.enabled = true; });
+    }
+    let release;
+    const hold = new Promise(resolve => { release = resolve; });
+    const call = async () => {
+        await hold;
+        return { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role: 'extractor' } };
+    };
+    await startProcessing(directories, stories[0], { all: true, automatic: true }, call);
+    await startProcessing(directories, stories[1], { all: true, automatic: true }, call);
+    try {
+        const manual = await startProcessing(directories, stories[2], { all: true }, call);
+        assert.equal(manual.processing.status, 'running');
+    } finally {
+        release();
+        await Promise.all(stories.slice(0, 3).map(story => waitForProcessing(directories, story)));
+    }
+    const stop = startMewmoryWorker(async () => [directories], call);
+    try {
+        for (let attempt = 0; attempt < 200 && stories.some(story => readState(directories, story).processing?.status !== 'complete'); attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        assert.ok(stories.every(story => readState(directories, story).processing?.status === 'complete'), 'queue should drain without another 15-second tick');
+    } finally {
+        stop();
+        await Promise.all(stories.map(story => waitForProcessing(directories, story)));
+    }
+});
 
 test('connection profiles resolve server-side and retain local-only permissions', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mewmory-profiles-'));
@@ -622,6 +845,31 @@ test('HTTP recovery handles missing and corrupt archives without restoring delet
     assert.equal(chatPath(directories, { ...locator, avatar: 'part.png.extra.png' }), path.join(directories.chats, 'part.extra.png', 'Gift.jsonl'));
 });
 
+test('inspection retains readable memory when its job ledger needs recovery', async t => {
+    const { directories } = disk(t);
+    await loadCurrentState(directories, locator);
+    fs.mkdirSync(path.join(directories.root, 'jobs'));
+    const ledger = path.join(directories.root, 'jobs', 'index.json');
+    fs.writeFileSync(ledger, '{broken');
+    const express = (await import('express')).default;
+    const { router } = await import('../src/endpoints/mewmory.js');
+    const app = express();
+    app.use(express.json());
+    app.use((request, response, next) => { request.user = { directories }; next(); });
+    app.use(router);
+    const server = await new Promise(resolve => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
+    t.after(() => new Promise(resolve => server.close(resolve)));
+    const response = await fetch('http://127.0.0.1:' + server.address().port + '/inspect', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locator }),
+    });
+    assert.equal(response.status, 200);
+    const inspection = await response.json();
+    assert.ok(inspection.health.totalMessages > 0);
+    assert.deepEqual(inspection.operations, []);
+    assert.match(inspection.operationsError, /recovery/);
+    assert.equal(fs.readFileSync(ledger, 'utf8'), '{broken');
+});
+
 for (const operation of ['rename', 'delete']) test('finishing work cannot recreate an archive after chat ' + operation, async t => {
     const { directories, filename } = disk(t);
     const config = defaultConfig();
@@ -1071,7 +1319,7 @@ for (const change of ['author correction', 'model settings']) {
                 });
             } else {
                 const config = publicConfig(directories);
-                config.roles.extractor.timeoutMs = 90000;
+                config.roles.extractor.modelRevision = 'updated-model';
                 saveConfig(directories, config);
             }
             return { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role } };

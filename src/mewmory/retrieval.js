@@ -9,6 +9,7 @@ import { hybridCandidates, searchDocuments, terms, updateIndex } from './search.
 import { loadCurrentState } from './sources.js';
 import { mutateState, statePath } from './store.js';
 import { getCounter } from './tokens.js';
+import { listJobs } from '../jobs/store.js';
 
 const running = new Map();
 
@@ -149,7 +150,7 @@ async function selectMemories(state, directories, config, documents, scene, allD
 }
 
 export async function recall(directories, locator, {
-    asOf = Infinity, query: manualQuery = '', tokenizer = {}, signal, local = false, background = false,
+    asOf = Infinity, query: manualQuery = '', tokenizer = {}, signal, local = false, background = false, operationId,
 } = {}, { call = callJsonRole, embedFn = embed } = {}) {
     const config = readConfig(directories);
     const state = await loadCurrentState(directories, locator);
@@ -204,14 +205,16 @@ export async function recall(directories, locator, {
         asOf, counter, memoryTokens: config.memoryTokens, forcedIds: forced.map(document => document.id),
     });
     const inspection = {
-        id: hash([Date.now(), fingerprint, scene]), at: Date.now(), asOf: Number.isFinite(asOf) ? asOf : state.timeline.length - 1,
+        id: operationId || hash([Date.now(), fingerprint, scene]), at: Date.now(), asOf: Number.isFinite(asOf) ? asOf : state.timeline.length - 1,
         status: selection.status.status, fallbackUsed: selection.fallbackUsed,
         error: selection.error, indexError, ...selection.status,
         candidates: selection.documents.map(document => ({ id: document.id, kind: document.kind, refs: document.refs })),
         forcedIds: forced.map(document => document.id), omitted: assembly.omitted, usage,
         sourceCount, validationFingerprint, background,
     };
+    const retainedJobs = operationId ? new Set(listJobs(directories, { includeDismissed: true }).map(job => job.id)) : null;
     mutateState(directories, locator, current => {
+        signal?.throwIfAborted();
         const currentConfig = readConfig(directories);
         if ((background ? recallFingerprint(current, currentConfig, sourceCount) : generationFingerprint(current, currentConfig)) !== validationFingerprint) {
             fail('The story, settings or an author correction changed during recall. Generate again to use its current version.', 409);
@@ -220,6 +223,8 @@ export async function recall(directories, locator, {
         if (!local && assemblyFingerprint(indexState, config) === fingerprint && hash(current.index) === indexSnapshot) {
             current.index = { ...state.index, pending: state.index.pending || current.timeline.length > sourceCount };
         }
+        if (operationId && current.recallReceipts?.includes(operationId)) return;
+        if (operationId) current.recallReceipts = [...(current.recallReceipts || []).filter(id => retainedJobs.has(id)), operationId];
         current.recalls = [...current.recalls.slice(-9), inspection];
         if (!background) current.preview = { ...assembly, fingerprint };
         addUsage(current, usage);

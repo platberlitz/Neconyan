@@ -140,7 +140,9 @@ describe('connection manager profile save wiring', () => {
         for (const command of ['custom-include-body', 'custom-exclude-body', 'custom-include-headers']) {
             expect(ccCommandsSource).toContain(`'${command}',`);
             expect(allowEmptySource).toContain(`'${command}',`);
-            expect(sharedSource).toContain(`'${command}': ['${command.replaceAll('-', '_')}', value => String(value ?? '')],`);
+            const requestSource = normalizeSource(readFileSync(path.join(repoRoot, 'public', 'scripts', 'connection-profile-request.js'), 'utf8'));
+            expect(requestSource).toContain(`'${command}': ['${command.replaceAll('-', '_')}', value => String(value ?? '')],`);
+            expect(sharedSource).toContain('resolveProfileRequestOverrides(');
         }
         expect(connectionManagerSource).toContain('\'custom-include-body\': \'Custom Include Body Parameters\',');
         expect(connectionManagerSource).toContain('\'custom-exclude-body\': \'Custom Exclude Body Parameters\',');

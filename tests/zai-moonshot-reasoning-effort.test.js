@@ -239,11 +239,9 @@ describe('reasoning effort on Z.AI and Moonshot requests', () => {
     });
 
     test('keeps both sources out of the string-effort resolver so max is not collapsed to high', () => {
-        const openAiSource = fs.readFileSync(fileURLToPath(new URL('../public/scripts/openai.js', import.meta.url)), 'utf8');
-        const sources = openAiSource.match(/const reasoningEffortSources = \[([\s\S]*?)\];/);
-
-        expect(sources).not.toBeNull();
-        expect(sources[1]).not.toContain('ZAI');
-        expect(sources[1]).not.toContain('MOONSHOT');
+        for (const source of ['zai', 'moonshot']) {
+            expect(resolveChatReasoningEffort({ chat_completion_source: source, reasoning_effort: 'max' }, 'model')).toBe('max');
+        }
     });
 });
+import { resolveChatReasoningEffort } from '../public/scripts/chat-request-controls.js';

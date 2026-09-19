@@ -303,6 +303,7 @@ export function forkState(parent, locator, through, messages) {
     state.recalls = [];
     state.preview = null;
     state.jobs = [];
+    state.processing = null;
     state.coverage = {};
     state.checkpoints = {};
     state.activeNpcIds = null;
@@ -329,6 +330,7 @@ export function continueState(parent, locator, messages) {
     state.recalls = [];
     state.preview = null;
     state.jobs = [];
+    state.processing = null;
     state.activeNpcIds = null;
     state.revision = 0;
     const context = state.contextSources.map(ref => ({

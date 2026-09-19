@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { buildChatCompletionPreset } from '../public/scripts/openai-preset-utils.js';
+import { settingsToUpdate } from '../public/scripts/chat-preset-mapping.js';
 
 const readSource = (relativePath) => fs.readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), 'utf8');
 
@@ -10,14 +11,9 @@ const indexSource = readSource('../public/index.html');
 const openAiSource = readSource('../public/scripts/openai.js');
 const scriptSource = readSource('../public/script.js');
 
-const SETTING_ENTRY = "kimi_partial_prefill: ['#openai_kimi_partial_prefill', 'kimi_partial_prefill', false, false],";
-
 describe('Kimi K3 partial prefill field', () => {
     test('is registered in the preset setting map as a plain, non-connection value', () => {
-        const map = openAiSource.match(/export const settingsToUpdate = \{([\s\S]*?)\n\};/);
-
-        expect(map).not.toBeNull();
-        expect(map[1]).toContain(SETTING_ENTRY);
+        expect(settingsToUpdate.kimi_partial_prefill).toEqual(['#openai_kimi_partial_prefill', 'kimi_partial_prefill', false, false]);
     });
 
     test('defaults to empty so no existing install starts sending a prefill', () => {

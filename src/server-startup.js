@@ -59,6 +59,8 @@ import { router as inChatAgentsRouter } from './endpoints/in-chat-agents.js';
 // Neconyan divergence: keep Conversation REST mounted here only; endpoint behavior stays isolated in its fork-owned router for upstream syncs.
 import { router as neconyanConversationRouter } from './endpoints/neconyan-conversation.js';
 import { router as mewmoryRouter } from './endpoints/mewmory.js';
+// Neconyan divergence: durable server-side job dispatcher for work that must finish without an open tab.
+import { router as jobsRouter } from './endpoints/jobs.js';
 import { resumableGenerationMiddleware, router as resumableGenerationsRouter } from './resumable-generations.js';
 
 /**
@@ -131,6 +133,7 @@ export function setupPrivateEndpoints(app) {
     // Keep both legacy bases mounted so saved integrations continue to work.
     app.use('/api/neconyan-conversation', neconyanConversationRouter);
     app.use('/api/mewmory', mewmoryRouter);
+    app.use('/api/jobs', jobsRouter);
     app.use('/api/sillybunny-conversation', neconyanConversationRouter);
     app.use('/api/sillybunny/conversation', neconyanConversationRouter);
 }

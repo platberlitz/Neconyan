@@ -5,9 +5,9 @@
 
 import { MACRO_IDENTIFIER_PATTERN } from './MacroLexer.js';
 
-import { isFalseBoolean, isTrueBoolean } from '../../utils.js';
+import { isFalseBoolean, isTrueBoolean } from '../../macro-primitives.js';
 import { MacroEngine } from './MacroEngine.js';
-import { createMacroRuntimeError, logMacroRegisterError, logMacroRegisterWarning, logMacroRuntimeWarning } from './MacroDiagnostics.js';
+import { createMacroRuntimeError, logMacroRegisterError, logMacroRegisterWarning, logMacroRuntimeWarning } from './macro-console.js';
 
 /**
  * Enum of standard macro categories for grouping in documentation and autocomplete.

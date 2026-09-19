@@ -1,4 +1,4 @@
-import { chevrotain } from '../../../lib.js';
+import { chevrotain } from '../engine/macro-vendor.js';
 import { MacroLexer } from './MacroLexer.js';
 
 const { CstParser } = chevrotain;

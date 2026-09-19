@@ -4,6 +4,7 @@ import {
 } from './index.js';
 import { getFriendlyTokenizerName } from '../tokenizers.js';
 import { uuidv4 } from '../utils.js';
+import { dismissJob, retryJob } from '../jobs.js';
 
 const tabs = [['now', 'Now'], ['pawspective', 'Pawspective'], ['archive', 'Archive'], ['recall', 'Recall'], ['settings', 'Settings']];
 const kinds = { entity: 'NPC or entity reference', state: 'Current state', event: 'Event', relationship: 'Relationship fact',
@@ -616,25 +617,16 @@ function renderHealth(root) {
     const actions = node('div', 'mewmory-actions');
     actions.append(button('Backfill this chat', () => processMewmory({ all: true }), { disabled: mewmory.busy || !view.enabled }),
         button('Review preservation', () => processMewmory({ all: true, checkpoint: true }), { disabled: mewmory.busy || !view.enabled }),
-        button('Rebuild search index', () => act(async scope => {
-            ui.stopIndex = false;
-            const locator = getMewmoryLocator();
-            let result = await requestMewmory('index', { locator, reset: true }, { scope });
-            while (result.remaining > 0 && !ui.stopIndex) {
-                ui.progress = result.remaining + ' search passages remaining';
-                render();
-                result = await requestMewmory('index', { locator }, { scope });
-            }
-            ui.progress = '';
-        }), { disabled: !mewmory.config.roles.embedding.enabled }));
-    if (mewmory.busy) actions.append(button('Stop after this batch', stopMewmoryBackfill));
-    if (ui.progress) {
-        health.append(node('p', 'mewmory-caption', ui.progress));
-        const stop = button('Stop after this batch', () => { ui.stopIndex = true; });
-        stop.disabled = false;
-        actions.append(stop);
-    }
+        button('Rebuild search index', () => act(scope => requestMewmory('index', { reset: true }, { scope })),
+            { disabled: !mewmory.config.roles.embedding.enabled || mewmory.busy }));
+    if (mewmory.busy) actions.append(button('Stop processing', stopMewmoryBackfill));
     health.append(actions);
+    if (view.operationsError) health.append(node('p', 'mewmory-caption', view.operationsError));
+    for (const job of view.operations || []) {
+        health.append(node('p', 'mewmory-caption', job.label + ' · ' + job.state + (job.error?.message ? ': ' + job.error.message : job.warning ? ': ' + job.warning : '')));
+        if (['failed', 'interrupted'].includes(job.state)) health.append(button('Retry ' + job.label.toLocaleLowerCase(), () => act(() => retryJob(job.id))));
+        if (['failed', 'interrupted', 'completed', 'cancelled'].includes(job.state)) health.append(button('Dismiss ' + job.label.toLocaleLowerCase(), () => act(() => dismissJob(job.id))));
+    }
     for (const job of view.health.jobs.slice(-5).reverse()) {
         health.append(node('p', 'mewmory-caption', (job.checkpoint ? 'Preservation' : 'Update') + ' · messages '
             + (job.from + 1) + '–' + (job.through + 1) + ' · ' + job.status + (job.error ? ': ' + job.error : '')));
@@ -732,7 +724,6 @@ function render() {
         ui.status = '';
         ui.parent = '';
         ui.progress = '';
-        ui.stopIndex = true;
         ui.running = false;
     }
     root.replaceChildren();

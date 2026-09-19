@@ -147,12 +147,9 @@ export function observeRequestCancellation(request, response = null, {
     const cleanupCallbacks = [];
     let cancelled = false;
     let cleanedUp = false;
+    let observing = false;
 
     function cleanup() {
-        if (cleanedUp) {
-            return;
-        }
-
         cleanedUp = true;
         for (const removeListener of cleanupCallbacks.splice(0)) {
             removeListener();
@@ -160,13 +157,14 @@ export function observeRequestCancellation(request, response = null, {
     }
 
     function abort(source = 'manual') {
-        if (cancelled || controller.signal.aborted) {
+        if (cancelled) {
             return;
         }
 
         cancelled = true;
         controller.abort(reason);
-        runAbortHook(onAbort, {
+        // A provider-wide abort must not run for work that was cancelled before registration.
+        if (observing) runAbortHook(onAbort, {
             request,
             response,
             signal: controller.signal,
@@ -191,6 +189,7 @@ export function observeRequestCancellation(request, response = null, {
     }
 
     const resumableGeneration = getResumableGeneration(request);
+    cleanupCallbacks.push(once(request?.generationSignal, 'abort', () => abort('generation-signal')));
     if (resumableGeneration) {
         // Neconyan: a resumable generation outlives its client; only an explicit cancel aborts upstream.
         cleanupCallbacks.push(
@@ -216,6 +215,15 @@ export function observeRequestCancellation(request, response = null, {
             ));
         }
     }
+
+    if (controller.signal.aborted || request?.generationSignal?.aborted || resumableGeneration?.cancelled) {
+        abort('already-cancelled');
+    } else if (!resumableGeneration && (isRequestAborted(request) || request?.socket?.destroyed || (response?.destroyed && !response?.writableEnded))) {
+        abort('already-disconnected');
+    }
+    // A cancelled generation can invoke its hook synchronously while listeners are being installed.
+    if (cleanedUp) cleanup();
+    observing = true;
 
     return {
         controller,

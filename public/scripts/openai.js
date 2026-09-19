@@ -4,6 +4,7 @@
 * https://github.com/CncAnon1/TavernAITurbo
 */
 import { Fuse, DOMPurify } from '../lib.js';
+import { REVERSE_PROXY_SUPPORTED_SOURCES, resolveChatReasoningEffort } from './chat-request-controls.js';
 
 import {
     abortStatusCheck,
@@ -50,6 +51,9 @@ import { deleteSecret, rotateSecret, SECRET_KEYS, secret_state, writeSecret } fr
 import { getEventSourceStream } from './sse-stream.js';
 import { fetchResumable } from './resumable-generation.js';
 import { applyGenerationRequestControls, isGenerationLengthFinish } from './generation-request-controls.js';
+import { createChatGenerationParameters } from './chat-provider-parameters.js';
+import { settingsToUpdate } from './chat-preset-mapping.js';
+export { settingsToUpdate } from './chat-preset-mapping.js';
 import {
     createThumbnail,
     delay,
@@ -103,7 +107,7 @@ import {
     normalizeReverseProxyPreset,
     shouldIncludeSamplingFieldsInPreset,
 } from './openai-preset-utils.js';
-import { applyClaudeModelParameterConstraints, applyKimiK3ModelParameterConstraints, isKimiK3Model, buildChatCompletionSamplerMetadata, filterChatCompletionSamplingParameters, getChatCompletionSamplerCapabilities } from './openai-model-capabilities.js';
+import { isKimiK3Model, buildChatCompletionSamplerMetadata, getChatCompletionSamplerCapabilities } from './openai-model-capabilities.js';
 import { TOOL_CALL_RECURSE_LIMIT_DEFAULT, normalizeToolCallRecurseLimit } from './tool-call-recurse-limit.js';
 import { LINKAPI_ENDPOINT, getLinkApiRequestFormat } from './linkapi-utils.js';
 import { IN_CHAT_AGENT_PROMPT_KEY_PREFIX, RUNTIME_AGENTS_IDENTIFIER, collectInChatAgentInspectionRecords, getInChatAgentContributionKind, isInChatAgentPromptIdentifier, trimOldestRetainedContribution } from './in-chat-agent-inspection.js';
@@ -196,7 +200,6 @@ const oai_max_temp = 2.0;
 const claude_max_temp = 1.0;
 const mistral_max_temp = 1.5;
 const openrouter_website_model = 'OR_Website';
-const openai_max_stop_strings = 4;
 
 const textCompletionModels = [
     'gpt-3.5-turbo-instruct',
@@ -265,18 +268,7 @@ export const chat_completion_sources = {
     LINKAPI: 'linkapi',
 };
 
-export const REVERSE_PROXY_SUPPORTED_SOURCES = [
-    chat_completion_sources.CLAUDE,
-    chat_completion_sources.OPENAI,
-    chat_completion_sources.OPENAI_RESPONSES,
-    chat_completion_sources.MISTRALAI,
-    chat_completion_sources.MAKERSUITE,
-    chat_completion_sources.VERTEXAI,
-    chat_completion_sources.DEEPSEEK,
-    chat_completion_sources.XAI,
-    chat_completion_sources.ZAI,
-    chat_completion_sources.MOONSHOT,
-];
+export { REVERSE_PROXY_SUPPORTED_SOURCES };
 
 const REVERSE_PROXY_SOURCE_LABELS = {
     [chat_completion_sources.OPENAI]: 'OpenAI',
@@ -431,128 +423,6 @@ const sensitiveFields = [
  * The optional is_sampling flag marks fields for preset sampling binding and model sampling profiles.
  * @type {Record<string, [string, string, boolean, boolean, boolean?]>}
  */
-export const settingsToUpdate = {
-    chat_completion_source: ['#chat_completion_source', 'chat_completion_source', false, true, false],
-    temperature: ['#temp_openai', 'temp_openai', false, false, true],
-    frequency_penalty: ['#freq_pen_openai', 'freq_pen_openai', false, false, true],
-    presence_penalty: ['#pres_pen_openai', 'pres_pen_openai', false, false, true],
-    top_p: ['#top_p_openai', 'top_p_openai', false, false, true],
-    claude_disable_temperature: ['#claude_disable_temperature', 'claude_disable_temperature', true, false, true],
-    claude_disable_top_p: ['#claude_disable_top_p', 'claude_disable_top_p', true, false, true],
-    top_k: ['#top_k_openai', 'top_k_openai', false, false, true],
-    top_a: ['#top_a_openai', 'top_a_openai', false, false, true],
-    min_p: ['#min_p_openai', 'min_p_openai', false, false, true],
-    typical_p: ['#typical_p_openai', 'typical_p_openai', false, false, true],
-    repetition_penalty: ['#repetition_penalty_openai', 'repetition_penalty_openai', false, false, true],
-    max_context_unlocked: ['#oai_max_context_unlocked', 'max_context_unlocked', true, false, false],
-    openai_model: ['#model_openai_select', 'openai_model', false, true],
-    claude_model: ['#model_claude_select', 'claude_model', false, true],
-    openrouter_model: ['#model_openrouter_select', 'openrouter_model', false, true],
-    openrouter_use_fallback: ['#openrouter_use_fallback', 'openrouter_use_fallback', true, true],
-    openrouter_group_models: ['#openrouter_group_models', 'openrouter_group_models', false, true],
-    openrouter_sort_models: ['#openrouter_sort_models', 'openrouter_sort_models', false, true],
-    openrouter_providers: ['#openrouter_providers_chat', 'openrouter_providers', false, true],
-    openrouter_service_tier: ['#openrouter_service_tier_chat', 'openrouter_service_tier', false, true],
-    openrouter_quantizations: ['#openrouter_quantizations_chat', 'openrouter_quantizations', false, true],
-    openrouter_allow_fallbacks: ['#openrouter_allow_fallbacks', 'openrouter_allow_fallbacks', true, true],
-    openrouter_middleout: ['#openrouter_middleout', 'openrouter_middleout', false, true],
-    tool_reasoning_mode: ['#tool_reasoning_mode', 'tool_reasoning_mode', false, false],
-    ai21_model: ['#model_ai21_select', 'ai21_model', false, true],
-    mistralai_model: ['#model_mistralai_select', 'mistralai_model', false, true],
-    cohere_model: ['#model_cohere_select', 'cohere_model', false, true],
-    perplexity_model: ['#model_perplexity_select', 'perplexity_model', false, true],
-    groq_model: ['#model_groq_select', 'groq_model', false, true],
-    chutes_model: ['#model_chutes_select', 'chutes_model', false, true],
-    chutes_sort_models: ['#chutes_sort_models', 'chutes_sort_models', false, true],
-    siliconflow_model: ['#model_siliconflow_select', 'siliconflow_model', false, true],
-    siliconflow_endpoint: ['#siliconflow_endpoint', 'siliconflow_endpoint', false, true],
-    minimax_model: ['#model_minimax_select', 'minimax_model', false, true],
-    minimax_endpoint: ['#minimax_endpoint', 'minimax_endpoint', false, true],
-    electronhub_model: ['#model_electronhub_select', 'electronhub_model', false, true],
-    electronhub_sort_models: ['#electronhub_sort_models', 'electronhub_sort_models', false, true],
-    electronhub_group_models: ['#electronhub_group_models', 'electronhub_group_models', false, true],
-    nanogpt_model: ['#model_nanogpt_select', 'nanogpt_model', false, true],
-    nanogpt_provider: ['', 'nanogpt_provider', false, true],
-    nanogpt_allowed_providers: ['#nanogpt_allowed_providers', 'nanogpt_allowed_providers', false, true],
-    nanogpt_ignored_providers: ['#nanogpt_ignored_providers', 'nanogpt_ignored_providers', false, true],
-    nanogpt_payg_override: ['#nanogpt_payg_override', 'nanogpt_payg_override', true, true],
-    nanogpt_service_tier: ['#nanogpt_service_tier', 'nanogpt_service_tier', false, true],
-    deepseek_model: ['#model_deepseek_select', 'deepseek_model', false, true],
-    aimlapi_model: ['#model_aimlapi_select', 'aimlapi_model', false, true],
-    xai_model: ['#model_xai_select', 'xai_model', false, true],
-    pollinations_model: ['#model_pollinations_select', 'pollinations_model', false, true],
-    moonshot_model: ['#model_moonshot_select', 'moonshot_model', false, true],
-    fireworks_model: ['#model_fireworks_select', 'fireworks_model', false, true],
-    cometapi_model: ['#model_cometapi_select', 'cometapi_model', false, true],
-    custom_model: ['#custom_model_id', 'custom_model', false, true],
-    custom_model_icon_detection: ['#custom_model_icon_detection', 'custom_model_icon_detection', true, true],
-    custom_url: ['#custom_api_url_text', 'custom_url', false, true],
-    custom_include_body: ['#custom_include_body', 'custom_include_body', false, true],
-    custom_exclude_body: ['#custom_exclude_body', 'custom_exclude_body', false, true],
-    custom_include_headers: ['#custom_include_headers', 'custom_include_headers', false, true],
-    custom_prompt_post_processing: ['#custom_prompt_post_processing', 'custom_prompt_post_processing', false, true],
-    google_model: ['#model_google_select', 'google_model', false, true],
-    vertexai_model: ['#model_vertexai_select', 'vertexai_model', false, true],
-    zai_model: ['#model_zai_select', 'zai_model', false, true],
-    zai_endpoint: ['#zai_endpoint', 'zai_endpoint', false, true],
-    linkapi_model: ['#model_linkapi_select', 'linkapi_model', false, true],
-    linkapi_endpoint: ['#linkapi_endpoint', 'linkapi_endpoint', false, true],
-    workers_ai_model: ['#model_workers_ai_select', 'workers_ai_model', false, true],
-    workers_ai_account_id: ['#workers_ai_account_id', 'workers_ai_account_id', false, true],
-    openai_max_context: ['#openai_max_context', 'openai_max_context', false, false],
-    openai_max_tokens: ['#openai_max_tokens', 'openai_max_tokens', false, false],
-    names_behavior: ['#names_behavior', 'names_behavior', false, false],
-    send_if_empty: ['#send_if_empty_textarea', 'send_if_empty', false, false],
-    impersonation_prompt: ['#impersonation_prompt_textarea', 'impersonation_prompt', false, false],
-    new_chat_prompt: ['#newchat_prompt_textarea', 'new_chat_prompt', false, false],
-    new_group_chat_prompt: ['#newgroupchat_prompt_textarea', 'new_group_chat_prompt', false, false],
-    new_example_chat_prompt: ['#newexamplechat_prompt_textarea', 'new_example_chat_prompt', false, false],
-    continue_nudge_prompt: ['#continue_nudge_prompt_textarea', 'continue_nudge_prompt', false, false],
-    bias_preset_selected: ['#openai_logit_bias_preset', 'bias_preset_selected', false, false],
-    bias_presets: ['', 'bias_presets', false, false],
-    reverse_proxy: ['#openai_reverse_proxy', 'reverse_proxy', false, true],
-    wi_format: ['#wi_format_textarea', 'wi_format', false, false],
-    scenario_format: ['#scenario_format_textarea', 'scenario_format', false, false],
-    personality_format: ['#personality_format_textarea', 'personality_format', false, false],
-    group_nudge_prompt: ['#group_nudge_prompt_textarea', 'group_nudge_prompt', false, false],
-    stream_openai: ['#stream_toggle', 'stream_openai', true, false],
-    prompts: ['', 'prompts', false, false],
-    prompt_order: ['', 'prompt_order', false, false],
-    show_external_models: ['#openai_show_external_models', 'show_external_models', true, true],
-    proxy_password: ['#openai_proxy_password', 'proxy_password', false, true],
-    assistant_prefill: ['#claude_assistant_prefill', 'assistant_prefill', false, false],
-    kimi_partial_prefill: ['#openai_kimi_partial_prefill', 'kimi_partial_prefill', false, false],
-    assistant_impersonation: ['#claude_assistant_impersonation', 'assistant_impersonation', false, false],
-    use_sysprompt: ['#use_sysprompt', 'use_sysprompt', true, false],
-    vertexai_auth_mode: ['#vertexai_auth_mode', 'vertexai_auth_mode', false, true],
-    vertexai_region: ['#vertexai_region', 'vertexai_region', false, true],
-    vertexai_express_project_id: ['#vertexai_express_project_id', 'vertexai_express_project_id', false, true],
-    squash_system_messages: ['#squash_system_messages', 'squash_system_messages', true, false],
-    media_inlining: ['#openai_media_inlining', 'media_inlining', true, false],
-    inline_image_quality: ['#openai_inline_image_quality', 'inline_image_quality', false, false],
-    continue_prefill: ['#continue_prefill', 'continue_prefill', true, false],
-    continue_postfix: ['#continue_postfix', 'continue_postfix', false, false],
-    function_calling: ['#openai_function_calling', 'function_calling', true, false],
-    tool_call_recurse_limit: ['#tool_call_recurse_limit', 'tool_call_recurse_limit', false, false],
-    show_thoughts: ['#openai_show_thoughts', 'show_thoughts', true, false],
-    auto_append_reasoning_tags: ['#openai_auto_append_reasoning_tags', 'auto_append_reasoning_tags', true, false],
-    auto_append_reasoning_tag_style: ['#openai_reasoning_tag_style', 'auto_append_reasoning_tag_style', false, false],
-    reasoning_effort: ['#openai_reasoning_effort', 'reasoning_effort', false, false],
-    verbosity: ['#openai_verbosity', 'verbosity', false, false],
-    enable_web_search: ['#openai_enable_web_search', 'enable_web_search', true, false],
-    seed: ['#seed_openai', 'seed', false, false],
-    n: ['#n_openai', 'n', false, false],
-    bypass_status_check: ['#openai_bypass_status_check', 'bypass_status_check', true, true],
-    request_images: ['#openai_request_images', 'request_images', true, false],
-    request_image_aspect_ratio: ['#request_image_aspect_ratio', 'request_image_aspect_ratio', false, false],
-    request_image_resolution: ['#request_image_resolution', 'request_image_resolution', false, false],
-    azure_base_url: ['#azure_base_url', 'azure_base_url', false, true],
-    azure_deployment_name: ['#azure_deployment_name', 'azure_deployment_name', false, true],
-    azure_api_version: ['#azure_api_version', 'azure_api_version', false, true],
-    azure_openai_model: ['#azure_openai_model', 'azure_openai_model', false, true],
-    extensions: ['#NULL_SELECTOR', 'extensions', false, false],
-};
-
 const default_settings = {
     preset_settings_openai: 'Default',
     temp_openai: 1.0,
@@ -5354,60 +5224,7 @@ function getAimlapiModelTemplate(option) {
 function getReasoningEffort(settings = null, model = null) {
     settings = settings ?? oai_settings;
     model = model ?? getChatCompletionModel(settings);
-
-    // These sources expect the effort as string.
-    const reasoningEffortSources = [
-        chat_completion_sources.OPENAI,
-        chat_completion_sources.OPENAI_RESPONSES,
-        chat_completion_sources.AZURE_OPENAI,
-        chat_completion_sources.CUSTOM,
-        chat_completion_sources.XAI,
-        chat_completion_sources.AIMLAPI,
-        chat_completion_sources.OPENROUTER,
-        chat_completion_sources.POLLINATIONS,
-        chat_completion_sources.PERPLEXITY,
-        chat_completion_sources.COMETAPI,
-        chat_completion_sources.ELECTRONHUB,
-        chat_completion_sources.CHUTES,
-    ];
-
-    if (!reasoningEffortSources.includes(settings.chat_completion_source)) {
-        return settings.reasoning_effort;
-    }
-
-    function resolveReasoningEffort() {
-        switch (settings.reasoning_effort) {
-            case reasoning_effort_types.none:
-                // GPT-5.1 and newer accept 'none' as a real value that pins thinking off;
-                // omitting the field instead lets the model pick its own default depth.
-                // Everywhere else 'none' stays unsent, since endpoints that do not list it reject it.
-                return [chat_completion_sources.OPENAI, chat_completion_sources.OPENAI_RESPONSES, chat_completion_sources.AZURE_OPENAI, chat_completion_sources.CUSTOM].includes(settings.chat_completion_source) && /^gpt-5\.([1-9]|\d{2,})/.test(model)
-                    ? reasoning_effort_types.none
-                    : undefined;
-            case reasoning_effort_types.min:
-                // Neconyan divergence: no endpoint accepts the literal 'min', and 'minimal' is how
-                // OpenAI-compatible ones spell this rung. Every other rung is sent exactly as picked.
-                return 'minimal';
-            default:
-                return settings.reasoning_effort;
-        }
-    }
-
-    const reasoningEffort = resolveReasoningEffort();
-
-    // Check if the resolved effort supported by the model
-    if (settings.chat_completion_source === chat_completion_sources.ELECTRONHUB) {
-        if (Array.isArray(model_list) && reasoningEffort) {
-            const currentModel = model_list.find(m => m.id === model);
-            const supportedEfforts = currentModel?.metadata?.supported_reasoning_efforts;
-            if (Array.isArray(supportedEfforts) && supportedEfforts.includes(reasoningEffort)) {
-                return reasoningEffort;
-            }
-            return undefined;
-        }
-    }
-
-    return reasoningEffort;
+    return resolveChatReasoningEffort(settings, model, model_list);
 }
 
 /**
@@ -5449,443 +5266,25 @@ function getVerbosity(settings = null) {
  * @returns {Promise<object>} Final generation parameters object appropriate for the chat completion source
  */
 export async function createGenerationParameters(settings, model, type, messages, { jsonSchema = null, cacheScope = null } = {}) {
-    // HACK: Filter out null and non-object messages
-    if (!Array.isArray(messages)) {
-        throw new Error('messages must be an array');
-    }
-    messages = messages.filter(msg => msg && typeof msg === 'object');
-    messages = appendAutoAppendReasoningInstruction(messages, settings, model, type);
-
-    // "OpenAI-like" sources
-    const gptSources = [
-        chat_completion_sources.OPENAI,
-        chat_completion_sources.OPENAI_RESPONSES,
-        chat_completion_sources.AZURE_OPENAI,
-        chat_completion_sources.OPENROUTER,
-    ];
-
-    // Sources that support the "seed" parameter
-    const seedSupportedSources = [
-        chat_completion_sources.OPENAI,
-        chat_completion_sources.OPENAI_RESPONSES,
-        chat_completion_sources.AZURE_OPENAI,
-        chat_completion_sources.OPENROUTER,
-        chat_completion_sources.MISTRALAI,
-        chat_completion_sources.CUSTOM,
-        chat_completion_sources.COHERE,
-        chat_completion_sources.GROQ,
-        chat_completion_sources.ELECTRONHUB,
-        chat_completion_sources.NANOGPT,
-        chat_completion_sources.XAI,
-        chat_completion_sources.POLLINATIONS,
-        chat_completion_sources.AIMLAPI,
-        chat_completion_sources.VERTEXAI,
-        chat_completion_sources.MAKERSUITE,
-        chat_completion_sources.CHUTES,
-        chat_completion_sources.LINKAPI,
-    ];
-
-    // Sources that support logprobs
-    const logprobsSupportedSources = [
-        chat_completion_sources.OPENAI,
-        chat_completion_sources.AZURE_OPENAI,
-        chat_completion_sources.CUSTOM,
-        chat_completion_sources.DEEPSEEK,
-        chat_completion_sources.XAI,
-        chat_completion_sources.AIMLAPI,
-        chat_completion_sources.CHUTES,
-    ];
-
-    // Sources that support logit bias
-    const logitBiasSources = [
-        chat_completion_sources.OPENAI,
-        chat_completion_sources.AZURE_OPENAI,
-        chat_completion_sources.OPENROUTER,
-        chat_completion_sources.ELECTRONHUB,
-        chat_completion_sources.CHUTES,
-        chat_completion_sources.CUSTOM,
-    ];
-
-    // Sources that support "n" parameter for multi-swipe
-    const multiswipeSources = [
-        chat_completion_sources.OPENAI,
-        chat_completion_sources.AZURE_OPENAI,
-        chat_completion_sources.CUSTOM,
-        chat_completion_sources.XAI,
-        chat_completion_sources.AIMLAPI,
-        chat_completion_sources.MOONSHOT,
-    ];
-
-    const isO1 = gptSources.includes(settings.chat_completion_source) && ['o1-2024-12-17', 'o1'].includes(model);
-    const isWorkersAIJsonMode = settings.chat_completion_source === chat_completion_sources.WORKERS_AI && jsonSchema;
-    const isKimiK3Request = [chat_completion_sources.CUSTOM, chat_completion_sources.MOONSHOT, chat_completion_sources.NANOGPT, chat_completion_sources.OPENROUTER].includes(settings.chat_completion_source)
-        && isKimiK3Model(model);
-    const stream = settings.stream_openai && type !== 'quiet' && !isO1 && !isWorkersAIJsonMode;
-
-    const noMultiSwipeTypes = ['quiet', 'impersonate', 'continue'];
-    const canMultiSwipe = settings.n > 1 && !noMultiSwipeTypes.includes(type) && multiswipeSources.includes(settings.chat_completion_source) && !isKimiK3Request;
-
-    let logit_bias = {};
-    if (settings.bias_preset_selected
-        && logitBiasSources.includes(settings.chat_completion_source)
-        && Array.isArray(settings.bias_presets[settings.bias_preset_selected])
-        && settings.bias_presets[settings.bias_preset_selected].length) {
-        logit_bias = biasCache || await calculateLogitBias();
-        biasCache = logit_bias;
-    }
-
-    if (Object.keys(logit_bias).length === 0) {
-        logit_bias = undefined;
-    }
-
-    const generate_data = {
-        'type': type,
-        'messages': messages,
-        'log_prompts': Boolean(power_user.console_log_prompts),
-        'model': model,
-        'temperature': Number(settings.temp_openai),
-        'frequency_penalty': Number(settings.freq_pen_openai),
-        'presence_penalty': Number(settings.pres_pen_openai),
-        'top_p': Number(settings.top_p_openai),
-        'typical_p': Number(settings.typical_p_openai),
-        'max_tokens': settings.openai_max_tokens,
-        'stream': stream,
-        'logit_bias': logit_bias,
-        'stop': getCustomStoppingStrings(openai_max_stop_strings),
-        'chat_completion_source': settings.chat_completion_source,
-        'n': canMultiSwipe ? settings.n : undefined,
-        'user_name': name1,
-        'char_name': name2,
-        'group_names': getGroupNames(),
-        'include_reasoning': shouldRequestReasoning(settings),
-        'reasoning_effort': getReasoningEffort(settings, model),
-        'enable_web_search': Boolean(settings.enable_web_search),
-        'request_images': Boolean(settings.request_images),
-        'request_image_resolution': String(settings.request_image_resolution),
-        'request_image_aspect_ratio': String(settings.request_image_aspect_ratio),
-        'custom_prompt_post_processing': settings.custom_prompt_post_processing,
-        'verbosity': getVerbosity(settings),
-        'cacheScope': cacheScope ?? (type === 'quiet' ? 'auxiliary' : 'main'),
-    };
-
-    if (settings.chat_completion_source === chat_completion_sources.AZURE_OPENAI) {
-        generate_data.azure_base_url = settings.azure_base_url;
-        generate_data.azure_deployment_name = settings.azure_deployment_name;
-        generate_data.azure_api_version = settings.azure_api_version;
-        // Reasoning effort is not supported on some Azure models (e.g. GPT-3.x, GPT-4.x)
-        if (/^gpt-[34]/.test(model)) {
-            delete generate_data.reasoning_effort;
-        }
-    }
-
-    if (!canMultiSwipe && ToolManager.canPerformToolCalls(type, settings, model)) {
-        await ToolManager.registerFunctionToolsOpenAI(generate_data);
-    }
-
-    // Empty array will produce a validation error
-    if (!Array.isArray(generate_data.stop) || !generate_data.stop.length) {
-        delete generate_data.stop;
-    }
-
-    if (settings.reverse_proxy && REVERSE_PROXY_SUPPORTED_SOURCES.includes(settings.chat_completion_source)) {
-        await validateReverseProxy();
-        generate_data.reverse_proxy = settings.reverse_proxy;
-        generate_data.proxy_password = settings.proxy_password;
-    }
-
-    // Add logprobs request (max 5 per OpenAI docs)
-    const useLogprobs = !!power_user.request_token_probabilities;
-    if (useLogprobs && logprobsSupportedSources.includes(settings.chat_completion_source)) {
-        generate_data.logprobs = 5;
-    }
-
-    // Remove logit bias/logprobs/stop-strings if not supported by the model
-    const isVision = (m) => ['gpt', 'vision'].every(x => typeof m === 'string' && m.includes(x));
-    if (gptSources.includes(settings.chat_completion_source) && isVision(model)) {
-        delete generate_data.logit_bias;
-        delete generate_data.stop;
-        delete generate_data.logprobs;
-    }
-    if (gptSources.includes(settings.chat_completion_source) && /gpt-4.5/.test(model)) {
-        delete generate_data.logprobs;
-    }
-
-    if (settings.chat_completion_source === chat_completion_sources.CLAUDE) {
-        generate_data.top_k = settings.top_k_openai > 0 ? Number(settings.top_k_openai) : undefined;
-        generate_data.use_sysprompt = settings.use_sysprompt;
-        generate_data.stop = getCustomStoppingStrings(); // Claude shouldn't have limits on stop strings.
-        // Don't add a prefill on quiet gens (summarization) and when using continue prefill.
-        if (type !== 'quiet' && !(type === 'continue' && settings.continue_prefill)) {
-            generate_data.assistant_prefill = type === 'impersonate'
-                ? getEffectiveAssistantImpersonationPrefill(settings)
-                : substituteParams(settings.assistant_prefill);
-        }
-    }
-
-    if (settings.chat_completion_source === chat_completion_sources.OPENROUTER) {
-        generate_data.top_k = settings.top_k_openai > 0 ? Number(settings.top_k_openai) : undefined;
-        generate_data.min_p = Number(settings.min_p_openai);
-        generate_data.repetition_penalty = Number(settings.repetition_penalty_openai);
-        generate_data.top_a = Number(settings.top_a_openai);
-        generate_data.use_fallback = settings.openrouter_use_fallback;
-        generate_data.provider = settings.openrouter_providers;
-        generate_data.service_tier = settings.openrouter_service_tier || undefined;
-        generate_data.quantizations = settings.openrouter_quantizations;
-        generate_data.allow_fallbacks = settings.openrouter_allow_fallbacks;
-        generate_data.middleout = settings.openrouter_middleout;
-    }
-
-    if ([chat_completion_sources.MAKERSUITE, chat_completion_sources.VERTEXAI].includes(settings.chat_completion_source)) {
-        const stopStringsLimit = 5;
-        generate_data.top_k = settings.top_k_openai > 0 ? Number(settings.top_k_openai) : undefined;
-        generate_data.stop = getCustomStoppingStrings(stopStringsLimit).slice(0, stopStringsLimit).filter(x => x.length >= 1 && x.length <= 16);
-        generate_data.use_sysprompt = settings.use_sysprompt;
-        if (settings.chat_completion_source === chat_completion_sources.VERTEXAI) {
-            generate_data.vertexai_auth_mode = settings.vertexai_auth_mode;
-            generate_data.vertexai_region = settings.vertexai_region;
-            generate_data.vertexai_express_project_id = settings.vertexai_express_project_id;
-        }
-    }
-
-    if (settings.chat_completion_source === chat_completion_sources.MISTRALAI) {
-        generate_data.safe_prompt = false; // already defaults to false, but just incase they change that in the future.
-        generate_data.stop = getCustomStoppingStrings(); // Mistral shouldn't have limits on stop strings.
-    }
-
-    if (settings.chat_completion_source === chat_completion_sources.CUSTOM) {
-        generate_data.custom_url = settings.custom_url;
-        generate_data.custom_include_body = settings.custom_include_body;
-        generate_data.custom_exclude_body = settings.custom_exclude_body;
-        generate_data.custom_include_headers = settings.custom_include_headers;
-        generate_data.custom_reasoning_param_name = settings.custom_reasoning_param_name;
-        generate_data.custom_reasoning_param_format = settings.custom_reasoning_param_format;
-        generate_data.custom_reasoning_enabled_value = settings.custom_reasoning_enabled_value;
-        generate_data.custom_reasoning_disabled_value = settings.custom_reasoning_disabled_value;
-    }
-
-    if (settings.chat_completion_source === chat_completion_sources.COHERE) {
-        // Clamp to 0.01 -> 0.99
-        generate_data.top_p = Math.min(Math.max(Number(settings.top_p_openai), 0.01), 0.99);
-        generate_data.top_k = settings.top_k_openai > 0 ? Number(settings.top_k_openai) : undefined;
-        // Clamp to 0 -> 1
-        generate_data.frequency_penalty = Math.min(Math.max(Number(settings.freq_pen_openai), 0), 1);
-        generate_data.presence_penalty = Math.min(Math.max(Number(settings.pres_pen_openai), 0), 1);
-        generate_data.stop = getCustomStoppingStrings(5);
-    }
-
-    if (settings.chat_completion_source === chat_completion_sources.PERPLEXITY) {
-        generate_data.top_k = settings.top_k_openai > 0 ? Number(settings.top_k_openai) : undefined;
-        generate_data.frequency_penalty = Number(settings.freq_pen_openai);
-        generate_data.presence_penalty = Number(settings.pres_pen_openai);
-        delete generate_data.stop;
-    }
-
-    // https://console.groq.com/docs/openai
-    if (settings.chat_completion_source === chat_completion_sources.GROQ) {
-        delete generate_data.logprobs;
-        delete generate_data.logit_bias;
-        delete generate_data.top_logprobs;
-        delete generate_data.n;
-    }
-
-    // https://api-docs.deepseek.com/api/create-chat-completion
-    if (settings.chat_completion_source === chat_completion_sources.DEEPSEEK) {
-        generate_data.top_p = generate_data.top_p || Number.EPSILON;
-    }
-
-    if (settings.chat_completion_source === chat_completion_sources.CLAUDE) {
-        generate_data.claude_disable_temperature = Boolean(settings.claude_disable_temperature);
-        generate_data.claude_disable_top_p = Boolean(settings.claude_disable_top_p);
-    }
-
-    if (settings.chat_completion_source === chat_completion_sources.XAI) {
-        const xaiReasoningModels = ['grok-3-mini', 'grok-4.20-multi-agent'];
-        if (!xaiReasoningModels.some(m => model.includes(m))) {
-            delete generate_data.reasoning_effort;
-        }
-
-        if (model.includes('grok-3-mini')) {
-            delete generate_data.presence_penalty;
-            delete generate_data.frequency_penalty;
-            delete generate_data.stop;
-        }
-
-        if (model.includes('grok-4') || model.includes('grok-code')) {
-            delete generate_data.presence_penalty;
-            delete generate_data.frequency_penalty;
-
-            // grok-4-fast-non-reasoning accepts stop
-            if (!model.includes('grok-4-fast-non-reasoning')) {
-                delete generate_data.stop;
-            }
-        }
-    }
-
-    // https://docs.electronhub.ai/api-reference/chat/completions
-    if (settings.chat_completion_source === chat_completion_sources.ELECTRONHUB) {
-        generate_data.top_k = settings.top_k_openai > 0 ? Number(settings.top_k_openai) : undefined;
-    }
-
-    if (settings.chat_completion_source === chat_completion_sources.CHUTES) {
-        generate_data.min_p = Number(settings.min_p_openai);
-        generate_data.top_k = settings.top_k_openai > 0 ? Number(settings.top_k_openai) : undefined;
-        generate_data.repetition_penalty = Number(settings.repetition_penalty_openai);
-        generate_data.stop = getCustomStoppingStrings();
-    }
-
-    // https://docs.z.ai/api-reference/llm/chat-completion
-    if (settings.chat_completion_source === chat_completion_sources.ZAI) {
-        generate_data.top_p = generate_data.top_p || 0.01;
-        generate_data.stop = getCustomStoppingStrings(1);
-        generate_data.zai_endpoint = settings.zai_endpoint || ZAI_ENDPOINT.COMMON;
-        delete generate_data.presence_penalty;
-        delete generate_data.frequency_penalty;
-    }
-
-    if (settings.chat_completion_source === chat_completion_sources.SILICONFLOW) {
-        generate_data.siliconflow_endpoint = settings.siliconflow_endpoint || SILICONFLOW_ENDPOINT.GLOBAL;
-    }
-
-    if (settings.chat_completion_source === chat_completion_sources.MINIMAX) {
-        generate_data.minimax_endpoint = settings.minimax_endpoint || MINIMAX_ENDPOINT.GLOBAL;
-        // MiniMax rejects zero temperature.
-        if (Number.isFinite(generate_data.temperature)) {
-            generate_data.temperature = Math.min(Math.max(generate_data.temperature, Number.EPSILON), 1.0);
-        }
-    }
-
-    if (settings.chat_completion_source === chat_completion_sources.WORKERS_AI) {
-        generate_data.workers_ai_account_id = settings.workers_ai_account_id;
-        generate_data.top_k = settings.top_k_openai > 0 ? Math.min(Number(settings.top_k_openai), 50) : undefined;
-        generate_data.repetition_penalty = Number(settings.repetition_penalty_openai);
-        generate_data.seed = settings.seed >= 1 ? Number(settings.seed) : undefined;
-        generate_data.top_p = Math.max(Number(settings.top_p_openai), 0.001);
-        delete generate_data.n;
-        delete generate_data.logit_bias;
-    }
-
-    // https://docs.nano-gpt.com/api-reference/endpoint/chat-completion#temperature-&-nucleus
-    if (settings.chat_completion_source === chat_completion_sources.NANOGPT) {
-        generate_data.nanogpt_provider = settings.nanogpt_provider;
-        generate_data.nanogpt_allowed_providers = settings.nanogpt_allowed_providers;
-        generate_data.nanogpt_ignored_providers = settings.nanogpt_ignored_providers;
-        generate_data.nanogpt_payg_override = settings.nanogpt_payg_override;
-        generate_data.service_tier = await getNanoGptServiceTier(settings, model);
-        generate_data.top_k = settings.top_k_openai > 0 ? Number(settings.top_k_openai) : undefined;
-        generate_data.min_p = Number(settings.min_p_openai);
-        generate_data.repetition_penalty = Number(settings.repetition_penalty_openai);
-        generate_data.top_a = Number(settings.top_a_openai);
-    }
-
-    // https://platform.moonshot.ai/docs/api/chat#public-service-address
-    if (settings.chat_completion_source === chat_completion_sources.MOONSHOT) {
-        // >Kimi API is fully compatible with OpenAI's API format
-        if (/kimi-k2.5/.test(model)) {
-            delete generate_data.temperature;
-            delete generate_data.top_p;
-            delete generate_data.frequency_penalty;
-            delete generate_data.presence_penalty;
-        }
-    }
-
-    if (settings.chat_completion_source === chat_completion_sources.LINKAPI) {
-        generate_data.linkapi_endpoint = settings.linkapi_endpoint || LINKAPI_ENDPOINT.GLOBAL;
-        const linkApiFormat = getLinkApiRequestFormat(model);
-        if (linkApiFormat === 'anthropic') {
-            generate_data.top_k = settings.top_k_openai > 0 ? Number(settings.top_k_openai) : undefined;
-            generate_data.use_sysprompt = settings.use_sysprompt;
-            generate_data.claude_disable_temperature = Boolean(settings.claude_disable_temperature);
-            generate_data.claude_disable_top_p = Boolean(settings.claude_disable_top_p);
-            generate_data.stop = getCustomStoppingStrings(); // Claude shouldn't have limits on stop strings.
-            // Don't add a prefill on quiet gens (summarization) and when using continue prefill.
-            if (type !== 'quiet' && !(type === 'continue' && settings.continue_prefill)) {
-                generate_data.assistant_prefill = type === 'impersonate'
-                    ? getEffectiveAssistantImpersonationPrefill(settings)
-                    : substituteParams(settings.assistant_prefill);
-            }
-        } else if (linkApiFormat === 'google') {
-            const stopStringsLimit = 5;
-            generate_data.top_k = settings.top_k_openai > 0 ? Number(settings.top_k_openai) : undefined;
-            generate_data.use_sysprompt = settings.use_sysprompt;
-            generate_data.stop = getCustomStoppingStrings(stopStringsLimit).slice(0, stopStringsLimit).filter(x => x.length >= 1 && x.length <= 16);
-        }
-    }
-
-    if (seedSupportedSources.includes(settings.chat_completion_source) && settings.seed >= 0) {
-        generate_data.seed = settings.seed;
-    }
-
-    if ([chat_completion_sources.OPENAI, chat_completion_sources.OPENAI_RESPONSES, chat_completion_sources.AZURE_OPENAI].includes(settings.chat_completion_source) && /^(o1|o3|o4)/.test(model) ||
-        (chat_completion_sources.OPENROUTER === settings.chat_completion_source && /^openai\/(o1|o3|o4)/.test(model))) {
-        generate_data.max_completion_tokens = generate_data.max_tokens;
-        delete generate_data.max_tokens;
-        delete generate_data.logprobs;
-        delete generate_data.top_logprobs;
-        delete generate_data.stop;
-        delete generate_data.logit_bias;
-        delete generate_data.temperature;
-        delete generate_data.top_p;
-        delete generate_data.frequency_penalty;
-        delete generate_data.presence_penalty;
-        if (/^(openai\/)?(o1)/.test(model)) {
-            generate_data.messages.forEach((msg) => {
-                if (msg.role === 'system') {
-                    msg.role = 'user';
-                }
-            });
-            delete generate_data.n;
-            delete generate_data.tools;
-            delete generate_data.tool_choice;
-        }
-    }
-
-    if (gptSources.includes(settings.chat_completion_source) && /gpt-5/.test(model)) {
-        generate_data.max_completion_tokens = generate_data.max_tokens;
-        delete generate_data.max_tokens;
-        delete generate_data.logprobs;
-        delete generate_data.top_logprobs;
-        if (/gpt-5-chat-latest/.test(model)) {
-            delete generate_data.tools;
-            delete generate_data.tool_choice;
-        } else if (/gpt-5\.\d/.test(model) && !/chat-latest/.test(model)) {
-            delete generate_data.frequency_penalty;
-            delete generate_data.presence_penalty;
-            delete generate_data.logit_bias;
-            delete generate_data.stop;
-        } else {
-            delete generate_data.temperature;
-            delete generate_data.top_p;
-            delete generate_data.frequency_penalty;
-            delete generate_data.presence_penalty;
-            delete generate_data.logit_bias;
-            delete generate_data.stop;
-        }
-    }
-
-    // Neconyan: Claude Fable and Sonnet 5 reject sampling parameters, including through provider-prefixed proxy model ids.
-    applyClaudeModelParameterConstraints(generate_data, {
-        preserveReasoning: [chat_completion_sources.CLAUDE, chat_completion_sources.LINKAPI].includes(settings.chat_completion_source),
-    });
-    if (isKimiK3Request) {
-        applyKimiK3ModelParameterConstraints(generate_data);
-    }
-
-    const samplerMetadata = getChatCompletionSamplerMetadata(settings, model);
-    if (samplerMetadata) {
-        generate_data.model_sampler_metadata = structuredClone(samplerMetadata);
-    }
-    filterChatCompletionSamplingParameters(generate_data, {
-        source: settings.chat_completion_source,
-        model,
-        metadata: samplerMetadata,
-        stripMetadata: false,
-    });
-
-    if (jsonSchema) {
-        generate_data.json_schema = jsonSchema;
-    }
-
-    return { generate_data, stream, canMultiSwipe };
+    return createChatGenerationParameters(settings, model, type, messages, {
+        appendReasoning: value => appendAutoAppendReasoningInstruction(value, settings, model, type),
+        logPrompts: power_user.console_log_prompts,
+        requestTokenProbabilities: power_user.request_token_probabilities,
+        userName: name1, characterName: name2, getGroupNames,
+        getLogitBias: async () => { biasCache = biasCache || await calculateLogitBias(); return biasCache; },
+        getIncludeReasoning: () => shouldRequestReasoning(settings),
+        getReasoningEffort: () => getReasoningEffort(settings, model),
+        getVerbosity: () => getVerbosity(settings),
+        canPerformToolCalls: () => ToolManager.canPerformToolCalls(type, settings, model),
+        registerTools: data => ToolManager.registerFunctionToolsOpenAI(data),
+        reverseProxySources: REVERSE_PROXY_SUPPORTED_SOURCES,
+        validateReverseProxy: () => validateReverseProxy(),
+        getStoppingStrings: getCustomStoppingStrings,
+        getAssistantPrefill: () => type === 'impersonate'
+            ? getEffectiveAssistantImpersonationPrefill(settings) : substituteParams(settings.assistant_prefill),
+        getServiceTier: () => getNanoGptServiceTier(settings, model),
+        getSamplerMetadata: () => getChatCompletionSamplerMetadata(settings, model),
+    }, { jsonSchema, cacheScope });
 }
 
 /**

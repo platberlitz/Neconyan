@@ -10,6 +10,7 @@ import { CHAT_COMPLETION_SOURCES, SETTINGS_FILE, TEXTGEN_TYPES } from '../src/co
 import { setConfigFilePath } from '../src/util.js';
 import { CONVERSATION_STORE_KEY, DEFAULT_BRANCH_ID } from '../public/scripts/neconyan-conversation/constants.js';
 import { validateStoreStructure } from '../src/endpoints/conversation-utils.js';
+import { resumableGenerationMiddleware } from '../src/resumable-generations.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 
@@ -114,6 +115,7 @@ describe('SillyBunny Conversation REST API', () => {
             request.user = { directories: userDirectories, profile: { handle: userHandle } };
             next();
         });
+        app.use(resumableGenerationMiddleware);
         app.use('/api/sillybunny-conversation', router);
         app.use('/api/sillybunny/conversation', router);
 
@@ -210,6 +212,88 @@ describe('SillyBunny Conversation REST API', () => {
         }
         throw new Error('Timed out waiting for upstream request');
     }
+
+    test('native job effects retain receipts with messages, preserve other writes and reject edited or deleted targets', async () => {
+        const { captureConversationTarget, appendConversationJobMessage, commitConversationEffect, commitConversationJobCommands } = await import('../src/generation/conversation-effects.js');
+        const { acceptJob, requestCancellation } = await import('../src/jobs/store.js');
+        const created = await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [{ role: 'user', mes: 'Hello', name: 'User' }] });
+        expect(created.status).toBe(200);
+        const request = { user: { directories: userDirectories, profile: { handle: userHandle } } };
+        const target = captureConversationTarget(request, { avatar: 'nova.png', branchId: DEFAULT_BRANCH_ID });
+        const job = acceptJob(userDirectories, { owner: userHandle, type: 'test.conversation', submissionKey: 'native-effects', intent: {} }).job;
+        const context = { job, owner: userHandle, directories: userDirectories, signal: new AbortController().signal };
+        const message = { role: 'character', name: 'Nova', mes: 'First bubble' };
+        const first = await appendConversationJobMessage(context, target, 'bubble-0', message);
+        expect(await appendConversationJobMessage(context, target, 'bubble-0', message)).toEqual(first);
+        expect(readConversationStore().characters['nova.png'].branches.main.messages).toHaveLength(2);
+        const settings = readSettings();
+        settings.unrelatedSetting = 'preserved';
+        settings._version++;
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(settings));
+        await commitConversationJobCommands(context, target, 'commands-0', {
+            reminders: [{ delay: '21:30', memo: 'Already committed' }], scheduleUpdates: ['status="dnd" activity="working" duration="1h"'],
+        }, 'nova.png', 'Asia/Manila', Date.parse('2026-09-19T12:00:00Z'));
+        await commitConversationEffect(context, target, 'commands-0', () => { throw new Error('An applied command must not run twice.'); });
+        expect(readSettings().unrelatedSetting).toBe('preserved');
+        expect(readConversationStore().reminders).toHaveLength(1);
+        expect(readConversationStore().reminders[0].triggerAt).toBe(Date.parse('2026-09-19T13:30:00Z'));
+        expect(readConversationStore().runtimeStatusOverrides['\u001fnova.png']).toMatchObject({ status: 'dnd', activity: 'working' });
+        const edited = readSettings();
+        edited.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].branches.main.messages[0].mes = 'Edited';
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(edited));
+        await expect(appendConversationJobMessage(context, target, 'bubble-1', message)).rejects.toMatchObject({ status: 409 });
+        delete edited.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'];
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(edited));
+        await expect(appendConversationJobMessage(context, target, 'bubble-1', message)).rejects.toMatchObject({ status: 409 });
+        expect(readConversationStore().characters['nova.png']).toBeUndefined();
+        requestCancellation(userDirectories, job.id);
+        await expect(appendConversationJobMessage(context, target, 'bubble-1', message)).rejects.toMatchObject({ name: 'AbortError' });
+    });
+
+    test('accepted replies use a saved profile and finish native bubbles and reminders after acceptance without another client request', async () => {
+        const { testExports: { runJob }, setDirectoriesResolver } = await import('../src/jobs/runner.js');
+        const { getJob, updateJob, recoverJobs } = await import('../src/jobs/store.js');
+        const { readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
+        const created = await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [{ role: 'user', name: 'User', mes: 'Please reply' }] });
+        expect(created.status).toBe(200);
+        const saved = readSettings();
+        saved.extension_settings.connectionManager = { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o', proxy: 'fixture' }] };
+        saved.proxies = [{ name: 'fixture', url: upstreamUrl.replace(/\/$/, ''), password: 'fixture-private-token' }];
+        saved.oai_settings = { chat_completion_source: 'openai', temp_openai: 0.2, top_p_openai: 1, n: 1 };
+        saved.extension_settings[CONVERSATION_STORE_KEY].settings.connection_profile = 'saved';
+        saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].settings.connection_profile = 'saved';
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(saved));
+        const input = { submissionKey: 'accepted-reply', target: { avatar: 'nova.png', branchId: 'main' }, timeZone: 'Asia/Manila' };
+        const response = await postJson('/reply/submit', input);
+        expect([response.status, await response.clone().text()]).toEqual([202, expect.any(String)]);
+        const { job } = await response.json();
+        expect(upstreamRequests).toHaveLength(0);
+        const duplicate = await postJson('/reply/submit', input);
+        expect(duplicate.status).toBe(200);
+        expect((await duplicate.json()).job.id).toBe(job.id);
+        expect(JSON.stringify(readArtifact(userDirectories, job.id, 'request'))).not.toContain('fixture-private-token');
+        upstreamReplyText = 'First reply. [reminder: 1h | Saved reminder]\n\nSecond reply.';
+        setDirectoriesResolver(() => userDirectories);
+        await runJob(job);
+        expect(getJob(userDirectories, job.id).error).toBeNull();
+        expect(getJob(userDirectories, job.id)).toMatchObject({ state: 'completed', result: { artifact: true } });
+        const branch = readConversationStore().characters['nova.png'].branches.main;
+        expect(branch.messages.map(message => message.mes)).toEqual(['Please reply', 'First reply.', 'Second reply.']);
+        expect(readConversationStore().reminders).toHaveLength(1);
+        expect(upstreamRequests).toHaveLength(1);
+        // Model work and native effects survived, but the final completion marker did not.
+        writeArtifact(userDirectories, job.id, 'result', null);
+        const changed = readSettings();
+        changed.extension_settings.connectionManager.profiles = [];
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(changed));
+        updateJob(userDirectories, job.id, { state: 'running', resume: 'delivery', recoverability: 'resumable' });
+        recoverJobs(userDirectories);
+        await runJob(getJob(userDirectories, job.id));
+        expect(getJob(userDirectories, job.id).state).toBe('completed');
+        expect(upstreamRequests).toHaveLength(1);
+        expect(readConversationStore().characters['nova.png'].branches.main.messages).toHaveLength(3);
+        expect(readConversationStore().reminders).toHaveLength(1);
+    });
 
     test('info describes browser-primary and curl-capable REST paths', async () => {
         const response = await postJson('/info', {});
@@ -1183,7 +1267,7 @@ describe('SillyBunny Conversation REST API', () => {
 
         expect(response.status).toBe(200);
         const json = await response.json();
-        expect(json.version).toBe(1); // Atomic save: only one version increment
+        expect(json.version).toBe(2); // The user message is saved before generation.
         expect(json.userMessage).toMatchObject({
             role: 'user',
             name: 'Riley',
@@ -1218,13 +1302,41 @@ describe('SillyBunny Conversation REST API', () => {
         expect(JSON.stringify(upstreamRequests[0].input)).toContain('Can you say hi?');
 
         const settings = readSettings();
-        expect(settings._version).toBe(1); // Atomic save: only one version increment
+        expect(settings._version).toBe(2);
         const messages = settings.extension_settings[CONVERSATION_STORE_KEY]
             .characters['nova.png']
             .branches[DEFAULT_BRANCH_ID]
             .messages;
         expect(messages.map(message => message.mes)).toEqual(['Can you say hi?', 'Hello from Nova.']);
         expect(messages[1].extra.conversation_reply_to.messageId).toBe(messages[0].id);
+    });
+
+    test('regeneration repairs legacy messages and retains the old reply on failure before a successful retry', async () => {
+        const seed = await postJson('/thread/save', {
+            avatar: 'nova.png', version: 0, messages: [
+                { id: 'old-user', role: 'user', mes: 'Hello' },
+                { id: 'old-reply', role: 'character', mes: 'Keep this reply until success' },
+            ],
+        });
+        expect(seed.status).toBe(200);
+        const settings = readSettings();
+        delete settings.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].branches[DEFAULT_BRANCH_ID].messages[0].extra;
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(settings));
+        const request = { avatar: 'nova.png', text: 'Hello', reuseLastUser: true, version: 1,
+            character: { name: 'Nova' }, generation: getChatGeneration() };
+        upstreamResponseStatus = 422;
+        const failed = await postJson('/message/send', request);
+        expect(failed.status).toBe(422);
+        const failure = await failed.json();
+        expect(failure).toMatchObject({ version: 2, reuseLastUser: true, userMessage: { id: 'old-user' } });
+        expect(readConversationStore().characters['nova.png'].branches[DEFAULT_BRANCH_ID].messages.at(-1).id).toBe('old-reply');
+        upstreamResponseStatus = 200;
+        const retried = await postJson('/message/send', { ...request, version: failure.version });
+        expect(retried.status).toBe(200);
+        const result = await retried.json();
+        expect(result.version).toBe(4);
+        expect(result.messages).toHaveLength(2);
+        expect(result.messages.at(-1).id).not.toBe('old-reply');
     });
 
     test('message/send resolves authenticated relative user images without an HTTP loopback fetch', async () => {
@@ -1254,7 +1366,7 @@ describe('SillyBunny Conversation REST API', () => {
         expect(JSON.stringify(upstreamRequests[0])).toContain('data:image/png;base64,');
     });
 
-    test('message/send rejects oversized generated replies without persisting speculative messages', async () => {
+    test('message/send rejects oversized generated replies while retaining the user message', async () => {
         upstreamReplyText = 'x'.repeat(256 * 1024 + 1);
         const response = await postJson('/message/send', {
             avatar: 'nova.png',
@@ -1264,8 +1376,8 @@ describe('SillyBunny Conversation REST API', () => {
         });
         expect(response.status).toBe(502);
         await expect(response.json()).resolves.toMatchObject({ error: 'generation_too_large' });
-        expect(readSettings()._version).toBe(0);
-        expect(readSettings().extension_settings[CONVERSATION_STORE_KEY]).toBeUndefined();
+        expect(readSettings()._version).toBe(1);
+        expect(readConversationStore().characters['nova.png'].branches[DEFAULT_BRANCH_ID].messages.map(message => message.mes)).toEqual(['Generate too much']);
     });
 
     test('read and write routes reject corrupt or non-object settings without replacing them', async () => {
@@ -1764,15 +1876,50 @@ describe('SillyBunny Conversation REST API', () => {
         const appendResponse = await postJson('/message/append', {
             avatar: 'nova.png',
             text: 'winning write',
-            version: 0,
+            version: 1,
         });
         expect(appendResponse.status).toBe(200);
 
         const sendResponse = await sendPromise;
         expect(sendResponse.status).toBe(409);
-        await expect(sendResponse.json()).resolves.toEqual({ error: 'settings_conflict', version: 1 });
+        await expect(sendResponse.json()).resolves.toEqual({ error: 'settings_conflict', version: 2 });
         const persistedMessages = readConversationStore().characters['nova.png'].branches[DEFAULT_BRANCH_ID].messages;
-        expect(persistedMessages.map(message => message.mes)).toEqual(['winning write']);
+        expect(persistedMessages.map(message => message.mes)).toEqual(['concurrent generation', 'winning write']);
+    });
+
+    test('message/send merges a reply after another thread is saved', async () => {
+        upstreamResponseDelayMs = 100;
+        const send = postJson('/message/send', {
+            avatar: 'nova.png', text: 'Keep my reply', version: 0, generation: getChatGeneration(),
+        });
+        await waitForUpstreamRequests(1);
+        expect(readConversationStore().characters['nova.png'].branches[DEFAULT_BRANCH_ID].messages[0].mes).toBe('Keep my reply');
+        const append = await postJson('/message/append', { avatar: 'other.png', text: 'Other thread', version: 1 });
+        expect(append.status).toBe(200);
+        const response = await send;
+        expect(response.status).toBe(200);
+        expect((await response.json()).version).toBe(3);
+        const store = readConversationStore();
+        expect(store.characters['nova.png'].branches[DEFAULT_BRANCH_ID].messages).toHaveLength(2);
+        expect(store.characters['other.png'].branches[DEFAULT_BRANCH_ID].messages[0].mes).toBe('Other thread');
+    });
+
+    test('a resumable Conversation request saves its reply after the client disconnects', async () => {
+        upstreamResponseDelayMs = 100;
+        const controller = new AbortController();
+        const send = fetch(`${baseUrl}/message/send`, {
+            method: 'POST', signal: controller.signal,
+            headers: { 'Content-Type': 'application/json', 'X-Generation-Id': 'conversation-disconnect' },
+            body: JSON.stringify({ avatar: 'nova.png', text: 'Finish without me', version: 0, generation: getChatGeneration() }),
+        });
+        await waitForUpstreamRequests(1);
+        controller.abort();
+        await expect(send).rejects.toThrow();
+        for (let attempt = 0; attempt < 100 && readSettings()._version < 2; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        expect(readConversationStore().characters['nova.png'].branches[DEFAULT_BRANCH_ID].messages.map(message => message.mes))
+            .toEqual(['Finish without me', upstreamReplyText]);
     });
 
     test.each(['chat', 'responses', 'text'])('marked assistants receive shared help in the actual %s request with tools disabled', async format => {
@@ -1865,7 +2012,7 @@ describe('SillyBunny Conversation REST API', () => {
         const textResponse = await postJson('/message/send', {
             avatar: 'nova.png',
             text: 'text validation failure',
-            version: 0,
+            version: 1,
             generation: {
                 backend: 'text',
                 payload: {
@@ -1880,11 +2027,13 @@ describe('SillyBunny Conversation REST API', () => {
         const serverErrorResponse = await postJson('/message/send', {
             avatar: 'nova.png',
             text: 'upstream unavailable',
-            version: 0,
+            version: 2,
             generation: getChatGeneration(),
         });
         expect(serverErrorResponse.status).toBe(502);
-        expect(readSettings()._version).toBe(0);
+        expect(readSettings()._version).toBe(3);
+        expect(readConversationStore().characters['nova.png'].branches[DEFAULT_BRANCH_ID].messages.map(message => message.mes))
+            .toEqual(['chat rate limit', 'text validation failure', 'upstream unavailable']);
     });
 
     test('message/send charges validated requests per user and IP without spending user quota on invalid requests', async () => {
@@ -1907,14 +2056,14 @@ describe('SillyBunny Conversation REST API', () => {
             version: 0,
             generation: getChatGeneration(),
         });
-        expect(validResponse.status).toBe(200);
+        expect({ status: validResponse.status, error: validResponse.ok ? '' : await validResponse.text() }).toEqual({ status: 200, error: '' });
 
         upstreamResponseStatus = 422;
         for (let index = 0; index < 19; index++) {
             const rejectedUpstreamResponse = await postJson('/message/send', {
                 avatar: 'nova.png',
                 text: `validated failure ${index}`,
-                version: 1,
+                version: readSettings()._version,
                 generation: getChatGeneration(),
             });
             expect(rejectedUpstreamResponse.status).toBe(422);
@@ -1922,7 +2071,7 @@ describe('SillyBunny Conversation REST API', () => {
         const limitedResponse = await postJson('/message/send', {
             avatar: 'nova.png',
             text: 'same user is limited',
-            version: 1,
+            version: readSettings()._version,
             generation: getChatGeneration(),
         });
         expect(limitedResponse.status).toBe(429);
@@ -1932,7 +2081,7 @@ describe('SillyBunny Conversation REST API', () => {
         const otherUserResponse = await postJson('/message/send', {
             avatar: 'nova.png',
             text: 'same IP, different authenticated user',
-            version: 1,
+            version: readSettings()._version,
             generation: getChatGeneration(),
         });
         expect(otherUserResponse.status).toBe(200);

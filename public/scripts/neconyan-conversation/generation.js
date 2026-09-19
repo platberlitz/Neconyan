@@ -7,24 +7,22 @@ import {
     MAX_CONVERSATION_REPLY_MAX_TOKENS,
     MIN_CONVERSATION_REPLY_MAX_TOKENS,
     SAFE_TOAST_OPTIONS,
-    SCHEDULE_STATUSES,
 } from './constants.js';
 import { getConversationGroupById, getConversationGroupIdForAvatar, getConversationPersonaId, getCurrentCharAvatar, getCurrentCharName } from './context.js';
 import {
     buildSelfieImagePromptTemplate,
     extractCharacterReplyCommandParts,
-    getCharacterReplyCommandMetadata,
     normalizeConversationOutputText,
-    parseCommandArgs,
+    resolveConversationScheduleUpdate,
 } from './generation-utils.js';
 import { buildCharacterImagePrompt, generateConversationImage, getCharacterForAvatar, getCharacterImageDetails } from './media.js';
 import { appendConversationMessage } from './message-writer.js';
 import { stripSpeakerPrefix } from './partners.js';
-import { getSpeakerPrefixMatch } from './partners-utils.js';
+import { deliverConversationReply } from './reply-delivery.js';
 import { getConnectionProfiles } from './personas.js';
 import { buildConversationPromptMessages, buildConversationSystemPrompt } from './prompt.js';
 import { formatPromptText } from './shared-helpers.js';
-import { clamp, getConversationReplyMaxTokens, getConversationRuntimeStatusKey, parseDurationToMs } from './schedule.js';
+import { clamp, getConversationReplyMaxTokens, getConversationRuntimeStatusKey } from './schedule.js';
 import { runtimeStatusOverrides } from './state.js';
 import {
     addConversationReminder,
@@ -35,7 +33,7 @@ import {
     markImageGenerated,
     updateConversationThreadMessage,
 } from './thread-store.js';
-import { splitChatroomMessages, waitForReplyDelay, withTypingParticipant } from './typing.js';
+import { waitForReplyDelay, withTypingParticipant } from './typing.js';
 
 let activeConversationEditor = null;
 
@@ -249,19 +247,8 @@ export function editConversationMessage(messageId) {
 }
 
 export function applyScheduleUpdateCommand(avatar, rawArgs, { personaId = getConversationPersonaId() } = {}) {
-    const args = parseCommandArgs(rawArgs);
-    const status = SCHEDULE_STATUSES.includes(args.status) ? args.status : null;
-    const activity = (args.activity || '').trim();
-    if (!avatar || (!status && !activity)) {
-        return;
-    }
-
-    const durationMs = parseDurationToMs(args.duration) || (2 * 60 * 60 * 1000);
-    runtimeStatusOverrides.set(getConversationRuntimeStatusKey(avatar, personaId), {
-        status: status || 'online',
-        activity: activity || 'free time',
-        expiresAt: Date.now() + durationMs,
-    });
+    const update = resolveConversationScheduleUpdate(rawArgs);
+    if (avatar && update) runtimeStatusOverrides.set(getConversationRuntimeStatusKey(avatar, personaId), update);
 }
 
 export function extractCharacterReplyCommands(rawText, settings) {
@@ -323,13 +310,7 @@ export function reportConversationGenerationError(context, error, { toast = true
     }
 }
 
-export function splitPartnerChatroomMessages(text) {
-    const messages = String(text || '')
-        .split(/\n+/)
-        .map(part => normalizeConversationOutputText(part))
-        .filter(Boolean);
-    return messages.length ? messages : splitChatroomMessages(text).map(part => normalizeConversationOutputText(part)).filter(Boolean);
-}
+export { splitPartnerChatroomMessages } from './reply-delivery.js';
 
 function addConversationReplySpeaker(speakers, speaker) {
     const avatar = String(speaker?.avatar || '').trim();
@@ -360,43 +341,6 @@ function getConversationReplySpeakers(threadAvatar, fallbackSpeaker, groupId, pe
     }
 
     return speakers;
-}
-
-function resolveConversationReplySpeaker(messageText, fallbackSpeaker, { threadAvatar, groupId = '', personaId = getConversationPersonaId() } = {}) {
-    const speakerMatch = groupId
-        ? getSpeakerPrefixMatch(messageText, getConversationReplySpeakers(threadAvatar, fallbackSpeaker, groupId, personaId))
-        : null;
-    const speaker = speakerMatch?.speaker || fallbackSpeaker;
-    const text = speakerMatch
-        ? normalizeConversationOutputText(speakerMatch.text)
-        : stripSpeakerPrefix(messageText, speaker.name || fallbackSpeaker?.name || 'Character');
-
-    return {
-        speaker,
-        text,
-    };
-}
-
-function splitConversationGeneratedReplyMessages(rawText, fallbackSpeaker, { threadAvatar, groupId = '', personaId = getConversationPersonaId(), splitEveryLine = false } = {}) {
-    const text = String(rawText || '').trim();
-    if (!text) {
-        return [];
-    }
-
-    const speakers = groupId ? getConversationReplySpeakers(threadAvatar, fallbackSpeaker, groupId, personaId) : [];
-    const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-    if (groupId && lines.length > 1 && lines.some(line => getSpeakerPrefixMatch(line, speakers))) {
-        return lines.reduce((messages, line) => {
-            if (!messages.length || getSpeakerPrefixMatch(line, speakers)) {
-                messages.push(line);
-            } else {
-                messages[messages.length - 1] = `${messages[messages.length - 1]}\n${line}`;
-            }
-            return messages;
-        }, []);
-    }
-
-    return splitEveryLine ? splitPartnerChatroomMessages(text) : splitChatroomMessages(text);
 }
 
 function getResolvedReplyRole(speakerAvatar, threadAvatar) {
@@ -462,20 +406,6 @@ function getResolvedReplyExtra(extra, speakerAvatar, threadAvatar, { branchId = 
     return resolvedExtra;
 }
 
-function getReplyExtraWithCommandMetadata(extra, commandParts) {
-    const resolvedExtra = { ...extra };
-    delete resolvedExtra.conversation_commands;
-    const commandMetadata = getCharacterReplyCommandMetadata(commandParts);
-    if (commandMetadata) {
-        resolvedExtra.conversation_commands = commandMetadata;
-    }
-    return resolvedExtra;
-}
-
-function hasCharacterReplyCommandSideEffects(commandParts) {
-    return Boolean(commandParts?.scheduleUpdates?.length || commandParts?.reminders?.length);
-}
-
 async function appendResolvedConversationReply(messageText, speaker, settings, { avatar, extra = {}, branchId = '', groupId = undefined, personaId = getConversationPersonaId(), attachReplyReference = true, validateTarget = null } = {}) {
     const speakerAvatar = speaker?.avatar || avatar;
     const speakerName = speaker?.name || 'Character';
@@ -503,72 +433,30 @@ async function appendResolvedConversationReply(messageText, speaker, settings, {
 }
 
 export async function postPartnerConversationReply(rawText, partner, partnerSettings, { avatar = getCurrentCharAvatar(), extra = {}, branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId(), validateTarget = null } = {}) {
-    if (!avatar || !partner) {
-        return false;
-    }
-
-    const partnerName = partner.name || 'A friend';
-    const fallbackSpeaker = { avatar: partner.avatar, name: partnerName };
-    const rawMessages = splitConversationGeneratedReplyMessages(rawText, fallbackSpeaker, {
-        threadAvatar: avatar,
-        groupId,
-        personaId,
-        splitEveryLine: true,
+    if (!avatar || !partner) return false;
+    const result = await deliverReply(rawText, partnerSettings, { avatar: partner.avatar, name: partner.name || 'A friend' }, {
+        avatar, extra, branchId, groupId, personaId, validateTarget, partner: true,
     });
-    let posted = false;
-    const replyReferenceSpeakers = new Set();
+    return result.posted;
+}
 
-    for (const rawMessage of rawMessages) {
-        if (typeof validateTarget === 'function' && !validateTarget()) {
-            return posted;
-        }
-        const resolved = resolveConversationReplySpeaker(rawMessage, fallbackSpeaker, { threadAvatar: avatar, groupId, personaId });
-        const commandParts = extractCharacterReplyCommands(resolved.text, partnerSettings);
-        const messages = splitChatroomMessages(commandParts.text).map(part => normalizeConversationOutputText(part)).filter(Boolean);
-        const speakerAvatar = resolved.speaker.avatar || partner.avatar;
-        const replyExtra = getReplyExtraWithCommandMetadata(extra, commandParts);
-        const plainReplyExtra = getReplyExtraWithCommandMetadata(extra, null);
-        let commandReplyAppended = false;
-        let commandSideEffectsCommitted = false;
-
-        for (const messageText of messages) {
-            const attachReplyReference = !replyReferenceSpeakers.has(speakerAvatar);
-            const appended = await appendResolvedConversationReply(messageText, resolved.speaker, partnerSettings, { avatar, extra: commandReplyAppended ? plainReplyExtra : replyExtra, branchId, groupId, personaId, attachReplyReference, validateTarget });
-            if (!appended) {
-                return posted;
-            }
-            if (attachReplyReference) {
-                replyReferenceSpeakers.add(speakerAvatar);
-            }
-            commandReplyAppended = true;
-            posted = true;
-            if (!commandSideEffectsCommitted && hasCharacterReplyCommandSideEffects(commandParts)) {
-                commitCharacterReplyCommands(commandParts, speakerAvatar, { branchId, groupId, personaId, reminderAvatar: avatar });
-                commandSideEffectsCommitted = true;
-            }
-        }
-
-        for (const context of commandParts.selfieRequests) {
-            const speakerName = resolved.speaker.name || partnerName;
-            const attachReplyReference = !replyReferenceSpeakers.has(speakerAvatar);
-            const generated = await withTypingParticipant({ avatar: speakerAvatar, name: speakerName }, () => generateSelfieFromContext(context, partnerSettings, speakerAvatar, {
-                threadAvatar: avatar,
-                role: getResolvedReplyRole(speakerAvatar, avatar),
-                name: speakerName,
-                extra: getResolvedReplyExtra(extra, speakerAvatar, avatar, { branchId, groupId, personaId, attachReplyReference }),
-                branchId,
-                groupId,
-                personaId,
-                validateTarget,
-            }), avatar, { branchId, groupId, personaId });
-            if (generated && attachReplyReference) {
-                replyReferenceSpeakers.add(speakerAvatar);
-            }
-            posted = posted || generated;
-        }
-    }
-
-    return posted;
+function deliverReply(rawText, settings, fallbackSpeaker, { avatar, extra, branchId, groupId, personaId, validateTarget, partner = false }) {
+    const scope = { branchId, groupId, personaId };
+    return deliverConversationReply(rawText, settings, {
+        fallbackSpeaker, groupId, extra, splitEveryLine: partner,
+        getSpeakers: () => getConversationReplySpeakers(avatar, fallbackSpeaker, groupId, personaId),
+        validateTarget: () => typeof validateTarget !== 'function' || validateTarget(),
+        append: (text, speaker, options) => appendResolvedConversationReply(text, speaker, settings, { avatar, ...scope, ...options, validateTarget }),
+        commitCommands: (commands, speakerAvatar) => commitCharacterReplyCommands(commands, speakerAvatar, { ...scope, reminderAvatar: avatar }),
+        generateImage: (context, speaker, { attachReplyReference }) => {
+            const speakerAvatar = speaker.avatar || fallbackSpeaker.avatar;
+            const generate = () => generateSelfieFromContext(context, settings, speakerAvatar, {
+                threadAvatar: avatar, role: getResolvedReplyRole(speakerAvatar, avatar), name: speaker.name || '',
+                extra: getResolvedReplyExtra(extra, speakerAvatar, avatar, { ...scope, attachReplyReference }), ...scope, validateTarget,
+            });
+            return partner ? withTypingParticipant({ avatar: speakerAvatar, name: speaker.name || fallbackSpeaker.name }, generate, avatar, scope) : generate();
+        },
+    });
 }
 
 export async function generateSelfieFromContext(context, settings, avatar = getCurrentCharAvatar(), { threadAvatar = avatar, role = 'character', name = '', extra = {}, branchId = '', groupId = undefined, personaId = getConversationPersonaId(), force = false, notify = false, validateTarget = null } = {}) {
@@ -667,73 +555,11 @@ async function generateSelfieCaption(context, settings, avatar, imagePrompt) {
 }
 
 export async function postCharacterReply(rawText, settings, { extra = {}, branchId = '', groupId = undefined, personaId = getConversationPersonaId(), validateTarget = null } = {}, avatar = getCurrentCharAvatar()) {
-    if (!avatar) {
-        return '';
-    }
+    if (!avatar) return '';
     const character = (Array.isArray(characters) ? characters : []).find(c => c?.avatar === avatar);
     const speakerName = character?.name || getCurrentCharName();
-    const fallbackSpeaker = { avatar, name: speakerName };
-    const rawMessages = splitConversationGeneratedReplyMessages(rawText, fallbackSpeaker, {
-        threadAvatar: avatar,
-        groupId,
-        personaId,
+    const result = await deliverReply(rawText, settings, { avatar, name: speakerName }, {
+        avatar, extra, branchId, groupId, personaId, validateTarget,
     });
-    const postedText = [];
-    const replyReferenceSpeakers = new Set();
-
-    for (const rawMessage of rawMessages) {
-        if (typeof validateTarget === 'function' && !validateTarget()) {
-            return postedText.join('\n');
-        }
-        const resolved = resolveConversationReplySpeaker(rawMessage, fallbackSpeaker, { threadAvatar: avatar, groupId, personaId });
-        const commandParts = extractCharacterReplyCommands(resolved.text, settings);
-        const speakerAvatar = resolved.speaker.avatar || avatar;
-        const replyExtra = getReplyExtraWithCommandMetadata(extra, commandParts);
-        const plainReplyExtra = getReplyExtraWithCommandMetadata(extra, null);
-        let commandReplyAppended = false;
-        let commandSideEffectsCommitted = false;
-
-        if (commandParts.text) {
-            for (const messageText of splitChatroomMessages(commandParts.text)) {
-                const cleanMessageText = normalizeConversationOutputText(messageText);
-                if (!cleanMessageText) {
-                    continue;
-                }
-
-                const attachReplyReference = !replyReferenceSpeakers.has(speakerAvatar);
-                const appended = await appendResolvedConversationReply(cleanMessageText, resolved.speaker, settings, { avatar, extra: commandReplyAppended ? plainReplyExtra : replyExtra, branchId, groupId, personaId, attachReplyReference, validateTarget });
-                if (!appended) {
-                    return postedText.join('\n');
-                }
-                if (attachReplyReference) {
-                    replyReferenceSpeakers.add(speakerAvatar);
-                }
-                commandReplyAppended = true;
-                postedText.push(cleanMessageText);
-                if (!commandSideEffectsCommitted && hasCharacterReplyCommandSideEffects(commandParts)) {
-                    commitCharacterReplyCommands(commandParts, speakerAvatar, { branchId, groupId, personaId, reminderAvatar: avatar });
-                    commandSideEffectsCommitted = true;
-                }
-            }
-        }
-
-        for (const context of commandParts.selfieRequests) {
-            const attachReplyReference = !replyReferenceSpeakers.has(speakerAvatar);
-            const generated = await generateSelfieFromContext(context, settings, speakerAvatar, {
-                threadAvatar: avatar,
-                role: getResolvedReplyRole(speakerAvatar, avatar),
-                name: resolved.speaker.name || '',
-                extra: getResolvedReplyExtra(extra, speakerAvatar, avatar, { branchId, groupId, personaId, attachReplyReference }),
-                branchId,
-                groupId,
-                personaId,
-                validateTarget,
-            });
-            if (generated && attachReplyReference) {
-                replyReferenceSpeakers.add(speakerAvatar);
-            }
-        }
-    }
-
-    return postedText.join('\n');
+    return result.text.join('\n');
 }

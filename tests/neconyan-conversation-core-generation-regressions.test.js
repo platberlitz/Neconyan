@@ -33,9 +33,6 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/message-
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/partners.js', () => ({
     stripSpeakerPrefix: value => String(value || '').trim(),
 }));
-await jest.unstable_mockModule('../public/scripts/neconyan-conversation/partners-utils.js', () => ({
-    getSpeakerPrefixMatch: () => null,
-}));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/personas.js', () => ({ getConnectionProfiles: () => [] }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/prompt.js', () => ({
     buildConversationPromptMessages: jest.fn(),

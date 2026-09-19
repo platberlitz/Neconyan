@@ -5,6 +5,8 @@ import { EventEmitter } from 'node:events';
 import vm from 'node:vm';
 import { parse } from 'acorn';
 import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse, requestUsesReasoning } from '../public/scripts/generation-request-controls.js';
+import { createChatGenerationParameters } from '../public/scripts/chat-provider-parameters.js';
+import { resolveChatReasoningEffort } from '../public/scripts/chat-request-controls.js';
 import { buildChatCompletionSamplerMetadata, filterChatCompletionSamplingParameters, applyClaudeModelParameterConstraints, applyKimiK3ModelParameterConstraints, isKimiK3Model } from '../public/scripts/openai-model-capabilities.js';
 import { resolveGenerationOutputBufferState, resolveGenerationUnblockState, resolveStopGenerationState } from '../public/scripts/generation-lifecycle/index.js';
 import { event_types } from '../public/scripts/events.js';
@@ -94,9 +96,11 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
         eventSource, event_types,
         resolveGenerationOutputBufferState, resolveGenerationUnblockState, resolveStopGenerationState,
         applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse,
+        createChatGenerationParameters,
+        resolveChatReasoningEffort,
         buildAssistantKnowledge, getAssistantKnowledgeBudget,
         buildChatCompletionSamplerMetadata, filterChatCompletionSamplingParameters,
-        modelSamplerMetadataBySource: new Map(), nanoGptModelList: [],
+        modelSamplerMetadataBySource: new Map(), nanoGptModelList: [], model_list: [],
         applyClaudeModelParameterConstraints, applyKimiK3ModelParameterConstraints, isKimiK3Model,
         getLinkApiRequestFormat: () => 'openai',
         getRequestHeaders: () => ({}),

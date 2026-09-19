@@ -7,6 +7,8 @@ import {
 } from '../lib.js';
 
 import { getContext } from './extensions.js';
+import { getStringHash, isTrueBoolean } from './macro-primitives.js';
+import { parseTimestamp } from './message-timestamp.js';
 import { characters, getRequestHeaders, processDroppedFiles, this_chid, user_avatar } from '../script.js';
 import { isMobile } from './RossAscends-mods.js';
 import { collapseNewlines, power_user } from './power-user.js';
@@ -516,28 +518,11 @@ export async function parseJsonFile(file) {
  * License: Public domain (or MIT if needed). Attribution appreciated.
  * A fast and simple 53-bit string hash function with decent collision resistance.
  * Largely inspired by MurmurHash2/3, but with a focus on speed/simplicity.
- * @param {string} str The string to hash.
- * @param {number} [seed=0] The seed to use for the hash.
- * @returns {number} The hash code.
+ *
+ * Defined in the pure macro-primitives leaf so server macro code can import it
+ * without pulling in this module's DOM and SillyTavern dependencies.
  */
-export function getStringHash(str, seed = 0) {
-    if (typeof str !== 'string') {
-        return 0;
-    }
-
-    let h1 = 0xdeadbeef ^ seed,
-        h2 = 0x41c6ce57 ^ seed;
-    for (let i = 0, ch; i < str.length; i++) {
-        ch = str.charCodeAt(i);
-        h1 = Math.imul(h1 ^ ch, 2654435761);
-        h2 = Math.imul(h2 ^ ch, 1597334677);
-    }
-
-    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-
-    return 4294967296 * (2097151 & h2) + (h1 >>> 0);
-}
+export { getStringHash } from './macro-primitives.js';
 
 /**
  * Copy text to clipboard. Use navigator.clipboard.writeText if available, otherwise use document.execCommand.
@@ -1012,21 +997,15 @@ export function countOccurrences(string, character) {
 
 /**
  * Checks if a string is "true" value.
- * @param {string} arg String to check
- * @returns {boolean} True if the string is true, false otherwise.
+ * Defined in the pure macro-primitives leaf; re-exported here for existing importers.
  */
-export function isTrueBoolean(arg) {
-    return ['on', 'true', '1'].includes(arg?.trim()?.toLowerCase());
-}
+export { isTrueBoolean } from './macro-primitives.js';
 
 /**
  * Checks if a string is "false" value.
- * @param {string} arg String to check
- * @returns {boolean} True if the string is false, false otherwise.
+ * Defined in the pure macro-primitives leaf; re-exported here for existing importers.
  */
-export function isFalseBoolean(arg) {
-    return ['off', 'false', '0'].includes(arg?.trim()?.toLowerCase());
-}
+export { isFalseBoolean } from './macro-primitives.js';
 
 /**
  * Parses an array either as a comma-separated string or as a JSON array.
@@ -1093,66 +1072,6 @@ export function timestampToMoment(timestamp) {
 
     dateCache.set(timestamp, objMoment);
     return objMoment;
-}
-
-/**
- * Parses a timestamp and returns a moment object representing the parsed date and time.
- * @param {MessageTimestamp} timestamp - The timestamp to parse. It can be a string or a number.
- * @returns {string} - If the timestamp is valid, returns an ISO 8601 string.
- */
-function parseTimestamp(timestamp) {
-    if (!timestamp) return;
-
-    // Date object
-    if (timestamp instanceof Date) {
-        return timestamp.toISOString();
-    }
-
-    // Unix time (legacy TAI / tags)
-    if (typeof timestamp === 'number' || /^\d+$/.test(timestamp)) {
-        const unixTime = Number(timestamp);
-        const isValid = Number.isFinite(unixTime) && !Number.isNaN(unixTime) && unixTime >= 0;
-        if (!isValid) return;
-        return new Date(unixTime).toISOString();
-    }
-
-    // ISO 8601
-    if (moment(timestamp, moment.ISO_8601, true).isValid()) {
-        return timestamp;
-    }
-
-    let dtFmt = [];
-
-    // meridiem-based format
-    const convertFromMeridiemBased = (_, month, day, year, hour, minute, meridiem) => {
-        const monthNum = moment().month(month).format('MM');
-        const hour24 = meridiem.toLowerCase() === 'pm' ? (parseInt(hour, 10) % 12) + 12 : parseInt(hour, 10) % 12;
-        return `${year}-${monthNum}-${day.padStart(2, '0')}T${hour24.toString().padStart(2, '0')}:${minute.padStart(2, '0')}:00`;
-    };
-    // June 19, 2023 2:20pm
-    dtFmt.push({ callback: convertFromMeridiemBased, pattern: /(\w+)\s(\d{1,2}),\s(\d{4})\s(\d{1,2}):(\d{1,2})(am|pm)/i });
-
-    // ST "humanized" format patterns
-    const convertFromHumanized = (_, year, month, day, hour, min, sec, ms) => {
-        ms = typeof ms !== 'undefined' ? `.${ms.padStart(3, '0')}` : '';
-        return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${min.padStart(2, '0')}:${sec.padStart(2, '0')}${ms}Z`;
-    };
-    // 2024-07-12@01h31m37s123ms
-    dtFmt.push({ callback: convertFromHumanized, pattern: /(\d{4})-(\d{1,2})-(\d{1,2})@(\d{1,2})h(\d{1,2})m(\d{1,2})s(\d{1,3})ms/ });
-    // 2024-7-12@01h31m37s
-    dtFmt.push({ callback: convertFromHumanized, pattern: /(\d{4})-(\d{1,2})-(\d{1,2})@(\d{1,2})h(\d{1,2})m(\d{1,2})s/ });
-    // 2024-6-5 @14h 56m 50s 682ms
-    dtFmt.push({ callback: convertFromHumanized, pattern: /(\d{4})-(\d{1,2})-(\d{1,2}) @(\d{1,2})h (\d{1,2})m (\d{1,2})s (\d{1,3})ms/ });
-    // Neconyan chat names: 2026-09-15 18-58-07
-    dtFmt.push({ callback: convertFromHumanized, pattern: /(\d{4})-(\d{1,2})-(\d{1,2}) (\d{1,2})-(\d{1,2})-(\d{1,2})/ });
-
-    for (const x of dtFmt) {
-        let rgxMatch = timestamp.match(x.pattern);
-        if (!rgxMatch) continue;
-        return x.callback(...rgxMatch);
-    }
-
-    return;
 }
 
 /** Split string to parts no more than length in size.

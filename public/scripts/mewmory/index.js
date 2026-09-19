@@ -1,19 +1,19 @@
 import {
     characters, chat_metadata, flushPendingChatSaves, getChatGeneration, getCurrentChatId,
-    getRequestHeaders, is_send_press, this_chid,
+    getRequestHeaders, this_chid,
 } from '../../script.js';
-import { is_group_generating, selected_group } from '../group-chats.js';
+import { selected_group } from '../group-chats.js';
 import { eventSource, event_types } from '../events.js';
 import { getFriendlyTokenizerName } from '../tokenizers.js';
 import { conversationState } from '../neconyan-conversation/state.js';
+import { cancelJob } from '../jobs.js';
+import { uuidv4 } from '../utils.js';
 
 export const mewmory = {
     config: null, view: null, stories: [], error: '', loading: false, busy: false, backfilling: false, preparing: false,
 };
 let initialized = false;
 let timer;
-let failures = 0;
-let stopRequested = false;
 let viewKey = '';
 let selectionVersion = 0;
 let refreshVersion = 0;
@@ -46,6 +46,7 @@ export function notifyMewmory() {
 
 export async function requestMewmory(route, data = {}, { signal, scope = getMewmoryScope() } = {}) {
     if (scope !== getMewmoryScope()) throw new Error('The active chat changed.');
+    if (route === 'recall' || route === 'index') data = { background: true, submissionKey: uuidv4(), ...data };
     const response = await fetch('/api/mewmory/' + route, {
         method: 'POST', headers: getRequestHeaders(), signal,
         body: JSON.stringify({ locator: getMewmoryLocator(), ...data }),
@@ -53,6 +54,7 @@ export async function requestMewmory(route, data = {}, { signal, scope = getMewm
     const result = await response.json().catch(() => ({}));
     if (scope !== getMewmoryScope()) throw new Error('The active chat changed.');
     if (!response.ok) throw Object.assign(new Error(result.error || 'Mewmory could not reach the server.'), { status: response.status });
+    if (result.job) scheduleUpdate();
     return result;
 }
 
@@ -92,7 +94,14 @@ async function refreshCurrentChat(filters, { signal }) {
     } finally {
         if (current()) {
             mewmory.loading = false;
+            const processing = mewmory.view?.health?.processing;
+            mewmory.busy = processing?.status === 'running' || Boolean(mewmory.view?.operations?.some(job => ['queued', 'running'].includes(job.state)));
+            mewmory.backfilling = Boolean(processing?.status === 'running' && processing.all);
+            if (processing?.status === 'failed') mewmory.error = processing.error;
+            const operation = mewmory.view?.operations?.[0];
+            if (['failed', 'interrupted'].includes(operation?.state)) mewmory.error = operation.error?.message || 'Memory processing needs attention.';
             notifyMewmory();
+            if (mewmory.busy) scheduleUpdate();
         }
     }
 }
@@ -105,16 +114,23 @@ export async function changeMewmory(route, data = {}) {
         if (result.locator && (!mewmory.view || result.revision >= mewmory.view.revision)) mewmory.view = result;
         if (result.config && (!mewmory.config || result.config.revision >= mewmory.config.revision)) mewmory.config = result.config;
         mewmory.error = '';
-        failures = 0;
         notifyMewmory();
     }
     return result;
 }
 
-export function stopMewmoryBackfill() {
-    stopRequested = true;
-    mewmory.backfilling = false;
-    notifyMewmory();
+export async function stopMewmoryBackfill() {
+    const scope = getMewmoryScope();
+    try {
+        await Promise.all((mewmory.view?.operations || []).filter(job => ['queued', 'running'].includes(job.state)).map(job => cancelJob(job.id)));
+        await requestMewmory('process/cancel', {}, { scope });
+        if (scope === getMewmoryScope()) await refreshMewmory();
+    } catch (error) {
+        if (scope === getMewmoryScope()) {
+            mewmory.error = error.message;
+            notifyMewmory();
+        }
+    }
 }
 
 export async function processMewmory({ all = false, checkpoint = false } = {}) {
@@ -124,55 +140,39 @@ export async function processMewmory({ all = false, checkpoint = false } = {}) {
     const currentKey = getMewmoryScope();
     mewmory.busy = true;
     mewmory.backfilling = all;
-    stopRequested = false;
     notifyMewmory();
     try {
         if (!await flushPendingChatSaves({ silent: true })) throw new Error('Save this chat before updating Mewmory.');
-        do {
-            if (getMewmoryScope() !== currentKey) break;
-            const view = await requestMewmory('process', { locator, checkpoint });
-            if (getMewmoryScope() !== currentKey) break;
+        if (getMewmoryScope() !== currentKey) return;
+        const view = await requestMewmory('process', { locator, checkpoint, all, background: true });
+        if (getMewmoryScope() === currentKey) {
             if (!mewmory.view || view.revision >= mewmory.view.revision) mewmory.view = view;
             mewmory.error = '';
-            failures = 0;
-            notifyMewmory();
-            if (!(checkpoint ? view.health.checkpointPending : view.health.pending)) break;
-        } while (all && !stopRequested);
+        }
     } catch (error) {
         if (getMewmoryScope() === currentKey) {
-            failures++;
             mewmory.error = error.message;
         }
     } finally {
-        mewmory.busy = false;
-        mewmory.backfilling = false;
-        notifyMewmory();
+        if (getMewmoryScope() === currentKey) {
+            mewmory.busy = mewmory.view?.health?.processing?.status === 'running';
+            mewmory.backfilling = mewmory.busy && mewmory.view.health.processing.all;
+            notifyMewmory();
+            scheduleUpdate();
+        }
     }
 }
 
-function scheduleUpdate({ resetFailures = false } = {}) {
-    if (resetFailures) failures = 0;
+function scheduleUpdate(delay = 1500) {
     window.clearTimeout(timer);
     timer = window.setTimeout(async () => {
-        if (is_send_press || is_group_generating || mewmory.preparing || mewmory.busy) {
-            scheduleUpdate();
-            return;
-        }
-        try {
-            await refreshMewmory();
-            if (!mewmory.view?.enabled || !mewmory.config?.autoUpdate || failures >= 3) return;
-            // ponytail: automatic batches also review preservation, without a second pass that holds up chat.
-            const checkpoint = mewmory.config.excludeHistory;
-            const pending = () => checkpoint ? mewmory.view?.health.checkpointPending : mewmory.view?.health.pending;
-            if (pending()) {
-                await processMewmory({ checkpoint });
-                if (pending() && failures < 3) scheduleUpdate();
-            }
-        } catch (error) {
-            mewmory.error = error.message;
-            notifyMewmory();
-        }
-    }, 1500 * Math.max(1, 2 ** failures));
+        if (getMewmoryLocator()) await refreshMewmory();
+        const health = mewmory.view?.health;
+        const pending = mewmory.config?.excludeHistory ? health?.checkpointPending : health?.pending;
+        const waiting = mewmory.view?.enabled && mewmory.config?.autoUpdate && mewmory.config?.roles?.extractor?.enabled
+            && pending > 0 && !['failed', 'cancelled'].includes(health?.processing?.status);
+        if (mewmory.busy || waiting) scheduleUpdate(mewmory.busy ? 1500 : 15000);
+    }, delay);
 }
 
 export function initMewmory() {
@@ -180,12 +180,13 @@ export function initMewmory() {
     initialized = true;
     const changed = () => {
         selectionVersion++;
-        stopMewmoryBackfill();
+        mewmory.busy = false;
+        mewmory.backfilling = false;
         mewmory.view = null;
         mewmory.error = '';
         mewmory.filters = {};
         void refreshMewmory();
-        scheduleUpdate({ resetFailures: true });
+        scheduleUpdate();
     };
     eventSource.on(event_types.CHAT_CHANGED, changed);
     eventSource.on(event_types.CHAT_RENAMED, changed);
@@ -196,9 +197,9 @@ export function initMewmory() {
         event_types.MESSAGE_SENT, event_types.CHARACTER_EDITED, event_types.CHARACTER_DELETED, event_types.WORLDINFO_UPDATED,
         event_types.WORLDINFO_SETTINGS_UPDATED, event_types.WORLDINFO_DELETED,
     ]) {
-        eventSource.on(event, () => scheduleUpdate({ resetFailures: true }));
+        eventSource.on(event, () => scheduleUpdate());
     }
-    window.addEventListener('mewmory:configured', () => scheduleUpdate({ resetFailures: true }));
+    window.addEventListener('mewmory:configured', () => { void refreshMewmory(); scheduleUpdate(); });
     scheduleUpdate();
 }
 

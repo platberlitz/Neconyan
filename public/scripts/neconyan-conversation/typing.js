@@ -160,13 +160,7 @@ export function stripPreviewText(messageText) {
         .slice(0, 130);
 }
 
-export function splitChatroomMessages(text) {
-    const parts = String(text || '')
-        .split(/\n\s*\n+/)
-        .map(part => part.trim())
-        .filter(Boolean);
-    return parts.length ? parts : [String(text || '').trim()].filter(Boolean);
-}
+export { splitChatroomMessages } from './reply-delivery.js';
 
 export function setLastConversationPreview(avatar, messageText, { branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {
     const preview = stripPreviewText(messageText);

@@ -3,7 +3,9 @@ import path from 'node:path';
 import sanitize from 'sanitize-filename';
 import { parse as parseCharacterCard } from '../character-card-parser.js';
 import { readWorldInfoFile } from '../endpoints/worldinfo.js';
-import { fail, hash, purgeSources, sourceAt } from './core.js';
+import { fail, hash, POLICY_VERSION, purgeSources, sourceAt } from './core.js';
+import { readConfig } from './models.js';
+import { processingVersion } from './processing.js';
 import { captureBranchMemory, mutateState, readChat, readJson, readState, synchronize } from './store.js';
 
 function safeFilename(value) {
@@ -79,7 +81,15 @@ export async function readContextSources(directories, locator, state) {
 
 export async function loadCurrentState(directories, locator) {
     const state = synchronize(directories, locator, await readContextSources(directories, locator));
-    return mutateState(directories, locator, current => purgeMissingContextSources(directories, current), state.revision);
+    const config = readConfig(directories);
+    const legacyPolicy = hash([POLICY_VERSION, ...['extractor', 'pawspective'].map(name => hash([config.localOnly, config.roles[name]]))]);
+    return mutateState(directories, locator, current => {
+        // Preserve existing coverage when upgrading the policy that included request timeouts.
+        for (const coverage of [current.coverage, current.checkpoints]) {
+            for (const key of Object.keys(coverage)) if (coverage[key] === legacyPolicy) coverage[key] = processingVersion(config);
+        }
+        return purgeMissingContextSources(directories, current);
+    }, state.revision);
 }
 
 export function purgeMissingContextSources(directories, state) {

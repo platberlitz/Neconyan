@@ -109,6 +109,9 @@
         "openai": "^4.17.0",
         "whatwg-url": "^14.0.0"
     },
+    "imports": {
+        "#macro-vendor": "./src/macros/vendor.js"
+    },
     "name": "neconyan",
     "type": "module",
     "license": "AGPL-3.0",

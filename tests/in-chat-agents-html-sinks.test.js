@@ -35,7 +35,8 @@ describe('style decoder cannot break out of its style element', () => {
         const utilNames = [...readSource('../../utils.js').matchAll(/^export (?:async function|function|const|let|class) (\w+)/gm)]
             .map(match => match[1]);
         const escapeHtml = str => String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-        await jest.unstable_mockModule('../public/scripts/utils.js', mockNames(utilNames, { escapeHtml }));
+        const primitives = await import('../public/scripts/macro-primitives.js');
+        await jest.unstable_mockModule('../public/scripts/utils.js', mockNames(utilNames, { ...primitives, escapeHtml }));
         await jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ selected_group: null }));
         await jest.unstable_mockModule('../public/scripts/power-user.js', () => ({
             power_user: { forbid_external_media: false, external_media_allowed_overrides: [], external_media_forbidden_overrides: [] },

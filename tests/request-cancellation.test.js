@@ -19,6 +19,33 @@ function createHttpExchange() {
 }
 
 describe('observeRequestCancellation', () => {
+    test('honours an internal job signal without an HTTP disconnect and removes listeners', () => {
+        const { request, response } = createHttpExchange();
+        const job = new AbortController();
+        request.generationSignal = job.signal;
+        const onAbort = jest.fn();
+        const cancellation = observeRequestCancellation(request, response, { onAbort });
+        job.abort();
+        expect(cancellation.signal.aborted).toBe(true);
+        expect(onAbort).toHaveBeenCalledTimes(1);
+        expect(request.socket.listenerCount('close')).toBe(0);
+    });
+
+    test('observes cancellation that preceded registration', () => {
+        for (const kind of ['request', 'signal', 'controller']) {
+            const { request, response } = createHttpExchange();
+            const controller = new AbortController();
+            if (kind === 'request') request.aborted = true;
+            if (kind === 'signal') request.generationSignal = AbortSignal.abort();
+            if (kind === 'controller') controller.abort();
+            const onAbort = jest.fn();
+            observeRequestCancellation(request, response, { controller, onAbort });
+            expect(controller.signal.aborted).toBe(true);
+            expect(onAbort).not.toHaveBeenCalled();
+            expect(request.socket.listenerCount('close')).toBe(0);
+        }
+    });
+
     afterEach(() => {
         jest.restoreAllMocks();
         jest.useRealTimers();

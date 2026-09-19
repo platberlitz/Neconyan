@@ -1,11 +1,11 @@
 import { describe, expect, test } from '@jest/globals';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { resolveChatReasoningEffort } from '../public/scripts/chat-request-controls.js';
 
 const readSource = (relativePath) => fs.readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), 'utf8');
 
 const indexSource = readSource('../public/index.html');
-const openAiSource = readSource('../public/scripts/openai.js');
 const chatCompletionsSource = readSource('../src/endpoints/backends/chat-completions.js');
 
 describe('reasoning effort \'none\'', () => {
@@ -13,12 +13,14 @@ describe('reasoning effort \'none\'', () => {
         // GPT-5.1 and newer accept 'none' as a value that pins thinking off. Omitting the field
         // there lets the model pick its own default depth, which defeats picking None. Every
         // other source keeps omitting it, because endpoints that do not list the value reject it.
-        const noneCase = openAiSource.match(/case reasoning_effort_types\.none:[\s\S]*?(?=case reasoning_effort_types\.min:)/);
-
-        expect(noneCase).not.toBeNull();
-        expect(noneCase[0]).toContain('return [chat_completion_sources.OPENAI, chat_completion_sources.OPENAI_RESPONSES, chat_completion_sources.AZURE_OPENAI, chat_completion_sources.CUSTOM].includes(settings.chat_completion_source) && /^gpt-5\\.([1-9]|\\d{2,})/.test(model)');
-        expect(noneCase[0]).toContain('? reasoning_effort_types.none');
-        expect(noneCase[0]).toContain(': undefined;');
+        for (const source of ['openai', 'openai_responses', 'azure_openai', 'custom']) {
+            const settings = { chat_completion_source: source, reasoning_effort: 'none' };
+            expect(resolveChatReasoningEffort(settings, 'gpt-5.1')).toBe('none');
+            expect(resolveChatReasoningEffort(settings, 'gpt-5.4')).toBe('none');
+            expect(resolveChatReasoningEffort(settings, 'gpt-5')).toBeUndefined();
+            expect(resolveChatReasoningEffort(settings, 'gpt-4o')).toBeUndefined();
+        }
+        expect(resolveChatReasoningEffort({ chat_completion_source: 'openrouter', reasoning_effort: 'none' }, 'gpt-5.4')).toBeUndefined();
     });
 
     test('the NanoGPT handler forwards \'none\' untouched', () => {

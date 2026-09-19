@@ -1,4 +1,4 @@
-import { chevrotain } from '../../../lib.js';
+import { chevrotain } from '../engine/macro-vendor.js';
 const { createToken, Lexer } = chevrotain;
 
 /** @typedef {import('chevrotain').TokenType} TokenType */

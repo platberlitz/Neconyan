@@ -34,4 +34,15 @@ describe('settings version guard', () => {
         expect(getSettingsVersion({ _version: 'not-a-number' })).toBe(0);
         expect(getSettingsVersion({ _version: '7' })).toBe(7);
     });
+
+    test('only native server effects may change Conversation completion receipts', () => {
+        const wrap = branch => ({ _version: 2, extension_settings: { sillybunny_conversation: { characters: { 'nova.png': { branches: { main: branch } } } } } });
+        const current = wrap({ createdAt: 123, messages: [], serverOperations: { completed: { effects: { first: 'saved' } } } });
+        const incoming = wrap({ createdAt: 123, messages: [], serverOperations: { forged: true } });
+        const branch = result => result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main;
+        expect(branch(prepareSettingsSave(incoming, current)).serverOperations).toEqual({ completed: { effects: { first: 'saved' } } });
+        expect(branch(prepareSettingsSave(incoming, wrap({ createdAt: 456, messages: [] })))).not.toHaveProperty('serverOperations');
+        expect(branch(prepareSettingsSave(incoming, current, { trustedConversationEffects: true })).serverOperations).toEqual({ forged: true });
+        expect(incoming.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main.serverOperations).toEqual({ forged: true });
+    });
 });

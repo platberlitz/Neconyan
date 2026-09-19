@@ -45,6 +45,8 @@ const mediaSource = readConversationSource('media.js');
 const palsRailSource = readConversationSource('pals-rail.js');
 const pickersSource = readConversationSource('pickers.js');
 const promptSource = readConversationSource('prompt.js');
+const promptMessagesSource = readConversationSource('prompt-messages.js');
+const promptSystemSource = readConversationSource('prompt-system.js');
 const sharedHelpersSource = readConversationSource('shared-helpers.js');
 const renderUtilsSource = readConversationSource('render-utils.js');
 const settingsStoreSource = readConversationSource('settings-store.js');
@@ -112,14 +114,15 @@ describe('conversation mode scoped connection profile', () => {
     });
 
     test('routes explicitly prefixed group replies to the named participant', () => {
-        expect(generationSource).toContain('getSpeakerPrefixMatch');
-        expect(generationSource).toContain('resolveConversationReplySpeaker');
+        expect(readConversationSource('reply-delivery.js')).toContain('getSpeakerPrefixMatch');
+        expect(generationSource).toContain('deliverConversationReply');
         expect(generationSource).toContain('resolvedExtra.partner_avatar = speakerAvatar');
     });
 
     test('adds context-aware implicit references for group DMs', () => {
-        expect(promptSource).toContain('buildConversationGroupReferenceContext');
-        expect(promptSource).toContain('conversation-group-reference-context');
+        expect(promptSource).toContain('composeConversationPromptMessages');
+        expect(promptMessagesSource).toContain('buildConversationGroupReferenceContext');
+        expect(promptMessagesSource).toContain('conversation-group-reference-context');
         expect(sharedHelpersSource).toContain('last non-user speaker before it');
         expect(sharedHelpersSource).toContain('do not assume every you means');
         expect(generationSource).toContain('buildConversationPromptMessages(messages, directive, speakerName, { groupId, personaId })');
@@ -148,9 +151,9 @@ describe('conversation mode scoped connection profile', () => {
         expect(chromeSource).toContain('openGroundedDialogueRulesEditor');
         expect(chromeSource).toContain('case \'edit-grounded-dialogue-rules\':');
         expect(chromeSource).toContain('DEFAULT_GROUNDED_DIALOGUE_RULES');
-        expect(promptSource).toContain('getGroundedDialogueRulesPrompt');
-        expect(promptSource).toContain('from \'./shared-helpers.js\'');
-        expect(promptSource).toContain('fields.push(groundedRules)');
+        expect(promptSystemSource).toContain('getGroundedDialogueRulesPrompt(settings)');
+        expect(promptSource).toContain('composeConversationSystemPrompt');
+        expect(conversationGenerationSource).toContain('composeConversationSystemPrompt');
         // Server endpoint now imports from conversation-generation.js which imports from shared-helpers.js
         expect(serverEndpointSource).toContain('from \'./conversation-generation.js\'');
         // normalizeConversationSettings is now in conversation-generation.js
@@ -213,8 +216,8 @@ describe('conversation mode scoped connection profile', () => {
         expect(generationSource).toContain('getGeneratedReplyReference');
         expect(generationSource).toContain('buildConversationMessageReplyReference(message)');
         expect(generationSource).toContain('resolvedExtra.conversation_reply_to = replyReference');
-        expect(generationSource).toContain('const attachReplyReference = !replyReferenceSpeakers.has(speakerAvatar)');
-        expect(generationSource).toContain('replyReferenceSpeakers.add(speakerAvatar)');
+        expect(readConversationSource('reply-delivery.js')).toContain('const attachReplyReference = !referenced.has(speakerAvatar)');
+        expect(readConversationSource('reply-delivery.js')).toContain('referenced.add(speakerAvatar)');
 
         const replyRefFuncStart = generationSource.indexOf('function getGeneratedReplyReference(');
         const nextFuncStart = generationSource.indexOf('function getResolvedReplyExtra(', replyRefFuncStart);

@@ -3,47 +3,11 @@ import { extractJsonFromData, extractMessageFromData, getGenerateUrl, getRequest
 import { getTextGenServer, createTextGenGenerationData, setting_names, textgenerationwebui_settings } from './textgen-settings.js';
 import { extractReasoningFromData } from './reasoning.js';
 import { formatInstructModeChat, formatInstructModePrompt, getInstructStoppingSequences } from './instruct-mode.js';
-import { chat_completion_sources, getStreamingReply, tryParseStreamingError, createGenerationParameters, getNanoGptServiceTier, settingsToUpdate, oai_settings } from './openai.js';
+import { chat_completion_sources, getStreamingReply, tryParseStreamingError, createGenerationParameters, getNanoGptServiceTier, oai_settings } from './openai.js';
 import EventSourceStream from './sse-stream.js';
 import { fetchResumable } from './resumable-generation.js';
-import { migrateNanoGptProviderSettings } from './openai-preset-utils.js';
+import { buildChatPresetPayload, createChatRequestData } from './chat-preset-request.js';
 import { isGenerationLengthFinish } from './generation-request-controls.js';
-
-const BOOLEAN_CHAT_COMPLETION_FIELDS = [
-    'include_reasoning',
-    'enable_web_search',
-    'request_images',
-];
-
-function coerceRequestBoolean(value) {
-    if (typeof value === 'boolean') {
-        return value;
-    }
-
-    if (typeof value === 'string') {
-        const normalized = value.trim().toLowerCase();
-        if (['true', 'on', '1'].includes(normalized)) {
-            return true;
-        }
-        if (['false', 'off', '0'].includes(normalized)) {
-            return false;
-        }
-    }
-
-    return Boolean(value);
-}
-
-function normalizeChatCompletionBooleanFields(payload) {
-    if (!payload || typeof payload !== 'object') {
-        return;
-    }
-
-    for (const field of BOOLEAN_CHAT_COMPLETION_FIELDS) {
-        if (payload[field] !== undefined) {
-            payload[field] = coerceRequestBoolean(payload[field]);
-        }
-    }
-}
 
 // #region Type Definitions
 /**
@@ -494,32 +458,8 @@ export class ChatCompletionService {
      * @param {ChatCompletionPayload} custom
      * @returns {ChatCompletionPayload}
      */
-    static createRequestData({ stream = false, messages, model, chat_completion_source, max_tokens, temperature, custom_url, reverse_proxy, proxy_password, custom_prompt_post_processing, ...props }) {
-        const payload = {
-            stream,
-            messages,
-            model,
-            chat_completion_source,
-            max_tokens,
-            temperature,
-            custom_url,
-            reverse_proxy,
-            proxy_password,
-            custom_prompt_post_processing,
-            use_sysprompt: true,
-            ...props,
-        };
-
-        normalizeChatCompletionBooleanFields(payload);
-
-        // Remove undefined values to avoid API errors
-        Object.keys(payload).forEach(key => {
-            if (payload[key] === undefined) {
-                delete payload[key];
-            }
-        });
-
-        return payload;
+    static createRequestData(custom) {
+        return createChatRequestData(custom);
     }
 
     /**
@@ -655,182 +595,6 @@ export class ChatCompletionService {
      * @returns {Promise<any>} - Formatted payload for chat completion API
      */
     static async presetToGeneratePayload(preset, overridePreset = {}, overridePayload = {}) {
-        if (!preset || typeof preset !== 'object') {
-            throw new Error('Invalid preset: must be an object');
-        }
-
-        // Neconyan: migrate each layer before merging so overrides cannot erase unrelated restrictions.
-        preset = { ...preset };
-        migrateNanoGptProviderSettings(preset);
-        overridePreset = { ...overridePreset };
-        migrateNanoGptProviderSettings(overridePreset, { partial: true });
-        preset = { ...preset, ...overridePreset };
-        overridePayload = { ...overridePayload };
-        migrateNanoGptProviderSettings(overridePayload, { partial: true });
-
-        // Fix any fields before converting to settings
-        preset.bias_preset_selected = preset.bias_presets !== undefined ? preset.bias_preset_selected : undefined;  // presets might have bias_preset_selected but not bias_presets, but settings need both or neither.
-
-        // Convert from preset to ChatCompletionSettings
-        const settings = structuredClone(oai_settings);
-        // Neconyan: a preset without a tier predates paid-tier opt-in.
-        settings.nanogpt_service_tier = preset.nanogpt_service_tier ?? '';
-        settings.openrouter_service_tier = preset.openrouter_service_tier ?? '';
-        for (const [key, value] of Object.entries(preset)) {
-            const settingToUpdate = settingsToUpdate[key];
-            if (!settingToUpdate) continue;
-            settings[settingToUpdate[1]] = value;
-        }
-
-        // Ensure api-url is properly applied for the correct API source only
-        const sourceToUrlField = {
-            [chat_completion_sources.CUSTOM]: 'custom_url',
-            [chat_completion_sources.VERTEXAI]: 'vertexai_region',
-            [chat_completion_sources.ZAI]: 'zai_endpoint',
-            [chat_completion_sources.SILICONFLOW]: 'siliconflow_endpoint',
-            [chat_completion_sources.MINIMAX]: 'minimax_endpoint',
-            [chat_completion_sources.LINKAPI]: 'linkapi_endpoint',
-        };
-
-        if (overridePayload.chat_completion_source) {
-            const urlField = sourceToUrlField[overridePayload.chat_completion_source];
-            if (urlField && overridePayload[urlField]) {
-                // Only set the URL field for the actual API source
-            } else if (urlField) {
-                overridePayload[urlField] = overridePayload[urlField] || settings[urlField] || oai_settings[urlField];
-            }
-        } else {
-            // Fallback: apply URL fields for all sources (legacy behavior)
-            ['custom_url', 'vertexai_region', 'zai_endpoint', 'siliconflow_endpoint', 'linkapi_endpoint'].forEach(field => {
-                overridePayload[field] = overridePayload[field] || settings[field] || oai_settings[field];
-            });
-        }
-
-        // Apply overridePayload fields to settings BEFORE createGenerationParameters
-        // so that source-specific parameter construction uses the correct API source.
-        // Without this, switching connection profiles corrupts the global oai_settings,
-        // causing createGenerationParameters to build a mismatched payload.
-        if (overridePayload.chat_completion_source) {
-            settings.chat_completion_source = overridePayload.chat_completion_source;
-        }
-        if (overridePayload.model) {
-            settings.openai_model = overridePayload.model;
-        }
-        const outputLimit = overridePayload.max_completion_tokens ?? overridePayload.max_tokens;
-        if (outputLimit !== undefined) {
-            settings.openai_max_tokens = outputLimit;
-        }
-        if (Number.isFinite(overridePayload.temperature)) settings.temp_openai = overridePayload.temperature;
-        if (overridePayload.service_tier !== undefined) {
-            const source = settings.chat_completion_source;
-            if (['nanogpt', 'openrouter'].includes(source)) settings[`${source}_service_tier`] = overridePayload.service_tier;
-        }
-        for (const key of ['nanogpt_provider', 'nanogpt_allowed_providers', 'nanogpt_ignored_providers', 'nanogpt_payg_override']) {
-            if (Object.hasOwn(overridePayload, key)) settings[key] = overridePayload[key];
-        }
-        if (overridePayload.reverse_proxy !== undefined) {
-            settings.reverse_proxy = overridePayload.reverse_proxy;
-        }
-        if (overridePayload.proxy_password !== undefined) {
-            settings.proxy_password = overridePayload.proxy_password;
-        }
-        if (overridePayload.custom_url !== undefined) {
-            settings.custom_url = overridePayload.custom_url;
-        }
-        if (overridePayload.vertexai_region !== undefined) {
-            settings.vertexai_region = overridePayload.vertexai_region;
-        }
-        if (overridePayload.zai_endpoint !== undefined) {
-            settings.zai_endpoint = overridePayload.zai_endpoint;
-        }
-        if (overridePayload.siliconflow_endpoint !== undefined) {
-            settings.siliconflow_endpoint = overridePayload.siliconflow_endpoint;
-        }
-        if (overridePayload.minimax_endpoint !== undefined) {
-            settings.minimax_endpoint = overridePayload.minimax_endpoint;
-        }
-        if (overridePayload.linkapi_endpoint !== undefined) {
-            settings.linkapi_endpoint = overridePayload.linkapi_endpoint;
-        }
-        if (overridePayload.custom_include_body !== undefined) {
-            settings.custom_include_body = overridePayload.custom_include_body;
-        }
-        if (overridePayload.custom_exclude_body !== undefined) {
-            settings.custom_exclude_body = overridePayload.custom_exclude_body;
-        }
-        if (overridePayload.custom_include_headers !== undefined) {
-            settings.custom_include_headers = overridePayload.custom_include_headers;
-        }
-        const connectionProfileRequestFields = Array.isArray(overridePayload.__connectionProfileRequestFields)
-            ? overridePayload.__connectionProfileRequestFields
-            : [];
-        const shouldUseConnectionProfileField = (field) => connectionProfileRequestFields.includes(field);
-        normalizeChatCompletionBooleanFields(overridePayload);
-
-        // Neconyan: Connection Profile requests can carry reasoning/image behavior without mutating global UI settings.
-        if (overridePayload.include_reasoning !== undefined) {
-            settings.show_thoughts = coerceRequestBoolean(overridePayload.include_reasoning);
-            if (!settings.show_thoughts) {
-                settings.auto_append_reasoning_tags = false;
-            }
-        }
-        if (overridePayload.reasoning_effort !== undefined) {
-            settings.reasoning_effort = overridePayload.reasoning_effort;
-        }
-        if (overridePayload.verbosity !== undefined) {
-            settings.verbosity = overridePayload.verbosity;
-        }
-        if (overridePayload.enable_web_search !== undefined) {
-            settings.enable_web_search = coerceRequestBoolean(overridePayload.enable_web_search);
-        }
-        if (overridePayload.request_images !== undefined) {
-            settings.request_images = coerceRequestBoolean(overridePayload.request_images);
-        }
-        if (overridePayload.request_image_resolution !== undefined) {
-            settings.request_image_resolution = overridePayload.request_image_resolution;
-        }
-        if (overridePayload.request_image_aspect_ratio !== undefined) {
-            settings.request_image_aspect_ratio = overridePayload.request_image_aspect_ratio;
-        }
-        if (overridePayload.custom_reasoning_param_name !== undefined) {
-            settings.custom_reasoning_param_name = overridePayload.custom_reasoning_param_name;
-        }
-        if (overridePayload.custom_reasoning_param_format !== undefined) {
-            settings.custom_reasoning_param_format = overridePayload.custom_reasoning_param_format;
-        }
-        if (overridePayload.custom_reasoning_enabled_value !== undefined) {
-            settings.custom_reasoning_enabled_value = overridePayload.custom_reasoning_enabled_value;
-        }
-        if (overridePayload.custom_reasoning_disabled_value !== undefined) {
-            settings.custom_reasoning_disabled_value = overridePayload.custom_reasoning_disabled_value;
-        }
-
-        // Convert from settings to generation payload
-        const data = await createGenerationParameters(settings, overridePayload.model, 'quiet', overridePayload.messages);
-        const payload = data.generate_data;
-
-        if (shouldUseConnectionProfileField('include_reasoning')) {
-            overridePayload.include_reasoning = payload.include_reasoning;
-        }
-        if (shouldUseConnectionProfileField('reasoning_effort')) {
-            overridePayload.reasoning_effort = payload.reasoning_effort;
-        }
-        if (shouldUseConnectionProfileField('verbosity')) {
-            overridePayload.verbosity = payload.verbosity;
-        }
-        if (shouldUseConnectionProfileField('service_tier')) {
-            overridePayload.service_tier = payload.service_tier;
-        }
-        delete overridePayload.__connectionProfileRequestFields;
-        delete overridePayload.modelOverride;
-        // The model-specific conversion above owns the final output-limit field.
-        if (outputLimit !== undefined) {
-            delete overridePayload.max_tokens;
-            delete overridePayload.max_completion_tokens;
-        }
-        if (Number.isFinite(overridePayload.temperature)) delete overridePayload.temperature;
-
-        // apply overrides
-        return this.createRequestData({ ...payload, ...overridePayload });
+        return this.createRequestData(await buildChatPresetPayload(oai_settings, preset, overridePreset, overridePayload, createGenerationParameters));
     }
 }

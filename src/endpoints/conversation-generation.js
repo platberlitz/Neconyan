@@ -14,25 +14,16 @@ import { recoverFileWriteSync } from '../util.js';
 import { handleChatCompletionsGenerate } from './backends/chat-completions.js';
 import { handleTextCompletionsGenerate } from './backends/text-completions.js';
 import {
-    DEFAULT_CHATROOM_PROMPT,
     DEFAULT_SETTINGS,
-    TRANSCRIPT_MESSAGE_LIMIT,
     DEFAULT_CONVERSATION_REPLY_MAX_TOKENS,
     MIN_CONVERSATION_REPLY_MAX_TOKENS,
     MAX_CONVERSATION_REPLY_MAX_TOKENS,
 } from '../../public/scripts/neconyan-conversation/constants.js';
+import { composeConversationPromptMessages } from '../../public/scripts/neconyan-conversation/prompt-messages.js';
+import { composeConversationSystemPrompt } from '../../public/scripts/neconyan-conversation/prompt-system.js';
 import {
-    getConversationAttachmentSummary,
-    getConversationMediaDisplay,
-    getConversationMediaIndex,
-    getConversationPromptMediaAttachments,
-} from '../../public/scripts/neconyan-conversation/thread-store-utils.js';
-import {
-    buildConversationGroupReferenceContext,
-    compileChatroomPrompt,
     normalizeChatroomPromptSettings,
     formatPromptText,
-    getGroundedDialogueRulesPrompt,
 } from '../../public/scripts/neconyan-conversation/shared-helpers.js';
 import { getObject, clamp, parsePositiveInt, isObject } from './conversation-utils.js';
 import { convertImageUrlsToBase64 } from './conversation-utils.js';
@@ -208,166 +199,24 @@ export async function buildConversationPromptMessages(messages, directive, speak
     signal,
     userDirectories,
 } = {}) {
-    const promptMessages = [{
-        role: 'user',
-        content: 'Conversation transcript:',
-        identifier: 'conversation-transcript-header',
-    }];
-
-    const sliceMessages = messages.slice(-TRANSCRIPT_MESSAGE_LIMIT);
-    const imageUrls = [];
-    const messageParts = sliceMessages.map((message, index) => {
-        const parts = [
-            formatPromptText(message.mes, 1800),
-            getConversationAttachmentSummary(message),
-        ].filter(Boolean);
-        const media = getConversationPromptMediaAttachments(message);
-
-        if (!parts.length && !media.length) {
-            return null;
-        }
-
-        const role = message.role === 'user' ? 'user' : message.role === 'system' ? 'system' : 'assistant';
-        const textContent = parts.length ? `${message.name || 'Speaker'}: ${parts.join(' ')}` : `${message.name || 'Speaker'} sent an attachment.`;
-
-        if (!media.length) {
-            return {
-                role,
-                content: textContent,
-                identifier: `conversation-message-${message.id || index}`,
-            };
-        }
-
-        // Build multimodal content with images
-        const contentParts = [
-            { type: 'text', text: textContent },
-        ];
-
-        const mediaDisplay = getConversationMediaDisplay(message);
-        const mediaIndex = getConversationMediaIndex(message, media);
-        // MEDIA_DISPLAY.GALLERY means show one image; otherwise show all
-        const mediaToInline = mediaDisplay === 'gallery'
-            ? [media[mediaIndex]]
-            : media;
-        const selectedImageUrls = mediaToInline.map(item => item?.url).filter(Boolean);
-        const imageStartIndex = imageUrls.length;
-        imageUrls.push(...selectedImageUrls);
-
-        return {
-            role,
-            contentParts,
-            identifier: `conversation-message-${message.id || index}`,
-            imageStartIndex,
-            imageCount: selectedImageUrls.length,
-        };
+    return composeConversationPromptMessages(messages, directive, speakerName, {
+        groupId, userName,
+        convertImages: urls => convertImageUrlsToBase64(urls, 3, { signal, userDirectories }),
     });
-    const convertedImageUrls = await convertImageUrlsToBase64(imageUrls, 3, { signal, userDirectories });
-    const convertedMessages = messageParts.map(message => {
-        if (!message || !message.contentParts) {
-            return message;
-        }
-        const base64Urls = convertedImageUrls.slice(message.imageStartIndex, message.imageStartIndex + message.imageCount);
-        for (const base64Url of base64Urls) {
-            if (base64Url) {
-                message.contentParts.push({
-                    type: 'image_url',
-                    image_url: {
-                        url: base64Url,
-                        detail: 'high',
-                    },
-                });
-            }
-        }
-
-        return {
-            role: message.role,
-            content: message.contentParts,
-            identifier: message.identifier,
-        };
-    });
-
-    promptMessages.push(...convertedMessages.filter(Boolean));
-
-    if (promptMessages.length === 1) {
-        promptMessages.push({
-            role: 'user',
-            content: '(No prior DM messages.)',
-            identifier: 'conversation-empty-transcript',
-        });
-    }
-
-    const groupReferenceContext = buildConversationGroupReferenceContext(messages, { groupId, speakerName, userName });
-    if (groupReferenceContext) {
-        promptMessages.push({
-            role: 'system',
-            content: groupReferenceContext,
-            identifier: 'conversation-group-reference-context',
-        });
-    }
-
-    promptMessages.push({
-        role: 'user',
-        content: [directive, `${speakerName}:`].filter(Boolean).join('\n\n'),
-        identifier: 'conversation-reply-directive',
-    });
-    return promptMessages;
 }
 
 /**
  * Build conversation system prompt
  */
-export function buildConversationSystemPrompt({ settings, character, userName, groupId, branch, participantNames = [] }) {
-    const charName = character.name || 'Character';
-    const fields = [
-        groupId
-            ? `You are ${charName} in a private group direct-message conversation with ${userName}. You are one equal participant in this group DM and should reply only as ${charName}.`
-            : `You are ${charName} in a private direct-message conversation with ${userName}.`,
-        groupId && participantNames.length
-            ? `Active group participants: ${participantNames.map(name => formatPromptText(name, 80)).filter(Boolean).join(', ')}.`
-            : '',
-        'This Conversation Mode transcript is separate from the roleplay/story chat. Do not continue roleplay scenes unless the user explicitly asks about them.',
-        'Formatting: write plain chat text. Do not start with a speaker/name label. Do not wrap words or phrases in double quotation marks or smart quotes for emphasis. If sending multiple chat bubbles, put each bubble on its own line.',
-        getConversationSystemTimeContext(),
-        compileChatroomPrompt(settings, charName, userName, DEFAULT_CHATROOM_PROMPT),
-    ];
-
-    const groundedRules = getGroundedDialogueRulesPrompt(settings);
-    if (groundedRules) {
-        fields.push(groundedRules);
-    }
-
-    if (character.description) {
-        fields.push(`Character description:\n${formatPromptText(character.description, 2400)}`);
-    }
-    if (character.personality) {
-        fields.push(`Personality:\n${formatPromptText(character.personality, 1600)}`);
-    }
-    if (character.scenario) {
-        fields.push(`Background context:\n${formatPromptText(character.scenario, 1200)}`);
-    }
-
-    const authorNote = settings.authors_note || character.creator_notes;
-    if (authorNote) {
-        fields.push(`Conversation author's note:\n${String(authorNote).replace('{{char}}', charName).replace('{{user}}', userName)}`);
-    }
-    if (settings.lorebook_override) {
-        fields.push(`Conversation lorebook focus: ${settings.lorebook_override}. Prefer this lore/context over roleplay scene continuity.`);
-    }
-    if (branch?.memorySummary) {
-        fields.push(`Long-term DM memory summary:\n${branch.memorySummary}`);
-    }
-
-    const commandHints = [];
-    if (settings.selfie_command_enabled) {
-        commandHints.push('To send a selfie or photo, embed [selfie] (optionally [selfie: context="what the photo shows"]) anywhere in your reply. It is stripped from the visible message and turned into a real image.');
-    }
-    if (settings.schedule_command_enabled) {
-        commandHints.push('To change what you are doing right now, embed [schedule_update: status="online|idle|dnd|offline", activity="short description", duration="1h30m"]. Use this when your situation shifts.');
-    }
-    commandHints.push('To schedule a reminder for the user at their request, embed [reminder: delay_or_time | memo] anywhere in your reply. This command is stripped from the visible message.');
-    fields.push(`Available commands (use sparingly and only when natural):\n${commandHints.join('\n')}`);
-
-    return fields.filter(Boolean).join('\n\n');
+export function buildConversationSystemPrompt({ settings, character, userName, groupId, branch, participantNames = [], context = {} }) {
+    return composeConversationSystemPrompt({
+        ...context, settings, character, userName, groupId,
+        timeContext: context.timeContext ?? getConversationSystemTimeContext(),
+        authorNote: settings.authors_note || character.creator_notes,
+        memorySummary: branch?.memorySummary || '',
+        participantContext: groupId && participantNames.length
+            ? `Active group participants: ${participantNames.map(name => formatPromptText(name, 80)).filter(Boolean).join(', ')}.` : '',
+    });
 }
 
 /**
@@ -586,6 +435,12 @@ export function getSafeConversationGenerationStatus(status) {
  * Run backend generation with error handling
  */
 export async function runBackendGeneration(request, backend, payload, { signal, fetch, anonymousCustom = false } = {}) {
+    const handler = backend === GENERATION_BACKENDS.TEXT ? handleTextCompletionsGenerate : handleChatCompletionsGenerate;
+    return runBackendRequest(request, handler, payload, { signal, fetch, anonymousCustom });
+}
+
+/** Invoke an existing provider handler with the same owner and cancellation policy. */
+export async function runBackendRequest(request, handler, payload, { signal, fetch, anonymousCustom = false } = {}) {
     if (!Object.keys(payload).length) {
         const error = new Error('generation payload is required');
         error.status = 400;
@@ -604,8 +459,11 @@ export async function runBackendGeneration(request, backend, payload, { signal, 
         user: request.user,
         headers: request.headers,
         app: request.app,
+        query: request.query || {},
         fetch,
         anonymousCustom,
+        resumableGeneration: request.resumableGeneration,
+        generationSignal: signal,
         socket: request.socket || inertSocket,
         get: typeof request.get === 'function' ? request.get.bind(request) : undefined,
         on: typeof request.on === 'function' ? request.on.bind(request) : undefined,
@@ -627,10 +485,10 @@ export async function runBackendGeneration(request, backend, payload, { signal, 
         body: payload,
     };
     const capture = createCapturingResponse();
-    if (backend === GENERATION_BACKENDS.TEXT) {
-        await handleTextCompletionsGenerate(generationRequest, capture);
-    } else {
-        await handleChatCompletionsGenerate(generationRequest, capture);
+    try {
+        await handler(generationRequest, capture);
+    } finally {
+        if (!capture.writableEnded) capture.end();
     }
 
     if (signal?.aborted) {

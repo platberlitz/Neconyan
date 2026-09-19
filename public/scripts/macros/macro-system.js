@@ -13,6 +13,7 @@ import { MacroLexer } from './engine/MacroLexer.js';
 import { MacroParser } from './engine/MacroParser.js';
 import { MacroCstWalker } from './engine/MacroCstWalker.js';
 import { MacroEnvBuilder } from './engine/MacroEnvBuilder.js';
+import { ensureGenerationTracking } from './engine/MacroEnvExtra.browser.js';
 
 // Macro definition groups
 import { registerCoreMacros } from './definitions/core-macros.js';
@@ -63,6 +64,7 @@ export const macros = {
  * Intended to be called once during app initialization.
  */
 export function initRegisterMacros() {
+    ensureGenerationTracking();
     // Core utilities and generic helpers
     registerCoreMacros();
 

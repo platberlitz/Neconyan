@@ -156,7 +156,7 @@ describe('in-chat agents generation UI wiring', () => {
         expect(coreScriptSource).toContain('const companionFeedbackTarget = companionHistoryTarget');
         expect(coreScriptSource).toContain('companionHistoryTarget: companionFeedbackTarget');
         expect(agentRunnerSource).toContain('companionRuntime?.stripAuxiliaryTrackerEchoes?.(message.mes, undefined, activeAgents)');
-        expect(agentRunnerSource).toContain('recordAppliedTransformation(message, initialText, promptRuns)');
+        expect(agentRunnerSource).toContain('recordAppliedTransformation(message, historyBaselineText, promptRuns)');
         expect(coreScriptSource).toContain("isContinue || type === 'swipe' || type === 'regenerate' ? lastMessage : null");
         expect(coreScriptSource).toContain('message !== companionRewriteTarget');
         expect(coreScriptSource).toContain('!message.extra?.[IGNORE_SYMBOL]');

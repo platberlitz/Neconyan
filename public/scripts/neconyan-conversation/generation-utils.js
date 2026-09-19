@@ -1,8 +1,10 @@
 import {
     REMINDER_COMMAND_RE,
     SCHEDULE_UPDATE_RE,
+    SCHEDULE_STATUSES,
     SELFIE_COMMAND_RE,
 } from './constants.js';
+import { parseDurationToMs } from './schedule-utils.js';
 
 export function parseCommandArgs(rawArgs) {
     const args = {};
@@ -12,6 +14,14 @@ export function parseCommandArgs(rawArgs) {
         args[match[1].toLowerCase()] = match[2];
     }
     return args;
+}
+
+export function resolveConversationScheduleUpdate(rawArgs, now = Date.now()) {
+    const args = parseCommandArgs(rawArgs);
+    const status = SCHEDULE_STATUSES.includes(args.status) ? args.status : null;
+    const activity = (args.activity || '').trim();
+    if (!status && !activity) return null;
+    return { status: status || 'online', activity: activity || 'free time', expiresAt: now + (parseDurationToMs(args.duration) || 7200000) };
 }
 
 export function normalizeConversationOutputText(rawText) {

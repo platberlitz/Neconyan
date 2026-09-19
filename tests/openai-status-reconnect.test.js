@@ -2,6 +2,7 @@
 import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import { createContext, runInContext } from 'node:vm';
+import { REVERSE_PROXY_SUPPORTED_SOURCES } from '../public/scripts/chat-request-controls.js';
 
 const openAiSource = readFileSync(new URL('../public/scripts/openai.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const scriptSource = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
@@ -30,6 +31,7 @@ function createHarness() {
     const constantsEnd = openAiSource.indexOf('const REVERSE_PROXY_SOURCE_LABELS', constantsStart);
     const context = createContext({
         AbortController,
+        REVERSE_PROXY_SUPPORTED_SOURCES,
         AbortReason: Error,
         main_api: 'openai',
         oai_settings: { chat_completion_source: 'linkapi', linkapi_endpoint: 'global', reverse_proxy: '', proxy_password: '' },
@@ -74,7 +76,7 @@ function createHarness() {
         }),
     });
     runInContext(`
-        ${openAiSource.slice(constantsStart, constantsEnd).replaceAll('export ', '')}
+        ${openAiSource.slice(constantsStart, constantsEnd).replace('export { REVERSE_PROXY_SUPPORTED_SOURCES };', '').replaceAll('export ', '')}
         function setOnlineStatus(status) { online_status = status; }
         ${functionSource(scriptSource, 'startStatusLoading')}
         ${functionSource(scriptSource, 'stopStatusLoading')}

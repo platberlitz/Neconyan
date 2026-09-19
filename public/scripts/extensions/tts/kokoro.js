@@ -207,6 +207,7 @@ export class KokoroTtsProvider {
     get settingsHtml() {
         return `
             <div class="kokoro_tts_settings">
+                <p data-i18n="Kokoro runs in this browser. Keep this page open while speech is being generated.">Kokoro runs in this browser. Keep this page open while speech is being generated.</p>
                 <label for="kokoro_model_id">Model ID:</label>
                 <input id="kokoro_model_id" type="text" class="text_pole" value="${this.settings.modelId}" />
 

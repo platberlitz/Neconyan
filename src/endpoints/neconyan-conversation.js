@@ -45,6 +45,7 @@ import {
 } from './conversation-threads.js';
 import {
     appendConversationMessage,
+    createConversationMessage,
     getIncomingMessage,
     refreshBranchPreview,
     buildConversationMessageReplyReference,
@@ -64,6 +65,7 @@ import {
     extractGeneratedText,
     getSafeConversationGenerationStatus,
 } from './conversation-generation.js';
+import { acceptConversationReply } from '../generation/conversation-jobs.js';
 
 const PREFER_REAL_IP_HEADER = getConfigValue('rateLimiting.preferRealIpHeader', false, 'boolean');
 const MESSAGE_SEND_RATE_LIMIT = getConfigValue('rateLimiting.conversationMessageSendPoints', 20, 'number');
@@ -559,6 +561,13 @@ router.post('/message/append', asyncRoute(async (request, response) => {
     });
 }));
 
+router.post('/reply/submit', asyncRoute(async (request, response) => {
+    if (!await consumeMessageSendLimit(response, messageSendIpLimiter, getIpAddress(request, PREFER_REAL_IP_HEADER))) return;
+    if (!await consumeMessageSendLimit(response, messageSendUserLimiter, request.user.profile.handle)) return;
+    const accepted = await acceptConversationReply(request, request.body || {});
+    return response.status(accepted.created ? 202 : 200).send(accepted);
+}));
+
 router.post('/message/send', asyncRoute(async (request, response) => {
     const ip = getIpAddress(request, PREFER_REAL_IP_HEADER);
     if (!await consumeMessageSendLimit(response, messageSendIpLimiter, ip)) {
@@ -651,7 +660,7 @@ router.post('/message/send', asyncRoute(async (request, response) => {
 
     const cancellationController = new AbortController();
     const cancellation = abortOnRequestClose(request, cancellationController, response);
-    if (request.aborted || request.readableAborted || response.destroyed) {
+    if (!request.resumableGeneration && (request.aborted || request.readableAborted || response.destroyed)) {
         cancellation.abort('pre-generation');
     }
     const userMessage = reuseLastUser
@@ -680,10 +689,11 @@ router.post('/message/send', asyncRoute(async (request, response) => {
             avatar: target.avatar,
             character,
         });
-        const branch = getActiveConversationBranch(context.store, storageTarget.avatar, storageTarget.groupId, {
+        const branch = JSON.parse(JSON.stringify(getActiveConversationBranch(context.store, storageTarget.avatar, storageTarget.groupId, {
             create: true,
             personaId: storageTarget.personaId,
-        });
+        })));
+        const originalMessages = JSON.stringify(branch.messages);
         if (reuseLastUser && branch.messages.at(-1)?.role === 'character') {
             branch.messages.pop();
         }
@@ -715,6 +725,12 @@ router.post('/message/send', asyncRoute(async (request, response) => {
             settings.reply_max_tokens,
         );
 
+        // Save the user's message before waiting for the provider; keep the old reply during regeneration.
+        if (cancellationController.signal.aborted) return;
+        const pendingSave = await saveConversationStore(request, context.store, context.version);
+        if (!pendingSave.ok) return response.status(pendingSave.status).send(pendingSave.body);
+        const retryState = { version: pendingSave.version, userMessage, reuseLastUser: true };
+
         let generationResponse;
         try {
             generationResponse = await runBackendGeneration(request, backend, payload, { signal: cancellationController.signal });
@@ -729,6 +745,7 @@ router.post('/message/send', asyncRoute(async (request, response) => {
             return response.status(getSafeConversationGenerationStatus(error.status)).send({
                 error: 'generation_failed',
                 detail: sanitizedDetail,
+                ...retryState,
             });
         }
 
@@ -737,6 +754,7 @@ router.post('/message/send', asyncRoute(async (request, response) => {
             return response.status(502).send({
                 error: 'generation_too_large',
                 detail: 'Model response exceeded the Conversation message limit',
+                ...retryState,
             });
         }
         const commandParts = extractCharacterReplyCommandParts(rawReplyText, settings);
@@ -746,6 +764,7 @@ router.post('/message/send', asyncRoute(async (request, response) => {
             return response.status(502).send({
                 error: 'empty_generation',
                 detail: 'Model returned empty response',
+                ...retryState,
             });
         }
         if (cancellationController.signal.aborted) {
@@ -753,7 +772,7 @@ router.post('/message/send', asyncRoute(async (request, response) => {
         }
 
         const userReplyReference = buildConversationMessageReplyReference(userMessage);
-        const replyMessage = appendConversationMessage(context.store, storageTarget.avatar, {
+        const replyMessage = createConversationMessage({
             role: 'character',
             name: character.name || 'Character',
             mes: replyText,
@@ -761,10 +780,6 @@ router.post('/message/send', asyncRoute(async (request, response) => {
                 ...(userReplyReference ? { conversation_reply_to: userReplyReference } : {}),
                 conversation_commands: conversationCommands,
             },
-        }, {
-            groupId: storageTarget.groupId,
-            personaId: storageTarget.personaId,
-            fallback: { role: 'character', name: character.name || 'Character' },
         });
         if (!replyMessage) {
             const error = new Error('Failed to append generated reply');
@@ -772,14 +787,22 @@ router.post('/message/send', asyncRoute(async (request, response) => {
             throw error;
         }
 
-        const saveResult = await saveConversationStore(request, context.store, request.body.version);
+        const latest = readUserSettingsWithStatus(request);
+        if (!latest.ok) return response.status(500).send({ error: 'settings_read_failed' });
+        const latestVersion = getSettingsVersion(latest.data);
+        const latestStore = ensureConversationStore(latest.data, normalizeGroupRecord);
+        const threadKey = getConversationThreadKey(storageTarget.avatar, storageTarget.groupId, storageTarget.personaId);
+        const savedBranch = latestStore.characters[threadKey]?.branches?.[branch.id];
+        if (!savedBranch || savedBranch.createdAt !== branch.createdAt || JSON.stringify(savedBranch.messages) !== originalMessages) {
+            return response.status(409).send({ error: 'settings_conflict', version: latestVersion });
+        }
+        // Only replace this unchanged branch's messages, preserving concurrent settings and other threads.
+        savedBranch.messages = [...branch.messages, replyMessage].slice(-MAX_THREAD_MESSAGES);
+        refreshBranchPreview(savedBranch);
+        const saveResult = await saveConversationStore(request, latestStore, latestVersion);
         if (!saveResult.ok) {
             return response.status(saveResult.status).send(saveResult.body);
         }
-        const savedBranch = getActiveConversationBranch(saveResult.store, storageTarget.avatar, storageTarget.groupId, {
-            create: false,
-            personaId: storageTarget.personaId,
-        });
         return response.send({
             threadKey: getConversationThreadKey(storageTarget.avatar, storageTarget.groupId, storageTarget.personaId),
             userMessage,

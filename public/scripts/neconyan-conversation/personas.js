@@ -22,6 +22,7 @@ import {
     persistConversationStore,
 } from './context.js';
 import { updateUserFooter } from './pickers.js';
+import { composePersonaDescription, conversationPersonaAppendices } from './persona-description.js';
 
 export function getAvailabilityCopy(status) {
     return AVAILABILITY_COPY[status] ?? AVAILABILITY_COPY.online;
@@ -128,20 +129,7 @@ function normalizeConversationPersonaAppendixSelections(descriptor) {
 }
 
 export function getConversationPersonaAppendices(avatarId) {
-    const descriptor = power_user?.persona_descriptions?.[avatarId];
-    if (!descriptor || !Array.isArray(descriptor.appendices)) {
-        return [];
-    }
-
-    return descriptor.appendices.map((appendix, index) => {
-        const name = String(appendix?.name || `Scenario Note ${index + 1}`).trim() || `Scenario Note ${index + 1}`;
-        const id = String(appendix?.id || `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${index}`).trim();
-        return {
-            id,
-            name,
-            description: String(appendix?.description ?? ''),
-        };
-    }).filter(appendix => appendix.id);
+    return conversationPersonaAppendices(power_user?.persona_descriptions?.[avatarId]);
 }
 
 export function getActiveConversationPersonaAppendixIds(avatarId, options = {}) {
@@ -170,26 +158,7 @@ export function getActiveConversationPersonaAppendixIds(avatarId, options = {}) 
 }
 
 export function composeConversationPersonaDescription(avatarId, options = {}) {
-    const descriptor = power_user?.persona_descriptions?.[avatarId];
-    const chunks = [];
-    const baseDescription = String(descriptor?.description ?? '').trim();
-
-    if (baseDescription) {
-        chunks.push(baseDescription);
-    }
-
-    const activeIds = new Set(getActiveConversationPersonaAppendixIds(avatarId, options));
-    for (const appendix of getConversationPersonaAppendices(avatarId)) {
-        if (activeIds.has(appendix.id) && appendix.description.trim()) {
-            // Neconyan: wrap the appendix label in parentheses instead of square brackets.
-            // Square brackets collide with Conversation Mode's reply command grammar
-            // ([selfie], [schedule_update:], [reminder:]); echoing them in a reply caused
-            // the strip pass to blank it entirely.
-            chunks.push(`(${appendix.name})\n${appendix.description.trim()}`);
-        }
-    }
-
-    return chunks.join('\n\n');
+    return composePersonaDescription(power_user?.persona_descriptions?.[avatarId], getActiveConversationPersonaAppendixIds(avatarId, options));
 }
 
 export function setActiveConversationPersonaAppendixIds(avatarId, ids, options = {}) {

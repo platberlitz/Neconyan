@@ -1,8 +1,4 @@
 import { MacroRegistry, MacroCategory, MacroValueType } from '../engine/MacroRegistry.js';
-import { isMobile } from '../../RossAscends-mods.js';
-import { parseMesExamples, main_api } from '../../../script.js';
-import { power_user } from '../../power-user.js';
-import { formatInstructModeExamples } from '../../instruct-mode.js';
 
 /** @typedef {import('../engine/MacroEnv.types.js').MacroEnv} MacroEnv */
 
@@ -110,7 +106,9 @@ export function registerEnvMacros() {
             const raw = env.character.mesExamplesRaw ?? '';
             if (!raw) return '';
 
-            const isInstruct = !!power_user?.instruct?.enabled && main_api !== 'openai';
+            const parseMesExamples = env.extra?.parseMesExamples;
+
+            const isInstruct = !!env.extra?.powerUser?.instruct?.enabled && env.extra?.mainApi !== 'openai';
             const parsed = parseMesExamples(raw, isInstruct);
 
             if (!Array.isArray(parsed) || parsed.length === 0) {
@@ -120,6 +118,7 @@ export function registerEnvMacros() {
                 return parsed.join('');
             }
 
+            const formatInstructModeExamples = env.extra?.formatInstructModeExamples;
             const formatted = formatInstructModeExamples(parsed, env.names.user, env.names.char);
             return Array.isArray(formatted) ? formatted.join('') : '';
         },
@@ -200,6 +199,6 @@ export function registerEnvMacros() {
         description: '"true" if currently running in a mobile environment, "false" otherwise.',
         returns: 'Whether the environment is mobile.',
         returnType: MacroValueType.BOOLEAN,
-        handler: () => String(isMobile()),
+        handler: ({ env }) => String(!!env.extra?.isMobile?.()),
     });
 }

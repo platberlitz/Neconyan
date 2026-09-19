@@ -6,36 +6,8 @@ import { getPresetManager } from '../preset-manager.js';
 import { SECRET_KEYS, secret_state } from '../secrets.js';
 import { textgen_types, textgenerationwebui_settings } from '../textgen-settings.js';
 import { getTokenCountAsync } from '../tokenizers.js';
-import { createThumbnail, isTrueBoolean, isValidUrl } from '../utils.js';
-
-const CHAT_COMPLETION_PROFILE_REQUEST_FIELDS = {
-    'request-reasoning': ['include_reasoning', value => isTrueBoolean(String(value))],
-    'reasoning-effort': ['reasoning_effort', value => String(value ?? '')],
-    'verbosity': ['verbosity', value => String(value ?? '')],
-    'enable-web-search': ['enable_web_search', value => isTrueBoolean(String(value))],
-    'request-images': ['request_images', value => isTrueBoolean(String(value))],
-    'request-image-resolution': ['request_image_resolution', value => String(value ?? '')],
-    'request-image-aspect-ratio': ['request_image_aspect_ratio', value => String(value ?? '')],
-    'custom-reasoning-param-format': ['custom_reasoning_param_format', value => String(value ?? '')],
-    'custom-reasoning-param-name': ['custom_reasoning_param_name', value => String(value ?? '')],
-    'custom-reasoning-enabled-value': ['custom_reasoning_enabled_value', value => String(value ?? '')],
-    'custom-reasoning-disabled-value': ['custom_reasoning_disabled_value', value => String(value ?? '')],
-    'custom-include-body': ['custom_include_body', value => String(value ?? '')],
-    'custom-exclude-body': ['custom_exclude_body', value => String(value ?? '')],
-    'custom-include-headers': ['custom_include_headers', value => String(value ?? '')],
-};
-
-/**
- * Reasoning settings a completion preset owns, keyed by the connection profile field that would
- * override them. A profile can only capture what was set when it was saved, and profiles saved
- * before these fields existed carry none of them, so the preset a profile points at is the
- * fallback: that is where the setting is usually made.
- * @type {Record<string, string>}
- */
-const PRESET_BACKED_REASONING_FIELDS = Object.freeze({
-    'reasoning-effort': 'reasoning_effort',
-    'verbosity': 'verbosity',
-});
+import { createThumbnail, isValidUrl } from '../utils.js';
+import { resolveProfileProxy, resolveProfileRequestOverrides, resolveProfileServiceTier } from '../connection-profile-request.js';
 
 /**
  * Loads the completion preset a connection profile points at.
@@ -58,87 +30,15 @@ function getProfileCompletionPreset(profile) {
 export function getProfileServiceTier(profile) {
     const api = CONNECT_API_MAP[profile.api];
     const source = api?.source || api?.type;
-    if (!['nanogpt', 'openrouter'].includes(source)) return undefined;
-    if (profile.exclude?.includes('service-tier')) return undefined;
-    // Older profiles inherit an explicitly bound preset choice, never the active UI's paid tier.
-    const presetTier = api.selected === 'openai' ? getProfileCompletionPreset(profile)?.[`${source}_service_tier`] : undefined;
-    const tier = profile['service-tier'] ?? presetTier;
-    return tier === 'default' ? '' : (tier ?? '');
+    return resolveProfileServiceTier(profile, source, api?.selected === 'openai' ? getProfileCompletionPreset(profile) : null);
 }
 
 export function getChatCompletionProfileRequestOverrides(profile, overridePayload) {
-    const overrides = {};
-    const profileFieldNames = [];
-
-    for (const [profileKey, [requestKey, coerceValue]] of Object.entries(CHAT_COMPLETION_PROFILE_REQUEST_FIELDS)) {
-        if (!Object.hasOwn(profile, profileKey) || Object.hasOwn(overridePayload, requestKey)) {
-            continue;
-        }
-
-        overrides[requestKey] = coerceValue(profile[profileKey]);
-        profileFieldNames.push(requestKey);
-    }
-
-    // SillyBunny: a profile that states no reasoning preference of its own inherits the one its
-    // preset carries, which is where the setting is usually made. An explicit value on the
-    // profile, and anything the caller passes, still wins.
-    const preset = getProfileCompletionPreset(profile);
-    for (const [profileKey, requestKey] of Object.entries(PRESET_BACKED_REASONING_FIELDS)) {
-        if (Object.hasOwn(profile, profileKey) || Object.hasOwn(overridePayload, requestKey)) {
-            continue;
-        }
-
-        const value = preset?.[requestKey];
-        if (value === undefined || value === null || value === '') {
-            continue;
-        }
-
-        const [, coerceValue] = CHAT_COMPLETION_PROFILE_REQUEST_FIELDS[profileKey];
-        overrides[requestKey] = coerceValue(value);
-        profileFieldNames.push(requestKey);
-    }
-
-    return { overrides, profileFieldNames };
-}
-
-function getReverseProxyRequestFields(proxyPreset) {
-    if (!proxyPreset?.url) {
-        return {};
-    }
-
-    return {
-        reverse_proxy: proxyPreset.url,
-        proxy_password: proxyPreset.password,
-    };
+    return resolveProfileRequestOverrides(profile, overridePayload, getProfileCompletionPreset(profile));
 }
 
 export function getChatCompletionProfileReverseProxy(profile, chatCompletionSource) {
-    const profileProxyName = profile?.proxy;
-    const profileProxy = proxies.find((preset) => preset.name === profileProxyName);
-    const profileProxyFields = getReverseProxyRequestFields(profileProxy);
-    if (profileProxyFields.reverse_proxy) {
-        return profileProxyFields;
-    }
-
-    // SillyBunny: a profile that explicitly stores a proxy selection ('None' included)
-    // must be honored as-is. Falling through here would leak the currently active
-    // profile's proxy state into requests made under this profile (e.g. Agents).
-    // Empty strings are deliberate: a later preset merge only overrides fields that
-    // are present, so `{}` would let a preset's stored proxy come back.
-    if (profileProxyName) {
-        return { reverse_proxy: '', proxy_password: '' };
-    }
-
-    const sourceProxy = proxies.find((preset) => preset.name !== 'None' && preset.source === chatCompletionSource && preset.url);
-    const sourceProxyFields = getReverseProxyRequestFields(sourceProxy);
-    if (sourceProxyFields.reverse_proxy) {
-        return sourceProxyFields;
-    }
-
-    return getReverseProxyRequestFields({
-        url: oai_settings.reverse_proxy,
-        password: oai_settings.proxy_password,
-    });
+    return resolveProfileProxy(profile, chatCompletionSource, proxies, oai_settings);
 }
 
 /**

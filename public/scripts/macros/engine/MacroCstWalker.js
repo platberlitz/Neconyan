@@ -3,12 +3,12 @@
 /** @typedef {import('./MacroEnv.types.js').MacroEnv} MacroEnv */
 /** @typedef {import('./MacroFlags.js').MacroFlags} MacroFlags */
 
-import { logMacroInternalError, logMacroRuntimeWarning } from './MacroDiagnostics.js';
+import { logMacroInternalError, logMacroRuntimeWarning } from './macro-console.js';
 import { MacroEngine } from './MacroEngine.js';
 import { parseFlags, createEmptyFlags, MacroFlagType } from './MacroFlags.js';
 import { MacroParser } from './MacroParser.js';
 import { MacroRegistry } from './MacroRegistry.js';
-import { isFalseBoolean } from '/scripts/utils.js';
+import { isFalseBoolean } from '../../macro-primitives.js';
 
 /**
  * @typedef {Object} MacroCall
@@ -371,6 +371,7 @@ class MacroCstWalker {
             return this.#evaluateVariableExpr(macroNode, variableExprNode, context);
         }
 
+
         // Regular macro - get identifier from macroBody
         const macroBodyNode = /** @type {CstNode?} */ ((children.macroBody || [])[0]);
         const bodyChildren = macroBodyNode?.children || {};
@@ -605,8 +606,8 @@ class MacroCstWalker {
         // which is important for performance and because some macros are stateful.
         const lazyValue = hasValueExpr ? this.#createLazyValue(operatorChildren, context) : () => '';
 
-        // Execute the operation using direct variable API calls
-        return this.#executeVariableOperation(varName, isGlobal, operation, lazyValue);
+        // Execute the operation using the operation-scoped variable API carried on the env.
+        return this.#executeVariableOperation(context.env, varName, isGlobal, operation, lazyValue);
     }
 
     /**
@@ -631,17 +632,24 @@ class MacroCstWalker {
     }
 
     /**
-     * Executes a variable operation using the SillyTavern context API.
+     * Executes a variable operation using the operation-scoped variable API
+     * provided by the host on env.extra.variables. The browser builder supplies the
+     * live SillyTavern stores; server glue supplies an explicit snapshot plus
+     * a mutation sink. This module must not reach for globals.
      *
+     * @param {MacroEnv} env - The macro environment for the current operation.
      * @param {string} varName - The variable name.
      * @param {boolean} isGlobal - Whether this is a global ($) or local (.) variable.
      * @param {string} operation - The operation to perform.
      * @param {() => string} lazyValue - A lazy function that returns the value when called. Only evaluated when needed.
      * @returns {string} The result of the operation.
      */
-    #executeVariableOperation(varName, isGlobal, operation, lazyValue) {
-        const ctx = SillyTavern.getContext();
-        const vars = isGlobal ? ctx.variables.global : ctx.variables.local;
+    #executeVariableOperation(env, varName, isGlobal, operation, lazyValue) {
+        const vars = isGlobal ? env.extra.variables.global : env.extra.variables.local;
+        if (!vars) {
+            logMacroRuntimeWarning({ message: `Variable shorthand cannot be resolved: env.extra.variables.${isGlobal ? 'global' : 'local'} is not available.` });
+            return '';
+        }
 
         /**
         * Normalizes macro results into a string.
