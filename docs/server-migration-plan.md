@@ -124,8 +124,12 @@ acceptance case is unproven), `pending` (not started).
   pipeline (styles, quality tags, ST-style and contextual filters) and the other
   media pipelines remain browser-side or unimplemented server-side.
 - `partial` Conversation participant selection, availability, assistant context and
-  image delivery run natively (see Phase 2). The main composer queue, explicit
-  reply targets, send-triggered partner chimes and the autonomous scheduler remain.
+  the image boundary run natively (see Phase 2). The worker now schedules native
+  reminders, weekly and legacy schedules, idle and proactive messages, chimes and
+  character chat through the reply family, plus native memory summaries and manual
+  schedule generation, using deterministic occurrence keys and one-time bookkeeping
+  claims. Remaining: the main composer queue, explicit reply targets, the Roleplay
+  aside bridge and disabling the browser worker after ownership handover.
 - `pending` Meower.
 - `pending` Prompting Lab, Distiller, LoreStitch, World Info Lab.
 - `pending` remaining bundled model and file workflows.
