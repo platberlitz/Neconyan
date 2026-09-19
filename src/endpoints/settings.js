@@ -274,14 +274,15 @@ router.post('/save', function (request, response) {
         const preparedSave = prepareSettingsSave(request.body, currentSettings);
         if (!preparedSave.ok) {
             return response.status(409).send({
-                error: 'settings_conflict',
+                error: preparedSave.conversationConflict ? 'conversation_conflict' : 'settings_conflict',
                 version: preparedSave.currentVersion,
+                reload: preparedSave.conversationConflict ? '/api/neconyan-conversation/store/get' : undefined,
             });
         }
 
         tryWriteFileSync(pathToSettings, JSON.stringify(preparedSave.settings, null, 4));
         triggerAutoSave(request.user.profile.handle);
-        response.send({ result: 'ok', version: preparedSave.version });
+        response.send({ result: 'ok', version: preparedSave.version, settingsRevision: preparedSave.settingsRevision });
     } catch (err) {
         console.error(err);
         response.status(500).send({ error: 'settings_save_failed' });

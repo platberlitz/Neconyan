@@ -14,7 +14,14 @@ function readProfile(directories, profileId) {
     if (typeof profileId !== 'string' || !profileId || profileId.length > 256) fail('Choose a saved connection profile.', 400);
     const settings = readJson(path.join(directories.root, 'settings.json'), {});
     if (settings.extension_settings?.disabledExtensions?.includes('connection-manager')) fail('Connection Manager is disabled.', 409);
-    const profile = settings.extension_settings?.connectionManager?.profiles?.find(item => item.id === profileId);
+    const profiles = settings.extension_settings?.connectionManager?.profiles;
+    let profile = profiles?.find(item => item.id === profileId);
+    if (!profile) {
+        // Conversation settings save a profile name, while jobs capture its id.
+        const named = (profiles || []).filter(item => item.name === profileId);
+        if (named.length > 1) fail('More than one saved connection profile has this name.', 409);
+        profile = named[0];
+    }
     if (!profile) fail('The saved connection profile no longer exists.', 409);
     const source = aliases[profile.api] || profile.api;
     if (!sources.has(source)) fail('This operation requires a Chat Completion connection profile.', 409);
@@ -55,7 +62,7 @@ export async function buildChatProfileRequest(directories, binding, messages, ma
     const payload = {
         stream: false, messages, max_tokens: maxTokens, model: modelOverride.trim() || profile.model,
         chat_completion_source: source, secret_id: profile['secret-id'], ...proxy,
-        custom_prompt_post_processing: profile['post-processing'],
+        custom_prompt_post_processing: profile['prompt-post-processing'],
         service_tier: resolveProfileServiceTier(profile, source, preset), ...overrides, ...overridePayload,
         __connectionProfileRequestFields: profileFieldNames,
     };

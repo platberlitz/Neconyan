@@ -883,6 +883,9 @@ export function getCharacterConversationStore(avatar, { create = true, personaId
     characterStore.branches = characterStore.branches && typeof characterStore.branches === 'object' ? characterStore.branches : {};
     characterStore.activeBranchId = characterStore.activeBranchId || DEFAULT_BRANCH_ID;
     if (!characterStore.branches[characterStore.activeBranchId]) {
+        if (!create) {
+            return null;
+        }
         characterStore.branches[characterStore.activeBranchId] = createConversationBranch('Main', characterStore.activeBranchId);
     }
     characterStore.branches[characterStore.activeBranchId] = normalizeConversationBranch(characterStore.branches[characterStore.activeBranchId], characterStore.activeBranchId);

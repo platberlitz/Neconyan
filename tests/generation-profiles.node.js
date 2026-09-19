@@ -65,6 +65,31 @@ test('saved chat profiles bind preset controls without storing credentials or fo
     assert.throws(() => captureChatProfile({ root: path.join(root, 'other-user') }, 'saved'), error => error.status === 409);
 });
 
+test('profiles resolve by saved name and carry prompt post-processing like the browser', async t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-profile-name-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const directories = { root, openAI_Settings: path.join(root, 'presets') };
+    fs.mkdirSync(directories.openAI_Settings);
+    const settings = {
+        extension_settings: { connectionManager: { profiles: [
+            { id: 'id-one', name: 'Named', api: 'custom', model: 'bound-model', 'prompt-post-processing': 'merge' },
+            { id: 'id-two', name: 'Named', api: 'custom', model: 'other-model' },
+        ] } },
+        oai_settings: { chat_completion_source: 'openai', temp_openai: 1, top_p_openai: 1, n: 1 },
+    };
+    const save = () => fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify(settings));
+    save();
+
+    assert.throws(() => captureChatProfile(directories, 'Named'), error => error.status === 409 && /More than one/.test(error.message));
+
+    settings.extension_settings.connectionManager.profiles.pop();
+    save();
+    const binding = captureChatProfile(directories, 'Named');
+    const request = await buildChatProfileRequest(directories, binding, [{ role: 'user', content: 'Hi' }], 50, () => ({ stream: false, messages: [{ role: 'user', content: 'Hi' }], max_tokens: 50 }));
+    assert.equal(request.model, 'bound-model');
+    assert.equal(request.custom_prompt_post_processing, 'merge');
+});
+
 test('server profile execution uses saved controls, caches completed calls and propagates job cancellation', async t => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-profile-execution-'));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));

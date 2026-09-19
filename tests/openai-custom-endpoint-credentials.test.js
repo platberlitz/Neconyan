@@ -20,7 +20,7 @@ const syncSource = source.match(/export function syncCustomEndpointPresetSelecti
 const POPUP_TYPE = { CONFIRM: 'confirm' };
 const POPUP_RESULT = { AFFIRMATIVE: 1, CANCEL: 0 };
 const scriptSource = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const saverSource = ['saveSettings', 'saveSettingsInner', 'normalizeSettingsVersion']
+const saverSource = ['saveSettings', 'saveSettingsInner', 'normalizeSettingsVersion', 'normalizeSettingsRevision']
     .map(name => scriptSource.match(new RegExp(`(?:async )?function ${name}\\([\\s\\S]*?\\n\\}`))[0]).join('\n');
 const sources = Object.fromEntries([...source.matchAll(/chat_completion_sources\.([A-Z0-9_]+)/g)].map(([, name]) => [name, name.toLowerCase()]));
 const keys = Object.fromEntries(Object.keys(sources).map(name => [name, `api_key_${name.toLowerCase()}`]));
@@ -57,6 +57,7 @@ function createHarness({ profile = normalizeCustomEndpointPreset({ name: 'Saved 
         settingsConflictReloadRequired: false,
         settingsConflictPromptDismissed: false,
         lastServerSettingsVersion: 1,
+        lastServerSettingsRevision: 1,
         settings: {},
         accountStorage: { getState: () => ({}) },
         getWorldInfoSettings: () => ({}),

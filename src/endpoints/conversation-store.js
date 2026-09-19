@@ -187,7 +187,7 @@ export async function saveConversationStore(request, store, version, { trustedCo
         },
         _version: versionValidation.version,
     };
-    const preparedSave = prepareSettingsSave(incomingSettings, latestSettings, { trustedConversationEffects });
+    const preparedSave = prepareSettingsSave(incomingSettings, latestSettings, { trustedConversationEffects, conversationOnly: true });
     if (!preparedSave.ok) {
         return {
             ok: false,

@@ -35,6 +35,56 @@ describe('settings version guard', () => {
         expect(getSettingsVersion({ _version: '7' })).toBe(7);
     });
 
+    const branchWrap = (version, revision, branch) => ({
+        _version: version,
+        _settingsRevision: revision,
+        extension_settings: { sillybunny_conversation: { characters: { 'nova.png': { branches: { main: branch } } } } },
+    });
+
+    test('keeps the non-Conversation revision steady across Conversation-only writes', () => {
+        const current = branchWrap(4, 2, { createdAt: 1, messages: [] });
+
+        const native = prepareSettingsSave(branchWrap(4, 2, { createdAt: 1, messages: [{ id: 'server' }] }), current, { conversationOnly: true });
+        expect(native).toMatchObject({ ok: true, version: 5, settingsRevision: 2 });
+        expect(native.settings._settingsRevision).toBe(2);
+
+        const general = prepareSettingsSave({ _version: 4, _settingsRevision: 2, username: 'New' }, current);
+        expect(general).toMatchObject({ ok: true, version: 5, settingsRevision: 3 });
+    });
+
+    test('a general save that omits Conversation keeps the authoritative block', () => {
+        const current = branchWrap(7, 1, { createdAt: 1, messages: [{ id: 'server' }] });
+        const incoming = { _version: 7, _settingsRevision: 1, _conversationOmitted: true, username: 'New', extension_settings: {} };
+
+        const result = prepareSettingsSave(incoming, current);
+        expect(result).toMatchObject({ ok: true, version: 8, settingsRevision: 2 });
+        expect(result.settings.extension_settings.sillybunny_conversation).toEqual(current.extension_settings.sillybunny_conversation);
+        expect(result.settings._conversationOmitted).toBeUndefined();
+    });
+
+    test('rejects a legacy whole-settings write that changes server-managed Conversation', () => {
+        const current = branchWrap(3, 0, { createdAt: 1, messages: [{ id: 'server' }], serverOperations: { job: {} } });
+        const incoming = branchWrap(3, 0, { createdAt: 1, messages: [] });
+
+        expect(prepareSettingsSave(incoming, current)).toMatchObject({ ok: false, currentVersion: 3, conversationConflict: true });
+
+        const untouched = prepareSettingsSave(branchWrap(3, 0, current.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main), current);
+        expect(untouched).toMatchObject({ ok: true, version: 4 });
+    });
+
+    test('tolerates a stale global version when only Conversation changed', () => {
+        const current = branchWrap(9, 4, { createdAt: 1, messages: [{ id: 'server' }] });
+        const incoming = { _version: 7, _settingsRevision: 4, username: 'New', extension_settings: {} };
+
+        const result = prepareSettingsSave(incoming, current);
+        expect(result).toMatchObject({ ok: true, version: 10, settingsRevision: 5 });
+        expect(result.settings.username).toBe('New');
+        expect(result.settings.extension_settings.sillybunny_conversation).toEqual(current.extension_settings.sillybunny_conversation);
+
+        const mismatched = prepareSettingsSave({ ...incoming, _settingsRevision: 3 }, current);
+        expect(mismatched).toEqual({ ok: false, currentVersion: 9 });
+    });
+
     test('only native server effects may change Conversation completion receipts', () => {
         const wrap = branch => ({ _version: 2, extension_settings: { sillybunny_conversation: { characters: { 'nova.png': { branches: { main: branch } } } } } });
         const current = wrap({ createdAt: 123, messages: [], serverOperations: { completed: { effects: { first: 'saved' } } } });

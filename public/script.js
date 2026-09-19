@@ -1014,6 +1014,8 @@ let rangeDeleteOfferUndo = false;
 export let settings;
 // Neconyan: version-tokened settings saves avoid stale overwrites across open devices/tabs.
 let lastServerSettingsVersion = 0;
+// Neconyan: revision of non-Conversation settings, so native Conversation writes do not force reloads.
+let lastServerSettingsRevision = 0;
 let settingsSaveQueue = Promise.resolve();
 let settingsConflictReloadRequired = false;
 let settingsConflictPromptOpen = false;
@@ -12980,6 +12982,11 @@ function normalizeSettingsVersion(version) {
     return Number.isSafeInteger(version) && version >= 0 ? version : 0;
 }
 
+function normalizeSettingsRevision(revision) {
+    revision = Number(revision);
+    return Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;
+}
+
 async function promptSettingsConflictReload() {
     if (settingsConflictPromptOpen) {
         return;
@@ -13034,6 +13041,7 @@ export async function getSettings(initLoaderHandle = null) {
     if (data.result != 'file not find' && data.settings) {
         settings = JSON.parse(data.settings);
         lastServerSettingsVersion = normalizeSettingsVersion(settings._version);
+        lastServerSettingsRevision = normalizeSettingsRevision(settings._settingsRevision);
         settingsConflictReloadRequired = false;
         settingsConflictPromptDismissed = false;
         if (settings.username !== undefined && settings.username !== '') {
@@ -13207,6 +13215,7 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
 
     const payload = {
         _version: lastServerSettingsVersion,
+        _settingsRevision: lastServerSettingsRevision,
         firstRun: firstRun,
         accountStorage: accountStorage.getState(),
         currentVersion: currentVersion,
@@ -13275,7 +13284,9 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
         }
 
         lastServerSettingsVersion = savedSettingsVersion;
+        lastServerSettingsRevision = normalizeSettingsRevision(saveResult?.settingsRevision ?? lastServerSettingsRevision);
         payload._version = lastServerSettingsVersion;
+        payload._settingsRevision = lastServerSettingsRevision;
 
         settings = payload;
         await eventSource.emit(event_types.SETTINGS_UPDATED);
