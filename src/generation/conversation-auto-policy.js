@@ -8,6 +8,7 @@
  * occurrence as a normal Conversation reply family.
  */
 
+import { createHash } from 'node:crypto';
 import { isCharacterMentionedInText } from '../../public/scripts/neconyan-conversation/partners-utils.js';
 import { getCurrentActivityFromSchedule } from '../../public/scripts/neconyan-conversation/schedule-utils.js';
 import { clamp, parsePositiveInt } from '../endpoints/conversation-utils.js';
@@ -18,7 +19,7 @@ const DEFAULT_IDLE_LIMIT = 15;
 const DEFAULT_INACTIVITY_THRESHOLD = 120;
 const DEFAULT_MAX_FOLLOWUPS = 3;
 const DEFAULT_AUTO_CHAT_COOLDOWN = 10;
-const REMINDER_RETRY_DELAY_MS = 60000;
+export const REMINDER_RETRY_DELAY_MS = 60000;
 const PARTNER_FOLLOWUP_RECENT_WINDOW = 6;
 const MAX_PARALLEL_CHIME_PARTNERS = 2;
 const AT_AUTO_CHAT_MARKER = 'auto_chat_at';
@@ -47,18 +48,19 @@ function scheduleTriggerCap(triggers) {
 
 /** The clock fields the browser reads locally, resolved in the user's named zone. */
 export function getConversationAutomationClock(now, timeZone = 'UTC') {
-    const parts = new Intl.DateTimeFormat('en-GB', { timeZone, hour12: false, weekday: 'short', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(now));
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone, hour12: false, weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(now));
     const get = type => parts.find(part => part.type === type)?.value || '';
     const hour = Number(get('hour')) % 24;
     const minute = get('minute');
     const dayOfWeek = Math.max(0, WEEKDAYS.indexOf(get('weekday')));
-    return { dayOfWeek, hour, minuteKey: `${String(hour).padStart(2, '0')}:${minute}` };
+    return { dayOfWeek, hour, minuteKey: `${String(hour).padStart(2, '0')}:${minute}`, dateKey: `${get('year')}-${get('month')}-${get('day')}` };
 }
 
 /** A deterministic key for one logical autonomous occurrence. */
 export function getConversationOccurrenceKey({ owner, target, kind, basis }) {
-    return ['conv-auto', owner, target?.avatar || '', target?.groupId || '', target?.personaId || '', target?.branchId || '', kind, ...(Array.isArray(basis) ? basis : [basis])]
+    const joined = ['conv-auto', owner, target?.avatar || '', target?.groupId || '', target?.personaId || '', target?.branchId || '', kind, ...(Array.isArray(basis) ? basis : [basis])]
         .map(value => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 200)).join('|');
+    return joined.length <= 180 ? joined : `conv-auto:${createHash('sha256').update(joined).digest('hex')}`;
 }
 
 function lastUserActivity(branch) {
@@ -98,7 +100,7 @@ export function selectConversationReminder({ reminders = [], targets = new Map()
         return occurrence(target.target, 'reminder', key, directive,
             [{ avatar: target.target.avatar, purpose: 'reminder', extra: { conversation_mode_auto: true, conversation_mode_reminder: true, reminder_text: reminder.text, reminder_id: reminder.id, groupId: target.target.groupId || '' } }],
             { conversation_mode_auto: true, conversation_mode_reminder: true, reminder_text: reminder.text, reminder_id: reminder.id, groupId: target.target.groupId || '' },
-            { reminder: { id: reminder.id, firedAt: now } });
+            { reminder: { id: reminder.id }, markAutoMessage: true });
     }
     return null;
 }
@@ -106,14 +108,14 @@ export function selectConversationReminder({ reminders = [], targets = new Map()
 /** A due weekly or legacy scheduled message for one thread. */
 export function selectConversationScheduledMessage({ settings = {}, branch = null, target = null, now = Date.now(), timeZone = 'UTC' } = {}) {
     if (!settings.auto_message || !branch || !target) return null;
-    const { dayOfWeek, minuteKey } = getConversationAutomationClock(now, timeZone);
+    const { dayOfWeek, minuteKey, dateKey } = getConversationAutomationClock(now, timeZone);
     const triggers = branch.scheduleTriggers || {};
     const candidates = [];
     for (const entry of safeParseWeeklySchedule(settings.weekly_schedule)) {
         if (!entry || entry.enabled === false) continue;
         if (!Array.isArray(entry.days) || !entry.days.includes(dayOfWeek)) continue;
         if (entry.time !== minuteKey) continue;
-        candidates.push({ key: `weekly:${dayOfWeek}:${entry.time}:${entry.message}`, directive: `[System directive: Your weekly schedule is due: "${entry.message}". Send a message with this context in mind.]`, label: `weekly:${entry.time}`, raw: entry.message });
+        candidates.push({ key: `weekly:${dateKey}:${entry.time}:${entry.message}`, directive: `[System directive: Your weekly schedule is due: "${entry.message}". Send a message with this context in mind.]`, label: `weekly:${entry.time}`, raw: entry.message });
     }
     for (const line of String(settings.ai_schedule || '').split('\n')) {
         const trimmed = line.trim();
@@ -121,7 +123,7 @@ export function selectConversationScheduledMessage({ settings = {}, branch = nul
         const absolute = trimmed.match(/^(\d{2}):(\d{2})\s*-\s*(.*)$/);
         if (absolute) {
             if (`${absolute[1]}:${absolute[2]}` === minuteKey) {
-                candidates.push({ key: `absolute:${dayOfWeek}:${minuteKey}:${trimmed}`, directive: `[System directive: Your schedule is due: "${absolute[3]}". Send a message with this context in mind.]`, label: trimmed, raw: absolute[3] });
+                candidates.push({ key: `absolute:${dateKey}:${minuteKey}:${trimmed}`, directive: `[System directive: Your schedule is due: "${absolute[3]}". Send a message with this context in mind.]`, label: trimmed, raw: absolute[3] });
             }
             continue;
         }
@@ -139,7 +141,7 @@ export function selectConversationScheduledMessage({ settings = {}, branch = nul
         return occurrence(target, 'schedule', key, candidate.directive,
             [{ avatar: target.avatar, purpose: 'schedule', extra: { conversation_mode_auto: true, schedule: candidate.label, groupId: target.groupId || '' } }],
             { conversation_mode_auto: true, schedule: candidate.label, groupId: target.groupId || '' },
-            { scheduleTriggers: [candidate.key], lastAutoMessageAt: now });
+            { scheduleTriggers: [candidate.key], markAutoMessage: true });
     }
     return null;
 }
@@ -158,18 +160,18 @@ export function selectConversationIdleMessage({ settings = {}, branch = null, ta
         const directive = '[System directive: The user has been quiet for a while. Send a casual auto follow-up checking in or asking what they are up to.]';
         const key = getConversationOccurrenceKey({ owner: '', target, kind: 'idle-followup', basis: lastUserActivity(branch) });
         return occurrence(target, 'idle-followup', key, directive,
-            [{ avatar: target.avatar, purpose: 'idle', extra: { conversation_mode_auto: true, idle_action: 'followup', groupId: target.groupId || '' } }],
+            [{ avatar: target.avatar, purpose: 'idle-followup', extra: { conversation_mode_auto: true, idle_action: 'followup', groupId: target.groupId || '' } }],
             { conversation_mode_auto: true, idle_action: 'followup', groupId: target.groupId || '' },
-            { sessionMarkers: { [followupMarker]: String(lastUserActivity(branch)) }, lastAutoMessageAt: now });
+            { sessionMarkers: { [followupMarker]: String(lastUserActivity(branch)) }, markAutoMessage: true });
     }
     const spontaneousLimit = settings.idle_followup ? idleLimit * 2 : idleLimit;
     if (settings.idle_spontaneous && elapsedMinutes >= spontaneousLimit && markers[spontaneousMarker] !== String(lastUserActivity(branch))) {
         const directive = '[System directive: Send a spontaneous ping to the user, starting a new topic or sharing a casual thought.]';
         const key = getConversationOccurrenceKey({ owner: '', target, kind: 'idle-spontaneous', basis: lastUserActivity(branch) });
         return occurrence(target, 'idle-spontaneous', key, directive,
-            [{ avatar: target.avatar, purpose: 'idle', extra: { conversation_mode_auto: true, idle_action: 'spontaneous', groupId: target.groupId || '' } }],
+            [{ avatar: target.avatar, purpose: 'idle-spontaneous', extra: { conversation_mode_auto: true, idle_action: 'spontaneous', groupId: target.groupId || '' } }],
             { conversation_mode_auto: true, idle_action: 'spontaneous', groupId: target.groupId || '' },
-            { sessionMarkers: { [spontaneousMarker]: String(lastUserActivity(branch)) }, lastAutoMessageAt: now });
+            { sessionMarkers: { [spontaneousMarker]: String(lastUserActivity(branch)) }, markAutoMessage: true });
     }
     return null;
 }
@@ -203,7 +205,7 @@ export function selectConversationProactiveMessage({ settings = {}, branch = nul
     return occurrence(target, 'proactive', key, directive,
         [{ avatar: target.avatar, purpose: 'proactive', extra: { conversation_mode_auto: true, proactive: true, proactive_status: status, groupId: target.groupId || '' } }],
         { conversation_mode_auto: true, proactive: true, proactive_status: status, groupId: target.groupId || '' },
-        { followupCount: sentCount + 1, lastAutoMessageAt: now });
+        { followupCount: sentCount + 1, markAutoMessage: true });
 }
 
 function mergePartnerRecords(settings, partners, group, threadAvatar) {
@@ -264,10 +266,10 @@ export function selectConversationChime({ settings = {}, branch = null, target =
     if (!chosen.length) return null;
     const key = getConversationOccurrenceKey({ owner: '', target, kind: 'chime', basis: lastUserActivity(branch) });
     const directiveFor = partner => `[System directive: You are ${partner.name}, chiming in on a private group DM conversation between ${target.avatar} and the user. If you were mentioned recently, answer naturally. Otherwise add one short message only if you have something distinct to contribute. Other people may be typing at the same time; do not wait for them. Output only your message body, without a name prefix.]`;
-    return occurrence(target, 'chime', key, '',
+    return occurrence(target, 'chime', key, directiveFor(chosen[0]),
         chosen.map(partner => ({ avatar: partner.avatar, purpose: 'chime', directive: directiveFor(partner), extra: { conversation_mode_auto: true, conversation_mode_chime: true, partner_avatar: partner.avatar, groupId: target.groupId || '' } })),
         { conversation_mode_auto: true },
-        { sessionMarkers: { [marker]: String(lastUserActivity(branch)) }, lastAutoMessageAt: now });
+        { sessionMarkers: { [marker]: String(lastUserActivity(branch)) }, markAutoMessage: true });
 }
 
 /** Character-to-character ambient chat, one partner aimed at another member. */
@@ -286,14 +288,15 @@ export function selectConversationCharacterChat({ settings = {}, branch = null, 
     return occurrence(target, 'chat', key, directive,
         [{ avatar: speaking.avatar, purpose: 'chat', extra: { conversation_mode_auto: true, conversation_mode_auto_chat: true, partner_avatar: speaking.avatar, groupId: target.groupId || '' } }],
         { conversation_mode_auto: true, conversation_mode_auto_chat: true, partner_avatar: speaking.avatar },
-        { sessionMarkers: { [AT_AUTO_CHAT_MARKER]: String(now) }, lastAutoMessageAt: now });
+        { sessionMarkersAtDelivery: [AT_AUTO_CHAT_MARKER], markAutoMessage: true });
 }
 
 /** Resolve a thread's current activity without treating a missing schedule as manual. */
 export function resolveAutomationActivity(characters, avatar, personaId, overrides, now, timeZone) {
     const schedule = characters[avatar]?.schedule;
-    if (!schedule) return manualActivity({});
-    return getCurrentActivityFromSchedule(schedule, `${personaId}\u001f${avatar}`, new Date(now), new Map(Object.entries(overrides || {})), timeZone);
+    const overrideKey = `${personaId}\u001f${avatar}`;
+    if (!schedule && !(overrides && Object.hasOwn(overrides, overrideKey))) return manualActivity({});
+    return getCurrentActivityFromSchedule(schedule, overrideKey, new Date(now), new Map(Object.entries(overrides || {})), timeZone);
 }
 
 /**

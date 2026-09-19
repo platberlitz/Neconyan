@@ -6,8 +6,8 @@ import { unScopeConversationStorageKey } from '../endpoints/conversation-utils.j
 import { getCharacterData } from '../endpoints/conversation-generation.js';
 import { getSettingsVersion } from '../settings-version.js';
 import { acceptConversationAutonomousReply, finalizeConversationSubmission } from './conversation-jobs.js';
-import { acceptConversationSummary } from './conversation-maintenance.js';
-import { resolveAutomationActivity, selectConversationReminder, selectNextConversationThreadAutomation } from './conversation-auto-policy.js';
+import { acceptConversationSummary, finalizeConversationMaintenanceSubmission } from './conversation-maintenance.js';
+import { REMINDER_RETRY_DELAY_MS, resolveAutomationActivity, selectConversationReminder, selectNextConversationThreadAutomation } from './conversation-auto-policy.js';
 
 const DEFAULT_INTERVAL_MS = 1000;
 const AUTO_SCAN_INTERVAL_MS = 30000;
@@ -24,22 +24,21 @@ function splitThreadKey(localKey) {
     return { avatar: rest.slice(separator + 1), groupId: rest.slice(0, separator) };
 }
 
-/** Every active branch for a persona, with settings and partner records resolved. */
+/** Every branch for a persona, with settings and partner records resolved. */
 async function buildAutomationFrames(request, store, personaId) {
+    const timeZone = store.automation?.timeZone || 'UTC';
     const characters = {};
     for (const [key, value] of Object.entries(store.characters || {})) {
         const local = unScopeConversationStorageKey(key, personaId);
         if (local !== null) characters[local] = value;
     }
     const frames = [];
+    const branches = new Map();
     for (const [key, characterStore] of Object.entries(store.characters || {})) {
         const local = unScopeConversationStorageKey(key, personaId);
         const split = splitThreadKey(local);
         if (!split || !characterStore) continue;
-        const branchId = characterStore.activeBranchId;
-        const branch = characterStore.branches?.[branchId];
-        if (!branch || !Array.isArray(branch.messages)) continue;
-        const target = { avatar: split.avatar, groupId: split.groupId, personaId, branchId };
+        const target = { avatar: split.avatar, groupId: split.groupId, personaId };
         const settings = getConversationSettings(request, store, target.avatar, target.groupId, {}, { personaId });
         const partners = [];
         if (target.groupId) {
@@ -47,16 +46,23 @@ async function buildAutomationFrames(request, store, personaId) {
             for (const avatar of [...new Set(group?.members || [])]) {
                 if (avatar === target.avatar || group?.disabled_members?.includes(avatar)) continue;
                 const member = await getCharacterData(request, avatar, { allowOverride: false });
-                partners.push({ avatar, name: member.name, status: 'online' });
+                const activity = resolveAutomationActivity(characters, avatar, personaId, store.runtimeStatusOverrides, Date.now(), timeZone);
+                partners.push({ avatar, name: member.name, status: activity?.status || 'online' });
             }
         }
-        frames.push({
-            target, branch, settings, partners,
-            activity: resolveAutomationActivity(characters, target.avatar, personaId, store.runtimeStatusOverrides, Date.now(), store.automation?.timeZone || 'UTC'),
-        });
+        for (const [branchId, branch] of Object.entries(characterStore.branches || {})) {
+            if (!branch || !Array.isArray(branch.messages)) continue;
+            const branchTarget = { ...target, branchId };
+            branches.set(`${split.avatar}\u001f${split.groupId}\u001f${branchId}`, { target: branchTarget, settings });
+            if (branchId !== characterStore.activeBranchId) continue;
+            frames.push({
+                target: branchTarget, branch, settings, partners,
+                activity: resolveAutomationActivity(characters, branchTarget.avatar, personaId, store.runtimeStatusOverrides, Date.now(), timeZone),
+            });
+        }
     }
     frames.sort((a, b) => (Number(b.branch.updatedAt) || 0) - (Number(a.branch.updatedAt) || 0));
-    return { characters, frames };
+    return { characters, frames, branches };
 }
 
 /**
@@ -108,11 +114,13 @@ export async function runConversationWorkerTick({ directoriesFor, owners, now = 
             continue;
         }
         for (const job of jobs) {
-            if (job.type !== 'conversation.reply') continue;
+            if (!['conversation.reply', 'conversation.summary', 'conversation.schedule'].includes(job.type)) continue;
             try {
                 if (job.stage === 'preparing' && job.state === 'waiting' && !job.cancellation?.requested && !(Number(job.coalesce?.deadline) > now)) {
-                    await finalizeConversationSubmission({ user: { profile: { handle: owner }, directories } }, job);
-                } else if (job.stage === 'children' && !job.result) {
+                    const scopedRequest = { user: { profile: { handle: owner }, directories } };
+                    if (job.type === 'conversation.reply') await finalizeConversationSubmission(scopedRequest, job);
+                    else await finalizeConversationMaintenanceSubmission(scopedRequest, job);
+                } else if (job.type === 'conversation.reply' && job.stage === 'children' && !job.result) {
                     // A cancelled root is terminal but still needs its aggregate.
                     reconcileConversationJob(directories, job, { now });
                 }
@@ -149,11 +157,9 @@ export async function scanConversationAutonomy({ directoriesFor, owners, now = D
         const timeZone = store.automation?.timeZone || 'UTC';
         const personaId = String(saved.data.user_avatar || '');
         const userStatus = String(store.userStatus || 'online');
-        const { characters, frames } = await buildAutomationFrames(request, store, personaId);
-        const byBranch = new Map();
+        const { characters, frames, branches } = await buildAutomationFrames(request, store, personaId);
         const byThread = new Map();
         for (const frame of frames) {
-            byBranch.set(`${frame.target.avatar}\u001f${frame.target.groupId}\u001f${frame.target.branchId}`, frame);
             const thread = `${frame.target.avatar}\u001f${frame.target.groupId}`;
             if (!byThread.has(thread)) byThread.set(thread, frame);
         }
@@ -161,47 +167,72 @@ export async function scanConversationAutonomy({ directoriesFor, owners, now = D
         for (const reminder of store.reminders || []) {
             const fallback = byThread.get(`${reminder.avatar}\u001f${reminder.groupId || ''}`);
             const branchId = reminder.branchId || fallback?.target.branchId;
-            const frame = byBranch.get(`${reminder.avatar}\u001f${reminder.groupId || ''}\u001f${branchId}`);
-            if (frame && branchId) targets.set(reminder, { target: { ...frame.target, branchId }, settings: frame.settings });
+            if (!branchId) continue;
+            const entry = branches.get(`${reminder.avatar}\u001f${reminder.groupId || ''}\u001f${branchId}`);
+            if (entry) targets.set(reminder, { target: entry.target, settings: entry.settings });
         }
-        let occurrence = selectConversationReminder({ reminders: store.reminders || [], targets, personaId, now });
-        if (occurrence?.action === 'invalidate' || occurrence?.action === 'skip') {
-            const reminder = (store.reminders || []).find(item => item.id === occurrence.reminderId);
-            if (reminder) {
-                if (occurrence.action === 'invalidate') {
-                    reminder.invalidAt = now;
-                    reminder.invalidReason = occurrence.reason;
-                } else {
-                    reminder.fired = true;
-                    reminder.skippedAt = now;
-                }
-                try {
-                    const savedResult = await saveConversationStore(request, store, getSettingsVersion(saved.data), { trustedConversationEffects: true });
-                    if (savedResult.ok) invalidated.push(reminder.id);
-                } catch (error) {
-                    console.error(`[Conversation] Could not update reminder ${reminder.id}:`, error?.message ?? error);
-                }
-            }
-            continue;
-        }
-        if (!occurrence) {
-            for (const frame of frames) {
-                occurrence = selectNextConversationThreadAutomation({
-                    settings: frame.settings, branch: frame.branch, target: frame.target, partners: frame.partners,
-                    characters, personaId, overrides: store.runtimeStatusOverrides || {}, userStatus, now, timeZone, random,
-                });
-                if (occurrence) break;
-            }
-        }
-        if (occurrence?.target) {
+        const acceptOccurrence = async candidate => {
             try {
-                await acceptConversationAutonomousReply(request, { ...occurrence, timeZone });
-                accepted.push(occurrence.key);
-                continue;
+                const result = await acceptConversationAutonomousReply(request, { ...candidate, timeZone });
+                if (result?.created) {
+                    accepted.push(candidate.key);
+                    return true;
+                }
             } catch (error) {
                 console.error('[Conversation] Could not accept automatic message:', error?.message ?? error);
             }
+            return false;
+        };
+        let handled = false;
+        if (userStatus !== 'offline') {
+            const reminderOccurrence = selectConversationReminder({ reminders: store.reminders || [], targets, personaId, now });
+            if (reminderOccurrence?.action === 'invalidate' || reminderOccurrence?.action === 'skip') {
+                const reminder = (store.reminders || []).find(item => item.id === reminderOccurrence.reminderId);
+                if (reminder) {
+                    if (reminderOccurrence.action === 'invalidate') {
+                        reminder.invalidAt = now;
+                        reminder.invalidReason = reminderOccurrence.reason;
+                    } else {
+                        reminder.fired = true;
+                        reminder.skippedAt = now;
+                    }
+                    try {
+                        const savedResult = await saveConversationStore(request, store, getSettingsVersion(saved.data), { trustedConversationEffects: true });
+                        if (savedResult.ok) invalidated.push(reminder.id);
+                    } catch (error) {
+                        console.error(`[Conversation] Could not update reminder ${reminder.id}:`, error?.message ?? error);
+                    }
+                }
+                continue;
+            }
+            if (reminderOccurrence?.target) {
+                handled = await acceptOccurrence(reminderOccurrence);
+                if (!handled) {
+                    const reminder = (store.reminders || []).find(item => item.id === reminderOccurrence.bookkeeping?.reminder?.id);
+                    if (reminder) {
+                        reminder.retryAfter = now + REMINDER_RETRY_DELAY_MS;
+                        try {
+                            await saveConversationStore(request, store, getSettingsVersion(saved.data), { trustedConversationEffects: true });
+                        } catch (error) {
+                            console.error(`[Conversation] Could not defer reminder ${reminder.id}:`, error?.message ?? error);
+                        }
+                    }
+                }
+            }
+            if (!handled) {
+                for (const frame of frames) {
+                    const candidate = selectNextConversationThreadAutomation({
+                        settings: frame.settings, branch: frame.branch, target: frame.target, partners: frame.partners,
+                        characters, personaId, overrides: store.runtimeStatusOverrides || {}, userStatus, now, timeZone, random,
+                    });
+                    if (candidate && await acceptOccurrence(candidate)) {
+                        handled = true;
+                        break;
+                    }
+                }
+            }
         }
+        if (handled) continue;
         for (const frame of frames) {
             const messages = (frame.branch.messages || []).filter(message => message.role !== 'system' && String(message.mes || '').trim());
             const throughId = messages.at(-1)?.id;

@@ -428,7 +428,8 @@ async function runConversationParticipantJob(context, deps) {
     // reminder, schedule, idle or proactive message; chimes and character chat do
     // not, so an old user message cannot force a selfie on them.
     const imageEligible = ['reply', 'reminder', 'schedule', 'idle-followup', 'idle-spontaneous', 'proactive'].includes(snapshot.purpose || 'reply');
-    if (imageEligible && !imageDelivered && conversationReplyWantsImage(settings, lastUserMessageText(snapshot.macros?.extra?.chat || []))) {
+    const imageText = automation ? response.text : lastUserMessageText(snapshot.macros?.extra?.chat || []);
+    if (imageEligible && !imageDelivered && conversationReplyWantsImage(settings, imageText)) {
         await deps.generateImage(context, snapshot, '', speaker, { chunk: 'spontaneous', image: 0, attachReplyReference: false, extra: {} });
     }
     writeArtifact(directories, context.job.id, 'result', result);

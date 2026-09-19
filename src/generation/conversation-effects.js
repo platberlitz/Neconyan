@@ -72,7 +72,7 @@ export async function commitConversationEffect(context, target, effectId, mutate
 }
 
 export function appendConversationJobMessage(context, target, effectId, value, { mutate } = {}) {
-    return commitConversationEffect(context, target, effectId, branch => {
+    return commitConversationEffect(context, target, effectId, (branch, store, settings) => {
         const message = createConversationMessage({ ...value, id: `job_${digest([context.job.id, effectId]).slice(0, 32)}` });
         if (!message) throw Object.assign(new Error('The generated Conversation message is invalid.'), { status: 400 });
         branch.messages.push(message);
@@ -82,7 +82,7 @@ export function appendConversationJobMessage(context, target, effectId, value, {
             branch.followupCount = 0;
         }
         refreshBranchPreview(branch);
-        mutate?.(branch);
+        mutate?.(branch, store, settings);
         return { id: message.id };
     });
 }
@@ -112,7 +112,12 @@ export function applyConversationBookkeeping(branch, store, patch, occurrenceKey
     if (patch.sessionMarkers && typeof patch.sessionMarkers === 'object') {
         branch.sessionMarkers = { ...(branch.sessionMarkers || {}), ...patch.sessionMarkers };
     }
+    if (Array.isArray(patch.sessionMarkersAtDelivery)) {
+        branch.sessionMarkers = { ...(branch.sessionMarkers || {}) };
+        for (const key of patch.sessionMarkersAtDelivery) branch.sessionMarkers[key] = now;
+    }
     if (Number.isFinite(patch.followupCount)) branch.followupCount = patch.followupCount;
+    if (patch.markAutoMessage) branch.lastAutoMessageAt = now;
     if (Number.isFinite(patch.lastAutoMessageAt)) branch.lastAutoMessageAt = patch.lastAutoMessageAt;
     return true;
 }
@@ -162,11 +167,19 @@ export function commitConversationJobCommands(context, target, effectId, parts, 
 export function commitConversationMemorySummary(context, target, { summary, throughId = '', count = 0 } = {}) {
     const text = String(summary || '').trim();
     if (!text) throw conflict('The new memory summary was empty.');
-    return commitConversationEffect(context, target, 'memory-summary', branch => {
+    return commitConversationEffect(context, target, 'memory-summary', (branch, store) => {
+        const updatedAt = Date.now();
         branch.memorySummary = text;
         branch.memoryMessageCount = Number.isFinite(count) && count > 0 ? count : (branch.messages || []).length;
-        branch.memoryUpdatedAt = Date.now();
+        branch.memoryUpdatedAt = updatedAt;
         if (throughId) branch.memorySummaryThrough = String(throughId);
+        const thread = store.characters?.[getConversationThreadKey(target.avatar, target.groupId, target.personaId)];
+        if (thread) {
+            thread.memorySummary = text;
+            thread.memoryUpdatedAt = updatedAt;
+            thread.memoryMessageCount = branch.memoryMessageCount;
+            if (throughId) thread.memorySummaryThrough = String(throughId);
+        }
         return { summary: text };
     });
 }
@@ -185,8 +198,18 @@ export async function commitConversationStoreEffect(context, effectId, mutate) {
     const saved = readUserSettingsWithStatus(scopedRequest);
     if (!saved?.ok) throw conflict(saved?.error || 'Settings could not be read.');
     const store = ensureConversationStore(saved.data, normalizeGroup);
+    const effectKey = digest([job.id, effectId]);
+    const receipt = store.serverOperations?.[effectKey];
+    if (receipt && Object.hasOwn(receipt, 'result')) return receipt.result;
     const result = mutate(store, saved.data);
     if (result && typeof result.then === 'function') throw new TypeError('Conversation effects must be synchronous.');
-    await saveConversationStore(scopedRequest, store, getSettingsVersion(saved.data), { trustedConversationEffects: true });
+    store.serverOperations = { ...(store.serverOperations || {}), [effectKey]: { result: result ?? null, at: Date.now() } };
+    const receiptKeys = Object.keys(store.serverOperations);
+    if (receiptKeys.length > 100) {
+        receiptKeys.sort((left, right) => (store.serverOperations[left]?.at || 0) - (store.serverOperations[right]?.at || 0));
+        for (const key of receiptKeys.slice(0, receiptKeys.length - 100)) delete store.serverOperations[key];
+    }
+    const saveResult = await saveConversationStore(scopedRequest, store, getSettingsVersion(saved.data), { trustedConversationEffects: true });
+    if (!saveResult?.ok) throw Object.assign(new Error(saveResult?.body?.error || 'Conversation save failed.'), { status: saveResult?.status || 500, recoverable: true });
     return result;
 }

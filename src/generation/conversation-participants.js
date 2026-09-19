@@ -88,8 +88,9 @@ export function chooseGroupReplyCandidates({ candidates = [], threadAvatar = '',
 /** The saved activity from a character's schedule, or null when it has none. */
 export function resolveParticipantActivity(characters, avatar, personaId, overrides, now, timeZone) {
     const schedule = characters[avatar]?.schedule;
-    if (!schedule) return null;
-    return getCurrentActivityFromSchedule(schedule, `${personaId}\u001f${avatar}`, new Date(now), new Map(Object.entries(overrides || {})), timeZone);
+    const overrideKey = `${personaId}\u001f${avatar}`;
+    if (!schedule && !(overrides && Object.hasOwn(overrides, overrideKey))) return null;
+    return getCurrentActivityFromSchedule(schedule, overrideKey, new Date(now), new Map(Object.entries(overrides || {})), timeZone);
 }
 
 /** The manual availability fallback, matching the browser's getConversationActivityContext. */

@@ -120,6 +120,13 @@ async function finalizeSummarySubmission(request, job) {
     return getJob(request.user.directories, job.id);
 }
 
+function sameThreadTarget(a, b) {
+    return String(a?.avatar || '') === String(b?.avatar || '')
+        && String(a?.groupId || '') === String(b?.groupId || '')
+        && String(a?.personaId || '') === String(b?.personaId || '')
+        && String(a?.branchId || '') === String(b?.branchId || '');
+}
+
 /**
  * Accept a memory summary. Manual callers set force; the worker calls it with
  * automatic true and lets eligibility decide.
@@ -140,7 +147,12 @@ export async function acceptConversationSummary(request, body = {}, { automatic 
         }
     }
     const existing = listJobs(directories, { owner, includeDismissed: true }).find(item => item.submissionKey === body.submissionKey);
-    if (existing) return { created: false, job: existing };
+    if (existing) {
+        if (existing.type !== 'conversation.summary' || !sameThreadTarget(existing.intent?.target, target)) {
+            throw fail('This submission key already belongs to another operation.', 409);
+        }
+        return { created: false, job: existing };
+    }
     const settings = getConversationSettings(request, current.store, target.avatar, target.groupId, {}, { personaId: target.personaId });
     const binding = captureChatProfile(directories, settings.connection_profile);
     const intent = { kind: 'summary', target, force };
@@ -208,17 +220,23 @@ export async function acceptConversationSchedule(request, body = {}) {
     if (typeof body.submissionKey !== 'string' || !body.submissionKey || body.submissionKey.length > 256) throw fail('A submission key is required.');
     const avatar = String(body.target?.avatar || body.avatar || '');
     if (!avatar) throw fail('A character is required.');
-    const target = captureConversationTarget(request, { avatar, groupId: '', personaId: body.target?.personaId || '', branchId: body.target?.branchId });
+    const groupId = String(body.target?.groupId || '');
+    const target = captureConversationTarget(request, { avatar, groupId, personaId: body.target?.personaId || '', branchId: body.target?.branchId });
     const current = readConversationTarget(request, target);
     const existing = listJobs(directories, { owner, includeDismissed: true }).find(item => item.submissionKey === body.submissionKey);
-    if (existing) return { created: false, job: existing };
-    const settings = getConversationSettings(request, current.store, avatar, '', {}, { personaId: target.personaId });
+    if (existing) {
+        if (existing.type !== 'conversation.schedule' || !sameThreadTarget(existing.intent?.target, target)) {
+            throw fail('This submission key already belongs to another operation.', 409);
+        }
+        return { created: false, job: existing };
+    }
+    const settings = getConversationSettings(request, current.store, avatar, groupId, {}, { personaId: target.personaId });
     const binding = captureChatProfile(directories, settings.connection_profile);
     const intent = { kind: 'schedule', avatar, target };
     const accepted = acceptJob(directories, {
         owner, type: 'conversation.schedule', submissionKey: body.submissionKey, intent,
         automatic: false, paused: true, coalesce: { deadline: 0, members: [] },
-        target: { kind: 'conversation', id: getConversationThreadKey(avatar, '', target.personaId), branchId: target.branchId },
+        target: { kind: 'conversation', id: getConversationThreadKey(avatar, groupId, target.personaId), branchId: target.branchId },
         credentialRef: binding, config: {}, label: 'Conversation schedule',
     });
     noteOwner(owner);
@@ -246,16 +264,29 @@ async function runConversationScheduleJob(context, dependencies) {
     if (!schedule || !schedule.days) throw fail('The schedule model returned unusable output.', 502);
     setJobResume(context.directories, context.job.id, 'apply');
     await commitConversationStoreEffect(context, `schedule:${snapshot.avatar}`, store => {
-        const key = getConversationThreadKey(snapshot.avatar, '', snapshot.target.personaId);
+        const key = getConversationThreadKey(snapshot.avatar, snapshot.target.groupId || '', snapshot.target.personaId);
         const characterStore = store.characters?.[key];
         if (!characterStore) throw fail('The character no longer has a Conversation store.', 409);
         characterStore.schedule = schedule;
-        store.settings = { ...(store.settings || {}), auto_schedule: JSON.stringify(schedule), talkativeness: schedule.talkativeness, inactivity_threshold: schedule.inactivityThresholdMinutes, schedule_generated_at: schedule.generatedAt };
+        characterStore.settings = {
+            ...(characterStore.settings || {}),
+            auto_schedule: JSON.stringify(schedule),
+            talkativeness: schedule.talkativeness,
+            inactivity_threshold: schedule.inactivityThresholdMinutes,
+            schedule_generated_at: schedule.generatedAt,
+        };
         return { generatedAt: schedule.generatedAt };
     });
     const result = { schedule };
     writeArtifact(context.directories, context.job.id, 'result', result);
     return { artifact: true };
+}
+
+/** Finish a paused maintenance job the worker found after a crash. */
+export async function finalizeConversationMaintenanceSubmission(request, job) {
+    if (job?.type === 'conversation.summary') return finalizeSummarySubmission(request, job);
+    if (job?.type === 'conversation.schedule') return finalizeScheduleSubmission(request, job);
+    return job;
 }
 
 export function registerConversationMaintenanceJobs({ generate = runChatProfile } = {}) {
