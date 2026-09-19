@@ -36,7 +36,7 @@ function writeSettings(directories) {
                 settings: { connection_profile: 'saved' },
                 characters: {
                     'nova.png': {
-                        settings: {}, activeBranchId: 'main',
+                        settings: { enabled: true, roleplay_reactions: true }, activeBranchId: 'main',
                         branches: {
                             main: {
                                 id: 'main', name: 'Main', createdAt: 1,
@@ -87,18 +87,18 @@ function setup() {
 
 test('a group mention aside is accepted natively, sets a durable delay and claims the cooldown once', async () => {
     const { directories, request } = setup();
-    const group = { id: 'g1', name: 'Crew', members: ['nova.png'], disabled_members: [] };
+    const group = { id: 'g1', name: 'Crew', members: ['nova.png'], disabled_members: [], chats: ['crew'] };
     fs.writeFileSync(path.join(directories.groups, 'g1.json'), JSON.stringify(group));
     const messages = [
-        { id: 'g0', role: 'user', name: 'User', mes: 'Hello all' },
+        { id: 'g0', role: 'user', name: 'User', mes: '@Nova hello' },
         { id: 'g1', role: 'character', name: 'Nova', mes: 'Hey there', original_avatar: 'nova.png' },
     ];
     writeChat(path.join(directories.groupChats, 'crew.jsonl'), messages);
     const submission = {
         target: { avatar: 'nova.png', personaId: '', branchId: 'main' },
         source: { locator: { chat: 'crew', avatar: '', group: true }, groupId: 'g1' },
-        messageIndex: 1,
-        messageRevision: getRoleplaySourceMessageRevision(messages[1]),
+        messageIndex: 0,
+        messageRevision: getRoleplaySourceMessageRevision(messages[0]),
         groupRevision: getRoleplayGroupRevision(group),
         reason: 'mention',
     };
@@ -124,7 +124,7 @@ test('a group mention aside is accepted natively, sets a durable delay and claim
     assert.equal(duplicate.created, false);
     assert.equal(duplicate.job.id, accepted.job.id);
 
-    const second = { ...submission, messageIndex: 0, messageRevision: getRoleplaySourceMessageRevision(messages[0]), reason: 'random' };
+    const second = { ...submission, messageIndex: 1, messageRevision: getRoleplaySourceMessageRevision(messages[1]), reason: 'random' };
     const cooled = await acceptConversationAside(request, second);
     assert.equal(cooled.created, false);
     assert.equal(cooled.skipped, 'cooldown');
@@ -157,10 +157,10 @@ test('a solo side DM is accepted with its own delay and no group cooldown', asyn
 
 test('the bridge refuses changed revisions, unknown fields and missing chats', async () => {
     const { directories, request } = setup();
-    const group = { id: 'g1', name: 'Crew', members: ['nova.png'], disabled_members: [] };
+    const group = { id: 'g1', name: 'Crew', members: ['nova.png'], disabled_members: [], chats: ['crew'] };
     fs.writeFileSync(path.join(directories.groups, 'g1.json'), JSON.stringify(group));
     const messages = [
-        { id: 'g0', role: 'user', name: 'User', mes: 'Hello all' },
+        { id: 'g0', role: 'user', name: 'User', mes: '@Nova hello' },
         { id: 'g1', role: 'character', name: 'Nova', mes: 'Hey there', original_avatar: 'nova.png' },
     ];
     writeChat(path.join(directories.groupChats, 'crew.jsonl'), messages);
@@ -179,4 +179,103 @@ test('the bridge refuses changed revisions, unknown fields and missing chats', a
         ...submission,
         source: { locator: { chat: 'missing', avatar: '', group: true }, groupId: 'g1' },
     }), error => error.apiError === 'roleplay_chat_not_found');
+});
+
+test('a mention built from a character message is refused', async () => {
+    const { directories, request } = setup();
+    const group = { id: 'g1', name: 'Crew', members: ['nova.png'], disabled_members: [], chats: ['crew'] };
+    fs.writeFileSync(path.join(directories.groups, 'g1.json'), JSON.stringify(group));
+    const messages = [
+        { id: 'g0', role: 'user', name: 'User', mes: '@Nova hello' },
+        { id: 'g1', role: 'character', name: 'Nova', mes: 'Hey there', original_avatar: 'nova.png' },
+    ];
+    writeChat(path.join(directories.groupChats, 'crew.jsonl'), messages);
+
+    await assert.rejects(() => acceptConversationAside(request, {
+        target: { avatar: 'nova.png', personaId: '', branchId: 'main' },
+        source: { locator: { chat: 'crew', avatar: '', group: true }, groupId: 'g1' },
+        messageIndex: 1,
+        messageRevision: getRoleplaySourceMessageRevision(messages[1]),
+        groupRevision: getRoleplayGroupRevision(group),
+        reason: 'mention',
+    }), error => error.apiError === 'roleplay_mention_not_user');
+});
+
+test('a group aside only accepts a chat the group owns', async () => {
+    const { directories, request } = setup();
+    const group = { id: 'g1', name: 'Crew', members: ['nova.png'], disabled_members: [], chats: ['other'] };
+    fs.writeFileSync(path.join(directories.groups, 'g1.json'), JSON.stringify(group));
+    const messages = [
+        { id: 'g0', role: 'user', name: 'User', mes: '@Nova hello' },
+        { id: 'g1', role: 'character', name: 'Nova', mes: 'Hey there', original_avatar: 'nova.png' },
+    ];
+    writeChat(path.join(directories.groupChats, 'crew.jsonl'), messages);
+
+    await assert.rejects(() => acceptConversationAside(request, {
+        target: { avatar: 'nova.png', personaId: '', branchId: 'main' },
+        source: { locator: { chat: 'crew', avatar: '', group: true }, groupId: 'g1' },
+        messageIndex: 0,
+        messageRevision: getRoleplaySourceMessageRevision(messages[0]),
+        groupRevision: getRoleplayGroupRevision(group),
+        reason: 'random',
+    }), error => error.apiError === 'roleplay_group_chat_mismatch');
+});
+
+test('a source changed after acceptance is refused before generation', async () => {
+    const { directories, request } = setup();
+    const group = { id: 'g1', name: 'Crew', members: ['nova.png'], disabled_members: [], chats: ['crew'] };
+    fs.writeFileSync(path.join(directories.groups, 'g1.json'), JSON.stringify(group));
+    const messages = [
+        { id: 'g0', role: 'user', name: 'User', mes: '@Nova hello' },
+        { id: 'g1', role: 'character', name: 'Nova', mes: 'Hey there', original_avatar: 'nova.png' },
+    ];
+    writeChat(path.join(directories.groupChats, 'crew.jsonl'), messages);
+    const accepted = await acceptConversationAside(request, {
+        target: { avatar: 'nova.png', personaId: '', branchId: 'main' },
+        source: { locator: { chat: 'crew', avatar: '', group: true }, groupId: 'g1' },
+        messageIndex: 0,
+        messageRevision: getRoleplaySourceMessageRevision(messages[0]),
+        groupRevision: getRoleplayGroupRevision(group),
+        reason: 'random',
+    });
+
+    let generated = false;
+    registerConversationReplyJob({ generate: async () => { generated = true; return { text: 'should not happen' }; } });
+    writeChat(path.join(directories.groupChats, 'crew.jsonl'), [{ ...messages[0], mes: '@Nova hello there' }, messages[1]]);
+    await runFamily(directories, accepted.job.id).catch(() => {});
+
+    assert.equal(generated, false);
+    assert.equal(readStore(directories).characters['nova.png'].branches.main.messages.length, 3);
+});
+
+test('the aside delay is resumable across a restart', async () => {
+    const { directories, request } = setup();
+    const messages = [
+        { id: 'r0', role: 'user', name: 'User', mes: 'The dragon roars.' },
+        { id: 'r1', role: 'character', name: 'Nova', mes: 'I draw my blade.', original_avatar: 'nova.png' },
+    ];
+    writeChat(path.join(directories.chats, 'nova', 'roleplay.jsonl'), messages);
+    let jobId = '';
+    const observed = [];
+    registerConversationReplyJob({
+        generate: async () => ({ text: 'private aside' }),
+        sleep: async () => {
+            const root = getJob(directories, jobId);
+            const childId = (root?.children || [])[0];
+            observed.push((childId ? getJob(directories, childId)?.resume : null) || null);
+        },
+    });
+    const accepted = await acceptConversationAside(request, {
+        target: { avatar: 'nova.png', personaId: '', branchId: 'main' },
+        source: { locator: { chat: 'roleplay', avatar: 'nova.png', group: false } },
+        messageIndex: 1,
+        messageRevision: getRoleplaySourceMessageRevision(messages[1]),
+        reason: 'reaction',
+    });
+    jobId = accepted.job.id;
+
+    await runFamily(directories, jobId);
+
+    assert.ok(observed.includes('automation-delay'), JSON.stringify(observed));
+    assert.equal(getJob(directories, jobId).state, 'completed');
 });

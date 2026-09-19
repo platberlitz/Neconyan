@@ -6,8 +6,6 @@ import {
     DEFAULT_SETTINGS,
     AUTO_WORKER_INTERVAL_GLOBAL_KEY,
     AUTO_WORKER_INTERVAL_MS,
-    GROUP_ASIDE_COOLDOWN_MS,
-    GROUP_ASIDE_MENTION_COOLDOWN_MS,
     LAST_CHIME_SESSION_PREFIX,
     LAST_IDLE_SESSION_PREFIX,
     MAX_INACTIVITY_THRESHOLD,
@@ -36,7 +34,6 @@ import {
     buildGroupChatContext,
     getConversationRailItems,
     getCurrentGroupConversationMembers,
-    getGroupAsideKey,
 } from './pals-rail.js';
 import {
     chooseConversationPartner,
@@ -65,7 +62,6 @@ import {
 import {
     conversationState,
     groupAsideBusyKeys,
-    groupAsideLastSent,
     partnerReplyBusyKeys,
     sendQueue,
 } from './state.js';
@@ -819,14 +815,8 @@ export async function triggerGroupAsideDM(character, options = {}) {
         return false;
     }
 
-    const key = getGroupAsideKey(character.avatar, group.id, personaId);
+    const key = `${personaId || 'persona'}:${group.id || 'group'}:${character.avatar || 'unknown'}`;
     if (groupAsideBusyKeys.has(key)) {
-        return false;
-    }
-
-    const now = Date.now();
-    const cooldown = reason === 'mention' ? GROUP_ASIDE_MENTION_COOLDOWN_MS : GROUP_ASIDE_COOLDOWN_MS;
-    if (now - (groupAsideLastSent.get(key) || 0) < cooldown) {
         return false;
     }
 
@@ -851,9 +841,6 @@ export async function triggerGroupAsideDM(character, options = {}) {
             groupRevision: sourceGroupRevision,
             reason,
         });
-        if (result?.created) {
-            groupAsideLastSent.set(key, Date.now());
-        }
         return Boolean(result?.created);
     } catch (err) {
         reportConversationGenerationError('group aside DM', err, { toast: false });

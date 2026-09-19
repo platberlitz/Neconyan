@@ -68,7 +68,10 @@ export function normalizeConversationAsideSubmission(body = {}) {
     const avatar = identifier(body.target.avatar, 'character');
     const personaId = optionalIdentifier(body.target.personaId, 'persona');
     const branchId = identifier(body.target.branchId, 'branch');
-    const chat = identifier(body.source.locator.chat, 'chat name');
+    const chat = identifier(body.source.locator.chat, 'chat name').replace(/\.jsonl$/i, '');
+    if (!chat || sanitize(chat) !== chat) {
+        throw fail('Invalid aside chat name.', 400, 'invalid_aside_submission');
+    }
     if (typeof body.source.locator.group !== 'boolean') {
         throw fail('Invalid aside locator group flag.', 400, 'invalid_aside_submission');
     }
@@ -216,14 +219,30 @@ export function captureConversationRoleplaySource(request, submission, { charact
     if (submission.messageIndex >= messages.length) {
         throw fail('The saved Roleplay message no longer exists.', 409, 'roleplay_message_out_of_range');
     }
-    if (getRoleplaySourceMessageRevision(messages[submission.messageIndex]) !== submission.messageRevision) {
+    const sourceMessage = messages[submission.messageIndex];
+    if (getRoleplaySourceMessageRevision(sourceMessage) !== submission.messageRevision) {
         throw fail('The saved Roleplay message changed after this aside was captured.', 409, 'roleplay_message_revision_mismatch');
+    }
+    if (submission.reason === 'mention' && !(sourceMessage?.is_user === true || sourceMessage?.role === 'user')) {
+        throw fail('A mention aside requires a user-authored Roleplay message.', 409, 'roleplay_mention_not_user');
     }
 
     if (locator.group) {
         const group = readRoleplayGroup(directories, submission.source.groupId);
         if (getRoleplayGroupRevision(group) !== submission.groupRevision) {
             throw fail('The source Roleplay group changed after this aside was captured.', 409, 'roleplay_group_revision_mismatch');
+        }
+        const ownedChats = new Set();
+        if (Array.isArray(group.chats)) {
+            for (const entry of group.chats) {
+                const value = String(typeof entry === 'string' ? entry : entry?.file_name || entry?.fileName || entry?.chat_id || entry?.id || '').replace(/\.jsonl$/i, '');
+                if (value) ownedChats.add(value);
+            }
+        }
+        const currentChat = String(group.chat_id || '').replace(/\.jsonl$/i, '');
+        if (currentChat) ownedChats.add(currentChat);
+        if (ownedChats.size && !ownedChats.has(submission.source.locator.chat)) {
+            throw fail('The saved Roleplay chat does not belong to the named group.', 409, 'roleplay_group_chat_mismatch');
         }
         const members = Array.isArray(group.members) ? group.members.map(String) : [];
         const disabled = Array.isArray(group.disabled_members) ? group.disabled_members.map(String) : [];

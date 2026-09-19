@@ -10,7 +10,7 @@ import { appendConversationJobMessage, applyConversationBookkeeping, captureConv
 import { captureChatProfile } from './profiles.js';
 import { runChatProfile } from './service.js';
 import { createConversationImageGenerator, conversationReplyWantsImage, lastUserMessageText } from './conversation-images.js';
-import { buildConversationParticipantPlan, buildConversationParticipantSnapshot, buildAvailabilityAutoResponderText, buildDelayedReplyNoticeText, getConversationAvailabilityDecision, getInitialAvailabilityDelayMs, getReplyDelayMsForStatus, manualActivity } from './conversation-participants.js';
+import { buildConversationParticipantPlan, buildConversationParticipantSnapshot, buildAvailabilityAutoResponderText, buildDelayedReplyNoticeText, getConversationAvailabilityDecision, getInitialAvailabilityDelayMs, getReplyDelayMsForStatus, manualActivity, resolveParticipantActivity } from './conversation-participants.js';
 import { captureConversationRoleplaySource, getConversationAsideOccurrenceKey, getConversationGroupAsideCooldownMs, getConversationGroupAsideLastSent, normalizeConversationAsideSubmission } from './conversation-roleplay-source.js';
 
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -283,7 +283,8 @@ export async function acceptConversationAutonomousReply(request, occurrence) {
         })),
         automation: { key: occurrence.key, kind: occurrence.kind || 'auto', patch: occurrence.bookkeeping || null,
             delayMs: Number.isFinite(occurrence.delayMs) && occurrence.delayMs > 0 ? occurrence.delayMs : 0,
-            groupAsideKey: typeof occurrence.groupAsideKey === 'string' ? occurrence.groupAsideKey : '' },
+            groupAsideKey: typeof occurrence.groupAsideKey === 'string' ? occurrence.groupAsideKey : '',
+            roleplaySource: occurrence.roleplaySource || null },
     };
     const existing = findSubmission(directories, owner, occurrence.key);
     if (existing) {
@@ -319,11 +320,27 @@ export async function acceptConversationAside(request, body = {}) {
         if (existing.job.type !== 'conversation.reply') fail('This aside key already belongs to another operation.');
         return { job: existing.job, created: false };
     }
+    // Eligibility and the shared cooldown are checked against the fresh store
+    // after the async character read: two submissions that started together must
+    // not both slip past the persona + group + recipient cooldown.
+    const character = await getCharacterData(request, target.avatar, { allowOverride: false, requireExisting: true });
+    const settings = getConversationSettings(request, current.store, target.avatar, '', {}, { personaId: target.personaId });
+    if (settings.enabled === false || settings.roleplay_reactions !== true) {
+        return { job: null, created: false, skipped: 'disabled' };
+    }
+    const activity = resolveParticipantActivity(
+        { [target.avatar]: current.store.characters?.[getConversationThreadKey(target.avatar, '', target.personaId)] },
+        target.avatar, target.personaId, current.store.runtimeStatusOverrides, Date.now(), current.store.automation?.timeZone || 'UTC',
+    ) || manualActivity(settings);
+    if (activity.status === 'offline') {
+        return { job: null, created: false, skipped: 'offline' };
+    }
+    const fresh = readConversationTarget(request, target);
     const cooldownKey = submission.source.locator.group
         ? JSON.stringify([submission.target.personaId, submission.source.groupId, submission.target.avatar])
         : '';
     if (cooldownKey) {
-        const lastSent = getConversationGroupAsideLastSent(current.store, cooldownKey);
+        const lastSent = getConversationGroupAsideLastSent(fresh.store, cooldownKey);
         if (Date.now() - lastSent < getConversationGroupAsideCooldownMs(submission.reason)) {
             return { job: null, created: false, skipped: 'cooldown' };
         }
@@ -331,7 +348,6 @@ export async function acceptConversationAside(request, body = {}) {
             .some(job => job.intent?.automation?.groupAsideKey === cooldownKey && !TERMINAL_JOB_STATES.has(job.state));
         if (busy) return { job: null, created: false, skipped: 'busy' };
     }
-    const character = await getCharacterData(request, target.avatar, { allowOverride: false, requireExisting: true });
     const userName = String(current.settings?.power_user?.personas?.[target.personaId] || current.settings?.name1 || 'User');
     const captured = captureConversationRoleplaySource(request, submission, { characterName: character?.name || 'Character', userName });
     return acceptConversationAutonomousReply(request, {
@@ -342,6 +358,7 @@ export async function acceptConversationAside(request, body = {}) {
         kind: captured.kind,
         delayMs: captured.delayMs,
         groupAsideKey: cooldownKey || null,
+        roleplaySource: submission,
         bookkeeping: cooldownKey ? { groupAside: { key: cooldownKey } } : {},
     });
 }
@@ -435,7 +452,17 @@ async function runConversationParticipantJob(context, deps) {
     }
     if (automation?.delayUntil) {
         const remaining = Number(automation.delayUntil) - deps.now();
-        if (remaining > 0) await waitForConversationJobDelay(context, 'automation-delay', remaining, deps);
+        if (remaining > 0) {
+            // Mark the wait resumable so a restart during the aside delay is
+            // requeued; clearing it after makes a crash during generation an
+            // interrupted unknown outcome instead of a charged automatic repeat.
+            setJobResume(directories, context.job.id, 'automation-delay');
+            try {
+                await waitForConversationJobDelay(context, 'automation-delay', remaining, deps);
+            } finally {
+                setJobResume(directories, context.job.id, null);
+            }
+        }
     }
     // The browser posts the "replies may be slow" notice for a schedule-driven
     // dnd/offline speaker, but not when the manual availability already says so.
@@ -447,6 +474,11 @@ async function runConversationParticipantJob(context, deps) {
     }
     let response = readArtifact(directories, context.job.id, 'reply');
     if (!response) {
+        // Reassert the saved source immediately before paying for a provider
+        // call: the chat, message and group may have changed since acceptance.
+        if (automation?.roleplaySource) {
+            captureConversationRoleplaySource({ user: { directories } }, automation.roleplaySource, { characterName: speaker.name, userName });
+        }
         response = await deps.generate({ context, jobContext: context, binding, messages: snapshot.messages,
             maxTokens: settings.reply_max_tokens, userName, characterName: speaker.name,
             macroEnvironment: createMacroEnvironment(snapshot.macros) });
