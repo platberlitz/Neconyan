@@ -5,6 +5,10 @@ import vm from 'node:vm';
 import { parse } from 'acorn';
 import { isGenerationLengthFinish } from '../public/scripts/generation-request-controls.js';
 import { buildChatPresetPayload, createChatRequestData } from '../public/scripts/chat-preset-request.js';
+import { normalizeContentText as normalizeContentTextPure, constructScopedTextPrompt, cleanScopedTextResponse } from '../public/scripts/generation-format.js';
+import { instructSettings, promptMessages, expectedPrompts, providerDependencies } from './fixtures/text-generation-baseline.js';
+import { createTextProviderParameters } from '../public/scripts/text-provider-parameters.js';
+import { getLocalPromptCacheValue, isLikelyLocalServerUrl } from '../public/scripts/local-url-utils.js';
 
 function load(context, file, names) {
     const source = readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8');
@@ -20,7 +24,10 @@ function load(context, file, names) {
 function runtime() {
     const context = vm.createContext({
         console, structuredClone, AbortController, Error,
-        isGenerationLengthFinish,
+        isGenerationLengthFinish, normalizeContentTextPure, constructScopedTextPrompt, cleanScopedTextResponse,
+        name1: 'Sam', name2: 'Ada', selected_group: null, substituteParams: providerDependencies.substitute,
+        getPresetManager: () => ({ getCompletionPresetByName: () => undefined }),
+        getTextGenServer: () => 'http://127.0.0.1:5000',
         buildChatPresetPayload, createChatRequestData,
         getGenerateUrl: () => '/generate', getRequestHeaders: () => ({}),
         getNanoGptServiceTier: async () => '',
@@ -29,7 +36,7 @@ function runtime() {
         chat_completion_sources: { OPENAI: 'openai', NANOGPT: 'nanogpt' },
         settingsToUpdate: { openai_max_tokens: [null, 'openai_max_tokens'] },
         oai_settings: { openai_max_tokens: 8192, auto_append_reasoning_tags: false },
-        power_user: { reasoning: { auto_parse: false, prefix: '<think>', suffix: '</think>' } },
+        power_user: { instruct: instructSettings, reasoning: { auto_parse: false, prefix: '<think>', suffix: '</think>' } },
         migrateNanoGptProviderSettings: () => {},
     });
     load(context, 'script.js', ['stringifyUnknown', 'normalizeContentText', 'extractMessageFromData']);
@@ -41,6 +48,38 @@ function runtime() {
 }
 
 describe('real agent request boundaries', () => {
+    test.each([undefined, 'missing', instructSettings])('direct text prompt preserves instruct fallback %#', preset => {
+        const ctx = runtime();
+        expect(ctx.TextCompletionService.constructPrompt(structuredClone(promptMessages), preset)).toBe(expectedPrompts.scoped);
+        expect(ctx.TextCompletionService.constructPrompt([{ role: 'user', content: 'Hello' }], {})).toBe('Hello');
+    });
+
+    test.each([[null, 'Answer'], [['<stop>'], 'Answer<sto']])('text response cleanup accepts stop list %#', async (stopping_strings, content) => {
+        const ctx = runtime();
+        ctx.TextCompletionService.sendRequest = jest.fn(async () => ({ content }));
+        await expect(ctx.TextCompletionService.processRequest({ prompt: 'Question', stopping_strings })).resolves.toEqual({ content: 'Answer' });
+    });
+
+    test.each([
+        ['https://remote.example/v1', 'http://127.0.0.1:5000', true],
+        ['http://127.0.0.1:5000', 'https://remote.example/v1', false],
+        ['http://127.0.0.1:5000', undefined, true],
+    ])('cache policy follows the actual request address %#', (globalUrl, api_server, local) => {
+        const ctx = runtime();
+        Object.assign(ctx, {
+            window: { location: { href: 'http://localhost:8000' } },
+            getTextGenServer: () => globalUrl,
+            createTextProviderParameters, getLocalPromptCacheValue, isLikelyLocalServerUrl,
+            getCustomTokenBans: () => ({ banned_tokens: '', banned_strings: [] }),
+            calculateLogitBias: () => ({}), getStoppingStrings: () => [], max_context: 8192,
+        });
+        load(ctx, 'scripts/textgen-settings.js', ['shouldUseLocalPromptCache', 'createTextGenGenerationData']);
+        const make = scope => ctx.createTextGenGenerationData({ type: 'llamacpp', api_server }, 'model', 'Prompt', 50, false, false, null, 'quiet', { cacheScope: scope });
+        expect(make('main').cache_prompt).toBe(local ? true : undefined);
+        expect(make('auxiliary').cache_prompt).toBe(local ? false : undefined);
+        expect(make('main').api_server).toBe(api_server ?? globalUrl);
+    });
+
     test.each(['ChatCompletionService', 'TextCompletionService'])('%s retains HTTP status and provider diagnostics', async service => {
         const ctx = runtime();
         ctx.fetchResumable.mockResolvedValue({ ok: false, status: 429, json: async () => ({ error: { message: 'Quota exhausted' } }) });

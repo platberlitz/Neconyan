@@ -1,8 +1,11 @@
 import { getPresetManager } from './preset-manager.js';
-import { extractJsonFromData, extractMessageFromData, getGenerateUrl, getRequestHeaders, name1, name2, normalizeContentText } from '../script.js';
+import { extractJsonFromData, extractMessageFromData, getGenerateUrl, getRequestHeaders, name1, name2, normalizeContentText, substituteParams } from '../script.js';
 import { getTextGenServer, createTextGenGenerationData, setting_names, textgenerationwebui_settings } from './textgen-settings.js';
 import { extractReasoningFromData } from './reasoning.js';
-import { formatInstructModeChat, formatInstructModePrompt, getInstructStoppingSequences } from './instruct-mode.js';
+import { getInstructStoppingSequences } from './instruct-mode.js';
+import { selected_group } from './group-chats.js';
+import { power_user } from './power-user.js';
+import { constructScopedTextPrompt, cleanScopedTextResponse } from './generation-format.js';
 import { chat_completion_sources, getStreamingReply, tryParseStreamingError, createGenerationParameters, getNanoGptServiceTier, oai_settings } from './openai.js';
 import EventSourceStream from './sse-stream.js';
 import { fetchResumable } from './resumable-generation.js';
@@ -228,64 +231,9 @@ export class TextCompletionService {
             Object.assign(instructPreset, instructSettings);
         }
 
-        // Make the type check shut up. We 100% don't have a string here.
-        if (typeof instructPreset === 'string') {
-            return;
-        }
-
-        // Format messages using instruct formatting
-        const formattedMessages = [];
-        const prefillActive = prompt.length > 0 ? prompt[prompt.length - 1].role === 'assistant' : false;
-        for (const message of prompt) {
-            const rawMessageContent = normalizeContentText(message.content);
-            let messageContent = rawMessageContent;
-            if (!message.ignoreInstruct) {
-                const isLastMessage = message === prompt[prompt.length - 1];
-
-                // This complicated logic means:
-                // 1. If prefill is not active, format all messages
-                // 2. If prefill is active, format all messages except the last one
-                if (!isLastMessage || !prefillActive) {
-                    messageContent = formatInstructModeChat(
-                        message.name ?? message.role,
-                        rawMessageContent,
-                        message.role === 'user',
-                        message.role === 'system',
-                        undefined,
-                        name1,  // for macros
-                        name2,  // for macros
-                        undefined,
-                        instructPreset,
-                    );
-                }
-
-                // Add prompt formatting for the last message.
-                // e.g. "<|im_start|>assistant"
-                if (isLastMessage) {
-                    let last_line = formatInstructModePrompt(
-                        'assistant',  // for sequences using {{name}}
-                        false,  // not an impersonation
-                        prefillActive ? rawMessageContent : undefined,  // if using prefill, last message is the prefill
-                        name1,  // for macros
-                        name2,  // for macros
-                        true,   // quiet
-                        false,
-                        instructPreset,
-                    );
-
-                    if (prefillActive) {  // content is the prefilled message
-                        if (last_line.endsWith('\n') && !rawMessageContent.endsWith('\n')) {
-                            last_line = last_line.slice(0, -1);  // remove newline after prefill if it's not in the prefill itself
-                        }
-                        messageContent = last_line;
-                    } else {  // append last line to content (e.g. "<|im_start|>assistant:")
-                        messageContent += last_line;
-                    }
-                }
-            }
-            formattedMessages.push(messageContent);
-        }
-        return formattedMessages.join('');
+        return constructScopedTextPrompt(prompt, instructPreset ?? power_user.instruct, {
+            name1, name2, selectedGroup: Boolean(selected_group), substitute: substituteParams,
+        });
     }
 
 
@@ -355,51 +303,7 @@ export class TextCompletionService {
             // @ts-ignore
             const extractedData = response;
 
-            let message = extractedData.content;
-
-            message = message.replace(/[^\S\r\n]+$/gm, '');
-
-            if (requestData.stopping_strings) {
-                for (const stoppingString of requestData.stopping_strings) {
-                    if (stoppingString.length) {
-                        for (let j = stoppingString.length; j > 0; j--) {
-                            if (message.slice(-j) === stoppingString.slice(0, j)) {
-                                message = message.slice(0, -j);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (instructPreset) {
-                [
-                    instructPreset.stop_sequence,
-                    instructPreset.input_sequence,
-                ].forEach(sequence => {
-                    if (sequence?.trim()) {
-                        const index = message.indexOf(sequence);
-                        if (index !== -1) {
-                            message = message.substring(0, index);
-                        }
-                    }
-                });
-
-                [
-                    instructPreset.output_sequence,
-                    instructPreset.last_output_sequence,
-                ].forEach(sequences => {
-                    if (sequences) {
-                        sequences.split('\n')
-                            .filter(line => line.trim() !== '')
-                            .forEach(line => {
-                                message = message.replaceAll(line, '');
-                            });
-                    }
-                });
-            }
-
-            extractedData.content = message;
+            extractedData.content = cleanScopedTextResponse(extractedData.content, requestData.stopping_strings, instructPreset);
         }
 
         return response;

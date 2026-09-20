@@ -6,6 +6,8 @@ import vm from 'node:vm';
 import { parse } from 'acorn';
 import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse, requestUsesReasoning } from '../public/scripts/generation-request-controls.js';
 import { createChatGenerationParameters } from '../public/scripts/chat-provider-parameters.js';
+import { normalizeContentText as normalizeContentTextPure, createRawPrompt as createRawPromptPure } from '../public/scripts/generation-format.js';
+import { textgen_types, createTextProviderParameters, replaceMacrosInList as replaceListMacros } from '../public/scripts/text-provider-parameters.js';
 import { resolveChatReasoningEffort } from '../public/scripts/chat-request-controls.js';
 import { buildChatCompletionSamplerMetadata, filterChatCompletionSamplingParameters, applyClaudeModelParameterConstraints, applyKimiK3ModelParameterConstraints, isKimiK3Model } from '../public/scripts/openai-model-capabilities.js';
 import { resolveGenerationOutputBufferState, resolveGenerationUnblockState, resolveStopGenerationState } from '../public/scripts/generation-lifecycle/index.js';
@@ -96,7 +98,8 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
         eventSource, event_types,
         resolveGenerationOutputBufferState, resolveGenerationUnblockState, resolveStopGenerationState,
         applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse,
-        createChatGenerationParameters,
+        createChatGenerationParameters, normalizeContentTextPure, createRawPromptPure,
+        createTextProviderParameters, replaceListMacros,
         resolveChatReasoningEffort,
         buildAssistantKnowledge, getAssistantKnowledgeBudget,
         buildChatCompletionSamplerMetadata, filterChatCompletionSamplingParameters,
@@ -499,10 +502,11 @@ describe('owned host generation flow', () => {
 
     test.each(['generateRaw', 'generateQuietPrompt'])('%s preserves the exact real text-completion reasoning payload, not a backend default', async method => {
         const { context, requests } = makeRuntime({ api: 'textgenerationwebui', model: 'deepseek-r1' });
-        load(context, 'scripts/textgen-settings.js', ['textgen_types', 'getTextGenModel', 'createTextGenGenerationData', 'getTextGenGenerationData', 'replaceMacrosInList']);
-        Object.assign(context, vm.runInContext('textgen_types', context), {
+        load(context, 'scripts/textgen-settings.js', ['getTextGenModel', 'createTextGenGenerationData', 'getTextGenGenerationData', 'replaceMacrosInList']);
+        Object.assign(context, textgen_types, {
+            textgen_types, calculateLogitBias: () => ({}),
             isDynamicTemperatureSupported: () => false,
-            getCustomTokenBans: () => ({ banned_tokens: [], banned_strings: [] }),
+            getCustomTokenBans: () => ({ banned_tokens: '', banned_strings: [] }),
             isObject: value => value !== null && typeof value === 'object',
             toIntArray: () => [], shouldUseLocalPromptCache: () => false,
             getTextGenServer: () => 'http://example.invalid',

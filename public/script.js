@@ -342,6 +342,7 @@ import { bindIOSFastTapSendButton, isIOSWebKitPlatform } from './scripts/mobile-
 import { formatMobileStreamingPreview, getMobileStreamingBottomPinBehavior, getStreamingUpdateInterval, isAndroidStreamingPlatform, shouldReduceStreamingDomWork, shouldUsePlainTextStreamingPreview } from './scripts/mobile-streaming.js';
 import { fetchResumable, setGenerationContext, listRecoverableGenerations, openHeldGeneration, discardGeneration } from './scripts/resumable-generation.js';
 import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse } from './scripts/generation-request-controls.js';
+import { createRawPrompt as createRawPromptPure, normalizeContentText as normalizeContentTextPure } from './scripts/generation-format.js';
 import {
     CHAT_RENDER_LIFECYCLE_ROLLOUT_KEY,
     CHAT_RENDER_LIFECYCLE_ROUTE,
@@ -7549,82 +7550,10 @@ class StreamingProcessor {
  * @returns {string | object[]} Prompt ready for use in generation. If using TC, this will be a string. If using CC, this will be an array of chat-style messages.
  */
 export function createRawPrompt(prompt, api, instructOverride, quietToLoud, systemPrompt, prefill) {
-    const isInstruct = power_user.instruct.enabled && api !== 'openai' && api !== 'novel' && !instructOverride;
-
-    // If the prompt was given as a string, convert to a message-style object assuming user role
-    if (typeof prompt === 'string') {
-        const message = { role: 'user', content: prompt.trim() };
-        prompt = [message];
-    } else {  // checks for message-style object
-        if (prompt.length === 0 && !systemPrompt) throw Error('No messages provided');
-    }
-
-    // Substitute the prefill if provided
-    prefill = substituteParams(prefill ?? '');
-
-    // Format each message in the prompt, accounting for the provided roles
-    for (const message of prompt) {
-        let name = '';
-        if (message.role === 'user') name = message.name ?? name1;
-        if (message.role === 'assistant') name = message.name ?? name2;
-        if (message.role === 'system') name = message.name ?? '';
-        const prefix = isInstruct || api === 'openai' ? '' : (name ? `${name}: ` : '');
-        if (api === 'openai' && Array.isArray(message.content)) {
-            let didApplyPrefix = !prefix;
-            message.content = message.content.map(part => {
-                if (part?.type !== 'text' || typeof part.text !== 'string') {
-                    return part;
-                }
-
-                const text = substituteParams(part.text);
-                if (didApplyPrefix) {
-                    return { ...part, text };
-                }
-
-                didApplyPrefix = true;
-                return { ...part, text: prefix + text };
-            });
-
-            if (!didApplyPrefix) {
-                message.content.unshift({ type: 'text', text: prefix });
-            }
-        } else {
-            const messageContent = normalizeContentText(message.content);
-            message.content = prefix + substituteParams(messageContent);
-        }
-        if (isInstruct) {  // instruct formatting for text completion
-            const isUser = message.role === 'user';
-            const isNarrator = message.role === 'system';
-            message.content = formatInstructModeChat(name, message.content, isUser, isNarrator, '', name1, name2, false);
-        }
-    }
-
-    // prepend system prompt, if provided
-    if (systemPrompt) {
-        systemPrompt = substituteParams(systemPrompt);
-        systemPrompt = isInstruct ? formatInstructModeStoryString(systemPrompt) : systemPrompt.trim();
-        if (isInstruct && systemPrompt.length > 0 && !systemPrompt.endsWith('\n')) {
-            if (power_user.instruct.wrap && !power_user.instruct.story_string_suffix) {
-                systemPrompt += '\n';
-            }
-        }
-        prompt.unshift({ role: 'system', content: systemPrompt });
-    }
-
-    // with Chat Completion, the prefill is an additional assistant message at the end.
-    if (api === 'openai' && prefill) {
-        prompt.push({ role: 'assistant', content: prefill });
-    }
-
-    // if text completion, convert to text prompt by concatenating all message contents and adding the prefill as a promptBias.
-    if (api !== 'openai') {
-        const joiner = isInstruct ? '' : '\n';
-        prompt = prompt.map(message => message.content).join(joiner);
-        prompt = api === 'novel' ? adjustNovelInstructionPrompt(prompt) : prompt;
-        prompt = prompt + (isInstruct ? formatInstructModePrompt(name2, false, prefill, name1, name2, true, quietToLoud) : `\n${prefill}`);  // add last line
-    }
-
-    return prompt;
+    return createRawPromptPure(prompt, api, instructOverride, quietToLoud, systemPrompt, prefill, {
+        instruct: power_user.instruct, context: power_user.context, name1, name2,
+        selectedGroup: Boolean(selected_group), substitute: substituteParams, adjustNovelPrompt: adjustNovelInstructionPrompt,
+    });
 }
 
 /**
@@ -10701,75 +10630,8 @@ export function stringifyUnknown(value) {
  * @param {any} value
  * @returns {string}
  */
-export function normalizeContentText(value, { excludeReasoning = false } = {}) {
-    if (typeof value === 'string') {
-        return value;
-    }
-
-    if (typeof value === 'number' || typeof value === 'boolean') {
-        return String(value);
-    }
-
-    if (value == null) {
-        return '';
-    }
-
-    if (Array.isArray(value)) {
-        return value
-            .map(item => normalizeContentText(item, { excludeReasoning }))
-            .filter(Boolean)
-            .join('\n\n');
-    }
-
-    if (typeof value === 'object') {
-        if (excludeReasoning && (value.thought === true || /reasoning|thinking|thought/i.test(String(value.type ?? '')))) {
-            return '';
-        }
-        if (typeof value.text === 'string') {
-            return value.text;
-        }
-        if (typeof value.content === 'string') {
-            return value.content;
-        }
-        if (!excludeReasoning && typeof value.thinking === 'string') {
-            return value.thinking;
-        }
-        if (typeof value.tool_plan === 'string') {
-            return value.tool_plan;
-        }
-        if (!excludeReasoning && typeof value.reasoning === 'string') {
-            return value.reasoning;
-        }
-        if (typeof value.output === 'string') {
-            return value.output;
-        }
-        if (typeof value.message === 'string') {
-            return value.message;
-        }
-        if (Array.isArray(value.parts)) {
-            return normalizeContentText(value.parts, { excludeReasoning });
-        }
-        if (Array.isArray(value.content)) {
-            return normalizeContentText(value.content, { excludeReasoning });
-        }
-        if (typeof value.content === 'object' && value.content !== null) {
-            const nestedContent = normalizeContentText(value.content, { excludeReasoning });
-            if (nestedContent) {
-                return nestedContent;
-            }
-        }
-        if (Array.isArray(value.tool_plan)) {
-            return normalizeContentText(value.tool_plan, { excludeReasoning });
-        }
-        if (!excludeReasoning && Array.isArray(value.reasoning)) {
-            return normalizeContentText(value.reasoning);
-        }
-        if (Array.isArray(value.output)) {
-            return normalizeContentText(value.output, { excludeReasoning });
-        }
-    }
-
-    return '';
+export function normalizeContentText(value, options) {
+    return normalizeContentTextPure(value, options);
 }
 
 /**
