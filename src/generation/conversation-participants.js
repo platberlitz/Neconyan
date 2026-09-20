@@ -16,7 +16,7 @@ import { buildConversationMessageReplyReference } from '../endpoints/conversatio
 import { buildConversationPromptMessages, buildConversationSystemPrompt, getCharacterData, getConversationSettings } from '../endpoints/conversation-generation.js';
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import { clamp, parsePositiveInt, unScopeConversationStorageKey } from '../endpoints/conversation-utils.js';
-import { captureChatProfile, getChatProfileContextLimit } from './profiles.js';
+import { captureChatProfile, getChatProfileContextLimit, resolveGenerationProfile } from './profiles.js';
 import { buildSavedConversationContext } from './conversation-context.js';
 
 // Matches the browser regex: flexible whitespace and the curly apostrophe iOS
@@ -192,12 +192,31 @@ export async function buildConversationParticipantPlan(request, current, target,
     return chosen.map(avatar => ({ avatar, purpose: 'reply', gate: false }));
 }
 
+/** Capture all eligible connections before accepting input; speaker selection still uses the complete batch. */
+export async function captureConversationParticipantBindings(request, current, target, { plan = null, explicitSpeaker = '' } = {}) {
+    let avatars = plan ? plan.map(item => item.avatar) : explicitSpeaker ? [explicitSpeaker] : target.groupId
+        ? current.group.members.filter(avatar => !current.group.disabled_members?.includes(avatar)) : [target.avatar];
+    if (avatars.length > 128) throw Object.assign(new Error('Too many Conversation participants.'), { status: 400 });
+    if (target.groupId && !plan && !explicitSpeaker) {
+        const existing = [];
+        for (const avatar of avatars) {
+            try { await getCharacterData(request, avatar, { allowOverride: false, requireExisting: true }); existing.push(avatar); } catch { /* Missing cards are not eligible speakers. */ }
+        }
+        avatars = existing.length ? existing : [target.avatar];
+    }
+    return Object.fromEntries([...new Set(avatars)].sort().map(avatar => {
+        const settings = getConversationSettings(request, current.store, avatar, target.groupId, {}, { personaId: target.personaId });
+        return [avatar, captureChatProfile(request.user.directories, settings.connection_profile)];
+    }));
+}
+
 /** Build one participant's frozen request. The native target stays the thread's, only the speaker changes. */
-export async function buildConversationParticipantSnapshot(request, current, target, plan, { directive, timeZone, force = false, now = Date.now(), extra = {}, automation = null, referenceMessageId = '' } = {}) {
+export async function buildConversationParticipantSnapshot(request, current, target, plan, { directive, timeZone, binding, force = false, now = Date.now(), extra = {}, automation = null, referenceMessageId = '' } = {}) {
     const directories = request.user.directories;
     const avatar = plan.avatar;
     const settings = getConversationSettings(request, current.store, avatar, target.groupId, {}, { personaId: target.personaId });
-    const binding = captureChatProfile(directories, settings.connection_profile);
+    if (!binding) throw Object.assign(new Error('The accepted participant connection is unavailable. Saved messages have been kept.'), { status: 409 });
+    resolveGenerationProfile(directories, binding);
     // Group members must have a real card; the solo thread avatar keeps the
     // legacy fallback so an avatar without a loaded card still replies.
     const character = await getCharacterData(request, avatar, { allowOverride: false, requireExisting: Boolean(target.groupId) });

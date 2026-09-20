@@ -91,7 +91,7 @@ export const test = base.extend({
             async release() {
                 await fetch(provider.url.replace(/\/v1$/, '') + '/fixture/release', { method: 'POST', body: '{}' });
             },
-            async account({ handle = 'default-user', phone = false, settings = {}, configureSettings = () => {} } = {}) {
+            async account({ handle = 'default-user', phone = false, textProfile = false, settings = {}, configureSettings = () => {} } = {}) {
                 const context = await browser.newContext({ baseURL: app.url, serviceWorkers: 'block', reducedMotion: 'reduce',
                     viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone });
                 contexts.push(context);
@@ -108,6 +108,16 @@ export const test = base.extend({
                 saved.extension_settings.connectionManager = { profiles: [{ id: 'durable', name: 'Durable fixture',
                     api: 'custom', mode: 'cc', model: MODEL, 'api-url': provider.url }] };
                 saved.oai_settings = { ...saved.oai_settings, chat_completion_source: 'custom', custom_url: provider.url, custom_model: 'decoy', stream_openai: false };
+                if (textProfile) {
+                    Object.assign(saved.extension_settings.connectionManager.profiles[0], { api: 'llamacpp', mode: 'tc', preset: 'Durable', instruct: 'Durable', 'instruct-state': 'true' });
+                    saved.textgenerationwebui_settings = { ...saved.textgenerationwebui_settings, type: 'ooba', api_server: 'https://unused.invalid',
+                        banned_tokens: '', global_banned_tokens: '', logit_bias: [], dry_sequence_breakers: '[]', negative_prompt: '' };
+                    saved.max_context = 8192;
+                    saved.power_user.custom_stopping_strings = '[]';
+                    await fs.writeFile(path.join(config.dataRoot, handle, 'TextGen Settings', 'Durable.json'), JSON.stringify({ temp: 0.25, genamt: 73, max_length: 8192 }));
+                    await fs.writeFile(path.join(config.dataRoot, handle, 'instruct', 'Durable.json'), JSON.stringify({ enabled: true, wrap: true, names_behavior: 'none',
+                        system_sequence: '<system>', input_sequence: '<user>', output_sequence: '<assistant>', stop_sequence: '</assistant>' }));
+                }
                 configureSettings(saved);
                 await post('/api/settings/save', saved);
                 const created = await context.request.post('/api/characters/create', { headers, data: {

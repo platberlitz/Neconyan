@@ -51,6 +51,29 @@ describe('web tokenizer runtime bootstrap', () => {
         expect(tokenizer.encode('hello world').length).toBeGreaterThan(0);
     });
 
+    test('cancelling a local tokenizer wait leaves its shared load available to other callers', async () => {
+        const { setConfigFilePath } = await import('../src/util.js');
+        setConfigFilePath(defaultConfigPath);
+        const { getWebTokenizer, encodeGenerationText } = await import('../src/endpoints/tokenizers.js');
+        let release;
+        const pending = new Promise(resolve => { release = resolve; });
+        const loading = jest.spyOn(getWebTokenizer('qwen2'), 'get').mockReturnValue(pending);
+        const controller = new AbortController();
+        const remove = jest.spyOn(controller.signal, 'removeEventListener');
+        try {
+            const cancelled = encodeGenerationText('qwen2', 'word', '', controller.signal);
+            const continuing = encodeGenerationText('qwen2', 'word');
+            controller.abort();
+            await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' });
+            expect(remove).toHaveBeenCalledWith('abort', expect.any(Function));
+            release({ encode: () => [17] });
+            await expect(continuing).resolves.toEqual([17]);
+        } finally {
+            release({ encode: () => [17] });
+            loading.mockRestore();
+        }
+    });
+
     test('Mewmory rejects a silently substituted tokenizer even after its fallback is cached', async () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mewmory-tokenizer-'));
         globalThis.DATA_ROOT = root;
@@ -58,10 +81,12 @@ describe('web tokenizer runtime bootstrap', () => {
         try {
             const { setConfigFilePath } = await import('../src/util.js');
             setConfigFilePath(defaultConfigPath);
-            const { getWebTokenizer } = await import('../src/endpoints/tokenizers.js');
+            const { getWebTokenizer, encodeGenerationText } = await import('../src/endpoints/tokenizers.js');
             const tokenizer = getWebTokenizer('qwen2');
+            await expect(encodeGenerationText('qwen2', 'word')).rejects.toThrow(/qwen2.*llama3/);
             expect(await tokenizer.get()).toBeTruthy();
             expect(tokenizer.loadedModel).toBe('llama3');
+            await expect(encodeGenerationText('qwen2', 'word')).rejects.toThrow(/qwen2.*llama3/);
             const { getCounter } = await import('../src/mewmory/tokens.js');
             await expect(getCounter('qwen2')).rejects.toThrow(/qwen2.*llama3.*History has been kept/);
         } finally {

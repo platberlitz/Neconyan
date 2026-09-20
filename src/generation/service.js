@@ -9,8 +9,10 @@ import {
 import { handleChatCompletionsBias, handleChatCompletionsStatus } from '../endpoints/backends/chat-completions.js';
 import { readJson } from '../mewmory/store.js';
 import { fail, hash } from '../mewmory/core.js';
-import { providerStep } from '../jobs/artifacts.js';
-import { buildChatProfileRequest, captureChatProfile } from './profiles.js';
+import { providerStep, readArtifact, writeArtifact } from '../jobs/artifacts.js';
+import { buildChatProfileRequest, captureChatProfile, resolveGenerationProfile } from './profiles.js';
+import { buildTextProfileRequest } from './text-request.js';
+import { cleanScopedTextResponse, normalizeContentText } from '../../public/scripts/generation-format.js';
 import { createChatGenerationParameters } from '../../public/scripts/chat-provider-parameters.js';
 import { REVERSE_PROXY_SUPPORTED_SOURCES, resolveChatReasoningEffort, resolveCustomStoppingStrings } from '../../public/scripts/chat-request-controls.js';
 import { buildChatCompletionSamplerMetadata } from '../../public/scripts/openai-model-capabilities.js';
@@ -21,7 +23,7 @@ import { getNanoGptServiceTiers, isNanoGptPayg } from '../../public/scripts/serv
  * server transport the Conversation API uses. Callers supply an already-built
  * request; saved chat profiles use runChatProfile below.
  */
-export async function runTextGeneration({ context, backend, payload, signal, anonymousCustom = false, fetch: fetchImpl } = {}) {
+export async function runTextGeneration({ context, backend, payload, signal, anonymousCustom = false, boundProfile = false, fetch: fetchImpl } = {}) {
     if (!context?.directories) throw Object.assign(new Error('A generation context is required.'), { status: 400, code: 'GENERATION_CONTEXT_MISSING' });
     if (!payload || typeof payload !== 'object' || Object.keys(payload).length === 0) {
         throw Object.assign(new Error('A generation payload is required.'), { status: 400, code: 'GENERATION_PAYLOAD_MISSING' });
@@ -31,8 +33,11 @@ export async function runTextGeneration({ context, backend, payload, signal, ano
         user: { profile: { handle: context.owner }, directories: context.directories },
         headers: {},
     };
-    const response = await runBackendGeneration(request, resolvedBackend, payload, { signal, fetch: fetchImpl, anonymousCustom });
-    return { response, text: extractGeneratedText(response) };
+    const response = await runBackendGeneration(request, resolvedBackend, payload, { signal, fetch: fetchImpl, anonymousCustom, boundProfile });
+    const text = resolvedBackend === 'text'
+        ? normalizeContentText(typeof response === 'string' ? response : response?.choices?.[0]?.text ?? response?.choices?.[0]?.message?.content ?? response?.content ?? response?.response ?? response?.[0]?.content ?? '', { excludeReasoning: true })
+        : extractGeneratedText(response);
+    return { response, text };
 }
 
 export { buildGenerationRequestBody, extractGeneratedText, normalizeGenerationBackend };
@@ -45,6 +50,27 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     if (!context?.directories) fail('A generation context is required.', 400);
     signal ||= jobContext?.signal;
     signal?.throwIfAborted();
+    if (binding?.backend === 'text') {
+        const options = { macroEnvironment, ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload };
+        const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames, modelOverride, overridePayload });
+        if (jobContext) {
+            const retained = readArtifact(context.directories, jobContext.job.id, 'provider:' + key);
+            if (retained !== undefined) return retained;
+        }
+        const material = resolveGenerationProfile(context.directories, binding);
+        const preparedName = 'text-request:' + key;
+        let payload = jobContext && readArtifact(context.directories, jobContext.job.id, preparedName);
+        if (!payload) {
+            payload = await buildTextProfileRequest(context, material, messages, maxTokens, options);
+            if (jobContext) writeArtifact(context.directories, jobContext.job.id, preparedName, payload);
+        }
+        resolveGenerationProfile(context.directories, binding);
+        const call = async () => {
+            const result = await runTextGeneration({ context, backend: 'text', payload, signal, fetch: fetchImpl, anonymousCustom: !material.secretId, boundProfile: true });
+            return { ...result, text: cleanScopedTextResponse(result.text, payload.stopping_strings, material.instruct.enabled ? material.instruct : undefined) };
+        };
+        return jobContext ? providerStep(jobContext, key, call) : call();
+    }
     const saved = readJson(path.join(context.directories.root, 'settings.json'), {});
     const power = saved.power_user || {};
     if (power.custom_stopping_strings_macro && !macroEnvironment?.evaluate) fail('This profile requires the captured chat macro context.', 400);

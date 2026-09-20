@@ -19,12 +19,12 @@ export function resolveCustomStoppingStrings(settings, substitute, ephemeral = [
         const parsed = settings.custom_stopping_strings ? JSON.parse(settings.custom_stopping_strings) : [];
         if (Array.isArray(parsed)) {
             permanent = parsed.filter(value => typeof value === 'string' && value.length > 0);
-            if (settings.custom_stopping_strings_macro) permanent = permanent.map(substitute);
         }
     } catch (error) {
         console.warn('Error parsing custom stopping strings:', error);
         permanent = [];
     }
+    if (settings.custom_stopping_strings_macro) permanent = permanent.map(substitute);
     const strings = [...permanent, ...ephemeral];
     return limit > 0 ? strings.slice(0, limit) : strings;
 }

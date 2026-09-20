@@ -11,6 +11,58 @@ test.describe.configure({ mode: 'default' });
 test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires an explicitly opted-in disposable server.');
 test.setTimeout(180000);
 
+for (const changeBinding of [false, true]) {
+    test(`group batching ${changeBinding ? 'separates changed bindings' : 'uses later mentions with captured bindings'}`, async ({ app, browser }) => {
+        const account = await app.account({ configureSettings(saved) {
+            saved.extension_settings.connectionManager.profiles.push({ ...saved.extension_settings.connectionManager.profiles[0],
+                id: 'group-other', name: 'Other group profile', model: 'group-other' });
+        } });
+        const created = await account.context.request.post('/api/characters/create', { headers: account.headers,
+            data: { ch_name: 'Durable Kit', description: 'A second group member.', first_mes: 'Hello.' } });
+        expect(created.ok()).toBe(true);
+        const partner = await created.text();
+        const current = await account.post('/api/neconyan-conversation/store/get');
+        const { group } = await account.post('/api/neconyan-conversation/group/create', { version: current.version,
+            personaId: account.personaId, members: [account.avatar, partner], name: 'Captured group',
+            settings: { enabled: true, availability: 'online', reply_delay_multiplier: 0 } });
+        const page = await account.open();
+        await page.evaluate(async ({ avatar, partner, groupId }) => {
+            const context = await import('/scripts/neconyan-conversation/context.js');
+            for (const member of [avatar, partner]) Object.assign(context.getConversationThreadStore(member, { groupId, create: true }).settings,
+                { enabled: true, availability: 'online', connection_profile: 'durable', reply_delay_multiplier: 0 });
+            await (await import('/scripts/neconyan-conversation/chrome.js')).openConversationWorkspaceForAvatar(avatar, { groupId });
+            if (!await (await import('/scripts/neconyan-conversation/store-sync.js')).flushConversationStore()) throw new Error('Group setup failed');
+        }, { avatar: account.avatar, partner, groupId: group.id });
+        app.provider.mode.hold = [MODEL, 'group-other'];
+        app.provider.mode.reply = { choices: [{ message: { content: 'Captured group reply.' } }] };
+        const first = await send(page, 'Please wait for my next message.');
+        expect(Object.keys(first.job.config.participantBindings).sort()).toEqual([account.avatar, partner].sort());
+        if (changeBinding) await page.evaluate(async () => {
+            const context = await import('/scripts/neconyan-conversation/context.js');
+            context.getConversationStore().settings.connection_profile = 'group-other';
+        });
+        const second = await send(page, '@Durable Nova and @Durable Kit, please both answer.');
+        expect(second.job.id === first.job.id).toBe(!changeBinding);
+        expect(second.job.config.participantBindings[partner].profileId).toBe(changeBinding ? 'group-other' : 'durable');
+        await page.close();
+        expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
+        await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBeGreaterThanOrEqual(2);
+        await app.release();
+        await account.settled(first.job.id);
+        await account.settled(second.job.id);
+        const firstRoot = await account.job(first.job.id);
+        expect(firstRoot.children).toHaveLength(2);
+        for (const id of firstRoot.children) expect((await account.job(id)).credentialRef.profileId).toBe('durable');
+        const secondRoot = await account.job(second.job.id);
+        if (changeBinding) {
+            expect(secondRoot.children.length).toBeGreaterThanOrEqual(1);
+            for (const id of secondRoot.children) expect((await account.job(id)).credentialRef.profileId).toBe('group-other');
+        }
+        expect(app.provider.calls).toHaveLength(2 + (changeBinding ? secondRoot.children.length : 0));
+        expect(app.provider.calls.filter(call => call.model === 'group-other')).toHaveLength(changeBinding ? secondRoot.children.length : 0);
+    });
+}
+
 for (const phone of [false, true]) {
     for (const count of [249, 250]) {
         test(`${phone ? 'phone' : 'desktop'} retention at ${count} preserves a multi-bubble send and native effects`, async ({ app, browser }) => {
@@ -255,11 +307,11 @@ for (const phone of [false, true]) {
             await expect(menu).toHaveAttribute('aria-expanded', 'false');
         }
     });
-    for (const control of ['Send', 'Enter', 'Ask for reply', 'Branch from here']) {
-        test(`${phone ? 'phone' : 'desktop'} ${control}: zero-page completion and repeat-safe reopening`, async ({ app, browser }, info) => {
-            const account = await app.account({ phone });
+    for (const { control, textProfile } of ['Send', 'Enter', 'Ask for reply', 'Branch from here'].flatMap(control => [false, true].map(textProfile => ({ control, textProfile })))) {
+        test(`${phone ? 'phone' : 'desktop'} ${textProfile ? 'saved text ' : ''}${control}: zero-page completion and repeat-safe reopening`, async ({ app, browser }, info) => {
+            const account = await app.account({ phone, textProfile });
             const page = await account.open();
-            app.provider.mode.hold = MODEL;
+            app.provider.mode.hold = textProfile ? 'text-writer' : MODEL;
             const original = await account.branch('main');
             if (control === 'Ask for reply') await page.locator('#sb_conversation_toggle_tools').click();
             if (control === 'Branch from here') {
@@ -294,6 +346,12 @@ for (const phone of [false, true]) {
                 await expect(page.locator('#sb_conversation_input')).toHaveValue('');
             }
             await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBe(1);
+            if (textProfile) {
+                expect(app.provider.calls[0].prompt).toContain('<user>');
+                expect(app.provider.calls[0].prompt).toContain('<assistant>');
+                expect(app.provider.calls[0].prompt).toContain('Original question.');
+                expect(accepted.job.config.participantBindings[account.avatar].backend).toBe('text');
+            }
             const geometry = await page.locator('#sb_conversation_send').evaluate(element => ({
                 width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height,
                 touch: navigator.maxTouchPoints, viewport: { width: innerWidth, height: innerHeight },

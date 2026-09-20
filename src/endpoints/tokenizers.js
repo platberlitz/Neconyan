@@ -890,6 +890,37 @@ function createWebTokenizerDecodingHandler(tokenizer) {
 
 export const router = express.Router();
 
+/** Encode with an explicitly saved local tokenizer; never replace a missing tokenizer. */
+export async function encodeGenerationText(tokenizer, text, model, signal) {
+    signal?.throwIfAborted();
+    const local = {
+        llama: spp_llama, nerdstash: spp_nerd, nerdstash_v2: spp_nerd_v2,
+        mistral: spp_mistral, yi: spp_yi, gemma: spp_gemma, jamba: spp_jamba,
+        claude: claude_tokenizer, llama3: llama3_tokenizer, qwen2: qwen2Tokenizer,
+        'command-r': commandRTokenizer, 'command-a': commandATokenizer,
+        nemo: nemoTokenizer, deepseek: deepseekTokenizer,
+    };
+    if (tokenizer === 'gpt2' || tokenizer === 'openai') return Array.from(getTiktokenTokenizer(tokenizer === 'gpt2' ? 'gpt2' : getTokenizerModel(model)).encode(text, [], []));
+    // Loading is shared; cancellation releases this caller without cancelling other users.
+    let onAbort;
+    let instance;
+    try {
+        instance = await new Promise((resolve, reject) => {
+            onAbort = () => reject(signal.reason);
+            signal?.addEventListener('abort', onAbort, { once: true });
+            Promise.resolve(local[tokenizer]?.get()).then(resolve, reject);
+        });
+    } finally {
+        signal?.removeEventListener('abort', onAbort);
+    }
+    signal?.throwIfAborted();
+    if (!instance) throw new Error('The saved tokenizer is unavailable.');
+    if (local[tokenizer].fallback) throw Object.assign(new Error(`The ${tokenizer} tokenizer is unavailable; the ${local[tokenizer].loadedModel} replacement cannot encode this saved request.`), { status: 409 });
+    const ids = instance.encodeIds ? await instance.encodeIds(text) : Array.from(instance.encode(text));
+    if (!Array.isArray(ids) || !ids.every(Number.isInteger) || (text && !ids.length)) throw new Error('The saved tokenizer could not encode this text.');
+    return ids;
+}
+
 router.post('/llama/encode', createSentencepieceEncodingHandler(spp_llama));
 router.post('/nerdstash/encode', createSentencepieceEncodingHandler(spp_nerd));
 router.post('/nerdstash_v2/encode', createSentencepieceEncodingHandler(spp_nerd_v2));
@@ -1242,7 +1273,7 @@ router.post('/remote/kobold/count', async function (request, response) {
     }
 });
 
-router.post('/remote/textgenerationwebui/encode', async function (request, response) {
+export async function handleTextGenerationEncode(request, response) {
     if (!request.body) {
         return response.sendStatus(400);
     }
@@ -1288,7 +1319,8 @@ router.post('/remote/textgenerationwebui/encode', async function (request, respo
                 break;
         }
 
-        const result = await fetch(url, args);
+        args.signal = request.generationSignal;
+        const result = await (request.fetch || fetch)(url, args);
 
         if (!result.ok) {
             console.warn(`API returned error: ${result.status} ${result.statusText}`);
@@ -1305,4 +1337,5 @@ router.post('/remote/textgenerationwebui/encode', async function (request, respo
         console.error(error);
         return response.send({ error: true });
     }
-});
+}
+router.post('/remote/textgenerationwebui/encode', handleTextGenerationEncode);

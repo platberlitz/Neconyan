@@ -7,7 +7,7 @@ document; this file only records what is actually finished and what is not.
 Status values: `done` (implemented and verified), `partial` (implemented but an
 acceptance case is unproven), `pending` (not started).
 
-## Current checkpoint: Conversation integrity
+## Current checkpoint: named text requests
 
 - `done` The named Step 7 controls pass Chromium checks at desktop 1280x900 and
   touch 393x852. The suite contains 52 cases: 51 passed in the full run and the
@@ -19,7 +19,7 @@ acceptance case is unproven), `pending` (not started).
   uploads and preliminary aside saves, initial settings ownership, queued saves,
   observer read coalescing and test opt-in/process handling. Thumbnail responses
   also have deterministic coverage for equal-size/equal-time cache collisions.
-- Latest checks: 334 unit suites, 4,324 tests passed and two skipped; 165 Node
+- Latest checks: 334 unit suites, 4,333 tests passed and two skipped; 208 Node
   tests passed; root lint, frontend budgets and whitespace checks passed.
 - `done` Resolve findings a-e: pre-migration baseline/version capture, bounded
   history retention, branch identity during batching/repair, complete member-key
@@ -28,8 +28,14 @@ acceptance case is unproven), `pending` (not started).
   saving without discarding local edits. Legacy histories receive a verified
   checkpoint before new work is captured. Retention, real crash recovery,
   migration races and all settings-replacement paths have browser regressions.
-- `pending` Finish saved text-completion/instruct and explicit active-connection
-  bindings, then native solo partner chimes, unread alerts and narration with the
+- `done` Named text-completion/instruct requests share all 15 provider parameter
+  mappings and retain saved templates, credential references and prepared values.
+  Eight new desktop/phone control cases and two group-binding cases passed;
+  the expanded 62-case suite was not rerun in full at this checkpoint.
+- `done` Capture eligible participant bindings before input acceptance, retain
+  later mention selection and separate batches when their bindings differ.
+- `pending` Finish explicit active-connection bindings, preflight and manual
+  fallback removal, then native solo partner chimes, unread alerts and narration with the
   automatic-ownership handover. Roleplay generation/completion migration follows.
 - Safari, unresolved image-provider crash recovery and reload-persistent send
   retry identity are unverified. Other Conversation generation controls remain

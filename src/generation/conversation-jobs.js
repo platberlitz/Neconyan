@@ -8,10 +8,9 @@ import { acceptChildJobs, acceptJob, getJob, listJobs, releaseChildJobs, release
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { appendConversationJobMessage, applyConversationBookkeeping, captureConversationTarget, prepareConversationTarget, commitConversationEffect, commitConversationJobCommands, commitConversationReplyNotice, readConversationTarget } from './conversation-effects.js';
-import { captureChatProfile } from './profiles.js';
 import { runChatProfile } from './service.js';
 import { createConversationImageGenerator, conversationReplyWantsImage, lastUserMessageText } from './conversation-images.js';
-import { buildConversationParticipantPlan, buildConversationParticipantSnapshot, buildAvailabilityAutoResponderText, buildDelayedReplyNoticeText, getConversationAvailabilityDecision, getInitialAvailabilityDelayMs, getReplyDelayMsForStatus, manualActivity, resolveParticipantActivity } from './conversation-participants.js';
+import { buildConversationParticipantPlan, buildConversationParticipantSnapshot, captureConversationParticipantBindings, buildAvailabilityAutoResponderText, buildDelayedReplyNoticeText, getConversationAvailabilityDecision, getInitialAvailabilityDelayMs, getReplyDelayMsForStatus, manualActivity, resolveParticipantActivity } from './conversation-participants.js';
 import { captureConversationRoleplaySource, getConversationAsideOccurrenceKey, getConversationGroupAsideCooldownMs, getConversationGroupAsideLastSent, normalizeConversationAsideSubmission } from './conversation-roleplay-source.js';
 
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -139,7 +138,7 @@ function lastTriggerId(anchors) {
  * profile binding, system prompt and macro environment. The first participant is
  * also the top-level snapshot so the legacy single-speaker path keeps working.
  */
-async function buildConversationSnapshot(request, target, directive, timeZone, { force = false, plan = null, automation = null, anchors = null } = {}) {
+async function buildConversationSnapshot(request, target, directive, timeZone, { force = false, plan = null, automation = null, anchors = null, bindings = {} } = {}) {
     const current = readConversationTarget(request, target);
     verifyConversationAnchors(current, target, anchors);
     const explicitSpeaker = anchors ? resolveExplicitSpeaker(current, target, anchors.replyTarget) : '';
@@ -153,6 +152,7 @@ async function buildConversationSnapshot(request, target, directive, timeZone, {
             directive: item.directive || directive, timeZone, force: force || item.force === true, now,
             extra: item.extra, automation: automation || item.automation || null,
             referenceMessageId: lastTriggerId(anchors),
+            binding: Object.hasOwn(bindings, item.avatar) ? bindings[item.avatar] : null,
         }));
     }
     const primary = participants[0];
@@ -262,6 +262,7 @@ export async function finalizeConversationSubmission(request, job) {
             const built = await buildConversationSnapshot(request, target, job.intent.directive, job.intent.timeZone, {
                 force: job.intent.force === true, plan: job.intent.plan, automation: job.intent.automation,
                 anchors: job.intent.anchors || null,
+                bindings: job.config?.participantBindings,
             });
             const latest = getJob(directories, job.id);
             if (!latest || latest.cancellation?.requested || TERMINAL_JOB_STATES.has(latest.state)) return latest;
@@ -303,7 +304,7 @@ function findSubmission(directories, owner, key) {
 }
 
 /** The open send batch this submission can still join, or null. */
-function findCoalesceLeader(directories, owner, target, binding, now, { force, timeZone, directive, anchors }) {
+function findCoalesceLeader(directories, owner, target, bindings, now, { force, timeZone, directive, anchors }) {
     const threadKey = getConversationThreadKey(target.avatar, target.groupId, target.personaId);
     return listJobs(directories, { owner, includeDismissed: true }).find(job => job.type === 'conversation.reply'
         && job.intent?.mode === 'send'
@@ -316,9 +317,9 @@ function findCoalesceLeader(directories, owner, target, binding, now, { force, t
         && !job.cancellation?.requested
         && job.target?.id === threadKey && job.target?.branchId === target.branchId
         && job.target?.createdAt === target.createdAt
-        && job.credentialRef?.profileId === binding?.profileId
-        && job.credentialRef?.fingerprint === binding?.fingerprint
-        && Number(job.coalesce?.deadline) > now) || null;
+        && Number(job.coalesce?.deadline) > now
+        && job.config?.participantBindings
+        && hash(job.config.participantBindings) === hash(bindings)) || null;
 }
 
 /**
@@ -414,17 +415,16 @@ export async function acceptConversationSubmission(request, body = {}) {
     // Refuse a stale or edited source before any partial write: the branch, its
     // triggers and the explicit reply target must all still match what was seen.
     verifyConversationAnchors(current, target, anchors);
-    resolveExplicitSpeaker(current, target, anchors.replyTarget);
-    const settings = getConversationSettings(request, current.store, target.avatar, target.groupId, {}, { personaId: target.personaId });
-    const binding = captureChatProfile(directories, settings.connection_profile);
+    const explicitSpeaker = resolveExplicitSpeaker(current, target, anchors.replyTarget);
+    const bindings = await captureConversationParticipantBindings(request, current, target, { explicitSpeaker });
     if (mode === 'send') {
-        const leader = findCoalesceLeader(directories, owner, target, binding, Date.now(), intent);
+        const leader = findCoalesceLeader(directories, owner, target, bindings, Date.now(), intent);
         if (leader) return joinCoalesceLeader(request, leader, { messages, submissionKey: body.submissionKey, anchors, intentFingerprint });
     }
     const accepted = acceptJob(directories, { owner, type: 'conversation.reply', submissionKey: body.submissionKey, intent, paused: true,
         coalesce: { deadline: mode === 'send' ? Date.now() + COALESCE_WINDOW_MS : 0, members: [] },
         target: { kind: 'conversation', id: getConversationThreadKey(target.avatar, target.groupId, target.personaId), branchId: target.branchId, createdAt: target.createdAt },
-        credentialRef: binding, config: {}, label: 'Conversation reply' });
+        credentialRef: Object.values(bindings)[0], config: { participantBindings: bindings }, label: 'Conversation reply' });
     noteOwner(owner);
     const prepared = await prepareConversationSubmission(request, accepted.job, { mode, messages, directive: intent.directive, timeZone });
     return { ...prepared, created: accepted.created };
@@ -450,8 +450,6 @@ export async function acceptConversationAutonomousReply(request, occurrence) {
     if (!Array.isArray(occurrence.participants) || !occurrence.participants.length) fail('The automatic Conversation participants are missing.', 400);
     const target = await prepareConversationTarget(request, occurrence.target);
     const current = readConversationTarget(request, target);
-    const settings = getConversationSettings(request, current.store, occurrence.participants[0].avatar, target.groupId, {}, { personaId: target.personaId });
-    const binding = captureChatProfile(directories, settings.connection_profile);
     const intent = {
         mode: 'auto',
         target: { avatar: target.avatar, groupId: target.groupId, personaId: target.personaId, branchId: target.branchId },
@@ -470,10 +468,11 @@ export async function acceptConversationAutonomousReply(request, occurrence) {
         if (existing.job.type !== 'conversation.reply' || hash(existing.job.intent) !== hash(intent)) fail('This occurrence key already belongs to another operation.');
         return { job: existing.job, created: false };
     }
+    const bindings = await captureConversationParticipantBindings(request, current, target, { plan: occurrence.participants });
     const accepted = acceptJob(directories, { owner, type: 'conversation.reply', submissionKey: occurrence.key, intent, automatic: true, paused: true,
         coalesce: { deadline: 0, members: [] },
         target: { kind: 'conversation', id: getConversationThreadKey(target.avatar, target.groupId, target.personaId), branchId: target.branchId, createdAt: target.createdAt },
-        credentialRef: binding, config: {}, label: 'Conversation automatic message' });
+        credentialRef: Object.values(bindings)[0], config: { participantBindings: bindings }, label: 'Conversation automatic message' });
     noteOwner(owner);
     await finalizeConversationSubmission(request, accepted.job);
     return { job: getJob(directories, accepted.job.id), created: accepted.created };

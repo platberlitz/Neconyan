@@ -216,7 +216,8 @@ export function getOverrideHeaders(urlHost) {
  * @param {string|null} server API server for new request
  */
 export function setAdditionalHeaders(request, args, server) {
-    setAdditionalHeadersByType(args.headers, request.body.api_type, server, request.user.directories, request.body.secret_id);
+    if (request.anonymousCustom) return;
+    setAdditionalHeadersByType(args.headers, request.body.api_type, server, request.user.directories, request.body.secret_id, !request.boundProfile);
 }
 
 /**
@@ -226,8 +227,9 @@ export function setAdditionalHeaders(request, args, server) {
  * @param {string|null} server API server for new request
  * @param {import('./users.js').UserDirectoryList} directories User directories
  * @param {string|null} secretId Secret ID for the request (optional, used for some API types to determine which secret to use)
+ * @param {boolean} allowHostOverrides Whether unbound host configuration may add headers
  */
-export function setAdditionalHeadersByType(requestHeaders, type, server, directories, secretId = null) {
+export function setAdditionalHeadersByType(requestHeaders, type, server, directories, secretId = null, allowHostOverrides = true) {
     const headerGetters = {
         [TEXTGEN_TYPES.MANCER]: getMancerHeaders,
         [TEXTGEN_TYPES.VLLM]: getVllmHeaders,
@@ -248,7 +250,7 @@ export function setAdditionalHeadersByType(requestHeaders, type, server, directo
     const getHeaders = headerGetters[type];
     const headers = getHeaders ? getHeaders(directories, secretId) : {};
 
-    if (typeof server === 'string' && server.length > 0) {
+    if (allowHostOverrides && typeof server === 'string' && server.length > 0) {
         try {
             const url = new URL(server);
             const overrideHeaders = getOverrideHeaders(url.host);

@@ -440,13 +440,13 @@ export function getSafeConversationGenerationStatus(status) {
 /**
  * Run backend generation with error handling
  */
-export async function runBackendGeneration(request, backend, payload, { signal, fetch, anonymousCustom = false } = {}) {
+export async function runBackendGeneration(request, backend, payload, { signal, fetch, anonymousCustom = false, boundProfile = false } = {}) {
     const handler = backend === GENERATION_BACKENDS.TEXT ? handleTextCompletionsGenerate : handleChatCompletionsGenerate;
-    return runBackendRequest(request, handler, payload, { signal, fetch, anonymousCustom });
+    return runBackendRequest(request, handler, payload, { signal, fetch, anonymousCustom, boundProfile });
 }
 
 /** Invoke an existing provider handler with the same owner and cancellation policy. */
-export async function runBackendRequest(request, handler, payload, { signal, fetch, anonymousCustom = false } = {}) {
+export async function runBackendRequest(request, handler, payload, { signal, fetch, anonymousCustom = false, boundProfile = false } = {}) {
     if (!Object.keys(payload).length) {
         const error = new Error('generation payload is required');
         error.status = 400;
@@ -468,6 +468,7 @@ export async function runBackendRequest(request, handler, payload, { signal, fet
         query: request.query || {},
         fetch,
         anonymousCustom,
+        boundProfile,
         resumableGeneration: request.resumableGeneration,
         generationSignal: signal,
         socket: request.socket || inertSocket,

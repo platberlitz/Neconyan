@@ -38,7 +38,9 @@ import { ENCODE_TOKENIZERS, TEXTGEN_TOKENIZERS, TOKENIZER_SUPPORTED_KEY, getText
 import { AbortReason } from './util/AbortReason.js';
 import { getSortableDelay, onlyUnique } from './utils.js';
 import { textgen_types, APHRODITE_DEFAULT_ORDER, createTextProviderParameters, replaceMacrosInList as replaceListMacros } from './text-provider-parameters.js';
+import { setting_names, TEXT_PROVIDER_URLS } from './text-preset-request.js';
 export { textgen_types, APHRODITE_DEFAULT_ORDER };
+export { setting_names } from './text-preset-request.js';
 
 function initSamplerOrderLock(sortableSelector) {
     const button = document.querySelector(`[data-sampler-order-lock="${sortableSelector.slice(1)}"]`);
@@ -130,7 +132,7 @@ const SAMPLER_VISIBILITY_EXTENSION_KEY = 'samplerVisibility';
 // Maybe let it be configurable in the future?
 // (7 days later) The future has come.
 const MANCER_SERVER_KEY = 'mancer_server';
-const MANCER_SERVER_DEFAULT = 'https://neuro.mancer.tech';
+const MANCER_SERVER_DEFAULT = TEXT_PROVIDER_URLS.mancer;
 
 function getStoredMancerServer() {
     try {
@@ -143,11 +145,11 @@ function getStoredMancerServer() {
 }
 
 export let MANCER_SERVER = getStoredMancerServer() ?? MANCER_SERVER_DEFAULT;
-export let TOGETHERAI_SERVER = 'https://api.together.xyz';
-export let INFERMATICAI_SERVER = 'https://api.totalgpt.ai';
-export let DREAMGEN_SERVER = 'https://dreamgen.com';
-export let OPENROUTER_SERVER = 'https://openrouter.ai/api';
-export let FEATHERLESS_SERVER = 'https://api.featherless.ai/v1';
+export let TOGETHERAI_SERVER = TEXT_PROVIDER_URLS.togetherai;
+export let INFERMATICAI_SERVER = TEXT_PROVIDER_URLS.infermaticai;
+export let DREAMGEN_SERVER = TEXT_PROVIDER_URLS.dreamgen;
+export let OPENROUTER_SERVER = TEXT_PROVIDER_URLS.openrouter;
+export let FEATHERLESS_SERVER = TEXT_PROVIDER_URLS.featherless;
 
 export const SERVER_INPUTS = {
     [textgen_types.OOBA]: '#textgenerationwebui_api_url_text',
@@ -274,83 +276,6 @@ export let textgenerationwebui_banned_in_macros = [];
 
 export let textgenerationwebui_presets = [];
 export let textgenerationwebui_preset_names = [];
-
-export const setting_names = [
-    'temp',
-    'temperature_last',
-    'rep_pen',
-    'rep_pen_range',
-    'rep_pen_decay',
-    'rep_pen_slope',
-    'no_repeat_ngram_size',
-    'top_k',
-    'top_p',
-    'top_a',
-    'tfs',
-    'epsilon_cutoff',
-    'eta_cutoff',
-    'typical_p',
-    'min_p',
-    'penalty_alpha',
-    'num_beams',
-    'length_penalty',
-    'min_length',
-    'dynatemp',
-    'min_temp',
-    'max_temp',
-    'dynatemp_exponent',
-    'smoothing_factor',
-    'smoothing_curve',
-    'dry_allowed_length',
-    'dry_multiplier',
-    'dry_base',
-    'dry_sequence_breakers',
-    'dry_penalty_last_n',
-    'max_tokens_second',
-    'encoder_rep_pen',
-    'freq_pen',
-    'presence_pen',
-    'skew',
-    'do_sample',
-    'early_stopping',
-    'seed',
-    'add_bos_token',
-    'ban_eos_token',
-    'skip_special_tokens',
-    'include_reasoning',
-    'streaming',
-    'mirostat_mode',
-    'mirostat_tau',
-    'mirostat_eta',
-    'guidance_scale',
-    'negative_prompt',
-    'grammar_string',
-    'json_schema',
-    'banned_tokens',
-    'global_banned_tokens',
-    'send_banned_tokens',
-    'ignore_eos_token',
-    'spaces_between_special_tokens',
-    'speculative_ngram',
-    'sampler_order',
-    'sampler_priority',
-    'samplers',
-    'samplers_priorities',
-    'n',
-    'logit_bias',
-    'custom_model',
-    'bypass_status_check',
-    'openrouter_allow_fallbacks',
-    'xtc_threshold',
-    'xtc_probability',
-    'nsigma',
-    'min_keep',
-    'generic_model',
-    'extensions',
-    'json_schema_allow_empty',
-    'adaptive_target',
-    'adaptive_decay',
-];
 
 export function validateTextGenUrl() {
     const selector = SERVER_INPUTS[textgenerationwebui_settings.type];

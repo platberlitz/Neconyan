@@ -598,7 +598,9 @@ describe('SillyBunny Conversation REST API', () => {
     /* eslint-enable jest/no-conditional-expect */
 
     test('a send on a different saved profile does not join an open batch', async () => {
-        const { getJob } = await import('../src/jobs/store.js');
+        const { getJob, updateJob } = await import('../src/jobs/store.js');
+        const { readArtifact } = await import('../src/jobs/artifacts.js');
+        const { finalizeConversationSubmission } = await import('../src/generation/conversation-jobs.js');
         await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [] });
         const saved = readSettings();
         saved.extension_settings.connectionManager = { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o' }, { id: 'other', api: 'openai', model: 'gpt-4o' }] };
@@ -623,6 +625,35 @@ describe('SillyBunny Conversation REST API', () => {
         expect(secondJob).not.toBe(firstJob);
         expect(getJob(userDirectories, secondJob).credentialRef.profileId).toBe('other');
         expect(readConversationStore().characters['nova.png'].branches.main.messages.map(message => message.mes)).toEqual(['One', 'Two']);
+        const request = { user: { profile: { handle: userHandle }, directories: userDirectories } };
+        await finalizeConversationSubmission(request, getJob(userDirectories, firstJob));
+        expect(getJob(userDirectories, firstJob).state).toBe('queued');
+        expect(readArtifact(userDirectories, firstJob, 'request').binding.profileId).toBe('saved');
+        const changed = readSettings();
+        changed.extension_settings.connectionManager.profiles[1].model = 'changed-after-acceptance';
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(changed));
+        await finalizeConversationSubmission(request, getJob(userDirectories, secondJob));
+        expect(getJob(userDirectories, secondJob).state).toBe('failed');
+        expect(readArtifact(userDirectories, secondJob, 'request')).toBeUndefined();
+        const replay = await postJson('/reply/submit', { submissionKey: 'batch-b', mode: 'send', target, messages: [{ role: 'user', mes: 'Two' }] });
+        expect(replay.status).toBe(200);
+        expect((await replay.json()).job.id).toBe(secondJob);
+        const third = await postJson('/reply/submit', { submissionKey: 'legacy-binding', mode: 'send', target, messages: [{ role: 'user', mes: 'Kept legacy input' }] });
+        const thirdJob = (await third.json()).job.id;
+        updateJob(userDirectories, thirdJob, { config: {} });
+        for (const deadline of [0, Date.now() + 5000]) {
+            updateJob(userDirectories, thirdJob, job => ({ inputDurable: false, coalesce: { ...job.coalesce, deadline } }));
+            const fresh = await postJson('/reply/submit', { submissionKey: `after-legacy-${deadline}`, mode: 'send', target, messages: [{ role: 'user', mes: 'Fresh input' }] });
+            expect(fresh.status).toBe(202);
+            const freshJob = (await fresh.json()).job.id;
+            expect(freshJob).not.toBe(thirdJob);
+            expect(getJob(userDirectories, thirdJob).state).toBe('waiting');
+            updateJob(userDirectories, freshJob, { state: 'cancelled' });
+        }
+        await finalizeConversationSubmission(request, getJob(userDirectories, thirdJob));
+        expect(getJob(userDirectories, thirdJob).state).toBe('failed');
+        expect(readConversationStore().characters['nova.png'].branches.main.messages.map(message => message.mes)).toEqual(['One', 'Two', 'Kept legacy input', 'Fresh input', 'Fresh input']);
+        expect(upstreamRequests).toHaveLength(0);
     });
 
     test('a reply validates its captured triggers, reply target and branch before accepting', async () => {
@@ -696,6 +727,7 @@ describe('SillyBunny Conversation REST API', () => {
             triggers: [{ messageId: 'u1', revision: getConversationMessageRevision(byId.u1) }],
             replyTarget: { messageId: 'p1', revision: getConversationMessageRevision(byId.p1) } });
         expect(accepted.status).toBe(202);
+        expect(Object.keys((await accepted.json()).job.config.participantBindings)).toEqual(['kit.png']);
     });
 
     test('a send with a different explicit reply target does not join an open batch', async () => {

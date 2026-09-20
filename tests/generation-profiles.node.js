@@ -6,11 +6,251 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { setConfigFilePath } from '../src/util.js';
 import { createChatGenerationParameters } from '../public/scripts/chat-provider-parameters.js';
+import { textgen_types } from '../public/scripts/text-provider-parameters.js';
+import { providerSettings, instructSettings, promptMessages, expectedPrompts } from './fixtures/text-generation-baseline.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
-const { captureChatProfile, buildChatProfileRequest } = await import('../src/generation/profiles.js');
+const { captureChatProfile, buildChatProfileRequest, resolveGenerationProfile } = await import('../src/generation/profiles.js');
 const { runChatProfile } = await import('../src/generation/service.js');
 const { acceptJob, getJob } = await import('../src/jobs/store.js');
+const { buildTextProfileRequest, resolveTextTokenizer } = await import('../src/generation/text-request.js');
+const { createMacroEnvironment } = await import('../src/macros/index.js');
+const { readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
+const { hash } = await import('../src/mewmory/core.js');
+
+function textFixture(t) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-text-controls-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const profile = { id: 'text', mode: 'tc', api: 'llamacpp', model: 'fixture', 'api-url': 'http://127.0.0.1:5000' };
+    const settings = { max_context: 8192, textgenerationwebui_settings: { ...providerSettings, banned_tokens: '', global_banned_tokens: '', logit_bias: [],
+        send_banned_tokens: true, dry_sequence_breakers: '[]', negative_prompt: '' },
+    power_user: { custom_stopping_strings: '[]' }, extension_settings: { connectionManager: { profiles: [profile] } } };
+    const directories = { root };
+    const save = () => fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify(settings));
+    const capture = () => { save(); return captureChatProfile(directories, profile.id); };
+    const material = () => resolveGenerationProfile(directories, capture());
+    return { root, profile, settings, directories, save, capture, material };
+}
+
+test('stock text destinations do not inherit an unrelated active URL', t => {
+    const fixture = textFixture(t);
+    const defaults = { mancer: 'https://neuro.mancer.tech', togetherai: 'https://api.together.xyz', infermaticai: 'https://api.totalgpt.ai',
+        dreamgen: 'https://dreamgen.com', openrouter: 'https://openrouter.ai/api', featherless: 'https://api.featherless.ai/v1' };
+    fixture.settings.textgenerationwebui_settings.api_server = 'https://wrong.invalid';
+    for (const [source, url] of Object.entries(defaults)) {
+        fixture.profile.api = source;
+        fixture.profile['secret-id'] = 'selected';
+        fs.writeFileSync(path.join(fixture.root, 'secrets.json'), JSON.stringify({ [`api_key_${source}`]: [{ id: 'selected', value: 'private', active: true }] }));
+        delete fixture.profile['api-url'];
+        assert.equal(fixture.material().active.api_server, url);
+        fixture.profile['api-url'] = 'https://explicit.invalid';
+        assert.equal(fixture.material().active.api_server, 'https://explicit.invalid');
+        fixture.profile.exclude = ['api-url'];
+        assert.equal(fixture.material().active.api_server, url);
+        delete fixture.profile.exclude;
+    }
+});
+
+test('malformed saved instruct, stop and bias controls fail during capture', t => {
+    const fixture = textFixture(t);
+    fixture.profile['instruct-state'] = true;
+    for (const invalid of [{ instruct: { stop_sequence: 7 } }, { instruct: { input_suffix: 7 } }, { context: { chat_start: 7 } }, { custom_stopping_strings: '[7]' }, { custom_stopping_strings: 'not JSON' }]) {
+        fixture.settings.power_user = invalid;
+        assert.throws(fixture.capture, error => error.status === 409);
+    }
+    fixture.settings.power_user = {};
+    fixture.settings.textgenerationwebui_settings.logit_bias = [{ text: 'word', value: 'invalid' }];
+    assert.throws(fixture.capture, error => error.status === 409);
+});
+
+test('prompt macros precede token bans and consume request-local banned words once', async t => {
+    const fixture = textFixture(t);
+    fixture.profile['instruct-state'] = true;
+    fixture.settings.power_user = { tokenizer: 'api_textgenerationwebui', instruct: { macro: true, input_sequence: '{{setvar::ban::after}}{{banned "hidden"}}' } };
+    fixture.settings.textgenerationwebui_settings.banned_tokens = '{{getvar::ban}}';
+    const material = fixture.material();
+    const macroEnvironment = createMacroEnvironment({ names: { user: 'Sam', char: 'Ada' }, extra: { mainApi: 'textgenerationwebui' } });
+    const words = [];
+    const payload = await buildTextProfileRequest({ owner: 'alice', directories: fixture.directories }, material, [{ role: 'user', content: 'Hello' }], 73, {
+        macroEnvironment, fetch: async (_url, request) => {
+            words.push(JSON.parse(request.body).content);
+            return new Response(JSON.stringify({ tokens: [17] }));
+        },
+    });
+    assert.deepEqual(words, ['after', 'hidden']);
+    assert.deepEqual(payload.logit_bias, [[17, false]]);
+    assert.deepEqual(macroEnvironment.extra.bannedWords, []);
+});
+
+test('prepared text requests preserve random seeds and macros across recovery', async t => {
+    const fixture = textFixture(t);
+    fixture.profile.api = 'huggingface';
+    fixture.profile['secret-id'] = 'selected';
+    fs.writeFileSync(path.join(fixture.root, 'secrets.json'), JSON.stringify({ api_key_huggingface: [{ id: 'selected', value: 'private', active: true }] }));
+    fixture.settings.power_user.custom_stopping_strings = '["{{random::one::two}}"]';
+    fixture.settings.power_user.custom_stopping_strings_macro = true;
+    const binding = fixture.capture();
+    const context = { owner: 'alice', directories: fixture.directories };
+    const job = acceptJob(fixture.directories, { owner: 'alice', type: 'test.profile', submissionKey: 'recovery', intent: {} }).job;
+    const jobContext = { ...context, job, signal: new AbortController().signal };
+    const options = { context, binding, messages: [{ role: 'user', content: 'Hello' }], maxTokens: 73,
+        ephemeralStops: [], userName: 'User', characterName: 'Character', groupNames: [], modelOverride: '', overridePayload: {} };
+    const key = hash({ binding, messages: options.messages, maxTokens: 73, ephemeralStops: [], userName: 'User', characterName: 'Character', groupNames: [], modelOverride: '', overridePayload: {} });
+    const prepared = await buildTextProfileRequest(context, fixture.material(), options.messages, 73, { macroEnvironment: createMacroEnvironment() });
+    writeArtifact(fixture.directories, job.id, 'text-request:' + key, prepared);
+    let calls = 0;
+    const run = () => runChatProfile({ ...options, jobContext, macroEnvironment: { evaluate: () => { throw new Error('Prepared macros must not run twice'); } },
+        fetch: async (_url, request) => {
+            calls++;
+            const body = JSON.parse(request.body);
+            assert.equal(body.seed, prepared.seed);
+            assert.deepEqual(body.stop, prepared.stop);
+            return new Response(JSON.stringify({ choices: [{ text: 'Recovered' }] }));
+        } });
+    assert.equal((await run()).text, 'Recovered');
+    fixture.settings.extension_settings.connectionManager.profiles = [];
+    fixture.save();
+    assert.equal((await run()).text, 'Recovered');
+    assert.equal(calls, 1);
+    assert.deepEqual(readArtifact(fixture.directories, job.id, 'text-request:' + key), JSON.parse(JSON.stringify(prepared)));
+});
+
+test('named template macros use bound settings and omit only empty resolved stops', async t => {
+    const fixture = textFixture(t);
+    fixture.profile['instruct-state'] = true;
+    fixture.settings.power_user = { instruct: { input_sequence: '<bound-user>', macro: true }, context: { chat_start: '<bound-chat>' },
+        custom_stopping_strings: '["{{instructInput}}","{{chatStart}}","{{getvar::optionalStop}}","ordinary"," "]', custom_stopping_strings_macro: true };
+    const captured = { instruct: { input_sequence: '<active-user>' }, context: { chat_start: '<active-chat>' } };
+    const original = structuredClone(captured);
+    const environment = createMacroEnvironment({ extra: { powerUser: captured } });
+    const payload = await buildTextProfileRequest({ owner: 'alice', directories: fixture.directories }, fixture.material(), [{ role: 'user', content: 'Hello' }], 73, { macroEnvironment: environment });
+    assert.ok(payload.prompt.startsWith('<bound-user>'));
+    assert.ok(payload.stop.includes('<bound-user>'));
+    assert.ok(payload.stop.includes('<bound-chat>'));
+    assert.ok(payload.stop.includes('ordinary'));
+    assert.ok(payload.stop.includes(' '));
+    assert.ok(!payload.stop.includes(''));
+    assert.ok(!payload.stop.includes('<active-user>'));
+    assert.deepEqual(captured, original);
+});
+
+test('text cancellation stops remote tokenisation and sends Kobold its abort request', async t => {
+    const fixture = textFixture(t);
+    for (const stage of ['tokenisation', 'generation']) {
+        fixture.profile.api = 'koboldcpp';
+        fixture.settings.power_user.tokenizer = 'api_textgenerationwebui';
+        fixture.settings.textgenerationwebui_settings.banned_tokens = stage === 'tokenisation' ? 'word' : '';
+        const binding = fixture.capture();
+        const controller = new AbortController();
+        let started;
+        const ready = new Promise(resolve => { started = resolve; });
+        const urls = [];
+        const pending = runChatProfile({ context: { owner: 'alice', directories: fixture.directories }, binding,
+            messages: [{ role: 'user', content: 'Hello' }], maxTokens: 73, signal: controller.signal,
+            fetch: async (url, request) => {
+                urls.push(url);
+                if (url.endsWith('/abort')) return new Response('{}');
+                started();
+                return new Promise((_resolve, reject) => request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true }));
+            } });
+        await ready;
+        controller.abort();
+        await assert.rejects(pending, error => error.status === 499 || error.name === 'AbortError');
+        if (stage === 'tokenisation') assert.deepEqual(urls, ['http://127.0.0.1:5000/api/extra/tokencount']);
+        else assert.deepEqual(urls, ['http://127.0.0.1:5000/v1/completions', 'http://127.0.0.1:5000/api/extra/abort']);
+    }
+});
+
+test('text response extraction preserves text precedence and omits structured reasoning', async t => {
+    const fixture = textFixture(t);
+    const binding = fixture.capture();
+    for (const [response, expected] of [
+        [{ choices: [{ text: 'Text', message: { content: 'Wrong' } }] }, 'Text'],
+        [{ choices: [{ message: { content: [{ type: 'reasoning', text: 'Hidden' }, { type: 'text', text: 'Visible' }] } }] }, 'Visible'],
+        [[{ content: 'Array reply' }], 'Array reply'],
+        [{ response: 'Ollama reply' }, 'Ollama reply'],
+        [{ content: 'Llama reply' }, 'Llama reply'],
+    ]) {
+        const result = await runChatProfile({ context: { owner: 'alice', directories: fixture.directories }, binding,
+            messages: [{ role: 'user', content: 'Hi' }], maxTokens: 73, fetch: async () => new Response(JSON.stringify(response)) });
+        assert.equal(result.text, expected);
+    }
+});
+
+test('saved tokenizer keys and hosted model selection never follow the active provider', async t => {
+    for (const [key, expected] of [['command_r', 'command-r'], [16, 'command-r'], ['command_a', 'command-a'], ['19', 'command-a'],
+        ['nerd', 'nerdstash'], ['nerd2', 'nerdstash_v2'], ['api_textgenerationwebui', 'remote'], [9, 'remote']]) {
+        assert.equal(resolveTextTokenizer(key, 'llamacpp', 'unused'), expected);
+    }
+    assert.equal(resolveTextTokenizer('best_match', 'togetherai', 'meta-llama/Llama-3.1-8B'), 'llama3');
+    assert.equal(resolveTextTokenizer(99, 'dreamgen', 'lucid-v1-medium'), 'mistral');
+    assert.equal(resolveTextTokenizer(99, 'togetherai', 'mistralai/Mistral-Nemo-Instruct-2407'), 'nemo');
+    assert.equal(resolveTextTokenizer(99, 'togetherai', 'mistralai/Pixtral-12B-2409'), 'nemo');
+    assert.equal(resolveTextTokenizer(99, 'togetherai', 'mistralai/Mistral-7B-Instruct'), 'mistral');
+    assert.throws(() => resolveTextTokenizer('best_match', 'togetherai', 'unknown'), error => error.status === 409);
+    const fixture = textFixture(t);
+    fixture.settings.power_user.tokenizer = 'gpt2';
+    fixture.settings.textgenerationwebui_settings.banned_tokens = 'hello';
+    fixture.settings.textgenerationwebui_settings.logit_bias = [{ text: 'world', value: -2 }];
+    const payload = await buildTextProfileRequest({ owner: 'alice', directories: fixture.directories }, fixture.material(), [{ role: 'user', content: 'Hi' }], 73);
+    assert.deepEqual(payload.logit_bias, [[995, -2], [31373, false]]);
+});
+
+test('saved service tiers override presets, honour Default and exclusions, and permit explicit request overrides', async t => {
+    const fixture = textFixture(t);
+    fixture.profile.api = 'openrouter-text';
+    fixture.profile['secret-id'] = 'selected';
+    fs.writeFileSync(path.join(fixture.root, 'secrets.json'), JSON.stringify({ api_key_openrouter: [{ id: 'selected', value: 'private', active: true }] }));
+    fixture.settings.textgenerationwebui_settings.openrouter_service_tier = 'priority';
+    const build = (overridePayload = {}) => buildTextProfileRequest({ owner: 'alice', directories: fixture.directories }, fixture.material(), [{ role: 'user', content: 'Hi' }], 73, { overridePayload });
+    fixture.profile['service-tier'] = 'flex';
+    assert.equal((await build()).service_tier, 'flex');
+    fixture.profile['service-tier'] = 'default';
+    assert.ok(!(await build()).service_tier);
+    fixture.profile.exclude = ['service-tier'];
+    assert.ok(!(await build()).service_tier);
+    assert.equal((await build({ service_tier: 'priority' })).service_tier, 'priority');
+});
+
+test('named tokenisation and generation reject unbound host credentials and keep selected-key rotation', async t => {
+    const fixture = textFixture(t);
+    const previous = process.env.SILLYTAVERN_REQUESTOVERRIDES;
+    process.env.SILLYTAVERN_REQUESTOVERRIDES = JSON.stringify([{ hosts: ['127.0.0.1:5000'], headers: { Authorization: 'Bearer wrong-host', 'X-Unbound': 'private' } }]);
+    t.after(() => { if (previous === undefined) delete process.env.SILLYTAVERN_REQUESTOVERRIDES; else process.env.SILLYTAVERN_REQUESTOVERRIDES = previous; });
+    fixture.profile['secret-id'] = 'selected';
+    const secrets = { api_key_llamacpp: [{ id: 'selected', value: 'chosen', active: false }, { id: 'active', value: 'wrong-active', active: true }] };
+    const saveSecrets = () => fs.writeFileSync(path.join(fixture.root, 'secrets.json'), JSON.stringify(secrets));
+    saveSecrets();
+    fixture.settings.power_user.tokenizer = 'api_current';
+    fixture.settings.textgenerationwebui_settings.banned_tokens = 'word';
+    const binding = fixture.capture();
+    const calls = [];
+    const options = { context: { owner: 'alice', directories: fixture.directories }, binding, messages: [{ role: 'user', content: 'Hi' }], maxTokens: 73,
+        fetch: async (url, request) => {
+            calls.push(url);
+            assert.equal(request.headers.Authorization, `Bearer ${secrets.api_key_llamacpp[0].value}`);
+            assert.equal(request.headers['X-Unbound'], undefined);
+            return new Response(JSON.stringify(url.endsWith('/tokenize') ? { tokens: [17] } : { content: 'Reply' }));
+        } };
+    await runChatProfile(options);
+    secrets.api_key_llamacpp[0].value = 'rotated';
+    saveSecrets();
+    await runChatProfile(options);
+    assert.equal(calls.length, 4);
+    delete fixture.profile['secret-id'];
+    await runChatProfile({ ...options, binding: fixture.capture(), fetch: async (url, request) => {
+        assert.equal(request.headers.Authorization, undefined);
+        assert.equal(request.headers['X-Unbound'], undefined);
+        return new Response(JSON.stringify(url.endsWith('/tokenize') ? { tokens: [17] } : { content: 'Anonymous' }));
+    } });
+});
+
+test('required stop macros fail before dispatch rather than silently disappearing', async t => {
+    const fixture = textFixture(t);
+    fixture.settings.power_user = { custom_stopping_strings: '["{{getvar::required}}"]', custom_stopping_strings_macro: true };
+    await assert.rejects(runChatProfile({ context: { owner: 'alice', directories: fixture.directories }, binding: fixture.capture(),
+        messages: [{ role: 'user', content: 'Hi' }], maxTokens: 73, fetch: () => assert.fail('No generation before required macros resolve') }), /captured chat macro context/);
+});
 
 test('saved chat profiles bind preset controls without storing credentials or following later settings', async t => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-profile-'));
@@ -85,10 +325,63 @@ test('profiles resolve by saved name and carry prompt post-processing like the b
     settings.extension_settings.connectionManager.profiles.pop();
     save();
     const binding = captureChatProfile(directories, 'Named');
+    assert.equal(binding.profileId, 'id-one');
     const request = await buildChatProfileRequest(directories, binding, [{ role: 'user', content: 'Hi' }], 50, () => ({ stream: false, messages: [{ role: 'user', content: 'Hi' }], max_tokens: 50 }));
     assert.equal(request.model, 'bound-model');
     assert.equal(request.custom_prompt_post_processing, 'merge');
 });
+
+for (const source of Object.values(textgen_types)) {
+    test(`saved text profile ${source} uses its instruct preset and provider transport`, async t => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-text-profile-'));
+        t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+        const directories = { root, textGen_Settings: path.join(root, 'presets'), instruct: path.join(root, 'instruct') };
+        fs.mkdirSync(directories.textGen_Settings);
+        fs.mkdirSync(directories.instruct);
+        const keyed = ['mancer', 'togetherai', 'infermaticai', 'dreamgen', 'openrouter', 'featherless', 'huggingface'].includes(source);
+        const profile = { id: 'saved-text', name: 'Saved text', mode: 'tc', api: source === 'openrouter' ? 'openrouter-text' : source,
+            model: 'fixture-model', preset: 'chosen', instruct: 'chosen', 'api-url': 'http://127.0.0.1:5000', ...(keyed ? { 'secret-id': 'chosen-key' } : {}) };
+        const settings = { max_context: 8192, textgenerationwebui_settings: { ...providerSettings, type: 'wrong-active-provider' },
+            power_user: { custom_stopping_strings: '["END"]', tokenizer: 3 },
+            extension_settings: { connectionManager: { selectedProfile: 'decoy', profiles: [profile] } } };
+        const save = () => fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify(settings));
+        save();
+        fs.writeFileSync(path.join(directories.textGen_Settings, 'chosen.json'), JSON.stringify({ temp: 0.25, genamt: 999, max_length: 8192, logit_bias: [{ text: '[9]', value: -2 }], banned_tokens: '[4,5]', global_banned_tokens: '', send_banned_tokens: true }));
+        fs.writeFileSync(path.join(directories.instruct, 'chosen.json'), JSON.stringify(instructSettings));
+        fs.writeFileSync(path.join(root, 'secrets.json'), JSON.stringify({ [`api_key_${source}`]: [{ id: 'chosen-key', value: 'private-key', active: true }] }));
+        const binding = captureChatProfile(directories, 'Saved text');
+        assert.equal(binding.profileId, 'saved-text');
+        assert.equal(binding.backend, 'text');
+        assert.ok(!JSON.stringify(binding).includes('private-key'));
+        const job = acceptJob(directories, { owner: 'alice', type: 'test.text-profile', submissionKey: source, intent: {} }).job;
+        const controller = new AbortController();
+        let calls = 0;
+        const options = { context: { owner: 'alice', directories }, binding, messages: structuredClone(promptMessages), maxTokens: 73,
+            userName: 'Sam', characterName: 'Ada', macroEnvironment: { evaluate: value => value.replaceAll('{{char}}', 'Ada').replaceAll('{{user}}', 'Sam') },
+            jobContext: { directories, job, signal: controller.signal },
+            fetch: async (url, request) => {
+                calls++;
+                assert.ok(url.startsWith('http://127.0.0.1:5000/'));
+                const body = JSON.parse(request.body);
+                assert.equal(body.prompt, expectedPrompts.scoped);
+                const controls = source === 'ollama' ? body.options : body;
+                for (const field of ['max_tokens', 'max_new_tokens', 'n_predict', 'num_predict']) {
+                    if (controls[field] !== undefined) assert.equal(controls[field], 73);
+                }
+                assert.equal(request.headers.Authorization, keyed ? 'Bearer private-key' : undefined);
+                return new Response(JSON.stringify({ choices: [{ text: 'Bound reply' }] }));
+            } };
+        assert.equal((await runChatProfile(options)).text, 'Bound reply');
+        settings.extension_settings.connectionManager.profiles = [];
+        save();
+        assert.equal((await runChatProfile(options)).text, 'Bound reply');
+        assert.equal(calls, 1);
+        for (const entry of fs.readdirSync(path.join(root, 'jobs', 'artifacts'), { recursive: true })) {
+            const filename = path.join(root, 'jobs', 'artifacts', entry);
+            if (fs.statSync(filename).isFile()) assert.ok(!fs.readFileSync(filename, 'utf8').includes('private-key'));
+        }
+    });
+}
 
 test('server profile execution uses saved controls, caches completed calls and propagates job cancellation', async t => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-profile-execution-'));

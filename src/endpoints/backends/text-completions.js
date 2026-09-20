@@ -141,7 +141,7 @@ async function abortKoboldCppRequest(request, url) {
         };
 
         setAdditionalHeaders(request, args, url);
-        const abortResponse = await fetch(`${url}/api/extra/abort`, args);
+        const abortResponse = await (request.fetch || fetch)(`${url}/api/extra/abort`, args);
 
         if (!abortResponse.ok) {
             console.error('Error sending abort request to Kobold:', abortResponse.status, abortResponse.statusText);
@@ -466,10 +466,10 @@ export async function handleTextCompletionsGenerate(request, response) {
         }
 
         if (request.body.api_type === TEXTGEN_TYPES.OLLAMA && request.body.stream) {
-            const stream = await fetch(url, args);
+            const stream = await (request.fetch || fetch)(url, args);
             parseOllamaStream(stream, request, response, () => controller.abort());
         } else if (request.body.stream) {
-            const completionsStream = await fetch(url, args);
+            const completionsStream = await (request.fetch || fetch)(url, args);
             // Pipe remote SSE stream to Express response
             await forwardFetchResponse(completionsStream, response, request, async () => {
                 if (request.body.api_type === TEXTGEN_TYPES.KOBOLDCPP && !response.writableEnded) {
@@ -478,7 +478,7 @@ export async function handleTextCompletionsGenerate(request, response) {
                 controller.abort();
             });
         } else {
-            const completionsReply = await fetch(url, args);
+            const completionsReply = await (request.fetch || fetch)(url, args);
 
             if (completionsReply.ok) {
                 /** @type {any} */

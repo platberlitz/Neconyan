@@ -6,9 +6,70 @@ import { fail, hash } from '../mewmory/core.js';
 import { readJson } from '../mewmory/store.js';
 import { buildChatPresetPayload, createChatRequestData } from '../../public/scripts/chat-preset-request.js';
 import { resolveProfileProxy, resolveProfileRequestOverrides, resolveProfileServiceTier } from '../../public/scripts/connection-profile-request.js';
+import { textgen_types } from '../../public/scripts/text-provider-parameters.js';
+import { mergeTextPresetSettings, TEXT_PROVIDER_URLS } from '../../public/scripts/text-preset-request.js';
 
 const sources = new Set(Object.values(CHAT_COMPLETION_SOURCES));
 const aliases = { oai: 'openai', google: 'makersuite' };
+const textSources = new Set(Object.values(textgen_types));
+
+function readPreset(directory, name, label) {
+    if (!name) return undefined;
+    if (typeof name !== 'string' || sanitize(name) !== name || !directory) fail(`The profile has an invalid ${label}.`, 409);
+    const preset = readJson(path.join(directory, name + '.json'), null);
+    if (!preset || typeof preset !== 'object' || Array.isArray(preset)) fail(`The profile's ${label} no longer exists.`, 409);
+    return preset;
+}
+
+function profileValue(profile, field) {
+    return profile.exclude?.includes(field) ? undefined : profile[field];
+}
+
+function readTextProfile(directories, profile, settings, source) {
+    if (!textSources.has(source)) fail('This text-completion provider is not supported.', 409);
+    const saved = settings.textgenerationwebui_settings;
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) fail('The saved Text Completion settings are missing.', 409);
+    const preset = readPreset(directories.textGen_Settings, profileValue(profile, 'preset'), 'completion preset');
+    const template = readPreset(directories.instruct, profileValue(profile, 'instruct'), 'instruct preset');
+    const context = readPreset(directories.context, profileValue(profile, 'context'), 'context template') ?? settings.power_user?.context ?? {};
+    const active = mergeTextPresetSettings(saved, preset, { api_type: source });
+    active.api_server = profileValue(profile, 'api-url') || TEXT_PROVIDER_URLS[source];
+    if (source === 'openrouter') active.openrouter_service_tier = resolveProfileServiceTier(profile, source, preset) ?? '';
+    let url;
+    try { url = new URL(active.api_server); } catch { fail('Save a server URL in this connection profile.', 409); }
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) fail('Use an HTTP server URL without embedded credentials.', 409);
+    const power = structuredClone(settings.power_user || {});
+    const instruct = structuredClone(template ?? power.instruct ?? {});
+    const state = profileValue(profile, 'instruct-state');
+    instruct.enabled = state === undefined ? Boolean(template || (profile.exclude?.includes('instruct') && instruct.enabled))
+        : ['true', 'on', '1'].includes(String(state).toLowerCase());
+    if (profileValue(profile, 'stop-strings') !== undefined) power.custom_stopping_strings = profileValue(profile, 'stop-strings');
+    if (profileValue(profile, 'tokenizer') !== undefined) power.tokenizer = profileValue(profile, 'tokenizer');
+    for (const [key, value] of Object.entries(instruct)) {
+        if ((key.endsWith('_sequence') || key.endsWith('_suffix') || ['name', 'activation_regex'].includes(key)) && typeof value !== 'string') fail('The saved instruct sequences must be text.', 409);
+    }
+    for (const key of ['chat_start', 'example_separator', 'story_string', 'story_string_prefix', 'story_string_suffix']) {
+        if (context[key] !== undefined && typeof context[key] !== 'string') fail('The saved context template fields must be text.', 409);
+    }
+    if (state !== undefined && ![true, false, 'true', 'false', 'on', 'off', '1', '0', 1, 0].includes(state)) fail('The saved instruct state is invalid.', 409);
+    let stops;
+    try { stops = power.custom_stopping_strings ? JSON.parse(power.custom_stopping_strings) : []; } catch { fail('The saved stopping strings are invalid JSON.', 409); }
+    if (!Array.isArray(stops) || !stops.every(value => typeof value === 'string')) fail('The saved stopping strings must be a list of text.', 409);
+    if (active.logit_bias !== undefined && (!Array.isArray(active.logit_bias) || !active.logit_bias.every(entry => entry && typeof entry.text === 'string' && Number.isFinite(entry.value)))) fail('The saved token bias is invalid.', 409);
+    for (const key of ['banned_tokens', 'global_banned_tokens', 'dry_sequence_breakers', 'negative_prompt']) {
+        if (active[key] !== undefined && typeof active[key] !== 'string') fail('The saved text controls contain an invalid text field.', 409);
+    }
+    const secretType = SECRET_KEYS[source === 'ooba' ? 'OOBA' : source.toUpperCase()];
+    const secretId = profile['secret-id'] || null;
+    if (secretId && (!secretType || !readSecret(directories, secretType, secretId))) fail('The saved API key for this profile is unavailable.', 409);
+    if (!secretId && ['mancer', 'togetherai', 'infermaticai', 'dreamgen', 'openrouter', 'featherless', 'huggingface'].includes(source)) fail('Select a saved API key in this connection profile.', 409);
+    const contextLimit = Number(preset?.max_length ?? preset?.max_context ?? settings.max_context);
+    if (!Number.isSafeInteger(contextLimit) || contextLimit < 1) fail('Save a valid context limit for this text connection.', 409);
+    const fingerprint = hash({ profile, active, preset, instruct, context, contextLimit, secretId,
+        requestControls: { custom_stopping_strings: power.custom_stopping_strings, custom_stopping_strings_macro: power.custom_stopping_strings_macro,
+            tokenizer: power.tokenizer, request_token_probabilities: power.request_token_probabilities } });
+    return { backend: 'text', profile, source, active, preset, instruct, context, power, contextLimit, secretId, fingerprint };
+}
 
 function readProfile(directories, profileId) {
     if (typeof profileId !== 'string' || !profileId || profileId.length > 256) fail('Choose a saved connection profile.', 400);
@@ -23,6 +84,10 @@ function readProfile(directories, profileId) {
         profile = named[0];
     }
     if (!profile) fail('The saved connection profile no longer exists.', 409);
+    if (profile.mode === 'tc' || profile.api === 'openrouter-text' || (profile.api !== 'openrouter' && textSources.has(profile.api)) || profile.api === 'kcpp') {
+        const source = { 'openrouter-text': 'openrouter', kcpp: 'koboldcpp' }[profile.api] || profile.api;
+        return readTextProfile(directories, profile, settings, source);
+    }
     const source = aliases[profile.api] || profile.api;
     if (!sources.has(source)) fail('This operation requires a Chat Completion connection profile.', 409);
     if (typeof profile.model !== 'string' || !profile.model.trim()) fail('Save a model in this connection profile.', 409);
@@ -48,8 +113,15 @@ function readProfile(directories, profileId) {
 
 /** Persist only this binding. Changed saved controls require an explicit new acceptance. */
 export function captureChatProfile(directories, profileId) {
-    const { fingerprint } = readProfile(directories, profileId);
-    return { profileId, fingerprint };
+    const { profile, fingerprint, backend } = readProfile(directories, profileId);
+    return { profileId: profile.id, fingerprint, ...(backend === 'text' ? { backend } : {}) };
+}
+
+/** Read current controls only when they still match the accepted reference. */
+export function resolveGenerationProfile(directories, binding) {
+    const material = readProfile(directories, binding?.profileId);
+    if (!binding?.fingerprint || material.fingerprint !== binding.fingerprint) fail('The saved connection settings changed after this operation was accepted. Retry with the current settings.', 409);
+    return material;
 }
 
 /**
@@ -58,8 +130,8 @@ export function captureChatProfile(directories, profileId) {
  * back to the active browser profile.
  */
 export function getChatProfileContextLimit(directories, binding) {
-    const { preset, fingerprint } = readProfile(directories, binding?.profileId);
-    if (!binding?.fingerprint || fingerprint !== binding.fingerprint) fail('The saved connection settings changed after this operation was accepted. Retry with the current settings.', 409);
+    const { preset, contextLimit } = resolveGenerationProfile(directories, binding);
+    if (contextLimit) return contextLimit;
     for (const key of ['openai_max_context', 'max_context']) {
         const value = Number(preset?.[key]);
         if (Number.isFinite(value) && value > 0) return Math.floor(value);
@@ -69,8 +141,8 @@ export function getChatProfileContextLimit(directories, binding) {
 
 /** Resolve controls through the same preset/profile builders used by the browser. */
 export async function buildChatProfileRequest(directories, binding, messages, maxTokens, generate, { modelOverride = '', overridePayload = {} } = {}) {
-    const material = readProfile(directories, binding?.profileId);
-    if (!binding?.fingerprint || material.fingerprint !== binding.fingerprint) fail('The saved connection settings changed after this operation was accepted. Retry with the current settings.', 409);
+    const material = resolveGenerationProfile(directories, binding);
+    if (material.backend === 'text') fail('Use the text request builder for this profile.', 400);
     if (!Array.isArray(messages) || !Number.isSafeInteger(maxTokens) || maxTokens < 1) fail('The generation input is invalid.', 400);
     const { profile, source, active, preset, proxy } = material;
     const { overrides, profileFieldNames } = resolveProfileRequestOverrides(profile, overridePayload, preset);

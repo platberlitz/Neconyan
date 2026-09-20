@@ -1,6 +1,7 @@
 import { getPresetManager } from './preset-manager.js';
 import { extractJsonFromData, extractMessageFromData, getGenerateUrl, getRequestHeaders, name1, name2, normalizeContentText, substituteParams } from '../script.js';
-import { getTextGenServer, createTextGenGenerationData, setting_names, textgenerationwebui_settings } from './textgen-settings.js';
+import { getTextGenServer, createTextGenGenerationData, textgenerationwebui_settings } from './textgen-settings.js';
+import { mergeTextPresetSettings } from './text-preset-request.js';
 import { extractReasoningFromData } from './reasoning.js';
 import { getInstructStoppingSequences } from './instruct-mode.js';
 import { selected_group } from './group-chats.js';
@@ -326,23 +327,12 @@ export class TextCompletionService {
         preset = { ...preset, ...overridePreset };
 
         // Only take fields from the preset specified in setting_names to use as TextCompletionSettings
-        const settings = structuredClone(textgenerationwebui_settings);
-        settings.openrouter_service_tier = preset.openrouter_service_tier ?? '';
-        for (const [key, value] of Object.entries(preset)) {
-            if (!setting_names.includes(key)) continue;
-            settings[key] = value;
-        }
+        const settings = mergeTextPresetSettings(textgenerationwebui_settings, preset, overridePayload);
 
         // Apply api_type from overridePayload to settings BEFORE createTextGenGenerationData
         // so that source-specific parameter construction uses the correct API type.
         // Without this, switching connection profiles corrupts the global textgenerationwebui_settings,
         // causing createTextGenGenerationData to build a mismatched payload.
-        if (overridePayload.api_type) {
-            settings.type = overridePayload.api_type;
-        }
-        if (overridePayload.api_server !== undefined) {
-            settings.api_server = overridePayload.api_server;
-        }
 
         // convert to a generation payload
         const payload = createTextGenGenerationData(settings, overridePayload.model, overridePayload.prompt, preset.genamt);
