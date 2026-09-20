@@ -157,7 +157,7 @@ export function readConversationStoreForWrite(request, expectedVersion, normaliz
  * Save Conversation Mode store to disk with version conflict detection
  * Returns { ok, version?, settings?, store?, status?, body? }
  */
-export async function saveConversationStore(request, store, version, { trustedConversationEffects = false } = {}) {
+export async function saveConversationStore(request, store, version, { trustedConversationEffects = false, trustedConversationAppend = false } = {}) {
     const versionValidation = validateExpectedSettingsVersion(version);
     if (!versionValidation.valid) {
         return { ok: false, status: 400, body: { error: versionValidation.error } };
@@ -189,7 +189,7 @@ export async function saveConversationStore(request, store, version, { trustedCo
         },
         _version: versionValidation.version,
     };
-    const preparedSave = prepareSettingsSave(incomingSettings, latestSettings, { trustedConversationEffects, conversationOnly: true });
+    const preparedSave = prepareSettingsSave(incomingSettings, latestSettings, { trustedConversationEffects, trustedConversationAppend, conversationOnly: true });
     if (!preparedSave.ok) {
         return {
             ok: false,

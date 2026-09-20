@@ -16,7 +16,7 @@
  * (`_conversationOmitted`), so this module is the only path that sends
  * Conversation content, and it always does so with an exact expected version.
  */
-import { getRequestHeaders, settings } from '../../script.js';
+import { getRequestHeaders } from '../../script.js';
 import { getCurrentUserHandle } from '../user.js';
 import { extension_settings } from '../extensions.js';
 import { CONVERSATION_STORE_KEY } from './constants.js';
@@ -52,25 +52,21 @@ export function bindConversationAccount(account) {
  * Remember the store and version the server currently agrees with. Called after
  * a successful read or write, and once at startup from the loaded settings.
  */
-export function captureConversationStore(store = readLocalStore(), version = null) {
+export function captureConversationStore(store, version) {
     checkAccount(loadedAccount);
-    if (!store || typeof store !== 'object') {
-        return;
-    }
-    savedSnapshot = cloneConversationValue(store);
-    // Never coerce null/undefined to 0: an absent version must fall through to
-    // the startup seed, not claim the store is at version zero.
-    const next = version === null || version === undefined ? NaN : Number(version);
-    if (Number.isSafeInteger(next) && next >= 0) {
-        savedVersion = next;
-    } else if (savedVersion === null) {
-        // Seed the first version from the loaded settings, before any
-        // Conversation-only save has told us a newer one.
-        const seeded = Number(settings?._version);
-        if (Number.isSafeInteger(seeded) && seeded >= 0) {
-            savedVersion = seeded;
-        }
-    }
+    validateVersion(version);
+    savedSnapshot = cloneConversationValue(store ?? {});
+    savedVersion = version;
+}
+
+function validateVersion(version) {
+    if (!Number.isSafeInteger(version) || version < 0) throw new Error('Invalid Conversation store version.');
+}
+
+function responseStore(body) {
+    validateVersion(body?.version);
+    if (!body?.store || typeof body.store !== 'object' || Array.isArray(body.store)) throw new Error('Invalid Conversation store response.');
+    return body.store;
 }
 
 export function getConversationSavedVersion() {
@@ -114,24 +110,21 @@ async function postJson(url, body, account) {
  *  the merged store, or null when a genuine conflict must be reported. */
 async function refreshOnce(account) {
     const body = await postJson(STORE_GET_ENDPOINT, {}, account);
-    const serverStore = body?.store && typeof body.store === 'object' ? body.store : null;
-    const version = Number(body?.version);
-    if (!serverStore) {
-        return null;
-    }
+    const serverStore = responseStore(body);
+    const version = body?.version;
     const localStore = readLocalStore();
     const merged = mergeConversationStore(serverStore, localStore, savedSnapshot);
     if (!merged) {
         // Do not move the baseline: the browser's copy still disagrees.
         return { store: serverStore, version, conflict: true };
     }
-    if (localStore && !conversationValuesEqual(merged, localStore)) {
+    if (!conversationValuesEqual(merged, localStore)) {
         setLocalStore(merged);
     }
     // The baseline is the server's copy, not the merged one. The merged copy can
     // contain unsaved local edits; recording those as acknowledged would let the
     // next read treat them as unchanged and replace them with the older value.
-    captureConversationStore(serverStore, Number.isSafeInteger(version) ? version : savedVersion);
+    captureConversationStore(serverStore, version);
     return { store: merged, version, conflict: false };
 }
 
@@ -149,13 +142,15 @@ export function refreshConversationStore(account = getCurrentUserHandle()) {
  * the server's copy.
  */
 function absorbSaveResult(body, submitted) {
-    const stored = body?.store && typeof body.store === 'object' ? body.store : submitted;
+    const stored = responseStore(body);
     const current = readLocalStore();
     const reconciled = mergeConversationStore(stored, current, submitted);
-    if (reconciled && !conversationValuesEqual(reconciled, current)) {
+    if (!reconciled) return false;
+    if (!conversationValuesEqual(reconciled, current)) {
         setLocalStore(reconciled);
     }
     captureConversationStore(stored, body?.version);
+    return true;
 }
 
 async function saveOnce(account) {
@@ -165,7 +160,8 @@ async function saveOnce(account) {
     }
     if (!Number.isSafeInteger(savedVersion)) {
         // Learn the authoritative version before the first Conversation-only save.
-        await refreshOnce(account);
+        const refreshed = await refreshOnce(account);
+        if (!refreshed || refreshed.conflict) return false;
     }
     const local = readLocalStore();
     if (!local || !Number.isSafeInteger(savedVersion)) {
@@ -174,8 +170,7 @@ async function saveOnce(account) {
     const submitted = cloneConversationValue(local);
     try {
         const body = await postJson(STORE_SAVE_ENDPOINT, { store: submitted, version: savedVersion }, account);
-        absorbSaveResult(body, submitted);
-        return true;
+        return absorbSaveResult(body, submitted);
     } catch (error) {
         if (error.status !== 409 || error.message === 'account_changed') {
             throw error;
@@ -192,8 +187,7 @@ async function saveOnce(account) {
         }
         const retry = cloneConversationValue(retrySource);
         const body = await postJson(STORE_SAVE_ENDPOINT, { store: retry, version: savedVersion }, account);
-        absorbSaveResult(body, retry);
-        return true;
+        return absorbSaveResult(body, retry);
     }
 }
 
@@ -250,10 +244,7 @@ export async function flushConversationStore(account = getCurrentUserHandle()) {
 
 export function initConversationStoreSync() {
     checkAccount(loadedAccount);
-    const store = readLocalStore();
-    if (store) {
-        captureConversationStore(store, null);
-    }
+    // Startup already captured the downloaded pair, before local migrations.
 }
 
 /** Number of pending synchronisation steps; exposed for tests and diagnostics. */

@@ -102,7 +102,7 @@ export function safeParseThread(stored) {
     try {
         const parsed = typeof stored === 'string' ? JSON.parse(stored) : stored;
         return Array.isArray(parsed)
-            ? parsed.map(normalizeConversationStoredMessage).filter(hasConversationMessageContent)
+            ? parsed.map((message, index) => normalizeConversationStoredMessage(message, index)).filter(hasConversationMessageContent)
             : [];
     } catch {
         return [];

@@ -1,3 +1,9 @@
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import { tryWriteFileSync } from './util.js';
+import { MAX_THREAD_MESSAGES } from '../public/scripts/neconyan-conversation/constants.js';
+import { validateStoreStructure } from './endpoints/conversation-utils.js';
+
 export function getSettingsVersion(settings) {
     const version = Number(settings?._version);
     return Number.isSafeInteger(version) && version >= 0 ? version : 0;
@@ -6,6 +12,22 @@ export function getSettingsVersion(settings) {
 export function getSettingsRevision(settings) {
     const revision = Number(settings?._settingsRevision);
     return Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;
+}
+
+/** Replace imported/reset settings without reusing a checkpoint from an older file. */
+export function restoreSettingsSnapshot(filePath, snapshot) {
+    if (!isPlainObject(snapshot)) throw new Error('Invalid settings snapshot.');
+    let current;
+    try {
+        current = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+        current = {};
+    }
+    if (!isPlainObject(current)) throw new Error('Invalid current settings.');
+    const prepared = prepareSettingsSave({ ...snapshot, _version: getSettingsVersion(current) }, current, { restoreSnapshot: true });
+    if (!prepared.ok) throw new Error('Settings snapshot conflict.');
+    tryWriteFileSync(filePath, JSON.stringify(prepared.settings, null, 4));
 }
 
 function hasSettingsRevision(settings) {
@@ -25,6 +47,44 @@ function canonicalize(value) {
         return result;
     }
     return value;
+}
+
+export function getConversationMessagesHash(messages) {
+    return createHash('sha256').update(JSON.stringify(canonicalize(messages))).digest('hex');
+}
+
+/** Derive message history metadata from disk, never from browser-supplied counters. */
+function stampConversationMessages(conversation, previous, allowRetention, writeVersion) {
+    if (!isPlainObject(conversation?.characters)) return conversation;
+    const characters = Object.fromEntries(Object.entries(conversation.characters).map(([key, thread]) => {
+        if (!isPlainObject(thread?.branches)) return [key, thread];
+        const branches = Object.fromEntries(Object.entries(thread.branches).map(([id, branch]) => {
+            if (!isPlainObject(branch)) return [id, branch];
+            const old = previous?.characters?.[key]?.branches?.[id];
+            const same = isPlainObject(old) && String(old.createdAt || '') === String(branch.createdAt || '');
+            let revision = same ? (old.messageEditRevision ?? writeVersion) : writeVersion;
+            if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('Invalid Conversation message revision.');
+            const before = same && Array.isArray(old.messages) ? old.messages : [];
+            const after = Array.isArray(branch.messages) ? branch.messages : [];
+            const beforeHash = getConversationMessagesHash(before);
+            let appendOnly = after.length >= before.length && getConversationMessagesHash(after.slice(0, before.length)) === beforeHash;
+            if (!appendOnly && allowRetention && after.length === MAX_THREAD_MESSAGES) {
+                // Only a retained, unchanged suffix followed by new messages is a trim.
+                for (let dropped = 1; dropped < before.length; dropped += 1) {
+                    const retained = before.length - dropped;
+                    if (getConversationMessagesHash(before.slice(dropped)) === getConversationMessagesHash(after.slice(0, retained))) {
+                        appendOnly = true;
+                        break;
+                    }
+                }
+            }
+            if (same && (!appendOnly || (old.messageContentHash && old.messageContentHash !== beforeHash))) revision = Math.max(revision + 1, writeVersion);
+            if (!Number.isSafeInteger(revision)) throw new Error('Conversation message revision limit reached.');
+            return [id, { ...branch, messageEditRevision: revision, messageContentHash: getConversationMessagesHash(after) }];
+        }));
+        return [key, { ...thread, branches }];
+    }));
+    return { ...conversation, characters };
 }
 
 function isPlainObject(value) {
@@ -68,6 +128,8 @@ function stripProtectedConversationState(conversation) {
             const rest = { ...branch };
             delete rest.serverOperations;
             delete rest.automationClaims;
+            delete rest.messageEditRevision;
+            delete rest.messageContentHash;
             branches[id] = rest;
         }
         nextCharacters[key] = { ...thread, branches };
@@ -98,7 +160,7 @@ function isConversationManaged(conversation) {
             continue;
         }
         for (const branch of Object.values(branches)) {
-            if (isPlainObject(branch) && (branch.serverOperations || hasEntries(branch.automationClaims))) {
+            if (isPlainObject(branch) && (branch.serverOperations || hasEntries(branch.automationClaims) || branch.messageContentHash)) {
                 return true;
             }
         }
@@ -134,10 +196,12 @@ function protectedConversationShape(conversation) {
             if (!isPlainObject(thread?.branches)) continue;
             for (const [id, branch] of Object.entries(thread.branches)) {
                 if (!isPlainObject(branch)) continue;
-                if (branch.serverOperations !== undefined || hasEntries(branch.automationClaims)) {
+                if (branch.serverOperations !== undefined || hasEntries(branch.automationClaims) || branch.messageContentHash) {
                     receipts[`${key}\u001f${id}`] = {
                         serverOperations: branch.serverOperations ?? null,
                         automationClaims: branch.automationClaims ?? null,
+                        messageEditRevision: branch.messageEditRevision ?? null,
+                        messageContentHash: branch.messageContentHash ?? null,
                     };
                 }
             }
@@ -210,7 +274,7 @@ function restoreProtectedConversationState(conversation, currentConversation) {
  *   `trustedConversationEffects` - server-owned Conversation effect write; Conversation may change freely.
  *   `conversationOnly` - explicit version-checked Conversation store save; message content may change but server records are restored.
  */
-export function prepareSettingsSave(incomingSettings, currentSettings = {}, { trustedConversationEffects = false, conversationOnly = false } = {}) {
+export function prepareSettingsSave(incomingSettings, currentSettings = {}, { trustedConversationEffects = false, conversationOnly = false, trustedConversationAppend = false, restoreSnapshot = false } = {}) {
     const incomingVersion = getSettingsVersion(incomingSettings);
     const currentVersion = getSettingsVersion(currentSettings);
     const currentRevision = getSettingsRevision(currentSettings);
@@ -231,6 +295,7 @@ export function prepareSettingsSave(incomingSettings, currentSettings = {}, { tr
     }
 
     const version = currentVersion + 1;
+    if (!Number.isSafeInteger(version)) throw new Error('Settings version limit reached.');
     const currentConversation = currentSettings.extension_settings?.sillybunny_conversation;
     const incomingConversation = incomingSettings.extension_settings?.sillybunny_conversation;
     let settingsRevision = currentRevision;
@@ -238,7 +303,8 @@ export function prepareSettingsSave(incomingSettings, currentSettings = {}, { tr
 
     if (trustedConversationEffects) {
         settings = incomingSettings;
-    } else if (conversationOnly) {
+    } else if (conversationOnly || restoreSnapshot) {
+        if (restoreSnapshot) settingsRevision += 1;
         // An explicit, version-checked Conversation store save may intentionally
         // edit or delete messages, but it may not forge the server's records or
         // drop its bookkeeping. A deleted or reset branch is left as supplied.
@@ -287,6 +353,14 @@ export function prepareSettingsSave(incomingSettings, currentSettings = {}, { tr
     if (settings._conversationOmitted !== undefined) {
         settings = { ...settings };
         delete settings._conversationOmitted;
+    }
+
+    const conversation = settings.extension_settings?.sillybunny_conversation;
+    if (conversation && conversation !== currentConversation) {
+        settings = { ...settings, extension_settings: { ...settings.extension_settings,
+            sillybunny_conversation: stampConversationMessages(conversation, currentConversation, trustedConversationEffects || trustedConversationAppend, version) } };
+        const validation = validateStoreStructure(settings.extension_settings.sillybunny_conversation, { strictMessages: false });
+        if (!validation.valid) throw Object.assign(new Error(validation.error), { status: 400 });
     }
 
     return {

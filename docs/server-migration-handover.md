@@ -24,15 +24,18 @@ Read the repository instructions, product and design documents, the phase checkl
 
 The main Conversation composer, the forced-reply action and the branch-from-message reply now submit to the accepted-reply API. These entry points observe accepted jobs and read the server's saved messages. Their browser checks are recorded below; this does not establish complete Conversation migration.
 
-Continue in order: resolve findings a-e below, finish saved text-completion/instruct and explicit active-connection bindings, resolve f/g while handing automatic ownership to the server, then migrate Roleplay generation and completion writes.
+Continue in order: finish saved text-completion/instruct and explicit active-connection bindings, resolve f/g while handing automatic ownership to the server, then migrate Roleplay generation and completion writes.
 
-Outstanding findings, not fixed by the browser checkpoint:
+The integrity checkpoint resolves findings a-e:
 
-- a. The acknowledged Conversation baseline is captured after migration, and general settings versions can be paired with stale Conversation content.
-- b. The 250-message retention limit can invalidate a captured history prefix during legitimate delivery.
-- c. Batch matching and incomplete-member repair do not consistently retain the accepted branch's creation identity.
-- d. A grouped-send member key can be reused for a different destination because its comparison omits complete intent.
-- e. Identifier-less legacy messages can duplicate during merging.
+- a. The downloaded Conversation baseline and its exact version are captured before migration; unrelated general saves cannot advance that pair.
+- b. Server-derived history fingerprints and edit counters distinguish legitimate 250-message retention from destructive changes. New work stamps legacy history before capture; unprovable older captures remain refused. Snapshot restoration, folder/ZIP settings imports and settings reset preserve increasing versions and invalidate changed history.
+- c. Acceptance saves branch creation identity, and batch repair validates each member's own anchors and partial progress. Replacement branches cannot inherit old work.
+- d. Member retry keys compare complete canonical intent. Historical members whose full intent was never recorded refuse ambiguous replay rather than guessing from the leader.
+- e. Identifier-less messages merge by content and occurrence count. Ambiguous concurrent additions, deletions and replacements preserve local data and refuse saving. A lost successful new-branch save can recover without treating server metadata as a content conflict.
+
+Outstanding:
+
 - f. Native solo replies still lack send-triggered partner chimes.
 - g. Native observation still lacks unread alerts and automatic narration.
 
@@ -58,9 +61,9 @@ Do not treat arbitrary DOM-dependent user scripts as portable server code. Ident
 
 ## Verification and release gates
 
-Latest checkpoint: 334 unit suites passed, 4,294 tests passed and two skipped; all 165 Node tests passed. Root lint, frontend budgets and whitespace checks passed. The full tests-folder lint run still reports historical errors in untouched files; changed tests are checked separately. These are checkpoint results, not proof that unfinished callers have migrated.
+Latest checkpoint: 334 unit suites passed, 4,324 tests passed and two skipped; all 165 Node tests passed. Root lint, frontend budgets and whitespace checks passed. Changed tests have no lint errors, with nine warnings. The full tests-folder lint run still reports historical errors in untouched files. These are checkpoint results, not proof that unfinished callers have migrated.
 
-The disposable Conversation Chromium suite has 40 cases: a complete 36-case run passed, followed by passing focused startup and three preliminary-aside-save cases. Real Send, Enter, 'Ask for reply' and 'Branch from here' were exercised at 1280x900 and touch 393x852. Checks cover zero-page bubbles/reminders/status/images, reopening without repeat calls, retained drafts, lost acceptance retry, cancellation during preparation/generation/delivery, source and target conflicts, stale unrelated saves and two-account isolation. Three restart boundaries kill the actual serving process with SIGKILL, then restart with the same disposable data. Unknown text-provider outcomes remain interrupted.
+The disposable Conversation Chromium suite has 52 cases: 51 passed in the complete run; the lost-new-branch-response test passed after correcting its interception to drop a successful save rather than an initial version conflict. Real Send, Enter, 'Ask for reply' and 'Branch from here' were exercised at 1280x900 and touch 393x852. Checks cover zero-page bubbles/reminders/status/images, reopening without repeat calls, retained drafts, lost acceptance retry, cancellation during preparation/generation/delivery, source and target conflicts, stale unrelated saves and two-account isolation. Three restart boundaries kill the actual serving process with SIGKILL, then restart with the same disposable data. Added cases cover multi-bubble retention at 249/250 messages, restart during capped delivery, startup migration racing native completion, same-key branch replacement, legacy merging and all four settings-replacement paths. Unknown text-provider outcomes remain interrupted.
 
 Browser reproduction and independent review fixed a broken account-getter import, a decorative cat intercepting the message menu, cross-account submission/upload/preliminary-chat-write gaps, startup ownership binding, queued-save ownership and observer refresh coalescing. Review also corrected the test's original supervisor-only kill and added collection-time opt-in skipping. A deterministic thumbnail cache regression now covers different bytes with identical file size and modification time; cached responses identify their actual contents.
 

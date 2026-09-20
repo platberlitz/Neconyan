@@ -1,6 +1,6 @@
 import { describe, expect, test } from '@jest/globals';
 
-import { getSettingsVersion, prepareSettingsSave } from '../src/settings-version.js';
+import { getConversationMessagesHash, getSettingsVersion, prepareSettingsSave } from '../src/settings-version.js';
 
 describe('settings version guard', () => {
     test('initializes unversioned settings on first guarded save', () => {
@@ -43,10 +43,52 @@ describe('settings version guard', () => {
 
     const canonicalCopy = value => JSON.parse(JSON.stringify(value));
 
+    test('omitted messages, restores and same-identity recreation cannot reuse an old checkpoint', () => {
+        const messages = [{ id: 'first', mes: 'First' }, { id: 'second', mes: 'Second' }];
+        const original = { createdAt: 'same', messages, messageEditRevision: 3, messageContentHash: getConversationMessagesHash(messages) };
+        const current = branchWrap(5, 1, original);
+        const branch = result => result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main;
+        const omitted = { createdAt: 'same', messageEditRevision: 3, messageContentHash: getConversationMessagesHash([]) };
+        const removed = prepareSettingsSave(branchWrap(5, 1, omitted), current, { conversationOnly: true });
+        expect(branch(removed).messageEditRevision).toBe(6);
+        const rewritten = prepareSettingsSave(branchWrap(6, 1, { ...omitted, messages: [{ mes: 'Replacement' }] }), removed.settings, { conversationOnly: true });
+        expect(branch(rewritten).messageEditRevision).not.toBe(3);
+        const backup = branchWrap(5, 0, { ...original, messages: messages.slice(0, 1) });
+        const restored = prepareSettingsSave(backup, current, { restoreSnapshot: true });
+        expect(restored).toMatchObject({ version: 6, settingsRevision: 2 });
+        expect(branch(restored).messageEditRevision).toBe(6);
+        const deleted = canonicalCopy(current);
+        deleted.extension_settings.sillybunny_conversation.characters['nova.png'].branches = {};
+        const deletion = prepareSettingsSave(deleted, current, { conversationOnly: true });
+        const recreated = prepareSettingsSave(branchWrap(6, 1, { ...original, messages: [{ mes: 'Recreated' }] }), deletion.settings, { conversationOnly: true });
+        expect(branch(recreated).messageEditRevision).toBe(7);
+        expect(current.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main).toEqual(original);
+    });
+
+    test('message revisions distinguish trusted retention from deletion and ignore forged counters', () => {
+        const messages = Array.from({ length: 250 }, (_, i) => ({ id: String(i), mes: `Message ${i}` }));
+        const original = { createdAt: 1, messages, messageEditRevision: 3, messageContentHash: getConversationMessagesHash(messages) };
+        const current = branchWrap(5, 1, original);
+        const retained = [...messages.slice(2), { id: '250', mes: 'Message 250' }, { id: '251', mes: 'Message 251' }];
+        const incoming = branchWrap(5, 1, { ...original, messages: retained, messageEditRevision: 0, messageContentHash: 'forged' });
+        const branch = result => result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main;
+        const trusted = branch(prepareSettingsSave(incoming, current, { conversationOnly: true, trustedConversationAppend: true }));
+        expect(trusted.messageEditRevision).toBe(3);
+        expect(trusted.messageContentHash).toBe(getConversationMessagesHash(retained));
+        expect(branch(prepareSettingsSave(incoming, current, { conversationOnly: true })).messageEditRevision).toBe(6);
+        const metadata = branchWrap(5, 1, { ...original, preview: 'Only a preview', messageEditRevision: 99 });
+        expect(branch(prepareSettingsSave(metadata, current, { conversationOnly: true })).messageEditRevision).toBe(3);
+        const edited = canonicalCopy(current);
+        edited.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main.messages[0].mes = 'Raw file edit';
+        expect(branch(prepareSettingsSave(incoming, edited, { trustedConversationEffects: true })).messageEditRevision).toBe(6);
+        const replaced = branchWrap(5, 1, { ...original, createdAt: 2, messageEditRevision: 99 });
+        expect(branch(prepareSettingsSave(replaced, current, { conversationOnly: true })).messageEditRevision).toBe(6);
+    });
+
     test('keeps the non-Conversation revision steady across Conversation-only writes', () => {
         const current = branchWrap(4, 2, { createdAt: 1, messages: [] });
 
-        const native = prepareSettingsSave(branchWrap(4, 2, { createdAt: 1, messages: [{ id: 'server' }] }), current, { conversationOnly: true });
+        const native = prepareSettingsSave(branchWrap(4, 2, { createdAt: 1, messages: [{ id: 'server', mes: 'Saved reply' }] }), current, { conversationOnly: true });
         expect(native).toMatchObject({ ok: true, version: 5, settingsRevision: 2 });
         expect(native.settings._settingsRevision).toBe(2);
 
@@ -65,7 +107,7 @@ describe('settings version guard', () => {
     });
 
     test('rejects a legacy whole-settings write that changes server-managed Conversation', () => {
-        const current = branchWrap(3, 0, { createdAt: 1, messages: [{ id: 'server' }], serverOperations: { job: {} } });
+        const current = branchWrap(3, 0, { createdAt: 1, messages: [{ id: 'server', mes: 'Saved reply' }], serverOperations: { job: {} } });
         const incoming = branchWrap(3, 0, { createdAt: 1, messages: [] });
 
         expect(prepareSettingsSave(incoming, current)).toMatchObject({ ok: false, currentVersion: 3, conversationConflict: true });
@@ -99,7 +141,7 @@ describe('settings version guard', () => {
     });
 
     test('a general save that keeps Conversation unchanged does not conflict', () => {
-        const current = branchWrap(3, 0, { createdAt: 1, messages: [{ id: 'server' }], serverOperations: { job: {} } });
+        const current = branchWrap(3, 0, { createdAt: 1, messages: [{ id: 'server', mes: 'Saved reply' }], serverOperations: { job: {} } });
         const incoming = { _version: 3, _settingsRevision: 0, username: 'New', extension_settings: { sillybunny_conversation: canonicalCopy(current.extension_settings.sillybunny_conversation) } };
 
         const result = prepareSettingsSave(incoming, current);

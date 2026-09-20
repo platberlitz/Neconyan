@@ -596,7 +596,7 @@ router.post('/message/append', asyncRoute(async (request, response) => {
         create: false,
         personaId: storageTarget.personaId,
     });
-    const saveResult = await saveConversationStore(request, context.store, request.body.version);
+    const saveResult = await saveConversationStore(request, context.store, request.body.version, { trustedConversationAppend: true });
     return respondSaveResult(response, saveResult, {
         threadKey: getConversationThreadKey(storageTarget.avatar, storageTarget.groupId, storageTarget.personaId),
         message,
@@ -755,7 +755,8 @@ router.post('/message/send', asyncRoute(async (request, response) => {
             personaId: storageTarget.personaId,
         })));
         const originalMessages = JSON.stringify(branch.messages);
-        if (reuseLastUser && branch.messages.at(-1)?.role === 'character') {
+        const replacesReply = reuseLastUser && branch.messages.at(-1)?.role === 'character';
+        if (replacesReply) {
             branch.messages.pop();
         }
         const directive = getDefaultDirective(request.body);
@@ -788,7 +789,7 @@ router.post('/message/send', asyncRoute(async (request, response) => {
 
         // Save the user's message before waiting for the provider; keep the old reply during regeneration.
         if (cancellationController.signal.aborted) return;
-        const pendingSave = await saveConversationStore(request, context.store, context.version);
+        const pendingSave = await saveConversationStore(request, context.store, context.version, { trustedConversationAppend: true });
         if (!pendingSave.ok) return response.status(pendingSave.status).send(pendingSave.body);
         const retryState = { version: pendingSave.version, userMessage, reuseLastUser: true };
 
@@ -860,7 +861,7 @@ router.post('/message/send', asyncRoute(async (request, response) => {
         // Only replace this unchanged branch's messages, preserving concurrent settings and other threads.
         savedBranch.messages = [...branch.messages, replyMessage].slice(-MAX_THREAD_MESSAGES);
         refreshBranchPreview(savedBranch);
-        const saveResult = await saveConversationStore(request, latestStore, latestVersion);
+        const saveResult = await saveConversationStore(request, latestStore, latestVersion, { trustedConversationAppend: !replacesReply });
         if (!saveResult.ok) {
             return response.status(saveResult.status).send(saveResult.body);
         }

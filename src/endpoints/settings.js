@@ -6,7 +6,7 @@ import _ from 'lodash';
 import bytes from 'bytes';
 
 import { SETTINGS_FILE } from '../constants.js';
-import { prepareSettingsSave } from '../settings-version.js';
+import { prepareSettingsSave, restoreSettingsSnapshot } from '../settings-version.js';
 import { readAgentCollection } from '../in-chat-agent-storage.js';
 import {
     getConfigValue,
@@ -455,8 +455,8 @@ router.post('/restore-snapshot', getFileNameValidationFunction('name'), async (r
         }
 
         const pathToSettings = path.join(request.user.directories.root, SETTINGS_FILE);
-        fs.rmSync(pathToSettings, { force: true });
-        fs.copyFileSync(snapshotPath, pathToSettings);
+        const restored = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+        restoreSettingsSnapshot(pathToSettings, restored);
 
         response.sendStatus(204);
     } catch (error) {

@@ -14,6 +14,7 @@ jest.unstable_mockModule('../public/scripts/extensions.js', () => ({ extension_s
 jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => account }));
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/constants.js', () => ({
     CONVERSATION_STORE_KEY: 'sillybunny_conversation',
+    MAX_THREAD_MESSAGES: 250,
 }));
 
 const storeSync = await import('../public/scripts/neconyan-conversation/store-sync.js');
@@ -69,6 +70,84 @@ afterEach(() => {
 });
 
 describe('conversation store synchronisation', () => {
+    test('a lost new-branch save response can recover against server-added history metadata', async () => {
+        seed(store({}), 7);
+        extension_settings[KEY].characters['nova.png'] = thread([message('new', 'New branch')]);
+        const server = structuredClone(extension_settings[KEY]);
+        Object.assign(server.characters['nova.png'].branches.b1, { messageEditRevision: 8, messageContentHash: 'a'.repeat(64) });
+        globalThis.fetch = jest.fn()
+            .mockRejectedValueOnce(new Error('Lost response'))
+            .mockResolvedValueOnce(jsonResponse(409, { error: 'settings_conflict' }))
+            .mockResolvedValueOnce(jsonResponse(200, { store: server, version: 8 }))
+            .mockResolvedValueOnce(jsonResponse(200, { store: server, version: 9 }));
+        await expect(storeSync.persistConversationStoreNow()).rejects.toThrow('Lost response');
+        expect(await storeSync.persistConversationStoreNow()).toBe(true);
+        expect(extension_settings[KEY]).toEqual(server);
+        expect(storeSync.getConversationSavedVersion()).toBe(9);
+    });
+
+    test('an ambiguous save response retains the local edit and the previous acknowledged pair', async () => {
+        seed(store({ 'nova.png': thread([{ mes: 'Legacy', role: 'user' }]) }), 7);
+        const baseline = structuredClone(extension_settings[KEY]);
+        globalThis.fetch = async () => {
+            extension_settings[KEY].characters['nova.png'].branches.b1.messages[0].mes = 'Local replacement';
+            return jsonResponse(200, { store: store({ 'nova.png': thread([{ mes: 'Server replacement', role: 'user' }]) }), version: 8 });
+        };
+        expect(await storeSync.persistConversationStoreNow()).toBe(false);
+        expect(extension_settings[KEY].characters['nova.png'].branches.b1.messages[0].mes).toBe('Local replacement');
+        expect(storeSync.getConversationSavedSnapshot()).toEqual(baseline);
+        expect(storeSync.getConversationSavedVersion()).toBe(7);
+    });
+
+    test.each([undefined, null, []])('a missing or invalid response store %j is never acknowledged', async (invalid) => {
+        seed(store({ 'nova.png': thread([message('a', 'Keep')]) }), 7);
+        const before = structuredClone(extension_settings[KEY]);
+        globalThis.fetch = async () => jsonResponse(200, { store: invalid, version: 8 });
+        await expect(storeSync.refreshConversationStore()).rejects.toThrow('Invalid Conversation store response');
+        await expect(storeSync.persistConversationStoreNow()).rejects.toThrow('Invalid Conversation store response');
+        expect(extension_settings[KEY]).toEqual(before);
+        expect(storeSync.getConversationSavedVersion()).toBe(7);
+    });
+
+    test('startup migration remains local while general settings versions advance', async () => {
+        seed(store({}), 7);
+        extension_settings[KEY].characters['migrated.png'] = thread([message('legacy', 'Migrated locally')]);
+        settings._version = 12;
+        storeSync.initConversationStoreSync();
+        storeSync.initConversationStoreSync();
+        expect(storeSync.getConversationSavedVersion()).toBe(7);
+        expect(storeSync.getConversationSavedSnapshot().characters).toEqual({});
+        globalThis.fetch = async () => jsonResponse(200, {
+            store: store({ 'native.png': thread([message('native', 'Saved remotely')]) }), version: 13,
+        });
+        await storeSync.refreshConversationStore();
+        await storeSync.refreshConversationStore();
+        expect(Object.keys(extension_settings[KEY].characters).sort()).toEqual(['migrated.png', 'native.png']);
+        expect(storeSync.getConversationSavedSnapshot().characters['migrated.png']).toBeUndefined();
+    });
+
+    test('a confirmed absent store at version zero preserves later local migration', async () => {
+        seed(null, 0);
+        extension_settings[KEY] = store({ 'migrated.png': thread([message('legacy', 'Migrated locally')]) });
+        storeSync.initConversationStoreSync();
+        expect(storeSync.getConversationSavedVersion()).toBe(0);
+        expect(storeSync.getConversationSavedSnapshot()).toEqual({});
+        globalThis.fetch = async () => jsonResponse(200, { store: store({}), version: 1 });
+        await storeSync.refreshConversationStore();
+        expect(extension_settings[KEY].characters['migrated.png'].branches.b1.messages[0].id).toBe('legacy');
+    });
+
+    test.each([undefined, null, '8', -1, 0.5])('invalid response version %j cannot change the saved pair or local state', async (version) => {
+        seed(store({ 'nova.png': thread([message('a', 'Keep')]) }), 7);
+        const before = structuredClone(extension_settings[KEY]);
+        globalThis.fetch = async () => jsonResponse(200, { store: store({}), version });
+        await expect(storeSync.refreshConversationStore()).rejects.toThrow('Invalid Conversation store version');
+        await expect(storeSync.persistConversationStoreNow()).rejects.toThrow('Invalid Conversation store version');
+        expect(extension_settings[KEY]).toEqual(before);
+        expect(storeSync.getConversationSavedSnapshot()).toEqual(before);
+        expect(storeSync.getConversationSavedVersion()).toBe(7);
+    });
+
     test.each([null, store({ 'nova.png': thread([message('private', 'Account A only')]) })])('initial binding cannot adopt another profile with store %j', async (downloaded) => {
         jest.resetModules();
         const fresh = await import('../public/scripts/neconyan-conversation/store-sync.js');

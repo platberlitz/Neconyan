@@ -13048,6 +13048,8 @@ export async function getSettings(initLoaderHandle = null) {
         conversationSync.bindConversationAccount(data.inChatAgentAccount);
         settings = JSON.parse(data.settings);
         lastServerSettingsVersion = normalizeSettingsVersion(settings._version);
+        const conversationBaseline = structuredClone(settings.extension_settings?.sillybunny_conversation ?? {});
+        const conversationVersion = lastServerSettingsVersion;
         lastServerSettingsRevision = normalizeSettingsRevision(settings._settingsRevision);
         settingsConflictReloadRequired = false;
         settingsConflictPromptDismissed = false;
@@ -13060,6 +13062,7 @@ export async function getSettings(initLoaderHandle = null) {
         applyNeconyanFrontendIcon();
         await setUserControls(data.enable_accounts);
         conversationSync.assertConversationAccount();
+        conversationSync.captureConversationStore(conversationBaseline, conversationVersion);
         setRequestCompressionConfig(data.request_compression);
 
         // Allow subscribers to mutate settings

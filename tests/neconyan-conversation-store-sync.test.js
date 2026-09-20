@@ -23,6 +23,42 @@ function store(characters, extra = {}) {
 }
 
 describe('conversation store sync merge', () => {
+    test('legacy occurrences survive local edits, native appends and repeated refreshes without duplication', () => {
+        const legacy = { role: 'user', mes: 'Repeated without an id or timestamp', extra: { b: 2, a: 1 } };
+        const wrap = messages => store({ alice: thread({ main: branch('main', messages, 10) }) });
+        const saved = wrap([legacy, legacy, message('known', 'Original')]);
+        const local = wrap([{ extra: { a: 1, b: 2 }, mes: legacy.mes, role: 'user' }, legacy, message('known', 'Local edit')]);
+        const server = wrap([legacy, legacy, message('known', 'Original'), message('native', 'Native append')]);
+        const first = mergeConversationStore(server, local, saved);
+        const second = mergeConversationStore(server, first, server);
+        expect(second.characters.alice.branches.main.messages).toEqual([legacy, legacy, message('known', 'Local edit'), message('native', 'Native append')]);
+    });
+
+    test('legacy deletions and distinct concurrent additions retain their occurrence counts', () => {
+        const a = { mes: 'Repeat', role: 'user' };
+        const localNew = { mes: 'Local addition', role: 'user' };
+        const serverNew = { mes: 'Server addition', role: 'character' };
+        const wrap = messages => store({ alice: thread({ main: branch('main', messages, 10) }) });
+        expect(mergeConversationStore(wrap([a, a, serverNew]), wrap([a]), wrap([a, a])).characters.alice.branches.main.messages).toEqual([a, serverNew]);
+        expect(mergeConversationStore(wrap([a, serverNew]), wrap([a, localNew]), wrap([a])).characters.alice.branches.main.messages).toEqual([a, serverNew, localNew]);
+    });
+
+    test('ambiguous legacy changes and colliding new branches refuse to guess', () => {
+        const a = { mes: 'Original' };
+        const b = { mes: 'Repeated addition' };
+        const wrap = messages => store({ alice: thread({ main: branch('main', messages, 10) }) });
+        const saved = wrap([a]);
+        const local = wrap([{ mes: 'Local replacement' }]);
+        expect(mergeConversationStore(wrap([{ mes: 'Server replacement' }]), local, saved)).toBeNull();
+        expect(mergeConversationStore(wrap([a, b, message('native', 'New')]), wrap([a, b]), saved)).toBeNull();
+        expect(mergeConversationStore(wrap([a, b]), wrap([a, b]), saved)).toBeNull();
+        expect(mergeConversationStore(wrap([a, message('native', 'New')]), local, saved)).toBeNull();
+        expect(mergeConversationStore(wrap([message('normalised', 'Original')]), local, saved)).toBeNull();
+        expect(mergeConversationStore(wrap([a]), local, store({}))).toBeNull();
+        expect(mergeConversationStore(wrap([a, message('b', 'Middle')]), wrap([message('b', 'Middle'), a]), wrap([a, message('b', 'Middle'), a]))).toBeNull();
+        expect(local.characters.alice.branches.main.messages).toEqual([{ mes: 'Local replacement' }]);
+    });
+
     test('an unchanged local store accepts the server value', () => {
         const saved = store({ alice: thread({ main: branch('main', [message('a', 'one')], 10) }) });
         const local = JSON.parse(JSON.stringify(saved));

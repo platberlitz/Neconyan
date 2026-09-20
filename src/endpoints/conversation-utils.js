@@ -571,6 +571,12 @@ function validateStoredThread(threadStore, { strictMessages, baselineThreadStore
         if (strictMessages && branch.messages?.length > MAX_THREAD_MESSAGES) {
             return { valid: false, error: 'too_many_thread_messages' };
         }
+        if (branch.messageEditRevision !== undefined && (!Number.isSafeInteger(branch.messageEditRevision) || branch.messageEditRevision < 0)) {
+            return { valid: false, error: 'invalid_message_edit_revision' };
+        }
+        if (branch.messageContentHash !== undefined && (typeof branch.messageContentHash !== 'string' || !/^[a-f0-9]{64}$/.test(branch.messageContentHash))) {
+            return { valid: false, error: 'invalid_message_content_hash' };
+        }
         const messageIds = new Set();
         const baselineMessages = new Set(
             (Array.isArray(getObject(baselineBranches[branchId])?.messages) ? baselineBranches[branchId].messages : [])

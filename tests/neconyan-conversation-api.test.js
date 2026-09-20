@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, jest, tes
 import express from 'express';
 import fs from 'node:fs';
 import http from 'node:http';
+import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -57,6 +58,7 @@ describe('SillyBunny Conversation REST API', () => {
     let upstreamResponseDelayMs;
     let upstreamResponseStatus;
     let userHandle;
+    let clientNumber = 0;
     const upstreamRequests = [];
     const tempDirs = [];
 
@@ -113,6 +115,7 @@ describe('SillyBunny Conversation REST API', () => {
         app.use(express.json({ limit: '150mb' }));
         app.use((request, _response, next) => {
             request.user = { directories: userDirectories, profile: { handle: userHandle } };
+            Object.defineProperty(request.socket, 'remoteAddress', { value: `192.0.2.${clientNumber}`, configurable: true });
             next();
         });
         app.use(resumableGenerationMiddleware);
@@ -126,6 +129,7 @@ describe('SillyBunny Conversation REST API', () => {
     });
 
     beforeEach(() => {
+        clientNumber++;
         triggerSettingsBackup.mockClear();
         upstreamRequests.length = 0;
         upstreamReplyText = 'Hello from Nova.';
@@ -248,6 +252,69 @@ describe('SillyBunny Conversation REST API', () => {
         expect(readConversationStore().characters['nova.png']).toBeUndefined();
         requestCancellation(userDirectories, job.id);
         await expect(appendConversationJobMessage(context, target, 'bubble-1', message)).rejects.toMatchObject({ name: 'AbortError' });
+    });
+
+    test('a legacy capture cannot acquire trusted revision metadata after a raw history edit', async () => {
+        const { captureConversationTarget, appendConversationJobMessage } = await import('../src/generation/conversation-effects.js');
+        const { acceptJob } = await import('../src/jobs/store.js');
+        await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [{ id: 'original', role: 'user', mes: 'Original' }] });
+        const file = path.join(userDirectories.root, SETTINGS_FILE);
+        const legacy = readSettings();
+        const branch = legacy.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].branches.main;
+        delete branch.messageContentHash;
+        delete branch.messageEditRevision;
+        fs.writeFileSync(file, JSON.stringify(legacy));
+        const request = { user: { directories: userDirectories, profile: { handle: userHandle } } };
+        const target = captureConversationTarget(request, { avatar: 'nova.png', branchId: 'main' });
+        expect(target).not.toHaveProperty('messageEditRevision');
+        const job = acceptJob(userDirectories, { owner: userHandle, type: 'test.conversation', submissionKey: 'legacy-target', intent: {} }).job;
+        branch.messages[0].mes = 'Raw replacement';
+        fs.writeFileSync(file, JSON.stringify(legacy));
+        const store = readConversationStore();
+        store.settings.fixtureChange = true;
+        expect((await postJson('/store/save', { store, version: legacy._version })).status).toBe(200);
+        const before = fs.readFileSync(file, 'utf8');
+        const context = { job, owner: userHandle, directories: userDirectories, signal: new AbortController().signal };
+        await expect(appendConversationJobMessage(context, target, 'late', { role: 'character', mes: 'Must not appear' })).rejects.toMatchObject({ status: 409 });
+        expect(fs.readFileSync(file, 'utf8')).toBe(before);
+    });
+
+    test.each([[249, false], [250, false], [249, true], [250, true]])('native effects and sibling appends survive retention from %i messages, legacy=%s', async (count, legacy) => {
+        const { prepareConversationTarget, appendConversationJobMessage, commitConversationJobCommands } = await import('../src/generation/conversation-effects.js');
+        const { acceptJob, acceptChildJobs } = await import('../src/jobs/store.js');
+        const messages = Array.from({ length: count }, (_, i) => ({ id: `old-${i}`, role: 'user', name: 'User', mes: `Original ${i}` }));
+        expect((await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages })).status).toBe(200);
+        if (legacy) {
+            const saved = readSettings();
+            const branch = saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].branches.main;
+            delete branch.messageContentHash;
+            delete branch.messageEditRevision;
+            fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(saved));
+        }
+        const request = { user: { directories: userDirectories, profile: { handle: userHandle } } };
+        const target = await prepareConversationTarget(request, { avatar: 'nova.png', branchId: 'main' });
+        expect(Number.isSafeInteger(target.messageEditRevision)).toBe(true);
+        const job = acceptJob(userDirectories, { owner: userHandle, type: 'test.conversation', submissionKey: 'retention', intent: {} }).job;
+        const children = acceptChildJobs(userDirectories, job.id, [{ participantKey: 'first' }, { participantKey: 'second' }]);
+        const context = { job: children[0], owner: userHandle, directories: userDirectories, signal: new AbortController().signal };
+        const sibling = { ...context, job: children[1] };
+        const later = await postJson('/message/append', { avatar: 'nova.png', version: readSettings()._version, message: { id: 'later-input', role: 'user', name: 'User', mes: 'Later input' } });
+        expect(later.status).toBe(200);
+        const first = await appendConversationJobMessage(context, target, 'first', { role: 'character', name: 'Nova', mes: 'First' });
+        const second = await appendConversationJobMessage(sibling, target, 'second', { role: 'character', name: 'Nova', mes: 'Second' });
+        const commands = { reminders: [{ delay: '1h', memo: 'Once' }], scheduleUpdates: [] };
+        await commitConversationJobCommands(context, target, 'commands', commands, 'nova.png', 'UTC');
+        await commitConversationJobCommands(context, target, 'commands', commands, 'nova.png', 'UTC');
+        expect(await appendConversationJobMessage(sibling, target, 'second', {})).toEqual(second);
+        const branch = readConversationStore().characters['nova.png'].branches.main;
+        expect(branch.messages.map(item => item.id)).toEqual([...messages.map(item => item.id), 'later-input', first.id, second.id].slice(-250));
+        expect(readConversationStore().reminders).toHaveLength(1);
+        const edited = readConversationStore();
+        edited.characters['nova.png'].branches.main.messages[0].mes = 'Edited before eviction';
+        expect((await postJson('/store/save', { store: edited, version: readSettings()._version })).status).toBe(200);
+        expect((await postJson('/message/append', { avatar: 'nova.png', version: readSettings()._version,
+            message: { role: 'user', name: 'User', mes: 'Evicts the edited message' } })).status).toBe(200);
+        await expect(appendConversationJobMessage(context, target, 'late', { role: 'character', name: 'Nova', mes: 'Must not save' })).rejects.toMatchObject({ status: 409 });
     });
 
     test('accepted replies use a saved profile and finish native bubbles and reminders after acceptance without another client request', async () => {
@@ -387,11 +454,27 @@ describe('SillyBunny Conversation REST API', () => {
         expect(changed.status).toBe(409);
 
         // A later message joins the open batch instead of starting a second request.
-        const joined = await postJson('/reply/submit', { ...input, submissionKey: 'composer-send-1b', messages: [{ role: 'user', mes: 'Third' }] });
+        const memberInput = { ...input, submissionKey: 'composer-send-1b', messages: [{ role: 'user', mes: 'Third', extra: { a: 1, b: 2 } }] };
+        const joined = await postJson('/reply/submit', memberInput);
         expect(joined.status).toBe(200);
         const joinedJson = await joined.json();
         expect(joinedJson).toMatchObject({ created: false, inputDurable: true, job: { id: accepted.job.id } });
         expect(readConversationStore().characters['nova.png'].branches.main.messages.map(message => message.mes)).toEqual(['First', 'Second', 'Third']);
+
+        for (const patch of [{ target: { ...input.target, avatar: 'other.png' } }, { target: { ...input.target, branchId: 'side' } },
+            { target: { ...input.target, groupId: 'other' } }, { target: { ...input.target, personaId: 'other' } },
+            { mode: 'reply' }, { force: true }, { directive: 'Different instructions' }, { timeZone: 'UTC' }, { branchCreatedAt: 'other' }]) {
+            expect((await postJson('/reply/submit', { ...memberInput, ...patch })).status).toBe(409);
+        }
+        const replay = await postJson('/reply/submit', { ...memberInput, messages: [{ mes: 'Third', extra: { b: 2, a: 1 } }] });
+        expect(replay.status).toBe(200);
+        expect((await replay.json()).userMessageIds).toEqual(joinedJson.userMessageIds);
+        const beforeLegacy = getJob(userDirectories, accepted.job.id).coalesce.members;
+        updateJob(userDirectories, accepted.job.id, job => ({ coalesce: { ...job.coalesce, members: job.coalesce.members.map(({ intentFingerprint: _fingerprint, ...member }) => member) } }));
+        expect((await postJson('/reply/submit', { ...memberInput, target: { ...input.target, avatar: 'other.png' } })).status).toBe(409);
+        expect((await postJson('/reply/submit', memberInput)).status).toBe(409);
+        updateJob(userDirectories, accepted.job.id, job => ({ coalesce: { ...job.coalesce, members: beforeLegacy } }));
+        expect(readConversationStore().characters['nova.png'].branches.main.messages).toHaveLength(3);
 
         // A crash between input append and snapshot/release leaves a paused job;
         // the same submission repairs it without duplicating the message.
@@ -417,7 +500,7 @@ describe('SillyBunny Conversation REST API', () => {
         expect(rejected.status).toBe(400);
     });
 
-    test('a submission cannot be repaired into a replaced branch', async () => {
+    test.each([true, false])('a submission cannot be repaired into a replaced branch (browser anchor: %s)', async (withAnchor) => {
         await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [{ role: 'user', name: 'User', mes: 'First' }] });
         const saved = readSettings();
         saved.extension_settings.connectionManager = { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o' }] };
@@ -428,21 +511,91 @@ describe('SillyBunny Conversation REST API', () => {
         fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(saved));
         const branchCreatedAt = readConversationStore().characters['nova.png'].branches.main.createdAt;
 
-        const input = { submissionKey: 'reset-send-1', mode: 'send', target: { avatar: 'nova.png', branchId: 'main' }, branchCreatedAt,
+        const input = { submissionKey: 'reset-send-1', mode: 'send', target: { avatar: 'nova.png', branchId: 'main' }, ...(withAnchor ? { branchCreatedAt } : {}),
             messages: [{ role: 'user', mes: 'Second' }] };
         const response = await postJson('/reply/submit', input);
         expect(response.status).toBe(202);
+        const original = (await response.json()).job;
+        expect(original.target.createdAt).toBe(branchCreatedAt);
 
         // Replace the branch identity: same key, new createdAt.
         const reset = readSettings();
         reset.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].branches.main.createdAt = 'replaced';
         reset.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].branches.main.messages = [];
-        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(reset));
+        expect((await postJson('/store/save', { store: reset.extension_settings[CONVERSATION_STORE_KEY], version: reset._version })).status).toBe(200);
 
         const retry = await postJson('/reply/submit', input);
         expect(retry.status).toBe(409);
         expect(readConversationStore().characters['nova.png'].branches.main.messages).toHaveLength(0);
+        const fresh = await postJson('/reply/submit', { ...input, submissionKey: 'replacement-send', branchCreatedAt: 'replaced' });
+        expect(fresh.status).toBe(202);
+        expect((await fresh.json()).job.id).not.toBe(original.id);
+        expect(readConversationStore().characters['nova.png'].branches.main.messages.map(message => message.mes)).toEqual(['Second']);
+        const { finalizeConversationSubmission } = await import('../src/generation/conversation-jobs.js');
+        const failed = await finalizeConversationSubmission({ user: { directories: userDirectories, profile: { handle: userHandle } } }, original);
+        expect(failed.state).toBe('failed');
+        expect(upstreamRequests).toHaveLength(0);
     });
+
+    /* eslint-disable jest/no-conditional-expect -- Each named repair scenario has a different required outcome. */
+    test.each(['partial', 'trigger-edit', 'target-delete', 'legacy', 'cancel'])('incomplete batch repair respects its own anchors and progress: %s', async (scenario) => {
+        const { getJob, updateJob, requestCancellation } = await import('../src/jobs/store.js');
+        const { readArtifact } = await import('../src/jobs/artifacts.js');
+        const { finalizeConversationSubmission } = await import('../src/generation/conversation-jobs.js');
+        const { captureConversationTarget, appendConversationJobMessage } = await import('../src/generation/conversation-effects.js');
+        const { getConversationMessageRevision } = await import('../public/scripts/neconyan-conversation/message-identity-utils.js');
+        await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [
+            { id: 'trigger', role: 'user', name: 'User', mes: 'Original trigger' },
+            { id: 'reply', role: 'character', name: 'Nova', mes: 'Original reply' },
+        ] });
+        const saved = readSettings();
+        saved.extension_settings.connectionManager = { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o', proxy: 'fixture' }] };
+        saved.proxies = [{ name: 'fixture', url: upstreamUrl.replace(/\/$/, ''), password: 'fixture-private-token' }];
+        saved.oai_settings = { chat_completion_source: 'openai', temp_openai: 0.2, top_p_openai: 1, n: 1 };
+        saved.extension_settings[CONVERSATION_STORE_KEY].settings.connection_profile = 'saved';
+        saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].settings.connection_profile = 'saved';
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(saved));
+        const branch = readConversationStore().characters['nova.png'].branches.main;
+        const anchors = { branchCreatedAt: branch.createdAt,
+            triggers: [{ messageId: 'trigger', revision: getConversationMessageRevision(branch.messages[0]) }],
+            replyTarget: { messageId: 'reply', revision: getConversationMessageRevision(branch.messages[1]) } };
+        const response = await postJson('/reply/submit', { submissionKey: 'repair-leader', mode: 'send', target: { avatar: 'nova.png', branchId: 'main' }, messages: [{ mes: 'Leader input' }] });
+        expect(response.status).toBe(202);
+        const { job } = await response.json();
+        const request = { user: { directories: userDirectories, profile: { handle: userHandle } } };
+        const member = { key: 'repair-member', anchors, messages: [{ mes: 'Member one', extra: {} }, { mes: 'Member two', extra: {} }], userMessageIds: [] };
+        if (scenario === 'partial') {
+            const target = captureConversationTarget(request, job.intent.target);
+            const tag = createHash('sha256').update(JSON.stringify(member.key)).digest('hex').slice(0, 12);
+            const first = await appendConversationJobMessage({ owner: userHandle, directories: userDirectories, job, signal: { throwIfAborted() {} } }, target, `input:${tag}:0`, { role: 'user', name: 'User', mes: 'Member one', extra: { conversation_mode_user: true } });
+            member.userMessageIds = [first.id];
+        }
+        if (scenario === 'legacy') delete member.anchors;
+        updateJob(userDirectories, job.id, current => ({ coalesce: { ...current.coalesce, members: [member] } }));
+        if (scenario === 'trigger-edit' || scenario === 'target-delete') {
+            const current = readSettings();
+            const messages = current.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].branches.main.messages;
+            if (scenario === 'trigger-edit') messages[0].mes = 'Edited trigger';
+            else messages.splice(1, 1);
+            expect((await postJson('/store/save', { store: current.extension_settings[CONVERSATION_STORE_KEY], version: current._version })).status).toBe(200);
+        }
+        if (scenario === 'cancel') requestCancellation(userDirectories, job.id);
+        const before = readConversationStore();
+        await finalizeConversationSubmission(request, getJob(userDirectories, job.id));
+        const result = getJob(userDirectories, job.id);
+        if (scenario === 'partial') {
+            expect(result.state).toBe('queued');
+            expect(result.coalesce.members[0].userMessageIds).toHaveLength(2);
+            expect(readConversationStore().characters['nova.png'].branches.main.messages.map(message => message.mes)).toEqual(['Original trigger', 'Original reply', 'Leader input', 'Member one', 'Member two']);
+            expect(JSON.stringify(readArtifact(userDirectories, job.id, 'request'))).toContain('Member two');
+        } else {
+            expect(result.state).toBe(scenario === 'cancel' ? 'cancelled' : 'failed');
+            expect(readConversationStore()).toEqual(before);
+            expect(readArtifact(userDirectories, job.id, 'request')).toBeUndefined();
+        }
+        expect(upstreamRequests).toHaveLength(0);
+    });
+    /* eslint-enable jest/no-conditional-expect */
 
     test('a send on a different saved profile does not join an open batch', async () => {
         const { getJob } = await import('../src/jobs/store.js');
@@ -914,7 +1067,7 @@ describe('SillyBunny Conversation REST API', () => {
         expect(savedStore.userStatus).toBe('idle');
         expect(savedStore.userPersonaStatus).toBe('Working on tests');
         expect(savedStore.futureBrowserState).toEqual({ enabled: true });
-        expect(savedStore.characters).toEqual(browserStore.characters);
+        expect(savedStore.characters).toMatchObject(browserStore.characters);
 
         const getResponse = await postJson('/store/get', {});
         expect(getResponse.status).toBe(200);
@@ -1653,6 +1806,30 @@ describe('SillyBunny Conversation REST API', () => {
             .messages;
         expect(messages.map(message => message.mes)).toEqual(['Can you say hi?', 'Hello from Nova.']);
         expect(messages[1].extra.conversation_reply_to.messageId).toBe(messages[0].id);
+    });
+
+    test('retrying a failed ordinary send at the cap is append-only, while regeneration is destructive', async () => {
+        const { captureConversationTarget, appendConversationJobMessage } = await import('../src/generation/conversation-effects.js');
+        const { acceptJob } = await import('../src/jobs/store.js');
+        const messages = Array.from({ length: 249 }, (_, i) => ({ id: `retry-${i}`, role: 'user', mes: `Earlier ${i}` }));
+        expect((await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages })).status).toBe(200);
+        upstreamResponseStatus = 422;
+        const failed = await postJson('/message/send', { avatar: 'nova.png', text: 'Retry this', version: 1, generation: getChatGeneration() });
+        expect(failed.status).toBe(422);
+        const failure = await failed.json();
+        const request = { user: { directories: userDirectories, profile: { handle: userHandle } } };
+        const target = captureConversationTarget(request, { avatar: 'nova.png', branchId: 'main' });
+        upstreamResponseStatus = 200;
+        const retry = await postJson('/message/send', { avatar: 'nova.png', text: 'Retry this', reuseLastUser: true, version: failure.version, generation: getChatGeneration() });
+        expect(retry.status).toBe(200);
+        expect(readConversationStore().characters['nova.png'].branches.main.messageEditRevision).toBe(target.messageEditRevision);
+        const job = acceptJob(userDirectories, { owner: userHandle, type: 'test.conversation', submissionKey: 'retry-retention', intent: {} }).job;
+        const context = { job, owner: userHandle, directories: userDirectories, signal: new AbortController().signal };
+        await appendConversationJobMessage(context, target, 'later', { role: 'character', mes: 'Other pending reply' });
+        const regeneration = await postJson('/message/send', { avatar: 'nova.png', text: 'Retry this', reuseLastUser: true, version: readSettings()._version, generation: getChatGeneration() });
+        expect(regeneration.status).toBe(200);
+        expect(readConversationStore().characters['nova.png'].branches.main.messageEditRevision).toBeGreaterThan(target.messageEditRevision);
+        await expect(appendConversationJobMessage(context, target, 'stale', { role: 'character', mes: 'Must not save' })).rejects.toMatchObject({ status: 409 });
     });
 
     test('regeneration repairs legacy messages and retains the old reply on failure before a successful retry', async () => {

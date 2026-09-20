@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import { SETTINGS_FILE } from '../src/constants.js';
 import { CONVERSATION_STORE_KEY, DEFAULT_BRANCH_ID } from '../public/scripts/neconyan-conversation/constants.js';
+import { MAX_CONVERSATION_STORE_ENTRIES, validateStoreStructure } from '../src/endpoints/conversation-utils.js';
 
 const triggerAutoSave = jest.fn();
 await jest.unstable_mockModule('../src/endpoints/settings.js', () => ({ triggerAutoSave }));
@@ -73,5 +74,21 @@ describe('Conversation backend store commits', () => {
         expect(triggerAutoSave).not.toHaveBeenCalled();
         const settings = JSON.parse(fs.readFileSync(path.join(request.user.directories.root, SETTINGS_FILE), 'utf8'));
         expect(settings).toEqual({ _version: 0, extension_settings: {} });
+    });
+
+    test('server-added history metadata cannot write a store beyond the accepted entry budget', async () => {
+        const request = createRequest();
+        const file = path.join(request.user.directories.root, SETTINGS_FILE);
+        const before = fs.readFileSync(file, 'utf8');
+        const store = createStore();
+        store.characters['nova.png'] = { activeBranchId: 'main', branches: { main: { createdAt: '1', messages: [] } } };
+        store.padding = Array.from({ length: 500 }, () => Array(998).fill(null));
+        const count = value => value && typeof value === 'object'
+            ? Object.keys(value).length + Object.values(value).reduce((sum, child) => sum + count(child), 0) : 0;
+        store.padding.push(Array(MAX_CONVERSATION_STORE_ENTRIES - count(store) - 2).fill(null));
+        expect(validateStoreStructure(store)).toEqual({ valid: true });
+        await expect(saveConversationStore(request, store, 0)).rejects.toMatchObject({ status: 400, message: 'payload_too_complex' });
+        expect(fs.readFileSync(file, 'utf8')).toBe(before);
+        expect(triggerAutoSave).not.toHaveBeenCalled();
     });
 });

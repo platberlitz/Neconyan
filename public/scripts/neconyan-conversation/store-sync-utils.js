@@ -3,6 +3,7 @@
  * last acknowledged server snapshot, the current browser state and a fresh
  * server read, and decide how to reconcile them without executing anything.
  */
+import { MAX_THREAD_MESSAGES } from './constants.js';
 
 export function isPlainConversationObject(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -53,15 +54,44 @@ function messageId(message) {
 function mergeMessageLists(serverMessages, localMessages, savedMessages) {
     const serverList = Array.isArray(serverMessages) ? serverMessages : [];
     const localList = Array.isArray(localMessages) ? localMessages : [];
-    const savedById = new Map((Array.isArray(savedMessages) ? savedMessages : []).filter(item => messageId(item)).map(item => [messageId(item), item]));
-    const localById = new Map(localList.filter(item => messageId(item)).map(item => [messageId(item), item]));
-    const serverIds = new Set(serverList.map(messageId).filter(Boolean));
+    const savedList = Array.isArray(savedMessages) ? savedMessages : [];
+    if (conversationValuesEqual(localList, savedList)) return cloneConversationValue(serverList);
+    if (conversationValuesEqual(serverList, savedList)) return cloneConversationValue(localList);
+    // Legacy messages have no stable identity. Match complete content by occurrence,
+    // without manufacturing ids or timestamps during a read.
+    const entries = list => {
+        const counts = new Map();
+        return list.map(message => {
+            const id = messageId(message);
+            if (id) return [`id:${id}`, message];
+            const content = JSON.stringify(canonicalConversationValue(message));
+            const occurrence = counts.get(content) || 0;
+            counts.set(content, occurrence + 1);
+            return [`legacy:${content}:${occurrence}`, message];
+        });
+    };
+    const savedById = new Map(entries(savedList));
+    const localById = new Map(entries(localList));
+    const serverEntries = entries(serverList);
+    const serverIds = new Set(serverEntries.map(([id]) => id));
+    const legacyKeys = map => [...map.keys()].filter(key => key.startsWith('legacy:'));
+    const savedLegacy = legacyKeys(savedById);
+    const localLegacy = legacyKeys(localById);
+    const serverLegacy = legacyKeys(new Map(serverEntries));
+    const removed = keys => savedLegacy.some(key => !keys.includes(key));
+    const added = keys => keys.some(key => !savedById.has(key));
+    const ambiguousDeletion = savedLegacy.some(key => !key.endsWith(':0') && !localById.has(key) && !serverIds.has(key)
+        && (localById.has(key.slice(0, key.lastIndexOf(':')) + ':0') || serverIds.has(key.slice(0, key.lastIndexOf(':')) + ':0')));
+    if (ambiguousDeletion || (removed(localLegacy) && added(localLegacy)) || (removed(serverLegacy) && added(serverLegacy))
+        || localLegacy.some(key => !savedById.has(key) && serverIds.has(key))
+        || (removed(serverLegacy) && serverEntries.some(([key]) => key.startsWith('id:') && !savedById.has(key)))
+        || (removed(localLegacy) && [...localById.keys()].some(key => key.startsWith('id:') && !savedById.has(key)))) return null;
+    if (conversationValuesEqual(serverList, localList)) return cloneConversationValue(serverList);
     const merged = [];
 
-    for (const serverMessage of serverList) {
-        const id = messageId(serverMessage);
-        const local = id ? localById.get(id) : null;
-        const saved = id ? savedById.get(id) : null;
+    for (const [id, serverMessage] of serverEntries) {
+        const local = localById.get(id);
+        const saved = savedById.get(id);
         if (!local) {
             // Absent locally. If the browser had already acknowledged it and the
             // server has not touched it, the browser deleted it: honor that.
@@ -83,8 +113,7 @@ function mergeMessageLists(serverMessages, localMessages, savedMessages) {
         merged.push(cloneConversationValue(conversationValuesEqual(local, saved) ? serverMessage : local));
     }
 
-    for (const message of localList) {
-        const id = messageId(message);
+    for (const [id, message] of entries(localList)) {
         if (id && serverIds.has(id)) {
             continue;
         }
@@ -96,7 +125,7 @@ function mergeMessageLists(serverMessages, localMessages, savedMessages) {
         merged.push(cloneConversationValue(message));
     }
 
-    return merged;
+    return merged.length <= MAX_THREAD_MESSAGES ? merged : null;
 }
 
 /**
@@ -141,8 +170,12 @@ function mergeBranch(serverBranch, localBranch, savedBranch) {
     if (!isPlainConversationObject(localBranch)) {
         return copyBranch(serverBranch);
     }
-    const merged = mergePlainFields(serverBranch, localBranch, savedBranch, new Set(['messages', 'serverOperations', 'automationClaims']));
+    const merged = mergePlainFields(serverBranch, localBranch, savedBranch, new Set(['messages', 'serverOperations', 'automationClaims', 'messageEditRevision', 'messageContentHash']));
+    for (const key of ['messageEditRevision', 'messageContentHash']) {
+        if (serverBranch[key] !== undefined) merged[key] = serverBranch[key];
+    }
     merged.messages = mergeMessageLists(serverBranch.messages, localBranch.messages, savedBranch?.messages);
+    if (!merged.messages) return null;
     if (isSameConversationBranchIdentity(savedBranch, localBranch)) {
         for (const key of ['serverOperations', 'automationClaims']) {
             if (isPlainConversationObject(localBranch[key])) {
@@ -173,7 +206,9 @@ function mergeBranchMap(serverBranches, localBranches, savedBranches) {
             continue;
         }
         if (!Object.hasOwn(savedMap, id)) {
-            // A brand-new server branch against a brand-new local branch: keep both.
+            // Different new branches under one key cannot be combined safely.
+            const content = branch => Object.fromEntries(Object.entries(branch).filter(([key]) => !['messageEditRevision', 'messageContentHash', 'serverOperations', 'automationClaims'].includes(key)));
+            if (!conversationValuesEqual(content(serverMap[id]), content(localMap[id]))) return { conflict: true };
             merged[id] = copyBranch(serverMap[id]);
             continue;
         }
@@ -191,6 +226,7 @@ function mergeBranchMap(serverBranches, localBranches, savedBranches) {
             continue;
         }
         merged[id] = mergeBranch(serverMap[id], localBranch, savedBranch);
+        if (!merged[id]) return { conflict: true };
     }
     for (const id of Object.keys(localMap)) {
         if (Object.hasOwn(serverMap, id)) {

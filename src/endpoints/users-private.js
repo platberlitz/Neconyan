@@ -10,7 +10,8 @@ import yauzl from 'yauzl';
 
 import { getUserAvatar, toKey, getPasswordHash, getPasswordSalt, createBackupArchive, ensurePublicDirectoriesExist, toAvatarKey, getAccountVersion } from '../users.js';
 import { SETTINGS_FILE, USER_DIRECTORY_TEMPLATE } from '../constants.js';
-import { checkForNewContent, CONTENT_TYPES } from './content-manager.js';
+import { checkForNewContent, CONTENT_TYPES, getContentOfType } from './content-manager.js';
+import { restoreSettingsSnapshot } from '../settings-version.js';
 import { SECRETS_FILE } from './secrets.js';
 import { color, Cache, getConfigValue, ensureDirectory, normalizeZipEntryPath, recoverFileWritesInDirectorySync } from '../util.js';
 import { ENTITY_DATE_ADDED_FILE, importEntityDateAdded } from '../entity-date-added.js';
@@ -274,7 +275,11 @@ async function copyAllowedFolderContents(sourceRoot, targetRoot, progress = () =
         }
 
         ensureDirectory(path.dirname(destinationPath));
-        await fsPromises.copyFile(sourcePath, destinationPath);
+        if (relativePath === SETTINGS_FILE) {
+            restoreSettingsSnapshot(destinationPath, JSON.parse(await fsPromises.readFile(sourcePath, 'utf8')));
+        } else {
+            await fsPromises.copyFile(sourcePath, destinationPath);
+        }
         copiedEntries++;
     }
 
@@ -664,18 +669,24 @@ async function importZipContents(zipFilePath, targetRoot, progress = () => {}) {
                     const destinationPath = path.join(targetRoot, relativePath);
                     ensureDirectory(path.dirname(destinationPath));
 
-                    if (relativePath === ENTITY_DATE_ADDED_FILE || relativePath === ENTITY_LAST_CHAT_FILE) {
+                    if ([SETTINGS_FILE, ENTITY_DATE_ADDED_FILE, ENTITY_LAST_CHAT_FILE].includes(relativePath)) {
                         const chunks = [];
                         readStream.on('data', chunk => chunks.push(chunk));
                         readStream.once('error', finalize);
                         readStream.once('end', () => {
-                            if (relativePath === ENTITY_DATE_ADDED_FILE) {
-                                importedEntityDateAdded = Buffer.concat(chunks);
-                            } else {
-                                importedEntityLastChat = Buffer.concat(chunks);
+                            try {
+                                if (relativePath === SETTINGS_FILE) {
+                                    restoreSettingsSnapshot(destinationPath, JSON.parse(Buffer.concat(chunks).toString('utf8')));
+                                } else if (relativePath === ENTITY_DATE_ADDED_FILE) {
+                                    importedEntityDateAdded = Buffer.concat(chunks);
+                                } else {
+                                    importedEntityLastChat = Buffer.concat(chunks);
+                                }
+                                importedFiles++;
+                                zipfile.readEntry();
+                            } catch (error) {
+                                finalize(error);
                             }
-                            importedFiles++;
-                            zipfile.readEntry();
                         });
                         return;
                     }
@@ -939,8 +950,7 @@ router.post('/reset-settings', async (request, response) => {
         }
 
         const pathToFile = path.join(request.user.directories.root, SETTINGS_FILE);
-        await fsPromises.rm(pathToFile, { force: true });
-        await checkForNewContent([request.user.directories], [CONTENT_TYPES.SETTINGS]);
+        restoreSettingsSnapshot(pathToFile, getContentOfType(CONTENT_TYPES.SETTINGS, 'json')[0]);
 
         return response.sendStatus(204);
     } catch (error) {

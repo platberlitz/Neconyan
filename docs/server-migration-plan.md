@@ -7,22 +7,27 @@ document; this file only records what is actually finished and what is not.
 Status values: `done` (implemented and verified), `partial` (implemented but an
 acceptance case is unproven), `pending` (not started).
 
-## Current checkpoint: Conversation browser verification
+## Current checkpoint: Conversation integrity
 
 - `done` The named Step 7 controls pass Chromium checks at desktop 1280x900 and
-  touch 393x852. The suite contains 40 cases, covered by a complete 36-case run
-  and focused startup/aside follow-ups. It owns disposable accounts, fake providers
-  and an actual serving process; three recovery cases kill that process directly.
+  touch 393x852. The suite contains 52 cases: 51 passed in the full run and the
+  corrected lost-save-response test passed in a focused rerun. It owns disposable accounts, fake providers
+  and an actual serving process; four recovery cases cover three restart boundaries
+  and kill that process directly.
 - `done` Browser failures and independent review findings are fixed: the account
   import, overlapping message menu, captured-account guards through submissions,
   uploads and preliminary aside saves, initial settings ownership, queued saves,
   observer read coalescing and test opt-in/process handling. Thumbnail responses
   also have deterministic coverage for equal-size/equal-time cache collisions.
-- Latest checks: 334 unit suites, 4,294 tests passed and two skipped; 165 Node
+- Latest checks: 334 unit suites, 4,324 tests passed and two skipped; 165 Node
   tests passed; root lint, frontend budgets and whitespace checks passed.
-- `pending` Resolve findings a-e: pre-migration baseline/version capture, bounded
+- `done` Resolve findings a-e: pre-migration baseline/version capture, bounded
   history retention, branch identity during batching/repair, complete member-key
-  intent matching and identifier-less message merging.
+  intent matching and identifier-less message merging. Settings imports, restore
+  and reset preserve increasing checkpoints; ambiguous legacy changes refuse
+  saving without discarding local edits. Legacy histories receive a verified
+  checkpoint before new work is captured. Retention, real crash recovery,
+  migration races and all settings-replacement paths have browser regressions.
 - `pending` Finish saved text-completion/instruct and explicit active-connection
   bindings, then native solo partner chimes, unread alerts and narration with the
   automatic-ownership handover. Roleplay generation/completion migration follows.

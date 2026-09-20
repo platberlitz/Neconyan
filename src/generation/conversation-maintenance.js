@@ -12,7 +12,7 @@ import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { getCharacterData, getConversationSettings } from '../endpoints/conversation-generation.js';
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import {
-    captureConversationTarget,
+    prepareConversationTarget,
     commitConversationMemorySummary,
     commitConversationStoreEffect,
     readConversationTarget,
@@ -137,7 +137,7 @@ export async function acceptConversationSummary(request, body = {}, { automatic 
     if (!owner || !directories?.root) throw fail('An authenticated account is required.', 401);
     if (typeof body.submissionKey !== 'string' || !body.submissionKey || body.submissionKey.length > 256) throw fail('A submission key is required.');
     if (!body.target || typeof body.target !== 'object') throw fail('A target is required.');
-    const target = captureConversationTarget(request, body.target);
+    const target = await prepareConversationTarget(request, body.target);
     const current = readConversationTarget(request, target);
     const force = body.force === true;
     if (!force) {
@@ -221,7 +221,7 @@ export async function acceptConversationSchedule(request, body = {}) {
     const avatar = String(body.target?.avatar || body.avatar || '');
     if (!avatar) throw fail('A character is required.');
     const groupId = String(body.target?.groupId || '');
-    const target = captureConversationTarget(request, { avatar, groupId, personaId: body.target?.personaId || '', branchId: body.target?.branchId });
+    const target = await prepareConversationTarget(request, { avatar, groupId, personaId: body.target?.personaId || '', branchId: body.target?.branchId });
     const current = readConversationTarget(request, target);
     const existing = listJobs(directories, { owner, includeDismissed: true }).find(item => item.submissionKey === body.submissionKey);
     if (existing) {

@@ -7,7 +7,7 @@ import { normalizeConversationSettings } from '../endpoints/conversation-generat
 import { createConversationMessage, refreshBranchPreview } from '../endpoints/conversation-messages.js';
 import { ensureConversationStore, getConversationThreadKey, readUserSettingsWithStatus, saveConversationStore } from '../endpoints/conversation-store.js';
 import { getJob } from '../jobs/store.js';
-import { getSettingsVersion } from '../settings-version.js';
+import { getConversationMessagesHash, getSettingsVersion } from '../settings-version.js';
 
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const conflict = message => { throw Object.assign(new Error(message), { status: 409, recoverable: true }); };
@@ -32,11 +32,26 @@ export function readConversationTarget(request, target) {
 export function captureConversationTarget(request, target) {
     const normalized = { avatar: target.avatar, groupId: target.groupId || '', personaId: target.personaId || '', branchId: target.branchId };
     const { branch } = readConversationTarget(request, normalized);
+    if (branch.messageContentHash && branch.messageContentHash !== getConversationMessagesHash(branch.messages)) conflict('The saved Conversation message fingerprint is stale.');
     // messageCount freezes the length the hash covers. An effect then verifies
     // that prefix instead of the whole array, so a later accepted send may
     // append user bubbles without invalidating an earlier reply, while an edit
     // or deletion inside the captured prefix is still a conflict.
-    return { ...normalized, createdAt: branch.createdAt, messageCount: branch.messages.length, messagesHash: digest(branch.messages) };
+    return { ...normalized, createdAt: branch.createdAt,
+        ...(branch.messageContentHash && Number.isSafeInteger(branch.messageEditRevision) ? { messageEditRevision: branch.messageEditRevision } : {}),
+        messageCount: branch.messages.length, messagesHash: digest(branch.messages) };
+}
+
+/** Stamp legacy history before freezing new work; old frozen requests stay conservative. */
+export async function prepareConversationTarget(request, target) {
+    const captured = captureConversationTarget(request, target);
+    if (Number.isSafeInteger(captured.messageEditRevision)) return captured;
+    const current = readConversationTarget(request, captured);
+    const saved = await saveConversationStore(request, current.store, current.version, { trustedConversationEffects: true });
+    if (!saved.ok) conflict('The Conversation history could not be prepared.');
+    const prepared = captureConversationTarget(request, target);
+    if (prepared.createdAt !== captured.createdAt || prepared.messagesHash !== captured.messagesHash) conflict('The Conversation history changed during preparation.');
+    return prepared;
 }
 
 /** Write a native effect and its receipt in the same settings-file replacement. */
@@ -83,8 +98,11 @@ export async function commitConversationEffect(context, target, effectId, mutate
         }
         return false;
     };
-    const unchanged = prefixMatches(target.messageCount, target.messagesHash)
-        && (!receipt || prefixMatches(receipt.messageCount, receipt.messagesHash));
+    const checkpointMatches = checkpoint => Number.isSafeInteger(checkpoint.messageEditRevision) && current.branch.messageContentHash
+        ? checkpoint.messageEditRevision === current.branch.messageEditRevision
+        : prefixMatches(checkpoint.messageCount, checkpoint.messagesHash);
+    const unchanged = (!current.branch.messageContentHash || current.branch.messageContentHash === getConversationMessagesHash(currentMessages))
+        && checkpointMatches(target) && (!receipt || checkpointMatches(receipt));
     if (!unchanged) {
         conflict('The Conversation messages changed before this reply could be saved.');
     }
@@ -92,6 +110,7 @@ export async function commitConversationEffect(context, target, effectId, mutate
     if (result?.then) throw new TypeError('A Conversation effect must finish before releasing its settings write.');
     current.branch.serverOperations ??= {};
     current.branch.serverOperations[jobKey] = {
+        ...(current.branch.messageContentHash && Number.isSafeInteger(current.branch.messageEditRevision) ? { messageEditRevision: current.branch.messageEditRevision } : {}),
         messageCount: current.branch.messages.length,
         messagesHash: digest(current.branch.messages),
         effects: { ...receipt?.effects, [effectKey]: result ?? null },

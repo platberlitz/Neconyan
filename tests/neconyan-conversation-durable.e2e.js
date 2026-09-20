@@ -1,14 +1,213 @@
-/* global document, window, navigator, innerWidth, innerHeight, MutationObserver */
+/* global document, window, navigator, innerWidth, innerHeight, MutationObserver, localStorage */
 /* eslint-disable playwright/no-conditional-in-test, playwright/no-conditional-expect -- Each parameterised case has explicit boundary-specific assertions. */
 import { expect } from '@playwright/test';
 import { setTimeout as delay } from 'node:timers/promises';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import archiver from 'archiver';
 import { test, MODEL, send, noLateEffects } from './neconyan-conversation-durable-fixture.js';
 
 test.describe.configure({ mode: 'default' });
 test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires an explicitly opted-in disposable server.');
 test.setTimeout(180000);
+
+for (const phone of [false, true]) {
+    for (const count of [249, 250]) {
+        test(`${phone ? 'phone' : 'desktop'} retention at ${count} preserves a multi-bubble send and native effects`, async ({ app, browser }) => {
+            const restart = !phone && count === 250;
+            const account = await app.account({ phone, settings: { reply_delay_multiplier: restart ? 300 : 0 } });
+            const history = Array.from({ length: count }, (_, index) => ({ id: `history-${index}`, role: 'user', name: 'User', mes: `Earlier ${index}`, timestamp: 1700000000000 + index }));
+            await account.changeStore(store => { store.characters[account.threadKey].branches.main.messages = history; });
+            app.provider.mode.reply = { choices: [{ message: { content: 'First. [reminder: 1h | Retention reminder]\n\n' + 'Remaining reply. '.repeat(40) } }] };
+            const page = await account.open();
+            const accepted = await send(page, 'First new input.\n\nSecond new input.');
+            expect(accepted.userMessageIds).toHaveLength(2);
+            await page.close();
+            expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
+            if (restart) {
+                await expect.poll(async () => (await account.branch()).messages.filter(message => message.role === 'character').length, { timeout: 30000 }).toBe(1);
+                await app.restart();
+                expect(app.processes[0].signal).toBe('SIGKILL');
+            }
+            await account.settled(accepted.job.id);
+            const branch = await account.branch();
+            expect(branch.messages).toHaveLength(250);
+            expect(branch.messages.slice(0, -4).map(message => message.id)).toEqual(history.slice(count - 246).map(message => message.id));
+            expect(branch.messages.slice(-4, -2).map(message => message.mes)).toEqual(['First new input.', 'Second new input.']);
+            expect((await account.store()).reminders).toHaveLength(1);
+            expect(app.provider.calls).toHaveLength(1);
+            const reopened = await account.open();
+            expect((await account.branch()).messages).toEqual(branch.messages);
+            expect(app.provider.calls).toHaveLength(1);
+            await reopened.close();
+        });
+    }
+}
+
+for (const method of ['snapshot', 'folder', 'zip', 'reset then snapshot']) test(`restoring settings through ${method} invalidates a reply captured from newer history`, async ({ app }) => {
+    const account = await app.account();
+    const page = await account.open();
+    expect((await account.context.request.post('/api/settings/make-snapshot', { headers: account.headers })).status()).toBe(204);
+    const snapshots = await account.post('/api/settings/get-snapshots');
+    const snapshot = snapshots.sort((a, b) => b.date - a.date)[0];
+    expect(snapshot).toBeTruthy();
+    const originalSettings = (await account.post('/api/settings/get')).settings;
+    app.provider.mode.hold = MODEL;
+    const accepted = await send(page, 'This newer input must not survive the backup restore.');
+    await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBe(1);
+    await page.close();
+    const before = await account.post('/api/neconyan-conversation/store/get');
+    if (method === 'folder') {
+        const source = path.join(app.directory, 'import');
+        await fs.mkdir(source);
+        await fs.writeFile(path.join(source, 'settings.json'), originalSettings);
+        await account.post('/api/users/import-sillytavern/folder', { sourcePath: source });
+    } else if (method === 'zip') {
+        const archive = archiver('zip');
+        const chunks = [];
+        archive.on('data', chunk => chunks.push(chunk));
+        archive.append(originalSettings, { name: 'settings.json' });
+        await archive.finalize();
+        const response = await account.context.request.post('/api/users/import-sillytavern/zip', {
+            headers: account.headers, multipart: { avatar: { name: 'backup.zip', mimeType: 'application/zip', buffer: Buffer.concat(chunks) } },
+        });
+        expect(response.ok(), await response.text()).toBe(true);
+    } else {
+        if (method === 'reset then snapshot') {
+            expect((await account.context.request.post('/api/users/reset-settings', { headers: account.headers, data: { password: '' } })).status()).toBe(204);
+            expect((await account.post('/api/neconyan-conversation/store/get')).version).toBeGreaterThan(before.version);
+        }
+        expect((await account.context.request.post('/api/settings/restore-snapshot', { headers: account.headers, data: { name: snapshot.name } })).status()).toBe(204);
+    }
+    const restored = await account.post('/api/neconyan-conversation/store/get');
+    expect(restored.version).toBeGreaterThan(before.version);
+    expect(restored.store.characters[account.threadKey].branches.main.messages.map(message => message.mes)).toEqual(['Original question.']);
+    await app.release();
+    await account.settled(accepted.job.id, 'interrupted');
+    expect(await account.store()).toEqual(restored.store);
+    expect(app.provider.calls).toHaveLength(1);
+});
+
+test('a lost first save of a new branch does not block the next real Send', async ({ app }) => {
+    const account = await app.account();
+    const page = await account.open();
+    await page.evaluate(async threadKey => {
+        const { getConversationStore } = await import('/scripts/neconyan-conversation/context.js');
+        const thread = getConversationStore().characters[threadKey];
+        thread.branches.recovered = { ...structuredClone(thread.branches.main), id: 'recovered', createdAt: Date.now() + 1 };
+        delete thread.branches.recovered.messageContentHash;
+        delete thread.branches.recovered.messageEditRevision;
+        thread.activeBranchId = 'recovered';
+    }, account.threadKey);
+    let dropped = false;
+    await page.route('**/api/neconyan-conversation/store/save', async route => {
+        if (dropped) return route.continue();
+        const response = await route.fetch();
+        if (response.status() === 409) return route.fulfill({ response });
+        expect(response.ok(), await response.text()).toBe(true);
+        dropped = true;
+        await route.abort('failed');
+    });
+    expect(await page.evaluate(async () => {
+        try { await (await import('/scripts/neconyan-conversation/store-sync.js')).persistConversationStoreNow(); }
+        catch { return 'lost'; }
+    })).toBe('lost');
+    expect(dropped).toBe(true);
+    expect((await account.store()).characters[account.threadKey].branches.recovered.messageContentHash).toMatch(/^[a-f0-9]{64}$/);
+    const accepted = await send(page, 'Send after a lost branch save.');
+    await page.close();
+    await account.settled(accepted.job.id);
+    expect((await account.branch('recovered')).messages.filter(message => message.mes === 'Send after a lost branch save.')).toHaveLength(1);
+    expect(app.provider.calls).toHaveLength(1);
+});
+
+test('startup migration survives a native reply completed after the downloaded baseline', async ({ app }) => {
+    const account = await app.account();
+    const sending = await account.open();
+    app.provider.mode.hold = MODEL;
+    const accepted = await send(sending);
+    await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBe(1);
+    await sending.close();
+    await account.changeStore(store => { store.localStorageMigrated = false; });
+    const page = await account.context.newPage();
+    await page.addInitScript(() => localStorage.setItem('sb_conv_thread_migrated.png', JSON.stringify([{ id: 'migrated-user', role: 'user', mes: 'Unsaved local migration.', timestamp: 1700000000000 }])));
+    await page.route('**/api/settings/get', async route => {
+        const response = await route.fetch();
+        await app.release();
+        await account.settled(accepted.job.id);
+        await route.fulfill({ response });
+    });
+    await page.goto('/');
+    await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+    expect(await page.evaluate(async () => (await import('/scripts/neconyan-conversation/store-sync.js')).flushConversationStore())).toBe(true);
+    const saved = await account.store();
+    expect(saved.characters[account.threadKey].branches.main.messages.filter(message => message.role === 'character')).toHaveLength(2);
+    const allMessages = Object.values(saved.characters).flatMap(thread => Object.values(thread.branches || {}).flatMap(branch => branch.messages || []));
+    expect(allMessages.filter(message => message.mes === 'Unsaved local migration.')).toHaveLength(1);
+    await page.close();
+    expect(app.provider.calls).toHaveLength(1);
+});
+
+test('a replacement branch cannot join or repair the previous branch batch without a browser anchor', async ({ app }) => {
+    const account = await app.account();
+    const page = await account.open();
+    let payload;
+    await page.route('**/reply/submit', route => {
+        payload = route.request().postDataJSON();
+        delete payload.branchCreatedAt;
+        return route.continue({ postData: JSON.stringify(payload) });
+    });
+    const old = await send(page, 'Old branch input.');
+    await page.close();
+    await account.changeStore(store => {
+        const branch = store.characters[account.threadKey].branches.main;
+        branch.createdAt = 'replacement-identity';
+        branch.messages = [];
+    });
+    expect((await account.context.request.post('/api/neconyan-conversation/reply/submit', { headers: account.headers, data: payload })).status()).toBe(409);
+    const fresh = await account.open();
+    const accepted = await send(fresh, 'New branch input.');
+    expect(accepted.job.id).not.toBe(old.job.id);
+    await fresh.close();
+    await account.settled(old.job.id, 'failed');
+    await account.settled(accepted.job.id);
+    expect((await account.branch()).messages.filter(message => message.role === 'user').map(message => message.mes)).toEqual(['New branch input.']);
+    expect(app.provider.calls).toHaveLength(1);
+});
+
+test('legacy repeated messages survive concurrent native additions and unrelated local edits', async ({ app }) => {
+    const account = await app.account();
+    const file = path.join(app.directory, 'data/default-user/settings.json');
+    const saved = JSON.parse(await fs.readFile(file, 'utf8'));
+    const branch = saved.extension_settings.sillybunny_conversation.characters[account.threadKey].branches.main;
+    branch.messages = [{ role: 'user', mes: 'Repeated legacy message.' }, { role: 'user', mes: 'Repeated legacy message.' }];
+    delete branch.messageEditRevision;
+    delete branch.messageContentHash;
+    await fs.writeFile(file, JSON.stringify(saved));
+    const page = await account.context.newPage();
+    await page.goto('/');
+    await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+    await page.evaluate(async () => {
+        const { getConversationStore } = await import('/scripts/neconyan-conversation/context.js');
+        getConversationStore().settings.custom_instructions = 'Keep this local edit.';
+    });
+    const current = await account.post('/api/neconyan-conversation/store/get');
+    await account.post('/api/neconyan-conversation/message/append', { avatar: account.avatar, personaId: account.personaId, version: current.version,
+        message: { id: 'native-addition', role: 'character', name: 'Nova', mes: 'New server message.' } });
+    expect(await page.evaluate(async () => {
+        const sync = await import('/scripts/neconyan-conversation/store-sync.js');
+        await sync.refreshConversationStore();
+        await sync.refreshConversationStore();
+        return sync.flushConversationStore();
+    })).toBe(true);
+    const result = await account.store();
+    expect(result.settings.custom_instructions).toBe('Keep this local edit.');
+    expect(result.characters[account.threadKey].branches.main.messages.map(message => message.mes)).toEqual(['Repeated legacy message.', 'Repeated legacy message.', 'New server message.']);
+    await page.close();
+    const reopened = await account.open();
+    expect((await account.branch()).messages.map(message => message.mes)).toEqual(['Repeated legacy message.', 'Repeated legacy message.', 'New server message.']);
+    await reopened.close();
+});
 
 for (const phone of [false, true]) {
     test(`${phone ? 'phone' : 'desktop'} message menus and pet controls remain accessible`, async ({ app }) => {
