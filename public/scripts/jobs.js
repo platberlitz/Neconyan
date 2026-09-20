@@ -81,13 +81,17 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
     let delay = intervalMs;
     let previous = null;
 
-    const stop = () => {
+    // stop(reason) tells the caller why polling ended; 'missing' means the job
+    // record was pruned before a terminal snapshot could be read back.
+    const stop = (reason = 'stopped') => {
         if (stopped) return;
         stopped = true;
         if (timer) clearTimeout(timer);
-        signal?.removeEventListener('abort', stop);
-        onStop?.();
+        signal?.removeEventListener('abort', onAbort);
+        onStop?.(reason);
     };
+
+    const onAbort = () => stop('aborted');
 
     const schedule = () => { if (!stopped && !signal?.aborted) timer = setTimeout(tickOnce, delay); };
 
@@ -109,18 +113,21 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
                 if (stopped || signal?.aborted) return;
                 // A terminal job stops the job poll, but a failed readback must
                 // still be retried, so only stop once the snapshot succeeded.
-                if (TERMINAL.has(job.state)) { stop(); await onDone?.(job); return; }
+                if (TERMINAL.has(job.state)) { stop('done'); await onDone?.(job); return; }
             }
             delay = Math.min(MAX_INTERVAL_MS, Math.round(delay * 1.3));
         } catch (error) {
-            if (error.message === 'account_changed') { stop(); return; }
+            if (error.message === 'account_changed') { stop('account_changed'); return; }
+            // A job record that no longer exists can never complete, so retrying
+            // it forever only leaks an observer and blocks callers that wait on it.
+            if (error.status === 404) { stop('missing'); return; }
             delay = Math.min(MAX_INTERVAL_MS, Math.round(delay * 1.5));
         }
         schedule();
     };
 
     if (signal?.aborted) return stop;
-    if (signal) signal.addEventListener('abort', stop, { once: true });
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
     void tickOnce();
     return stop;
 }

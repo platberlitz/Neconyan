@@ -7,6 +7,49 @@ export function parseAvatarList(value) {
         .filter(Boolean);
 }
 
+export function collectConversationPartnerAvatars(host, settings = {}, messages = [], group = null, includeThreadPartners = true) {
+    return [...new Set([...parseAvatarList(settings.multi_char_names),
+        ...(group?.members || []).filter(avatar => !group.disabled_members?.includes(avatar)),
+        ...(includeThreadPartners ? messages.filter(message => message?.role === 'partner').map(message => message.extra?.partner_avatar) : []),
+    ])].filter(avatar => typeof avatar === 'string' && avatar && avatar !== host);
+}
+
+export function mergeConversationPartnerSettings(host, partner) {
+    const result = { ...host };
+    for (const key of ['availability', 'ai_schedule', 'weekly_schedule', 'auto_schedule', 'schedule_generated_at', 'talkativeness',
+        'inactivity_threshold', 'reply_delay_multiplier', 'authors_note', 'lorebook_override', 'connection_profile']) result[key] = partner[key];
+    return result;
+}
+
+export function chooseChimePartners(partners, messages, mentioned, max = 2, random = Math.random) {
+    const chosen = [];
+    const add = partner => { if (partner && !chosen.some(item => item.avatar === partner.avatar)) chosen.push(partner); };
+    add(mentioned);
+    add([...partners].sort((a, b) => getLastPartnerMessageIndex(messages, a) - getLastPartnerMessageIndex(messages, b))[0]);
+    const remaining = partners.filter(partner => !chosen.includes(partner));
+    for (let index = remaining.length - 1; index > 0; index--) {
+        const swap = Math.floor(random() * (index + 1));
+        [remaining[index], remaining[swap]] = [remaining[swap], remaining[index]];
+    }
+    for (const partner of remaining) { if (chosen.length >= max) break; add(partner); }
+    return chosen.slice(0, max);
+}
+
+export function selectChimePartners({ settings = {}, branch, partners = [], groupId = '', now = Date.now(), random = Math.random } = {}) {
+    if (!branch || !partners.length) return [];
+    const mentioned = getRecentlySilentMentionedPartnerFromThread(branch.messages || [], partners, 6);
+    if (!settings.multi_char && !mentioned) return [];
+    const activity = Number(branch.lastActivity) || 0;
+    if (!mentioned && (now - activity) / 60000 < Math.max(0.75, (Number(settings.idle_limit) || 15) / 4)) return [];
+    const markers = branch.sessionMarkers || {};
+    if ([markers.sb_conv_last_chime_session_, markers[`sb_conv_last_chime_session_${groupId || 'solo'}`]].includes(String(activity))) return [];
+    return !settings.multi_char ? [mentioned] : chooseChimePartners(partners, branch.messages || [], mentioned, 2, random);
+}
+
+export function buildPartnerChimeDirective(partner, hostName, userName) {
+    return `[System directive: You are ${partner.name}, chiming in on a private group DM conversation between ${hostName} and ${userName}. You are currently ${partner.activity || 'free'} (status: ${partner.status || 'online'}). If you were mentioned recently, answer naturally. Otherwise add one short message only if you have something distinct to contribute. Other people may be typing at the same time; do not wait for them. Output only your message body, without a name prefix.]`;
+}
+
 export function escapeRegExp(value) {
     return escapeRegex(String(value || ''));
 }
@@ -74,19 +117,13 @@ export function getLastPartnerMessageIndex(thread, partner) {
 
 export function getRecentlySilentMentionedPartnerFromThread(thread, partners, recentWindow) {
     const recentMessages = thread.slice(-recentWindow);
-    const mentionedPartner = partners.find(partner => recentMessages.some(message => isCharacterMentionedInText(partner, message?.mes || '', partners)));
-    if (!mentionedPartner) {
-        return null;
-    }
-
-    const lastMentionIndex = recentMessages.reduce((lastIndex, message, index) => {
-        return isCharacterMentionedInText(mentionedPartner, message?.mes || '', partners) ? index : lastIndex;
-    }, -1);
-    const spokeAfterMention = recentMessages.slice(lastMentionIndex + 1).some((message) => {
-        const isPartnerMessage = message?.extra?.partner_avatar === mentionedPartner.avatar;
-        return isPartnerMessage && !['user', 'system'].includes(message.role);
-    });
-    return spokeAfterMention ? null : mentionedPartner;
+    return partners.find(partner => {
+        const lastMentionIndex = recentMessages.reduce((last, message, index) =>
+            message?.role !== 'system' && message?.extra?.partner_avatar !== partner.avatar
+                && isCharacterMentionedInText(partner, message?.mes || '', partners) ? index : last, -1);
+        return lastMentionIndex >= 0 && !recentMessages.slice(lastMentionIndex + 1).some(message =>
+            message?.extra?.partner_avatar === partner.avatar && !['user', 'system'].includes(message.role));
+    }) || null;
 }
 
 export function stripSpeakerPrefixText(messageText, speakerName, normalize = value => value) {

@@ -1,7 +1,10 @@
 import { describe, expect, jest, test } from '@jest/globals';
 await jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => 'tester' }));
 const assertConversationAccount = jest.fn();
-await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({ assertConversationAccount }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({
+    assertConversationAccount,
+    refreshConversationStore: jest.fn(),
+}));
 
 import { resolveConversationReminderBranchId } from '../public/scripts/neconyan-conversation/thread-store-utils.js';
 

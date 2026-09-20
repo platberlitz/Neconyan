@@ -6,7 +6,7 @@ import { getCharacterData, getConversationSettings, getDefaultDirective } from '
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import { validateConversationPayload } from '../endpoints/conversation-utils.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
-import { acceptChildJobs, acceptJob, getJob, listJobs, releaseChildJobs, releaseJob, requestCancellation, setJobResume, submissionKey as fingerprintSubmission, updateJob } from '../jobs/store.js';
+import { acceptChildJobs, acceptJob, getJob, listJobs, mutateJobs, releaseChildJobs, releaseJob, requestCancellation, setJobResume, submissionKey as fingerprintSubmission, updateJob } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { appendConversationJobMessage, applyConversationBookkeeping, captureConversationTarget, prepareConversationTarget, commitConversationEffect, commitConversationJobCommands, commitConversationReplyNotice, readConversationTarget } from './conversation-effects.js';
@@ -128,6 +128,7 @@ export async function preflightConversationBindings(request, body = {}) {
     const proposedMessages = body.messages === undefined ? [] : normalizeInputMessages(body.messages);
     if (body.directive !== undefined && (typeof body.directive !== 'string' || body.directive.length > 20000)) fail('The Conversation directive is invalid.', 400);
     const participants = await captureConversationParticipantBindings(request, current, target, { explicitSpeaker, acknowledgement: body.acknowledgement,
+        includeChimes: Array.isArray(body.messages),
         proposedMessages, directive: getDefaultDirective(body), manualOptions, bindingOnly: body.bindingOnly === true && Boolean(body.speakerAvatar) && !manualOptions });
     const captured = normalizeBindingRequest({ participants, acknowledgement: body.acknowledgement });
     return { ...captured, contextLimits: Object.fromEntries(Object.entries(participants).map(([avatar, binding]) => [avatar, getChatProfileContextLimit(request.user.directories, binding)])) };
@@ -257,7 +258,7 @@ function lastTriggerId(anchors) {
  * profile binding, system prompt and macro environment. The first participant is
  * also the top-level snapshot so the legacy single-speaker path keeps working.
  */
-async function buildConversationSnapshot(request, target, directive, timeZone, { force = false, plan = null, automation = null, anchors = null, bindings = {} } = {}) {
+async function buildConversationSnapshot(request, target, directive, timeZone, { force = false, plan = null, automation = null, anchors = null, bindings = {}, includeChimes = false } = {}) {
     const current = readConversationTarget(request, target);
     verifyConversationAnchors(current, target, anchors);
     const explicitSpeaker = anchors ? resolveExplicitSpeaker(current, target, anchors.replyTarget) : '';
@@ -265,7 +266,7 @@ async function buildConversationSnapshot(request, target, directive, timeZone, {
     const participants = [];
     // An autonomous occurrence freezes its own participants; a normal reply lets
     // the selection policy choose them from the captured thread.
-    const selected = Array.isArray(plan) ? plan : await buildConversationParticipantPlan(request, current, target, { force, now, timeZone, explicitSpeaker });
+    const selected = Array.isArray(plan) ? plan : await buildConversationParticipantPlan(request, current, target, { force, now, timeZone, explicitSpeaker, includeChimes });
     for (const item of selected) {
         participants.push(await buildConversationParticipantSnapshot(request, current, target, item, {
             directive: item.directive || directive, timeZone, force: force || item.force === true, now,
@@ -382,6 +383,7 @@ export async function finalizeConversationSubmission(request, job) {
                 force: job.intent.force === true, plan: job.intent.plan, automation: job.intent.automation,
                 anchors: job.intent.anchors || null,
                 bindings: job.config?.participantBindings,
+                includeChimes: job.config?.sendChimes === true,
             });
             const latest = getJob(directories, job.id);
             if (!latest || latest.cancellation?.requested || TERMINAL_JOB_STATES.has(latest.state)) return latest;
@@ -438,6 +440,7 @@ function findCoalesceLeader(directories, owner, target, bindings, now, { force, 
         && job.target?.createdAt === target.createdAt
         && Number(job.coalesce?.deadline) > now
         && job.config?.participantBindings
+        && job.config.sendChimes === true
         && hash(job.config.participantBindings) === hash(bindings)) || null;
 }
 
@@ -538,6 +541,7 @@ export async function acceptConversationSubmission(request, body = {}) {
     verifyConversationAnchors(current, target, anchors);
     const explicitSpeaker = resolveExplicitSpeaker(current, target, anchors.replyTarget);
     const bindings = await captureConversationParticipantBindings(request, current, target, { explicitSpeaker, acknowledgement: bindingRequest?.acknowledgement,
+        includeChimes: mode === 'send',
         proposedMessages: messages, directive: intent.directive });
     if (bindingRequest && hash(normalizeBindingRequest({ participants: bindings, acknowledgement: bindingRequest.acknowledgement })) !== hash(bindingRequest)) fail('The saved participant connections changed. Check the connection and try again.', 409);
     if (mode === 'send') {
@@ -547,7 +551,7 @@ export async function acceptConversationSubmission(request, body = {}) {
     const accepted = acceptJob(directories, { owner, type: 'conversation.reply', submissionKey: body.submissionKey, intent, paused: true,
         coalesce: { deadline: mode === 'send' ? Date.now() + COALESCE_WINDOW_MS : 0, members: [] },
         target: { kind: 'conversation', id: getConversationThreadKey(target.avatar, target.groupId, target.personaId), branchId: target.branchId, createdAt: target.createdAt },
-        credentialRef: Object.values(bindings)[0], config: { participantBindings: bindings }, label: 'Conversation reply' });
+        credentialRef: Object.values(bindings)[0], config: { participantBindings: bindings, sendChimes: mode === 'send' }, label: 'Conversation reply' });
     noteOwner(owner);
     const prepared = await prepareConversationSubmission(request, accepted.job, { mode, messages, directive: intent.directive, timeZone });
     return { ...prepared, created: accepted.created };
@@ -685,6 +689,29 @@ export async function waitForConversationJobDelay(context, effectId, delayMs, { 
     await sleep(remaining, context.signal);
 }
 
+/** One root owns the occurrence, including all its siblings, before any chime is dispatched. */
+function claimChimeOccurrence(context, snapshot) {
+    const chime = snapshot.participants.find(participant => participant.purpose === 'chime');
+    if (!chime) return true;
+    const markers = chime.automation?.patch?.sessionMarkers || {};
+    const activity = markers.sb_conv_last_chime_session_ ?? markers[`sb_conv_last_chime_session_${snapshot.target.groupId || 'solo'}`];
+    if (activity === undefined) return false;
+    const { avatar, groupId, personaId, branchId, createdAt } = snapshot.target;
+    const key = hash({ avatar, groupId, personaId, branchId, createdAt, activity });
+    const request = { user: { profile: { handle: context.owner }, directories: context.directories } };
+    const branch = readConversationTarget(request, snapshot.target).branch;
+    return mutateJobs(context.directories, store => {
+        const jobs = Object.values(store.jobs);
+        const owner = jobs.find(job => job.config?.chimeClaim === key);
+        if (owner) return { changed: false, allowed: owner.id === context.job.id };
+        if (branch.sessionMarkers?.sb_conv_last_chime_session_ === activity) return { changed: false, allowed: false };
+        const job = jobs.find(item => item.id === context.job.id);
+        if (!job || job.cancellation?.requested) return { changed: false, allowed: false };
+        job.config = { ...job.config, chimeClaim: key };
+        return { job, allowed: true };
+    }).allowed;
+}
+
 /** The root coordinates its frozen participants and holds the thread without a slot. */
 async function runConversationRootJob(context, deps) {
     const directories = context.directories;
@@ -698,7 +725,10 @@ async function runConversationRootJob(context, deps) {
     setJobResume(directories, context.job.id, 'children');
     const threadKey = getConversationThreadKey(snapshot.target.avatar, snapshot.target.groupId, snapshot.target.personaId);
     try {
-        const children = acceptChildJobs(directories, context.job.id, snapshot.participants.map(participant => ({
+        const ownsChimes = claimChimeOccurrence(context, snapshot);
+        const participants = snapshot.participants.filter(participant => participant.purpose !== 'chime' || ownsChimes);
+        if (!participants.length) return { skipped: 'chime-already-owned' };
+        const children = acceptChildJobs(directories, context.job.id, participants.map(participant => ({
             participantKey: participant.speaker.avatar,
             intent: { participantKey: participant.speaker.avatar, purpose: participant.purpose || 'reply' },
             target: { kind: 'conversation', id: threadKey, branchId: snapshot.target.branchId },

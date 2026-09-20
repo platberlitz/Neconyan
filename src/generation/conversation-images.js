@@ -4,7 +4,7 @@ import { formatPromptText } from '../../public/scripts/neconyan-conversation/sha
 import { buildSelfieImagePromptTemplate } from '../../public/scripts/neconyan-conversation/generation-utils.js';
 import { parsePositiveInt } from '../endpoints/conversation-utils.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
-import { appendConversationJobMessage, commitConversationEffect, readConversationTarget } from './conversation-effects.js';
+import { appendConversationJobMessage, applyConversationBookkeeping, commitConversationEffect, readConversationTarget } from './conversation-effects.js';
 import { captureConversationRoleplaySource } from './conversation-roleplay-source.js';
 import { generateQuickImageGenImage, saveQuickImageToUserImages } from './quick-image-gen.js';
 
@@ -107,6 +107,7 @@ export function createConversationImageGenerator() {
             name: speaker.name,
             mes: 'Here, I can show you.',
             extra: {
+                ...(snapshot.extra || {}),
                 ...(delivery.extra || {}),
                 conversation_mode_image: true,
                 image_url: imageUrl,
@@ -114,7 +115,9 @@ export function createConversationImageGenerator() {
                 ...(delivery.attachReplyReference && snapshot.replyReference ? { conversation_reply_to: snapshot.replyReference } : {}),
                 ...(partner ? { partner_avatar: speaker.avatar } : {}),
             },
-        });
+        }, { mutate: (branch, store) => {
+            if (snapshot.automation) applyConversationBookkeeping(branch, store, snapshot.automation.patch, snapshot.automation.key);
+        } });
         return true;
     };
 }

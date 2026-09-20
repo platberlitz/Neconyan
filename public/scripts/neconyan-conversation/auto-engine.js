@@ -1,6 +1,7 @@
 import { chat, getCurrentChatId, getRequestHeaders, is_send_press, saveChatConditional } from '../../script.js';
 import { getCurrentUserHandle } from '../user.js';
 import { assertConversationAccount } from './store-sync.js';
+import { isObservingNativeConversationJob } from './native-jobs.js';
 import { selected_group } from '../group-chats.js';
 import {
     DEFAULT_INACTIVITY_THRESHOLD,
@@ -46,6 +47,7 @@ import {
     isCharacterMentionedInText,
 } from './partners.js';
 import { getConversationPersonaName, getUserStatus, safeParseWeeklySchedule } from './personas.js';
+import { buildPartnerChimeDirective, chooseChimePartners } from './partners-utils.js';
 import { clamp, getCurrentActivityFromSchedule, getStoredSchedule } from './schedule.js';
 import { getRoleplayGroupRevision, getRoleplaySourceMessageRevision } from './roleplay-source.js';
 import { buildConversationRoleplayContext } from './shared-helpers.js';
@@ -501,25 +503,8 @@ export function getPartnerReplyBusyKey(avatar, partnerAvatar, scope) {
 
 export function getConversationPartnerChimeCandidates(avatar, selectedAvatars, { branchId = '', max = PARALLEL_CHIME_MAX_PARTNERS, groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId(), settings = getSettings(avatar, { groupId, personaId }) } = {}) {
     const partners = getAllowedPartnerCharacters(selectedAvatars, avatar, settings, { branchId, groupId, includeThreadPartners: true, personaId });
-    const candidates = [];
-    const addCandidate = (partner) => {
-        if (partner?.avatar && !candidates.some(candidate => candidate.avatar === partner.avatar)) {
-            candidates.push(partner);
-        }
-    };
-
-    addCandidate(getRecentlySilentMentionedPartner(avatar, selectedAvatars, settings, { branchId, groupId, personaId }));
-    addCandidate(getLeastRecentPartner(avatar, selectedAvatars, settings, { branchId, groupId, personaId }));
-
-    const shuffled = [...partners].sort(() => Math.random() - 0.5);
-    for (const partner of shuffled) {
-        if (candidates.length >= max) {
-            break;
-        }
-        addCandidate(partner);
-    }
-
-    return candidates.slice(0, max);
+    return chooseChimePartners(partners, getConversationThread(avatar, { branchId, groupId, personaId }),
+        getRecentlySilentMentionedPartner(avatar, selectedAvatars, settings, { branchId, groupId, personaId }), max);
 }
 
 export async function triggerConversationPartnerChime(partner, settings, avatar = getCurrentCharAvatar(), { branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {
@@ -540,7 +525,7 @@ export async function triggerConversationPartnerChime(partner, settings, avatar 
         const character = getCharacterForAvatar(avatar);
         const charName = character?.name || getCurrentCharName();
         const userName = getConversationPersonaName(personaId, 'User');
-        const directive = `[System directive: You are ${partnerName}, chiming in on a private group DM conversation between ${charName} and ${userName}. You are currently ${partnerContext.activity} (status: ${partnerContext.status}). If you were mentioned recently, answer naturally. Otherwise add one short message only if you have something distinct to contribute. Other people may be typing at the same time; do not wait for them. Output only your message body, without a name prefix.]`;
+        const directive = buildPartnerChimeDirective({ ...partnerContext, name: partnerName }, charName, userName);
         const response = await generateConversationReply(directive, partnerSettings, {
             trimNames: false,
             speakerName: partnerName,
@@ -585,6 +570,11 @@ export async function triggerMultiCharacterChime(settings, avatar = getCurrentCh
 }
 
 export async function checkMultiCharacterChime(avatar, settings, now, { branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {
+    // ponytail: server observation owns the chime while it is in flight; the browser worker stands down until the readback merges the marker
+    if (isObservingNativeConversationJob()) {
+        return false;
+    }
+
     const mentionedPartner = getRecentlySilentMentionedPartner(avatar, settings.multi_char_names, settings, { branchId, groupId, personaId });
     if (!settings.multi_char && !mentionedPartner) {
         return false;

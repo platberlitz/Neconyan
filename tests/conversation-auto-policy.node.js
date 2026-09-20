@@ -15,6 +15,7 @@ const {
 } = await import('../src/generation/conversation-auto-policy.js');
 const { applyConversationBookkeeping } = await import('../src/generation/conversation-effects.js');
 const { scanConversationAutonomy } = await import('../src/generation/conversation-worker.js');
+const { getConversationThreadKey } = await import('../src/endpoints/conversation-store.js');
 
 const target = { avatar: 'a.png', groupId: '', personaId: 'p.png', branchId: 'main' };
 const branch = overrides => ({ messages: [], lastActivity: 0, followupCount: 0, ...overrides });
@@ -145,14 +146,49 @@ test('bookkeeping is applied once per occurrence and consumes its reminder', () 
     assert.equal(storeBranch.followupCount, 2);
 });
 
-test('the autonomy scan invalidates a reminder whose branch is gone', async () => {
+test('an oversized solo partner list does not stop the scan from invalidating an unrelated reminder', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'conversation-auto-policy-'));
     fs.mkdirSync(path.join(root, 'characters'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'groups'));
+    const now = Date.now();
+    const messages = Array.from({ length: 129 }, (_, index) => ({
+        id: `history-${index}`, role: 'partner', mes: 'Earlier solo reply.', extra: { partner_avatar: `p${index}.png` },
+    }));
+    const store = {
+        version: 1,
+        settings: {},
+        characters: { [getConversationThreadKey('a.png', '', 'p.png')]: {
+            settings: { enabled: true, multi_char_names: 'p0.png' }, activeBranchId: 'main',
+            branches: { main: { id: 'main', lastActivity: now, messages } },
+        } },
+        groups: [],
+        reminders: [{ id: 'rem1', personaId: 'p.png', avatar: 'a.png', groupId: '', branchId: 'missing', triggerAt: now - 1, text: 'tea', fired: false }],
+        automation: { mode: 'server', timeZone: 'UTC' },
+    };
+    fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify({
+        _version: 0, user_avatar: 'p.png',
+        extension_settings: { sillybunny_conversation: store },
+    }));
+    const result = await scanConversationAutonomy({ directoriesFor: () => ({ root, groups: path.join(root, 'groups'), characters: path.join(root, 'characters') }), owners: [''], now });
+    assert.deepEqual(result.invalidated, ['rem1']);
+    const saved = JSON.parse(fs.readFileSync(path.join(root, 'settings.json'), 'utf8'));
+    assert.ok(saved.extension_settings.sillybunny_conversation.reminders[0].invalidAt);
+    fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('an unresolved legacy group does not stop the scan from invalidating an unrelated reminder', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'conversation-auto-policy-'));
+    fs.mkdirSync(path.join(root, 'characters'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'groups'));
+    fs.writeFileSync(path.join(root, 'groups', 'legacy.json'), JSON.stringify({ id: 'legacy', members: ['a.png', 'b.png'] }));
     const now = Date.now();
     const store = {
         version: 1,
         settings: {},
-        characters: {},
+        characters: { [getConversationThreadKey('a.png', 'legacy', 'p.png')]: {
+            settings: { enabled: true, multi_char_names: 'b.png' }, activeBranchId: 'main',
+            branches: { main: { id: 'main', messages: [{ id: 'legacy-partner', role: 'partner', mes: 'Earlier group reply.', extra: { partner_avatar: 'b.png' } }] } },
+        } },
         groups: [],
         reminders: [{ id: 'rem1', personaId: 'p.png', avatar: 'a.png', groupId: '', branchId: 'missing', triggerAt: now - 1, text: 'tea', fired: false }],
         automation: { mode: 'server', timeZone: 'UTC' },
@@ -163,7 +199,7 @@ test('the autonomy scan invalidates a reminder whose branch is gone', async () =
     }));
     // An empty handle keeps the settings autosave (a 10-minute throttle timer)
     // out of the test process.
-    const result = await scanConversationAutonomy({ directoriesFor: () => ({ root }), owners: [''], now });
+    const result = await scanConversationAutonomy({ directoriesFor: () => ({ root, groups: path.join(root, 'groups'), characters: path.join(root, 'characters') }), owners: [''], now });
     assert.deepEqual(result.invalidated, ['rem1']);
     const saved = JSON.parse(fs.readFileSync(path.join(root, 'settings.json'), 'utf8'));
     assert.ok(saved.extension_settings.sillybunny_conversation.reminders[0].invalidAt);

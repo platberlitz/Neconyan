@@ -6,6 +6,9 @@ await jest.unstable_mockModule('../public/scripts/utils.js', () => ({
 
 const {
     getRecentlySilentMentionedPartnerFromThread,
+    collectConversationPartnerAvatars,
+    mergeConversationPartnerSettings,
+    selectChimePartners,
     getSpeakerPrefixMatch,
     isCharacterMentionedInText,
     parseAvatarList,
@@ -51,6 +54,33 @@ describe('sillybunny conversation partner utils', () => {
     test('strips generated speaker prefixes line by line', () => {
         expect(stripSpeakerPrefixText('**Ada:** hello\n{{char}} - checking', 'Ada')).toBe('hello\nchecking');
         expect(stripSpeakerPrefixText('Ada: hello', 'Ada', text => text.toUpperCase())).toBe('HELLO');
+    });
+
+    test('resolves configured and historical partners and only overrides partner-specific settings', () => {
+        const host = { multi_char_names: 'host.png, ada.png, ada.png', reply_max_tokens: 73, connection_profile: 'host', image_gen_enabled: false };
+        expect(collectConversationPartnerAvatars('host.png', host, [{ role: 'partner', extra: { partner_avatar: 'grace.png' } }],
+            { members: ['host.png', 'lin.png', 'muted.png'], disabled_members: ['muted.png'] })).toEqual(['ada.png', 'lin.png', 'grace.png']);
+        expect(mergeConversationPartnerSettings(host, { connection_profile: 'partner', reply_max_tokens: 999, image_gen_enabled: true, availability: 'idle' }))
+            .toMatchObject({ connection_profile: 'partner', reply_max_tokens: 73, image_gen_enabled: false, availability: 'idle' });
+    });
+
+    test('chimes honour unanswered mentions, least-recent selection, idle time and both saved marker formats', () => {
+        const partners = [{ avatar: 'ada.png', name: 'Ada' }, { avatar: 'grace.png', name: 'Grace' }, { avatar: 'lin.png', name: 'Lin' }];
+        const branch = { lastActivity: 1000, messages: [
+            { role: 'user', mes: '@Ada and @Grace, please answer.' },
+            { role: 'partner', mes: 'Ada has answered.', extra: { partner_avatar: 'ada.png' } },
+        ], sessionMarkers: {} };
+        const input = { partners, branch, now: 1100, settings: { multi_char: false }, random: () => 0 };
+        expect(selectChimePartners(input)).toEqual([partners[1]]);
+        expect(selectChimePartners({ ...input, settings: { multi_char: true } })).toEqual([partners[1], partners[2]]);
+        for (const key of ['sb_conv_last_chime_session_', 'sb_conv_last_chime_session_solo']) {
+            branch.sessionMarkers = { [key]: '1000' };
+            expect(selectChimePartners(input)).toEqual([]);
+        }
+        branch.sessionMarkers = {};
+        branch.messages = [{ role: 'user', mes: 'No named partner.' }];
+        expect(selectChimePartners({ ...input, settings: { multi_char: true, idle_limit: 4 } })).toEqual([]);
+        expect(selectChimePartners({ ...input, settings: { multi_char: true, idle_limit: 4 }, now: 61000, random: () => 0 })).toHaveLength(2);
     });
 
     test('detects explicit generated speaker labels for group replies', () => {

@@ -8,7 +8,7 @@
  */
 
 import { AVAILABILITY_COPY, DEFAULT_REPLY_DELAY_MULTIPLIER, DEFAULT_TALKATIVENESS, MAX_THREAD_MESSAGES } from '../../public/scripts/neconyan-conversation/constants.js';
-import { isCharacterMentionedInText } from '../../public/scripts/neconyan-conversation/partners-utils.js';
+import { isCharacterMentionedInText, collectConversationPartnerAvatars, mergeConversationPartnerSettings, selectChimePartners, buildPartnerChimeDirective } from '../../public/scripts/neconyan-conversation/partners-utils.js';
 import { getCurrentActivityFromSchedule } from '../../public/scripts/neconyan-conversation/schedule-utils.js';
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget, isNeconyanAssistant } from '../../public/scripts/neconyan-assistant-knowledge.js';
 import { composePersonaDescription, conversationPersonaSelection } from '../../public/scripts/neconyan-conversation/persona-description.js';
@@ -154,14 +154,62 @@ function localCharacters(current, personaId) {
     return characters;
 }
 
+export function getParticipantSettings(request, current, target, avatar) {
+    const own = getConversationSettings(request, current.store, avatar, target.groupId, {}, { personaId: target.personaId });
+    return !target.groupId && avatar !== target.avatar
+        ? mergeConversationPartnerSettings(getConversationSettings(request, current.store, target.avatar, '', {}, { personaId: target.personaId }), own)
+        : own;
+}
+
+export async function resolveConversationPartners(request, current, target, now = Date.now(), timeZone = 'UTC', { maxPartners = 128, strict = false } = {}) {
+    if (target.groupId && !current.group) return [];
+    const settings = getParticipantSettings(request, current, target, target.avatar);
+    const avatars = collectConversationPartnerAvatars(target.avatar, settings, current.branch.messages, current.group)
+        .filter(avatar => !target.groupId || (current.group.members.includes(avatar) && !current.group.disabled_members?.includes(avatar)));
+    // ponytail: the background scan must stay total, so cap there; a real request
+    // rejects rather than silently dropping partners.
+    if (avatars.length > maxPartners) {
+        if (strict) throw Object.assign(new Error('Too many Conversation partners.'), { status: 400 });
+        avatars.length = maxPartners;
+    }
+    const characters = localCharacters(current, target.personaId);
+    const partners = [];
+    for (const avatar of avatars) {
+        let character;
+        try { character = await getCharacterData(request, avatar, { allowOverride: false, requireExisting: true }); } catch { continue; }
+        const partnerSettings = getParticipantSettings(request, current, target, avatar);
+        const activity = resolveParticipantActivity(characters, avatar, target.personaId, current.store.runtimeStatusOverrides, now, timeZone) || manualActivity(partnerSettings);
+        partners.push({ avatar, name: character.name, status: activity.status, activity: activity.activity });
+    }
+    return partners;
+}
+
 /**
  * Freeze the participant list before any snapshot work, so a repair draws the
  * same people. Group members need a real card; a missing card drops the member
  * rather than inventing a fallback character.
  */
-export async function buildConversationParticipantPlan(request, current, target, { force = false, now = Date.now(), timeZone = 'UTC', random = Math.random, explicitSpeaker = '' } = {}) {
+export async function buildConversationParticipantPlan(request, current, target, { force = false, now = Date.now(), timeZone = 'UTC', random = Math.random, explicitSpeaker = '', includeChimes = false } = {}) {
     const explicit = String(explicitSpeaker || '').trim();
-    if (!target.groupId) return [{ avatar: explicit || target.avatar, purpose: 'reply', gate: true }];
+    if (!target.groupId) {
+        const primary = { avatar: explicit || target.avatar, purpose: 'reply', gate: true };
+        if (!includeChimes || explicit) return [primary];
+        const settings = getParticipantSettings(request, current, target, target.avatar);
+        const activity = resolveParticipantActivity(localCharacters(current, target.personaId), target.avatar, target.personaId,
+            current.store.runtimeStatusOverrides, now, timeZone) || manualActivity(settings);
+        if (['skip', 'autoresponder'].includes(getConversationAvailabilityDecision({ settings, activity, force }).action)) return [primary];
+        const partners = await resolveConversationPartners(request, current, target, now, timeZone);
+        const selected = selectChimePartners({ settings, branch: current.branch, partners, now, random });
+        if (!selected.length) return [primary];
+        const host = await getCharacterData(request, target.avatar, { allowOverride: false });
+        const userName = String(current.settings.power_user?.personas?.[target.personaId] || current.settings.name1 || 'User');
+        const activityKey = String(Number(current.branch.lastActivity) || 0);
+        return [primary, ...selected.map(partner => ({ avatar: partner.avatar, purpose: 'chime', gate: false,
+            directive: buildPartnerChimeDirective(partner, host.name, userName),
+            extra: { conversation_mode_chime: true, partner_avatar: partner.avatar },
+            automation: { key: `send-chime:${activityKey}`, patch: { sessionMarkers: { sb_conv_last_chime_session_: activityKey }, markAutoMessage: true } },
+        }))];
+    }
     // An explicit reply target replaces mention-weighted selection: the user
     // named the speaker, so exactly that member answers.
     if (explicit) return [{ avatar: explicit, purpose: 'reply', gate: false }];
@@ -196,9 +244,10 @@ export async function buildConversationParticipantPlan(request, current, target,
 }
 
 /** Capture all eligible connections before accepting input; speaker selection still uses the complete batch. */
-export async function captureConversationParticipantBindings(request, current, target, { plan = null, explicitSpeaker = '', acknowledgement = null, proposedMessages = [], directive = '', manualOptions, bindingOnly = false } = {}) {
+export async function captureConversationParticipantBindings(request, current, target, { plan = null, explicitSpeaker = '', acknowledgement = null, proposedMessages = [], directive = '', manualOptions, bindingOnly = false, includeChimes = false } = {}) {
     let avatars = plan ? plan.map(item => item.avatar) : explicitSpeaker ? [explicitSpeaker] : target.groupId
         ? current.group.members.filter(avatar => !current.group.disabled_members?.includes(avatar)) : [target.avatar];
+    if (includeChimes && !target.groupId && !plan && !explicitSpeaker) avatars.push(...(await resolveConversationPartners(request, current, target, Date.now(), 'UTC', { strict: true })).map(partner => partner.avatar));
     if (avatars.length > 128) throw Object.assign(new Error('Too many Conversation participants.'), { status: 400 });
     if (target.groupId && !plan && !explicitSpeaker) {
         const existing = [];
@@ -208,7 +257,7 @@ export async function captureConversationParticipantBindings(request, current, t
         avatars = existing.length ? existing : [target.avatar];
     }
     const bindings = Object.fromEntries([...new Set(avatars)].sort().map(avatar => {
-        const settings = getConversationSettings(request, current.store, avatar, target.groupId, {}, { personaId: target.personaId });
+        const settings = getParticipantSettings(request, current, target, avatar);
         if (String(settings.connection_profile || '').trim()) return [avatar, captureChatProfile(request.user.directories, settings.connection_profile)];
         if (!acknowledgement) throw Object.assign(new Error('Save and acknowledge the active connection before generating a reply.'), { status: 409, apiError: 'active_settings_ack_required' });
         if (acknowledgement.account !== request.user.profile.handle) throw Object.assign(new Error('account_changed'), { status: 409, apiError: 'account_changed' });
@@ -236,12 +285,12 @@ export async function captureConversationParticipantBindings(request, current, t
 export async function buildConversationParticipantSnapshot(request, current, target, plan, { directive, timeZone, binding, force = false, now = Date.now(), extra = {}, automation = null, referenceMessageId = '' } = {}) {
     const directories = request.user.directories;
     const avatar = plan.avatar;
-    const settings = getConversationSettings(request, current.store, avatar, target.groupId, {}, { personaId: target.personaId });
+    const settings = getParticipantSettings(request, current, target, avatar);
     if (!binding) throw Object.assign(new Error('The accepted participant connection is unavailable. Saved messages have been kept.'), { status: 409 });
     const material = resolveGenerationProfile(directories, binding);
     // Group members must have a real card; the solo thread avatar keeps the
     // legacy fallback so an avatar without a loaded card still replies.
-    const character = await getCharacterData(request, avatar, { allowOverride: false, requireExisting: Boolean(target.groupId) });
+    const character = await getCharacterData(request, avatar, { allowOverride: false, requireExisting: Boolean(target.groupId) || plan.purpose === 'chime' });
     if (binding.kind === 'active' && binding.characterRegexHash !== activeCharacterRegexHash(material, avatar, character)) {
         throw Object.assign(new Error('The captured character output transformations changed.'), { status: 409 });
     }

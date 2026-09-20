@@ -34,7 +34,7 @@ export async function createMewmoryProvider(port = 0) {
             response.writeHead(mode.redirectStatus || 307, { Location: mode.redirect });
             return response.end('{}');
         }
-        if (mode.reply) return response.end(JSON.stringify(mode.reply));
+        if (mode.reply) return response.end(JSON.stringify(typeof mode.reply === 'function' ? mode.reply(body) : mode.reply));
         if (mode.fail) {
             response.statusCode = 503;
             return response.end(JSON.stringify({ error: 'Fixture provider unavailable.' }));

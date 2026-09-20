@@ -18,9 +18,9 @@ The application is not fully server-owned. Provider requests reaching a server e
 | Mewmory recall, indexing and prompt preparation | Manual controls submit saved jobs; server retrieval, token counting, memory assembly and full index batching; fresh automatic recall runs independently of the page | Final Roleplay prompt construction remains in the browser. Legacy non-background endpoints remain available during migration. |
 | Roleplay replies | Server provider calls and resumable response buffering | Buffers live in process memory. Browser recovery applies the reply to the chat; server restart can lose an unfinished reply. |
 | Conversation send API | Server prompt assembly, provider call and thread persistence | The main composer instead submits accepted sends and replies, which save the user message durably before generation; this older resumable endpoint remains available. |
-| Accepted Conversation reply API | Named chat/text profiles and acknowledged saved-active bindings, validation before uploads/acceptance, captured prompt context, source checks, durable user messages, provider-result recovery and repeat-safe native bubbles, reminders, status effects and supported image delivery | Complete participant behaviour, unread alerts/narration and automatic-ownership handover remain unfinished. |
+| Accepted Conversation reply API | Named chat/text profiles and acknowledged saved-active bindings, validation before uploads/acceptance, captured prompt context, source checks, durable user messages, provider-result recovery and repeat-safe native bubbles, reminders, status effects and supported image delivery | Send-triggered solo partner chimes now run through the durable jobs with a one-owner occurrence claim and a browser fence. Unread alerts/narration, the browser 30-second worker handover and other participant behaviour remain unfinished. |
 | Manual Conversation text helpers | Server-bound requests retain account, connection and source identity; failed profiles cannot select another connection. Native summary/schedule jobs also accept saved-active bindings. | Regeneration, polishing, manual summaries/schedules and selfie coordination still apply their completion writes in the browser. |
-| Conversation interface | Saved state on the server; composer sends, forced replies and branch-from-message replies are accepted and generated server-side, and the browser only observes and reads | The browser's own 30-second auto worker (idle followups, scheduled and proactive messages, reminders) still runs; disabling it is part of the ownership handover, not done in this step. |
+| Conversation interface | Saved state on the server; composer sends, forced replies and branch-from-message replies are accepted and generated server-side, and the browser only observes and reads | The browser's own 30-second auto worker (idle followups, scheduled and proactive messages, reminders) still runs, but its chime path stands down while a native job is observed; disabling the worker is part of the ownership handover, not done in this step. |
 | Meower | Native server storage | Feed generation and its surrounding workflow remain browser-owned. |
 | Story Mode | Shared backend model requests | Story progression and generation coordination remain browser-owned. |
 | Agents | Native server collection storage and backend model requests | Agent execution, transformations and multi-step coordination remain browser-owned. |
@@ -33,7 +33,7 @@ WebLLM and bundled browser Kokoro are explicit owner-approved exceptions. Their 
 
 ## Verification
 
-The active-binding checkpoint passed 334 unit suites (4,335 tests, two skipped), 230 Node tests, root lint, frontend budgets and whitespace checks. The full browser run passed all 95 then-current durable cases and two scoped-formatting cases. Two acknowledgement tests passed after their queued-save fixture race was corrected; nine added durable cases passed separately. Current coverage is 104 durable plus four formatting/acknowledgement cases, not a single green 108-case run. New checks exercise saved-active controls at both sizes, refusal before upload/acceptance, exact retry through rate limiting, manual source/speaker races, character-script identity and inline-image source hashes without native Web Crypto.
+The chime checkpoint passed 334 unit suites (4,341 tests, two skipped; 4,343 total), 233 Node tests, root lint, frontend budgets and whitespace checks. The full 116-case disposable Conversation Chromium suite passed in one serial run (57.8 minutes), including the 12 added chime cases at desktop and touch sizes. At the active-binding checkpoint the full browser run passed all 95 then-current durable cases and two scoped-formatting cases. Two acknowledgement tests passed after their queued-save fixture race was corrected; nine added durable cases passed separately. Current coverage is 104 durable plus four formatting/acknowledgement cases, not a single green 108-case run. New checks exercise saved-active controls at both sizes, refusal before upload/acceptance, exact retry through rate limiting, manual source/speaker races, character-script identity and inline-image source hashes without native Web Crypto.
 
 The following verification record describes the earlier integrity checkpoint.
 
@@ -55,6 +55,10 @@ src/endpoints/conversation-generation.js
 src/endpoints/neconyan-conversation.js
 public/scripts/neconyan-conversation/native-jobs.js
 public/scripts/neconyan-conversation/store-sync.js
+public/scripts/jobs.js
+public/scripts/neconyan-conversation/partners-utils.js
+src/generation/conversation-participants.js
+src/generation/conversation-worker.js
 public/scripts/mewmory/index.js
 tests/mewmory.node.js
 tests/mewmory-selection.test.js

@@ -11,6 +11,173 @@ test.describe.configure({ mode: 'default' });
 test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires an explicitly opted-in disposable server.');
 test.setTimeout(180000);
 
+const isChimeCall = call => JSON.stringify(call.messages).includes('chiming in on a private group DM');
+
+async function chimeAccount(app, phone = false, image = false) {
+    const account = await app.account({ phone, configureSettings(saved) {
+        saved.extension_settings.connectionManager.profiles.push({ ...saved.extension_settings.connectionManager.profiles[0],
+            id: 'chime-profile', name: 'Chime profile', model: 'chime-model' });
+    } });
+    const created = await account.context.request.post('/api/characters/create', { headers: account.headers,
+        data: { ch_name: 'Durable Kit', description: 'A known DM partner.', first_mes: 'Hello.' } });
+    expect(created.ok()).toBe(true);
+    const partner = await created.text();
+    const current = await account.post('/api/neconyan-conversation/store/get');
+    const thread = await account.post('/api/neconyan-conversation/thread/save', { avatar: partner, personaId: account.personaId, version: current.version, messages: [] });
+    await account.changeStore(store => {
+        Object.assign(store.characters[thread.threadKey].settings, { availability: 'offline', reply_delay_multiplier: 0 });
+        Object.assign(store.characters[account.threadKey].settings, { multi_char_names: partner, multi_char: false, image_gen_enabled: image });
+    });
+    app.provider.mode.reply = body => ({ choices: [{ message: { content: isChimeCall(body)
+        ? image ? '[selfie: context="A cheerful portrait"]' : 'The partner chime.' : 'The host reply.' } }] });
+    return { account, partner };
+}
+
+for (const phone of [false, true]) for (const control of ['Send', 'Enter']) {
+    test(`${phone ? 'phone' : 'desktop'} ${control} finishes a mentioned solo partner chime with zero pages`, async ({ app, browser }) => {
+        const { account, partner } = await chimeAccount(app, phone);
+        const page = await account.open();
+        app.provider.mode.hold = [MODEL, 'chime-model'];
+        await page.locator('#sb_conversation_input').fill('@Durable Kit, please join us.');
+        const response = page.waitForResponse(value => value.url().endsWith('/reply/submit'));
+        if (control === 'Enter') await page.locator('#sb_conversation_input').press('Enter');
+        else await page.locator('#sb_conversation_send').click();
+        const accepted = await (await response).json();
+        expect(accepted.job.config.participantBindings[partner].profileId).toBe('durable');
+        await page.close();
+        expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
+        await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBe(2);
+        const chime = app.provider.calls.find(isChimeCall);
+        expect(JSON.stringify(chime.messages)).toContain('Durable Nova');
+        await app.release();
+        await account.settled(accepted.job.id);
+        const branch = await account.branch();
+        const partners = branch.messages.filter(message => message.role === 'partner');
+        expect(partners).toHaveLength(1);
+        expect(partners[0].extra).toMatchObject({ partner_avatar: partner, conversation_mode_chime: true });
+        expect(branch.sessionMarkers.sb_conv_last_chime_session_).toBe(String(branch.lastActivity));
+        expect(branch.lastAutoMessageAt).toBeGreaterThan(0);
+        const reopened = await account.open();
+        await expect(reopened.locator(`.sb-conversation-message[data-message-id="${partners[0].id}"]`)).toHaveCount(1);
+        expect(app.provider.calls).toHaveLength(2);
+        await reopened.close();
+    });
+}
+
+for (const condition of ['offline primary', 'autoresponder primary', 'explicit target', 'answered mention', 'unmentioned partner']) {
+    test(`solo chime selection excludes an ${condition}`, async ({ app }) => {
+        const { account, partner } = await chimeAccount(app);
+        await account.changeStore(store => {
+            const thread = store.characters[account.threadKey];
+            if (condition === 'offline primary') thread.settings.availability = 'offline';
+            if (condition === 'autoresponder primary') thread.settings.availability = 'dnd';
+            if (condition === 'explicit target') thread.branches.main.messages.push({ id: 'reply-host', role: 'character', name: 'Durable Nova', mes: 'Ask me.', timestamp: 1700000000001 });
+            if (condition === 'answered mention') thread.branches.main.messages.push({ id: 'mention-before', role: 'user', mes: '@Durable Kit, hello.', timestamp: 1700000000001 },
+                { id: 'answered-kit', role: 'partner', name: 'Durable Kit', mes: 'I answered.', timestamp: 1700000000002, extra: { partner_avatar: partner } });
+        });
+        const page = await account.open();
+        if (condition === 'explicit target') {
+            await page.locator('.sb-conversation-message[data-message-id="reply-host"] .sb-conversation-more-actions').click();
+            await page.locator('[data-sb-conversation-action="reply-message"][data-message-id="reply-host"]').click();
+        }
+        const accepted = await send(page, ['answered mention', 'unmentioned partner'].includes(condition) ? 'Just speaking to the host.' : '@Durable Kit, hello.');
+        await page.close();
+        await account.settled(accepted.job.id);
+        expect(app.provider.calls.filter(isChimeCall)).toHaveLength(0);
+        expect(app.provider.calls).toHaveLength(['offline primary', 'autoresponder primary'].includes(condition) ? 0 : 1);
+    });
+}
+
+test('an image-only partner chime records its session and survives restart without an automatic repeat', async ({ app }) => {
+    const images = await app.images();
+    const { account, partner } = await chimeAccount(app, false, true);
+    const saved = JSON.parse((await account.post('/api/settings/get')).settings);
+    saved.extension_settings['quick-image-gen'] = { provider: 'local', localUrl: images.url.replace(/\/v1$/, ''),
+        localType: 'stable-diffusion', a1111Model: 'nova.safetensors', sampler: 'euler_a' };
+    await account.post('/api/settings/save', saved);
+    await account.changeStore(store => { store.characters[account.threadKey].settings.multi_char = true; });
+    const page = await account.open();
+    const accepted = await send(page, '@Durable Kit, please join us.');
+    await page.close();
+    await account.settled(accepted.job.id);
+    const branch = await account.branch();
+    const image = branch.messages.find(message => message.role === 'partner' && message.extra?.image_url);
+    expect(image.extra).toMatchObject({ partner_avatar: partner, conversation_mode_chime: true, conversation_mode_image: true });
+    expect(branch.sessionMarkers.sb_conv_last_chime_session_).toBe(String(branch.lastActivity));
+    expect(branch.lastAutoMessageAt).toBeGreaterThan(0);
+    expect(images.calls).toHaveLength(1);
+    const current = await account.post('/api/neconyan-conversation/store/get');
+    await account.post('/api/neconyan-conversation/automation/configure', { mode: 'server', timeZone: 'UTC', version: current.version });
+    await app.restart();
+    await delay(65000);
+    expect(app.provider.calls).toHaveLength(2);
+    expect(images.calls).toHaveLength(1);
+    const reopened = await account.open();
+    await expect(reopened.locator(`.sb-conversation-message[data-message-id="${image.id}"]`)).toHaveCount(1);
+    expect(app.provider.calls).toHaveLength(2);
+    await reopened.close();
+});
+
+test('a refused chime-only occurrence finishes and leaves later reminders runnable after restart', async ({ app }) => {
+    const { account } = await chimeAccount(app);
+    const page = await account.open();
+    app.provider.mode.hold = MODEL;
+    const first = await send(page, '@Durable Kit, please answer.');
+    await page.close();
+    await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBe(2);
+    const root = await account.job(first.job.id);
+    const children = await Promise.all(root.children.map(id => account.job(id)));
+    const chime = children.find(child => child.intent.purpose === 'chime');
+    await account.post(`/api/jobs/${chime.id}/cancel`);
+    await app.release();
+    await account.settled(first.job.id, 'cancelled');
+    expect((await account.branch()).messages.filter(message => message.role === 'partner')).toHaveLength(0);
+    const current = await account.post('/api/neconyan-conversation/store/get');
+    await account.post('/api/neconyan-conversation/automation/configure', { mode: 'server', timeZone: 'UTC', version: current.version });
+    await app.restart();
+    let skipped;
+    await expect.poll(async () => {
+        const jobs = (await (await account.context.request.get('/api/jobs/list', { headers: account.headers })).json()).jobs;
+        skipped = jobs.find(job => job.type === 'conversation.reply' && job.id !== first.job.id && job.result?.skipped === 'chime-already-owned');
+        return skipped?.state;
+    }, { timeout: 40000 }).toBe('completed');
+    expect(skipped.children).toEqual([]);
+    expect(app.provider.calls).toHaveLength(2);
+    await account.changeStore(store => store.reminders.push({ id: 'after-refused-chime', avatar: account.avatar, personaId: account.personaId,
+        groupId: '', branchId: 'main', triggerAt: Date.now() - 1, text: 'A later reminder still runs.', fired: false }));
+    await app.restart();
+    await expect.poll(async () => (await account.store()).reminders.find(reminder => reminder.id === 'after-refused-chime')?.fired,
+        { timeout: 40000 }).toBe(true);
+    expect(app.provider.calls).toHaveLength(3);
+    expect(app.provider.calls.filter(isChimeCall)).toHaveLength(1);
+});
+
+test('distinct solo send batches retain their primary replies but own one partner chime', async ({ app }) => {
+    const { account } = await chimeAccount(app);
+    const page = await account.open();
+    app.provider.mode.hold = [MODEL, 'chime-model'];
+    const first = await send(page, '@Durable Kit, please answer.');
+    await page.evaluate(async () => {
+        (await import('/scripts/neconyan-conversation/context.js')).getConversationStore().settings.connection_profile = 'chime-profile';
+    });
+    const second = await send(page, '@Durable Kit, one more detail.');
+    expect(second.job.id).not.toBe(first.job.id);
+    await page.close();
+    await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBe(2);
+    await app.release();
+    await account.settled(first.job.id);
+    await account.settled(second.job.id);
+    expect(app.provider.calls.filter(isChimeCall)).toHaveLength(1);
+    expect(app.provider.calls.filter(call => !isChimeCall(call))).toHaveLength(2);
+    expect(app.provider.calls.find(isChimeCall).model).toBe(MODEL);
+    expect(app.provider.calls.filter(call => !isChimeCall(call)).map(call => call.model).sort()).toEqual([MODEL, 'chime-model'].sort());
+    expect((await account.branch()).messages.filter(message => message.role === 'partner')).toHaveLength(1);
+    await app.restart();
+    const reopened = await account.open();
+    expect(app.provider.calls).toHaveLength(3);
+    await reopened.close();
+});
+
 for (const textProfile of [false, true]) {
     test(`active ${textProfile ? 'text' : 'chat'} cleanup stop validation rejects before uploads and acceptance`, async ({ app }) => {
         const account = await app.account({ activeConnection: true, textProfile, configureSettings(saved) {

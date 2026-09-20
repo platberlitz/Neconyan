@@ -25,6 +25,9 @@ import { cloneConversationValue, conversationValuesEqual, mergeConversationStore
 const STORE_GET_ENDPOINT = '/api/neconyan-conversation/store/get';
 const STORE_SAVE_ENDPOINT = '/api/neconyan-conversation/store/save';
 const STORE_SAVE_DEBOUNCE_MS = 500;
+// One stalled request must not pin the serialised sync queue forever; aborting
+// lets the queue advance and a caller retry against a fresh connection.
+const STORE_REQUEST_TIMEOUT_MS = 60000;
 
 let savedSnapshot = null;
 let savedVersion = null;
@@ -92,6 +95,7 @@ async function postJson(url, body, account) {
         credentials: 'same-origin',
         headers: { ...getRequestHeaders(), 'Content-Type': 'application/json', 'X-Neconyan-Account': account },
         body: JSON.stringify(body ?? {}),
+        signal: AbortSignal.timeout(STORE_REQUEST_TIMEOUT_MS),
     });
     const text = await response.text();
     checkAccount(account);

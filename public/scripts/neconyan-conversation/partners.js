@@ -9,6 +9,7 @@ import {
     getRecentlySilentMentionedPartnerFromThread,
     isCharacterMentionedInText,
     parseAvatarList,
+    mergeConversationPartnerSettings,
     stripSpeakerPrefixText,
 } from './partners-utils.js';
 
@@ -60,20 +61,7 @@ export function getConversationPartnerSettings(partnerAvatar, hostSettings, { gr
     }
 
     const partnerSettings = getSettings(partnerAvatar, { groupId, personaId });
-    return {
-        ...hostSettings,
-        availability: partnerSettings.availability,
-        ai_schedule: partnerSettings.ai_schedule,
-        weekly_schedule: partnerSettings.weekly_schedule,
-        auto_schedule: partnerSettings.auto_schedule,
-        schedule_generated_at: partnerSettings.schedule_generated_at,
-        talkativeness: partnerSettings.talkativeness,
-        inactivity_threshold: partnerSettings.inactivity_threshold,
-        reply_delay_multiplier: partnerSettings.reply_delay_multiplier,
-        authors_note: partnerSettings.authors_note,
-        lorebook_override: partnerSettings.lorebook_override,
-        connection_profile: partnerSettings.connection_profile,
-    };
+    return mergeConversationPartnerSettings(hostSettings, partnerSettings);
 }
 
 export function getLeastRecentPartner(avatar, selectedAvatars, settings = getSettings(avatar), { branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {

@@ -7,6 +7,7 @@ import { getCharacterData } from '../endpoints/conversation-generation.js';
 import { getSettingsVersion } from '../settings-version.js';
 import { acceptConversationAutonomousReply, finalizeConversationSubmission } from './conversation-jobs.js';
 import { acceptConversationSummary, finalizeConversationMaintenanceSubmission } from './conversation-maintenance.js';
+import { resolveConversationPartners } from './conversation-participants.js';
 import { REMINDER_RETRY_DELAY_MS, resolveAutomationActivity, selectConversationReminder, selectNextConversationThreadAutomation } from './conversation-auto-policy.js';
 
 const DEFAULT_INTERVAL_MS = 1000;
@@ -25,7 +26,7 @@ function splitThreadKey(localKey) {
 }
 
 /** Every branch for a persona, with settings and partner records resolved. */
-async function buildAutomationFrames(request, store, personaId) {
+async function buildAutomationFrames(request, store, personaId, savedSettings, now) {
     const timeZone = store.automation?.timeZone || 'UTC';
     const characters = {};
     for (const [key, value] of Object.entries(store.characters || {})) {
@@ -40,24 +41,18 @@ async function buildAutomationFrames(request, store, personaId) {
         if (!split || !characterStore) continue;
         const target = { avatar: split.avatar, groupId: split.groupId, personaId };
         const settings = getConversationSettings(request, store, target.avatar, target.groupId, {}, { personaId });
-        const partners = [];
-        if (target.groupId) {
-            const group = (store.groups || []).find(item => String(item.id) === String(target.groupId));
-            for (const avatar of [...new Set(group?.members || [])]) {
-                if (avatar === target.avatar || group?.disabled_members?.includes(avatar)) continue;
-                const member = await getCharacterData(request, avatar, { allowOverride: false });
-                const activity = resolveAutomationActivity(characters, avatar, personaId, store.runtimeStatusOverrides, Date.now(), timeZone);
-                partners.push({ avatar, name: member.name, status: activity?.status || 'online' });
-            }
-        }
+        const group = target.groupId ? (store.groups || []).find(item => String(item.id) === String(target.groupId)) : null;
+        const host = await getCharacterData(request, target.avatar, { allowOverride: false });
         for (const [branchId, branch] of Object.entries(characterStore.branches || {})) {
             if (!branch || !Array.isArray(branch.messages)) continue;
             const branchTarget = { ...target, branchId };
             branches.set(`${split.avatar}\u001f${split.groupId}\u001f${branchId}`, { target: branchTarget, settings });
             if (branchId !== characterStore.activeBranchId) continue;
+            const partners = await resolveConversationPartners(request, { settings: savedSettings, store, branch, group }, branchTarget, now, timeZone);
             frames.push({
-                target: branchTarget, branch, settings, partners,
-                activity: resolveAutomationActivity(characters, branchTarget.avatar, personaId, store.runtimeStatusOverrides, Date.now(), timeZone),
+                target: branchTarget, branch, settings, partners, hostName: host.name,
+                userName: String(savedSettings.power_user?.personas?.[personaId] || savedSettings.name1 || 'User'),
+                activity: resolveAutomationActivity(characters, branchTarget.avatar, personaId, store.runtimeStatusOverrides, now, timeZone),
             });
         }
     }
@@ -161,7 +156,7 @@ export async function scanConversationAutonomy({ directoriesFor, owners, now = D
         const timeZone = store.automation?.timeZone || 'UTC';
         const personaId = String(saved.data.user_avatar || '');
         const userStatus = String(store.userStatus || 'online');
-        const { characters, frames, branches } = await buildAutomationFrames(request, store, personaId);
+        const { characters, frames, branches } = await buildAutomationFrames(request, store, personaId, saved.data, now);
         const byThread = new Map();
         for (const frame of frames) {
             const thread = `${frame.target.avatar}\u001f${frame.target.groupId}`;
@@ -227,6 +222,7 @@ export async function scanConversationAutonomy({ directoriesFor, owners, now = D
                 for (const frame of frames) {
                     const candidate = selectNextConversationThreadAutomation({
                         settings: frame.settings, branch: frame.branch, target: frame.target, partners: frame.partners,
+                        hostName: frame.hostName, userName: frame.userName,
                         characters, personaId, overrides: store.runtimeStatusOverrides || {}, userStatus, now, timeZone, random,
                     });
                     if (candidate && await acceptOccurrence(candidate)) {

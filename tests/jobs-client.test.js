@@ -121,6 +121,19 @@ describe('browser jobs observer snapshot callbacks', () => {
         expect(globalThis.fetch.mock.calls.length).toBe(reads);
     });
 
+    test('a pruned job (404) stops polling instead of retrying forever', async () => {
+        globalThis.fetch = jest.fn(async () => jsonResponse({ error: 'No such job.' }, 404));
+        const { observeJob } = await import('../public/scripts/jobs.js');
+        const onStop = jest.fn();
+        observeJob('gone', { intervalMs: 1, onSnapshot: () => {}, onStop });
+        await wait(40);
+        expect(onStop).toHaveBeenCalledTimes(1);
+        expect(onStop).toHaveBeenCalledWith('missing');
+        const reads = globalThis.fetch.mock.calls.length;
+        await wait(60);
+        expect(globalThis.fetch.mock.calls.length).toBe(reads);
+    });
+
     test.each(['cookie', 'local'])('an account change (%s) stops observation without late callbacks', async change => {
         let release;
         globalThis.fetch = jest.fn(() => new Promise(resolve => { release = resolve; }));

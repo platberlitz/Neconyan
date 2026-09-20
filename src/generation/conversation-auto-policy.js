@@ -9,7 +9,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { isCharacterMentionedInText } from '../../public/scripts/neconyan-conversation/partners-utils.js';
+import { buildPartnerChimeDirective, chooseChimePartners, getRecentlySilentMentionedPartnerFromThread, selectChimePartners } from '../../public/scripts/neconyan-conversation/partners-utils.js';
 import { getCurrentActivityFromSchedule } from '../../public/scripts/neconyan-conversation/schedule-utils.js';
 import { clamp, parsePositiveInt } from '../endpoints/conversation-utils.js';
 import { manualActivity } from './conversation-participants.js';
@@ -21,7 +21,6 @@ const DEFAULT_MAX_FOLLOWUPS = 3;
 const DEFAULT_AUTO_CHAT_COOLDOWN = 10;
 export const REMINDER_RETRY_DELAY_MS = 60000;
 const PARTNER_FOLLOWUP_RECENT_WINDOW = 6;
-const MAX_PARALLEL_CHIME_PARTNERS = 2;
 const AT_AUTO_CHAT_MARKER = 'auto_chat_at';
 const LAST_IDLE_SESSION_PREFIX = 'sb_conv_last_idle_session_';
 const LAST_CHIME_SESSION_PREFIX = 'sb_conv_last_chime_session_';
@@ -222,50 +221,23 @@ function mergePartnerRecords(settings, partners, group, threadAvatar) {
     return [...records.values()].filter(record => record.avatar !== threadAvatar);
 }
 
-function recentlySilentMentionedPartner(partners, messages, threadAvatar) {
-    const recent = messages.slice(-PARTNER_FOLLOWUP_RECENT_WINDOW);
-    for (let index = recent.length - 1; index >= 0; index -= 1) {
-        const message = recent[index];
-        if (!message || message.role === 'system') continue;
-        const text = String(message.mes || '');
-        for (const partner of partners) {
-            if (isCharacterMentionedInText({ name: partner.name }, text, partners)) return partner;
-        }
-    }
-    return null;
+function recentlySilentMentionedPartner(partners, messages) {
+    return getRecentlySilentMentionedPartnerFromThread(messages, partners, PARTNER_FOLLOWUP_RECENT_WINDOW);
 }
 
 /** Who chimes in: up to two partners, mentioning and least-recent first. */
-export function chooseConversationChimePartners({ partners = [], messages = [], threadAvatar = '', mentioned = null, random = Math.random } = {}) {
-    const chosen = [];
-    const add = partner => { if (partner?.avatar && !chosen.some(item => item.avatar === partner.avatar)) chosen.push(partner); };
-    if (mentioned) add(mentioned);
-    const ordered = [...partners].sort((a, b) => finiteNumber(a.lastSpokeAt, 0) - finiteNumber(b.lastSpokeAt, 0));
-    if (!mentioned) add(ordered[0]);
-    const rest = [...partners].filter(partner => !chosen.some(item => item.avatar === partner.avatar));
-    for (let index = rest.length - 1; index > 0; index -= 1) {
-        const swap = Math.floor(random() * (index + 1));
-        [rest[index], rest[swap]] = [rest[swap], rest[index]];
-    }
-    for (const partner of rest) { add(partner); if (chosen.length >= MAX_PARALLEL_CHIME_PARTNERS) break; }
-    return chosen.slice(0, MAX_PARALLEL_CHIME_PARTNERS);
+export function chooseConversationChimePartners({ partners = [], messages = [], mentioned = null, random = Math.random } = {}) {
+    return chooseChimePartners(partners, messages, mentioned, 2, random);
 }
 
 /** A chime occurrence when the thread is quiet or a partner was mentioned. */
-export function selectConversationChime({ settings = {}, branch = null, target = null, partners = [], now = Date.now(), random = Math.random } = {}) {
+export function selectConversationChime({ settings = {}, branch = null, target = null, partners = [], hostName = 'The host', userName = 'User', now = Date.now(), random = Math.random } = {}) {
     if (!branch || !target || !partners.length) return null;
-    const messages = branch.messages || [];
-    const mentioned = recentlySilentMentionedPartner(partners, messages, target.avatar);
-    if (!settings.multi_char && !mentioned) return null;
-    const idleLimit = positiveSettings(settings.idle_limit, DEFAULT_IDLE_LIMIT, 1);
-    const idleMinutes = (now - lastUserActivity(branch)) / 60000;
-    if (!mentioned && idleMinutes < Math.max(0.75, idleLimit / 4)) return null;
-    const marker = `${LAST_CHIME_SESSION_PREFIX}${target.groupId || 'solo'}`;
-    if ((branch.sessionMarkers || {})[marker] === String(lastUserActivity(branch))) return null;
-    const chosen = chooseConversationChimePartners({ partners, messages, threadAvatar: target.avatar, mentioned, random });
+    const marker = LAST_CHIME_SESSION_PREFIX;
+    const chosen = selectChimePartners({ settings, branch, partners, groupId: target.groupId, now, random });
     if (!chosen.length) return null;
     const key = getConversationOccurrenceKey({ owner: '', target, kind: 'chime', basis: lastUserActivity(branch) });
-    const directiveFor = partner => `[System directive: You are ${partner.name}, chiming in on a private group DM conversation between ${target.avatar} and the user. If you were mentioned recently, answer naturally. Otherwise add one short message only if you have something distinct to contribute. Other people may be typing at the same time; do not wait for them. Output only your message body, without a name prefix.]`;
+    const directiveFor = partner => buildPartnerChimeDirective(partner, hostName, userName);
     return occurrence(target, 'chime', key, directiveFor(chosen[0]),
         chosen.map(partner => ({ avatar: partner.avatar, purpose: 'chime', directive: directiveFor(partner), extra: { conversation_mode_auto: true, conversation_mode_chime: true, partner_avatar: partner.avatar, groupId: target.groupId || '' } })),
         { conversation_mode_auto: true },
@@ -304,7 +276,7 @@ export function resolveAutomationActivity(characters, avatar, personaId, overrid
  * idle, then chime, then character chat. Reminders are decided separately and
  * always take priority in the worker.
  */
-export function selectNextConversationThreadAutomation({ settings = {}, branch = null, target = null, partners = [], characters = {}, personaId = '', overrides = {}, userStatus = 'online', now = Date.now(), timeZone = 'UTC', random = Math.random } = {}) {
+export function selectNextConversationThreadAutomation({ settings = {}, branch = null, target = null, partners = [], hostName, userName, characters = {}, personaId = '', overrides = {}, userStatus = 'online', now = Date.now(), timeZone = 'UTC', random = Math.random } = {}) {
     if (settings.enabled === false || userStatus === 'offline') return null;
     const since = now - finiteNumber(branch?.lastAutoMessageAt, 0);
     if (since < positiveSettings(settings.cooldown, DEFAULT_COOLDOWN_SECONDS, 0) * 1000) return null;
@@ -318,7 +290,7 @@ export function selectNextConversationThreadAutomation({ settings = {}, branch =
         const idle = selectConversationIdleMessage({ settings, branch, target, now });
         if (idle) return idle;
     }
-    const chime = selectConversationChime({ settings, branch, target, partners, now, random });
+    const chime = selectConversationChime({ settings, branch, target, partners, hostName, userName, now, random });
     if (chime) return chime;
     return selectConversationCharacterChat({ settings, branch, target, partners, now, random });
 }

@@ -7,9 +7,15 @@ document; this file only records what is actually finished and what is not.
 Status values: `done` (implemented and verified), `partial` (implemented but an
 acceptance case is unproven), `pending` (not started).
 
-## Current checkpoint: acknowledged active requests
+## Current checkpoint: native solo partner chimes
 
-- `done` The named Step 7 controls pass Chromium checks at desktop 1280x900 and
+- `done` Native solo partner chimes are implemented and verified: the full 116-case
+  disposable Conversation suite passed in one serial Chromium run (57.8 minutes),
+  including desktop and touch Send/Enter zero-page chimes, the five exclusion
+  cases, a two-profile duplicate race, an image-only chime across a real process
+  restart and a refused chime-only family. The browser-worker duplicate race is
+  pinned by unit checks on the observation fence.
+- `done` Earlier active-binding checkpoint: the named Step 7 controls pass Chromium checks at desktop 1280x900 and
   touch 393x852. The suite contains 52 cases: 51 passed in the full run and the
   corrected lost-save-response test passed in a focused rerun. It owns disposable accounts, fake providers
   and an actual serving process; four recovery cases cover three restart boundaries
@@ -19,8 +25,9 @@ acceptance case is unproven), `pending` (not started).
   uploads and preliminary aside saves, initial settings ownership, queued saves,
   observer read coalescing and test opt-in/process handling. Thumbnail responses
   also have deterministic coverage for equal-size/equal-time cache collisions.
-- Latest checks: 334 unit suites, 4,335 tests passed and two skipped; 230 Node
-  tests passed; root lint, frontend budgets and whitespace checks passed.
+- Latest checks: 334 unit suites, 4,341 tests passed and two skipped (4,343
+  total); 233 Node tests passed; root lint, frontend budgets and whitespace
+  checks passed.
 - `done` Resolve findings a-e: pre-migration baseline/version capture, bounded
   history retention, branch identity during batching/repair, complete member-key
   intent matching and identifier-less message merging. Settings imports, restore
@@ -46,8 +53,12 @@ acceptance case is unproven), `pending` (not started).
   Checks include active Chat/Text controls at both sizes, lost acceptance followed
   by 429, pre-upload refusal, manual source/speaker races, character-script changes
   and stored inline images without native cryptographic hashing.
-- `pending` Native solo partner chimes, unread alerts and narration with the
-  automatic-ownership handover. Roleplay generation/completion migration follows.
+- `done` Native solo partner chimes run through the durable jobs: a server-side
+  occurrence claim gives exactly one root ownership, and the browser chime path
+  stands down while a native job is in flight, awaiting or syncing.
+- `pending` Native unread alerts and narration, plus the automatic-ownership
+  handover (including stopping the browser's 30-second worker). Roleplay
+  generation/completion migration follows.
 - Safari, unresolved image-provider crash recovery and reload-persistent send
   retry identity are unverified. Manual Conversation completion writes still
   depend on the browser. Deployment remains unauthorised.
@@ -183,8 +194,10 @@ The older results below describe earlier checkpoints, not the latest totals.
   revisions and explicit reply-target anchors, browser observation merges
   authoritative results, and a version-checked Conversation save path plus a
   strengthened settings guard protect server-owned messages and records from old
-  whole-store writes. Remaining: disabling the browser worker after ownership
-  handover, and text-completion/active-connection profile support.
+  whole-store writes. Send-triggered solo partner chimes run through the same family with a server-side
+  occurrence claim and a browser fence while a native reply is observed.
+  Remaining: disabling the browser worker after ownership handover, and
+  text-completion/active-connection profile support.
 - `pending` Meower.
 - `pending` Prompting Lab, Distiller, LoreStitch, World Info Lab.
 - `pending` remaining bundled model and file workflows.

@@ -656,6 +656,36 @@ describe('SillyBunny Conversation REST API', () => {
         expect(upstreamRequests).toHaveLength(0);
     });
 
+    test('pre-chime accepted sends keep their host-only binding and cannot absorb new chime-capable sends', async () => {
+        const { getJob, updateJob } = await import('../src/jobs/store.js');
+        const { readArtifact } = await import('../src/jobs/artifacts.js');
+        const { write } = await import('../src/character-card-parser.js');
+        const { finalizeConversationSubmission } = await import('../src/generation/conversation-jobs.js');
+        const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
+        fs.mkdirSync(userDirectories.characters, { recursive: true });
+        fs.writeFileSync(path.join(userDirectories.characters, 'kit.png'), write(png, JSON.stringify({ name: 'Kit' })));
+        await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [] });
+        const saved = readSettings();
+        saved.extension_settings.connectionManager = { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o' }] };
+        saved.proxies = [{ name: 'fixture', url: upstreamUrl.replace(/\/$/, ''), password: 'fixture-private-token' }];
+        saved.oai_settings = { chat_completion_source: 'openai', temp_openai: 0.2, top_p_openai: 1, n: 1 };
+        Object.assign(saved.extension_settings[CONVERSATION_STORE_KEY].settings, { connection_profile: 'saved', multi_char_names: 'kit.png' });
+        Object.assign(saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].settings, { connection_profile: 'saved', multi_char_names: 'kit.png', availability: 'online' });
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(saved));
+        const input = { mode: 'send', target: { avatar: 'nova.png', branchId: 'main' }, messages: [{ mes: '@Kit, please answer.' }] };
+        const accepted = await postJson('/reply/submit', { ...input, submissionKey: 'pre-chime' });
+        expect(accepted.status).toBe(202);
+        const old = (await accepted.json()).job;
+        updateJob(userDirectories, old.id, { config: { participantBindings: { 'nova.png': old.config.participantBindings['nova.png'] } } });
+        const next = await postJson('/reply/submit', { ...input, submissionKey: 'with-chimes' });
+        expect(next.status).toBe(202);
+        expect((await next.json()).job.id).not.toBe(old.id);
+        await finalizeConversationSubmission({ user: { profile: { handle: userHandle }, directories: userDirectories } }, getJob(userDirectories, old.id));
+        expect(getJob(userDirectories, old.id).state).toBe('queued');
+        expect(readArtifact(userDirectories, old.id, 'request').participants.map(participant => participant.speaker.avatar)).toEqual(['nova.png']);
+        expect(upstreamRequests).toHaveLength(0);
+    });
+
     test('a reply validates its captured triggers, reply target and branch before accepting', async () => {
         const { getConversationMessageRevision } = await import('../public/scripts/neconyan-conversation/message-identity-utils.js');
         const { getJob } = await import('../src/jobs/store.js');

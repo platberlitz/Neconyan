@@ -2,6 +2,7 @@ import { collectGroupConversationMemorySummaries, collectSoloConversationMemoryS
 import { getCurrentActivityFromSchedule } from '../../public/scripts/neconyan-conversation/schedule-utils.js';
 import { getCharacterData } from '../endpoints/conversation-generation.js';
 import { unScopeConversationStorageKey } from '../endpoints/conversation-utils.js';
+import { collectConversationPartnerAvatars } from '../../public/scripts/neconyan-conversation/partners-utils.js';
 
 /** Resolve saved context inside the captured persona, using the user's timezone rather than the server's. */
 export async function buildSavedConversationContext(request, current, target, character, settings, timeZone, now, { speakerAvatar = target.avatar } = {}) {
@@ -12,9 +13,11 @@ export async function buildSavedConversationContext(request, current, target, ch
     }
     const speakers = [{ avatar: speakerAvatar, name: character.name }];
     const group = current.group;
-    for (const avatar of [...new Set(group?.members || [])].slice(0, 32)) {
-        if (avatar === speakerAvatar || group.disabled_members?.includes(avatar)) continue;
-        const member = await getCharacterData(request, avatar, { allowOverride: false });
+    const others = group ? [...new Set(group.members || [])] : [target.avatar, ...collectConversationPartnerAvatars(target.avatar, settings, current.branch?.messages || [])];
+    for (const avatar of others.slice(0, 32)) {
+        if (avatar === speakerAvatar || group?.disabled_members?.includes(avatar)) continue;
+        let member;
+        try { member = await getCharacterData(request, avatar, { allowOverride: false, requireExisting: avatar !== target.avatar }); } catch { continue; }
         speakers.push({ avatar, name: member.name });
     }
     const schedule = characters[speakerAvatar]?.schedule;

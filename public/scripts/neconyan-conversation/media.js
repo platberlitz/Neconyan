@@ -9,7 +9,7 @@ import {
     getCurrentCharAvatar,
     getCurrentCharName,
 } from './context.js';
-import { parseAvatarList } from './partners.js';
+import { collectConversationPartnerAvatars } from './partners-utils.js';
 import { getExtensionCapability } from './extension-capabilities.js';
 import { formatPromptText } from './shared-helpers.js';
 import { scheduleTimelineRender } from './render-scheduler.js';
@@ -102,26 +102,9 @@ export function addUniqueAvatar(avatars, avatar, currentAvatar = '') {
 
 export function getConversationPartnerAvatars(avatar = getCurrentCharAvatar(), settings = null, { branchId = '', includeThreadPartners = true, groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {
     const resolvedSettings = settings || getSettings(avatar, { groupId, personaId });
-    const partnerAvatars = [];
-    parseAvatarList(resolvedSettings?.multi_char_names).forEach(partnerAvatar => addUniqueAvatar(partnerAvatars, partnerAvatar, avatar));
-
     const group = getConversationGroupById(groupId, { personaId });
-    if (group?.members?.length) {
-        group.members
-            .filter(memberAvatar => !group.disabled_members?.includes(memberAvatar))
-            .forEach(memberAvatar => addUniqueAvatar(partnerAvatars, memberAvatar, avatar));
-    }
-
-    if (includeThreadPartners) {
-        getConversationThread(avatar, { branchId, create: false, groupId, personaId }).forEach((message) => {
-            if (message?.role !== 'partner') {
-                return;
-            }
-
-            addUniqueAvatar(partnerAvatars, message.extra?.partner_avatar, avatar);
-        });
-    }
-
+    const partnerAvatars = collectConversationPartnerAvatars(avatar, resolvedSettings,
+        includeThreadPartners ? getConversationThread(avatar, { branchId, create: false, groupId, personaId }) : [], group, includeThreadPartners);
     return partnerAvatars.filter(partnerAvatar => getCharacterForAvatar(partnerAvatar));
 }
 
