@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import { parse } from 'acorn';
 import { isGenerationLengthFinish } from '../public/scripts/generation-request-controls.js';
 import { buildChatPresetPayload, createChatRequestData } from '../public/scripts/chat-preset-request.js';
-import { normalizeContentText as normalizeContentTextPure, constructScopedTextPrompt, cleanScopedTextResponse } from '../public/scripts/generation-format.js';
+import { normalizeContentText as normalizeContentTextPure, extractMessageFromData as extractMessageFromDataPure, constructScopedTextPrompt, cleanScopedTextResponse } from '../public/scripts/generation-format.js';
 import { instructSettings, promptMessages, expectedPrompts, providerDependencies } from './fixtures/text-generation-baseline.js';
 import { createTextProviderParameters } from '../public/scripts/text-provider-parameters.js';
 import { getLocalPromptCacheValue, isLikelyLocalServerUrl } from '../public/scripts/local-url-utils.js';
@@ -24,7 +24,7 @@ function load(context, file, names) {
 function runtime() {
     const context = vm.createContext({
         console, structuredClone, AbortController, Error,
-        isGenerationLengthFinish, normalizeContentTextPure, constructScopedTextPrompt, cleanScopedTextResponse,
+        isGenerationLengthFinish, normalizeContentTextPure, extractMessageFromDataPure, constructScopedTextPrompt, cleanScopedTextResponse,
         name1: 'Sam', name2: 'Ada', selected_group: null, substituteParams: providerDependencies.substitute,
         getPresetManager: () => ({ getCompletionPresetByName: () => undefined }),
         getTextGenServer: () => 'http://127.0.0.1:5000',

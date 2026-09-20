@@ -16,6 +16,7 @@ import {
 } from './context.js';
 import { createConversationMessageAnchors, getConversationMessageRevision } from './message-identity-utils.js';
 import { observeNativeConversationJob } from './native-jobs.js';
+import { preflightConversationBinding } from './bindings.js';
 import { getConversationPersonaName } from './personas.js';
 import { formatConversationFileSize } from './prompt.js';
 import { scheduleInterfaceRefresh } from './render-scheduler.js';
@@ -268,7 +269,7 @@ export async function submitConversationInput() {
     if (text.startsWith('/') && !pendingFiles.length) {
         const handled = await handleConversationSlashAction(text, { avatar, branchId, settings, groupId, personaId });
         if (handled) {
-            clearConversationComposer(input);
+            if (handled.clearDraft !== false) clearConversationComposer(input, text);
             return;
         }
     }
@@ -362,6 +363,10 @@ async function submitAcceptedSend({ avatar, branchId, groupId, personaId, text, 
             // re-uploading the files under a new key.
             payload = pendingSubmission.payload;
         } else {
+            const bindingRequest = await preflightConversationBinding({
+                target: { avatar, groupId, personaId, branchId }, branchCreatedAt, replyTarget: replyTargetAnchor,
+                messages: [{ mes: text }],
+            }, account);
             const messages = [];
             if (pendingFiles.length) {
                 const messageInput = { role: 'user', name: userName, mes: text, extra: buildConversationUserMessageExtra(replyReference) };
@@ -389,6 +394,7 @@ async function submitAcceptedSend({ avatar, branchId, groupId, personaId, text, 
                 replyTarget: replyTargetAnchor,
                 branchCreatedAt,
                 timeZone: getDeviceTimeZone(),
+                bindingRequest,
             };
             payload.submissionKey = resolveSubmissionKey(payload, account);
         }
@@ -411,6 +417,8 @@ async function submitAcceptedSend({ avatar, branchId, groupId, personaId, text, 
             clearConversationReplyTarget();
         }
         observeNativeConversationJob(accepted.job.id, account);
+    } catch (error) {
+        toastr.error(error.message || 'The saved connection could not be used.', 'Reply not sent');
     } finally {
         conversationState.conversationUploadActive = false;
         // Clear the busy flag even on the failure paths, then repaint so Send is
@@ -437,7 +445,7 @@ export async function submitAcceptedReply({ avatar, branchId, groupId, personaId
         getActiveConversationReplyTarget(avatar, { branchId, groupId, personaId }) || replyTargetFromTriggers(triggerMessages, branch.messages),
         branch.messages,
     );
-    const payload = {
+    let payload = {
         mode: 'reply',
         target: { avatar, groupId, personaId, branchId },
         triggers: createConversationMessageAnchors(triggerMessages),
@@ -446,10 +454,16 @@ export async function submitAcceptedReply({ avatar, branchId, groupId, personaId
         force: Boolean(force),
         timeZone: getDeviceTimeZone(),
     };
-    payload.submissionKey = submissionKey || resolveSubmissionKey(payload, account);
+    const draftSignature = JSON.stringify([account, payload]);
     conversationState.conversationUploadActive = true;
     try {
-        const accepted = await acceptConversationSubmission(payload, { account });
+        if (pendingSubmission?.account === account && pendingSubmission.draftSignature === draftSignature) {
+            payload = pendingSubmission.payload;
+        } else {
+            payload.bindingRequest = await preflightConversationBinding(payload, account);
+            payload.submissionKey = submissionKey || resolveSubmissionKey(payload, account);
+        }
+        const accepted = await acceptConversationSubmission(payload, { account, draftSignature });
         if (accepted) {
             pendingSubmission = null;
             try {
@@ -461,6 +475,8 @@ export async function submitAcceptedReply({ avatar, branchId, groupId, personaId
             scheduleInterfaceRefresh({ syncControls: false });
             observeNativeConversationJob(accepted.job.id, account);
         }
+    } catch (error) {
+        toastr.error(error.message || 'The saved connection could not be used.', 'Reply not sent');
     } finally {
         conversationState.conversationUploadActive = false;
         // Clear the busy flag even on the failure paths, then repaint so Send is
@@ -499,7 +515,7 @@ function createSubmissionKey() {
 
 /** Reuse the key of a submission whose response was lost, so a retry cannot duplicate it. */
 function resolveSubmissionKey(payload, account) {
-    const signature = JSON.stringify([payload.mode, payload.target, payload.branchCreatedAt, payload.messages, payload.triggers, payload.replyTarget, payload.force, payload.timeZone]);
+    const signature = JSON.stringify([payload.mode, payload.target, payload.branchCreatedAt, payload.messages, payload.triggers, payload.replyTarget, payload.force, payload.timeZone, payload.bindingRequest]);
     if (pendingSubmission && pendingSubmission.account === account && pendingSubmission.signature === signature) {
         return pendingSubmission.key;
     }
@@ -508,7 +524,7 @@ function resolveSubmissionKey(payload, account) {
 
 async function acceptConversationSubmission(payload, meta = {}) {
     const { account = getCurrentUserHandle() } = meta;
-    const signature = JSON.stringify([payload.mode, payload.target, payload.branchCreatedAt, payload.messages, payload.triggers, payload.replyTarget, payload.force, payload.timeZone]);
+    const signature = JSON.stringify([payload.mode, payload.target, payload.branchCreatedAt, payload.messages, payload.triggers, payload.replyTarget, payload.force, payload.timeZone, payload.bindingRequest]);
     let flushed = false;
     try {
         flushed = await flushConversationStore(account);
@@ -530,7 +546,9 @@ async function acceptConversationSubmission(payload, meta = {}) {
         // An uncertain failure may have been accepted already, so keep the exact
         // request (and its key and uploaded payload); the next identical send
         // replays rather than duplicates.
-        pendingSubmission = { key: payload.submissionKey, signature, payload, account, draftSignature: meta.draftSignature || '' };
+        const alreadyUncertain = pendingSubmission?.account === account && pendingSubmission?.key === payload.submissionKey;
+        pendingSubmission = !alreadyUncertain && error.status >= 400 && error.status < 500 ? null
+            : { key: payload.submissionKey, signature, payload, account, draftSignature: meta.draftSignature || '' };
         const detail = error?.body?.error || error?.message || 'The Conversation reply could not be sent.';
         toastr.error(detail, 'Reply not sent');
         return null;

@@ -1,14 +1,14 @@
-import { characters, generateRaw, getMaxPromptTokens } from '../../script.js';
+import { characters } from '../../script.js';
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget, isNeconyanAssistant } from '../neconyan-assistant-knowledge.js';
-import { extractProfileResponseText } from '../extensions/in-chat-agents/llm-utils.js';
-import { isAbortLikeError } from '../util/abort-error.js';
+import { getCurrentUserHandle } from '../user.js';
+import { preflightConversationBinding, requestConversationBinding } from './bindings.js';
 import {
     CONVERSATION_ERROR_DETAIL_MAX_LENGTH,
     MAX_CONVERSATION_REPLY_MAX_TOKENS,
     MIN_CONVERSATION_REPLY_MAX_TOKENS,
     SAFE_TOAST_OPTIONS,
 } from './constants.js';
-import { getConversationGroupById, getConversationGroupIdForAvatar, getConversationPersonaId, getCurrentCharAvatar, getCurrentCharName } from './context.js';
+import { getConversationGroupById, getConversationGroupIdForAvatar, getConversationPersonaId, getConversationThreadStore, getCurrentCharAvatar, getCurrentCharName } from './context.js';
 import {
     buildSelfieImagePromptTemplate,
     extractCharacterReplyCommandParts,
@@ -19,7 +19,6 @@ import { buildCharacterImagePrompt, generateConversationImage, getCharacterForAv
 import { appendConversationMessage } from './message-writer.js';
 import { stripSpeakerPrefix } from './partners.js';
 import { deliverConversationReply } from './reply-delivery.js';
-import { getConnectionProfiles } from './personas.js';
 import { buildConversationPromptMessages, buildConversationSystemPrompt } from './prompt.js';
 import { formatPromptText } from './shared-helpers.js';
 import { clamp, getConversationReplyMaxTokens, getConversationRuntimeStatusKey } from './schedule.js';
@@ -34,6 +33,7 @@ import {
     updateConversationThreadMessage,
 } from './thread-store.js';
 import { waitForReplyDelay, withTypingParticipant } from './typing.js';
+import { createConversationMessageAnchors } from './message-identity-utils.js';
 
 let activeConversationEditor = null;
 
@@ -44,73 +44,34 @@ export {
     parseCommandArgs,
 } from './generation-utils.js';
 
-// Neconyan: Conversation Mode diverges from the global connection-profile
-// switch pattern. Instead of flipping the active profile via /profile around
-// each generation, we issue a scoped request through ConnectionManagerRequestService
-// so the global selectedProfile (and the visible dropdown) never changes.
-/**
- * Neconyan: generate Conversation Mode text using the configured connection
- * profile WITHOUT switching the global selected profile. Resolves the profile
- * by name and routes through ConnectionManagerRequestService.sendRequest so no
- * global state is mutated. Falls back to generateRaw (the active profile) when
- * no profile is configured, the scoped request path is unavailable, or the
- * profile name cannot be resolved.
- * @param {Object} options - Same option shape as generateRaw (prompt, systemPrompt, responseLength, trimNames, signal, cacheScope).
- * @param {Object} settings - Conversation settings holding connection_profile (a profile NAME).
- * @returns {Promise<string>}
- */
+/** Capture the saved connection before preparation; a rejected profile never falls back. */
+export async function captureConversationTextBinding(providedScope = {}, options) {
+    const account = getCurrentUserHandle();
+    const avatar = providedScope.avatar || getCurrentCharAvatar();
+    const groupId = providedScope.groupId ?? getConversationGroupIdForAvatar(avatar);
+    const personaId = providedScope.personaId ?? getConversationPersonaId();
+    const thread = getConversationThreadStore(avatar, { create: true, groupId, personaId });
+    const branchId = providedScope.branchId || thread?.activeBranchId;
+    const scope = { target: { avatar, groupId, personaId, branchId }, branchCreatedAt: String(thread?.branches?.[branchId]?.createdAt ?? ''),
+        speakerAvatar: providedScope.speakerAvatar || avatar,
+        triggers: createConversationMessageAnchors(providedScope.messages || thread?.branches?.[branchId]?.messages || []) };
+    const { sha256 } = await import('../../lib.js');
+    scope.triggers = scope.triggers.map(({ messageId, revision }) => ({ messageId, revisionHash: sha256(revision) }));
+    return { account, scope, bindingRequest: await preflightConversationBinding({ ...scope, bindingOnly: !options, ...(options ? { options } : {}) }, account) };
+}
+
 export async function generateConversationRaw(options, settings, assistantContext = null) {
-    if (!isNeconyanAssistant(assistantContext?.character)) assistantContext = null;
-    const profileName = String(settings?.connection_profile || '').trim();
-    const ctx = window?.SillyTavern?.getContext?.();
-    const CMRS = ctx?.ConnectionManagerRequestService;
-    const prepare = async inputLimit => {
-        if (!assistantContext) return options;
-        const knowledge = await buildAssistantKnowledge({ ...assistantContext, maxTokens: getAssistantKnowledgeBudget(inputLimit) });
-        return { ...options, systemPrompt: [options.systemPrompt, knowledge.text].filter(Boolean).join('\n\n') };
-    };
-
-    if (profileName && CMRS) {
-        const profile = getConnectionProfiles().find(candidate => candidate?.name === profileName);
-        if (profile?.id) {
-            try {
-                let prepared = options;
-                if (assistantContext) {
-                    const api = CMRS.validateProfile(profile).selected;
-                    const preset = ctx.getPresetManager(api)?.getCompletionPresetByName(profile.preset);
-                    const limit = Number(preset?.openai_max_context ?? preset?.max_context);
-                    prepared = await prepare(limit - Number(options.responseLength || 0));
-                }
-                const messages = [];
-                if (prepared.systemPrompt) {
-                    messages.push({ role: 'system', content: prepared.systemPrompt });
-                }
-                if (Array.isArray(options.prompt)) {
-                    for (const message of options.prompt) {
-                        if (message && typeof message === 'object') {
-                            messages.push({ role: String(message.role || 'user'), content: message.content });
-                        }
-                    }
-                } else {
-                    messages.push({ role: 'user', content: options.prompt });
-                }
-                const result = await CMRS.sendRequest(profile.id, messages, options.responseLength, {
-                    extractData: true,
-                    includePreset: true,
-                    stream: false,
-                    signal: options.signal ?? null,
-                });
-                return typeof result === 'string' ? result : extractProfileResponseText(result);
-            } catch (error) {
-                if (isAbortLikeError(error, options.signal)) {
-                    throw error;
-                }
-                console.warn(`Conversation Mode: scoped profile "${profileName}" request failed, falling back to the active profile`, error);
-            }
-        }
+    const { signal, scope: providedScope, bindingContext, ...requestOptions } = options;
+    const { account, scope, bindingRequest } = bindingContext || await captureConversationTextBinding(providedScope, requestOptions);
+    if (isNeconyanAssistant(assistantContext?.character)) {
+        const limit = bindingRequest.contextLimits?.[scope.target.avatar];
+        const knowledge = await buildAssistantKnowledge({ ...assistantContext,
+            maxTokens: limit ? getAssistantKnowledgeBudget(limit - Number(requestOptions.responseLength || 0)) : 2048 });
+        requestOptions.systemPrompt = [requestOptions.systemPrompt, knowledge.text].filter(Boolean).join('\n\n');
     }
-
-    return generateRaw(assistantContext ? await prepare(getMaxPromptTokens(options.responseLength)) : options);
+    const result = await requestConversationBinding('binding/generate', { ...scope, bindingRequest,
+        options: requestOptions }, account, signal);
+    return result.text;
 }
 
 export async function generateConversationReply(directive, settings, { responseLength = null, speakerName = getCurrentCharName(), trimNames = true, avatar = getCurrentCharAvatar(), threadAvatar = avatar, speakerAvatar = avatar, branchId = '', groupId = getConversationGroupIdForAvatar(threadAvatar), personaId = getConversationPersonaId() } = {}) {
@@ -119,6 +80,7 @@ export async function generateConversationReply(directive, settings, { responseL
     const resolvedResponseLength = Number.isFinite(responseLength) && responseLength > 0
         ? clamp(Math.round(responseLength), MIN_CONVERSATION_REPLY_MAX_TOKENS, MAX_CONVERSATION_REPLY_MAX_TOKENS)
         : getConversationReplyMaxTokens(settings);
+    const bindingContext = await captureConversationTextBinding({ avatar: threadAvatar, speakerAvatar, branchId, groupId, personaId, messages });
     const prompt = await buildConversationPromptMessages(messages, directive, speakerName, { groupId, personaId });
 
     return generateConversationRaw({
@@ -126,7 +88,9 @@ export async function generateConversationReply(directive, settings, { responseL
         systemPrompt: buildConversationSystemPrompt(settings, speakerAvatar, { threadAvatar, branchId, groupId, personaId }),
         responseLength: resolvedResponseLength,
         trimNames,
+        bindingContext,
         cacheScope: 'conversation-mode',
+        scope: { avatar: threadAvatar, speakerAvatar, branchId, groupId, personaId },
     }, settings, assistantContext);
 }
 
@@ -485,15 +449,20 @@ export async function generateSelfieFromContext(context, settings, avatar = getC
     ].filter(Boolean).join('\n');
 
     let imagePrompt = '';
+    let bindingContext;
     try {
+        bindingContext = await captureConversationTextBinding({ avatar: threadAvatar, speakerAvatar: avatar, branchId, groupId, personaId });
         imagePrompt = await generateConversationRaw({
             prompt: metaPrompt,
             systemPrompt: 'You output only a raw image generation prompt with no preamble.',
             responseLength: 200,
             trimNames: false,
+            bindingContext,
         }, resolvedSettings);
     } catch (error) {
         console.warn('Conversation Mode: selfie prompt generation failed', error);
+        if (notify) reportConversationGenerationError('selfie', error, { level: 'warning' });
+        return false;
     }
 
     const scene = context || 'a casual selfie in the current moment';
@@ -505,7 +474,13 @@ export async function generateSelfieFromContext(context, settings, avatar = getC
 
     const imageUrl = await generateConversationImage(imagePrompt, resolvedSettings.image_gen_negative || '', { avatar, character, notify });
     if (imageUrl && (typeof validateTarget !== 'function' || validateTarget())) {
-        const caption = await generateSelfieCaption(scene, resolvedSettings, avatar, imagePrompt);
+        let caption;
+        try {
+            caption = await generateSelfieCaption(scene, resolvedSettings, avatar, imagePrompt, bindingContext);
+        } catch (error) {
+            if (notify) reportConversationGenerationError('selfie caption', error, { level: 'warning' });
+            return false;
+        }
         if (typeof validateTarget === 'function' && !validateTarget()) {
             return false;
         }
@@ -524,7 +499,7 @@ export async function generateSelfieFromContext(context, settings, avatar = getC
     return false;
 }
 
-async function generateSelfieCaption(context, settings, avatar, imagePrompt) {
+async function generateSelfieCaption(context, settings, avatar, imagePrompt, bindingContext) {
     const character = getCharacterForAvatar(avatar);
     const charName = character?.name || getCurrentCharName() || 'Character';
     const captionPrompt = [
@@ -542,6 +517,7 @@ async function generateSelfieCaption(context, settings, avatar, imagePrompt) {
             systemPrompt: 'You write only a short in-character chat caption. No speaker labels, no stage directions, no preamble.',
             responseLength: 80,
             trimNames: false,
+            bindingContext,
         }, settings || {});
         const caption = normalizeConversationOutputText(stripSpeakerPrefix(formatPromptText(rawCaption, 240), charName));
         if (caption) {
@@ -549,6 +525,7 @@ async function generateSelfieCaption(context, settings, avatar, imagePrompt) {
         }
     } catch (error) {
         console.warn('Conversation Mode: selfie caption generation failed', error);
+        throw error;
     }
 
     return 'Here, I took this for you.';

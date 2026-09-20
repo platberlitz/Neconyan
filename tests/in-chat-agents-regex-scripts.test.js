@@ -1,15 +1,7 @@
 import { describe, expect, jest, test } from '@jest/globals';
-import { readFileSync } from 'node:fs';
-import vm from 'node:vm';
+import { regexFromString } from '../public/scripts/regex-utils.js';
 
-/* Use the real host parser, not a friendlier stand-in, so parsing regressions show up here. */
-const utilsSource = readFileSync(new URL('../public/scripts/utils.js', import.meta.url), 'utf8');
-const start = utilsSource.indexOf('export function regexFromString');
-const end = utilsSource.indexOf('\n}\n', start) + 3;
-const regexFromString = vm.runInNewContext(`(${utilsSource.slice(start, end).replace('export ', '')})`);
-
-await jest.unstable_mockModule('../public/scripts/utils.js', () => ({
-    regexFromString,
+await jest.unstable_mockModule('../public/scripts/slash-commands/SlashCommandRuntimeUtils.js', () => ({
     uuidv4: jest.fn(() => 'test-uuid'),
 }));
 

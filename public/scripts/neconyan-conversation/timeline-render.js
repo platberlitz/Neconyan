@@ -30,7 +30,7 @@ import {
     getCurrentCharName,
     persistConversationStore,
 } from './context.js';
-import { commitCharacterReplyCommands, extractCharacterReplyCommands, generateConversationRaw, generateSelfieFromContext, getCharacterReplyCommandMetadata, reportConversationGenerationError } from './generation.js';
+import { captureConversationTextBinding, commitCharacterReplyCommands, extractCharacterReplyCommands, generateConversationRaw, generateSelfieFromContext, getCharacterReplyCommandMetadata, reportConversationGenerationError } from './generation.js';
 import { getConversationMessagesRevision } from './message-identity-utils.js';
 import { getCharacterForAvatar, getConversationParticipants, getEffectiveConversationStatus } from './media.js';
 import { getConversationMessageAvatar, getConversationMessageReceipt } from './pals-rail.js';
@@ -1070,6 +1070,8 @@ export async function regenerateConversationMessage(messageId) {
     scheduleInterfaceRefresh({ syncControls: false });
 
     try {
+        const bindingContext = await captureConversationTextBinding({ avatar: context.avatar, speakerAvatar, branchId: context.branchId,
+            groupId: context.groupId, personaId: context.personaId, messages: sourceMessages });
         const prompt = await buildConversationPromptMessages(
             sourceMessages.slice(0, -1),
             '[System directive: Regenerate the selected Conversation reply. Keep the same speaker, casual DM style, and current context. Output only the replacement message.]',
@@ -1089,6 +1091,8 @@ export async function regenerateConversationMessage(messageId) {
                 responseLength: getConversationReplyMaxTokens(settings),
                 trimNames: true,
                 cacheScope: 'conversation-mode',
+                scope: { avatar: context.avatar, speakerAvatar, branchId: context.branchId, groupId: context.groupId, personaId: context.personaId },
+                bindingContext,
             }, settings, assistantContext),
             context.avatar,
             { branchId: context.branchId, groupId: context.groupId, personaId: context.personaId },

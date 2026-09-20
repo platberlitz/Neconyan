@@ -64,6 +64,22 @@ test('two overlapping accounts retain private variables, metadata, state and cal
     assert.equal(MacroRegistry.getAllMacros().length, count);
 });
 
+test('captured environments select historical legacy behaviour without changing modern defaults', () => {
+    const env = createMacroEnvironment(snapshot(), capabilities, { dynamicMacros: { obj: { x: 1 }, 'a.b': 'literal' } });
+    for (const [input, output] of modern) assert.equal(env.evaluate(input), output, input);
+    for (const [input, output] of legacy) assert.equal(env.evaluate(input, { legacy: true }), output, input);
+    assert.equal(env.extra.variables.local.get('probe'), 16);
+    assert.equal(env.evaluate('{{description}}/{{model}}/{{original}}/{{original}}', { legacy: true }), 'D/test-model/original/');
+});
+
+test('legacy mobile macros use the captured capability or refuse it explicitly', () => {
+    const options = { legacy: true, strictCapabilities: true };
+    assert.throws(() => createMacroEnvironment().evaluate('{{isMobile}}', options), /unavailable browser context/);
+    assert.equal(createMacroEnvironment({}, { isMobile: () => true }).evaluate('{{isMobile}}', options), 'true');
+    assert.equal(createMacroEnvironment({}, { isMobile: () => false }).evaluate('{{isMobile}}', options), 'false');
+    assert.equal(createMacroEnvironment().evaluate('{{unknownLegacyValue}}', options), '{{unknownLegacyValue}}');
+});
+
 test('persistent sinks survive operations while read-only capture emits no writes', () => {
     const data = snapshot();
     const writes = [];

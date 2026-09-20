@@ -7,7 +7,7 @@ document; this file only records what is actually finished and what is not.
 Status values: `done` (implemented and verified), `partial` (implemented but an
 acceptance case is unproven), `pending` (not started).
 
-## Current checkpoint: named text requests
+## Current checkpoint: acknowledged active requests
 
 - `done` The named Step 7 controls pass Chromium checks at desktop 1280x900 and
   touch 393x852. The suite contains 52 cases: 51 passed in the full run and the
@@ -19,7 +19,7 @@ acceptance case is unproven), `pending` (not started).
   uploads and preliminary aside saves, initial settings ownership, queued saves,
   observer read coalescing and test opt-in/process handling. Thumbnail responses
   also have deterministic coverage for equal-size/equal-time cache collisions.
-- Latest checks: 334 unit suites, 4,333 tests passed and two skipped; 208 Node
+- Latest checks: 334 unit suites, 4,335 tests passed and two skipped; 230 Node
   tests passed; root lint, frontend budgets and whitespace checks passed.
 - `done` Resolve findings a-e: pre-migration baseline/version capture, bounded
   history retention, branch identity during batching/repair, complete member-key
@@ -34,12 +34,23 @@ acceptance case is unproven), `pending` (not started).
   the expanded 62-case suite was not rerun in full at this checkpoint.
 - `done` Capture eligible participant bindings before input acceptance, retain
   later mention selection and separate batches when their bindings differ.
-- `pending` Finish explicit active-connection bindings, preflight and manual
-  fallback removal, then native solo partner chimes, unread alerts and narration with the
+- `done` Explicit saved-active bindings use acknowledged serialised controls and
+  retained credential references. Validation precedes uploads and acceptance;
+  unsupported capabilities refuse without consuming the draft. Manual helpers
+  retain captured sources and never switch to active settings after a profile error.
+  Native summaries and schedules accept the same acknowledged bindings.
+- `done` The complete browser run passed 95 durable cases and two scoped-formatting
+  cases. Both acknowledgement cases passed after correcting an unrelated queued-save
+  fixture race; nine added durable cases passed separately. Coverage now comprises
+  104 durable and four formatting/acknowledgement cases, not one green 108-case run.
+  Checks include active Chat/Text controls at both sizes, lost acceptance followed
+  by 429, pre-upload refusal, manual source/speaker races, character-script changes
+  and stored inline images without native cryptographic hashing.
+- `pending` Native solo partner chimes, unread alerts and narration with the
   automatic-ownership handover. Roleplay generation/completion migration follows.
 - Safari, unresolved image-provider crash recovery and reload-persistent send
-  retry identity are unverified. Other Conversation generation controls remain
-  outside the verified named entry points. Deployment remains unauthorised.
+  retry identity are unverified. Manual Conversation completion writes still
+  depend on the browser. Deployment remains unauthorised.
 
 The older results below describe earlier checkpoints, not the latest totals.
 

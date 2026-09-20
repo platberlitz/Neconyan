@@ -1,4 +1,5 @@
-import { regexFromString, uuidv4 } from '../../utils.js';
+import { regexFromString } from '../../regex-utils.js';
+import { uuidv4 } from '../../slash-commands/SlashCommandRuntimeUtils.js';
 
 /**
  * @readonly

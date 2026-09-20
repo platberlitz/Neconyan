@@ -83,18 +83,14 @@ describe('conversation mode scoped connection profile', () => {
     test('exposes a scoped generateConversationRaw helper that never switches the global profile', () => {
         const helperSource = getFunctionSource(generationSource, 'generateConversationRaw');
 
-        // Resolves the configured profile by name and routes through the scoped
-        // ConnectionManagerRequestService instead of touching the global profile.
-        expect(helperSource).toContain('getConnectionProfiles');
-        expect(helperSource).toContain('ConnectionManagerRequestService');
-        expect(helperSource).toContain('CMRS.sendRequest');
-        expect(helperSource).toContain('extractData: true');
-        expect(helperSource).toContain('includePreset: true');
+        expect(helperSource).toContain('captureConversationTextBinding');
+        expect(helperSource).toContain('requestConversationBinding(\'binding/generate\'');
+        expect(helperSource).toContain('bindingRequest');
         // It must not run the `/profile` slash command or mutate global state.
         expect(helperSource).not.toContain('/profile ');
         expect(helperSource).not.toContain('applyConnectionProfileByName');
-        // Falls back to generateRaw (the active profile) when scoped path is unavailable.
-        expect(helperSource).toContain('generateRaw(assistantContext ? await prepare(getMaxPromptTokens(options.responseLength)) : options)');
+        expect(helperSource).not.toContain('generateRaw(');
+        expect(helperSource).not.toContain('catch');
     });
 
     test('replaces every generation call site with the scoped helper', () => {

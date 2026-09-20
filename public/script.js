@@ -37,6 +37,7 @@ import {
     parseTabbyLogprobs,
     initTextGenSettings,
     getTextGenServer,
+    getTextGenModel,
     getStatusTextgen,
 } from './scripts/textgen-settings.js';
 import { shouldRestoreTextGenStatusOnStartup } from './scripts/textgen-startup-status.js';
@@ -342,7 +343,8 @@ import { bindIOSFastTapSendButton, isIOSWebKitPlatform } from './scripts/mobile-
 import { formatMobileStreamingPreview, getMobileStreamingBottomPinBehavior, getStreamingUpdateInterval, isAndroidStreamingPlatform, shouldReduceStreamingDomWork, shouldUsePlainTextStreamingPreview } from './scripts/mobile-streaming.js';
 import { fetchResumable, setGenerationContext, listRecoverableGenerations, openHeldGeneration, discardGeneration } from './scripts/resumable-generation.js';
 import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse } from './scripts/generation-request-controls.js';
-import { createRawPrompt as createRawPromptPure, normalizeContentText as normalizeContentTextPure } from './scripts/generation-format.js';
+import { cleanGeneratedText, createRawPrompt as createRawPromptPure, normalizeContentText as normalizeContentTextPure, extractMessageFromData as extractMessageFromDataPure, extractJsonFromData as extractJsonFromDataPure } from './scripts/generation-format.js';
+import { generationSettingsSnapshot } from './scripts/generation-settings.js';
 import {
     CHAT_RENDER_LIFECYCLE_ROLLOUT_KEY,
     CHAT_RENDER_LIFECYCLE_ROUTE,
@@ -1018,6 +1020,8 @@ export let settings;
 let lastServerSettingsVersion = 0;
 // Neconyan: revision of non-Conversation settings, so native Conversation writes do not force reloads.
 let lastServerSettingsRevision = 0;
+let acknowledgedGenerationSettings = null;
+let pendingSettingsAcknowledgements = 0;
 let settingsSaveQueue = Promise.resolve();
 let settingsConflictReloadRequired = false;
 let settingsConflictPromptOpen = false;
@@ -6413,44 +6417,6 @@ export function extractMessageBias(message) {
     }
 }
 
-/**
- * Removes impersonated group member lines from the group member messages.
- * Doesn't do anything if group reply trimming is disabled.
- * @param {string} getMessage Group message
- * @returns Cleaned-up group message
- */
-function cleanGroupMessage(getMessage) {
-    if (power_user.disable_group_trimming) {
-        return getMessage;
-    }
-
-    const group = groups.find((x) => x.id == selected_group);
-
-    if (group && Array.isArray(group.members) && group.members) {
-        for (let member of group.members) {
-            const character = characters.find(x => x.avatar == member);
-
-            if (!character) {
-                continue;
-            }
-
-            const name = character.name;
-
-            // Skip current speaker.
-            if (name === name2) {
-                continue;
-            }
-
-            const regex = new RegExp(`(^|\n)${escapeRegex(name)}:`);
-            const nameMatch = getMessage.match(regex);
-            if (nameMatch) {
-                getMessage = getMessage.substring(0, nameMatch.index);
-            }
-        }
-    }
-    return getMessage;
-}
-
 function addPersonaDescriptionExtensionPrompt() {
     const INJECT_TAG = 'PERSONA_DESCRIPTION';
     setExtensionPrompt(INJECT_TAG, '', extension_prompt_types.IN_PROMPT, 0);
@@ -10641,47 +10607,7 @@ export function normalizeContentText(value, options) {
  * @returns {string} Extracted message
  */
 export function extractMessageFromData(data, activeApi = null, { excludeReasoning = false } = {}) {
-    const normalize = value => normalizeContentText(value, { excludeReasoning });
-    function getResult() {
-        if (typeof data === 'string') {
-            return data;
-        }
-
-        switch (activeApi ?? main_api) {
-            case 'kobold':
-                return data.results[0].text;
-            case 'koboldhorde':
-                return data.text;
-            case 'textgenerationwebui':
-                return data.choices?.[0]?.text ?? data.choices?.[0]?.message?.content ?? data.content ?? data.response ?? data[0]?.content ?? '';
-            case 'novel':
-                return data.output;
-            case 'openai':
-                return normalize(data?.content?.filter?.(p => p?.type === 'text')?.map?.(p => p.text)?.join?.('\n\n'))
-                    || normalize(data?.choices?.[0]?.message?.content)
-                    || normalize(data?.choices?.[0]?.text)
-                    || normalize(data?.text)
-                    || normalize(data?.message?.content)
-                    || normalize(data?.message?.tool_plan)
-                    // Neconyan: an empty reply must not fall back to Gemini's thinking parts.
-                    || normalize(Array.isArray(data?.responseContent?.parts)
-                        ? data.responseContent.parts.filter(part => !part?.thought)
-                        : data?.responseContent?.parts)
-                    || normalize(Array.isArray(data?.candidates?.[0]?.content?.parts)
-                        ? data.candidates[0].content.parts.filter(part => !part?.thought)
-                        : data?.candidates?.[0]?.content?.parts)
-                    || (excludeReasoning ? '' : stringifyUnknown(data?.message?.content));
-            default:
-                return '';
-        }
-    }
-
-    const result = getResult();
-    if (excludeReasoning) return normalize(result);
-    if (Array.isArray(result)) {
-        return result.map(x => typeof x?.text === 'string' ? x.text : '').filter(Boolean).join('');
-    }
-    return typeof result === 'string' ? result : stringifyUnknown(result);
+    return extractMessageFromDataPure(data, activeApi ?? main_api, { excludeReasoning });
 }
 
 /**
@@ -10694,69 +10620,9 @@ export function extractMessageFromData(data, activeApi = null, { excludeReasonin
  * @returns {string} Extracted JSON string from the response data
  */
 export function extractJsonFromData(data, { mainApi = null, chatCompletionSource = null, returnInvalidJson = false } = {}) {
-    mainApi = mainApi ?? main_api;
-    chatCompletionSource = chatCompletionSource ?? oai_settings.chat_completion_source;
-
-    const tryParse = (/** @type {string} */ value) => {
-        try {
-            return JSON.parse(value);
-        } catch (e) {
-            console.debug('Failed to parse content as JSON.', e);
-        }
-    };
-
-    let result = {};
-
-    switch (mainApi) {
-        case 'openai': {
-            const text = extractMessageFromData(data, mainApi);
-            switch (chatCompletionSource) {
-                case chat_completion_sources.CLAUDE:
-                    result = data?.content?.find(x => x.type === 'tool_use')?.input;
-                    break;
-                case chat_completion_sources.LINKAPI:
-                    // Anthropic-leg responses carry raw content blocks; other legs return plain text.
-                    result = Array.isArray(data?.content)
-                        ? data.content.find(x => x.type === 'tool_use')?.input
-                        : tryParse(text);
-                    if (!result && returnInvalidJson) {
-                        return text;
-                    }
-                    break;
-                case chat_completion_sources.PERPLEXITY:
-                    result = tryParse(removeReasoningFromString(text));
-                    if (!result && returnInvalidJson) {
-                        return text;
-                    }
-                    break;
-                case chat_completion_sources.VERTEXAI:
-                case chat_completion_sources.MAKERSUITE:
-                case chat_completion_sources.DEEPSEEK:
-                case chat_completion_sources.AI21:
-                case chat_completion_sources.GROQ:
-                case chat_completion_sources.POLLINATIONS:
-                case chat_completion_sources.AIMLAPI:
-                case chat_completion_sources.OPENAI:
-                case chat_completion_sources.OPENROUTER:
-                case chat_completion_sources.MISTRALAI:
-                case chat_completion_sources.CUSTOM:
-                case chat_completion_sources.COHERE:
-                case chat_completion_sources.XAI:
-                case chat_completion_sources.ELECTRONHUB:
-                case chat_completion_sources.CHUTES:
-                case chat_completion_sources.AZURE_OPENAI:
-                case chat_completion_sources.ZAI:
-                default:
-                    result = tryParse(text);
-                    if (!result && returnInvalidJson) {
-                        return text;
-                    }
-                    break;
-            }
-        } break;
-    }
-
-    return JSON.stringify(result ?? {});
+    return extractJsonFromDataPure(data, { mainApi: mainApi ?? main_api,
+        chatCompletionSource: chatCompletionSource ?? oai_settings.chat_completion_source,
+        returnInvalidJson, removeReasoning: removeReasoningFromString });
 }
 
 /**
@@ -10877,116 +10743,11 @@ export function cleanUpMessage({ getMessage, isImpersonate, isContinue, displayI
     // Regex uses vars, so add before formatting
     getMessage = getRegexedString(getMessage, isImpersonate ? regex_placement.USER_INPUT : regex_placement.AI_OUTPUT);
 
-    if (power_user.collapse_newlines) {
-        getMessage = collapseNewlines(getMessage);
-    }
-
-    // trailing invisible whitespace before every newlines, on a multiline string
-    // "trailing whitespace on newlines       \nevery line of the string    \n?sample text" ->
-    // "trailing whitespace on newlines\nevery line of the string\nsample text"
-    getMessage = getMessage.replace(/[^\S\r\n]+$/gm, '');
-
-    if (trimWrongNames) {
-        // If this is an impersonation, delete the entire response if it starts with "{{char}}:"
-        // If this isn't an impersonation, delete the entire response if it starts with "{{user}}:"
-        // Also delete any trailing text that starts with the wrong name.
-        // This only occurs if the corresponding "power_user.allow_nameX_display" is false.
-
-        let wrongName = isImpersonate
-            ? (!power_user.allow_name2_display ? name2 : '')  // char
-            : (!power_user.allow_name1_display ? name1 : '');  // user
-
-        if (wrongName) {
-            // If the message starts with the wrong name, delete the entire response
-            let startIndex = getMessage.indexOf(`${wrongName}:`);
-            if (startIndex === 0) {
-                getMessage = '';
-                console.debug(`Message started with the wrong name: "${wrongName}" - response was deleted.`);
-            }
-
-            // If there is trailing text starting with the wrong name, trim it off.
-            startIndex = getMessage.indexOf(`\n${wrongName}:`);
-            if (startIndex >= 0) {
-                getMessage = getMessage.substring(0, startIndex);
-            }
-        }
-    }
-
-    if (getMessage.indexOf('<|endoftext|>') != -1) {
-        getMessage = getMessage.substring(0, getMessage.indexOf('<|endoftext|>'));
-    }
-    const isInstruct = power_user.instruct.enabled && main_api !== 'openai';
-    const isNotEmpty = (str) => str && str.trim() !== '';
-    if (isInstruct && power_user.instruct.stop_sequence) {
-        if (getMessage.indexOf(power_user.instruct.stop_sequence) != -1) {
-            getMessage = getMessage.substring(0, getMessage.indexOf(power_user.instruct.stop_sequence));
-        }
-    }
-    // Hana: Only use the first sequence (should be <|model|>)
-    // of the prompt before <|user|> (as KoboldAI Lite does it).
-    if (isInstruct && isNotEmpty(power_user.instruct.input_sequence)) {
-        if (getMessage.indexOf(power_user.instruct.input_sequence) != -1) {
-            getMessage = getMessage.substring(0, getMessage.indexOf(power_user.instruct.input_sequence));
-        }
-    }
-
-    // Remove instruct sequences leaking to the output
-    if (isInstruct && power_user.instruct.sequences_as_stop_strings) {
-        const sequences = [
-            { value: power_user.instruct.input_sequence, apply: isImpersonate && isNotEmpty(power_user.instruct.input_sequence) },
-            { value: power_user.instruct.output_sequence, apply: !isImpersonate && isNotEmpty(power_user.instruct.output_sequence) },
-            { value: power_user.instruct.last_output_sequence, apply: !isImpersonate && isNotEmpty(power_user.instruct.last_output_sequence) },
-        ];
-        for (const seq of sequences.filter(s => s.apply)) {
-            seq.value.split('\n').filter(line => line.trim() !== '').forEach(line => { getMessage = getMessage.replaceAll(line, ''); });
-        }
-    }
-
-    // clean-up group message from excessive generations
-    if (selected_group) {
-        getMessage = cleanGroupMessage(getMessage);
-    }
-
-    if (!power_user.allow_name2_display) {
-        const name2Escaped = escapeRegex(name2);
-        getMessage = getMessage.replace(new RegExp(`(^|\n)${name2Escaped}:\\s*`, 'g'), '$1');
-    }
-
-    if (isImpersonate) {
-        getMessage = getMessage.trim();
-    }
-
-    if (power_user.auto_fix_generated_markdown) {
-        getMessage = fixMarkdown(getMessage, false);
-    }
-
-    if (trimNames) {
-        // If this is an impersonation, trim "{{user}}:" from the beginning
-        // If this isn't an impersonation, trim "{{char}}:" from the beginning.
-        // Only applied when the corresponding "power_user.allow_nameX_display" is false.
-        const nameToTrim2 = isImpersonate
-            ? (!power_user.allow_name1_display ? name1 : '')  // user
-            : (!power_user.allow_name2_display ? name2 : '');  // char
-
-        if (nameToTrim2 && getMessage.startsWith(nameToTrim2 + ':')) {
-            getMessage = getMessage.replace(nameToTrim2 + ':', '');
-            getMessage = getMessage.trimStart();
-        }
-    }
-
-    if (isImpersonate) {
-        getMessage = getMessage.trim();
-    }
-
-    if (!displayIncompleteSentences && power_user.trim_sentences) {
-        getMessage = trimToEndSentence(getMessage);
-    }
-
-    if (power_user.trim_spaces && !PromptReasoning.getLatestPrefix()) {
-        getMessage = getMessage.trim();
-    }
-
-    return getMessage;
+    const group = selected_group && groups.find(group => group.id == selected_group);
+    const groupNames = Array.isArray(group?.members) ? group.members.map(avatar => characters.find(character => character.avatar == avatar)?.name).filter(name => name !== undefined) : [];
+    return cleanGeneratedText(getMessage, { power: power_user, mainApi: main_api, name1, name2, groupNames,
+        isImpersonate, trimNames, trimWrongNames, displayIncompleteSentences,
+        trimSentence: trimToEndSentence, reasoningPrefix: power_user.trim_spaces ? PromptReasoning.getLatestPrefix() : '' });
 }
 
 /**
@@ -12913,6 +12674,11 @@ export async function getSettings(initLoaderHandle = null) {
         const conversationBaseline = structuredClone(settings.extension_settings?.sillybunny_conversation ?? {});
         const conversationVersion = lastServerSettingsVersion;
         lastServerSettingsRevision = normalizeSettingsRevision(settings._settingsRevision);
+        const downloadedGenerationSettings = {
+            account: data.inChatAgentAccount,
+            settingsRevision: lastServerSettingsRevision,
+            controls: generationSettingsSnapshot(settings),
+        };
         settingsConflictReloadRequired = false;
         settingsConflictPromptDismissed = false;
         if (settings.username !== undefined && settings.username !== '') {
@@ -12924,6 +12690,7 @@ export async function getSettings(initLoaderHandle = null) {
         applyNeconyanFrontendIcon();
         await setUserControls(data.enable_accounts);
         conversationSync.assertConversationAccount();
+        acknowledgedGenerationSettings = downloadedGenerationSettings;
         conversationSync.captureConversationStore(conversationBaseline, conversationVersion);
         setRequestCompressionConfig(data.request_compression);
 
@@ -13056,11 +12823,44 @@ export async function getSettings(initLoaderHandle = null) {
 //MARK: saveSettings()
 export async function saveSettings(loopCounter = 0, { returnResult = false } = {}) {
     const account = getCurrentUserHandle();
+    pendingSettingsAcknowledgements++;
     const saveTask = settingsSaveQueue.then(() => account === getCurrentUserHandle() ? saveSettingsInner(loopCounter, account) : false);
     settingsSaveQueue = saveTask.catch(() => {});
-    const saved = await saveTask;
-    // Neconyan: acknowledgement is opt-in; extensions rely on the default undefined result.
-    return returnResult ? saved : undefined;
+    try {
+        const saved = await saveTask;
+        // Neconyan: acknowledgement is opt-in; extensions rely on the default undefined result.
+        return returnResult ? saved : undefined;
+    } finally {
+        pendingSettingsAcknowledgements--;
+    }
+}
+
+/** Return proof of the saved active controls, never mutable settings or credentials. */
+export function getActiveGenerationAcknowledgement() {
+    const saved = acknowledgedGenerationSettings;
+    const current = generationSettingsSnapshot({
+        main_api, active_generation: captureActiveGenerationSelection(), max_context, oai_settings, textgenerationwebui_settings: textgen_settings,
+        power_user, proxies, selected_proxy, custom_endpoint_presets,
+        selected_custom_endpoint_preset, extension_settings,
+    });
+    if (pendingSettingsAcknowledgements || !saved || saved.account !== getCurrentUserHandle()
+        || JSON.stringify(saved.controls) !== JSON.stringify(current)) {
+        throw new Error('Save the active connection settings before generating a reply.');
+    }
+    return { account: saved.account, settingsRevision: saved.settingsRevision };
+}
+
+function captureActiveGenerationSelection() {
+    const preset = getPresetManager();
+    const regexPreset = { api: preset?.apiId ?? null, name: preset?.getSelectedPresetName() ?? null };
+    if (main_api === 'openai') return { api: main_api, source: oai_settings.chat_completion_source, model: getChatCompletionModel(oai_settings), regexPreset };
+    if (main_api === 'textgenerationwebui') return {
+        api: main_api, source: textgen_settings.type,
+        model: textgen_settings.type === 'ollama' && !textgen_settings.ollama_model ? '' : getTextGenModel(textgen_settings),
+        serverUrl: textgen_settings.api_server ?? getTextGenServer(textgen_settings.type),
+        regexPreset,
+    };
+    return { api: main_api };
 }
 
 // Neconyan: Conversation content is written through its own versioned store
@@ -13074,6 +12874,7 @@ function buildSettingsPayloadExtensionSettings() {
 }
 
 async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle()) {
+    acknowledgedGenerationSettings = null;
     if (!settingsReady) {
         console.warn('Settings not ready, scheduling another save');
         saveSettingsDebounced();
@@ -13110,6 +12911,7 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
         amount_gen: amount_gen,
         max_context: max_context,
         main_api: main_api,
+        active_generation: captureActiveGenerationSelection(),
         world_info_settings: getWorldInfoSettings(),
         textgenerationwebui_settings: textgen_settings,
         swipes: swipes,
@@ -13136,10 +12938,12 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
     };
 
     try {
+        const serializedPayload = JSON.stringify(payload);
+        const submittedGenerationSettings = generationSettingsSnapshot(JSON.parse(serializedPayload));
         const saveSettingsRequest = await compressRequest({
             method: 'POST',
             headers: { ...getRequestHeaders(), 'X-Neconyan-Account': account },
-            body: JSON.stringify(payload),
+            body: serializedPayload,
             cache: 'no-cache',
         });
         if (account !== getCurrentUserHandle()) return false;
@@ -13162,6 +12966,9 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
 
         const saveResult = await result.json().catch(() => ({}));
         if (account !== getCurrentUserHandle()) return false;
+        if (!Number.isSafeInteger(saveResult?.settingsRevision) || saveResult.settingsRevision <= payload._settingsRevision) {
+            throw new Error('Settings save returned an invalid settings revision');
+        }
         const savedSettingsVersion = normalizeSettingsVersion(saveResult?.version);
         if (savedSettingsVersion <= payload._version) {
             throw new Error('Settings save returned an invalid version token');
@@ -13169,6 +12976,7 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
 
         lastServerSettingsVersion = savedSettingsVersion;
         lastServerSettingsRevision = normalizeSettingsRevision(saveResult?.settingsRevision ?? lastServerSettingsRevision);
+        acknowledgedGenerationSettings = { account, settingsRevision: lastServerSettingsRevision, controls: submittedGenerationSettings };
         payload._version = lastServerSettingsVersion;
         payload._settingsRevision = lastServerSettingsRevision;
 

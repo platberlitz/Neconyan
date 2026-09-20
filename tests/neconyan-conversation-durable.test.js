@@ -37,6 +37,8 @@ let branchCreatedAt = 111;
 let submitResponse = { ok: true, body: { job: { id: 'job-1' }, inputDurable: true } };
 let fetchCalls = [];
 let account = 'alice';
+let preflightCalls = 0;
+const bindingRequest = { participants: { 'char.png': { profileId: 'saved', fingerprint: 'a'.repeat(64) } }, acknowledgement: null };
 
 const INPUT_ID = 'sb_conversation_input';
 
@@ -45,6 +47,7 @@ function jsonResponse(body, status = 200) {
         ok: status >= 200 && status < 300,
         status,
         text: async () => (body === null ? '' : JSON.stringify(body)),
+        json: async () => body,
     };
 }
 
@@ -65,6 +68,7 @@ function makeGlobals() {
     };
     globalThis.toastr = { warning: jest.fn(), error: jest.fn(), info: jest.fn() };
     globalThis.fetch = jest.fn(async (url, options = {}) => {
+        if (url.endsWith('/binding/preflight')) { preflightCalls++; return jsonResponse(bindingRequest); }
         fetchCalls.push({ url, options });
         sequence.push('fetch');
         return jsonResponse(submitResponse.body, submitResponse.ok ? 200 : submitResponse.status || 500);
@@ -76,6 +80,8 @@ async function loadAttachments() {
     await jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => account }));
     await jest.unstable_mockModule('../public/script.js', () => ({
         getRequestHeaders: () => ({ 'X-CSRF-Token': 'csrf' }),
+        getActiveGenerationAcknowledgement: jest.fn(),
+        saveSettings: jest.fn(),
         is_send_press: false,
     }));
     await jest.unstable_mockModule('../public/scripts/constants.js', () => ({ MEDIA_DISPLAY: { LIST: 'list' } }));
@@ -100,7 +106,10 @@ async function loadAttachments() {
     await jest.unstable_mockModule('../public/scripts/neconyan-conversation/settings-store.js', () => ({ getSettings: () => ({ enabled: true }), saveSettings: jest.fn() }));
     await jest.unstable_mockModule('../public/scripts/neconyan-conversation/shared-helpers.js', () => ({ formatPromptText: value => String(value || '') }));
     await jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js', () => ({ conversationState: { conversationUploadActive: false, conversationReplyTarget: null } }));
-    await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({ assertConversationAccount: () => {}, flushConversationStore, refreshConversationStore }));
+    await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({
+        assertConversationAccount: captured => { if (captured !== account) throw new Error('account_changed'); },
+        flushConversationStore, refreshConversationStore,
+    }));
     await jest.unstable_mockModule('../public/scripts/neconyan-conversation/thread-store.js', () => ({
         getConversationAttachmentSummary: () => '',
         getConversationFileAttachments: () => [],
@@ -127,6 +136,7 @@ describe('durable Conversation composer', () => {
         jest.resetModules();
         sequence.length = 0;
         fetchCalls = [];
+        preflightCalls = 0;
         account = 'alice';
         observeNativeConversationJob.mockClear();
         refreshConversationStore.mockClear();
@@ -150,6 +160,8 @@ describe('durable Conversation composer', () => {
         expect(payloads[0].mode).toBe('send');
         expect(payloads[0].messages).toEqual([{ mes: 'Hello there', extra: { conversation_mode_user: true } }]);
         expect(payloads[0].branchCreatedAt).toBe('111');
+        expect(payloads[0].bindingRequest).toEqual(bindingRequest);
+        expect(preflightCalls).toBe(1);
         expect(typeof payloads[0].submissionKey).toBe('string');
         // The store reaches the server before the submission does.
         expect(sequence.indexOf('flush')).toBeLessThan(sequence.indexOf('fetch'));
@@ -189,20 +201,26 @@ describe('durable Conversation composer', () => {
         const { submitConversationInput } = await loadAttachments();
         submitResponse = { ok: false, status: 500, body: { error: 'network' } };
         globalThis.fetch = jest.fn(async (url, options = {}) => {
+            if (url.endsWith('/binding/preflight')) { preflightCalls++; return jsonResponse(bindingRequest); }
             fetchCalls.push({ url, options });
             sequence.push('fetch');
             if (fetchCalls.length === 1) throw new Error('connection reset');
+            if (fetchCalls.length === 2) return jsonResponse({ error: 'rate_limited' }, 429);
             return jsonResponse({ job: { id: 'job-9' }, inputDurable: true });
         });
         input.value = 'Try again';
+        await submitConversationInput();
+        expect(input.value).toBe('Try again');
         await submitConversationInput();
         expect(input.value).toBe('Try again');
         input.value = 'Try again';
         await submitConversationInput();
 
         const payloads = sentPayloads();
-        expect(payloads).toHaveLength(2);
-        expect(payloads[0].submissionKey).toBe(payloads[1].submissionKey);
+        expect(payloads).toHaveLength(3);
+        expect(payloads[1]).toEqual(payloads[0]);
+        expect(payloads[2]).toEqual(payloads[0]);
+        expect(preflightCalls).toBe(1);
         expect(input.value).toBe('');
     });
 

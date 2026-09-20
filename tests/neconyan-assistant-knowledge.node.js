@@ -110,24 +110,19 @@ test('Mewmory uses the unchanged shared ranking implementation', () => {
     assert.deepEqual(sharedSearch(documents, ''), []);
 });
 
-test('browser Conversation sends request-local help through scoped profiles and fallback, excluding internal helpers', async () => {
+test('browser Conversation captures its binding before request-local help and never falls back', async () => {
     const source = readFileSync(new URL('public/scripts/neconyan-conversation/generation.js', root), 'utf8');
     const declaration = source.match(/export (async function generateConversationRaw\([\s\S]*?^})/m)[1];
     const requests = [];
-    const ctx = {
-        getPresetManager: () => ({ getCompletionPresetByName: () => ({ openai_max_context: 16000 }) }),
-        ConnectionManagerRequestService: {
-            validateProfile: () => ({ selected: 'openai' }),
-            sendRequest: async (id, messages) => { requests.push({ id, messages }); return 'Reply'; },
-        },
-    };
+    let captureError;
     const runtime = vm.createContext({
-        window: { SillyTavern: { getContext: () => ctx } }, console,
+        console,
         buildAssistantKnowledge, getAssistantKnowledgeBudget, isNeconyanAssistant,
-        getConnectionProfiles: () => [{ id: 'scoped', name: 'Other profile', preset: 'Other preset' }],
-        getMaxPromptTokens: () => 16000, extractProfileResponseText: value => value,
-        isAbortLikeError: error => error.name === 'AbortError',
-        generateRaw: async options => { requests.push(options); return 'Reply'; },
+        captureConversationTextBinding: async () => {
+            if (captureError) throw captureError;
+            return { account: 'alice', scope: { target: { avatar: 'char.png' } }, bindingRequest: { contextLimits: { 'char.png': 16000 } } };
+        },
+        requestConversationBinding: async (_path, request) => { requests.push(request); return { text: 'Reply' }; },
     });
     vm.runInContext(declaration, runtime);
     const options = { systemPrompt: 'Character personality', prompt: [{ role: 'user', content: 'Question' }], responseLength: 128 };
@@ -137,22 +132,22 @@ test('browser Conversation sends request-local help through scoped profiles and 
         runtime.generateConversationRaw(options, { connection_profile: 'Other profile' }, colour),
         runtime.generateConversationRaw(options, {}, voice),
     ]);
-    const scoped = requests.find(request => request.id === 'scoped');
-    const fallback = requests.find(request => request.systemPrompt);
-    assert.match(scoped.messages[0].content, /appearance.dialogue/);
-    assert.doesNotMatch(scoped.messages[0].content, /audio.tts/);
-    assert.match(fallback.systemPrompt, /audio.tts/);
-    assert.doesNotMatch(fallback.systemPrompt, /appearance.dialogue/);
+    assert.equal(requests.length, 2);
+    const colourRequest = requests.find(request => request.options.systemPrompt.includes('appearance.dialogue'));
+    const voiceRequest = requests.find(request => request.options.systemPrompt.includes('audio.tts'));
+    assert.ok(colourRequest);
+    assert.ok(voiceRequest);
+    assert.doesNotMatch(colourRequest.options.systemPrompt, /audio.tts/);
+    assert.doesNotMatch(voiceRequest.options.systemPrompt, /appearance.dialogue/);
     assert.equal(options.systemPrompt, 'Character personality');
     requests.length = 0;
     await runtime.generateConversationRaw(options, {});
     await runtime.generateConversationRaw(options, {}, { character: { name: 'Miso' }, messages: colour.messages });
-    assert.ok(requests.every(request => request === options));
-    ctx.ConnectionManagerRequestService.sendRequest = async () => { throw Object.assign(new Error('cancelled'), { name: 'AbortError' }); };
+    assert.ok(requests.every(request => request.options.systemPrompt === options.systemPrompt));
+    captureError = Object.assign(new Error('cancelled'), { name: 'AbortError' });
     await assert.rejects(runtime.generateConversationRaw(options, { connection_profile: 'Other profile' }, colour), /cancelled/);
     assert.equal(requests.length, 2);
-    ctx.ConnectionManagerRequestService.validateProfile = () => { throw new Error('Profile is no longer supported'); };
-    await runtime.generateConversationRaw(options, { connection_profile: 'Other profile' }, colour);
-    assert.match(requests.at(-1).systemPrompt, /appearance.dialogue/);
-    assert.equal(requests.length, 3);
+    captureError = new Error('Profile is no longer supported');
+    await assert.rejects(runtime.generateConversationRaw(options, { connection_profile: 'Other profile' }, colour), /no longer supported/);
+    assert.equal(requests.length, 2);
 });

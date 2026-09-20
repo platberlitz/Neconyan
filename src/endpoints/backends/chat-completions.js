@@ -203,7 +203,7 @@ function getOpenRouterPlugins(request) {
 export function shouldIncludeOpenRouterQuantizations(requestBody) {
     return Array.isArray(requestBody.quantizations)
         && requestBody.quantizations.length > 0
-        && !Object.hasOwn(requestBody, 'secret_id');
+        && (requestBody.active_connection === true || !Object.hasOwn(requestBody, 'secret_id'));
 }
 
 function hasCustomReasoningParamConfig(requestBody) {

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { createTextProviderParameters } from '../public/scripts/text-provider-parameters.js';
 import { providerTypes, providerSettings, providerDependencies, providerDigests, instructSettings, promptMessages, expectedPrompts } from './fixtures/text-generation-baseline.js';
-import { constructScopedTextPrompt, createRawPrompt, cleanScopedTextResponse } from '../public/scripts/generation-format.js';
+import { constructScopedTextPrompt, createRawPrompt, cleanScopedTextResponse, cleanGeneratedText, fixGeneratedMarkdown } from '../public/scripts/generation-format.js';
 
 for (const [index, type] of providerTypes.entries()) {
     test(`text provider ${type} preserves the recorded browser request`, () => {
@@ -47,4 +47,22 @@ test('stateful macro evaluation retains the browser call order', () => {
     assert.deepEqual(payload.stopping_strings, ['1']);
     assert.deepEqual(payload.stop, ['2']);
     assert.equal(payload.negative_prompt, '3');
+});
+
+test('raw cleanup preserves names, instruct boundaries, group trimming and markdown spacing', () => {
+    const options = { power: { instruct: { ...instructSettings, sequences_as_stop_strings: true }, collapse_newlines: true,
+        auto_fix_generated_markdown: true, trim_spaces: true }, mainApi: 'textgenerationwebui', name1: 'Sam', name2: 'Ada',
+    groupNames: ['Ada', 'Kit (guest)'], displayIncompleteSentences: true };
+    assert.equal(cleanGeneratedText(' Ada: * hello *  \n\nnext<stop>discard', options), 'Ada: *hello*\nnext');
+    assert.equal(cleanGeneratedText('Ada: * hello *  \n\nnext<stop>discard', options), '*hello*\nnext');
+    assert.equal(cleanGeneratedText('Sam: wrong speaker', options), '');
+    assert.equal(cleanGeneratedText('Answer\nSam: wrong speaker', options), 'Answer');
+    assert.equal(cleanGeneratedText('Answer\nKit (guest): another speaker', options), 'Answer');
+    assert.equal(cleanGeneratedText('Answer\nKit (guest): another speaker', { ...options, power: { ...options.power, disable_group_trimming: true } }), 'Answer\nKit (guest): another speaker');
+    assert.equal(cleanGeneratedText('Answer<|endoftext|>discard', options), 'Answer');
+    assert.equal(cleanGeneratedText('Answer<user {{name}}>discard', options), 'Answer');
+    assert.equal(cleanGeneratedText('<last>Answer', options), 'Answer');
+    assert.equal(cleanGeneratedText(' partial ', { ...options, reasoningPrefix: 'open' }), ' partial');
+    assert.equal(cleanGeneratedText('Sam: Answer\nAda: wrong', { ...options, isImpersonate: true }), 'Answer');
+    assert.equal(fixGeneratedMarkdown('A * broken * and ** bold ** then *unfinished'), 'A *broken* and **bold** then *unfinished');
 });

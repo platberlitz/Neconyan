@@ -10,13 +10,15 @@ import { handleChatCompletionsBias, handleChatCompletionsStatus } from '../endpo
 import { readJson } from '../mewmory/store.js';
 import { fail, hash } from '../mewmory/core.js';
 import { providerStep, readArtifact, writeArtifact } from '../jobs/artifacts.js';
-import { buildChatProfileRequest, captureChatProfile, resolveGenerationProfile } from './profiles.js';
+import { buildChatProfileRequest, resolveGenerationProfile } from './profiles.js';
 import { buildTextProfileRequest } from './text-request.js';
-import { cleanScopedTextResponse, normalizeContentText } from '../../public/scripts/generation-format.js';
+import { prepareActiveRegex, applyActiveRegex } from './active-regex.js';
+import { cleanGeneratedText, cleanScopedTextResponse, createRawPrompt, extractMessageFromData, extractJsonFromData, normalizeContentText, removePartialStops } from '../../public/scripts/generation-format.js';
 import { createChatGenerationParameters } from '../../public/scripts/chat-provider-parameters.js';
 import { REVERSE_PROXY_SUPPORTED_SOURCES, resolveChatReasoningEffort, resolveCustomStoppingStrings } from '../../public/scripts/chat-request-controls.js';
 import { buildChatCompletionSamplerMetadata } from '../../public/scripts/openai-model-capabilities.js';
 import { getNanoGptServiceTiers, isNanoGptPayg } from '../../public/scripts/service-tiers.js';
+import { createMacroEnvironment } from '../macros/index.js';
 
 /**
  * Run one non-streaming provider request on behalf of a job. This is the same
@@ -42,43 +44,157 @@ export async function runTextGeneration({ context, backend, payload, signal, ano
 
 export { buildGenerationRequestBody, extractGeneratedText, normalizeGenerationBackend };
 
+/** Check browser-only requirements before accepting input or uploading its files. */
+export async function validateActiveGenerationContext(material, macroEnvironment, messages = [], rawOptions = {}, { maxTokens = 1, groupNames = [], ephemeralStops = [] } = {}) {
+    if (material.kind !== 'active') return;
+    const isolated = macroEnvironment?.fork ? macroEnvironment.fork() : createMacroEnvironment(macroEnvironment || {});
+    isolated.extra.powerUser = { ...material.power, instruct: material.instruct || material.power.instruct || {},
+        context: material.context || material.power.context || {}, sysprompt: material.power.sysprompt || {} };
+    Object.assign(isolated.extra, {
+        mainApi: material.backend === 'text' ? 'textgenerationwebui' : 'openai',
+        getMaxResponseTokens: () => maxTokens,
+        getMaxContextTokens: () => material.contextLimit || material.active.openai_max_context,
+        getMaxPromptTokens: () => (material.contextLimit || material.active.openai_max_context) - maxTokens,
+    });
+    if (material.backend === 'text') {
+        await buildTextProfileRequest({}, material, structuredClone(messages), maxTokens, { macroEnvironment: isolated, rawOptions, groupNames, ephemeralStops,
+            userName: isolated.names.user, characterName: isolated.names.char, validateOnly: true, captureCleanupStops: () => {} });
+    } else {
+        const substitute = value => isolated.evaluate(value, { legacy: !material.power.experimental_macro_engine, strictCapabilities: true });
+        const prompt = createRawPrompt(structuredClone(messages), 'openai', rawOptions.instructOverride, rawOptions.quietToLoud,
+            rawOptions.systemPrompt, rawOptions.prefill, { instruct: material.power.instruct, context: material.power.context,
+                name1: isolated.names.user, name2: isolated.names.char, selectedGroup: groupNames.length > 0, substitute });
+        const settings = { ...material.active, openai_max_tokens: rawOptions.preserveReasoningBudget ? material.active.openai_max_tokens : maxTokens };
+        if (Number.isFinite(rawOptions.temperature)) settings.temp_openai = rawOptions.temperature;
+        // Exercise the shared formatter's actual stop passes without catalogue or tokeniser requests.
+        await createChatGenerationParameters(settings, material.profile.model, 'quiet', prompt, {
+            appendReasoning: value => value, userName: isolated.names.user, characterName: isolated.names.char,
+            getGroupNames: () => groupNames, getLogitBias: () => ({}),
+            getStoppingStrings: limit => resolveCustomStoppingStrings(material.power, substitute, ephemeralStops, limit),
+            getIncludeReasoning: () => Boolean(settings.show_thoughts || settings.auto_append_reasoning_tags),
+            getReasoningEffort: () => resolveChatReasoningEffort(settings, material.profile.model),
+            getVerbosity: () => settings.verbosity === 'auto' ? undefined : settings.verbosity,
+            canPerformToolCalls: () => false, registerTools: async () => {},
+            reverseProxySources: REVERSE_PROXY_SUPPORTED_SOURCES, validateReverseProxy: () => {},
+            getAssistantPrefill: () => '', getServiceTier: () => settings.nanogpt_service_tier,
+            getSamplerMetadata: () => settings.model_sampler_metadata,
+        }, { jsonSchema: rawOptions.jsonSchema, cacheScope: rawOptions.cacheScope });
+        resolveCustomStoppingStrings(material.power, substitute, ephemeralStops);
+    }
+    if (!rawOptions.jsonSchema) prepareActiveRegex(material, macroEnvironment);
+}
+
 /** Execute a bound Chat Completion profile without browser globals or credential persistence. */
 export async function runChatProfile({ context, binding, messages, maxTokens, macroEnvironment,
     ephemeralStops = [], userName = 'User', characterName = 'Character', groupNames = [],
-    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {},
+    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch,
 } = {}) {
     if (!context?.directories) fail('A generation context is required.', 400);
     signal ||= jobContext?.signal;
     signal?.throwIfAborted();
-    if (binding?.backend === 'text') {
-        const options = { macroEnvironment, ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload };
-        const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames, modelOverride, overridePayload });
+    const raw = binding?.kind === 'active';
+    if (binding?.backend === 'text' || raw) {
+        const options = { context, binding, macroEnvironment, ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions, maxTokens };
+        const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames, modelOverride, overridePayload, ...(raw ? { rawOptions } : {}) });
         if (jobContext) {
             const retained = readArtifact(context.directories, jobContext.job.id, 'provider:' + key);
             if (retained !== undefined) return retained;
         }
         const material = resolveGenerationProfile(context.directories, binding);
-        const preparedName = 'text-request:' + key;
-        let payload = jobContext && readArtifact(context.directories, jobContext.job.id, preparedName);
-        if (!payload) {
-            payload = await buildTextProfileRequest(context, material, messages, maxTokens, options);
-            if (jobContext) writeArtifact(context.directories, jobContext.job.id, preparedName, payload);
+        if (macroEnvironment) {
+            macroEnvironment.names = { ...macroEnvironment.names, user: userName, char: characterName,
+                group: macroEnvironment.names?.group ?? (groupNames.join(', ') || characterName),
+                groupNotMuted: macroEnvironment.names?.groupNotMuted ?? (groupNames.join(', ') || characterName),
+                notChar: macroEnvironment.names?.notChar ?? [...groupNames.filter(name => name !== characterName), userName].join(', ') };
+            macroEnvironment.system = { ...macroEnvironment.system, model: modelOverride || material.profile.model };
+            Object.assign(macroEnvironment.extra ??= {}, { mainApi: binding.backend === 'text' ? 'textgenerationwebui' : 'openai',
+                getMaxResponseTokens: () => maxTokens,
+                getMaxContextTokens: () => material.contextLimit || material.active.openai_max_context,
+                getMaxPromptTokens: () => (material.contextLimit || material.active.openai_max_context) - maxTokens });
         }
-        resolveGenerationProfile(context.directories, binding);
+        if (raw) await validateActiveGenerationContext(material, macroEnvironment, messages, rawOptions, { maxTokens, groupNames, ephemeralStops });
+        if (raw) {
+            const allowed = ['instructOverride', 'quietToLoud', 'systemPrompt', 'prefill', 'trimNames', 'temperature', 'jsonSchema', 'cacheScope', 'preserveReasoningBudget'];
+            if (Object.keys(rawOptions).some(key => !allowed.includes(key))) fail('This raw generation option cannot run on the server.', 409);
+            if (['proxy_password', 'custom_include_headers', 'custom_include_body'].some(key => Object.hasOwn(overridePayload, key))) {
+                fail('Save authentication overrides in the active connection before generating a reply.', 409);
+            }
+            if (rawOptions.jsonSchema && material.source === 'perplexity' && material.power.reasoning?.auto_parse) {
+                fail('Automatic reasoning parsing for structured Perplexity replies is not available on the server.', 409);
+            }
+        }
+        const preparedName = (raw ? 'active-request:' : 'text-request:') + key;
+        const prepared = jobContext && readArtifact(context.directories, jobContext.job.id, preparedName);
+        let payload = raw ? prepared?.payload : prepared;
+        let cleanupStops = prepared?.cleanupStops;
+        let regexScripts = prepared?.regexScripts;
+        if (!payload) {
+            if (raw) regexScripts = rawOptions.jsonSchema ? [] : prepareActiveRegex(material, macroEnvironment);
+            if (binding.backend === 'text') payload = await buildTextProfileRequest(context, material, messages, maxTokens, {
+                ...options, captureCleanupStops: stops => { cleanupStops = stops; },
+            });
+            else {
+                const substitute = value => {
+                    if (macroEnvironment?.evaluate) return macroEnvironment.evaluate(value, { legacy: !material.power.experimental_macro_engine, strictCapabilities: true });
+                    if (String(value).includes('{{')) fail('This connection requires the captured chat macro context.', 400);
+                    return value;
+                };
+                if (macroEnvironment?.extra) macroEnvironment.extra.powerUser = { ...structuredClone(material.power),
+                    instruct: structuredClone(material.power.instruct ?? {}), context: structuredClone(material.power.context ?? {}),
+                    sysprompt: structuredClone(material.power.sysprompt ?? {}) };
+                const prompt = createRawPrompt(structuredClone(messages), 'openai', rawOptions.instructOverride, rawOptions.quietToLoud,
+                    rawOptions.systemPrompt, rawOptions.prefill, { instruct: material.power.instruct, context: material.power.context,
+                        name1: userName, name2: characterName, selectedGroup: groupNames.length > 0, substitute });
+                payload = await prepareChatRequest({ ...options, messages: prompt }, material);
+                cleanupStops = resolveCustomStoppingStrings(material.power, substitute, ephemeralStops).filter(Boolean);
+            }
+            if (jobContext) {
+                const savedPayload = { ...payload, proxy_password: undefined, custom_include_headers: undefined, custom_include_body: undefined };
+                writeArtifact(context.directories, jobContext.job.id, preparedName, raw ? { payload: savedPayload, cleanupStops, regexScripts } : savedPayload);
+            }
+        }
+        const current = resolveGenerationProfile(context.directories, binding);
         const call = async () => {
-            const result = await runTextGeneration({ context, backend: 'text', payload, signal, fetch: fetchImpl, anonymousCustom: !material.secretId, boundProfile: true });
-            return { ...result, text: cleanScopedTextResponse(result.text, payload.stopping_strings, material.instruct.enabled ? material.instruct : undefined) };
+            beforeDispatch?.();
+            const requestPayload = raw && binding.backend === 'chat' ? { ...payload, proxy_password: current.proxy.proxy_password,
+                custom_include_headers: current.active.custom_include_headers, custom_include_body: current.active.custom_include_body } : payload;
+            const result = await runTextGeneration({ context, backend: binding.backend, payload: requestPayload, signal, fetch: fetchImpl,
+                anonymousCustom: binding.backend === 'text' ? !material.secretId : payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy, boundProfile: true });
+            if (raw && rawOptions.jsonSchema) return { ...result, text: extractJsonFromData(result.response, {
+                mainApi: 'openai', chatCompletionSource: material.source, returnInvalidJson: rawOptions.jsonSchema.returnInvalid,
+            }) };
+            const rawText = raw ? extractMessageFromData(result.response, binding.backend === 'text' ? 'textgenerationwebui' : 'openai') : result.text;
+            const text = raw ? cleanGeneratedText(applyActiveRegex(removePartialStops(rawText, cleanupStops), regexScripts), {
+                power: material.power, mainApi: binding.backend === 'text' ? 'textgenerationwebui' : 'openai',
+                name1: userName, name2: characterName, groupNames, trimNames: rawOptions.trimNames !== false,
+                trimWrongNames: rawOptions.trimNames !== false, displayIncompleteSentences: true,
+            }) : cleanScopedTextResponse(result.text, payload.stopping_strings, material.instruct.enabled ? material.instruct : undefined);
+            if (raw && !text) fail('No message generated.', 502);
+            return { ...result, text };
         };
         return jobContext ? providerStep(jobContext, key, call) : call();
     }
+    const payload = await prepareChatRequest({ context, binding, messages, maxTokens, macroEnvironment, ephemeralStops,
+        userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload });
+    resolveGenerationProfile(context.directories, binding);
+    const call = () => {
+        beforeDispatch?.();
+        return runTextGeneration({ context, backend: 'chat', payload, signal, fetch: fetchImpl,
+            anonymousCustom: payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy });
+    };
+    return jobContext ? providerStep(jobContext, hash({ binding, payload: { ...payload, proxy_password: undefined } }), call) : call();
+}
+
+async function prepareChatRequest({ context, binding, messages, maxTokens, macroEnvironment, ephemeralStops,
+    userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions = {} }, material) {
     const saved = readJson(path.join(context.directories.root, 'settings.json'), {});
-    const power = saved.power_user || {};
+    const power = material?.power || saved.power_user || {};
     if (power.custom_stopping_strings_macro && !macroEnvironment?.evaluate) fail('This profile requires the captured chat macro context.', 400);
     const request = { user: { profile: { handle: context.owner }, directories: context.directories }, headers: {} };
     const catalogs = new Map();
     const getCatalog = async (source) => {
         if (catalogs.has(source)) return catalogs.get(source);
-        const profile = saved.extension_settings?.connectionManager?.profiles?.find(item => item.id === binding.profileId);
+        const profile = material?.profile || saved.extension_settings?.connectionManager?.profiles?.find(item => item.id === binding.profileId);
         const controller = new AbortController();
         const abort = () => controller.abort(signal.reason);
         signal?.addEventListener('abort', abort, { once: true });
@@ -119,7 +235,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
             userName, characterName, getGroupNames: () => groupNames,
             getLogitBias: () => runBackendRequest({ ...request, query: { model } }, handleChatCompletionsBias,
                 settings.bias_presets[settings.bias_preset_selected], { signal }),
-            getStoppingStrings: limit => resolveCustomStoppingStrings(power, text => macroEnvironment.evaluate(text), ephemeralStops, limit),
+            getStoppingStrings: limit => resolveCustomStoppingStrings(power, text => macroEnvironment.evaluate(text, { legacy: material?.kind === 'active' && !power.experimental_macro_engine, strictCapabilities: material?.kind === 'active' }), ephemeralStops, limit),
             getIncludeReasoning: () => Boolean(settings.show_thoughts || settings.auto_append_reasoning_tags),
             getReasoningEffort: () => resolveChatReasoningEffort(settings, model, catalog),
             getVerbosity: () => settings.verbosity === 'auto' ? undefined : settings.verbosity,
@@ -133,14 +249,11 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
             getAssistantPrefill: () => '', // Quiet requests do not send assistant prefill.
             getServiceTier: () => serviceTier(settings, model, catalog),
             getSamplerMetadata: () => metadata,
-        });
+        }, { jsonSchema: rawOptions.jsonSchema, cacheScope: rawOptions.cacheScope });
     };
-    const payload = await buildChatProfileRequest(context.directories, binding, structuredClone(messages), maxTokens, generate, { modelOverride, overridePayload });
+    const payload = await buildChatProfileRequest(context.directories, binding, structuredClone(messages), maxTokens, generate, { modelOverride, overridePayload, rawOptions });
     if (payload.chat_completion_source === 'nanogpt' && ['flex', 'priority'].includes(payload.service_tier)) {
         payload.service_tier = serviceTier({ ...payload, nanogpt_service_tier: payload.service_tier }, payload.model, await getCatalog('nanogpt'));
     }
-    if (captureChatProfile(context.directories, binding.profileId).fingerprint !== binding.fingerprint) fail('The saved connection settings changed while preparing this request.', 409);
-    const call = () => runTextGeneration({ context, backend: 'chat', payload, signal, fetch: fetchImpl,
-        anonymousCustom: payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy });
-    return jobContext ? providerStep(jobContext, hash({ binding, payload: { ...payload, proxy_password: undefined } }), call) : call();
+    return payload;
 }

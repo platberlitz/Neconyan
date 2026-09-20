@@ -30,6 +30,10 @@ describe('OpenRouter quantization parameters', () => {
         })).toBe(false);
     });
 
+    test('retains active restrictions while pinning its key', () => {
+        expect(shouldIncludeOpenRouterQuantizations({ active_connection: true, secret_id: 'active-key', quantizations: ['int4'] })).toBe(true);
+    });
+
     test('omits quantizations when none are selected', () => {
         expect(shouldIncludeOpenRouterQuantizations({
             quantizations: [],

@@ -7,6 +7,10 @@ const generateConversationImage = jest.fn();
 const updateConversationThreadMessage = jest.fn();
 const runtimeStatusOverrides = new Map();
 const threadMessages = [{ id: 'user-1', role: 'user', name: 'User', mes: 'hello', extra: {} }];
+await jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => 'alice' }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/bindings.js', () => ({
+    preflightConversationBinding: jest.fn(), requestConversationBinding: jest.fn(),
+}));
 
 await jest.unstable_mockModule('../public/script.js', () => ({
     characters: [{ avatar: 'char.png', name: 'Aster' }],
@@ -20,6 +24,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.
     getConversationGroupById: () => null,
     getConversationGroupIdForAvatar: () => '',
     getConversationPersonaId: value => String(typeof value === 'undefined' ? 'persona-a.png' : value || ''),
+    getConversationThreadStore: () => ({ activeBranchId: 'main', branches: { main: { createdAt: 111 } } }),
     getCurrentCharAvatar: () => 'char.png',
     getCurrentCharName: () => 'Aster',
 }));

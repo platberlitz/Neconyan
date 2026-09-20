@@ -3,6 +3,7 @@ import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { buildCustomEndpointPresetForSave, normalizeCustomEndpointPreset } from '../public/scripts/openai-preset-utils.js';
+import { generationSettingsSnapshot } from '../public/scripts/generation-settings.js';
 
 const source = readFileSync(new URL('../public/scripts/openai.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const connectSource = source.match(/async function onConnectButtonClick\(e\) \{[\s\S]*?\n\}/)[0];
@@ -20,7 +21,7 @@ const syncSource = source.match(/export function syncCustomEndpointPresetSelecti
 const POPUP_TYPE = { CONFIRM: 'confirm' };
 const POPUP_RESULT = { AFFIRMATIVE: 1, CANCEL: 0 };
 const scriptSource = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const saverSource = ['buildSettingsPayloadExtensionSettings', 'saveSettings', 'saveSettingsInner', 'normalizeSettingsVersion', 'normalizeSettingsRevision']
+const saverSource = ['buildSettingsPayloadExtensionSettings', 'saveSettings', 'saveSettingsInner', 'captureActiveGenerationSelection', 'normalizeSettingsVersion', 'normalizeSettingsRevision']
     .map(name => scriptSource.match(new RegExp(`(?:async )?function ${name}\\([\\s\\S]*?\\n\\}`))[0]).join('\n');
 const sources = Object.fromEntries([...source.matchAll(/chat_completion_sources\.([A-Z0-9_]+)/g)].map(([, name]) => [name, name.toLowerCase()]));
 const keys = Object.fromEntries(Object.keys(sources).map(name => [name, `api_key_${name.toLowerCase()}`]));
@@ -29,7 +30,7 @@ const saveFailures = [
     ['network', context => context.fetch.mockRejectedValue(new Error('Network failure'))],
     ['compression', context => context.compressRequest.mockRejectedValue(new Error('Compression failure'))],
     ...[undefined, 0, 1, 'invalid', 1.5].map(version => [
-        `version ${version}`, context => context.fetch.mockResolvedValue({ ok: true, json: async () => ({ version }) }),
+        `version ${version}`, context => context.fetch.mockResolvedValue({ ok: true, json: async () => ({ version, settingsRevision: 2 }) }),
     ]),
     ['invalid JSON', context => context.fetch.mockResolvedValue({ ok: true, json: async () => { throw new Error('Invalid JSON'); } })],
     ['409', context => context.fetch.mockResolvedValue({ status: 409, json: async () => ({ version: 5 }) })],
@@ -55,6 +56,10 @@ function createHarness({ profile = normalizeCustomEndpointPreset({ name: 'Saved 
         extension_settings: { sillybunny_conversation: { characters: {} }, otherExtension: { enabled: true } },
         CONVERSATION_STORE_KEY: 'sillybunny_conversation',
         settingsSaveQueue: Promise.resolve(),
+        pendingSettingsAcknowledgements: 0,
+        acknowledgedGenerationSettings: null,
+        generationSettingsSnapshot,
+        getPresetManager: () => null,
         settingsReady: true,
         settingsConflictReloadRequired: false,
         settingsConflictPromptDismissed: false,
@@ -70,7 +75,7 @@ function createHarness({ profile = normalizeCustomEndpointPreset({ name: 'Saved 
         compressRequest: jest.fn(async request => request),
         fetch: jest.fn(async (_, request) => {
             persistedSettings = JSON.parse(request.body);
-            return { ok: true, json: async () => ({ version: persistedSettings._version + 1 }) };
+            return { ok: true, json: async () => ({ version: persistedSettings._version + 1, settingsRevision: persistedSettings._settingsRevision + 1 }) };
         }),
         eventSource: { emit: jest.fn(async () => {}) },
         event_types: { SETTINGS_UPDATED: 'settings_updated' },

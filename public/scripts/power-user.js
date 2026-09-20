@@ -1,6 +1,7 @@
 import { Fuse, Handlebars } from '../lib.js';
 import { accessibleTheme } from './theme-contrast.js';
 import { resolveCustomStoppingStrings } from './chat-request-controls.js';
+import { fixGeneratedMarkdown } from './generation-format.js';
 
 import {
     saveSettingsDebounced,
@@ -722,21 +723,7 @@ export function collapseNewlines(x) {
  * "^example * text* * harder problem *\n" // "^example *text* *harder problem*\n"
  */
 export function fixMarkdown(text, forDisplay) {
-    // Find pairs of formatting characters and capture the text in between them
-    const format = /([*_]{1,2})([\s\S]*?)\1/gm;
-    let matches = [];
-    let match;
-    while ((match = format.exec(text)) !== null) {
-        matches.push(match);
-    }
-
-    // Iterate through the matches and replace adjacent spaces immediately beside formatting characters
-    let newText = text;
-    for (let i = matches.length - 1; i >= 0; i--) {
-        let matchText = matches[i][0];
-        let replacementText = matchText.replace(/(\*|_)([\t \u00a0\u1680\u2000-\u200a\u202f\u205f\u3000\ufeff]+)|([\t \u00a0\u1680\u2000-\u200a\u202f\u205f\u3000\ufeff]+)(\*|_)/g, '$1$4');
-        newText = newText.slice(0, matches[i].index) + replacementText + newText.slice(matches[i].index + matchText.length);
-    }
+    let newText = fixGeneratedMarkdown(text);
 
     // Don't auto-fix asterisks if this is a message clean-up procedure.
     // It botches the continue function. Apply this to display only.

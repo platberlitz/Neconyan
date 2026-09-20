@@ -6,6 +6,66 @@ test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires a
 test.setTimeout(120000);
 
 for (const phone of [false, true]) {
+    test(`${phone ? 'phone' : 'desktop'} active settings acknowledgement matches the submitted controls`, async ({ app }, info) => {
+        const account = await app.account({ phone });
+        const page = await account.open();
+        const initial = await page.evaluate(async () => {
+            const core = await import('/script.js');
+            await core.changeMainAPI('textgenerationwebui');
+            const { textgenerationwebui_settings: textgen_settings } = await import('/scripts/textgen-settings.js');
+            textgen_settings.type = 'llamacpp';
+            textgen_settings.server_urls.llamacpp = 'http://127.0.0.1:6001';
+            textgen_settings.api_server = 'http://127.0.0.1:6002';
+            if (!await core.saveSettings(0, { returnResult: true })) throw new Error('Save failed');
+            return core.getActiveGenerationAcknowledgement();
+        });
+        const saved = JSON.parse((await account.post('/api/settings/get')).settings);
+        expect(saved.active_generation.serverUrl).toBe('http://127.0.0.1:6002');
+        expect(Object.keys(initial).sort()).toEqual(['account', 'settingsRevision']);
+        let release;
+        let releaseFollowing;
+        let reached;
+        const held = new Promise(resolve => { release = resolve; });
+        const following = new Promise(resolve => { releaseFollowing = resolve; });
+        const received = new Promise(resolve => { reached = resolve; });
+        const saves = [];
+        let requests = 0;
+        await page.route('**/api/settings/save', async route => {
+            if (requests++ > 0) await following;
+            const response = await route.fetch();
+            const saved = JSON.parse((await account.post('/api/settings/get')).settings);
+            saves.push({ response: await response.json(), model: saved.oai_settings.custom_model });
+            reached();
+            await held;
+            await route.fulfill({ response });
+        });
+        const saving = page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }));
+        await received;
+        const pending = await page.evaluate(async () => {
+            try { return (await import('/script.js')).getActiveGenerationAcknowledgement(); }
+            catch (error) { return error.message; }
+        });
+        expect(pending).toContain('Save the active connection');
+        await page.evaluate(async () => { (await import('/scripts/openai.js')).oai_settings.custom_model = 'edited while awaiting acknowledgement'; });
+        release();
+        expect(await saving).toBe(true);
+        const changed = await page.evaluate(async () => {
+            try { return (await import('/script.js')).getActiveGenerationAcknowledgement(); }
+            catch (error) { return error.message; }
+        });
+        await info.attach('acknowledgement-observations', { contentType: 'application/json', body: JSON.stringify({ initial, saves, changed,
+            current: await page.evaluate(async () => (await import('/scripts/openai.js')).oai_settings.custom_model) }) });
+        expect(changed).toContain('Save the active connection');
+        releaseFollowing();
+        const acknowledged = await page.evaluate(async () => {
+            const core = await import('/script.js');
+            if (!await core.saveSettings(0, { returnResult: true })) throw new Error('Save failed');
+            return core.getActiveGenerationAcknowledgement();
+        });
+        expect(acknowledged.settingsRevision).toBeGreaterThan(initial.settingsRevision);
+        expect(app.provider.calls).toHaveLength(0);
+    });
+
     test(`${phone ? 'phone' : 'desktop'} scoped text requests preserve instruct, macros and explicit server cache policy`, async ({ app }, info) => {
         const account = await app.account({ phone });
         const page = await account.open();

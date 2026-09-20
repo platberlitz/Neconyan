@@ -1,14 +1,17 @@
 import { createHash } from 'node:crypto';
 import { deliverConversationReply } from '../../public/scripts/neconyan-conversation/reply-delivery.js';
 import { getConversationMessageRevision } from '../../public/scripts/neconyan-conversation/message-identity-utils.js';
+import { MAX_THREAD_MESSAGES } from '../../public/scripts/neconyan-conversation/constants.js';
 import { getCharacterData, getConversationSettings, getDefaultDirective } from '../endpoints/conversation-generation.js';
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
+import { validateConversationPayload } from '../endpoints/conversation-utils.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { acceptChildJobs, acceptJob, getJob, listJobs, releaseChildJobs, releaseJob, requestCancellation, setJobResume, submissionKey as fingerprintSubmission, updateJob } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { appendConversationJobMessage, applyConversationBookkeeping, captureConversationTarget, prepareConversationTarget, commitConversationEffect, commitConversationJobCommands, commitConversationReplyNotice, readConversationTarget } from './conversation-effects.js';
 import { runChatProfile } from './service.js';
+import { getChatProfileContextLimit } from './profiles.js';
 import { createConversationImageGenerator, conversationReplyWantsImage, lastUserMessageText } from './conversation-images.js';
 import { buildConversationParticipantPlan, buildConversationParticipantSnapshot, captureConversationParticipantBindings, buildAvailabilityAutoResponderText, buildDelayedReplyNoticeText, getConversationAvailabilityDecision, getInitialAvailabilityDelayMs, getReplyDelayMsForStatus, manualActivity, resolveParticipantActivity } from './conversation-participants.js';
 import { captureConversationRoleplaySource, getConversationAsideOccurrenceKey, getConversationGroupAsideCooldownMs, getConversationGroupAsideLastSent, normalizeConversationAsideSubmission } from './conversation-roleplay-source.js';
@@ -60,6 +63,10 @@ function normalizeMessageAnchor(raw, label) {
     const messageId = typeof raw.messageId === 'string' ? raw.messageId.trim() : '';
     const revision = typeof raw.revision === 'string' ? raw.revision : '';
     if (!messageId || messageId.length > 256) fail(`The Conversation ${label} is invalid.`, 400);
+    if (raw.revisionHash !== undefined) {
+        if (!/^[a-f0-9]{64}$/.test(raw.revisionHash)) fail(`The Conversation ${label} revision is invalid.`, 400);
+        return { messageId, revisionHash: raw.revisionHash };
+    }
     if (!revision || Buffer.byteLength(revision) > MAX_ANCHOR_REVISION_BYTES) fail(`The Conversation ${label} revision is invalid.`, 400);
     return { messageId, revision };
 }
@@ -69,13 +76,13 @@ function normalizeMessageAnchor(raw, label) {
  * reply was drawn from; `replyTarget` is the message the user explicitly replied
  * to. A send has neither and only carries the branch identity it landed on.
  */
-function normalizeSubmissionAnchors(body) {
+export function normalizeSubmissionAnchors(body) {
     const branchCreatedAt = body.branchCreatedAt === undefined || body.branchCreatedAt === null ? '' : String(body.branchCreatedAt);
     if (branchCreatedAt.length > 128) fail('The Conversation branch identity is invalid.', 400);
     const replyTarget = body.replyTarget === undefined || body.replyTarget === null ? null : normalizeMessageAnchor(body.replyTarget, 'reply target');
     let triggers = [];
     if (body.triggers !== undefined) {
-        if (!Array.isArray(body.triggers) || body.triggers.length > MAX_INPUT_MESSAGES) fail('The Conversation triggers are invalid.', 400);
+        if (!Array.isArray(body.triggers) || body.triggers.length > MAX_THREAD_MESSAGES) fail('The Conversation triggers are invalid.', 400);
         triggers = body.triggers.map(entry => normalizeMessageAnchor(entry, 'trigger'));
     }
     return { branchCreatedAt, triggers, replyTarget };
@@ -83,6 +90,113 @@ function normalizeSubmissionAnchors(body) {
 
 function findAnchoredMessage(branch, messageId) {
     return (branch.messages || []).find(message => String(message?.id || '') === String(messageId));
+}
+
+export function normalizeBindingRequest(raw) {
+    if (raw === undefined) return undefined;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !raw.participants || typeof raw.participants !== 'object' || Array.isArray(raw.participants)) fail('The captured connections are invalid.', 400);
+    const entries = Object.entries(raw.participants);
+    if (!entries.length || entries.length > 128) fail('The captured connections are invalid.', 400);
+    const participants = Object.fromEntries(entries.sort(([a], [b]) => a.localeCompare(b)).map(([avatar, binding]) => {
+        if (!avatar || avatar.length > 256 || !binding || !/^[a-f0-9]{64}$/.test(binding.fingerprint)) fail('The captured connection is invalid.', 400);
+        if (binding.kind === 'active') {
+            if (!['chat', 'text'].includes(binding.backend)) fail('The captured active connection is invalid.', 400);
+            if (!/^[a-f0-9]{64}$/.test(binding.characterRegexHash)) fail('The captured character transformations are invalid.', 400);
+            return [avatar, { kind: 'active', backend: binding.backend, fingerprint: binding.fingerprint, characterRegexHash: binding.characterRegexHash }];
+        }
+        if (typeof binding.profileId !== 'string' || !binding.profileId || binding.profileId.length > 256 || (binding.backend !== undefined && binding.backend !== 'text')) fail('The captured profile is invalid.', 400);
+        return [avatar, { profileId: binding.profileId, fingerprint: binding.fingerprint, ...(binding.backend ? { backend: binding.backend } : {}) }];
+    }));
+    let acknowledgement = null;
+    if (raw.acknowledgement !== undefined && raw.acknowledgement !== null) {
+        const { account, settingsRevision } = raw.acknowledgement;
+        if (typeof account !== 'string' || !account || account.length > 256 || !Number.isSafeInteger(settingsRevision) || settingsRevision < 0) fail('The active settings acknowledgement is invalid.', 400);
+        acknowledgement = { account, settingsRevision };
+    }
+    return { participants, acknowledgement };
+}
+
+/** Validate saved selections without accepting input or starting generation. */
+export async function preflightConversationBindings(request, body = {}) {
+    if (!body.target || typeof body.target !== 'object' || Array.isArray(body.target)) fail('A Conversation target is required.', 400);
+    const target = captureConversationTarget(request, body.target);
+    const current = readConversationTarget(request, target);
+    const anchors = normalizeSubmissionAnchors(body);
+    verifyConversationAnchors(current, target, anchors);
+    const explicitSpeaker = resolveManualSpeaker(current, target, anchors, body.speakerAvatar);
+    const manualOptions = body.options ? validateManualOptions(body.options) : undefined;
+    const proposedMessages = body.messages === undefined ? [] : normalizeInputMessages(body.messages);
+    if (body.directive !== undefined && (typeof body.directive !== 'string' || body.directive.length > 20000)) fail('The Conversation directive is invalid.', 400);
+    const participants = await captureConversationParticipantBindings(request, current, target, { explicitSpeaker, acknowledgement: body.acknowledgement,
+        proposedMessages, directive: getDefaultDirective(body), manualOptions, bindingOnly: body.bindingOnly === true && Boolean(body.speakerAvatar) && !manualOptions });
+    const captured = normalizeBindingRequest({ participants, acknowledgement: body.acknowledgement });
+    return { ...captured, contextLimits: Object.fromEntries(Object.entries(participants).map(([avatar, binding]) => [avatar, getChatProfileContextLimit(request.user.directories, binding)])) };
+}
+
+function resolveManualSpeaker(current, target, anchors, speakerAvatar) {
+    let explicitSpeaker = resolveExplicitSpeaker(current, target, anchors.replyTarget);
+    if (speakerAvatar !== undefined) {
+        const speaker = speakerAvatar;
+        if (typeof speaker !== 'string' || !speaker || speaker.length > 256) fail('The selected speaker is invalid.', 400);
+        const eligible = speaker === target.avatar || (target.groupId
+            ? current.group.members.includes(speaker) && !current.group.disabled_members?.includes(speaker)
+            : current.branch.messages.some(message => message.role === 'partner' && message.extra?.partner_avatar === speaker));
+        if (!eligible || (explicitSpeaker && explicitSpeaker !== speaker)) fail('The selected speaker is not part of this Conversation.', 409);
+        explicitSpeaker = speaker;
+    }
+    return explicitSpeaker;
+}
+
+/** Manual helpers still write their result in the browser, but never choose another connection on failure. */
+function validateManualOptions(options) {
+    if (!options || typeof options !== 'object' || Array.isArray(options) || !validateConversationPayload(options).valid) fail('The generation input is invalid.', 400);
+    const { prompt, responseLength, ...other } = options;
+    if ((typeof prompt !== 'string' && !Array.isArray(prompt)) || (Array.isArray(prompt) && prompt.length > 512)
+        || !Number.isSafeInteger(responseLength) || responseLength < 1 || responseLength > 64000) fail('The generation input is invalid.', 400);
+    const texts = [JSON.stringify(other)];
+    for (const message of typeof prompt === 'string' ? [{ content: prompt }] : prompt) {
+        if (!message || typeof message !== 'object') fail('The generation message is invalid.', 400);
+        if (typeof message.content === 'string') texts.push(message.content);
+        else if (Array.isArray(message.content)) {
+            for (const part of message.content) {
+                if (part?.type === 'text' && typeof part.text === 'string') texts.push(part.text);
+                else if (part?.type !== 'image_url' || typeof part.image_url?.url !== 'string') fail('The generation content is invalid.', 400);
+            }
+        } else fail('The generation content is invalid.', 400);
+    }
+    if (texts.some(text => Buffer.byteLength(text) > MAX_INPUT_MESSAGE_BYTES) || texts.reduce((sum, text) => sum + Buffer.byteLength(text), 0) > MAX_INPUT_TOTAL_BYTES) fail('The generation text is too large.', 413);
+    return options;
+}
+
+export async function generateBoundConversationText(request, body, signal) {
+    const options = validateManualOptions(body.options);
+    const submitted = normalizeBindingRequest(body.bindingRequest);
+    if (!submitted) fail('A captured connection is required.', 400);
+    const currentBindings = await preflightConversationBindings(request, { ...body, bindingOnly: false, acknowledgement: submitted.acknowledgement });
+    if (hash(normalizeBindingRequest(currentBindings)) !== hash(submitted)) fail('The captured connection changed. Try again.', 409);
+    const { prompt, responseLength, ...rawOptions } = options;
+    const target = captureConversationTarget(request, body.target);
+    const current = readConversationTarget(request, target);
+    const avatar = body.speakerAvatar || target.avatar;
+    const binding = submitted.participants[avatar];
+    if (!binding) fail('The selected speaker has no captured connection.', 409);
+    const snapshot = await buildConversationParticipantSnapshot(request, current, target, { avatar }, { binding, directive: '', timeZone: 'UTC' });
+    const assertSource = () => {
+        const fresh = captureConversationTarget(request, body.target);
+        const latest = readConversationTarget(request, fresh);
+        verifyConversationAnchors(latest, fresh, normalizeSubmissionAnchors(body));
+        resolveManualSpeaker(latest, fresh, normalizeSubmissionAnchors(body), avatar);
+    };
+    assertSource();
+    const messages = binding.kind === 'active' ? prompt : [
+        ...(rawOptions.systemPrompt ? [{ role: 'system', content: rawOptions.systemPrompt }] : []),
+        ...(Array.isArray(prompt) ? prompt : [{ role: 'user', content: prompt }]),
+    ];
+    const result = await runChatProfile({ context: { owner: request.user.profile.handle, directories: request.user.directories },
+        binding, messages, maxTokens: responseLength, macroEnvironment: createMacroEnvironment(snapshot.macros),
+        userName: snapshot.userName, characterName: snapshot.speaker.name, groupNames: snapshot.groupNames,
+        rawOptions: binding.kind === 'active' ? rawOptions : {}, signal, beforeDispatch: assertSource });
+    return { text: result.text };
 }
 
 /** Re-check every captured identity against the fresh branch. Appends are fine; edits and deletions are not. */
@@ -93,17 +207,22 @@ function verifyConversationAnchors(current, target, anchors) {
     }
     for (const trigger of anchors.triggers || []) {
         const message = findAnchoredMessage(current.branch, trigger.messageId);
-        if (!message || getConversationMessageRevision(message) !== trigger.revision) {
+        if (!message || !matchesMessageAnchor(message, trigger)) {
             fail('A message this reply depends on changed. Try again.', 409);
         }
     }
+}
+
+function matchesMessageAnchor(message, anchor) {
+    const revision = getConversationMessageRevision(message);
+    return anchor.revisionHash ? createHash('sha256').update(revision).digest('hex') === anchor.revisionHash : revision === anchor.revision;
 }
 
 /** The speaker an explicit reply target names, or '' when the user did not target one. */
 function resolveExplicitSpeaker(current, target, replyTarget) {
     if (!replyTarget) return '';
     const message = findAnchoredMessage(current.branch, replyTarget.messageId);
-    if (!message || getConversationMessageRevision(message) !== replyTarget.revision) {
+    if (!message || !matchesMessageAnchor(message, replyTarget)) {
         fail('The message you replied to changed. Try again.', 409);
     }
     if (['user', 'system'].includes(String(message.role || ''))) fail('That message cannot be replied to.', 409);
@@ -374,6 +493,7 @@ export async function acceptConversationSubmission(request, body = {}) {
     if (!mode) fail('The Conversation submission mode is invalid.', 400);
     const messages = mode === 'send' ? normalizeInputMessages(body.messages) : [];
     const anchors = normalizeSubmissionAnchors(body);
+    const bindingRequest = normalizeBindingRequest(body.bindingRequest);
     const intent = {
         mode,
         target: { avatar: body.target.avatar, groupId: body.target.groupId || '', personaId: body.target.personaId || '', branchId: body.target.branchId },
@@ -381,6 +501,7 @@ export async function acceptConversationSubmission(request, body = {}) {
         ...(mode === 'send' ? { inputHash: hash(messages) } : {}),
     };
     const existing = findSubmission(directories, owner, body.submissionKey);
+    if (bindingRequest) intent.bindingRequest = bindingRequest;
     const intentFingerprint = fingerprintSubmission(owner, body.submissionKey, { ...intent, inputHash: undefined, messages });
     if (existing) {
         const member = existing.member;
@@ -416,7 +537,9 @@ export async function acceptConversationSubmission(request, body = {}) {
     // triggers and the explicit reply target must all still match what was seen.
     verifyConversationAnchors(current, target, anchors);
     const explicitSpeaker = resolveExplicitSpeaker(current, target, anchors.replyTarget);
-    const bindings = await captureConversationParticipantBindings(request, current, target, { explicitSpeaker });
+    const bindings = await captureConversationParticipantBindings(request, current, target, { explicitSpeaker, acknowledgement: bindingRequest?.acknowledgement,
+        proposedMessages: messages, directive: intent.directive });
+    if (bindingRequest && hash(normalizeBindingRequest({ participants: bindings, acknowledgement: bindingRequest.acknowledgement })) !== hash(bindingRequest)) fail('The saved participant connections changed. Check the connection and try again.', 409);
     if (mode === 'send') {
         const leader = findCoalesceLeader(directories, owner, target, bindings, Date.now(), intent);
         if (leader) return joinCoalesceLeader(request, leader, { messages, submissionKey: body.submissionKey, anchors, intentFingerprint });
@@ -660,8 +783,10 @@ async function runConversationParticipantJob(context, deps) {
         if (automation?.roleplaySource) {
             captureConversationRoleplaySource({ user: { directories } }, automation.roleplaySource, { characterName: speaker.name, userName });
         }
-        response = await deps.generate({ context, jobContext: context, binding, messages: snapshot.messages,
+        const separateSystem = binding.kind === 'active' && snapshot.messages[0]?.role === 'system';
+        response = await deps.generate({ context, jobContext: context, binding, messages: separateSystem ? snapshot.messages.slice(1) : snapshot.messages,
             maxTokens: settings.reply_max_tokens, userName, characterName: speaker.name,
+            groupNames: snapshot.groupNames || [], rawOptions: separateSystem ? { systemPrompt: snapshot.messages[0].content } : {},
             macroEnvironment: createMacroEnvironment(snapshot.macros) });
         writeArtifact(directories, context.job.id, 'reply', response);
     }

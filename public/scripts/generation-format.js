@@ -1,5 +1,49 @@
 import { formatInstructModeChat, formatInstructModePrompt, formatInstructModeStoryString } from './instruct-format.js';
 
+export function stringifyUnknown(value) {
+    if (typeof value === 'string') return value;
+    if (value == null) return '';
+    try { return JSON.stringify(value); } catch { return String(value); }
+}
+
+/** Provider response extraction shared by browser raw requests and saved-active jobs. */
+export function extractMessageFromData(data, activeApi, { excludeReasoning = false } = {}) {
+    const normalize = value => normalizeContentText(value, { excludeReasoning });
+    const stringify = stringifyUnknown;
+    let result = '';
+    if (typeof data === 'string') result = data;
+    else switch (activeApi) {
+        case 'kobold': result = data.results[0].text; break;
+        case 'koboldhorde': result = data.text; break;
+        case 'textgenerationwebui': result = data.choices?.[0]?.text ?? data.choices?.[0]?.message?.content ?? data.content ?? data.response ?? data[0]?.content ?? ''; break;
+        case 'novel': result = data.output; break;
+        case 'openai':
+            result = normalize(data?.content?.filter?.(part => part?.type === 'text')?.map?.(part => part.text)?.join?.('\n\n'))
+                || normalize(data?.choices?.[0]?.message?.content) || normalize(data?.choices?.[0]?.text)
+                || normalize(data?.text) || normalize(data?.message?.content) || normalize(data?.message?.tool_plan)
+                || normalize(Array.isArray(data?.responseContent?.parts) ? data.responseContent.parts.filter(part => !part?.thought) : data?.responseContent?.parts)
+                || normalize(Array.isArray(data?.candidates?.[0]?.content?.parts) ? data.candidates[0].content.parts.filter(part => !part?.thought) : data?.candidates?.[0]?.content?.parts)
+                || (excludeReasoning ? '' : stringify(data?.message?.content));
+            break;
+    }
+    if (excludeReasoning) return normalize(result);
+    if (Array.isArray(result)) return result.map(item => typeof item?.text === 'string' ? item.text : '').filter(Boolean).join('');
+    return typeof result === 'string' ? result : stringify(result);
+}
+
+export function extractJsonFromData(data, { mainApi, chatCompletionSource, returnInvalidJson = false, removeReasoning = value => value } = {}) {
+    if (mainApi !== 'openai') return '{}';
+    const text = extractMessageFromData(data, mainApi);
+    let result;
+    if (chatCompletionSource === 'claude' || (chatCompletionSource === 'linkapi' && Array.isArray(data?.content))) {
+        result = data?.content?.find(item => item.type === 'tool_use')?.input;
+    } else {
+        try { result = JSON.parse(chatCompletionSource === 'perplexity' ? removeReasoning(text) : text); } catch { /* Preserve raw invalid JSON only when requested. */ }
+    }
+    if (!result && returnInvalidJson && chatCompletionSource !== 'claude') return text;
+    return JSON.stringify(result ?? {});
+}
+
 /** Extract plain text from supported structured provider content. */
 export function normalizeContentText(value, { excludeReasoning = false } = {}) {
     if (typeof value === 'string') return value;
@@ -109,5 +153,66 @@ export function cleanScopedTextResponse(message, stoppingStrings = [], instruct)
             for (const line of sequence?.split('\n').filter(line => line.trim() !== '') ?? []) message = message.replaceAll(line, '');
         }
     }
+    return message;
+}
+
+/** Repair paired markdown spacing without changing continuation boundaries. */
+export function fixGeneratedMarkdown(text) {
+    const matches = [...text.matchAll(/([*_]{1,2})([\s\S]*?)\1/gm)];
+    for (let i = matches.length - 1; i >= 0; i--) {
+        const match = matches[i];
+        const replacement = match[0].replace(/(\*|_)([\t \u00a0\u1680\u2000-\u200a\u202f\u205f\u3000\ufeff]+)|([\t \u00a0\u1680\u2000-\u200a\u202f\u205f\u3000\ufeff]+)(\*|_)/g, '$1$4');
+        text = text.slice(0, match.index) + replacement + text.slice(match.index + match[0].length);
+    }
+    return text;
+}
+
+/** Apply raw-generation cleanup after prompt bias, partial stops and regex processing. */
+export function cleanGeneratedText(message, {
+    power = {}, mainApi, name1 = '', name2 = '', groupNames = [], isImpersonate = false,
+    trimNames = true, trimWrongNames = true, displayIncompleteSentences = false,
+    reasoningPrefix = '', trimSentence,
+} = {}) {
+    if (power.collapse_newlines) message = message.replaceAll(/\n+/g, '\n');
+    message = message.replace(/[^\S\r\n]+$/gm, '');
+    if (trimWrongNames) {
+        const wrong = isImpersonate ? (!power.allow_name2_display ? name2 : '') : (!power.allow_name1_display ? name1 : '');
+        if (wrong) {
+            if (message.startsWith(`${wrong}:`)) message = '';
+            const index = message.indexOf(`\n${wrong}:`);
+            if (index >= 0) message = message.slice(0, index);
+        }
+    }
+    if (message.includes('<|endoftext|>')) message = message.slice(0, message.indexOf('<|endoftext|>'));
+    const instruct = power.instruct || {};
+    const notEmpty = value => value && value.trim() !== '';
+    if (instruct.enabled && mainApi !== 'openai') {
+        for (const sequence of [instruct.stop_sequence, notEmpty(instruct.input_sequence) ? instruct.input_sequence : '']) {
+            if (sequence && message.includes(sequence)) message = message.slice(0, message.indexOf(sequence));
+        }
+        if (instruct.sequences_as_stop_strings) {
+            for (const sequence of isImpersonate ? [instruct.input_sequence] : [instruct.output_sequence, instruct.last_output_sequence]) {
+                if (notEmpty(sequence)) for (const line of sequence.split('\n').filter(line => line.trim() !== '')) message = message.replaceAll(line, '');
+            }
+        }
+    }
+    const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (!power.disable_group_trimming) {
+        for (const name of groupNames) {
+            if (name === name2) continue;
+            const match = message.match(new RegExp(`(^|\n)${escape(name)}:`));
+            if (match) message = message.slice(0, match.index);
+        }
+    }
+    if (!power.allow_name2_display) message = message.replace(new RegExp(`(^|\n)${escape(name2)}:\\s*`, 'g'), '$1');
+    if (isImpersonate) message = message.trim();
+    if (power.auto_fix_generated_markdown) message = fixGeneratedMarkdown(message);
+    if (trimNames) {
+        const name = isImpersonate ? (!power.allow_name1_display ? name1 : '') : (!power.allow_name2_display ? name2 : '');
+        if (name && message.startsWith(`${name}:`)) message = message.replace(`${name}:`, '').trimStart();
+    }
+    if (isImpersonate) message = message.trim();
+    if (!displayIncompleteSentences && power.trim_sentences) message = trimSentence(message);
+    if (power.trim_spaces && !reasoningPrefix) message = message.trim();
     return message;
 }

@@ -290,6 +290,7 @@ export async function updateConversationMemorySummary(avatar = getCurrentCharAva
             responseLength: MEMORY_SUMMARY_RESPONSE_TOKENS,
             trimNames: false,
             cacheScope: 'conversation-mode-memory',
+            scope: { avatar, branchId, groupId, personaId, messages },
         }, settings);
 
         if (response?.trim()) {

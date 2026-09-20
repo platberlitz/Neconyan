@@ -54,6 +54,10 @@ export function normalizeCharacterData(rawCharacter, avatar = '') {
         first_mes: data.first_mes || raw.first_mes || '',
         mes_example: data.mes_example || raw.mes_example || '',
         creator_notes: data.creator_notes || raw.creator_notes || raw.creatorcomment || '',
+        system_prompt: data.system_prompt || raw.system_prompt || '',
+        post_history_instructions: data.post_history_instructions || raw.post_history_instructions || '',
+        character_version: data.character_version || raw.character_version || '',
+        alternate_greetings: data.alternate_greetings || raw.alternate_greetings || [],
         extensions,
     };
 }

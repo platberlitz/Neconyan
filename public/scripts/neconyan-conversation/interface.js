@@ -614,6 +614,7 @@ export async function handleCharacterMessagePolish(messageId, buttonElement) {
             systemPrompt,
             responseLength: 300,
             trimNames: true,
+            scope: { avatar, branchId, groupId, personaId, messages: [msg] },
         }, settings);
 
         if (response?.trim()) {

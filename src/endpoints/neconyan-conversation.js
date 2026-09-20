@@ -65,7 +65,7 @@ import {
     extractGeneratedText,
     getSafeConversationGenerationStatus,
 } from './conversation-generation.js';
-import { acceptConversationAside, acceptConversationSubmission } from '../generation/conversation-jobs.js';
+import { acceptConversationAside, acceptConversationSubmission, preflightConversationBindings, generateBoundConversationText } from '../generation/conversation-jobs.js';
 import { acceptConversationSchedule, acceptConversationSummary } from '../generation/conversation-maintenance.js';
 
 const PREFER_REAL_IP_HEADER = getConfigValue('rateLimiting.preferRealIpHeader', false, 'boolean');
@@ -603,6 +603,34 @@ router.post('/message/append', asyncRoute(async (request, response) => {
         branch,
         messages: branch?.messages || [],
     });
+}));
+
+router.post('/binding/generate', asyncRoute(async (request, response) => {
+    if (!await consumeMessageSendLimit(response, messageSendIpLimiter, getIpAddress(request, PREFER_REAL_IP_HEADER))) return;
+    if (!await consumeMessageSendLimit(response, messageSendUserLimiter, request.user.profile.handle)) return;
+    const controller = new AbortController();
+    const abort = () => { if (!response.writableEnded) controller.abort(); };
+    response.once('close', abort);
+    try {
+        return response.send(await generateBoundConversationText(request, request.body || {}, controller.signal));
+    } catch (error) {
+        return response.status(error.status || 500).send({ error: 'bound_generation_failed', message: 'The captured connection could not complete this request. Check its saved settings and try again.' });
+    } finally {
+        response.removeListener('close', abort);
+    }
+}));
+
+router.post('/binding/preflight', asyncRoute(async (request, response) => {
+    try {
+        return response.send(await preflightConversationBindings(request, request.body || {}));
+    } catch (error) {
+        const needsAcknowledgement = error.apiError === 'active_settings_ack_required';
+        return response.status(error.status || 500).send({
+            error: needsAcknowledgement ? error.apiError : 'connection_binding_invalid',
+            message: needsAcknowledgement ? 'Save the active connection settings before generating a reply.'
+                : 'The saved connection is unavailable or has changed. Check its provider, model, presets and saved key, then try again.',
+        });
+    }
 }));
 
 router.post('/reply/submit', asyncRoute(async (request, response) => {

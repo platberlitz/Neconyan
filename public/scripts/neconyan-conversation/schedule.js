@@ -112,6 +112,7 @@ export async function generateCharacterSchedule(character, { groupId = getConver
         responseLength: SCHEDULE_GENERATION_RESPONSE_TOKENS,
         trimNames: false,
         cacheScope: 'conversation-mode-schedule',
+        scope: { avatar: character.avatar, groupId, personaId },
     }, settings);
 
     return parseScheduleResponse(response);

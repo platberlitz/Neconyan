@@ -16,6 +16,7 @@ import { getStringHash } from '../../public/scripts/macro-primitives.js';
 import { readVariableValue } from '../../public/scripts/slash-commands/SlashCommandRuntimeUtils.js';
 import { parseTimestamp } from '../../public/scripts/message-timestamp.js';
 import { moment } from './vendor.js';
+import { evaluateLegacyMacros } from './legacy-macros.js';
 
 export { MacroEngine, MacroRegistry };
 export {
@@ -49,6 +50,7 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
     } };
     const makeScope = (scope) => {
         const values = Object.assign(Object.create(null), data.variables?.[scope]);
+        data.variables[scope] = values;
         const get = name => readVariableValue(values[name]);
         const set = (name, value) => {
             if (readOnly) return '';
@@ -114,11 +116,44 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
     };
     // Each string has its own deterministic pick seed and one-shot original,
     // while variables and mutation sinks remain shared within the operation.
-    env.evaluate = content => {
+    env.fork = () => createMacroEnvironment({ ...data, names: env.names, character: env.character, system: env.system,
+        extra: { ...data.extra, powerUser: env.extra.powerUser, mainApi: env.extra.mainApi } }, capabilities, { dynamicMacros, postProcess });
+    env.evaluate = (content, { legacy = false, strictCapabilities = false } = {}) => {
+        let unavailable;
+        const extra = { ...env.extra };
+        const missing = name => () => {
+            unavailable = Object.assign(new Error(`The ${name} macro requires unavailable browser context.`), { status: 409 });
+            throw unavailable;
+        };
+        if (strictCapabilities) {
+            for (const [key, name] of Object.entries({ isMobile: 'isMobile', findExtension: 'hasExtension', getInput: 'input',
+                getFirstDisplayedMessageId: 'firstDisplayedMessageId', parseMesExamples: 'mesExamples', formatInstructModeExamples: 'mesExamples' })) {
+                if (!Object.hasOwn(capabilities, key) && !Object.hasOwn(snapshot.extra || {}, key)) extra[key] = missing(name);
+            }
+        }
         let original = data.original;
         const functions = { ...env.functions };
         if (typeof original === 'string') functions.original = () => { const value = original; original = ''; return value; };
-        return MacroEngine.evaluate(content, { ...env, content, contentHash: getStringHash(content), functions });
+        if (legacy) {
+            const fields = env.character;
+            const values = {
+                charPrompt: fields.charPrompt ?? '', charInstruction: fields.charInstruction ?? '', charJailbreak: fields.charInstruction ?? '',
+                description: fields.description ?? '', personality: fields.personality ?? '', scenario: fields.scenario ?? '', persona: fields.persona ?? '',
+                mesExamplesRaw: fields.mesExamplesRaw ?? '', charVersion: fields.version ?? '', char_version: fields.version ?? '',
+                charDepthPrompt: fields.charDepthPrompt ?? '', creatorNotes: fields.creatorNotes ?? '',
+                ...env.names, charIfNotGroup: env.names.group ?? env.names.char, model: env.system.model,
+                isMobile: () => String(Boolean(extra.isMobile?.())),
+                ...env.dynamicMacros,
+            };
+            if (functions.original) values.original = functions.original;
+            if (strictCapabilities) values.mesExamples = missing('mesExamples');
+            const result = evaluateLegacyMacros(content, values, extra, postProcess);
+            if (unavailable) throw unavailable;
+            return result;
+        }
+        const result = MacroEngine.evaluate(content, { ...env, extra, content, contentHash: getStringHash(content), functions });
+        if (unavailable) throw unavailable;
+        return result;
     };
     return env;
 }

@@ -43,7 +43,6 @@ describe('shared browser helper consolidation', () => {
             ['public/scripts/extensions/in-chat-agents/pathfinder/llm-sidecar.js', 'from \'../../../util/abort-error.js\';'],
             ['public/scripts/extensions/in-chat-agents/pathfinder/prompts/pipeline-runner.js', 'from \'../../../../util/abort-error.js\';'],
             ['public/scripts/extensions/in-chat-agents/pathfinder/sidecar-retrieval.js', 'from \'../../../util/abort-error.js\';'],
-            ['public/scripts/neconyan-conversation/generation.js', 'from \'../util/abort-error.js\';'],
             ['public/scripts/neconyan-custom-css-ai.js', 'from \'./util/abort-error.js\';'],
         ];
 

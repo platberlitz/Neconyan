@@ -68,8 +68,9 @@ export async function quickConversationSummarize({ avatar = getCurrentCharAvatar
     }
 
     const capturedBranchId = branchId || getConversationThreadStore(avatar, { create: false, groupId, personaId })?.activeBranchId || '';
-    await updateConversationMemorySummary(avatar, { branchId: capturedBranchId, force: true, groupId, notify: true, personaId });
+    const updated = await updateConversationMemorySummary(avatar, { branchId: capturedBranchId, force: true, groupId, notify: true, personaId });
     renderConversationMemoryPanel();
+    return updated;
 }
 
 export async function handleConversationSlashAction(text, { avatar = getCurrentCharAvatar(), branchId = '', settings = null, groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {
@@ -83,8 +84,8 @@ export async function handleConversationSlashAction(text, { avatar = getCurrentC
     switch (parsed.command) {
         case 'selfie': {
             const context = parsed.args || 'a casual selfie in the current DM conversation';
-            await generateSelfieFromContext(context, resolvedSettings, avatar, { branchId: capturedBranchId, groupId, personaId, force: true, notify: true });
-            return true;
+            const posted = await generateSelfieFromContext(context, resolvedSettings, avatar, { branchId: capturedBranchId, groupId, personaId, force: true, notify: true });
+            return { handled: true, clearDraft: posted === true };
         }
         case 'remind': {
             const reminder = parseConversationReminderArgs(parsed.args);
@@ -100,8 +101,7 @@ export async function handleConversationSlashAction(text, { avatar = getCurrentC
             openScheduleEditorModal(avatar);
             return true;
         case 'summarize':
-            await quickConversationSummarize({ avatar, branchId: capturedBranchId, groupId, personaId });
-            return true;
+            return { handled: true, clearDraft: await quickConversationSummarize({ avatar, branchId: capturedBranchId, groupId, personaId }) === true };
         case 'ooc':
             if (!parsed.args) {
                 globalThis.toastr?.warning?.('Use /ooc followed by a note for the OOC channel.', '', SAFE_TOAST_OPTIONS);

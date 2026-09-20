@@ -13,7 +13,8 @@ const { SETTINGS_FILE, CONVERSATION_STORE_KEY } = await import('../src/constants
 }));
 const { acceptConversationSchedule, acceptConversationSummary, registerConversationMaintenanceJobs } = await import('../src/generation/conversation-maintenance.js');
 const { commitConversationStoreEffect } = await import('../src/generation/conversation-effects.js');
-const { getJob } = await import('../src/jobs/store.js');
+const { getJob, listJobs } = await import('../src/jobs/store.js');
+const { runChatProfile } = await import('../src/generation/service.js');
 const { testExports: { runJob }, setDirectoriesResolver } = await import('../src/jobs/runner.js');
 const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
 
@@ -131,3 +132,84 @@ test('a store effect is applied once and remembered across retries', async () =>
     const saved = JSON.parse(fs.readFileSync(path.join(directories.root, SETTINGS_FILE), 'utf8'));
     assert.equal(saved.extension_settings[CONVERSATION_STORE_KEY].settings.unit_marker, 1);
 });
+
+for (const kind of ['summary', 'schedule']) {
+    test(`native ${kind} validates only its actual active text prompt before acceptance`, async t => {
+        const directories = makeDirectories();
+        t.after(() => fs.rmSync(directories.root, { recursive: true, force: true }));
+        const settings = writeSettings(directories);
+        Object.assign(settings, { _settingsRevision: 7, main_api: 'textgenerationwebui', max_context: 8192,
+            active_generation: { api: 'textgenerationwebui', source: 'llamacpp', model: '', serverUrl: 'http://127.0.0.1:6000' },
+            textgenerationwebui_settings: { type: 'llamacpp' },
+            power_user: { experimental_macro_engine: true, instruct: { enabled: true, macro: true,
+                input_sequence: '[USER]', output_sequence: '<assistant>', output_suffix: '{{isMobile}}', sequences_as_stop_strings: false } } });
+        settings.extension_settings[CONVERSATION_STORE_KEY].settings.connection_profile = '';
+        fs.writeFileSync(path.join(directories.root, SETTINGS_FILE), JSON.stringify(settings));
+        const request = { user: { profile: { handle: 'tester' }, directories } };
+        const body = { submissionKey: `actual-text-${kind}`, force: true, target: { avatar: 'nova.png', branchId: 'main' },
+            acknowledgement: { account: 'tester', settingsRevision: 7 } };
+        const accept = kind === 'summary' ? acceptConversationSummary : acceptConversationSchedule;
+        let calls = 0;
+        setDirectoriesResolver(() => directories);
+        registerConversationMaintenanceJobs({ generate: options => runChatProfile({ ...options, fetch: async (_url, init) => {
+            calls++;
+            assert.match(JSON.parse(init.body).prompt, /\[USER\]/);
+            return new Response(JSON.stringify({ choices: [{ text: kind === 'summary' ? '- A useful summary.' : JSON.stringify({
+                talkativeness: 40, inactivityThresholdMinutes: 90, days: { 0: [{ time: '08:00-12:00', activity: 'working', status: 'dnd' }] },
+            }) }] }));
+        } }) });
+        const accepted = await accept(request, body);
+        await runJob(getJob(directories, accepted.job.id));
+        assert.equal(getJob(directories, accepted.job.id).state, 'completed');
+        assert.equal(calls, 1);
+        const changed = JSON.parse(fs.readFileSync(path.join(directories.root, SETTINGS_FILE), 'utf8'));
+        changed.power_user.instruct.input_sequence = '{{isMobile}}';
+        fs.writeFileSync(path.join(directories.root, SETTINGS_FILE), JSON.stringify(changed));
+        const before = listJobs(directories, { owner: 'tester', includeDismissed: true }).length;
+        await assert.rejects(accept(request, { ...body, submissionKey: `invalid-text-${kind}` }), /capability|available/i);
+        assert.equal(listJobs(directories, { owner: 'tester', includeDismissed: true }).length, before);
+        assert.equal(calls, 1);
+    });
+
+    test(`native ${kind} captures acknowledged active settings and retains exact replay identity`, async t => {
+        const directories = makeDirectories();
+        t.after(() => fs.rmSync(directories.root, { recursive: true, force: true }));
+        const settings = writeSettings(directories);
+        Object.assign(settings, { _settingsRevision: 7, name1: 'Captured user', main_api: 'openai',
+            active_generation: { api: 'openai', source: 'custom', model: 'active-model' },
+            oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'active-model' } });
+        settings.extension_settings[CONVERSATION_STORE_KEY].settings.connection_profile = '';
+        fs.writeFileSync(path.join(directories.root, SETTINGS_FILE), JSON.stringify(settings));
+        const request = { user: { profile: { handle: 'tester' }, directories } };
+        const body = { submissionKey: `active-${kind}`, force: true, target: { avatar: 'nova.png', branchId: 'main' },
+            acknowledgement: { account: 'tester', settingsRevision: 7 } };
+        const accept = kind === 'summary' ? acceptConversationSummary : acceptConversationSchedule;
+        await assert.rejects(accept(request, { ...body, acknowledgement: undefined }), error => error.apiError === 'active_settings_ack_required');
+        let calls = 0;
+        setDirectoriesResolver(() => directories);
+        registerConversationMaintenanceJobs({ generate: async options => {
+            calls++;
+            assert.equal(options.binding.kind, 'active');
+            assert.equal(options.userName, 'Captured user');
+            assert.ok(options.rawOptions.systemPrompt);
+            assert.equal(options.messages.some(message => message.role === 'system'), false);
+            assert.equal(options.macroEnvironment.evaluate('{{user}}'), 'Captured user');
+            assert.equal(options.macroEnvironment.extra.chat[0].is_user, true);
+            return { text: kind === 'summary' ? '- A captured summary.' : JSON.stringify({ talkativeness: 40,
+                inactivityThresholdMinutes: 90, days: { 0: [{ time: '08:00-12:00', activity: 'working', status: 'dnd' }] } }) };
+        } });
+        const accepted = await accept(request, body);
+        await runJob(getJob(directories, accepted.job.id));
+        assert.equal(getJob(directories, accepted.job.id).state, 'completed');
+        const changed = JSON.parse(fs.readFileSync(path.join(directories.root, SETTINGS_FILE), 'utf8'));
+        changed.main_api = 'unsupported';
+        fs.writeFileSync(path.join(directories.root, SETTINGS_FILE), JSON.stringify(changed));
+        assert.equal((await accept(request, body)).job.id, accepted.job.id);
+        await assert.rejects(accept(request, { ...body, acknowledgement: { ...body.acknowledgement, settingsRevision: 8 } }), /submission key/i);
+        for (const anchors of [{ branchCreatedAt: 'replacement' }, { triggers: [{ messageId: 'source', revision: 'changed' }] },
+            { replyTarget: { messageId: 'target', revision: 'changed' } }]) {
+            await assert.rejects(accept(request, { ...body, ...anchors }), /submission key/i);
+        }
+        assert.equal(calls, 1);
+    });
+}

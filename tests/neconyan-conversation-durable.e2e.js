@@ -1,4 +1,4 @@
-/* global document, window, navigator, innerWidth, innerHeight, MutationObserver, localStorage */
+/* global document, window, navigator, innerWidth, innerHeight, MutationObserver, localStorage, globalThis */
 /* eslint-disable playwright/no-conditional-in-test, playwright/no-conditional-expect -- Each parameterised case has explicit boundary-specific assertions. */
 import { expect } from '@playwright/test';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -10,6 +10,258 @@ import { test, MODEL, send, noLateEffects } from './neconyan-conversation-durabl
 test.describe.configure({ mode: 'default' });
 test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires an explicitly opted-in disposable server.');
 test.setTimeout(180000);
+
+for (const textProfile of [false, true]) {
+    test(`active ${textProfile ? 'text' : 'chat'} cleanup stop validation rejects before uploads and acceptance`, async ({ app }) => {
+        const account = await app.account({ activeConnection: true, textProfile, configureSettings(saved) {
+            Object.assign(saved.power_user, { experimental_macro_engine: true, custom_stopping_strings_macro: true,
+                custom_stopping_strings: JSON.stringify([textProfile
+                    ? '{{if .third}}{{input}}{{else}}{{if .second}}{{setvar::third::true}}{{else}}{{if .first}}{{setvar::second::true}}{{else}}{{setvar::first::true}}{{/if}}{{/if}}END{{/if}}'
+                    : '{{if .seen}}{{input}}{{else}}{{setvar::seen::true}}END{{/if}}']) });
+        } });
+        const page = await account.open();
+        const requests = [];
+        page.on('request', request => { if (/\/upload|\/reply\/submit/.test(request.url())) requests.push(request.url()); });
+        await page.locator('#sb_conversation_file_input').setInputFiles({ name: 'keep.txt', mimeType: 'text/plain', buffer: Buffer.from('Keep this file') });
+        await page.locator('#sb_conversation_input').fill('Keep this draft.');
+        const response = page.waitForResponse(value => value.url().endsWith('/binding/preflight') && value.status() === 409
+            && value.request().postDataJSON().acknowledgement);
+        await page.locator('#sb_conversation_send').click();
+        await response;
+        await expect(page.locator('#sb_conversation_input')).toHaveValue('Keep this draft.');
+        expect(await page.locator('#sb_conversation_file_input').evaluate(input => input.files.length)).toBe(1);
+        expect(requests).toEqual([]);
+        expect((await account.branch()).messages).toHaveLength(1);
+        expect(app.provider.calls).toHaveLength(0);
+    });
+}
+
+test('real Regenerate validates its replacement prompt rather than the unused existing assistant reply', async ({ app }) => {
+    const account = await app.account({ activeConnection: true, textProfile: true, configureSettings(saved) {
+        Object.assign(saved.power_user, { experimental_macro_engine: true });
+        Object.assign(saved.power_user.instruct, { macro: true, output_suffix: '{{isMobile}}', sequences_as_stop_strings: false });
+    } });
+    await account.changeStore(store => store.characters[account.threadKey].branches.main.messages.push({
+        id: 'replace-first', role: 'character', name: 'Durable Nova', mes: 'The first reply.', timestamp: 1700000000001,
+    }));
+    const page = await account.open();
+    app.provider.mode.reply = { choices: [{ text: 'Valid replacement.' }] };
+    const replacement = page.waitForResponse(value => value.url().endsWith('/binding/generate'));
+    await page.locator('.sb-conversation-message[data-message-id="replace-first"] .sb-conversation-more-actions').click();
+    await page.locator('[data-sb-conversation-action="regenerate-message"][data-message-id="replace-first"]').click();
+    expect((await replacement).status()).toBe(200);
+    await expect.poll(async () => (await account.branch()).messages.find(message => message.id === 'replace-first').mes).toBe('Valid replacement.');
+    await page.locator('#sb_conversation_input').fill('A new reply must validate the assistant history.');
+    const rejected = page.waitForResponse(value => value.url().endsWith('/binding/preflight') && value.status() === 409
+        && value.request().postDataJSON().acknowledgement);
+    await page.locator('#sb_conversation_send').click();
+    await rejected;
+    await expect(page.locator('#sb_conversation_input')).toHaveValue('A new reply must validate the assistant history.');
+    expect(app.provider.calls).toHaveLength(1);
+});
+
+test('manual active preflight resolves the requested token limit', async ({ app }) => {
+    const account = await app.account({ activeConnection: true, textProfile: true, configureSettings(saved) {
+        saved.power_user.experimental_macro_engine = true;
+        saved.textgenerationwebui_settings.send_banned_tokens = true;
+        saved.textgenerationwebui_settings.banned_tokens = '[{{maxResponseTokens}}]';
+    } });
+    const page = await account.open();
+    app.provider.mode.reply = { choices: [{ text: 'Valid token limit.' }] };
+    const text = await page.evaluate(async avatar => (await import('/scripts/neconyan-conversation/generation.js')).generateConversationRaw({
+        prompt: 'Use the captured limit.', responseLength: 73, scope: { avatar },
+    }, {}), account.avatar);
+    expect(text).toBe('Valid token limit.');
+    expect(app.provider.calls).toHaveLength(1);
+});
+
+for (const afterAcceptance of [false, true]) {
+    test(`permitted character transformations cannot change ${afterAcceptance ? 'after acceptance' : 'after preflight'}`, async ({ app }) => {
+        const account = await app.account({ activeConnection: true });
+        const saved = JSON.parse((await account.post('/api/settings/get')).settings);
+        saved.extension_settings.character_allowed_regex = [account.avatar];
+        await account.post('/api/settings/save', saved);
+        const edit = async replacement => {
+            const response = await account.context.request.post('/api/characters/edit-attribute', { headers: account.headers, data: {
+                avatar_url: account.avatar, ch_name: 'Durable Nova', field: 'extensions',
+                value: { regex_scripts: [{ findRegex: 'first', replaceString: replacement, placement: [2] }] },
+            } });
+            expect(response.ok()).toBe(true);
+        };
+        await edit('original');
+        const page = await account.open();
+        let payload;
+        await page.route('**/api/neconyan-conversation/reply/submit', async route => {
+            payload = route.request().postDataJSON();
+            if (!afterAcceptance) await edit('replacement');
+            await route.continue();
+        });
+        const responsePromise = page.waitForResponse(response => response.url().endsWith('/reply/submit'));
+        await page.locator('#sb_conversation_input').fill('Keep the accepted character settings.');
+        await page.locator('#sb_conversation_send').click();
+        const response = await responsePromise;
+        if (afterAcceptance) {
+            expect(response.status()).toBe(202);
+            const accepted = await response.json();
+            await edit('replacement');
+            const replay = await account.post('/api/neconyan-conversation/reply/submit', payload);
+            expect(replay.job.id).toBe(accepted.job.id);
+            await page.close();
+            await account.settled(accepted.job.id, 'failed');
+            expect((await account.branch()).messages.filter(message => message.role === 'user')).toHaveLength(2);
+        } else {
+            expect(response.status()).toBe(409);
+            await expect(page.locator('#sb_conversation_input')).toHaveValue('Keep the accepted character settings.');
+            expect((await account.branch()).messages).toHaveLength(1);
+        }
+        expect(app.provider.calls).toHaveLength(0);
+    });
+}
+
+for (const change of ['profile', 'branch', 'edit', 'delete']) {
+    test(`manual regeneration rejects a ${change} change during image preparation`, async ({ app }) => {
+        const account = await app.account();
+        const imageUrl = '/img/neconyan/sleeping-tiger-right.webp?manual-preparation';
+        await account.changeStore(store => {
+            const messages = store.characters[account.threadKey].branches.main.messages;
+            messages[0].extra = { image_url: imageUrl, conversation_mode_image: true };
+            messages.push({ id: 'manual-reply', role: 'character', name: 'Durable Nova', mes: 'Keep this original reply.', timestamp: 1700000000001 });
+        });
+        const page = await account.open();
+        let release;
+        const held = new Promise(resolve => { release = resolve; });
+        let reached;
+        const preparing = new Promise(resolve => { reached = resolve; });
+        await page.route('**/*manual-preparation', async route => {
+            if (route.request().resourceType() === 'fetch') { reached(); await held; }
+            await route.continue();
+        });
+        const row = page.locator('.sb-conversation-message[data-message-id="manual-reply"]');
+        await row.locator('.sb-conversation-more-actions').click();
+        await page.locator('[data-sb-conversation-action="regenerate-message"][data-message-id="manual-reply"]').click();
+        await preparing;
+        if (change === 'profile') {
+            const saved = JSON.parse((await account.post('/api/settings/get')).settings);
+            saved.extension_settings.connectionManager.profiles[0].model = 'changed-during-preparation';
+            await account.post('/api/settings/save', saved);
+        } else await account.changeStore(store => {
+            const branch = store.characters[account.threadKey].branches.main;
+            if (change === 'branch') branch.createdAt = Number(branch.createdAt) + 1;
+            if (change === 'edit') branch.messages[0].mes = 'Edited source.';
+            if (change === 'delete') branch.messages.shift();
+        });
+        const rejected = page.waitForResponse(response => response.url().endsWith('/binding/generate'));
+        release();
+        expect((await rejected).status()).toBe(409);
+        expect((await account.branch()).messages.find(message => message.id === 'manual-reply').mes).toBe('Keep this original reply.');
+        expect(app.provider.calls).toHaveLength(0);
+        await page.close();
+    });
+}
+
+for (const changeImage of [false, true]) {
+    test(`manual regeneration ${changeImage ? 'rejects a changed' : 'accepts a saved'} inline image with compact source anchors`, async ({ app }) => {
+        const account = await app.account();
+        const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
+        const image = 'data:image/png;base64,' + Buffer.concat([png, Buffer.alloc(3 * 1024 * 1024)]).toString('base64');
+        await account.changeStore(store => {
+            const messages = store.characters[account.threadKey].branches.main.messages;
+            messages[0].extra = { image_url: image, conversation_mode_image: true };
+            messages.push({ id: 'inline-reply', role: 'character', name: 'Durable Nova', mes: 'Keep the inline reply.', timestamp: 1700000000001 });
+        });
+        const page = await account.open();
+        await page.evaluate(() => Object.defineProperty(globalThis.crypto, 'subtle', { value: undefined, configurable: true }));
+        app.provider.mode.reply = { choices: [{ message: { content: 'Saved inline image accepted.' } }] };
+        await page.route('**/api/neconyan-conversation/binding/generate', async route => {
+            const body = route.request().postDataJSON();
+            expect(body.triggers.every(anchor => /^[a-f0-9]{64}$/.test(anchor.revisionHash) && !anchor.revision)).toBe(true);
+            expect(JSON.stringify(body.triggers).length).toBeLessThan(512);
+            if (changeImage) await account.changeStore(store => {
+                store.characters[account.threadKey].branches.main.messages[0].extra.image_url = 'data:image/png;base64,' + png.toString('base64');
+            });
+            await route.continue();
+        });
+        const response = page.waitForResponse(value => value.url().endsWith('/binding/generate'));
+        await page.locator('.sb-conversation-message[data-message-id="inline-reply"] .sb-conversation-more-actions').click();
+        await page.locator('[data-sb-conversation-action="regenerate-message"][data-message-id="inline-reply"]').click();
+        expect((await response).status()).toBe(changeImage ? 409 : 200);
+        await expect.poll(async () => (await account.branch()).messages.find(message => message.id === 'inline-reply').mes)
+            .toBe(changeImage ? 'Keep the inline reply.' : 'Saved inline image accepted.');
+        expect(app.provider.calls).toHaveLength(changeImage ? 0 : 1);
+        await page.close();
+    });
+}
+
+test('bound manual generation accepts bounded image data and rejects oversized text before dispatch', async ({ app }) => {
+    const account = await app.account();
+    const page = await account.open();
+    app.provider.mode.reply = { choices: [{ message: { content: 'Large image accepted.' } }] };
+    const result = await page.evaluate(async avatar => {
+        const generation = await import('/scripts/neconyan-conversation/generation.js');
+        const bindingContext = await generation.captureConversationTextBinding({ avatar });
+        const image = 'data:image/png;base64,' + 'A'.repeat(4 * 1024 * 1024);
+        const text = await generation.generateConversationRaw({ bindingContext, responseLength: 73,
+            prompt: [{ role: 'user', content: [{ type: 'text', text: 'Inspect the supplied image.' }, { type: 'image_url', image_url: { url: image } }] }] }, {});
+        let oversized;
+        try { await generation.generateConversationRaw({ bindingContext, responseLength: 73, prompt: 'x'.repeat(256 * 1024 + 1) }, {}); }
+        catch (error) { oversized = error.status; }
+        return { text, oversized };
+    }, account.avatar);
+    expect(result).toEqual({ text: 'Large image accepted.', oversized: 413 });
+    expect(app.provider.calls).toHaveLength(1);
+    await page.close();
+});
+
+for (const change of ['remove', 'mute']) {
+    test(`manual generation refuses to ${change} its selected speaker during server preparation`, async ({ app }) => {
+        const account = await app.account({ textProfile: true, configureSettings(saved) {
+            Object.assign(saved.textgenerationwebui_settings, { banned_tokens: 'blocked', send_banned_tokens: true });
+            saved.power_user.tokenizer = 'api_textgenerationwebui';
+        } });
+        const created = await account.context.request.post('/api/characters/create', { headers: account.headers,
+            data: { ch_name: 'Durable Kit', description: 'A second group member.', first_mes: 'Hello.' } });
+        expect(created.ok()).toBe(true);
+        const partner = await created.text();
+        const remaining = await account.context.request.post('/api/characters/create', { headers: account.headers,
+            data: { ch_name: 'Durable Remaining', description: 'Keeps the group valid after removing a member.', first_mes: 'Hello.' } });
+        expect(remaining.ok()).toBe(true);
+        const remainingAvatar = await remaining.text();
+        const current = await account.post('/api/neconyan-conversation/store/get');
+        const { group } = await account.post('/api/neconyan-conversation/group/create', { version: current.version,
+            personaId: account.personaId, members: [account.avatar, partner, remainingAvatar], name: 'Preparation group' });
+        const page = await account.open();
+        await page.evaluate(async ({ avatar, partner, groupId }) => {
+            const context = await import('/scripts/neconyan-conversation/context.js');
+            for (const member of [avatar, partner]) Object.assign(context.getConversationThreadStore(member, { groupId, create: true }).settings,
+                { enabled: true, availability: 'online', connection_profile: 'durable' });
+            context.getConversationThreadStore(avatar, { groupId }).branches.main.messages.push({
+                id: 'server-preparation-reply', role: 'character', mes: 'Preserve this reply.', timestamp: 1700000000001,
+            });
+            if (!await (await import('/scripts/neconyan-conversation/store-sync.js')).flushConversationStore()) throw new Error('Group setup failed');
+        }, { avatar: account.avatar, partner, groupId: group.id });
+        app.provider.mode.hold = MODEL;
+        app.provider.mode.reply = { tokens: [17], choices: [{ text: 'Must not generate.' }] };
+        const pending = page.evaluate(async ({ avatar, partner, groupId }) => {
+            const generation = await import('/scripts/neconyan-conversation/generation.js');
+            const bindingContext = await generation.captureConversationTextBinding({ avatar, speakerAvatar: partner, groupId });
+            try { await generation.generateConversationRaw({ bindingContext, prompt: 'Reply now.', responseLength: 73 }, {}); return 200; }
+            catch (error) { return error.status; }
+        }, { avatar: account.avatar, partner, groupId: group.id });
+        await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBe(1);
+        expect(app.provider.calls[0].url).toContain('/tokenize');
+        await account.changeStore(store => {
+            const saved = store.groups.find(item => item.id === group.id);
+            if (change === 'remove') saved.members = saved.members.filter(member => member !== partner);
+            else saved.disabled_members = [partner];
+        });
+        await app.release();
+        expect(await pending).toBe(409);
+        expect(app.provider.calls).toHaveLength(1);
+        const messages = Object.values((await account.store()).characters).flatMap(thread => Object.values(thread.branches || {}).flatMap(branch => branch.messages || []));
+        expect(messages.find(message => message.id === 'server-preparation-reply').mes).toBe('Preserve this reply.');
+        await page.close();
+    });
+}
 
 for (const changeBinding of [false, true]) {
     test(`group batching ${changeBinding ? 'separates changed bindings' : 'uses later mentions with captured bindings'}`, async ({ app, browser }) => {
@@ -307,9 +559,9 @@ for (const phone of [false, true]) {
             await expect(menu).toHaveAttribute('aria-expanded', 'false');
         }
     });
-    for (const { control, textProfile } of ['Send', 'Enter', 'Ask for reply', 'Branch from here'].flatMap(control => [false, true].map(textProfile => ({ control, textProfile })))) {
-        test(`${phone ? 'phone' : 'desktop'} ${textProfile ? 'saved text ' : ''}${control}: zero-page completion and repeat-safe reopening`, async ({ app, browser }, info) => {
-            const account = await app.account({ phone, textProfile });
+    for (const { control, textProfile, activeConnection } of ['Send', 'Enter', 'Ask for reply', 'Branch from here'].flatMap(control => [false, true].flatMap(textProfile => [false, true].map(activeConnection => ({ control, textProfile, activeConnection }))))) {
+        test(`${phone ? 'phone' : 'desktop'} ${activeConnection ? 'active ' + (textProfile ? 'text ' : 'chat ') : textProfile ? 'saved text ' : ''}${control}: zero-page completion and repeat-safe reopening`, async ({ app, browser }, info) => {
+            const account = await app.account({ phone, textProfile, activeConnection });
             const page = await account.open();
             app.provider.mode.hold = textProfile ? 'text-writer' : MODEL;
             const original = await account.branch('main');
@@ -341,6 +593,7 @@ for (const phone of [false, true]) {
             const acceptedResponse = await response;
             expect(acceptedResponse.ok(), await acceptedResponse.text()).toBe(true);
             const accepted = await acceptedResponse.json();
+            if (activeConnection) expect(accepted.job.config.participantBindings[account.avatar].kind).toBe('active');
             if (['Send', 'Enter'].includes(control)) {
                 expect(accepted.inputDurable).toBe(true);
                 await expect(page.locator('#sb_conversation_input')).toHaveValue('');
@@ -398,6 +651,10 @@ test('draft survives a lost accepted response and retries the identical submissi
     await page.route('**/reply/submit', async route => {
         submissions.push(route.request().postDataJSON());
         await expect(page.locator('#sb_conversation_input')).toHaveValue('Keep this draft.');
+        if (submissions.length === 2) {
+            await route.fulfill({ status: 429, json: { error: 'rate_limited' } });
+            return;
+        }
         const response = await route.fetch();
         expect(response.ok(), await response.text()).toBe(true);
         const accepted = await response.json();
@@ -412,10 +669,22 @@ test('draft survives a lost accepted response and retries the identical submissi
     await lost;
     await expect(page.locator('#sb_conversation_input')).toHaveValue('Keep this draft.');
     await expect(page.locator('#sb_conversation_send')).toBeEnabled();
+    const limited = page.waitForResponse(response => response.url().endsWith('/reply/submit') && response.status() === 429);
+    await page.locator('#sb_conversation_send').click();
+    await limited;
+    await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBe(1);
+    await page.evaluate(async () => {
+        const { extension_settings } = await import('/scripts/extensions.js');
+        extension_settings.connectionManager.profiles[0].model = 'changed-after-acceptance';
+        if (!await (await import('/script.js')).saveSettings(0, { returnResult: true })) throw new Error('Settings were not saved');
+    });
+    await expect(page.locator('#sb_conversation_input')).toHaveValue('Keep this draft.');
+    await expect(page.locator('#sb_conversation_send')).toBeEnabled();
     await page.locator('#sb_conversation_send').click();
     await expect(page.locator('#sb_conversation_input')).toHaveValue('');
-    expect(submissions).toHaveLength(2);
+    expect(submissions).toHaveLength(3);
     expect(submissions[1]).toEqual(submissions[0]);
+    expect(submissions[2]).toEqual(submissions[0]);
     await app.release();
     await account.settled(first.job.id);
     expect(app.provider.calls).toHaveLength(1);
@@ -572,13 +841,94 @@ test('a missing saved binding rejects Send without consuming the draft', async (
     const page = await account.open();
     const before = await account.effects();
     await page.locator('#sb_conversation_input').fill('Do not lose this.');
-    const response = page.waitForResponse(response => response.url().endsWith('/reply/submit'));
+    let submissions = 0;
+    page.on('request', request => { if (request.url().endsWith('/reply/submit') || request.url().endsWith('/upload')) submissions++; });
+    const response = page.waitForResponse(response => response.url().endsWith('/binding/preflight'));
     await page.locator('#sb_conversation_send').click();
     expect((await response).ok()).toBe(false);
     await expect(page.locator('#sb_conversation_send')).toBeEnabled();
     await expect(page.locator('#sb_conversation_input')).toHaveValue('Do not lose this.');
     expect(await account.effects()).toEqual(before);
     expect(app.provider.calls).toHaveLength(0);
+    expect(submissions).toBe(0);
+});
+
+for (const invalid of ['unsupported input macro', 'invalid token IDs', 'missing Ollama model', 'incomplete Azure settings', 'literal bias braces', 'expanded invalid token IDs', 'assistant suffix capability', 'assistant suffix token IDs', 'legacy mobile input']) {
+    test(`active preflight rejects ${invalid} before uploading or accepting input`, async ({ app }) => {
+        const account = await app.account({ activeConnection: true, textProfile: invalid !== 'incomplete Azure settings', configureSettings(saved) {
+            if (invalid === 'invalid token IDs') {
+                saved.textgenerationwebui_settings.send_banned_tokens = true;
+                saved.textgenerationwebui_settings.banned_tokens = '[oops]';
+            }
+            if (invalid === 'missing Ollama model') {
+                saved.textgenerationwebui_settings.type = 'ollama';
+                saved.textgenerationwebui_settings.ollama_model = '';
+            }
+            if (invalid === 'incomplete Azure settings') Object.assign(saved.oai_settings, {
+                chat_completion_source: 'azure_openai', azure_openai_model: 'saved', azure_base_url: 'http://127.0.0.1:6000',
+                azure_deployment_name: '', azure_api_version: '2024-02-01',
+            });
+            if (invalid === 'literal bias braces') saved.textgenerationwebui_settings.logit_bias = [{ text: '[{{user}}]', value: 0 }];
+            if (invalid === 'expanded invalid token IDs') {
+                saved.extension_settings.variables = { global: { invalidBan: '[oops]' } };
+                Object.assign(saved.textgenerationwebui_settings, { send_banned_tokens: true, banned_tokens: '{{getglobalvar::invalidBan}}' });
+            }
+            if (invalid.startsWith('assistant suffix')) {
+                saved.power_user.experimental_macro_engine = true;
+                Object.assign(saved.power_user.instruct, { macro: true, output_suffix: invalid.endsWith('capability') ? '{{isMobile}}' : '{{setvar::ban::[oops]}}' });
+                if (invalid.endsWith('IDs')) Object.assign(saved.textgenerationwebui_settings, { send_banned_tokens: true, banned_tokens: '{{getvar::ban}}' });
+            }
+            if (invalid === 'legacy mobile input') saved.power_user.experimental_macro_engine = false;
+        } });
+        if (invalid.startsWith('assistant suffix')) await account.changeStore(store => {
+            store.characters[account.threadKey].branches.main.messages.push({ id: 'previous-assistant', role: 'character', mes: 'A previous answer.', timestamp: 1700000000001 });
+        });
+        const page = await account.open();
+        const before = await account.effects();
+        const writes = [];
+        page.on('request', request => { if (/\/reply\/submit$|\/upload$/.test(request.url())) writes.push(request.url()); });
+        const draft = invalid === 'unsupported input macro' ? '{{if isMobile}}phone{{else}}desktop{{/if}}' : invalid === 'legacy mobile input' ? '{{isMobile}}' : 'Keep this attachment.';
+        await page.locator('#sb_conversation_input').fill(draft);
+        await page.locator('#sb_conversation_file_input').setInputFiles({ name: 'retained.txt', mimeType: 'text/plain', buffer: Buffer.from('private attachment') });
+        const rejected = page.waitForResponse(async response => response.url().endsWith('/binding/preflight') && !response.ok()
+            && (await response.json()).error !== 'active_settings_ack_required');
+        await page.locator('#sb_conversation_send').click();
+        expect((await rejected).status()).toBe(409);
+        await expect(page.locator('#sb_conversation_send')).toBeEnabled();
+        await expect(page.locator('#sb_conversation_input')).toHaveValue(draft);
+        expect(await page.locator('#sb_conversation_file_input').evaluate(input => input.files.length)).toBe(1);
+        expect(writes).toEqual([]);
+        expect(await account.effects()).toEqual(before);
+        expect(app.provider.calls).toHaveLength(0);
+    });
+}
+
+test('manual preflight follows prefill-first macro order', async ({ app }) => {
+    const account = await app.account({ activeConnection: true, configureSettings(saved) { saved.power_user.experimental_macro_engine = true; } });
+    const page = await account.open();
+    const status = await page.evaluate(async avatar => {
+        try {
+            await (await import('/scripts/neconyan-conversation/generation.js')).captureConversationTextBinding({ avatar }, {
+                prompt: '{{if .flag}}{{input}}{{/if}}', prefill: '{{setvar::flag::true}}', responseLength: 73,
+            });
+        } catch (error) { return error.status; }
+    }, account.avatar);
+    expect(status).toBe(409);
+    expect(app.provider.calls).toHaveLength(0);
+});
+
+test('manual preflight honours an explicit instruct override', async ({ app }) => {
+    const account = await app.account({ activeConnection: true, textProfile: true, configureSettings(saved) {
+        saved.power_user.experimental_macro_engine = true;
+        Object.assign(saved.power_user.instruct, { macro: true, input_sequence: '{{isMobile}}', sequences_as_stop_strings: false });
+    } });
+    const page = await account.open();
+    app.provider.mode.reply = { choices: [{ text: 'Override accepted.' }] };
+    const text = await page.evaluate(async avatar => (await import('/scripts/neconyan-conversation/generation.js')).generateConversationRaw({
+        prompt: 'Use the deliberately disabled instruct template.', instructOverride: true, responseLength: 73, scope: { avatar },
+    }, {}), account.avatar);
+    expect(text).toBe('Override accepted.');
+    expect(app.provider.calls).toHaveLength(1);
 });
 
 test('failed store acknowledgement prevents submission and preserves the draft', async ({ app }) => {

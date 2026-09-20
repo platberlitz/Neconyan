@@ -6,7 +6,7 @@ import vm from 'node:vm';
 import { parse } from 'acorn';
 import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse, requestUsesReasoning } from '../public/scripts/generation-request-controls.js';
 import { createChatGenerationParameters } from '../public/scripts/chat-provider-parameters.js';
-import { normalizeContentText as normalizeContentTextPure, createRawPrompt as createRawPromptPure } from '../public/scripts/generation-format.js';
+import { cleanGeneratedText, normalizeContentText as normalizeContentTextPure, createRawPrompt as createRawPromptPure, extractMessageFromData as extractMessageFromDataPure, extractJsonFromData as extractJsonFromDataPure } from '../public/scripts/generation-format.js';
 import { textgen_types, createTextProviderParameters, replaceMacrosInList as replaceListMacros } from '../public/scripts/text-provider-parameters.js';
 import { resolveChatReasoningEffort } from '../public/scripts/chat-request-controls.js';
 import { buildChatCompletionSamplerMetadata, filterChatCompletionSamplingParameters, applyClaudeModelParameterConstraints, applyKimiK3ModelParameterConstraints, isKimiK3Model } from '../public/scripts/openai-model-capabilities.js';
@@ -98,7 +98,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
         eventSource, event_types,
         resolveGenerationOutputBufferState, resolveGenerationUnblockState, resolveStopGenerationState,
         applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse,
-        createChatGenerationParameters, normalizeContentTextPure, createRawPromptPure,
+        createChatGenerationParameters, normalizeContentTextPure, createRawPromptPure, cleanGeneratedText, extractMessageFromDataPure, extractJsonFromDataPure,
         createTextProviderParameters, replaceListMacros,
         resolveChatReasoningEffort,
         buildAssistantKnowledge, getAssistantKnowledgeBudget,

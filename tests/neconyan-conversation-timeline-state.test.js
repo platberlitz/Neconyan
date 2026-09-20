@@ -7,6 +7,8 @@ let currentPersonaId = 'persona-a.png';
 const stores = new Map();
 const extractCharacterReplyCommands = jest.fn(rawText => ({ text: String(rawText || '').trim(), selfieRequests: [] }));
 const generateConversationRaw = jest.fn();
+const captureConversationTextBinding = jest.fn(async () => ({}));
+const buildConversationPromptMessages = jest.fn(async () => []);
 const saveConversationThread = jest.fn();
 const commitCharacterReplyCommands = jest.fn();
 
@@ -44,6 +46,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.
     persistConversationStore: jest.fn(),
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/generation.js', () => ({
+    captureConversationTextBinding,
     commitCharacterReplyCommands,
     extractCharacterReplyCommands,
     generateConversationRaw,
@@ -68,7 +71,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/partners
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/personas.js', () => ({ getConnectionProfiles: () => [] }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/prompt.js', () => ({
-    buildConversationPromptMessages: async () => [],
+    buildConversationPromptMessages,
     buildConversationSystemPrompt: () => '',
     renderConversationAttachments: jest.fn(),
 }));
@@ -174,6 +177,8 @@ describe('conversation timeline operation identity', () => {
             branches: { 'branch-b': { id: 'branch-b', messages: [makeMessage('persona-b-message')] } },
         });
         generateConversationRaw.mockReset();
+        captureConversationTextBinding.mockReset().mockResolvedValue({});
+        buildConversationPromptMessages.mockClear();
         extractCharacterReplyCommands.mockReset().mockImplementation(rawText => ({ text: String(rawText || '').trim(), selfieRequests: [] }));
         saveConversationThread.mockClear();
         commitCharacterReplyCommands.mockClear();
@@ -217,15 +222,17 @@ describe('conversation timeline operation identity', () => {
     test('guards duplicate regeneration and keeps busy state until all operations finish', async () => {
         const first = deferred();
         const second = deferred();
+        const started = deferred();
         generateConversationRaw
             .mockImplementationOnce(() => first.promise)
-            .mockImplementationOnce(() => second.promise);
+            .mockImplementationOnce(() => { started.resolve(); return second.promise; });
 
         const firstRun = regenerateConversationMessage('message-1');
         const duplicateRun = regenerateConversationMessage('message-1');
         const secondRun = regenerateConversationMessage('message-2');
-        await Promise.resolve();
+        await started.promise;
         expect(generateConversationRaw).toHaveBeenCalledTimes(2);
+        expect(captureConversationTextBinding.mock.invocationCallOrder[0]).toBeLessThan(buildConversationPromptMessages.mock.invocationCallOrder[0]);
         expect(stateModule.conversationState.conversationReplyBusy).toBe(true);
 
         first.resolve('first replacement');
@@ -236,6 +243,16 @@ describe('conversation timeline operation identity', () => {
         second.resolve('second replacement');
         await secondRun;
         expect(stateModule.conversationState.conversationReplyBusy).toBe(false);
+    });
+
+    test('a rejected capture prevents prompt preparation, generation and replacement', async () => {
+        const before = structuredClone(stores.get(storeKey('persona-a.png', 'char.png')));
+        captureConversationTextBinding.mockRejectedValueOnce(new Error('Connection changed'));
+        await regenerateConversationMessage('message-1');
+        expect(buildConversationPromptMessages).not.toHaveBeenCalled();
+        expect(generateConversationRaw).not.toHaveBeenCalled();
+        expect(saveConversationThread).not.toHaveBeenCalled();
+        expect(stores.get(storeKey('persona-a.png', 'char.png'))).toEqual(before);
     });
 
     test('applies completion only to its captured persona and branch', async () => {

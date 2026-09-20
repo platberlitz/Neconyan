@@ -9,6 +9,7 @@ import {
 import { getContext } from './extensions.js';
 import { getStringHash, isTrueBoolean } from './macro-primitives.js';
 import { parseTimestamp } from './message-timestamp.js';
+import { regexFromString as parseRegex } from './regex-utils.js';
 import { characters, getRequestHeaders, processDroppedFiles, this_chid, user_avatar } from '../script.js';
 import { isMobile } from './RossAscends-mods.js';
 import { collapseNewlines, power_user } from './power-user.js';
@@ -1314,21 +1315,7 @@ export function escapeRegex(string) {
  * @copyright Originally from: https://github.com/IonicaBizau/regex-parser.js/blob/master/lib/index.js
  */
 export function regexFromString(input) {
-    try {
-        // Parse input
-        // Parse the whole input, including newlines, so a multi-line pattern is not cut at its first line.
-        var m = input.match(/^(\/?)([\s\S]+)\1([a-z]*)$/i);
-
-        try {
-            // Let the native constructor validate the flags (covers y, s, d, v, and rejects duplicates).
-            return new RegExp(m[2], m[3]);
-        } catch {
-            // Not a valid literal: treat the whole input as a plain pattern, as before.
-            return RegExp(input);
-        }
-    } catch {
-        return;
-    }
+    return parseRegex(input);
 }
 
 export class Stopwatch {

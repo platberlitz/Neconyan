@@ -7,7 +7,7 @@
  * way, and can be tested without a DOM.
  */
 
-import { AVAILABILITY_COPY, DEFAULT_REPLY_DELAY_MULTIPLIER, DEFAULT_TALKATIVENESS } from '../../public/scripts/neconyan-conversation/constants.js';
+import { AVAILABILITY_COPY, DEFAULT_REPLY_DELAY_MULTIPLIER, DEFAULT_TALKATIVENESS, MAX_THREAD_MESSAGES } from '../../public/scripts/neconyan-conversation/constants.js';
 import { isCharacterMentionedInText } from '../../public/scripts/neconyan-conversation/partners-utils.js';
 import { getCurrentActivityFromSchedule } from '../../public/scripts/neconyan-conversation/schedule-utils.js';
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget, isNeconyanAssistant } from '../../public/scripts/neconyan-assistant-knowledge.js';
@@ -16,8 +16,11 @@ import { buildConversationMessageReplyReference } from '../endpoints/conversatio
 import { buildConversationPromptMessages, buildConversationSystemPrompt, getCharacterData, getConversationSettings } from '../endpoints/conversation-generation.js';
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import { clamp, parsePositiveInt, unScopeConversationStorageKey } from '../endpoints/conversation-utils.js';
-import { captureChatProfile, getChatProfileContextLimit, resolveGenerationProfile } from './profiles.js';
+import { captureChatProfile, captureGenerationBinding, getChatProfileContextLimit, resolveGenerationProfile } from './profiles.js';
 import { buildSavedConversationContext } from './conversation-context.js';
+import { activeCharacterRegexHash } from './active-regex.js';
+import { createMacroEnvironment } from '../macros/index.js';
+import { validateActiveGenerationContext } from './service.js';
 
 // Matches the browser regex: flexible whitespace and the curly apostrophe iOS
 // keyboards produce, so "y’all" and "you  all" are broad addresses too.
@@ -193,7 +196,7 @@ export async function buildConversationParticipantPlan(request, current, target,
 }
 
 /** Capture all eligible connections before accepting input; speaker selection still uses the complete batch. */
-export async function captureConversationParticipantBindings(request, current, target, { plan = null, explicitSpeaker = '' } = {}) {
+export async function captureConversationParticipantBindings(request, current, target, { plan = null, explicitSpeaker = '', acknowledgement = null, proposedMessages = [], directive = '', manualOptions, bindingOnly = false } = {}) {
     let avatars = plan ? plan.map(item => item.avatar) : explicitSpeaker ? [explicitSpeaker] : target.groupId
         ? current.group.members.filter(avatar => !current.group.disabled_members?.includes(avatar)) : [target.avatar];
     if (avatars.length > 128) throw Object.assign(new Error('Too many Conversation participants.'), { status: 400 });
@@ -204,10 +207,29 @@ export async function captureConversationParticipantBindings(request, current, t
         }
         avatars = existing.length ? existing : [target.avatar];
     }
-    return Object.fromEntries([...new Set(avatars)].sort().map(avatar => {
+    const bindings = Object.fromEntries([...new Set(avatars)].sort().map(avatar => {
         const settings = getConversationSettings(request, current.store, avatar, target.groupId, {}, { personaId: target.personaId });
-        return [avatar, captureChatProfile(request.user.directories, settings.connection_profile)];
+        if (String(settings.connection_profile || '').trim()) return [avatar, captureChatProfile(request.user.directories, settings.connection_profile)];
+        if (!acknowledgement) throw Object.assign(new Error('Save and acknowledge the active connection before generating a reply.'), { status: 409, apiError: 'active_settings_ack_required' });
+        if (acknowledgement.account !== request.user.profile.handle) throw Object.assign(new Error('account_changed'), { status: 409, apiError: 'account_changed' });
+        return [avatar, captureGenerationBinding(request.user.directories, { kind: 'active' }, acknowledgement)];
     }));
+    for (const [avatar, binding] of Object.entries(bindings)) {
+        if (binding.kind !== 'active') continue;
+        const material = resolveGenerationProfile(request.user.directories, binding);
+        const character = await getCharacterData(request, avatar, { allowOverride: false, requireExisting: Boolean(target.groupId) });
+        binding.characterRegexHash = activeCharacterRegexHash(material, avatar, character);
+        if (bindingOnly) continue;
+        const proposed = { ...current, branch: { ...current.branch,
+            messages: [...current.branch.messages, ...proposedMessages.map(message => ({ ...message, role: 'user' }))].slice(-MAX_THREAD_MESSAGES) } };
+        const snapshot = await buildConversationParticipantSnapshot(request, proposed, target, { avatar }, { binding, directive, timeZone: 'UTC' });
+        const { prompt, ...rawOptions } = manualOptions || { prompt: snapshot.messages.slice(1), systemPrompt: snapshot.messages[0].content };
+        delete rawOptions.responseLength;
+        await validateActiveGenerationContext(material, createMacroEnvironment(snapshot.macros), prompt, rawOptions, {
+            maxTokens: manualOptions?.responseLength || snapshot.settings.reply_max_tokens, groupNames: snapshot.groupNames,
+        });
+    }
+    return bindings;
 }
 
 /** Build one participant's frozen request. The native target stays the thread's, only the speaker changes. */
@@ -216,10 +238,13 @@ export async function buildConversationParticipantSnapshot(request, current, tar
     const avatar = plan.avatar;
     const settings = getConversationSettings(request, current.store, avatar, target.groupId, {}, { personaId: target.personaId });
     if (!binding) throw Object.assign(new Error('The accepted participant connection is unavailable. Saved messages have been kept.'), { status: 409 });
-    resolveGenerationProfile(directories, binding);
+    const material = resolveGenerationProfile(directories, binding);
     // Group members must have a real card; the solo thread avatar keeps the
     // legacy fallback so an avatar without a loaded card still replies.
     const character = await getCharacterData(request, avatar, { allowOverride: false, requireExisting: Boolean(target.groupId) });
+    if (binding.kind === 'active' && binding.characterRegexHash !== activeCharacterRegexHash(material, avatar, character)) {
+        throw Object.assign(new Error('The captured character output transformations changed.'), { status: 409 });
+    }
     const userName = String(current.settings.power_user?.personas?.[target.personaId] || current.settings.name1 || 'User');
     const messages = await buildConversationPromptMessages(current.branch.messages, directive, character.name, {
         groupId: target.groupId, userName, userDirectories: directories,
@@ -249,9 +274,13 @@ export async function buildConversationParticipantSnapshot(request, current, tar
         const knowledge = await buildAssistantKnowledge({ character, messages: current.branch.messages, maxTokens: assistantKnowledgeTokens });
         if (knowledge.text) system = `${system}\n\n${knowledge.text}`;
     }
+    const groupMembers = target.groupId ? await Promise.all(current.group.members.map(async member => ({
+        avatar: member, name: (member === avatar ? character : await getCharacterData(request, member, { allowOverride: false })).name,
+    }))) : [];
+    const groupNames = groupMembers.map(member => member.name);
     return {
         target, binding, settings, force, purpose: plan.purpose || 'reply', timeZone,
-        speaker: { avatar, name: character.name }, speakers: savedContext.speakers, userName, now,
+        speaker: { avatar, name: character.name }, speakers: savedContext.speakers, userName, groupNames, now,
         activity, gate: plan.gate === true, assistantKnowledgeTokens,
         extra: plan.extra && typeof plan.extra === 'object' ? plan.extra : extra,
         automation,
@@ -263,6 +292,19 @@ export async function buildConversationParticipantSnapshot(request, current, tar
             (referenceMessageId && current.branch.messages.find(message => String(message?.id || '') === String(referenceMessageId)))
             || [...current.branch.messages].reverse().find(message => message.role !== 'system'),
         ),
-        macros: { names: { user: userName, char: character.name }, extra: { chat: current.branch.messages, chatMetadata: {}, powerUser: current.settings.power_user || {} } },
+        macros: {
+            names: { user: userName, char: character.name, group: groupNames.join(', ') || character.name,
+                groupNotMuted: groupMembers.filter(member => !current.group.disabled_members?.includes(member.avatar)).map(member => member.name).join(', ') || character.name,
+                notChar: [...groupNames.filter(name => name !== character.name), userName].join(', ') },
+            character: { description: character.description, personality: character.personality, scenario: character.scenario,
+                persona: personaContext, charPrompt: character.system_prompt, charInstruction: character.post_history_instructions,
+                mesExamplesRaw: character.mes_example, version: character.character_version, creatorNotes: character.creator_notes,
+                firstMessage: character.first_mes, alternateGreetings: character.alternate_greetings, charDepthPrompt: character.extensions.depth_prompt?.prompt || '' },
+            system: { model: material.profile.model },
+            variables: { global: current.settings.extension_settings?.variables?.global || {}, local: {} },
+            extra: { character, characterAvatar: avatar,
+                chat: current.branch.messages.map(message => ({ ...message, is_user: message.role === 'user', is_system: message.role === 'system', send_date: message.timestamp })),
+                chatMetadata: {}, powerUser: current.settings.power_user || {} },
+        },
     };
 }

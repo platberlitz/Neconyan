@@ -4,12 +4,16 @@ import {
     MEMORY_SUMMARY_RESPONSE_TOKENS,
 } from '../../public/scripts/neconyan-conversation/constants.js';
 import { parseScheduleResponse } from '../../public/scripts/neconyan-conversation/schedule-utils.js';
-import { captureChatProfile } from './profiles.js';
-import { runChatProfile } from './service.js';
+import { runChatProfile, validateActiveGenerationContext } from './service.js';
+import { resolveGenerationProfile } from './profiles.js';
+import { normalizeBindingRequest, normalizeSubmissionAnchors, preflightConversationBindings } from './conversation-jobs.js';
+import { buildConversationParticipantSnapshot } from './conversation-participants.js';
+import { createMacroEnvironment } from '../macros/index.js';
+import { hash } from '../mewmory/core.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { acceptJob, getJob, listJobs, releaseJob, setJobResume, updateJob } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
-import { getCharacterData, getConversationSettings } from '../endpoints/conversation-generation.js';
+import { getCharacterData } from '../endpoints/conversation-generation.js';
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import {
     prepareConversationTarget,
@@ -92,11 +96,14 @@ async function buildSummarySnapshot(request, job) {
     const character = await getCharacterData(request, job.intent.target.avatar, { allowOverride: false });
     const messages = eligibleMessages(branch);
     const throughId = messages.at(-1)?.id || '';
+    const participant = await buildConversationParticipantSnapshot(request, current, job.intent.target, { avatar: job.intent.target.avatar }, {
+        binding: job.credentialRef, directive: '', timeZone: 'UTC',
+    });
     return {
         target: job.intent.target,
         binding: job.credentialRef,
         characterName: character.name || 'Character',
-        userName: 'User',
+        userName: participant.userName, macros: participant.macros, groupNames: participant.groupNames,
         previousSummary: branch.memorySummary || '',
         messages: messages.map(message => ({ id: message.id, name: message.name, mes: message.mes })),
         throughId,
@@ -104,9 +111,33 @@ async function buildSummarySnapshot(request, job) {
     };
 }
 
-async function finalizeSummarySubmission(request, job) {
+function maintenanceGenerationOptions(snapshot, kind) {
+    const summary = kind === 'summary';
+    const systemPrompt = summary ? SUMMARY_SYSTEM_PROMPT : SCHEDULE_SYSTEM_PROMPT;
+    return {
+        binding: snapshot.binding,
+        messages: [
+            ...(snapshot.binding.kind === 'active' ? [] : [{ role: 'system', content: systemPrompt }]),
+            { role: 'user', content: summary ? buildConversationSummaryPrompt(snapshot) : buildConversationSchedulePrompt(snapshot.character) },
+        ],
+        maxTokens: summary ? MEMORY_SUMMARY_RESPONSE_TOKENS : 8000,
+        userName: snapshot.userName || 'User', characterName: summary ? snapshot.characterName : snapshot.character.name,
+        groupNames: snapshot.groupNames || [], macroEnvironment: createMacroEnvironment(snapshot.macros || {}),
+        rawOptions: snapshot.binding.kind === 'active' ? { systemPrompt } : {},
+    };
+}
+
+async function validateMaintenanceSnapshot(request, snapshot, kind) {
+    const options = maintenanceGenerationOptions(snapshot, kind);
+    await validateActiveGenerationContext(resolveGenerationProfile(request.user.directories, snapshot.binding), options.macroEnvironment,
+        options.messages, options.rawOptions, { maxTokens: options.maxTokens, groupNames: options.groupNames });
+}
+
+async function finalizeSummarySubmission(request, job, preparedSnapshot) {
     try {
-        const snapshot = await buildSummarySnapshot(request, job);
+        const snapshot = preparedSnapshot || readArtifact(request.user.directories, job.id, 'request') || await buildSummarySnapshot(request, job);
+        if (job.config?.requestHash && hash(snapshot) !== job.config.requestHash) throw fail('The accepted summary request changed during preparation.', 409);
+        await validateMaintenanceSnapshot(request, snapshot, 'summary');
         writeArtifact(request.user.directories, job.id, 'request', snapshot);
     } catch (error) {
         updateJob(request.user.directories, job.id, {
@@ -127,6 +158,21 @@ function sameThreadTarget(a, b) {
         && String(a?.branchId || '') === String(b?.branchId || '');
 }
 
+function maintenanceRequestHash(body, kind) {
+    const target = body.target || {};
+    return hash({ kind, target: { avatar: target.avatar || body.avatar || '', groupId: target.groupId || '',
+        personaId: target.personaId || '', branchId: target.branchId || '' }, force: body.force === true,
+    anchors: normalizeSubmissionAnchors(body), bindingRequest: normalizeBindingRequest(body.bindingRequest) || null, acknowledgement: body.acknowledgement || null });
+}
+
+async function captureMaintenanceBinding(request, body, target) {
+    const submitted = normalizeBindingRequest(body.bindingRequest);
+    const captured = normalizeBindingRequest(await preflightConversationBindings(request, { ...body, target, speakerAvatar: target.avatar, bindingOnly: true,
+        acknowledgement: submitted?.acknowledgement || body.acknowledgement }));
+    if (submitted && hash(submitted) !== hash(captured)) throw fail('The captured connection changed. Try again.', 409);
+    return captured.participants[target.avatar];
+}
+
 /**
  * Accept a memory summary. Manual callers set force; the worker calls it with
  * automatic true and lets eligibility decide.
@@ -137,6 +183,12 @@ export async function acceptConversationSummary(request, body = {}, { automatic 
     if (!owner || !directories?.root) throw fail('An authenticated account is required.', 401);
     if (typeof body.submissionKey !== 'string' || !body.submissionKey || body.submissionKey.length > 256) throw fail('A submission key is required.');
     if (!body.target || typeof body.target !== 'object') throw fail('A target is required.');
+    const requestHash = maintenanceRequestHash(body, 'summary');
+    const recorded = listJobs(directories, { owner, includeDismissed: true }).find(item => item.submissionKey === body.submissionKey);
+    if (recorded?.intent?.requestHash) {
+        if (recorded.type !== 'conversation.summary' || recorded.intent.requestHash !== requestHash) throw fail('This submission key already belongs to another operation.', 409);
+        return { created: false, job: recorded };
+    }
     const target = await prepareConversationTarget(request, body.target);
     const current = readConversationTarget(request, target);
     const force = body.force === true;
@@ -153,17 +205,18 @@ export async function acceptConversationSummary(request, body = {}, { automatic 
         }
         return { created: false, job: existing };
     }
-    const settings = getConversationSettings(request, current.store, target.avatar, target.groupId, {}, { personaId: target.personaId });
-    const binding = captureChatProfile(directories, settings.connection_profile);
-    const intent = { kind: 'summary', target, force };
+    const binding = await captureMaintenanceBinding(request, body, target);
+    const intent = { kind: 'summary', target, force, requestHash };
+    const snapshot = await buildSummarySnapshot(request, { intent, credentialRef: binding });
+    await validateMaintenanceSnapshot(request, snapshot, 'summary');
     const accepted = acceptJob(directories, {
         owner, type: 'conversation.summary', submissionKey: body.submissionKey, intent,
         automatic, paused: true, coalesce: { deadline: 0, members: [] },
         target: { kind: 'conversation', id: getConversationThreadKey(target.avatar, target.groupId, target.personaId), branchId: target.branchId },
-        credentialRef: binding, config: {}, label: 'Conversation summary',
+        credentialRef: binding, config: { requestHash: hash(snapshot) }, label: 'Conversation summary',
     });
     noteOwner(owner);
-    const job = await finalizeSummarySubmission(request, accepted.job);
+    const job = await finalizeSummarySubmission(request, accepted.job, snapshot);
     return { created: accepted.created, job };
 }
 
@@ -174,13 +227,7 @@ async function runConversationSummaryJob(context, dependencies) {
     let response = readArtifact(context.directories, context.job.id, 'reply');
     if (!response) {
         response = await dependencies.generate({
-            context, jobContext: context, binding: snapshot.binding,
-            messages: [
-                { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
-                { role: 'user', content: buildConversationSummaryPrompt(snapshot) },
-            ],
-            maxTokens: MEMORY_SUMMARY_RESPONSE_TOKENS,
-            userName: snapshot.userName, characterName: snapshot.characterName,
+            ...maintenanceGenerationOptions(snapshot, 'summary'), context, jobContext: context,
         });
         writeArtifact(context.directories, context.job.id, 'reply', { text: response.text });
     }
@@ -193,13 +240,25 @@ async function runConversationSummaryJob(context, dependencies) {
     return { artifact: true };
 }
 
-async function finalizeScheduleSubmission(request, job) {
+async function buildScheduleSnapshot(request, job) {
+    const character = await getCharacterData(request, job.intent.avatar, { allowOverride: false });
+    const current = readConversationTarget(request, job.intent.target);
+    const participant = await buildConversationParticipantSnapshot(request, current, job.intent.target, { avatar: job.intent.avatar }, {
+        binding: job.credentialRef, directive: '', timeZone: 'UTC',
+    });
+    return {
+        target: job.intent.target, binding: job.credentialRef, avatar: job.intent.avatar,
+        character: { name: character.name, description: character.description, personality: character.personality },
+        macros: participant.macros, userName: participant.userName, groupNames: participant.groupNames,
+    };
+}
+
+async function finalizeScheduleSubmission(request, job, preparedSnapshot) {
     try {
-        const character = await getCharacterData(request, job.intent.avatar, { allowOverride: false });
-        writeArtifact(request.user.directories, job.id, 'request', {
-            target: job.intent.target, binding: job.credentialRef, avatar: job.intent.avatar,
-            character: { name: character.name, description: character.description, personality: character.personality },
-        });
+        const snapshot = preparedSnapshot || readArtifact(request.user.directories, job.id, 'request') || await buildScheduleSnapshot(request, job);
+        if (job.config?.requestHash && hash(snapshot) !== job.config.requestHash) throw fail('The accepted schedule request changed during preparation.', 409);
+        await validateMaintenanceSnapshot(request, snapshot, 'schedule');
+        writeArtifact(request.user.directories, job.id, 'request', snapshot);
     } catch (error) {
         updateJob(request.user.directories, job.id, {
             state: 'failed', stage: null, finishedAt: Date.now(),
@@ -220,9 +279,14 @@ export async function acceptConversationSchedule(request, body = {}) {
     if (typeof body.submissionKey !== 'string' || !body.submissionKey || body.submissionKey.length > 256) throw fail('A submission key is required.');
     const avatar = String(body.target?.avatar || body.avatar || '');
     if (!avatar) throw fail('A character is required.');
+    const requestHash = maintenanceRequestHash(body, 'schedule');
+    const recorded = listJobs(directories, { owner, includeDismissed: true }).find(item => item.submissionKey === body.submissionKey);
+    if (recorded?.intent?.requestHash) {
+        if (recorded.type !== 'conversation.schedule' || recorded.intent.requestHash !== requestHash) throw fail('This submission key already belongs to another operation.', 409);
+        return { created: false, job: recorded };
+    }
     const groupId = String(body.target?.groupId || '');
     const target = await prepareConversationTarget(request, { avatar, groupId, personaId: body.target?.personaId || '', branchId: body.target?.branchId });
-    const current = readConversationTarget(request, target);
     const existing = listJobs(directories, { owner, includeDismissed: true }).find(item => item.submissionKey === body.submissionKey);
     if (existing) {
         if (existing.type !== 'conversation.schedule' || !sameThreadTarget(existing.intent?.target, target)) {
@@ -230,17 +294,18 @@ export async function acceptConversationSchedule(request, body = {}) {
         }
         return { created: false, job: existing };
     }
-    const settings = getConversationSettings(request, current.store, avatar, groupId, {}, { personaId: target.personaId });
-    const binding = captureChatProfile(directories, settings.connection_profile);
-    const intent = { kind: 'schedule', avatar, target };
+    const binding = await captureMaintenanceBinding(request, body, target);
+    const intent = { kind: 'schedule', avatar, target, requestHash };
+    const snapshot = await buildScheduleSnapshot(request, { intent, credentialRef: binding });
+    await validateMaintenanceSnapshot(request, snapshot, 'schedule');
     const accepted = acceptJob(directories, {
         owner, type: 'conversation.schedule', submissionKey: body.submissionKey, intent,
         automatic: false, paused: true, coalesce: { deadline: 0, members: [] },
         target: { kind: 'conversation', id: getConversationThreadKey(avatar, groupId, target.personaId), branchId: target.branchId },
-        credentialRef: binding, config: {}, label: 'Conversation schedule',
+        credentialRef: binding, config: { requestHash: hash(snapshot) }, label: 'Conversation schedule',
     });
     noteOwner(owner);
-    const job = await finalizeScheduleSubmission(request, accepted.job);
+    const job = await finalizeScheduleSubmission(request, accepted.job, snapshot);
     return { created: accepted.created, job };
 }
 
@@ -251,12 +316,7 @@ async function runConversationScheduleJob(context, dependencies) {
     let response = readArtifact(context.directories, context.job.id, 'reply');
     if (!response) {
         response = await dependencies.generate({
-            context, jobContext: context, binding: snapshot.binding,
-            messages: [
-                { role: 'system', content: SCHEDULE_SYSTEM_PROMPT },
-                { role: 'user', content: buildConversationSchedulePrompt(snapshot.character) },
-            ],
-            maxTokens: 8000, userName: 'User', characterName: snapshot.character.name,
+            ...maintenanceGenerationOptions(snapshot, 'schedule'), context, jobContext: context,
         });
         writeArtifact(context.directories, context.job.id, 'reply', { text: response.text });
     }

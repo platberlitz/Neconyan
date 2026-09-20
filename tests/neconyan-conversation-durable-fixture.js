@@ -91,7 +91,7 @@ export const test = base.extend({
             async release() {
                 await fetch(provider.url.replace(/\/v1$/, '') + '/fixture/release', { method: 'POST', body: '{}' });
             },
-            async account({ handle = 'default-user', phone = false, textProfile = false, settings = {}, configureSettings = () => {} } = {}) {
+            async account({ handle = 'default-user', phone = false, textProfile = false, activeConnection = false, settings = {}, configureSettings = () => {} } = {}) {
                 const context = await browser.newContext({ baseURL: app.url, serviceWorkers: 'block', reducedMotion: 'reduce',
                     viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone });
                 contexts.push(context);
@@ -104,6 +104,8 @@ export const test = base.extend({
                 };
                 await post('/api/users/login', { handle, password: '' });
                 const saved = JSON.parse((await post('/api/settings/get')).settings);
+                // Keep unrelated startup preset backups from changing the settings acknowledgement mid-test.
+                saved.extension_settings.disabledExtensions = [...new Set([...(saved.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
                 saved.power_user.send_on_enter = 1;
                 saved.extension_settings.connectionManager = { profiles: [{ id: 'durable', name: 'Durable fixture',
                     api: 'custom', mode: 'cc', model: MODEL, 'api-url': provider.url }] };
@@ -117,6 +119,18 @@ export const test = base.extend({
                     await fs.writeFile(path.join(config.dataRoot, handle, 'TextGen Settings', 'Durable.json'), JSON.stringify({ temp: 0.25, genamt: 73, max_length: 8192 }));
                     await fs.writeFile(path.join(config.dataRoot, handle, 'instruct', 'Durable.json'), JSON.stringify({ enabled: true, wrap: true, names_behavior: 'none',
                         system_sequence: '<system>', input_sequence: '<user>', output_sequence: '<assistant>', stop_sequence: '</assistant>' }));
+                }
+                if (activeConnection) {
+                    saved.main_api = textProfile ? 'textgenerationwebui' : 'openai';
+                    saved.oai_settings.custom_model = MODEL;
+                    if (textProfile) {
+                        Object.assign(saved.textgenerationwebui_settings, { type: 'llamacpp', api_server: provider.url,
+                            server_urls: { ...saved.textgenerationwebui_settings.server_urls, llamacpp: provider.url } });
+                        saved.power_user.instruct = JSON.parse(await fs.readFile(path.join(config.dataRoot, handle, 'instruct', 'Durable.json'), 'utf8'));
+                    }
+                    saved.extension_settings.connectionManager.selectedProfile = 'durable';
+                    saved.extension_settings.connectionManager.profiles[0].model = 'unused-named-model';
+                    settings = { ...settings, connection_profile: '' };
                 }
                 configureSettings(saved);
                 await post('/api/settings/save', saved);

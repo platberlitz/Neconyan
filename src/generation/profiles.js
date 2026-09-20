@@ -1,7 +1,9 @@
 import path from 'node:path';
 import sanitize from 'sanitize-filename';
 import { CHAT_COMPLETION_SOURCES } from '../constants.js';
-import { readSecret, SECRET_KEYS } from '../endpoints/secrets.js';
+import { readSecret, secretIdExists, SecretManager, SECRET_KEYS } from '../endpoints/secrets.js';
+import { getSettingsRevision } from '../settings-version.js';
+import { applyGenerationRequestControls } from '../../public/scripts/generation-request-controls.js';
 import { fail, hash } from '../mewmory/core.js';
 import { readJson } from '../mewmory/store.js';
 import { buildChatPresetPayload, createChatRequestData } from '../../public/scripts/chat-preset-request.js';
@@ -25,23 +27,31 @@ function profileValue(profile, field) {
     return profile.exclude?.includes(field) ? undefined : profile[field];
 }
 
-function readTextProfile(directories, profile, settings, source) {
+/** Validate literal lists before acceptance and macro-expanded lists during preparation. */
+export function parseTextTokenIds(value) {
+    let ids;
+    try { ids = JSON.parse(value); } catch { fail('The saved token list is invalid.', 409); }
+    if (!Array.isArray(ids) || !ids.every(Number.isInteger)) fail('The saved token list is invalid.', 409);
+    return ids;
+}
+
+function readTextProfile(directories, profile, settings, source, activeBinding = false) {
     if (!textSources.has(source)) fail('This text-completion provider is not supported.', 409);
     const saved = settings.textgenerationwebui_settings;
     if (!saved || typeof saved !== 'object' || Array.isArray(saved)) fail('The saved Text Completion settings are missing.', 409);
     const preset = readPreset(directories.textGen_Settings, profileValue(profile, 'preset'), 'completion preset');
     const template = readPreset(directories.instruct, profileValue(profile, 'instruct'), 'instruct preset');
     const context = readPreset(directories.context, profileValue(profile, 'context'), 'context template') ?? settings.power_user?.context ?? {};
-    const active = mergeTextPresetSettings(saved, preset, { api_type: source });
-    active.api_server = profileValue(profile, 'api-url') || TEXT_PROVIDER_URLS[source];
-    if (source === 'openrouter') active.openrouter_service_tier = resolveProfileServiceTier(profile, source, preset) ?? '';
+    const active = activeBinding ? structuredClone(saved) : mergeTextPresetSettings(saved, preset, { api_type: source });
+    active.api_server = activeBinding ? profile['api-url'] : profileValue(profile, 'api-url') || TEXT_PROVIDER_URLS[source];
+    if (source === 'openrouter' && !activeBinding) active.openrouter_service_tier = resolveProfileServiceTier(profile, source, preset) ?? '';
     let url;
     try { url = new URL(active.api_server); } catch { fail('Save a server URL in this connection profile.', 409); }
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) fail('Use an HTTP server URL without embedded credentials.', 409);
     const power = structuredClone(settings.power_user || {});
     const instruct = structuredClone(template ?? power.instruct ?? {});
     const state = profileValue(profile, 'instruct-state');
-    instruct.enabled = state === undefined ? Boolean(template || (profile.exclude?.includes('instruct') && instruct.enabled))
+    instruct.enabled = state === undefined ? Boolean(activeBinding ? instruct.enabled : template || (profile.exclude?.includes('instruct') && instruct.enabled))
         : ['true', 'on', '1'].includes(String(state).toLowerCase());
     if (profileValue(profile, 'stop-strings') !== undefined) power.custom_stopping_strings = profileValue(profile, 'stop-strings');
     if (profileValue(profile, 'tokenizer') !== undefined) power.tokenizer = profileValue(profile, 'tokenizer');
@@ -59,6 +69,15 @@ function readTextProfile(directories, profile, settings, source) {
     for (const key of ['banned_tokens', 'global_banned_tokens', 'dry_sequence_breakers', 'negative_prompt']) {
         if (active[key] !== undefined && typeof active[key] !== 'string') fail('The saved text controls contain an invalid text field.', 409);
     }
+    for (const entry of active.logit_bias || []) {
+        const value = entry.text.trim();
+        if (value.startsWith('[') && value.endsWith(']')) parseTextTokenIds(value);
+    }
+    const lists = active.send_banned_tokens ? `${active.banned_tokens || ''}\n${active.global_banned_tokens || ''}`.split('\n') : [];
+    for (const value of lists) {
+        if (value.startsWith('[') && value.endsWith(']') && !value.includes('{{')) parseTextTokenIds(value);
+    }
+    if (source === 'ollama' && (typeof profile.model !== 'string' || !profile.model.trim())) fail('Select an Ollama model before generating a reply.', 409);
     const secretType = SECRET_KEYS[source === 'ooba' ? 'OOBA' : source.toUpperCase()];
     const secretId = profile['secret-id'] || null;
     if (secretId && (!secretType || !readSecret(directories, secretType, secretId))) fail('The saved API key for this profile is unavailable.', 409);
@@ -89,8 +108,13 @@ function readProfile(directories, profileId) {
         return readTextProfile(directories, profile, settings, source);
     }
     const source = aliases[profile.api] || profile.api;
+    return readChatProfile(directories, profile, settings, source);
+}
+
+function readChatProfile(directories, profile, settings, source, activeBinding = false) {
     if (!sources.has(source)) fail('This operation requires a Chat Completion connection profile.', 409);
-    if (typeof profile.model !== 'string' || !profile.model.trim()) fail('Save a model in this connection profile.', 409);
+    const websiteDefault = activeBinding && source === 'openrouter' && profile.model === null && settings.oai_settings?.openrouter_model === 'OR_Website';
+    if (!websiteDefault && (typeof profile.model !== 'string' || !profile.model.trim())) fail('Save a model in this connection profile.', 409);
     const active = settings.oai_settings;
     if (!active || typeof active !== 'object' || Array.isArray(active)) fail('The saved Chat Completion settings are missing.', 409);
     let preset;
@@ -99,7 +123,18 @@ function readProfile(directories, profileId) {
         preset = readJson(path.join(directories.openAI_Settings, profile.preset + '.json'), null);
         if (!preset || typeof preset !== 'object' || Array.isArray(preset)) fail('The profile’s completion preset no longer exists.', 409);
     }
-    const proxy = resolveProfileProxy(profile, source, settings.proxies || [], active);
+    const proxy = activeBinding ? { reverse_proxy: active.reverse_proxy || '', proxy_password: active.proxy_password || '' }
+        : resolveProfileProxy(profile, source, settings.proxies || [], active);
+    if (activeBinding) {
+        if (source === 'azure_openai' && ['azure_base_url', 'azure_deployment_name', 'azure_api_version'].some(key => typeof active[key] !== 'string' || !active[key].trim())) fail('Save the Azure URL, deployment name and API version before generating a reply.', 409);
+        for (const address of [proxy.reverse_proxy, source === 'custom' ? active.custom_url : '', source === 'azure_openai' ? active.azure_base_url : '']) {
+            if (!address) continue;
+            let url;
+            try { url = new URL(address); } catch { fail('The saved active connection URL is invalid.', 409); }
+            if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) fail('Use an HTTP URL without embedded credentials for the active connection.', 409);
+        }
+        if (source === 'custom' && !active.custom_url) fail('Save the active Custom server URL before generating a reply.', 409);
+    }
     // Credential values are resolved again at execution, not copied to a job record.
     const fingerprint = hash({ profile, active: { ...active, proxy_password: undefined }, preset: preset && { ...preset, proxy_password: undefined }, proxy: proxy.reverse_proxy,
         requestControls: {
@@ -111,6 +146,57 @@ function readProfile(directories, profileId) {
     return { profile, source, active, preset, proxy, fingerprint };
 }
 
+function readActiveConnection(directories) {
+    const settings = readJson(path.join(directories.root, 'settings.json'), {});
+    const selection = settings.active_generation;
+    if (!selection || selection.api !== settings.main_api) fail('Save the active connection settings before generating a reply.', 409);
+    const text = settings.main_api === 'textgenerationwebui';
+    if (!text && settings.main_api !== 'openai') fail('This active connection cannot run on the server. Choose a saved Chat or Text Completion connection.', 409);
+    const controls = text ? settings.textgenerationwebui_settings : settings.oai_settings;
+    const source = text ? controls?.type : controls?.chat_completion_source;
+    if (selection.source !== source) fail('Save the current active provider before generating a reply.', 409);
+    const keyType = source === 'openai_responses' ? SECRET_KEYS.OPENAI
+        : source === 'vertexai' && controls?.vertexai_auth_mode === 'full' ? SECRET_KEYS.VERTEXAI_SERVICE_ACCOUNT : SECRET_KEYS[source?.toUpperCase()];
+    const secretId = !text && source === 'custom' && settings.selected_custom_endpoint_preset?.secretId
+        ? settings.selected_custom_endpoint_preset.secretId
+        : new SecretManager(directories).getSecretState()[keyType]?.find(secret => secret.active)?.id || null;
+    if (secretId && !secretIdExists(directories, keyType, secretId)) fail('The saved API key for the active connection is unavailable.', 409);
+    const profile = { id: 'active', api: source, model: selection.model, 'secret-id': secretId };
+    if (text) profile['api-url'] = selection.serverUrl;
+    else {
+        const field = { custom: 'custom_url', vertexai: 'vertexai_region', zai: 'zai_endpoint', siliconflow: 'siliconflow_endpoint', minimax: 'minimax_endpoint' }[source];
+        if (field) profile['api-url'] = controls[field];
+    }
+    const material = text ? readTextProfile(directories, profile, settings, source, true) : readChatProfile(directories, profile, settings, source, true);
+    if (!text && !material.proxy.reverse_proxy && source !== 'custom' && (!secretId || !readSecret(directories, keyType, secretId))) {
+        fail('Select a saved API key for the active connection.', 409);
+    }
+    const extensions = settings.extension_settings || {};
+    const regexPolicy = {
+        disabled: extensions.disabledExtensions?.includes('regex') || false,
+        global: extensions.regex || [],
+        characterAllowed: extensions.character_allowed_regex || [],
+        presetAllowed: extensions.preset_allowed_regex || {},
+        preset: selection.regexPreset,
+        presetScripts: controls?.extensions?.regex_scripts || [],
+    };
+    return { ...material, kind: 'active', power: structuredClone(settings.power_user || {}), regexPolicy,
+        fingerprint: hash({ kind: 'active', material: material.fingerprint, selection,
+            power: settings.power_user, regexPolicy }),
+        settingsRevision: getSettingsRevision(settings) };
+}
+
+/** Capture a deliberate saved selection; an empty profile is never a fallback. */
+export function captureGenerationBinding(directories, selection, acknowledgement) {
+    if (selection?.kind === 'profile') return { kind: 'profile', ...captureChatProfile(directories, selection.profileId) };
+    if (selection?.kind !== 'active') fail('Choose a saved profile or the acknowledged active connection.', 400);
+    const material = readActiveConnection(directories);
+    if (!Number.isSafeInteger(acknowledgement?.settingsRevision) || acknowledgement.settingsRevision !== material.settingsRevision) {
+        fail('The active connection settings are not acknowledged. Save them before generating a reply.', 409);
+    }
+    return { kind: 'active', backend: material.backend || 'chat', fingerprint: material.fingerprint };
+}
+
 /** Persist only this binding. Changed saved controls require an explicit new acceptance. */
 export function captureChatProfile(directories, profileId) {
     const { profile, fingerprint, backend } = readProfile(directories, profileId);
@@ -119,7 +205,7 @@ export function captureChatProfile(directories, profileId) {
 
 /** Read current controls only when they still match the accepted reference. */
 export function resolveGenerationProfile(directories, binding) {
-    const material = readProfile(directories, binding?.profileId);
+    const material = binding?.kind === 'active' ? readActiveConnection(directories) : readProfile(directories, binding?.profileId);
     if (!binding?.fingerprint || material.fingerprint !== binding.fingerprint) fail('The saved connection settings changed after this operation was accepted. Retry with the current settings.', 409);
     return material;
 }
@@ -130,8 +216,9 @@ export function resolveGenerationProfile(directories, binding) {
  * back to the active browser profile.
  */
 export function getChatProfileContextLimit(directories, binding) {
-    const { preset, contextLimit } = resolveGenerationProfile(directories, binding);
+    const { preset, contextLimit, kind, active } = resolveGenerationProfile(directories, binding);
     if (contextLimit) return contextLimit;
+    if (kind === 'active') return Number.isSafeInteger(active.openai_max_context) && active.openai_max_context > 0 ? active.openai_max_context : null;
     for (const key of ['openai_max_context', 'max_context']) {
         const value = Number(preset?.[key]);
         if (Number.isFinite(value) && value > 0) return Math.floor(value);
@@ -140,11 +227,28 @@ export function getChatProfileContextLimit(directories, binding) {
 }
 
 /** Resolve controls through the same preset/profile builders used by the browser. */
-export async function buildChatProfileRequest(directories, binding, messages, maxTokens, generate, { modelOverride = '', overridePayload = {} } = {}) {
+export async function buildChatProfileRequest(directories, binding, messages, maxTokens, generate, { modelOverride = '', overridePayload = {}, rawOptions = {} } = {}) {
     const material = resolveGenerationProfile(directories, binding);
     if (material.backend === 'text') fail('Use the text request builder for this profile.', 400);
     if (!Array.isArray(messages) || !Number.isSafeInteger(maxTokens) || maxTokens < 1) fail('The generation input is invalid.', 400);
     const { profile, source, active, preset, proxy } = material;
+    if (material.kind === 'active') {
+        const model = modelOverride.trim() || profile.model;
+        const settings = { ...active, openai_max_tokens: rawOptions.preserveReasoningBudget ? active.openai_max_tokens : maxTokens };
+        if (Number.isFinite(rawOptions.temperature)) settings.temp_openai = rawOptions.temperature;
+        const { generate_data: generated } = await generate(settings, model, 'quiet', messages);
+        const payload = createChatRequestData({ ...generated, ...overridePayload,
+            stream: false, messages, model, chat_completion_source: source, secret_id: profile['secret-id'], active_connection: true, ...proxy });
+        const secretType = source === 'openai_responses' ? SECRET_KEYS.OPENAI
+            : source === 'vertexai' && payload.vertexai_auth_mode === 'full' ? SECRET_KEYS.VERTEXAI_SERVICE_ACCOUNT : SECRET_KEYS[source.toUpperCase()];
+        const hasKey = payload.secret_id && (source === 'custom'
+            ? secretIdExists(directories, secretType, payload.secret_id) : Boolean(readSecret(directories, secretType, payload.secret_id)));
+        if (!payload.reverse_proxy && (payload.secret_id || source !== 'custom') && !hasKey) {
+            fail('Select a saved API key for the active connection.', 409);
+        }
+        const requestControls = { responseLength: maxTokens, preserveReasoningBudget: Boolean(rawOptions.preserveReasoningBudget) };
+        return source === 'custom' ? { ...payload, request_controls: requestControls } : applyGenerationRequestControls(payload, requestControls);
+    }
     const { overrides, profileFieldNames } = resolveProfileRequestOverrides(profile, overridePayload, preset);
     const payload = {
         stream: false, messages, max_tokens: maxTokens, model: modelOverride.trim() || profile.model,

@@ -10,8 +10,8 @@ import { textgen_types } from '../public/scripts/text-provider-parameters.js';
 import { providerSettings, instructSettings, promptMessages, expectedPrompts } from './fixtures/text-generation-baseline.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
-const { captureChatProfile, buildChatProfileRequest, resolveGenerationProfile } = await import('../src/generation/profiles.js');
-const { runChatProfile } = await import('../src/generation/service.js');
+const { captureChatProfile, captureGenerationBinding, buildChatProfileRequest, resolveGenerationProfile } = await import('../src/generation/profiles.js');
+const { runChatProfile, runTextGeneration, validateActiveGenerationContext } = await import('../src/generation/service.js');
 const { acceptJob, getJob } = await import('../src/jobs/store.js');
 const { buildTextProfileRequest, resolveTextTokenizer } = await import('../src/generation/text-request.js');
 const { createMacroEnvironment } = await import('../src/macros/index.js');
@@ -32,6 +32,82 @@ function textFixture(t) {
     return { root, profile, settings, directories, save, capture, material };
 }
 
+for (const backend of ['chat', 'text']) test(`explicit saved-active ${backend} capture ignores the selected profile and preset`, async t => {
+    const fixture = textFixture(t);
+    const settings = fixture.settings;
+    settings._settingsRevision = 17;
+    settings.main_api = backend === 'text' ? 'textgenerationwebui' : 'openai';
+    settings.active_generation = { api: settings.main_api, source: backend === 'text' ? 'llamacpp' : 'custom',
+        model: 'active-model', serverUrl: 'http://127.0.0.1:6000' };
+    settings.oai_settings = { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'active-model', temp_openai: 0.21, openai_max_tokens: 999,
+        reverse_proxy: '', proxy_password: '' };
+    settings.textgenerationwebui_settings.type = 'llamacpp';
+    settings.textgenerationwebui_settings.temp = 0.21;
+    settings.textgenerationwebui_settings.preset = 'missing-and-not-to-be-reloaded';
+    settings.textgenerationwebui_settings.openrouter_service_tier = 'priority';
+    settings.power_user.instruct = { ...instructSettings, enabled: true };
+    settings.extension_settings.connectionManager.selectedProfile = 'wrong';
+    settings.proxies = [{ name: 'Unselected', source: 'custom', url: 'https://unused.invalid', password: 'unused' }];
+    fixture.profile.preset = 'missing';
+    fixture.save();
+    assert.throws(() => captureGenerationBinding(fixture.directories, { kind: 'active' }), /not acknowledged/);
+    assert.throws(() => captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 16 }), /not acknowledged/);
+    const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 17 });
+    assert.equal(binding.kind, 'active');
+    assert.equal(binding.profileId, undefined);
+    assert.equal(binding.backend, backend);
+    const material = resolveGenerationProfile(fixture.directories, binding);
+    assert.equal(material.profile.model, 'active-model');
+    assert.equal(material.preset, undefined);
+    if (backend === 'text') {
+        assert.equal(material.active.api_server, 'http://127.0.0.1:6000');
+        assert.equal(material.active.temp, 0.21);
+        assert.equal(material.instruct.enabled, true);
+        assert.equal(material.active.openrouter_service_tier, 'priority');
+    } else {
+        const payload = await buildChatProfileRequest(fixture.directories, binding, [{ role: 'user', content: 'Hello' }], 73,
+            async controls => ({ generate_data: { temperature: controls.temp_openai, max_tokens: controls.openai_max_tokens, custom_url: controls.custom_url } }));
+        assert.equal(payload.temperature, 0.21);
+        assert.equal(payload.max_tokens, 73);
+        assert.equal(payload.custom_url, 'http://127.0.0.1:6000');
+        assert.equal(payload.reverse_proxy, '');
+    }
+    settings.extension_settings.connectionManager.selectedProfile = 'another-wrong-profile';
+    fixture.save();
+    assert.equal(resolveGenerationProfile(fixture.directories, binding).fingerprint, binding.fingerprint);
+    settings.power_user.instruct.input_sequence = 'changed';
+    fixture.save();
+    assert.throws(() => resolveGenerationProfile(fixture.directories, binding), /changed/);
+});
+
+for (const backend of ['chat', 'text']) test(`saved-active ${backend} executes raw formatting and retains its cleaned result`, async t => {
+    const fixture = textFixture(t);
+    Object.assign(fixture.settings, { _settingsRevision: 3, main_api: backend === 'text' ? 'textgenerationwebui' : 'openai',
+        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'active-model', temp_openai: 0.21, openai_max_tokens: 999 } });
+    fixture.settings.active_generation = { api: fixture.settings.main_api, source: backend === 'text' ? 'llamacpp' : 'custom', model: 'active-model', serverUrl: 'http://127.0.0.1:6000' };
+    fixture.settings.textgenerationwebui_settings.type = 'llamacpp';
+    fixture.settings.power_user = { instruct: structuredClone(instructSettings), context: { names_as_stop_strings: true }, custom_stopping_strings: '["<stop>"]', trim_spaces: true, auto_fix_generated_markdown: true };
+    fixture.save();
+    const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 });
+    const job = acceptJob(fixture.directories, { owner: 'tester', type: 'roleplay.reply', submissionKey: 'active', intent: {} }).job;
+    let calls = 0;
+    const options = { context: { owner: 'tester', directories: fixture.directories }, binding, messages: promptMessages, maxTokens: 73,
+        userName: 'Sam', characterName: 'Ada', macroEnvironment: { evaluate: value => value.replaceAll('{{char}}', 'Ada').replaceAll('{{user}}', 'Sam') },
+        rawOptions: { systemPrompt: ' Story {{char}} ', prefill: ' {{user}} ', quietToLoud: true }, jobContext: { job, directories: fixture.directories, signal: new AbortController().signal },
+        fetch: async (url, request) => {
+            calls++;
+            assert.ok(String(url).startsWith('http://127.0.0.1:6000/'));
+            const body = JSON.parse(request.body);
+            if (backend === 'text') { assert.equal(body.prompt, expectedPrompts.raw); assert.ok(body.stop.includes('\nSam:')); }
+            else assert.deepEqual(body.messages, expectedPrompts.chat);
+            return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'Ada: * hello *<sto' } }] }) };
+        } };
+    assert.equal((await runChatProfile(options)).text, '*hello*');
+    fixture.settings.main_api = 'unsupported'; fixture.save();
+    assert.equal((await runChatProfile(options)).text, '*hello*');
+    assert.equal(calls, 1);
+});
+
 test('stock text destinations do not inherit an unrelated active URL', t => {
     const fixture = textFixture(t);
     const defaults = { mancer: 'https://neuro.mancer.tech', togetherai: 'https://api.together.xyz', infermaticai: 'https://api.totalgpt.ai',
@@ -51,6 +127,160 @@ test('stock text destinations do not inherit an unrelated active URL', t => {
     }
 });
 
+test('active Custom keeps saved authentication out of artefacts and enforces final limits', async t => {
+    const fixture = textFixture(t);
+    Object.assign(fixture.settings, { _settingsRevision: 3, main_api: 'openai',
+        active_generation: { api: 'openai', source: 'custom', model: 'fixture-model' },
+        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'fixture-model',
+            temp_openai: 1, custom_include_headers: 'Authorization: Bearer header-private',
+            custom_include_body: 'api_key: body-private\nmax_tokens: 9000' } });
+    fixture.save();
+    const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 });
+    const job = acceptJob(fixture.directories, { owner: 'alice', type: 'roleplay.reply', submissionKey: 'custom-auth', intent: {} }).job;
+    const options = { context: { owner: 'alice', directories: fixture.directories }, binding,
+        messages: [{ role: 'user', content: 'Hi' }], maxTokens: 73, rawOptions: { temperature: 0 },
+        jobContext: { job, directories: fixture.directories, signal: new AbortController().signal },
+        fetch: async (_url, request) => {
+            const body = JSON.parse(request.body);
+            assert.equal(body.max_tokens, 73);
+            assert.equal(body.temperature, 0);
+            assert.equal(body.api_key, 'body-private');
+            assert.equal(request.headers.Authorization, 'Bearer header-private');
+            return new Response(JSON.stringify({ choices: [{ message: { content: 'Reply' } }] }));
+        } };
+    assert.equal((await runChatProfile(options)).text, 'Reply');
+    for (const entry of fs.readdirSync(path.join(fixture.root, 'jobs', 'artifacts'), { recursive: true })) {
+        const filename = path.join(fixture.root, 'jobs', 'artifacts', entry);
+        if (fs.statSync(filename).isFile()) assert.doesNotMatch(fs.readFileSync(filename, 'utf8'), /header-private|body-private/);
+    }
+    await assert.rejects(runChatProfile({ ...options, overridePayload: { custom_include_headers: 'Authorization: unsafe' } }), /Save authentication overrides/);
+    fixture.settings.oai_settings.custom_url = 'http://user:private@localhost:6000'; fixture.save();
+    assert.throws(() => captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 }), /without embedded credentials/);
+});
+
+test('active provider extraction preserves native text blocks and schema responses', async t => {
+    const fixture = textFixture(t);
+    const cases = [
+        ['cohere', { message: { content: [{ type: 'text', text: 'Cohere reply' }] } }, 'Cohere reply'],
+        ['claude', { content: [{ type: 'thinking', thinking: 'Private thought' }, { type: 'text', text: 'First' }, { type: 'text', text: 'Second' }] }, 'First\n\nSecond'],
+        ['mistralai', { choices: [{ message: { content: [{ type: 'text', text: 'Structured reply' }] } }] }, 'Structured reply'],
+        ['custom', { choices: [], text: 'Fallback text' }, 'Fallback text'],
+    ];
+    for (const [source, response, expected] of cases) {
+        Object.assign(fixture.settings, { _settingsRevision: 3, main_api: 'openai',
+            active_generation: { api: 'openai', source, model: 'fixture-model' },
+            oai_settings: { chat_completion_source: source, custom_url: 'http://127.0.0.1:6000', reverse_proxy: 'http://127.0.0.1:6000', proxy_password: 'private', openai_max_tokens: 999 } });
+        fs.writeFileSync(path.join(fixture.root, 'secrets.json'), JSON.stringify({ [`api_key_${source}`]: [{ id: 'selected', value: 'private', active: true }] }));
+        fixture.save();
+        const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 });
+        const options = { context: { owner: 'alice', directories: fixture.directories }, binding,
+            messages: [{ role: 'user', content: 'Hi' }], maxTokens: 73,
+            fetch: async () => new Response(JSON.stringify(response)) };
+        assert.equal((await runChatProfile(options)).text, expected, source);
+        if (source === 'claude') {
+            const object = { text: 'Character: * keep spaces *' };
+            const result = await runChatProfile({ ...options, rawOptions: { jsonSchema: { name: 'answer', value: { type: 'object' } } },
+                fetch: async () => new Response(JSON.stringify({ content: [{ type: 'tool_use', name: 'answer', input: object }] })) });
+            assert.deepEqual(JSON.parse(result.text), object);
+        }
+    }
+});
+
+test('active output transformations preserve scope, order and refusal before dispatch', async t => {
+    const fixture = textFixture(t);
+    const script = (findRegex, replaceString, extra = {}) => ({ findRegex, replaceString, placement: [2], ...extra });
+    Object.assign(fixture.settings, { _settingsRevision: 3, main_api: 'openai',
+        active_generation: { api: 'openai', source: 'custom', model: 'fixture', regexPreset: { api: 'openai', name: 'Current' } },
+        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'fixture',
+            extensions: { regex_scripts: [script('Beta', 'Gamma')] } } });
+    Object.assign(fixture.settings.extension_settings, {
+        regex: [script('(Alpha)', 'Beta'), script('Beta', 'Wrong', { markdownOnly: true }), script('Beta', 'Wrong', { disabled: true })],
+        preset_allowed_regex: { openai: ['Current'] }, character_allowed_regex: ['ada.png'],
+    });
+    fixture.save();
+    let calls = 0;
+    const options = { context: { owner: 'alice', directories: fixture.directories },
+        binding: captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 }),
+        messages: [{ role: 'user', content: 'Hi' }], maxTokens: 73,
+        macroEnvironment: createMacroEnvironment({ extra: { characterAvatar: 'ada.png',
+            character: { extensions: { regex_scripts: [script('Gamma', 'Final')] } } } }),
+        fetch: async () => { calls++; return new Response(JSON.stringify({ choices: [{ message: { content: 'Alpha' } }] })); },
+    };
+    assert.equal((await runChatProfile(options)).text, 'Final');
+    assert.equal(calls, 1);
+    await assert.rejects(runChatProfile({ ...options, macroEnvironment: undefined }), /captured character/);
+    assert.equal(calls, 1);
+    fixture.settings.extension_settings.regex.push(script('Final', '{{setvar::unsafe::1}}'));
+    fixture.save();
+    options.binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 });
+    await assert.rejects(runChatProfile(options), /Macro-dependent/);
+    assert.equal(calls, 1);
+    fixture.settings.extension_settings.disabledExtensions = ['regex']; fixture.save();
+    assert.throws(() => resolveGenerationProfile(fixture.directories, options.binding), /changed/);
+    options.binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 });
+    assert.equal((await runChatProfile(options)).text, 'Alpha');
+});
+
+test('active Custom binds the selected endpoint key, including an existing keyless ID', async t => {
+    const fixture = textFixture(t);
+    Object.assign(fixture.settings, { _settingsRevision: 3, main_api: 'openai',
+        active_generation: { api: 'openai', source: 'custom', model: 'typed-model' },
+        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'typed-model' },
+        selected_custom_endpoint_preset: { name: 'Saved endpoint', secretId: 'endpoint-a', url: 'https://unused.invalid', model: 'wrong' } });
+    fixture.save();
+    for (const value of ['endpoint-key', '']) {
+        fs.writeFileSync(path.join(fixture.root, 'secrets.json'), JSON.stringify({ api_key_custom: [
+            { id: 'endpoint-a', value, active: false }, { id: 'other-b', value: 'wrong-key', active: true },
+        ] }));
+        const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 });
+        const payload = await buildChatProfileRequest(fixture.directories, binding, [{ role: 'user', content: 'Hello' }], 73,
+            async settings => ({ generate_data: { custom_url: settings.custom_url } }));
+        assert.equal(payload.secret_id, 'endpoint-a');
+        assert.equal(payload.model, 'typed-model');
+        await runTextGeneration({ context: { owner: 'alice', directories: fixture.directories }, backend: 'chat', payload,
+            fetch: async (url, request) => {
+                assert.equal(url, 'http://127.0.0.1:6000/chat/completions');
+                assert.equal(request.headers.Authorization, value ? 'Bearer endpoint-key' : undefined);
+                return new Response(JSON.stringify({ choices: [{ message: { content: 'Reply' } }] }));
+            } });
+    }
+    fs.writeFileSync(path.join(fixture.root, 'secrets.json'), JSON.stringify({ api_key_custom: [{ id: 'other-b', value: 'wrong-key', active: true }] }));
+    assert.throws(() => captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 }), /key.*unavailable/);
+});
+
+test('active OpenRouter preserves website-default model and provider quantisations', async t => {
+    const fixture = textFixture(t);
+    Object.assign(fixture.settings, { _settingsRevision: 3, main_api: 'openai',
+        active_generation: { api: 'openai', source: 'openrouter', model: null },
+        oai_settings: { chat_completion_source: 'openrouter', openrouter_model: 'OR_Website', openrouter_quantizations: ['int4'] } });
+    fs.writeFileSync(path.join(fixture.root, 'secrets.json'), JSON.stringify({ api_key_openrouter: [{ id: 'selected', value: 'private', active: true }] }));
+    fixture.save();
+    const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 });
+    const payload = await buildChatProfileRequest(fixture.directories, binding, [{ role: 'user', content: 'Hello' }], 73,
+        async settings => ({ generate_data: { quantizations: settings.openrouter_quantizations } }));
+    assert.equal(payload.model, null);
+    await runTextGeneration({ context: { owner: 'alice', directories: fixture.directories }, backend: 'chat', payload,
+        fetch: async (_url, request) => {
+            const body = JSON.parse(request.body);
+            assert.equal(body.model, null);
+            assert.deepEqual(body.provider.quantizations, ['int4']);
+            assert.equal(request.headers.Authorization, 'Bearer private');
+            return new Response(JSON.stringify({ choices: [{ message: { content: 'Reply' } }] }));
+        } });
+    fixture.settings.oai_settings.openrouter_model = 'some-model';
+    fixture.save();
+    assert.throws(() => captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 }), /Save a model/);
+});
+
+test('an empty active text destination cannot become a hosted default', t => {
+    const fixture = textFixture(t);
+    Object.assign(fixture.settings, { _settingsRevision: 3, main_api: 'textgenerationwebui',
+        active_generation: { api: 'textgenerationwebui', source: 'openrouter', model: 'saved', serverUrl: '' } });
+    fixture.settings.textgenerationwebui_settings.type = 'openrouter';
+    fixture.save();
+    assert.throws(() => captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 }), /server URL/);
+});
+
 test('malformed saved instruct, stop and bias controls fail during capture', t => {
     const fixture = textFixture(t);
     fixture.profile['instruct-state'] = true;
@@ -61,6 +291,171 @@ test('malformed saved instruct, stop and bias controls fail during capture', t =
     fixture.settings.power_user = {};
     fixture.settings.textgenerationwebui_settings.logit_bias = [{ text: 'word', value: 'invalid' }];
     assert.throws(fixture.capture, error => error.status === 409);
+});
+
+test('active Azure rejects embedded credentials and text capture rejects invalid IDs or an empty Ollama model', t => {
+    const fixture = textFixture(t);
+    Object.assign(fixture.settings, { _settingsRevision: 3, main_api: 'openai',
+        active_generation: { api: 'openai', source: 'azure_openai', model: 'saved' },
+        oai_settings: { chat_completion_source: 'azure_openai', azure_base_url: 'https://azure.invalid', azure_deployment_name: 'saved', azure_api_version: '2025-01-01' } });
+    fs.writeFileSync(path.join(fixture.root, 'secrets.json'), JSON.stringify({ api_key_azure_openai: [{ id: 'selected', value: 'private', active: true }] }));
+    const capture = () => { fixture.save(); return captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 }); };
+    assert.equal(capture().kind, 'active');
+    for (const field of ['azure_base_url', 'azure_deployment_name', 'azure_api_version']) {
+        const saved = fixture.settings.oai_settings[field];
+        delete fixture.settings.oai_settings[field];
+        assert.throws(capture, /Azure/i);
+        fixture.settings.oai_settings[field] = saved;
+    }
+    fixture.settings.oai_settings.azure_base_url = 'https://user:private@azure.invalid';
+    assert.throws(capture, /embedded credentials/);
+    fixture.settings.textgenerationwebui_settings.banned_tokens = '[oops]';
+    assert.throws(fixture.capture, /token.*invalid/i);
+    fixture.settings.textgenerationwebui_settings.banned_tokens = '';
+    fixture.settings.textgenerationwebui_settings.logit_bias = [{ text: '[false]', value: 0 }];
+    assert.throws(fixture.capture, /token.*invalid/i);
+    fixture.settings.textgenerationwebui_settings.logit_bias = [{ text: '[{{user}}]', value: 0 }];
+    assert.throws(fixture.capture, /token.*invalid/i);
+    fixture.settings.textgenerationwebui_settings.logit_bias = [];
+    fixture.profile.api = 'ollama'; fixture.profile.model = '';
+    assert.throws(fixture.capture, /model/i);
+    fixture.profile.api = 'llamacpp';
+    assert.equal(fixture.capture().backend, 'text');
+});
+
+test('active capability checks cover indirect macros and refuse dynamic regex only when applicable', async t => {
+    const fixture = textFixture(t);
+    Object.assign(fixture.settings, { _settingsRevision: 3, main_api: 'openai',
+        active_generation: { api: 'openai', source: 'custom', model: 'saved' },
+        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000' } });
+    fixture.settings.power_user.experimental_macro_engine = true;
+    const capture = () => { fixture.save(); return captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 }); };
+    let calls = 0;
+    const options = { context: { owner: 'alice', directories: fixture.directories }, binding: capture(), maxTokens: 73,
+        macroEnvironment: createMacroEnvironment(), fetch: async () => {
+            calls++; return new Response(JSON.stringify({ choices: [{ message: { content: '{"text":"User: * original *"}' } }] }));
+        } };
+    for (const content of ['{{if isMobile}}phone{{else}}desktop{{/if}}', '{{if::isMobile}}phone{{else}}desktop{{/if}}',
+        '{{if {{reverse::eliboMsi}}}}phone{{else}}desktop{{/if}}', '{{if {{hasExtension::regex}}}}yes{{/if}}']) {
+        await assert.rejects(runChatProfile({ ...options, messages: [{ role: 'user', content }] }), /not available|cannot.*server|requires.*browser/i);
+    }
+    assert.equal(calls, 0);
+    for (const findRegex of ['<GROUP>', '<CHARIFNOTGROUP>']) {
+        fixture.settings.extension_settings.regex = [{ findRegex, replaceString: 'replacement', substituteRegex: 1, placement: [2] }];
+        options.binding = capture();
+        await assert.rejects(runChatProfile({ ...options, messages: [{ role: 'user', content: 'hello' }] }), /Macro-dependent/i);
+    }
+    for (const replaceString of ['<USER>', '<GROUP>', '<CHARIFNOTGROUP>', '$1', '{{match}}', '$<name>']) {
+        fixture.settings.extension_settings.regex = [{ findRegex: '(hello)', replaceString, placement: [2] }];
+        options.binding = capture();
+        await assert.rejects(runChatProfile({ ...options, messages: [{ role: 'user', content: 'hello' }] }), /Macro-dependent|capture-dependent/i);
+    }
+    assert.equal(calls, 0);
+    const result = await runChatProfile({ ...options, messages: [{ role: 'user', content: 'hello' }],
+        rawOptions: { jsonSchema: { name: 'Reply', value: { type: 'object', properties: { text: { type: 'string' } } } } } });
+    assert.equal(result.text, '{"text":"User: * original *"}');
+    assert.equal(calls, 1);
+});
+
+test('active preflight resolves token bans in isolated state and ignores unused Chat text controls', async t => {
+    const fixture = textFixture(t);
+    Object.assign(fixture.settings, { _settingsRevision: 3, main_api: 'textgenerationwebui',
+        active_generation: { api: 'textgenerationwebui', source: 'llamacpp', model: 'saved', serverUrl: 'http://127.0.0.1:6000' } });
+    fixture.settings.power_user.experimental_macro_engine = true;
+    fixture.settings.textgenerationwebui_settings.banned_tokens = '{{getvar::ban}}';
+    fixture.settings.textgenerationwebui_settings.type = 'llamacpp';
+    const material = () => {
+        fixture.save();
+        return resolveGenerationProfile(fixture.directories, captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 }));
+    };
+    const env = createMacroEnvironment({ variables: { local: { ban: '[oops]', count: '0' } } });
+    await assert.rejects(validateActiveGenerationContext(material(), env, [{ role: 'user', content: '{{incvar::count}}Hello' }]), /token.*invalid/i);
+    assert.equal(env.evaluate('{{getvar::count}}'), '0');
+    env.evaluate('{{setvar::ban::[17]}}');
+    await validateActiveGenerationContext(material(), env, [{ role: 'user', content: '{{incvar::count}}Hello' }]);
+    assert.equal(env.evaluate('{{getvar::count}}'), '0');
+    Object.assign(fixture.settings, { main_api: 'openai', active_generation: { api: 'openai', source: 'custom', model: 'saved' },
+        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000' } });
+    Object.assign(fixture.settings.power_user, { instruct: { enabled: true, input_sequence: '{{isMobile}}' },
+        custom_stopping_strings_macro: false, custom_stopping_strings: '["{{isMobile}}"]' });
+    let calls = 0;
+    const bindingMaterial = material();
+    await validateActiveGenerationContext(bindingMaterial, env, [{ role: 'user', content: 'Hello' }]);
+    const result = await runChatProfile({ context: { owner: 'alice', directories: fixture.directories },
+        binding: captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 }), messages: [{ role: 'user', content: 'Hello' }],
+        maxTokens: 73, macroEnvironment: env, fetch: async (_url, request) => {
+            calls++;
+            assert.ok(JSON.parse(request.body).stop.includes('{{isMobile}}'));
+            return new Response(JSON.stringify({ choices: [{ message: { content: 'Valid reply' } }] }));
+        } });
+    assert.equal(result.text, 'Valid reply');
+    assert.equal(calls, 1);
+});
+
+test('active validation includes cleanup stop passes and the actual response limit without changing caller state', async t => {
+    const fixture = textFixture(t);
+    Object.assign(fixture.settings, { _settingsRevision: 3, main_api: 'openai',
+        active_generation: { api: 'openai', source: 'custom', model: 'saved' },
+        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000' } });
+    Object.assign(fixture.settings.power_user, { experimental_macro_engine: true, custom_stopping_strings_macro: true,
+        custom_stopping_strings: JSON.stringify(['{{if .seen}}{{input}}{{else}}{{setvar::seen::true}}END{{/if}}']) });
+    const capture = () => { fixture.save(); return captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 }); };
+    let calls = 0;
+    let persisted = 0;
+    const env = createMacroEnvironment({}, {}, { onVariableChange: () => persisted++ });
+    const options = { context: { owner: 'alice', directories: fixture.directories }, maxTokens: 73,
+        messages: [{ role: 'user', content: 'Hello' }], macroEnvironment: env,
+        fetch: async (_url, request) => {
+            calls++;
+            assert.deepEqual(JSON.parse(request.body).logit_bias, [[73, false]]);
+            return new Response(JSON.stringify({ choices: [{ text: 'Valid reply.' }] }));
+        } };
+    await assert.rejects(runChatProfile({ ...options, binding: capture() }), /input.*unavailable/);
+    assert.equal(env.evaluate('{{getvar::seen}}'), '');
+    assert.equal(persisted, 0);
+    Object.assign(fixture.settings, { main_api: 'textgenerationwebui', active_generation: {
+        api: 'textgenerationwebui', source: 'llamacpp', model: 'saved', serverUrl: 'http://127.0.0.1:6000' } });
+    fixture.settings.textgenerationwebui_settings.type = 'llamacpp';
+    fixture.settings.power_user.custom_stopping_strings = JSON.stringify([
+        '{{if .third}}{{input}}{{else}}{{if .second}}{{setvar::third::true}}{{else}}{{if .first}}{{setvar::second::true}}{{else}}{{setvar::first::true}}{{/if}}{{/if}}END{{/if}}',
+    ]);
+    await assert.rejects(runChatProfile({ ...options, binding: capture() }), /input.*unavailable/);
+    assert.equal(env.evaluate('{{getvar::first}}'), '');
+    assert.equal(persisted, 0);
+    assert.equal(calls, 0);
+    fixture.settings.power_user.custom_stopping_strings = '[]';
+    fixture.settings.textgenerationwebui_settings.banned_tokens = '[{{maxResponseTokens}}]';
+    assert.equal((await runChatProfile({ ...options, binding: capture() })).text, 'Valid reply.');
+    assert.equal(calls, 1);
+    assert.equal(persisted, 0);
+});
+
+test('active validation preserves assistant roles, overrides and prefill-before-input ordering', async t => {
+    const fixture = textFixture(t);
+    Object.assign(fixture.settings, { _settingsRevision: 3, main_api: 'textgenerationwebui',
+        active_generation: { api: 'textgenerationwebui', source: 'llamacpp', model: 'saved', serverUrl: 'http://127.0.0.1:6000' } });
+    fixture.settings.textgenerationwebui_settings.type = 'llamacpp';
+    fixture.settings.power_user.experimental_macro_engine = true;
+    fixture.settings.power_user.instruct = { ...instructSettings, enabled: true, macro: true, output_suffix: '{{isMobile}}' };
+    const capture = () => { fixture.save(); return captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 }); };
+    const transcript = [{ role: 'assistant', content: 'An earlier reply.' }, { role: 'user', content: 'Next question.' }];
+    let calls = 0;
+    const options = { context: { owner: 'alice', directories: fixture.directories }, maxTokens: 73,
+        macroEnvironment: createMacroEnvironment(), fetch: async () => {
+            calls++; return new Response(JSON.stringify({ choices: [{ text: 'Valid reply.' }] }));
+        } };
+    await assert.rejects(runChatProfile({ ...options, binding: capture(), messages: transcript }), /isMobile.*unavailable/);
+    assert.equal((await runChatProfile({ ...options, binding: capture(), messages: transcript, rawOptions: { instructOverride: true } })).text, 'Valid reply.');
+    fixture.settings.power_user.instruct.output_suffix = '{{setvar::ban::[oops]}}';
+    fixture.settings.textgenerationwebui_settings.banned_tokens = '{{getvar::ban}}';
+    await assert.rejects(runChatProfile({ ...options, binding: capture(), messages: transcript }), /token.*invalid/i);
+    Object.assign(fixture.settings, { main_api: 'openai', active_generation: { api: 'openai', source: 'custom', model: 'saved' },
+        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000' } });
+    await assert.rejects(runChatProfile({ ...options, binding: capture(), messages: '{{if .flag}}{{input}}{{/if}}',
+        rawOptions: { prefill: '{{setvar::flag::true}}' } }), /input.*unavailable/);
+    fixture.settings.power_user.experimental_macro_engine = false;
+    await assert.rejects(runChatProfile({ ...options, binding: capture(), messages: '{{isMobile}}' }), /isMobile.*unavailable/);
+    assert.equal(calls, 1);
 });
 
 test('prompt macros precede token bans and consume request-local banned words once', async t => {
