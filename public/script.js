@@ -12162,7 +12162,10 @@ async function saveChatImmediately(...args) {
         scheduledCharacterId,
         scheduledGroupId,
         scheduledChatId,
+        account,
     } = options;
+
+    if (account !== undefined && account !== getCurrentUserHandle()) return false;
 
     if (wasGroupChat || (selected_group && !activeChatName)) {
         toastr.error(t`Operation was aborted to prevent data corruption.`, t`saveChat called for a group chat`);
@@ -12228,7 +12231,7 @@ async function saveChatImmediately(...args) {
         const saveChatRequest = await compressRequest({
             method: 'POST',
             cache: 'no-cache',
-            headers: getRequestHeaders(),
+            headers: { ...getRequestHeaders(), ...(account === undefined ? {} : { 'X-Neconyan-Account': account }) },
             body: JSON.stringify({
                 ch_name: resolvedCharacterName,
                 file_name: fileName,
@@ -12244,6 +12247,7 @@ async function saveChatImmediately(...args) {
 
         if (result.ok) {
             const responseData = await result.json().catch(() => ({}));
+            if (account !== undefined && account !== getCurrentUserHandle()) return false;
             rememberQueuedChatIntegrity(integrityKey, responseData?.integrity);
             if (isActiveChatSave && typeof responseData?.integrity === 'string' && responseData.integrity) {
                 chat_metadata.integrity = responseData.integrity;
@@ -12284,7 +12288,7 @@ async function saveChatImmediately(...args) {
             return false;
         }
 
-        return await saveChatImmediately({ chatName, withMetadata, metadataSnapshot: metadata, mesId, force: true, chatData, throwOnError, deferBackup, deferSequenceId, allowShrink, activeChatName, characterName, avatarUrl, wasGroupChat, scheduledGeneration, scheduledCharacterId, scheduledGroupId, scheduledChatId });
+        return await saveChatImmediately({ chatName, withMetadata, metadataSnapshot: metadata, mesId, force: true, chatData, throwOnError, deferBackup, deferSequenceId, allowShrink, activeChatName, characterName, avatarUrl, wasGroupChat, scheduledGeneration, scheduledCharacterId, scheduledGroupId, scheduledChatId, account });
     } catch (error) {
         console.error(error);
         toastr.error(t`Check the server connection and reload the page to prevent data loss.`, t`Chat could not be saved`);
@@ -13040,6 +13044,8 @@ export async function getSettings(initLoaderHandle = null) {
 
     const data = await response.json();
     if (data.result != 'file not find' && data.settings) {
+        const conversationSync = await import('./scripts/neconyan-conversation/store-sync.js');
+        conversationSync.bindConversationAccount(data.inChatAgentAccount);
         settings = JSON.parse(data.settings);
         lastServerSettingsVersion = normalizeSettingsVersion(settings._version);
         lastServerSettingsRevision = normalizeSettingsRevision(settings._settingsRevision);
@@ -13053,6 +13059,7 @@ export async function getSettings(initLoaderHandle = null) {
         accountStorage.init(settings?.accountStorage);
         applyNeconyanFrontendIcon();
         await setUserControls(data.enable_accounts);
+        conversationSync.assertConversationAccount();
         setRequestCompressionConfig(data.request_compression);
 
         // Allow subscribers to mutate settings

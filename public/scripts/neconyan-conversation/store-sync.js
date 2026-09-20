@@ -16,7 +16,8 @@
  * (`_conversationOmitted`), so this module is the only path that sends
  * Conversation content, and it always does so with an exact expected version.
  */
-import { getCurrentUserHandle, getRequestHeaders, settings } from '../../script.js';
+import { getRequestHeaders, settings } from '../../script.js';
+import { getCurrentUserHandle } from '../user.js';
 import { extension_settings } from '../extensions.js';
 import { CONVERSATION_STORE_KEY } from './constants.js';
 import { cloneConversationValue, conversationValuesEqual, mergeConversationStore } from './store-sync-utils.js';
@@ -27,6 +28,7 @@ const STORE_SAVE_DEBOUNCE_MS = 500;
 
 let savedSnapshot = null;
 let savedVersion = null;
+let loadedAccount;
 let syncQueue = Promise.resolve();
 
 function readLocalStore() {
@@ -40,11 +42,18 @@ function setLocalStore(store) {
 
 function swallow() {}
 
+/** Bind the downloaded settings to their authenticated owner, before profile loading. */
+export function bindConversationAccount(account) {
+    if (typeof account !== 'string' || !account || (loadedAccount !== undefined && loadedAccount !== account)) throw new Error('account_changed');
+    loadedAccount = account;
+}
+
 /**
  * Remember the store and version the server currently agrees with. Called after
  * a successful read or write, and once at startup from the loaded settings.
  */
 export function captureConversationStore(store = readLocalStore(), version = null) {
+    checkAccount(loadedAccount);
     if (!store || typeof store !== 'object') {
         return;
     }
@@ -72,14 +81,24 @@ export function getConversationSavedSnapshot() {
     return savedSnapshot;
 }
 
-async function postJson(url, body) {
+function checkAccount(account) {
+    if (loadedAccount === undefined || account !== getCurrentUserHandle() || account !== loadedAccount) throw new Error('account_changed');
+}
+
+export function assertConversationAccount(account = getCurrentUserHandle()) {
+    checkAccount(account);
+}
+
+async function postJson(url, body, account) {
+    checkAccount(account);
     const response = await fetch(url, {
         method: 'POST',
         credentials: 'same-origin',
-        headers: { ...getRequestHeaders(), 'Content-Type': 'application/json', 'X-Neconyan-Account': getCurrentUserHandle() ?? '' },
+        headers: { ...getRequestHeaders(), 'Content-Type': 'application/json', 'X-Neconyan-Account': account },
         body: JSON.stringify(body ?? {}),
     });
     const text = await response.text();
+    checkAccount(account);
     let parsed = null;
     try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
     if (!response.ok) {
@@ -93,8 +112,8 @@ async function postJson(url, body) {
 
 /** Read the authoritative store and merge it into the browser's copy. Returns
  *  the merged store, or null when a genuine conflict must be reported. */
-async function refreshOnce() {
-    const body = await postJson(STORE_GET_ENDPOINT, {});
+async function refreshOnce(account) {
+    const body = await postJson(STORE_GET_ENDPOINT, {}, account);
     const serverStore = body?.store && typeof body.store === 'object' ? body.store : null;
     const version = Number(body?.version);
     if (!serverStore) {
@@ -116,8 +135,9 @@ async function refreshOnce() {
     return { store: merged, version, conflict: false };
 }
 
-export function refreshConversationStore() {
-    const run = syncQueue.then(refreshOnce, refreshOnce);
+export function refreshConversationStore(account = getCurrentUserHandle()) {
+    const refresh = () => refreshOnce(account);
+    const run = syncQueue.then(refresh, refresh);
     syncQueue = run.then(swallow, swallow);
     return run;
 }
@@ -138,13 +158,14 @@ function absorbSaveResult(body, submitted) {
     captureConversationStore(stored, body?.version);
 }
 
-async function saveOnce() {
+async function saveOnce(account) {
+    checkAccount(account);
     if (!readLocalStore()) {
         return true;
     }
     if (!Number.isSafeInteger(savedVersion)) {
         // Learn the authoritative version before the first Conversation-only save.
-        await refreshOnce();
+        await refreshOnce(account);
     }
     const local = readLocalStore();
     if (!local || !Number.isSafeInteger(savedVersion)) {
@@ -152,16 +173,16 @@ async function saveOnce() {
     }
     const submitted = cloneConversationValue(local);
     try {
-        const body = await postJson(STORE_SAVE_ENDPOINT, { store: submitted, version: savedVersion });
+        const body = await postJson(STORE_SAVE_ENDPOINT, { store: submitted, version: savedVersion }, account);
         absorbSaveResult(body, submitted);
         return true;
     } catch (error) {
-        if (error.status !== 409) {
+        if (error.status !== 409 || error.message === 'account_changed') {
             throw error;
         }
         // The version moved on under us (usually an unrelated settings save).
         // Merge the server copy, which keeps local edits, then retry once.
-        const refreshed = await refreshOnce();
+        const refreshed = await refreshOnce(account);
         if (!refreshed || refreshed.conflict) {
             return false;
         }
@@ -170,15 +191,16 @@ async function saveOnce() {
             return false;
         }
         const retry = cloneConversationValue(retrySource);
-        const body = await postJson(STORE_SAVE_ENDPOINT, { store: retry, version: savedVersion });
+        const body = await postJson(STORE_SAVE_ENDPOINT, { store: retry, version: savedVersion }, account);
         absorbSaveResult(body, retry);
         return true;
     }
 }
 
 /** Send the browser's Conversation copy to the server under its expected version. */
-export function persistConversationStoreNow() {
-    const run = syncQueue.then(saveOnce, saveOnce);
+export function persistConversationStoreNow(account = getCurrentUserHandle()) {
+    const save = () => saveOnce(account);
+    const run = syncQueue.then(save, save);
     syncQueue = run.then(swallow, swallow);
     return run;
 }
@@ -186,11 +208,19 @@ export function persistConversationStoreNow() {
 let saveTimer = null;
 let pendingSave = null;
 let resolvePendingSave = null;
+let pendingAccount = null;
 
 /** Coalesce rapid edits into one save. The returned promise resolves once the
  *  debounced save has actually run, so `flushConversationStore` can await it. */
-function scheduleConversationStoreSave() {
+function scheduleConversationStoreSave(account = getCurrentUserHandle()) {
+    checkAccount(account);
+    if (pendingSave && pendingAccount !== account) {
+        clearTimeout(saveTimer);
+        resolvePendingSave(false);
+        pendingSave = null;
+    }
     if (!pendingSave) {
+        pendingAccount = account;
         pendingSave = new Promise(resolve => { resolvePendingSave = resolve; });
     }
     if (saveTimer) {
@@ -201,23 +231,25 @@ function scheduleConversationStoreSave() {
         const resolve = resolvePendingSave;
         pendingSave = null;
         resolvePendingSave = null;
-        persistConversationStoreNow().then(resolve, resolve);
+        pendingAccount = null;
+        persistConversationStoreNow(account).then(resolve, () => resolve(false));
     }, STORE_SAVE_DEBOUNCE_MS);
     return pendingSave;
 }
 
 /** Queue a Conversation-only save; rapid edits coalesce into one request. */
-export function persistConversationStoreDebounced() {
-    void scheduleConversationStoreSave().catch(swallow);
+export function persistConversationStoreDebounced(account = getCurrentUserHandle()) {
+    void Promise.resolve().then(() => scheduleConversationStoreSave(account)).catch(swallow);
 }
 
 /** Wait until the store the browser holds is acknowledged by the server. */
-export async function flushConversationStore() {
-    await scheduleConversationStoreSave();
-    return persistConversationStoreNow();
+export async function flushConversationStore(account = getCurrentUserHandle()) {
+    await scheduleConversationStoreSave(account);
+    return persistConversationStoreNow(account);
 }
 
 export function initConversationStoreSync() {
+    checkAccount(loadedAccount);
     const store = readLocalStore();
     if (store) {
         captureConversationStore(store, null);

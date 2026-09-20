@@ -22,6 +22,7 @@ import {
 import { ensureMewmoryMessageIds } from './mewmory/message-identity.js';
 import { RA_CountCharTokens, humanizedDateTime, dragElement, favsToHotswap, getMessageTimeStamp } from './RossAscends-mods.js';
 import { power_user, loadMovingUIState, sortEntitiesList } from './power-user.js';
+import { getCurrentUserHandle } from './user.js';
 import { debounce_timeout } from './constants.js';
 
 import {
@@ -599,11 +600,11 @@ export const group_generation_mode = {
 export const groupCandidatesFilter = new FilterHelper(debounce(printGroupCandidates, debounce_timeout.quick));
 export const groupMembersFilter = new FilterHelper(debounce(printGroupMembers, debounce_timeout.quick));
 const pendingGroupMetadataSaves = new Map();
-function saveGroupDebounced(group, reload) {
+function saveGroupDebounced(group, reload, account) {
     clearTimeout(pendingGroupMetadataSaves.get(group.id));
     pendingGroupMetadataSaves.set(group.id, setTimeout(() => {
         pendingGroupMetadataSaves.delete(group.id);
-        void _save(group, reload).catch(error => console.error('Error while saving group.', error));
+        void _save(group, reload, account).catch(error => console.error('Error while saving group.', error));
     }, debounce_timeout.relaxed));
 }
 /** @type {Map<string, number>} */
@@ -614,7 +615,7 @@ let groupChatQueueOrder = new Map();
  * @param {Group} group Group object to save
  * @param {boolean} reload Whether to refresh the character and group library after saving
  */
-async function _save(group, reload = true) {
+async function _save(group, reload = true, account) {
     clearTimeout(pendingGroupMetadataSaves.get(group.id));
     pendingGroupMetadataSaves.delete(group.id);
     const groupId = group?.id;
@@ -626,11 +627,13 @@ async function _save(group, reload = true) {
             setGroupSaveStatus('saving', groupId, revision);
         }
         try {
+            if (account !== undefined && account !== getCurrentUserHandle()) throw new Error('account_changed');
             const response = await fetch('/api/groups/edit', {
                 method: 'POST',
-                headers: getRequestHeaders(),
+                headers: { ...getRequestHeaders(), ...(account === undefined ? {} : { 'X-Neconyan-Account': account }) },
                 body,
             });
+            if (account !== undefined && account !== getCurrentUserHandle()) throw new Error('account_changed');
             // Neconyan: surface metadata-save failures so chat rename can roll back consistently.
             if (!response.ok) {
                 throw new Error(`Could not save group ${groupId}.`);
@@ -1198,6 +1201,7 @@ function saveGroupChat(groupId, shouldSaveGroup, force = false, throwOnError = f
     const chatIdSnapshot = group.chat_id;
     const currentGeneration = getChatGeneration();
     options = getChatBackupSaveOptions(options, JSON.stringify([groupId, chatIdSnapshot, currentGeneration]), uuidv4);
+    const account = options.account;
     const saveTask = groupChatSaveQueue
         .catch(error => console.warn('Previous group chat save failed before queued save.', error))
         .then(() => saveGroupChatImmediately({
@@ -1212,6 +1216,7 @@ function saveGroupChat(groupId, shouldSaveGroup, force = false, throwOnError = f
             deferSequenceId: options.deferSequenceId,
             allowShrink: Boolean(options.allowShrink),
             scheduledGeneration: currentGeneration,
+            account,
         }));
 
     groupChatSaveQueue = saveTask.catch(() => {});
@@ -1233,7 +1238,8 @@ export async function waitForQueuedGroupChatSaves() {
     }
 }
 
-async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = false, throwOnError = false, chatId, chatData, metadata, deferBackup = false, deferSequenceId, allowShrink = false, scheduledGeneration }) {
+async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = false, throwOnError = false, chatId, chatData, metadata, deferBackup = false, deferSequenceId, allowShrink = false, scheduledGeneration, account }) {
+    if (account !== undefined && account !== getCurrentUserHandle()) return false;
     const group = groups.find(x => x.id == groupId);
     if (!group) {
         console.warn('Group not found', groupId);
@@ -1273,7 +1279,7 @@ async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = fals
     const savePayload = JSON.stringify({ id: chatId, chat: [chatHeader, ...chatMessages], force: force, deferBackup: Boolean(deferBackup), deferSequenceId, allowShrink: Boolean(allowShrink) });
     const buildSaveGroupChatRequest = () => compressRequest({
         method: 'POST',
-        headers: getRequestHeaders(),
+        headers: { ...getRequestHeaders(), ...(account === undefined ? {} : { 'X-Neconyan-Account': account }) },
         body: savePayload,
     });
     // Neconyan: rebuild compressed save requests after refreshing a stale CSRF token.
@@ -1307,10 +1313,11 @@ async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = fals
             return false;
         }
 
-        return await saveGroupChatImmediately({ groupId, shouldSaveGroup, force: true, throwOnError, chatId, chatData: chatMessages, metadata: metadataForSave, deferBackup, deferSequenceId, allowShrink, scheduledGeneration });
+        return await saveGroupChatImmediately({ groupId, shouldSaveGroup, force: true, throwOnError, chatId, chatData: chatMessages, metadata: metadataForSave, deferBackup, deferSequenceId, allowShrink, scheduledGeneration, account });
     }
 
     const responseData = await response.json().catch(() => ({}));
+    if (account !== undefined && account !== getCurrentUserHandle()) return false;
     rememberQueuedGroupChatIntegrity(chatId, responseData?.integrity);
     if (isActiveGroupChatSave && typeof responseData?.integrity === 'string' && responseData.integrity) {
         chat_metadata.integrity = responseData.integrity;
@@ -1321,7 +1328,7 @@ async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = fals
         if (throwOnError && !groups.some(candidate => candidate.id === group.id)) {
             throw new Error('Group not found');
         }
-        await editGroup(throwOnError ? group.id : groupId, throwOnError, false);
+        await editGroup(throwOnError ? group.id : groupId, throwOnError, false, account);
     }
 
     return true;
@@ -2067,7 +2074,7 @@ async function deleteGroup(id) {
  * @param {boolean} reload Whether to reload the groups after saving
  * @returns {Promise<void>} Promise that resolves when the group is edited
  */
-export async function editGroup(id, immediately, reload = true) {
+export async function editGroup(id, immediately, reload = true, account) {
     let group = groups.find((x) => x.id === id);
 
     if (!group) {
@@ -2078,10 +2085,10 @@ export async function editGroup(id, immediately, reload = true) {
         markGroupSaveDirty(id);
     }
     if (immediately) {
-        return await _save(group, reload);
+        return await _save(group, reload, account);
     }
 
-    saveGroupDebounced(group, reload);
+    saveGroupDebounced(group, reload, account);
 }
 
 /**

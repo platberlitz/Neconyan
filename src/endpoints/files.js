@@ -28,6 +28,8 @@ router.post('/sanitize-filename', async (request, response) => {
 
 router.post('/upload', async (request, response) => {
     try {
+        const account = request.get('X-Neconyan-Account');
+        if (account && account !== request.user.profile.handle) return response.status(409).send({ error: 'account_changed' });
         if (!request.body.name) {
             return response.status(400).send('No upload name specified');
         }

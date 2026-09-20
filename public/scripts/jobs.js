@@ -5,6 +5,7 @@
  * transport can be added later without changing this contract.
  */
 import { getRequestHeaders } from '../script.js';
+import { getCurrentUserHandle } from './user.js';
 
 const DEFAULT_INTERVAL_MS = 1500;
 const MAX_INTERVAL_MS = 15000;
@@ -14,10 +15,12 @@ function endpoint(base, suffix) {
 }
 
 async function requestJson(url, options = {}) {
-    const { headers: extra, ...rest } = options;
-    const headers = { ...getRequestHeaders(), ...(extra ?? {}) };
+    const { headers: extra, account = getCurrentUserHandle(), ...rest } = options;
+    checkAccount(account);
+    const headers = { ...getRequestHeaders(), ...(extra ?? {}), 'X-Neconyan-Account': account };
     const response = await fetch(url, { credentials: 'same-origin', headers, ...rest });
     const text = await response.text();
+    checkAccount(account);
     let body = null;
     try { body = text ? JSON.parse(text) : null; } catch { body = null; }
     if (!response.ok) {
@@ -29,33 +32,38 @@ async function requestJson(url, options = {}) {
     return body;
 }
 
-export async function submitJob({ type, intent, submissionKey, target = null, label = null, mutating = true, automatic = false, base = '' }) {
+function checkAccount(account) {
+    if (account !== getCurrentUserHandle()) throw new Error('account_changed');
+}
+
+export async function submitJob({ type, intent, submissionKey, target = null, label = null, mutating = true, automatic = false, base = '', account = getCurrentUserHandle() }) {
     if (!type || intent === undefined || !submissionKey) throw new Error('A job needs a type, an intent and a submission key.');
     return requestJson(endpoint(base, '/submit'), {
         method: 'POST',
+        account,
         body: JSON.stringify({ type, intent, submissionKey, target, label, mutating, automatic }),
     });
 }
 
-export async function listJobs({ base = '', includeDismissed = false } = {}) {
-    const body = await requestJson(endpoint(base, `/list?includeDismissed=${includeDismissed}`));
+export async function listJobs({ base = '', includeDismissed = false, account = getCurrentUserHandle() } = {}) {
+    const body = await requestJson(endpoint(base, `/list?includeDismissed=${includeDismissed}`), { account });
     return body?.jobs ?? [];
 }
 
-export async function getJob(id, { base = '' } = {}) {
-    return requestJson(endpoint(base, `/${encodeURIComponent(id)}`));
+export async function getJob(id, { base = '', account = getCurrentUserHandle() } = {}) {
+    return requestJson(endpoint(base, `/${encodeURIComponent(id)}`), { account });
 }
 
-export async function cancelJob(id, { base = '', reason = null } = {}) {
-    return requestJson(endpoint(base, `/${encodeURIComponent(id)}/cancel`), { method: 'POST', body: JSON.stringify({ reason }) });
+export async function cancelJob(id, { base = '', reason = null, account = getCurrentUserHandle() } = {}) {
+    return requestJson(endpoint(base, `/${encodeURIComponent(id)}/cancel`), { account, method: 'POST', body: JSON.stringify({ reason }) });
 }
 
-export async function dismissJob(id, { base = '' } = {}) {
-    return requestJson(endpoint(base, `/${encodeURIComponent(id)}/dismiss`), { method: 'POST', body: JSON.stringify({}) });
+export async function dismissJob(id, { base = '', account = getCurrentUserHandle() } = {}) {
+    return requestJson(endpoint(base, `/${encodeURIComponent(id)}/dismiss`), { account, method: 'POST', body: JSON.stringify({}) });
 }
 
-export async function retryJob(id, { base = '' } = {}) {
-    return requestJson(endpoint(base, `/${encodeURIComponent(id)}/retry`), { method: 'POST', body: '{}' });
+export async function retryJob(id, { base = '', account = getCurrentUserHandle() } = {}) {
+    return requestJson(endpoint(base, `/${encodeURIComponent(id)}/retry`), { account, method: 'POST', body: '{}' });
 }
 
 const TERMINAL = new Set(['completed', 'cancelled', 'failed', 'interrupted', 'conflict']);
@@ -67,20 +75,26 @@ const TERMINAL = new Set(['completed', 'cancelled', 'failed', 'interrupted', 'co
  * the root job. Stop observing with the returned function; that is not
  * cancellation.
  */
-export function observeJob(id, { onUpdate, onSnapshot, onDone, base = '', intervalMs = DEFAULT_INTERVAL_MS, signal } = {}) {
+export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = '', account = getCurrentUserHandle(), intervalMs = DEFAULT_INTERVAL_MS, signal } = {}) {
     let stopped = false;
     let timer = null;
     let delay = intervalMs;
     let previous = null;
 
-    const stop = () => { stopped = true; if (timer) clearTimeout(timer); };
+    const stop = () => {
+        if (stopped) return;
+        stopped = true;
+        if (timer) clearTimeout(timer);
+        signal?.removeEventListener('abort', stop);
+        onStop?.();
+    };
 
     const schedule = () => { if (!stopped && !signal?.aborted) timer = setTimeout(tickOnce, delay); };
 
     const tickOnce = async () => {
         if (stopped || signal?.aborted) return;
         try {
-            const body = await getJob(id, { base });
+            const body = await getJob(id, { base, account });
             if (stopped || signal?.aborted) return;
             const job = body?.job ?? null;
             if (job) {
@@ -88,14 +102,18 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, base = '', interv
                     previous = job;
                     await onUpdate?.(job);
                 }
+                checkAccount(account);
+                if (stopped || signal?.aborted) return;
                 await onSnapshot?.(job);
+                checkAccount(account);
                 if (stopped || signal?.aborted) return;
                 // A terminal job stops the job poll, but a failed readback must
                 // still be retried, so only stop once the snapshot succeeded.
                 if (TERMINAL.has(job.state)) { stop(); await onDone?.(job); return; }
             }
             delay = Math.min(MAX_INTERVAL_MS, Math.round(delay * 1.3));
-        } catch {
+        } catch (error) {
+            if (error.message === 'account_changed') { stop(); return; }
             delay = Math.min(MAX_INTERVAL_MS, Math.round(delay * 1.5));
         }
         schedule();

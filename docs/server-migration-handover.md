@@ -2,9 +2,9 @@
 
 ## Status and authority
 
-This commit is an explicitly requested checkpoint of unfinished work. Production has not been changed. Continue the migration, then complete independent Fable review, fix real findings, run the release checks, commit the completed work locally and deploy it with a rollback backup. Do not deploy this checkpoint as a completed migration.
+This is an explicitly requested checkpoint of unfinished work. Production has not been changed. Continue the migration through planning, implementation, independent review, fixes and verification. Verified local commits are authorised. Deployment is not authorised during this migration.
 
-The owner originally requested DeepSeek V4.1 Flash for implementation and Fable for review. After repeated unfinished runs, the owner explicitly authorised the current GPT implementer to finish implementation and review fixes. Retain Fable for independent review. The owner also asked to stop repeatedly reviewing unfinished fragments and to proceed normally; reserve the next review for a coherent completed change.
+The owner authorises the configured GPT implementer and planner, with the planner acting independently in review-only mode when the review agent uses an unavailable provider. Do not restart the session or switch providers to bypass that constraint. Complete this sequence for each coherent change.
 
 The goal is server ownership of accepted workflows, authoritative state, scheduling, cancellation, recovery and completion writes. Server provider calls alone are insufficient. WebLLM and bundled browser Kokoro are the only approved browser-only exceptions so far. Their controls say to keep the page open. Do not silently replace those providers.
 
@@ -22,10 +22,22 @@ Read the repository instructions, product and design documents, the phase checkl
 
 ## Immediate continuation: connect the real Conversation workflow
 
-The main Conversation composer, the forced-reply action and the branch-from-message reply now submit to the accepted-reply API. The browser no longer holds a send queue, appends its own messages, coalesces, or runs reply selection; it observes accepted jobs and reads the server's saved messages. Items 3 and 4 below are therefore done; a remaining decision is text-completion and active-connection profile support.
+The main Conversation composer, the forced-reply action and the branch-from-message reply now submit to the accepted-reply API. These entry points observe accepted jobs and read the server's saved messages. Their browser checks are recorded below; this does not establish complete Conversation migration.
+
+Continue in order: resolve findings a-e below, finish saved text-completion/instruct and explicit active-connection bindings, resolve f/g while handing automatic ownership to the server, then migrate Roleplay generation and completion writes.
+
+Outstanding findings, not fixed by the browser checkpoint:
+
+- a. The acknowledged Conversation baseline is captured after migration, and general settings versions can be paired with stale Conversation content.
+- b. The 250-message retention limit can invalidate a captured history prefix during legitimate delivery.
+- c. Batch matching and incomplete-member repair do not consistently retain the accepted branch's creation identity.
+- d. A grouped-send member key can be reused for a different destination because its comparison omits complete intent.
+- e. Identifier-less legacy messages can duplicate during merging.
+- f. Native solo replies still lack send-triggered partner chimes.
+- g. Native observation still lacks unread alerts and automatic narration.
 
 1. Complete saved request support for text-completion profiles and instruct formatting, and define explicit captured behaviour for existing active-connection callers. Do not silently fall back to whichever profile is currently selected in the browser.
-2. Participant selection, group concurrency, availability/autoresponder delays, assistant context and image delivery are migrated: the accepted API creates a root job that freezes participants and materialises sibling child jobs, which share the root's message checkpoint and reconcile into one result. Images use the account's own Quick Image Gen provider only; a provider without a server branch is refused with a recoverable error that names it, and no Horde, Imagen or OpenRouter route is substituted. Send-triggered partner chimes and explicit reply targets are now moved: the submission carries trigger revisions and an explicit reply-target anchor, and an explicit target overrides mention-weighted selection.
+2. Participant selection, group concurrency, availability/autoresponder delays, assistant context and image delivery have native implementations. Images use the account's own Quick Image Gen provider only; unsupported providers are refused without substitution. Explicit reply targets override mention-weighted selection. Send-triggered solo partner chimes remain unfinished. Participant preparation must also retain the accepted binding through the batching window rather than resolving a changed connection later.
 3. Done. The composer submission and the already-appended-message reply event now submit to durable acceptance (`POST /reply/submit`). Attachment-only sends, blank forced replies, server-side coalescing, explicit reply targets and message-revision checks are preserved; the composer appends no messages and clears the draft only after acceptance and the required user-message writes are durable.
 4. Done. The browser observes accepted native jobs (`public/scripts/neconyan-conversation/native-jobs.js`) and merges authoritative results by reading the saved store; observation never executes delivery. A separate version-checked Conversation save path (`public/scripts/neconyan-conversation/store-sync.js`, `store-sync-utils.js`) keeps browser edits honest, and the settings guard protects server-owned messages, records and bookkeeping from old whole-store writes while allowing intentional edits and deletions.
 5. Reminders, weekly and legacy schedules, idle and proactive messages, chimes, character chat, memory summaries and schedule generation now run on the server worker, with deterministic occurrence keys, one-time bookkeeping claims and a per-account saved timezone (`POST /automation/configure`). The Roleplay/group-aside bridge is now native: `POST /aside/submit` accepts a saved source locator and revisions, builds the directive server-side, delays 900 ms for a mention or 2000 ms otherwise through the durable job delay, records the group-aside cooldown by persona, source group and recipient, and re-asserts the saved source through generation and image delivery. Remaining: stopping the browser's own 30-second worker once native ownership is enabled.
@@ -46,9 +58,15 @@ Do not treat arbitrary DOM-dependent user scripts as portable server code. Ident
 
 ## Verification and release gates
 
-Last full unit run: 331 suites passed, 4,260 tests passed and two skipped. After the final checkpoint review fixes, all 122 Node tests and 13 focused job-client, Mewmory selection and reminder-target unit tests passed. After the reply-artifact recovery change, all 50 Conversation API tests passed again. Root lint, frontend budgets and whitespace checks passed. These are checkpoint results, not proof that unfinished callers have migrated.
+Latest checkpoint: 334 unit suites passed, 4,294 tests passed and two skipped; all 165 Node tests passed. Root lint, frontend budgets and whitespace checks passed. The full tests-folder lint run still reports historical errors in untouched files; changed tests are checked separately. These are checkpoint results, not proof that unfinished callers have migrated.
 
-Chromium checks passed for all three Mewmory scenarios, including clicking the real index control, leaving the page after acceptance and checking saved completion before reopening. Macro parity passed at desktop and touch-phone sizes against historical fixtures. Safari was not tested. Simulated saved-state recovery is not a real process-kill test.
+The disposable Conversation Chromium suite has 40 cases: a complete 36-case run passed, followed by passing focused startup and three preliminary-aside-save cases. Real Send, Enter, 'Ask for reply' and 'Branch from here' were exercised at 1280x900 and touch 393x852. Checks cover zero-page bubbles/reminders/status/images, reopening without repeat calls, retained drafts, lost acceptance retry, cancellation during preparation/generation/delivery, source and target conflicts, stale unrelated saves and two-account isolation. Three restart boundaries kill the actual serving process with SIGKILL, then restart with the same disposable data. Unknown text-provider outcomes remain interrupted.
+
+Browser reproduction and independent review fixed a broken account-getter import, a decorative cat intercepting the message menu, cross-account submission/upload/preliminary-chat-write gaps, startup ownership binding, queued-save ownership and observer refresh coalescing. Review also corrected the test's original supervisor-only kill and added collection-time opt-in skipping. A deterministic thumbnail cache regression now covers different bytes with identical file size and modification time; cached responses identify their actual contents.
+
+Limits: Safari is unverified; cancellation uses the real HTTP endpoint because no Conversation Stop control is wired. Lost-response retry identity is page-memory-only. Completed-image reopening does not prove recovery during an unresolved image request. Other Conversation generation controls, unread alerts, narration and automatic ownership remain unfinished.
+
+Earlier Chromium checks passed for all three Mewmory scenarios and macro parity at desktop and touch-phone sizes. Their saved-state recovery checks should not be confused with the later real-process Conversation restart checks.
 
 For every migrated workflow, verify its real interface entry point, zero-client completion, reopening without replay, cancellation and late results, duplicate keys, changed/deleted targets, two-account isolation and actual process restart on disposable data. Unknown unqueryable provider outcomes should remain interrupted, not trigger an automatic charged repeat. Use controlled fake providers rather than paid requests.
 
@@ -88,16 +106,18 @@ Focused checks: tests/neconyan-conversation-api.test.js
                tests/generation-profiles.node.js
                tests/conversation-*.node.js
                tests/jobs*.{test,node}.js
-               tests/mewmory.e2e.js
+                tests/mewmory.e2e.js
+                tests/neconyan-conversation-durable.e2e.js
                tests/macros.node.js, tests/macro-parity-browser.mjs
 ```
 
 ```bash
-npm run test:unit --prefix tests -- --runInBand --silent --verbose=false
+npm run test:unit --prefix tests -- --runInBand --silent
 node --test tests/*.node.js
 npm run lint
 npm run check:frontend-budgets
 git diff --check
+NECONYAN_CONVERSATION_TEST_DISPOSABLE=1 node tests/node_modules/@playwright/test/cli.js test --config tests/playwright.config.js neconyan-conversation-durable.e2e.js --browser=chromium --workers=1 --reporter=line --trace=retain-on-failure
 ```
 
 Run browser checks at 1280x900 and touch 393x852 with the Chromium installed under the tests package. The existing Mewmory fixture server and disposable-data safeguards are documented in its test. Lint changed tests using their own configuration; historical unrelated test-folder lint errors are not permission to add new ones.

@@ -1578,7 +1578,7 @@ export async function getSanitizedFilename(fileName) {
  * @returns {Promise<string>} - Resolves to the saved image's path on the server.
  *                              Rejects with an error if the upload fails.
  */
-export async function saveBase64AsFile(base64Data, subFolder, fileName, extension) {
+export async function saveBase64AsFile(base64Data, subFolder, fileName, extension, { account } = {}) {
     // Prepare the request body
     const requestBody = {
         image: base64Data,
@@ -1590,7 +1590,7 @@ export async function saveBase64AsFile(base64Data, subFolder, fileName, extensio
     // Send the data URL to your backend using fetch
     const response = await fetch('/api/images/upload', {
         method: 'POST',
-        headers: getRequestHeaders(),
+        headers: { ...getRequestHeaders(), ...(account === undefined ? {} : { 'X-Neconyan-Account': account }) },
         body: JSON.stringify(requestBody),
     });
 

@@ -1,4 +1,7 @@
 import { describe, expect, jest, test } from '@jest/globals';
+await jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => 'tester' }));
+const assertConversationAccount = jest.fn();
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({ assertConversationAccount }));
 
 import { resolveConversationReminderBranchId } from '../public/scripts/neconyan-conversation/thread-store-utils.js';
 
@@ -15,7 +18,8 @@ const reminder = {
     fired: false,
 };
 
-await jest.unstable_mockModule('../public/script.js', () => ({ chat: [], getCurrentChatId: () => 'chat', getRequestHeaders: () => ({}), is_send_press: false, name1: 'User', saveChatConditional: async () => true }));
+const saveChatConditional = jest.fn(async () => true);
+await jest.unstable_mockModule('../public/script.js', () => ({ chat: [], getCurrentChatId: () => 'chat', getRequestHeaders: () => ({}), is_send_press: false, name1: 'User', saveChatConditional }));
 await jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ selected_group: null }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.js', () => ({
     getActiveConversationBranch: () => null,
@@ -105,9 +109,19 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/typing.j
     withTypingParticipant: (_participant, task) => task(),
 }));
 
-const { checkConversationReminders } = await import('../public/scripts/neconyan-conversation/auto-engine.js');
+const { checkConversationReminders, triggerRoleplayDM, triggerGroupAsideDM } = await import('../public/scripts/neconyan-conversation/auto-engine.js');
 
 describe('conversation reminder target identity', () => {
+    test('both native aside paths refuse a refreshed identity before saving the old chat', async () => {
+        assertConversationAccount.mockImplementation(() => { throw new Error('account_changed'); });
+        const captured = { account: 'tester', avatar: 'char.png', branchId: 'main', personaId: 'persona-a.png' };
+        await expect(triggerRoleplayDM(captured)).resolves.toBe(false);
+        await expect(triggerGroupAsideDM({ avatar: 'char.png' }, captured)).resolves.toBe(false);
+        expect(assertConversationAccount).toHaveBeenCalledTimes(2);
+        expect(assertConversationAccount).toHaveBeenCalledWith('tester');
+        expect(saveChatConditional).not.toHaveBeenCalled();
+        assertConversationAccount.mockReset();
+    });
     test('marks a missing captured branch invalid without posting or falsely firing', async () => {
         await expect(checkConversationReminders(100)).resolves.toBe(false);
         expect(generateConversationReply).not.toHaveBeenCalled();

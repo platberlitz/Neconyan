@@ -1368,6 +1368,7 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
 }
 
 router.post('/save', validateAvatarUrlMiddleware, async function (request, response) {
+    if (request.get('X-Neconyan-Account') && request.get('X-Neconyan-Account') !== request.user.profile.handle) return response.status(409).send({ error: 'account_changed' });
     try {
         const handle = request.user.profile.handle;
         const cardName = String(request.body.avatar_url).replace('.png', '');
@@ -1891,6 +1892,7 @@ router.post('/group/delete', (request, response) => {
 });
 
 router.post('/group/save', async function (request, response) {
+    if (request.get('X-Neconyan-Account') && request.get('X-Neconyan-Account') !== request.user.profile.handle) return response.status(409).send({ error: 'account_changed' });
     try {
         if (!request.body || !request.body.id) {
             return response.sendStatus(400);

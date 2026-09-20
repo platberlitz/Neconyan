@@ -1,5 +1,6 @@
 /* global globalThis */
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
+await jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => 'tester' }));
 
 let currentAvatar = 'char.png';
 let currentPersonaId = 'persona-a.png';
@@ -86,6 +87,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/render-u
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/schedule.js', () => ({ getConversationReplyMaxTokens: () => 100 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/settings-store.js', () => ({ getSettings: () => ({}) }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({
+    assertConversationAccount: () => {},
     captureConversationStore: jest.fn(),
     flushConversationStore: jest.fn(async () => true),
     getConversationSavedSnapshot: jest.fn(() => null),

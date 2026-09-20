@@ -1,14 +1,17 @@
+/* global globalThis */
+/* eslint-disable playwright/no-standalone-expect -- These are Jest parameterised tests. */
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 
 const extension_settings = {};
 const settings = { _version: 7 };
+let account = 'tester';
 
 jest.unstable_mockModule('../public/script.js', () => ({
-    getCurrentUserHandle: () => 'tester',
     getRequestHeaders: () => ({ 'X-CSRF': 'token' }),
     settings,
 }));
 jest.unstable_mockModule('../public/scripts/extensions.js', () => ({ extension_settings }));
+jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => account }));
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/constants.js', () => ({
     CONVERSATION_STORE_KEY: 'sillybunny_conversation',
 }));
@@ -48,10 +51,12 @@ function jsonResponse(status, body) {
 
 function seed(localStore, version) {
     extension_settings[KEY] = localStore;
+    storeSync.bindConversationAccount('tester');
     storeSync.captureConversationStore(localStore, version);
 }
 
 beforeEach(() => {
+    account = 'tester';
     for (const key of Object.keys(extension_settings)) {
         delete extension_settings[key];
     }
@@ -64,6 +69,49 @@ afterEach(() => {
 });
 
 describe('conversation store synchronisation', () => {
+    test.each([null, store({ 'nova.png': thread([message('private', 'Account A only')]) })])('initial binding cannot adopt another profile with store %j', async (downloaded) => {
+        jest.resetModules();
+        const fresh = await import('../public/scripts/neconyan-conversation/store-sync.js');
+        extension_settings[KEY] = downloaded;
+        globalThis.fetch = jest.fn();
+        await expect(fresh.refreshConversationStore()).rejects.toThrow('account_changed');
+        fresh.bindConversationAccount('tester');
+        account = 'other-account';
+        expect(() => fresh.initConversationStoreSync()).toThrow('account_changed');
+        expect(() => fresh.bindConversationAccount(account)).toThrow('account_changed');
+        await expect(fresh.persistConversationStoreNow()).rejects.toThrow('account_changed');
+        await expect(fresh.refreshConversationStore()).rejects.toThrow('account_changed');
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+        expect(extension_settings[KEY]).toEqual(downloaded);
+        expect(fresh.getConversationSavedSnapshot()).toBeNull();
+    });
+
+    test('a refreshed identity cannot relabel the loaded store or baseline', async () => {
+        seed(store({ 'nova.png': thread([message('private', 'Account A only')]) }), 7);
+        const before = structuredClone(extension_settings[KEY]);
+        account = 'other-account';
+        globalThis.fetch = jest.fn();
+        await expect(storeSync.persistConversationStoreNow()).rejects.toThrow('account_changed');
+        await expect(storeSync.refreshConversationStore()).rejects.toThrow('account_changed');
+        expect(() => storeSync.captureConversationStore(before, 7)).toThrow('account_changed');
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+        expect(extension_settings[KEY]).toEqual(before);
+        expect(storeSync.getConversationSavedSnapshot()).toEqual(before);
+    });
+
+    test('a late response cannot overwrite data after the current identity changes', async () => {
+        seed(store({ 'nova.png': thread([message('a', 'Account A')]) }), 7);
+        const before = structuredClone(extension_settings[KEY]);
+        globalThis.fetch = async (_url, options) => {
+            expect(options.headers['X-Neconyan-Account']).toBe('tester');
+            account = 'other-account';
+            return jsonResponse(200, { store: store({}), version: 8 });
+        };
+        await expect(storeSync.refreshConversationStore()).rejects.toThrow('account_changed');
+        expect(extension_settings[KEY]).toEqual(before);
+        expect(storeSync.getConversationSavedVersion()).toBe(7);
+    });
+
     test('a refresh merges a native server message into the local copy', async () => {
         seed(store({ 'nova.png': thread([message('a', 'Hi')]) }), 7);
 
@@ -89,6 +137,7 @@ describe('conversation store synchronisation', () => {
 
         globalThis.fetch = async (url, options) => {
             expect(url).toBe('/api/neconyan-conversation/store/save');
+            expect(options.headers['X-Neconyan-Account']).toBe('tester');
             const body = JSON.parse(options.body);
             expect(body.version).toBe(7);
             expect(body.store.characters['nova.png'].branches.b1.messages[0].id).toBe('a');

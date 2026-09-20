@@ -4,6 +4,7 @@ let chatId = 'first';
 let generation = 1;
 const listeners = new Map();
 const conversationState = { conversationWorkspaceOpen: false };
+jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => 'default-user' }));
 jest.unstable_mockModule('../public/script.js', () => ({
     characters: [{ avatar: 'Mara.png' }], this_chid: 0, chat_metadata: {}, is_send_press: false,
     getCurrentChatId: () => chatId, getChatGeneration: () => generation,

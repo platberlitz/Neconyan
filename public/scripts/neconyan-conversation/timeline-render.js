@@ -6,6 +6,7 @@ import {
     name1,
 } from '../../script.js';
 import { user_avatar } from '../personas.js';
+import { getCurrentUserHandle } from '../user.js';
 import { timestampToMoment } from '../utils.js';
 import { world_names } from '../world-info.js';
 import {
@@ -1140,6 +1141,7 @@ export async function regenerateConversationMessage(messageId) {
 }
 
 export async function branchConversationFromMessage(messageId) {
+    const account = getCurrentUserHandle();
     const context = getConversationMessageById(messageId);
     if (!context) {
         return;
@@ -1199,7 +1201,7 @@ export async function branchConversationFromMessage(messageId) {
     const replyText = String(context.message.mes || '').trim() || getConversationAttachmentSummary(context.message);
     // The new branch must exist on the server before the reply is accepted,
     // because the server captures the branch by its creation identity.
-    await flushConversationStore();
+    await flushConversationStore(account);
     if (!replyText) {
         return;
     }
@@ -1214,6 +1216,7 @@ export async function branchConversationFromMessage(messageId) {
             createdAt: Date.now(),
             force: true,
             submissionKey: createConversationSubmissionKey(),
+            account,
         },
     }));
 }

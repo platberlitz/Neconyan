@@ -232,7 +232,7 @@ export async function unhideChatMessage(messageId, _messageBlock) {
  * @param {ChatMessage} message Message object
  * @returns {Promise<void>} A promise that resolves when file is uploaded.
  */
-export async function populateFileAttachment(message, inputId = 'file_form_input', { resetForm = true } = {}) {
+export async function populateFileAttachment(message, inputId = 'file_form_input', { resetForm = true, account } = {}) {
     try {
         if (!message) return;
         if (!message.extra || typeof message.extra !== 'object') message.extra = {};
@@ -248,7 +248,7 @@ export async function populateFileAttachment(message, inputId = 'file_form_input
 
             const mediaType = MEDIA_TYPE.getFromMime(file.type);
             if (mediaType) {
-                const imageUrl = await saveBase64AsFile(base64Data, name2, fileNamePrefix, extension);
+                const imageUrl = await saveBase64AsFile(base64Data, name2, fileNamePrefix, extension, { account });
                 if (!Array.isArray(message.extra.media)) {
                     message.extra.media = [];
                 }
@@ -276,7 +276,7 @@ export async function populateFileAttachment(message, inputId = 'file_form_input
                     }
                 }
 
-                const fileUrl = await uploadFileAttachment(uniqueFileName, base64Data);
+                const fileUrl = await uploadFileAttachment(uniqueFileName, base64Data, { account });
 
                 if (!fileUrl) {
                     continue;
@@ -310,11 +310,11 @@ export async function populateFileAttachment(message, inputId = 'file_form_input
  * @param {string} base64Data
  * @returns {Promise<string>} File URL
  */
-export async function uploadFileAttachment(fileName, base64Data) {
+export async function uploadFileAttachment(fileName, base64Data, { account } = {}) {
     try {
         const result = await fetch('/api/files/upload', {
             method: 'POST',
-            headers: getRequestHeaders(),
+            headers: { ...getRequestHeaders(), ...(account === undefined ? {} : { 'X-Neconyan-Account': account }) },
             body: JSON.stringify({
                 name: fileName,
                 data: base64Data,

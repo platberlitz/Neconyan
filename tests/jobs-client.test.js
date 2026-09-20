@@ -6,6 +6,8 @@ const CSRF_HEADERS = { 'Content-Type': 'application/json', 'X-CSRF-Token': 'csrf
 // which made a sibling suite read a stale cache entry and fail intermittently.
 const nativeFetch = globalThis.fetch;
 let fetchCalls = [];
+let account = 'alice';
+jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => account }));
 
 function jsonResponse(body, status = 200) {
     return {
@@ -19,6 +21,7 @@ describe('browser jobs observer sends the CSRF header and keeps caller headers',
     beforeEach(() => {
         jest.resetModules();
         fetchCalls = [];
+        account = 'alice';
         jest.unstable_mockModule('../public/script.js', () => ({
             getRequestHeaders: jest.fn(() => ({ ...CSRF_HEADERS })),
         }));
@@ -38,6 +41,7 @@ describe('browser jobs observer sends the CSRF header and keeps caller headers',
         expect(fetchCalls).toHaveLength(1);
         expect(fetchCalls[0].url).toBe('/api/jobs/submit');
         expect(fetchCalls[0].options.headers).toMatchObject(CSRF_HEADERS);
+        expect(fetchCalls[0].options.headers['X-Neconyan-Account']).toBe('alice');
         expect(fetchCalls[0].options.credentials).toBe('same-origin');
         expect(JSON.parse(fetchCalls[0].options.body)).toMatchObject({ type: 'roleplay', submissionKey: 'k1' });
     });
@@ -64,6 +68,7 @@ describe('browser jobs observer snapshot callbacks', () => {
     beforeEach(() => {
         jest.resetModules();
         fetchCalls = [];
+        account = 'alice';
         jest.unstable_mockModule('../public/script.js', () => ({
             getRequestHeaders: jest.fn(() => ({ ...CSRF_HEADERS })),
         }));
@@ -114,5 +119,23 @@ describe('browser jobs observer snapshot callbacks', () => {
         const reads = globalThis.fetch.mock.calls.length;
         await wait(40);
         expect(globalThis.fetch.mock.calls.length).toBe(reads);
+    });
+
+    test.each(['cookie', 'local'])('an account change (%s) stops observation without late callbacks', async change => {
+        let release;
+        globalThis.fetch = jest.fn(() => new Promise(resolve => { release = resolve; }));
+        const { observeJob } = await import('../public/scripts/jobs.js');
+        const onSnapshot = jest.fn();
+        const onDone = jest.fn();
+        const onStop = jest.fn();
+        observeJob('job-1', { intervalMs: 1, onSnapshot, onDone, onStop });
+        expect(globalThis.fetch.mock.calls[0][1].headers['X-Neconyan-Account']).toBe('alice');
+        if (change === 'local') account = 'bob';
+        release(change === 'cookie' ? jsonResponse({ error: 'account_changed' }, 409) : jsonResponse({ job: { id: 'job-1', state: 'completed' } }));
+        await wait(40);
+        expect(onSnapshot).not.toHaveBeenCalled();
+        expect(onDone).not.toHaveBeenCalled();
+        expect(onStop).toHaveBeenCalledTimes(1);
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     });
 });

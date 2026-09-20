@@ -36,6 +36,7 @@ let branchMessages = [];
 let branchCreatedAt = 111;
 let submitResponse = { ok: true, body: { job: { id: 'job-1' }, inputDurable: true } };
 let fetchCalls = [];
+let account = 'alice';
 
 const INPUT_ID = 'sb_conversation_input';
 
@@ -72,6 +73,7 @@ function makeGlobals() {
 }
 
 async function loadAttachments() {
+    await jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => account }));
     await jest.unstable_mockModule('../public/script.js', () => ({
         getRequestHeaders: () => ({ 'X-CSRF-Token': 'csrf' }),
         is_send_press: false,
@@ -98,7 +100,7 @@ async function loadAttachments() {
     await jest.unstable_mockModule('../public/scripts/neconyan-conversation/settings-store.js', () => ({ getSettings: () => ({ enabled: true }), saveSettings: jest.fn() }));
     await jest.unstable_mockModule('../public/scripts/neconyan-conversation/shared-helpers.js', () => ({ formatPromptText: value => String(value || '') }));
     await jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js', () => ({ conversationState: { conversationUploadActive: false, conversationReplyTarget: null } }));
-    await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({ flushConversationStore, refreshConversationStore }));
+    await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({ assertConversationAccount: () => {}, flushConversationStore, refreshConversationStore }));
     await jest.unstable_mockModule('../public/scripts/neconyan-conversation/thread-store.js', () => ({
         getConversationAttachmentSummary: () => '',
         getConversationFileAttachments: () => [],
@@ -125,6 +127,7 @@ describe('durable Conversation composer', () => {
         jest.resetModules();
         sequence.length = 0;
         fetchCalls = [];
+        account = 'alice';
         observeNativeConversationJob.mockClear();
         refreshConversationStore.mockClear();
         scheduleInterfaceRefresh.mockClear();
@@ -152,7 +155,8 @@ describe('durable Conversation composer', () => {
         expect(sequence.indexOf('flush')).toBeLessThan(sequence.indexOf('fetch'));
         // The submitted draft is cleared, the job is observed, and the timeline refreshes.
         expect(input.value).toBe('');
-        expect(observeNativeConversationJob).toHaveBeenCalledWith('job-1');
+        expect(observeNativeConversationJob).toHaveBeenCalledWith('job-1', 'alice');
+        expect(fetchCalls[0].options.headers['X-Neconyan-Account']).toBe('alice');
         expect(refreshConversationStore).toHaveBeenCalled();
     });
 
@@ -164,6 +168,20 @@ describe('durable Conversation composer', () => {
 
         expect(fetchCalls).toHaveLength(0);
         expect(input.value).toBe('Do not lose me');
+        expect(observeNativeConversationJob).not.toHaveBeenCalled();
+    });
+
+    test('a changed account during the flush keeps the draft without submitting or observing', async () => {
+        const { submitConversationInput } = await loadAttachments();
+        flushConversationStore.mockImplementationOnce(async captured => {
+            expect(captured).toBe('alice');
+            account = 'bob';
+            return true;
+        });
+        input.value = 'Private draft';
+        await submitConversationInput();
+        expect(input.value).toBe('Private draft');
+        expect(fetchCalls).toHaveLength(0);
         expect(observeNativeConversationJob).not.toHaveBeenCalled();
     });
 

@@ -7,11 +7,11 @@ await jest.unstable_mockModule('../public/script.js', () => ({
     characters: [],
     saveSettingsDebounced,
     this_chid: undefined,
-    getCurrentUserHandle: () => 'tester',
     getRequestHeaders: () => ({}),
     settings: {},
 }));
 await jest.unstable_mockModule('../public/scripts/extensions.js', () => ({ extension_settings: extensionSettings }));
+await jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => 'tester' }));
 await jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({
     editGroup: jest.fn(),
     groups: [],

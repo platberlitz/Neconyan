@@ -7,56 +7,51 @@
  * delivery function, so a reload or a second tab cannot execute a reply twice.
  */
 import { cancelJob, listJobs, observeJob } from '../jobs.js';
+import { getCurrentUserHandle } from '../user.js';
 import { scheduleInterfaceRefresh } from './render-scheduler.js';
 import { refreshConversationStore } from './store-sync.js';
 
 const observed = new Map();
-let refreshing = false;
-let refreshQueued = false;
-
-async function readback() {
-    if (refreshing) {
-        refreshQueued = true;
-        return;
+const readbacks = new Map();
+function readback(account) {
+    const pending = readbacks.get(account);
+    if (pending) {
+        pending.again = true;
+        return pending.promise;
     }
-    refreshing = true;
-    try {
+    const entry = { again: false, promise: null };
+    entry.promise = (async () => {
         do {
-            refreshQueued = false;
-            const result = await refreshConversationStore();
-            // A conflicting merge means the authoritative read did not settle;
-            // throw so the observer backs off and retries rather than stopping
-            // on a terminal job with messages still missing.
-            if (result?.conflict) {
-                throw new Error('Conversation store merge conflict.');
-            }
-            scheduleInterfaceRefresh({ syncControls: false });
-        } while (refreshQueued);
-    } finally {
-        refreshing = false;
-    }
+            entry.again = false;
+            const result = await refreshConversationStore(account);
+            if (account !== getCurrentUserHandle()) throw new Error('account_changed');
+            // Throw so a terminal job keeps polling until its readback succeeds.
+            if (result?.conflict) throw new Error('Conversation store merge conflict.');
+        } while (entry.again);
+        scheduleInterfaceRefresh({ syncControls: false });
+    })().finally(() => readbacks.delete(account));
+    readbacks.set(account, entry);
+    return entry.promise;
 }
 
 /** Watch a native root job and merge its saved messages as they appear. */
-export function observeNativeConversationJob(jobId) {
+export function observeNativeConversationJob(jobId, account = getCurrentUserHandle()) {
+    if (account !== getCurrentUserHandle()) return;
     if (!jobId || observed.has(jobId)) {
         return;
     }
     const stop = observeJob(jobId, {
-        onUpdate: () => readback(),
-        onSnapshot: () => readback(),
+        account,
+        onSnapshot: () => readback(account),
         // Drop the registry entry once polling really stops, so a retried job
         // that reuses the id (or a later resume) can be observed again.
-        onDone: () => { observed.delete(jobId); },
+        onStop: () => { observed.delete(jobId); },
     });
-    observed.set(jobId, () => {
-        stop();
-        observed.delete(jobId);
-    });
+    observed.set(jobId, { account, stop });
 }
 
 export function stopNativeConversationObservation() {
-    for (const stop of [...observed.values()]) {
+    for (const { stop } of [...observed.values()]) {
         stop();
     }
     observed.clear();
@@ -68,21 +63,26 @@ export function isObservingConversationJob(jobId) {
 
 /** Reattach to native roots accepted before the page loaded or on another tab. */
 export async function resumeNativeConversationObservation() {
+    const account = getCurrentUserHandle();
+    for (const entry of [...observed.values()]) {
+        if (entry.account !== account) entry.stop();
+    }
     let jobs = [];
     try {
-        jobs = await listJobs({ includeDismissed: false });
+        jobs = await listJobs({ includeDismissed: false, account });
     } catch {
         return;
     }
     for (const job of jobs) {
         if (job?.type === 'conversation.reply' && !job.parentId) {
-            observeNativeConversationJob(job.id);
+            observeNativeConversationJob(job.id, account);
         }
     }
 }
 
 /** Ask the server to cancel one job family; committed messages are preserved. */
 export async function cancelNativeConversationJob(jobId) {
-    await cancelJob(jobId, { reason: 'Cancelled from Conversation Mode.' });
-    observed.get(jobId)?.();
+    const account = observed.get(jobId)?.account ?? getCurrentUserHandle();
+    await cancelJob(jobId, { reason: 'Cancelled from Conversation Mode.', account });
+    observed.get(jobId)?.stop();
 }

@@ -37,27 +37,6 @@ const thumbnailMobileRuntimeSettings = {
     format: String(getConfigValue('thumbnails.mobile.format', 'jpg')).toLowerCase().trim() === 'png' ? 'png' : 'jpg',
 };
 
-async function setCachedThumbnailContentType(response, filePath) {
-    let fileHandle = null;
-    try {
-        fileHandle = await fs.promises.open(filePath, 'r');
-        const header = Buffer.alloc(12);
-        await fileHandle.read(header, 0, header.length, 0);
-
-        if (header.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) {
-            response.type('jpg');
-        } else if (header.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
-            response.type('png');
-        }
-    } catch {
-        // Fall back to Express' extension-based content type.
-    } finally {
-        if (fileHandle !== null) {
-            await fileHandle.close();
-        }
-    }
-}
-
 /**
  * @typedef {'bg' | 'avatar' | 'persona'} ThumbnailType
  */
@@ -430,9 +409,13 @@ publicRouter.get('/', async function (request, response) {
         }
 
         if (fs.existsSync(pathToCachedFile)) {
+            const bytes = await fs.promises.readFile(pathToCachedFile);
+            response.type(bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])) ? 'jpg'
+                : bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) ? 'png' : path.extname(file));
+            response.setHeader('Cache-Control', 'public, max-age=0');
             invalidateFirefoxCache(pathToCachedFile, request, response);
-            await setCachedThumbnailContentType(response, pathToCachedFile);
-            return response.sendFile(file, { root: thumbnailFolder, dotfiles: 'allow' });
+            // Buffer responses use a content ETag, including same-size writes in one millisecond.
+            return response.send(bytes);
         }
 
         // Send a 404 so the frontend can display a placeholder

@@ -1,4 +1,5 @@
 import { getRequestHeaders, is_send_press } from '../../script.js';
+import { getCurrentUserHandle } from '../user.js';
 import { MEDIA_DISPLAY } from '../constants.js';
 import {
     CHROME_IDS,
@@ -22,7 +23,7 @@ import { escapeHtmlText } from './render-utils.js';
 import { getSettings, saveSettings } from './settings-store.js';
 import { formatPromptText } from './shared-helpers.js';
 import { conversationState } from './state.js';
-import { flushConversationStore, refreshConversationStore } from './store-sync.js';
+import { assertConversationAccount, flushConversationStore, refreshConversationStore } from './store-sync.js';
 import {
     getConversationAttachmentSummary,
     getConversationFileAttachments,
@@ -167,7 +168,8 @@ export function addConversationFilesToInput(files) {
     }
 }
 
-export async function populateConversationUserAttachments(messageInput) {
+export async function populateConversationUserAttachments(messageInput, account = getCurrentUserHandle()) {
+    assertConversationAccount(account);
     const pendingFiles = getValidatedConversationPendingFiles();
     if (!pendingFiles?.length) {
         return;
@@ -176,7 +178,8 @@ export async function populateConversationUserAttachments(messageInput) {
     const { populateFileAttachment } = await import('../chats.js');
     // Conversation clears its own file input after the send is accepted; do not
     // let the shared helper reset the Roleplay attachment form here.
-    await populateFileAttachment(messageInput, CHROME_IDS.fileInput, { resetForm: false });
+    await populateFileAttachment(messageInput, CHROME_IDS.fileInput, { resetForm: false, account });
+    assertConversationAccount(account);
     if (getConversationMediaAttachments(messageInput).length) {
         messageInput.extra.media_display = MEDIA_DISPLAY.LIST;
         messageInput.extra.inline_image = true;
@@ -219,6 +222,7 @@ export function focusConversationInput() {
 }
 
 export async function submitConversationInput() {
+    const account = getCurrentUserHandle();
     if (is_send_press || conversationState.conversationUploadActive) {
         return;
     }
@@ -252,7 +256,7 @@ export async function submitConversationInput() {
         if (!lastUser) {
             return;
         }
-        await submitAcceptedReply({ avatar, branchId, groupId, personaId, force: true, triggers: [lastUser] });
+        await submitAcceptedReply({ avatar, branchId, groupId, personaId, account, force: true, triggers: [lastUser] });
         return;
     }
 
@@ -269,7 +273,7 @@ export async function submitConversationInput() {
         }
     }
 
-    await submitAcceptedSend({ avatar, branchId, groupId, personaId, text, input });
+    await submitAcceptedSend({ avatar, branchId, groupId, personaId, text, input, account });
 }
 
 /** A stable identity for the currently selected files, used to tell a retry
@@ -320,7 +324,7 @@ function getBranchRecord(avatar, branchId, { groupId, personaId }) {
 }
 
 /** Send new composer content: the server appends the user bubbles itself. */
-async function submitAcceptedSend({ avatar, branchId, groupId, personaId, text, input }) {
+async function submitAcceptedSend({ avatar, branchId, groupId, personaId, text, input, account }) {
     if (conversationState.conversationUploadActive) {
         return;
     }
@@ -345,7 +349,7 @@ async function submitAcceptedSend({ avatar, branchId, groupId, personaId, text, 
     }
     const fileSignature = getPendingFileSignature();
     const branchCreatedAt = String(branch.createdAt ?? '');
-    const draftSignature = JSON.stringify(['send', avatar, groupId, personaId, branchId, branchCreatedAt, text, fileSignature, replyTargetAnchor?.messageId || '', replyTargetAnchor?.revision || '']);
+    const draftSignature = JSON.stringify([account, 'send', avatar, groupId, personaId, branchId, branchCreatedAt, text, fileSignature, replyTargetAnchor?.messageId || '', replyTargetAnchor?.revision || '']);
 
     // Guard before the async upload so a second tap cannot submit the same draft
     // twice while the first upload is still in flight.
@@ -361,7 +365,7 @@ async function submitAcceptedSend({ avatar, branchId, groupId, personaId, text, 
             const messages = [];
             if (pendingFiles.length) {
                 const messageInput = { role: 'user', name: userName, mes: text, extra: buildConversationUserMessageExtra(replyReference) };
-                await populateConversationUserAttachments(messageInput);
+                await populateConversationUserAttachments(messageInput, account);
                 if (!String(messageInput.mes || '').trim() && !getConversationMediaAttachments(messageInput).length && !getConversationFileAttachments(messageInput).length) {
                     toastr.warning('No attachments were added. Try a different file.');
                     return;
@@ -386,26 +390,27 @@ async function submitAcceptedSend({ avatar, branchId, groupId, personaId, text, 
                 branchCreatedAt,
                 timeZone: getDeviceTimeZone(),
             };
-            payload.submissionKey = resolveSubmissionKey(payload);
+            payload.submissionKey = resolveSubmissionKey(payload, account);
         }
 
-        const accepted = await acceptConversationSubmission(payload, { draftSignature });
+        const accepted = await acceptConversationSubmission(payload, { draftSignature, account });
         if (!accepted) {
             return;
         }
         try {
-            await refreshConversationStore();
+            await refreshConversationStore(account);
         } catch {
             // The acceptance is durable; observation retries the authoritative
             // read rather than the user resending and duplicating the message.
         }
+        if (account !== getCurrentUserHandle()) return;
         scheduleInterfaceRefresh({ syncControls: false });
         clearConversationComposer(input, text, { hadAttachments: pendingFiles.length > 0, fileSignature });
         pendingSubmission = null;
         if (replyTargetAnchor && getActiveConversationReplyTarget(avatar, { branchId, groupId, personaId })?.messageId === replyTargetAnchor.messageId) {
             clearConversationReplyTarget();
         }
-        observeNativeConversationJob(accepted.job.id);
+        observeNativeConversationJob(accepted.job.id, account);
     } finally {
         conversationState.conversationUploadActive = false;
         // Clear the busy flag even on the failure paths, then repaint so Send is
@@ -415,7 +420,7 @@ async function submitAcceptedSend({ avatar, branchId, groupId, personaId, text, 
 }
 
 /** Ask for a reply to messages the browser already saved (force response, branch-from-message). */
-export async function submitAcceptedReply({ avatar, branchId, groupId, personaId, force, triggers, submissionKey = '' }) {
+export async function submitAcceptedReply({ avatar, branchId, groupId, personaId, force, triggers, submissionKey = '', account = getCurrentUserHandle() }) {
     if (conversationState.conversationUploadActive) {
         return;
     }
@@ -441,19 +446,20 @@ export async function submitAcceptedReply({ avatar, branchId, groupId, personaId
         force: Boolean(force),
         timeZone: getDeviceTimeZone(),
     };
-    payload.submissionKey = submissionKey || resolveSubmissionKey(payload);
+    payload.submissionKey = submissionKey || resolveSubmissionKey(payload, account);
     conversationState.conversationUploadActive = true;
     try {
-        const accepted = await acceptConversationSubmission(payload);
+        const accepted = await acceptConversationSubmission(payload, { account });
         if (accepted) {
             pendingSubmission = null;
             try {
-                await refreshConversationStore();
+                await refreshConversationStore(account);
             } catch {
                 // The acceptance is durable; observation retries the read.
             }
+            if (account !== getCurrentUserHandle()) return;
             scheduleInterfaceRefresh({ syncControls: false });
-            observeNativeConversationJob(accepted.job.id);
+            observeNativeConversationJob(accepted.job.id, account);
         }
     } finally {
         conversationState.conversationUploadActive = false;
@@ -492,19 +498,20 @@ function createSubmissionKey() {
 }
 
 /** Reuse the key of a submission whose response was lost, so a retry cannot duplicate it. */
-function resolveSubmissionKey(payload) {
+function resolveSubmissionKey(payload, account) {
     const signature = JSON.stringify([payload.mode, payload.target, payload.branchCreatedAt, payload.messages, payload.triggers, payload.replyTarget, payload.force, payload.timeZone]);
-    if (pendingSubmission && pendingSubmission.signature === signature) {
+    if (pendingSubmission && pendingSubmission.account === account && pendingSubmission.signature === signature) {
         return pendingSubmission.key;
     }
     return createSubmissionKey();
 }
 
 async function acceptConversationSubmission(payload, meta = {}) {
+    const { account = getCurrentUserHandle() } = meta;
     const signature = JSON.stringify([payload.mode, payload.target, payload.branchCreatedAt, payload.messages, payload.triggers, payload.replyTarget, payload.force, payload.timeZone]);
     let flushed = false;
     try {
-        flushed = await flushConversationStore();
+        flushed = await flushConversationStore(account);
     } catch {
         flushed = false;
     }
@@ -513,7 +520,7 @@ async function acceptConversationSubmission(payload, meta = {}) {
         return null;
     }
     try {
-        const accepted = await postConversationSubmission(payload);
+        const accepted = await postConversationSubmission(payload, account);
         if (!accepted?.job || accepted.inputDurable !== true) {
             toastr.warning('The Conversation reply was not accepted. Try again.', 'Reply not sent');
             return null;
@@ -523,21 +530,23 @@ async function acceptConversationSubmission(payload, meta = {}) {
         // An uncertain failure may have been accepted already, so keep the exact
         // request (and its key and uploaded payload); the next identical send
         // replays rather than duplicates.
-        pendingSubmission = { key: payload.submissionKey, signature, payload, draftSignature: meta.draftSignature || '' };
+        pendingSubmission = { key: payload.submissionKey, signature, payload, account, draftSignature: meta.draftSignature || '' };
         const detail = error?.body?.error || error?.message || 'The Conversation reply could not be sent.';
         toastr.error(detail, 'Reply not sent');
         return null;
     }
 }
 
-async function postConversationSubmission(payload) {
+async function postConversationSubmission(payload, account) {
+    if (account !== getCurrentUserHandle()) throw new Error('account_changed');
     const response = await fetch('/api/neconyan-conversation/reply/submit', {
         method: 'POST',
         credentials: 'same-origin',
-        headers: { ...getRequestHeaders(), 'Content-Type': 'application/json' },
+        headers: { ...getRequestHeaders(), 'Content-Type': 'application/json', 'X-Neconyan-Account': account },
         body: JSON.stringify(payload),
     });
     const text = await response.text();
+    if (account !== getCurrentUserHandle()) throw new Error('account_changed');
     let body = null;
     try { body = text ? JSON.parse(text) : null; } catch { body = null; }
     if (!response.ok) {
@@ -579,6 +588,7 @@ if (typeof window !== 'undefined') {
             force: Boolean(detail.force),
             triggers,
             submissionKey: String(detail.submissionKey || '').trim(),
+            account: detail.account,
         });
     });
 }

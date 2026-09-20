@@ -152,6 +152,35 @@ describe('thumbnail file name resolution', () => {
         expect(errorSpy).not.toHaveBeenCalled();
     });
 
+    test.each(['desktop', 'mobile'])('validates %s cached contents when size and timestamps coincide', async preset => {
+        const file = 'same-time.png';
+        writeCharacter(file);
+        const folder = preset === 'mobile' ? directories.thumbnailsAvatarMobile : directories.thumbnailsAvatar;
+        const cachedPath = path.join(folder, file);
+        const first = await new Jimp({ width: 3, height: 4, color: 0xff0000ff }).getBuffer(JimpMime.png);
+        const second = await new Jimp({ width: 3, height: 4, color: 0x00ff00ff }).getBuffer(JimpMime.png);
+        expect(first.length).toBe(second.length);
+        expect(first).not.toEqual(second);
+        const timestamp = new Date(Date.now() - 1000);
+        const originalTime = new Date(timestamp.getTime() - 60000);
+        fs.utimesSync(path.join(directories.characters, file), originalTime, originalTime);
+        fs.writeFileSync(cachedPath, first);
+        fs.utimesSync(cachedPath, timestamp, timestamp);
+        const url = `${baseUrl}/thumbnail?type=avatar&file=${file}&preset=${preset}`;
+        const initial = await fetch(url);
+        expect(Buffer.from(await initial.arrayBuffer())).toEqual(first);
+        fs.writeFileSync(cachedPath, second);
+        fs.utimesSync(cachedPath, timestamp, timestamp);
+        const changed = await fetch(url, { headers: { 'If-None-Match': initial.headers.get('etag'), 'Cache-Control': 'max-age=0' } });
+        expect(changed.status).toBe(200);
+        expect(Buffer.from(await changed.arrayBuffer())).toEqual(second);
+        expect(changed.headers.get('etag')).not.toBe(initial.headers.get('etag'));
+        const before = fs.statSync(cachedPath).ctimeMs;
+        const unchanged = await fetch(url, { headers: { 'If-None-Match': changed.headers.get('etag'), 'Cache-Control': 'max-age=0' } });
+        expect(unchanged.status).toBe(304);
+        expect(fs.statSync(cachedPath).ctimeMs).toBe(before);
+    });
+
     test.each([
         'desktop',
         'mobile',

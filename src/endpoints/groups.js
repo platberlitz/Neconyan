@@ -266,6 +266,7 @@ router.post('/create', (request, response) => {
 });
 
 router.post('/edit', getFileNameValidationFunction('id'), (request, response) => {
+    if (request.get('X-Neconyan-Account') && request.get('X-Neconyan-Account') !== request.user.profile.handle) return response.status(409).send({ error: 'account_changed' });
     if (!request.body || !request.body.id) {
         return response.sendStatus(400);
     }

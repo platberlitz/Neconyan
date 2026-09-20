@@ -11,6 +11,10 @@ function directoriesFor(request) {
     // Validate before any path is built from the handle, so a malformed handle
     // can never select another account's directory.
     const owner = validateOwner(request.user?.profile?.handle);
+    const expected = request.get('X-Neconyan-Account');
+    if (expected !== undefined && expected !== owner) {
+        throw Object.assign(new Error('account_changed'), { status: 409 });
+    }
     noteOwner(owner);
     return { owner, directories: request.user.directories };
 }

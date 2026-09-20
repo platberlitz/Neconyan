@@ -90,6 +90,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/settings
     hasAnyConversationModeUsage: () => hasUsage,
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({
+    assertConversationAccount: () => {},
     initConversationStoreSync: jest.fn(),
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/native-jobs.js', () => ({

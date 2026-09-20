@@ -2159,6 +2159,7 @@ body.neconyan #sheld[data-sb-conversation-mode='on'] :is(#sb_conversation_toggle
 body.neconyan #sheld[data-sb-conversation-mode='on'] :is(#sb_conversation_toggle_tools, #sb_conversation_attach) span { display: inline; }
 /* Message actions read as three dots on the name row at the bubble's right. */
 body.neconyan #sheld[data-sb-conversation-mode='on'] .sb-conversation-more-actions {
+    position: relative; z-index: 3;
     display: flex; align-items: center; justify-content: center;
     inline-size: 44px; block-size: 44px; min-inline-size: 44px; min-height: 44px;
     margin: -14px 0 -14px auto; padding: 0; gap: 0;

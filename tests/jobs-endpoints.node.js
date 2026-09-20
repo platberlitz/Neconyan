@@ -68,6 +68,19 @@ test('reserved Conversation work cannot bypass its own acceptance endpoint', asy
     assert.equal(bypass.status, 400, 'the generic route refuses a reserved job type');
 });
 
+test('stale browser account headers refuse every job route before accessing the new account', async () => {
+    const { job } = await (await submit('bob', { key: 'stale-tab' })).json();
+    const before = await (await request('GET', '/api/jobs/list', { account: 'bob' })).json();
+    for (const [method, suffix] of [['GET', '/list'], ['GET', '/capacity'], ['GET', `/${job.id}`], ['GET', `/${job.id}/result`],
+        ['POST', '/submit'], ['POST', `/${job.id}/cancel`], ['POST', `/${job.id}/dismiss`], ['POST', `/${job.id}/retry`]]) {
+        const response = await request(method, '/api/jobs' + suffix, { account: 'bob', headers: { 'X-Neconyan-Account': 'alice' },
+            body: method === 'POST' ? { type: 'roleplay', submissionKey: 'blocked', intent: {} } : undefined });
+        assert.equal(response.status, 409, suffix);
+        assert.equal((await response.json()).error, 'account_changed');
+    }
+    assert.deepEqual(await (await request('GET', '/api/jobs/list', { account: 'bob', headers: { 'X-Neconyan-Account': 'bob' } })).json(), before);
+});
+
 test('an oversized or ill-typed job request cannot crash the server', async () => {
     const huge = await request('POST', '/api/jobs/submit', {
         body: { type: 'roleplay', submissionKey: 'big', intent: { blob: 'x'.repeat(JOB_INTENT_LIMIT_BYTES + 1024) } },

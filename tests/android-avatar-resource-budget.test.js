@@ -97,11 +97,10 @@ describe('Android avatar resource budget', () => {
     });
 
     test('cached thumbnails report their encoded image type instead of original filename extension', () => {
-        expect(thumbnailsSource).toContain('async function setCachedThumbnailContentType(response, filePath)');
-        expect(thumbnailsSource).toContain('await fs.promises.open(filePath, \'r\')');
-        expect(thumbnailsSource).toContain('response.type(\'jpg\')');
-        expect(thumbnailsSource).toContain('response.type(\'png\')');
-        expect(thumbnailsSource).toContain('await setCachedThumbnailContentType(response, pathToCachedFile);');
+        expect(thumbnailsSource).toContain('const bytes = await fs.promises.readFile(pathToCachedFile);');
+        expect(thumbnailsSource).toContain('bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])) ? \'jpg\'');
+        expect(thumbnailsSource).toContain('bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) ? \'png\'');
+        expect(thumbnailsSource).toContain('return response.send(bytes);');
         expect(thumbnailsSource).not.toContain('fs.openSync(filePath, \'r\')');
         expect(thumbnailsSource).not.toContain('fs.readSync(fd, header');
     });

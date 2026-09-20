@@ -1,4 +1,6 @@
 import { chat, getCurrentChatId, getRequestHeaders, is_send_press, saveChatConditional } from '../../script.js';
+import { getCurrentUserHandle } from '../user.js';
+import { assertConversationAccount } from './store-sync.js';
 import { selected_group } from '../group-chats.js';
 import {
     DEFAULT_INACTIVITY_THRESHOLD,
@@ -691,21 +693,25 @@ export async function checkAutoCharacterChat(avatar, settings, now, { branchId =
 
 export { getRoleplaySourceMessageRevision };
 
-async function submitConversationAside(body) {
+async function submitConversationAside(body, account) {
+    assertConversationAccount(account);
     const response = await fetch('/api/neconyan-conversation/aside/submit', {
         method: 'POST',
         credentials: 'same-origin',
-        headers: getRequestHeaders(),
+        headers: { ...getRequestHeaders(), 'X-Neconyan-Account': account },
         body: JSON.stringify(body),
     });
     const payload = await response.json().catch(() => null);
+    assertConversationAccount(account);
     if (!response.ok) {
         throw Object.assign(new Error(payload?.error || `Aside request failed (${response.status}).`), { status: response.status });
     }
     return payload;
 }
 
-function isCapturedRoleplaySourceValid({ avatar = '', sourceGroupId = '', sourceGroupRevision = '', sourceMessageId = null, sourceMessageRevision = '' } = {}) {
+function isCapturedRoleplaySourceValid({ account, avatar = '', sourceGroupId = '', sourceGroupRevision = '', sourceMessageId = null, sourceMessageRevision = '' } = {}) {
+    if (account !== getCurrentUserHandle()) return false;
+    try { assertConversationAccount(account); } catch { return false; }
     if (sourceMessageId !== null && typeof sourceMessageId !== 'undefined') {
         const currentMessage = chat[sourceMessageId];
         if (!currentMessage || getRoleplaySourceMessageRevision(currentMessage) !== sourceMessageRevision) {
@@ -734,6 +740,7 @@ export function captureGroupAsideRequest(character, { personaId = getConversatio
     return {
         branchId,
         groupContext,
+        account: getCurrentUserHandle(),
         personaId,
         reason,
         sourceGroupId: String(group.id || sourceGroupId || ''),
@@ -755,6 +762,7 @@ export function captureRoleplayDMRequest({ avatar = getCurrentCharAvatar(), pers
         avatar,
         branchId,
         personaId,
+        account: getCurrentUserHandle(),
         roleplayContext: capturedContext,
         sourceMessageId,
         sourceMessageRevision: sourceMessage ? getRoleplaySourceMessageRevision(sourceMessage) : '',
@@ -825,7 +833,7 @@ export async function triggerGroupAsideDM(character, options = {}) {
     }
     groupAsideBusyKeys.add(key);
     try {
-        await saveChatConditional({ throwOnError: true });
+        await saveChatConditional({ throwOnError: true, account: captured.account });
         if (!isCapturedRoleplaySourceValid({ ...captured, avatar: character.avatar })) {
             return false;
         }
@@ -839,7 +847,7 @@ export async function triggerGroupAsideDM(character, options = {}) {
             messageRevision: sourceMessageRevision,
             groupRevision: sourceGroupRevision,
             reason,
-        });
+        }, captured.account);
         return Boolean(result?.created);
     } catch (err) {
         reportConversationGenerationError('group aside DM', err, { toast: false });
@@ -866,7 +874,7 @@ export async function triggerRoleplayDM(options = {}) {
     }
 
     try {
-        await saveChatConditional({ throwOnError: true });
+        await saveChatConditional({ throwOnError: true, account: captured.account });
         if (!isCapturedRoleplaySourceValid(captured)) {
             return false;
         }
@@ -876,7 +884,7 @@ export async function triggerRoleplayDM(options = {}) {
             messageIndex: sourceMessageId,
             messageRevision: sourceMessageRevision,
             reason: 'reaction',
-        });
+        }, captured.account);
         return Boolean(result?.created);
     } catch (err) {
         reportConversationGenerationError('roleplay side DM', err, { toast: false });
