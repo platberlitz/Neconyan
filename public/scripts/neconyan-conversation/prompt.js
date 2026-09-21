@@ -3,24 +3,22 @@ import { composeConversationSystemPrompt } from './prompt-system.js';
 import { user_avatar } from '../personas.js';
 import { power_user } from '../power-user.js';
 import {
-    MEMORY_SUMMARY_INTERVAL_MESSAGES,
     MEMORY_SUMMARY_MIN_MESSAGES,
-    MEMORY_SUMMARY_RECENT_MESSAGES,
-    MEMORY_SUMMARY_RESPONSE_TOKENS,
     TRANSCRIPT_MESSAGE_LIMIT,
 } from './constants.js';
 import {
-    getActiveConversationBranch,
     getConversationGroupIdForAvatar,
     getConversationPersonaId,
-    getConversationThreadStore,
     getConversationThreadKey,
     getCurrentCharAvatar,
     getCurrentCharName,
     parsePositiveInt,
 } from './context.js';
-import { generateConversationRaw } from './generation.js';
-import { getConversationMessagesRevision } from './message-identity-utils.js';
+import { captureConversationTextBinding } from './generation.js';
+import { requestConversationBinding } from './bindings.js';
+import { observeJob } from '../jobs.js';
+import { refreshConversationStore } from './store-sync.js';
+import { createConversationSubmissionKey } from './message-identity-utils.js';
 import { getCharacterAuthorNote, getCharacterForAvatar, getConversationParticipants, getParticipantNamesForDisplay } from './media.js';
 import {
     composeConversationPersonaDescription,
@@ -36,14 +34,12 @@ import {
     getConversationMemorySummary,
     getConversationSoloMemorySummary,
     getSettings,
-    saveConversationMemorySummary,
 } from './settings-store.js';
-import { memorySummaryBusyAvatars, memorySummaryTimers } from './state.js';
+import { memorySummaryBusyAvatars } from './state.js';
 import {
     getConversationAttachmentSummary,
     getConversationFileAttachments,
     getConversationMediaAttachments,
-    hasConversationMessageContent,
 } from './thread-store.js';
 
 export function formatConversationFileSize(size) {
@@ -240,73 +236,28 @@ export async function buildConversationPromptMessages(messages, directive, speak
     });
 }
 
-export function buildConversationMemoryPrompt(avatar, messages, { groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {
-    const character = getCharacterForAvatar(avatar);
-    const participants = getParticipantNamesForDisplay(getConversationParticipants(avatar, getSettings(avatar, { groupId, personaId }), { groupId, personaId }));
-    return [
-        `Main DM: ${character?.name || 'Character'} with ${getConversationPersonaName(personaId, 'User')}.`,
-        participants.length > 1 ? `Other possible participants: ${participants.slice(1).join(', ')}.` : '',
-        'Summarize durable DM memory only: relationship tone, promises, unresolved topics, preferences, private jokes, boundaries, and emotionally important beats.',
-        'Ignore filler small talk unless it changes the relationship. Keep it compact and useful for future replies.',
-        '',
-        formatConversationTranscript(messages.slice(-MEMORY_SUMMARY_RECENT_MESSAGES)),
-    ].filter(Boolean).join('\n');
-}
-
 export async function updateConversationMemorySummary(avatar = getCurrentCharAvatar(), { branchId = '', force = false, groupId = getConversationGroupIdForAvatar(avatar), notify = false, personaId = getConversationPersonaId() } = {}) {
     const memoryKey = `${getConversationThreadKey(avatar, groupId, { personaId })}:${branchId}`;
     if (!avatar || !memoryKey || memorySummaryBusyAvatars.has(memoryKey)) {
         return false;
     }
 
-    const branch = getActiveConversationBranch(avatar, { branchId, create: false, groupId, personaId });
-    const messages = Array.isArray(branch?.messages) ? branch.messages.filter(message => hasConversationMessageContent(message) && message.role !== 'system') : [];
-    if (!messages.length || (!force && messages.length < MEMORY_SUMMARY_MIN_MESSAGES)) {
-        if (notify) {
-            toastr.info(`Memory appears after at least ${MEMORY_SUMMARY_MIN_MESSAGES} messages, or when there is enough chat to summarize.`);
-        }
-        return false;
-    }
-
-    const threadStore = getConversationThreadStore(avatar, { create: false, groupId, personaId });
-    const lastSummarizedCount = parsePositiveInt(branch?.memoryMessageCount ?? threadStore?.memoryMessageCount, 0, 0);
-    if (!force && messages.length - lastSummarizedCount < MEMORY_SUMMARY_INTERVAL_MESSAGES) {
-        return false;
-    }
-    const sourceRevision = getConversationMessagesRevision(messages);
-
     memorySummaryBusyAvatars.add(memoryKey);
     try {
-        const previousSummary = getConversationMemorySummary(avatar, { branchId, groupId, personaId });
-        const prompt = [
-            previousSummary ? `Existing DM memory summary:\n${previousSummary}` : '',
-            buildConversationMemoryPrompt(avatar, messages, { groupId, personaId }),
-            'Return the updated memory summary in concise bullets. No preamble.',
-        ].filter(Boolean).join('\n\n');
-        const settings = getSettings(avatar, { groupId, personaId });
-        const response = await generateConversationRaw({
-            prompt,
-            systemPrompt: 'You maintain a concise private DM memory summary for realistic ongoing chat continuity.',
-            responseLength: MEMORY_SUMMARY_RESPONSE_TOKENS,
-            trimNames: false,
-            cacheScope: 'conversation-mode-memory',
-            scope: { avatar, branchId, groupId, personaId, messages },
-        }, settings);
-
-        if (response?.trim()) {
-            const currentBranch = getActiveConversationBranch(avatar, { branchId, create: false, groupId, personaId });
-            const currentMessages = Array.isArray(currentBranch?.messages)
-                ? currentBranch.messages.filter(message => hasConversationMessageContent(message) && message.role !== 'system')
-                : [];
-            if (getConversationMessagesRevision(currentMessages) !== sourceRevision) {
-                return false;
-            }
-            saveConversationMemorySummary(avatar, response.trim(), messages.length, { branchId, groupId, personaId });
-            if (notify) {
-                toastr.success('Conversation memory refreshed.');
-            }
-            return true;
+        const { account, scope, bindingRequest } = await captureConversationTextBinding({ avatar, branchId, groupId, personaId });
+        const response = await requestConversationBinding('summary/submit', { ...scope, bindingRequest,
+            submissionKey: createConversationSubmissionKey(), force, acknowledgement: bindingRequest.acknowledgement }, account);
+        if (!response.job) {
+            if (notify) toastr.info(`Memory appears after at least ${MEMORY_SUMMARY_MIN_MESSAGES} messages, or when there is enough chat to summarise.`);
+            return false;
         }
+        const completed = await new Promise(resolve => observeJob(response.job.id, { account,
+            onSnapshot: () => refreshConversationStore(account),
+            onDone: job => resolve(job.state === 'completed'),
+            onStop: reason => { if (reason !== 'done') resolve(false); },
+        }));
+        if (notify && completed) toastr.success('Conversation memory refreshed.');
+        return completed;
     } catch (error) {
         console.warn('Conversation Mode: memory summary update failed', error);
         if (notify) {
@@ -317,25 +268,6 @@ export async function updateConversationMemorySummary(avatar = getCurrentCharAva
     }
 
     return false;
-}
-
-export function scheduleConversationMemorySummary(avatar = getCurrentCharAvatar(), { branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {
-    if (!avatar) {
-        return;
-    }
-
-    const capturedBranchId = branchId || getConversationThreadStore(avatar, { create: false, groupId, personaId })?.activeBranchId || '';
-    const memoryKey = `${getConversationThreadKey(avatar, groupId, { personaId })}:${capturedBranchId}`;
-    const existingTimer = memorySummaryTimers.get(memoryKey);
-    if (existingTimer) {
-        window.clearTimeout(existingTimer);
-    }
-
-    const timer = window.setTimeout(() => {
-        memorySummaryTimers.delete(memoryKey);
-        void updateConversationMemorySummary(avatar, { branchId: capturedBranchId, groupId, personaId });
-    }, 2500);
-    memorySummaryTimers.set(memoryKey, timer);
 }
 
 export function buildConversationSystemPrompt(settings, avatar = getCurrentCharAvatar(), { threadAvatar = avatar, branchId = '', groupId = getConversationGroupIdForAvatar(threadAvatar), personaId = getConversationPersonaId() } = {}) {

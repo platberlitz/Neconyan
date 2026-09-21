@@ -290,7 +290,7 @@ Manual Scheduling creates fixed-time outgoing messages. It is separate from the 
 
 The **Weekly Schedule** editor contains one or more entries with selected weekdays, a time, and the message context. At the selected minute, Conversation Mode can ask the character to send a message based on that entry.
 
-The automatic worker checks Conversation tasks periodically rather than continuously, so a scheduled action may not begin at the exact millisecond of the selected time.
+The server checks enabled Conversation tasks every 30 seconds, using the saved timezone and connection. Once you've opened Conversation to save ownership, you can close every page and accepted work still finishes. A scheduled action may therefore start slightly after its selected time. Failed or interrupted jobs need an explicit retry; cancellation doesn't schedule another attempt.
 
 Character Schedule describes what the character is doing. Manual Scheduling tells Conversation Mode when to create a particular outgoing message. (I.e. schedule character to message me around this time.)
 

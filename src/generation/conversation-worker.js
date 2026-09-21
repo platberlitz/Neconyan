@@ -1,4 +1,4 @@
-import { getJob, listJobs, updateJob } from '../jobs/store.js';
+import { getJob, holdJobPruning, listJobs, updateJob } from '../jobs/store.js';
 import { getConversationSettings, normalizeConversationSettings } from '../endpoints/conversation-generation.js';
 import { normalizeConversationGroupRecord } from '../endpoints/conversation-groups.js';
 import { ensureConversationStore, readUserSettingsWithStatus, saveConversationStore } from '../endpoints/conversation-store.js';
@@ -6,14 +6,30 @@ import { unScopeConversationStorageKey } from '../endpoints/conversation-utils.j
 import { getCharacterData } from '../endpoints/conversation-generation.js';
 import { getSettingsVersion } from '../settings-version.js';
 import { acceptConversationAutonomousReply, finalizeConversationSubmission } from './conversation-jobs.js';
-import { acceptConversationSummary, finalizeConversationMaintenanceSubmission } from './conversation-maintenance.js';
+import { acceptConversationSummary, eligibleMessages, finalizeConversationMaintenanceSubmission } from './conversation-maintenance.js';
 import { resolveConversationPartners } from './conversation-participants.js';
-import { REMINDER_RETRY_DELAY_MS, resolveAutomationActivity, selectConversationReminder, selectNextConversationThreadAutomation } from './conversation-auto-policy.js';
+import { backfillConversationAutomaticAcceptances, wasConversationAutomaticOccurrenceAccepted } from './conversation-effects.js';
+import { getConversationSummarySubmissionKey, REMINDER_RETRY_DELAY_MS, resolveAutomationActivity, selectConversationReminder, selectNextConversationThreadAutomation } from './conversation-auto-policy.js';
 
 const DEFAULT_INTERVAL_MS = 1000;
 const AUTO_SCAN_INTERVAL_MS = 30000;
 const TERMINAL_STATES = new Set(['completed', 'cancelled', 'failed', 'interrupted', 'conflict']);
 const normalizeGroup = group => normalizeConversationGroupRecord(group, normalizeConversationSettings);
+
+/** Migrate before any listener or runner can accept work and prune old evidence. */
+export async function migrateConversationAutomaticOwnership({ directoriesFor, owners }) {
+    const ownerList = typeof owners === 'function' ? await owners() : owners;
+    for (const owner of ownerList || []) {
+        holdJobPruning(owner);
+        try {
+            const directories = directoriesFor(owner);
+            const jobs = listJobs(directories, { owner, includeDismissed: true });
+            await backfillConversationAutomaticAcceptances({ user: { profile: { handle: owner }, directories } }, jobs);
+        } catch (error) {
+            console.error('[Conversation] Could not migrate automatic ownership:', error?.message ?? error);
+        }
+    }
+}
 
 /** Decode a saved character slot key into its avatar and destination group. */
 function splitThreadKey(localKey) {
@@ -42,7 +58,8 @@ async function buildAutomationFrames(request, store, personaId, savedSettings, n
         const target = { avatar: split.avatar, groupId: split.groupId, personaId };
         const settings = getConversationSettings(request, store, target.avatar, target.groupId, {}, { personaId });
         const group = target.groupId ? (store.groups || []).find(item => String(item.id) === String(target.groupId)) : null;
-        const host = await getCharacterData(request, target.avatar, { allowOverride: false });
+        let host;
+        try { host = await getCharacterData(request, target.avatar, { allowOverride: false, requireExisting: true }); } catch { continue; }
         for (const [branchId, branch] of Object.entries(characterStore.branches || {})) {
             if (!branch || !Array.isArray(branch.messages)) continue;
             const branchTarget = { ...target, branchId };
@@ -146,6 +163,11 @@ export async function scanConversationAutonomy({ directoriesFor, owners, now = D
         const request = { user: { profile: { handle: owner }, directories } };
         let jobs;
         try { jobs = listJobs(directories, { owner, includeDismissed: true }); } catch { continue; }
+        try { await backfillConversationAutomaticAcceptances(request, jobs); } catch (error) {
+            console.error('[Conversation] Could not preserve previous automatic ownership:', error?.message ?? error);
+            continue;
+        }
+        const submitted = new Set(jobs.map(job => job.submissionKey).filter(Boolean));
         if (jobs.some(job => job.type === 'conversation.reply' && !TERMINAL_STATES.has(job.state))) continue;
         let saved;
         try { saved = readUserSettingsWithStatus(request); } catch { continue; }
@@ -153,6 +175,7 @@ export async function scanConversationAutonomy({ directoriesFor, owners, now = D
         let store;
         try { store = ensureConversationStore(saved.data, normalizeGroup); } catch { continue; }
         if (store.automation?.mode !== 'server') continue;
+        const taken = key => submitted.has(key) || wasConversationAutomaticOccurrenceAccepted(store, key);
         const timeZone = store.automation?.timeZone || 'UTC';
         const personaId = String(saved.data.user_avatar || '');
         const userStatus = String(store.userStatus || 'online');
@@ -173,8 +196,8 @@ export async function scanConversationAutonomy({ directoriesFor, owners, now = D
         const acceptOccurrence = async candidate => {
             try {
                 const result = await acceptConversationAutonomousReply(request, { ...candidate, timeZone });
-                if (result?.created) {
-                    accepted.push(candidate.key);
+                if (result?.job) {
+                    if (result.created) accepted.push(candidate.key);
                     return true;
                 }
             } catch (error) {
@@ -184,7 +207,7 @@ export async function scanConversationAutonomy({ directoriesFor, owners, now = D
         };
         let handled = false;
         if (userStatus !== 'offline') {
-            const reminderOccurrence = selectConversationReminder({ reminders: store.reminders || [], targets, personaId, now });
+            const reminderOccurrence = selectConversationReminder({ reminders: store.reminders || [], targets, taken, personaId, now });
             if (reminderOccurrence?.action === 'invalidate' || reminderOccurrence?.action === 'skip') {
                 const reminder = (store.reminders || []).find(item => item.id === reminderOccurrence.reminderId);
                 if (reminder) {
@@ -207,14 +230,18 @@ export async function scanConversationAutonomy({ directoriesFor, owners, now = D
             if (reminderOccurrence?.target) {
                 handled = await acceptOccurrence(reminderOccurrence);
                 if (!handled) {
-                    const reminder = (store.reminders || []).find(item => item.id === reminderOccurrence.bookkeeping?.reminder?.id);
-                    if (reminder) {
-                        reminder.retryAfter = now + REMINDER_RETRY_DELAY_MS;
-                        try {
-                            await saveConversationStore(request, store, getSettingsVersion(saved.data), { trustedConversationEffects: true });
-                        } catch (error) {
-                            console.error(`[Conversation] Could not defer reminder ${reminder.id}:`, error?.message ?? error);
+                    try {
+                        const latest = readUserSettingsWithStatus(request);
+                        if (latest.ok) {
+                            const currentStore = ensureConversationStore(latest.data, normalizeGroup);
+                            const reminder = (currentStore.reminders || []).find(item => item.id === reminderOccurrence.bookkeeping?.reminder?.id);
+                            if (reminder && !wasConversationAutomaticOccurrenceAccepted(currentStore, reminderOccurrence.key)) {
+                                reminder.retryAfter = now + REMINDER_RETRY_DELAY_MS;
+                                await saveConversationStore(request, currentStore, getSettingsVersion(latest.data), { trustedConversationEffects: true });
+                            }
                         }
+                    } catch (error) {
+                        console.error('[Conversation] Could not defer reminder:', error?.message ?? error);
                     }
                 }
             }
@@ -224,6 +251,7 @@ export async function scanConversationAutonomy({ directoriesFor, owners, now = D
                         settings: frame.settings, branch: frame.branch, target: frame.target, partners: frame.partners,
                         hostName: frame.hostName, userName: frame.userName,
                         characters, personaId, overrides: store.runtimeStatusOverrides || {}, userStatus, now, timeZone, random,
+                        taken: key => taken(key) || Object.hasOwn(frame.branch.automationClaims || {}, key),
                     });
                     if (candidate && await acceptOccurrence(candidate)) {
                         handled = true;
@@ -234,13 +262,17 @@ export async function scanConversationAutonomy({ directoriesFor, owners, now = D
         }
         if (handled) continue;
         for (const frame of frames) {
-            const messages = (frame.branch.messages || []).filter(message => message.role !== 'system' && String(message.mes || '').trim());
+            if (frame.settings.enabled === false) continue;
+            const messages = eligibleMessages(frame.branch);
             const throughId = messages.at(-1)?.id;
             if (!throughId) continue;
+            const submissionKey = getConversationSummarySubmissionKey(frame.target, throughId);
+            if (taken(submissionKey)) continue;
             try {
                 const summary = await acceptConversationSummary(request, {
-                    submissionKey: `summary:${frame.target.avatar}:${frame.target.groupId}:${frame.target.branchId}:${throughId}`,
+                    submissionKey,
                     target: frame.target,
+                    acknowledgement: store.automation?.acknowledgement,
                 }, { automatic: true });
                 if (summary.created) {
                     accepted.push(summary.job?.id || throughId);

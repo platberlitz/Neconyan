@@ -4,6 +4,7 @@ import {
     MEMORY_SUMMARY_RESPONSE_TOKENS,
 } from '../../public/scripts/neconyan-conversation/constants.js';
 import { parseScheduleResponse } from '../../public/scripts/neconyan-conversation/schedule-utils.js';
+import { getConversationAttachmentSummary } from '../../public/scripts/neconyan-conversation/thread-store-utils.js';
 import { runChatProfile, validateActiveGenerationContext } from './service.js';
 import { resolveGenerationProfile } from './profiles.js';
 import { normalizeBindingRequest, normalizeSubmissionAnchors, preflightConversationBindings } from './conversation-jobs.js';
@@ -13,13 +14,16 @@ import { hash } from '../mewmory/core.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { acceptJob, getJob, listJobs, releaseJob, setJobResume, updateJob } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
-import { getCharacterData } from '../endpoints/conversation-generation.js';
-import { getConversationThreadKey } from '../endpoints/conversation-store.js';
+import { getCharacterData, getConversationSettings } from '../endpoints/conversation-generation.js';
+import { getConversationThreadKey, saveConversationStore } from '../endpoints/conversation-store.js';
 import {
     prepareConversationTarget,
     commitConversationMemorySummary,
+    getConversationMemoryFingerprint,
     commitConversationStoreEffect,
     readConversationTarget,
+    retainConversationAutomaticAcceptance,
+    wasConversationAutomaticOccurrenceAccepted,
 } from './conversation-effects.js';
 
 const SUMMARY_SYSTEM_PROMPT = 'You maintain a concise private DM memory summary for realistic ongoing chat continuity.';
@@ -46,22 +50,27 @@ function fail(message, status = 400) {
 }
 
 function hasContent(message) {
-    return String(message?.mes ?? '').trim().length > 0;
+    return String(message?.mes ?? '').trim().length > 0 || Boolean(getConversationAttachmentSummary(message));
 }
 
 function formatTranscript(messages, limit) {
     return messages.slice(-limit)
-        .map(message => `${message.name || 'Speaker'}: ${String(message.mes || '').slice(0, 1800)}`)
+        .map(message => `${message.name || 'Speaker'}: ${[String(message.mes || '').slice(0, 1800), message.attachmentSummary].filter(Boolean).join(' ')}`)
         .join('\n');
 }
 
-function eligibleMessages(branch) {
+export function eligibleMessages(branch) {
     return (branch.messages || []).filter(message => message.role !== 'system' && hasContent(message));
 }
 
-/** New messages after the saved cursor; with no cursor, treat the whole history as uncounted. */
-function countNewMessages(messages, cursor) {
-    if (!cursor) return messages.length;
+function automaticSummaryAllowed(request, current, target) {
+    return current.store.automation?.mode === 'server'
+        && getConversationSettings(request, current.store, target.avatar, target.groupId, {}, { personaId: target.personaId }).enabled !== false;
+}
+
+/** Older manual summaries stored a count rather than a cursor. */
+function countNewMessages(messages, cursor, count) {
+    if (!cursor) return Math.max(0, messages.length - (Number(count) || 0));
     const index = messages.findIndex(message => message.id === cursor);
     return index >= 0 ? messages.length - index - 1 : messages.length;
 }
@@ -105,7 +114,11 @@ async function buildSummarySnapshot(request, job) {
         characterName: character.name || 'Character',
         userName: participant.userName, macros: participant.macros, groupNames: participant.groupNames,
         previousSummary: branch.memorySummary || '',
-        messages: messages.map(message => ({ id: message.id, name: message.name, mes: message.mes })),
+        memoryFingerprint: getConversationMemoryFingerprint(branch),
+        messages: messages.map(message => {
+            const attachmentSummary = getConversationAttachmentSummary(message);
+            return { id: message.id, name: message.name, mes: message.mes, ...(attachmentSummary ? { attachmentSummary } : {}) };
+        }),
         throughId,
         count: messages.length,
     };
@@ -134,6 +147,7 @@ async function validateMaintenanceSnapshot(request, snapshot, kind) {
 }
 
 async function finalizeSummarySubmission(request, job, preparedSnapshot) {
+    await retainConversationAutomaticAcceptance(request, job);
     try {
         const snapshot = preparedSnapshot || readArtifact(request.user.directories, job.id, 'request') || await buildSummarySnapshot(request, job);
         if (job.config?.requestHash && hash(snapshot) !== job.config.requestHash) throw fail('The accepted summary request changed during preparation.', 409);
@@ -147,6 +161,9 @@ async function finalizeSummarySubmission(request, job, preparedSnapshot) {
         });
         return getJob(request.user.directories, job.id);
     }
+    // Freeze the captured-history occurrence before dispatch, too. A failed
+    // marker write must leave the job waiting and non-prunable.
+    await retainConversationAutomaticAcceptance(request, getJob(request.user.directories, job.id));
     releaseJob(request.user.directories, job.id);
     return getJob(request.user.directories, job.id);
 }
@@ -183,6 +200,28 @@ export async function acceptConversationSummary(request, body = {}, { automatic 
     if (!owner || !directories?.root) throw fail('An authenticated account is required.', 401);
     if (typeof body.submissionKey !== 'string' || !body.submissionKey || body.submissionKey.length > 256) throw fail('A submission key is required.');
     if (!body.target || typeof body.target !== 'object') throw fail('A target is required.');
+    if (Object.hasOwn(body, 'summary')) {
+        if (automatic || typeof body.summary !== 'string' || body.summary.length > MAX_RESPONSE_BYTES
+            || (body.clearAll !== undefined && typeof body.clearAll !== 'boolean') || (body.clearAll && body.summary.trim())) {
+            throw fail('The manual memory summary is invalid.');
+        }
+        const current = readConversationTarget(request, body.target);
+        if (String(current.branch.createdAt) !== String(body.branchCreatedAt)) throw fail('The Conversation branch was replaced.', 409);
+        const summary = body.summary.trim();
+        const thread = current.store.characters[getConversationThreadKey(body.target.avatar, body.target.groupId, body.target.personaId)];
+        const branches = body.clearAll ? Object.values(thread.branches || {}) : [current.branch];
+        for (const branch of branches) {
+            const messages = eligibleMessages(branch);
+            Object.assign(branch, { memorySummary: summary, memoryMessageCount: messages.length,
+                memoryUpdatedAt: Date.now(), memorySummaryThrough: messages.at(-1)?.id || '' });
+        }
+        if (body.clearAll || thread.activeBranchId === body.target.branchId) {
+            for (const field of ['memorySummary', 'memoryMessageCount', 'memoryUpdatedAt', 'memorySummaryThrough']) thread[field] = current.branch[field];
+        }
+        const saved = await saveConversationStore(request, current.store, current.version, { trustedConversationEffects: true });
+        if (!saved.ok) throw fail('The Conversation memory could not be saved.', saved.status || 409);
+        return { created: false, applied: true };
+    }
     const requestHash = maintenanceRequestHash(body, 'summary');
     const recorded = listJobs(directories, { owner, includeDismissed: true }).find(item => item.submissionKey === body.submissionKey);
     if (recorded?.intent?.requestHash) {
@@ -192,12 +231,14 @@ export async function acceptConversationSummary(request, body = {}, { automatic 
     const target = await prepareConversationTarget(request, body.target);
     const current = readConversationTarget(request, target);
     const force = body.force === true;
+    const messages = eligibleMessages(current.branch);
+    if (!messages.length) return { created: false, skipped: 'not-enough-messages' };
     if (!force) {
-        const messages = eligibleMessages(current.branch);
-        if (messages.length < MEMORY_SUMMARY_MIN_MESSAGES || countNewMessages(messages, current.branch.memorySummaryThrough) < MEMORY_SUMMARY_INTERVAL_MESSAGES) {
+        if (messages.length < MEMORY_SUMMARY_MIN_MESSAGES || countNewMessages(messages, current.branch.memorySummaryThrough, current.branch.memoryMessageCount) < MEMORY_SUMMARY_INTERVAL_MESSAGES) {
             return { created: false, skipped: 'not-enough-messages' };
         }
     }
+    if (automatic && !automaticSummaryAllowed(request, current, target)) return { created: false, skipped: 'disabled' };
     const existing = listJobs(directories, { owner, includeDismissed: true }).find(item => item.submissionKey === body.submissionKey);
     if (existing) {
         if (existing.type !== 'conversation.summary' || !sameThreadTarget(existing.intent?.target, target)) {
@@ -209,6 +250,11 @@ export async function acceptConversationSummary(request, body = {}, { automatic 
     const intent = { kind: 'summary', target, force, requestHash };
     const snapshot = await buildSummarySnapshot(request, { intent, credentialRef: binding });
     await validateMaintenanceSnapshot(request, snapshot, 'summary');
+    if (automatic) {
+        const fresh = readConversationTarget(request, target);
+        if (!automaticSummaryAllowed(request, fresh, target)) return { created: false, skipped: 'disabled' };
+        if (wasConversationAutomaticOccurrenceAccepted(fresh.store, body.submissionKey)) return { created: false, skipped: 'already-accepted' };
+    }
     const accepted = acceptJob(directories, {
         owner, type: 'conversation.summary', submissionKey: body.submissionKey, intent,
         automatic, paused: true, coalesce: { deadline: 0, members: [] },
@@ -224,6 +270,7 @@ async function runConversationSummaryJob(context, dependencies) {
     const snapshot = readArtifact(context.directories, context.job.id, 'request');
     if (!snapshot) throw fail('The summary request is missing.', 409);
     if (readArtifact(context.directories, context.job.id, 'result')) return { artifact: true };
+    if (snapshot.memoryFingerprint === undefined) throw Object.assign(fail('The Conversation memory changed or cannot be verified. Refresh memory again.', 409), { recoverable: true });
     let response = readArtifact(context.directories, context.job.id, 'reply');
     if (!response) {
         response = await dependencies.generate({
@@ -234,7 +281,8 @@ async function runConversationSummaryJob(context, dependencies) {
     const text = String(response.text || '').trim();
     if (!text || text.length > MAX_RESPONSE_BYTES) throw fail('The summary model returned unusable text.', 502);
     setJobResume(context.directories, context.job.id, 'apply');
-    await commitConversationMemorySummary(context, snapshot.target, { summary: text, throughId: snapshot.throughId, count: snapshot.count });
+    await commitConversationMemorySummary(context, snapshot.target, { summary: text, throughId: snapshot.throughId, count: snapshot.count,
+        memoryFingerprint: snapshot.memoryFingerprint });
     const result = { summary: text };
     writeArtifact(context.directories, context.job.id, 'result', result);
     return { artifact: true };

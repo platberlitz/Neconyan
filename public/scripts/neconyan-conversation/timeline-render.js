@@ -31,7 +31,7 @@ import {
     persistConversationStore,
 } from './context.js';
 import { captureConversationTextBinding, commitCharacterReplyCommands, extractCharacterReplyCommands, generateConversationRaw, generateSelfieFromContext, getCharacterReplyCommandMetadata, reportConversationGenerationError } from './generation.js';
-import { getConversationMessagesRevision } from './message-identity-utils.js';
+import { createConversationSubmissionKey, getConversationMessagesRevision } from './message-identity-utils.js';
 import { getCharacterForAvatar, getConversationParticipants, getEffectiveConversationStatus } from './media.js';
 import { getConversationMessageAvatar, getConversationMessageReceipt } from './pals-rail.js';
 import { escapeRegExp, getCharacterMentionHandles, parseAvatarList } from './partners.js';
@@ -1219,21 +1219,10 @@ export async function branchConversationFromMessage(messageId) {
             text: replyText,
             createdAt: Date.now(),
             force: true,
-            submissionKey: createConversationSubmissionKey(),
+            submissionKey: createConversationSubmissionKey('branch'),
             account,
         },
     }));
-}
-
-function createConversationSubmissionKey() {
-    try {
-        if (globalThis.crypto?.randomUUID) {
-            return globalThis.crypto.randomUUID();
-        }
-    } catch {
-        /* fall through to a timestamp key */
-    }
-    return `branch_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
 export async function quickConversationSelfie() {

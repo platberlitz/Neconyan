@@ -30,7 +30,7 @@ import {
     saveStoredSchedule,
 } from './schedule.js';
 import { clearConversationMemorySummary, getConversationMemorySummary, getSettings, saveConversationMemorySummary, saveSettings } from './settings-store.js';
-import { getConversationThread, hasConversationMessageContent } from './thread-store.js';
+import { hasConversationMessageContent } from './thread-store.js';
 import {
     buildChimingPartnerOptions,
     buildConnectionProfileOptions,
@@ -576,10 +576,12 @@ export async function forceCreateMemoryFromPanel() {
     }
 
     const trimmedMemory = newMemory.trim();
-    const messages = getConversationThread(avatar, { groupId });
-    saveConversationMemorySummary(avatar, trimmedMemory, messages.length, { groupId });
-    toastr.success('Conversation memory updated.');
-    renderConversationMemoryPanel();
+    try {
+        await saveConversationMemorySummary(avatar, trimmedMemory, { groupId });
+        toastr.success('Conversation memory updated.');
+    } catch (error) {
+        toastr.warning(error.message || 'Conversation memory could not be saved.');
+    }
 }
 
 export async function refreshConversationMemoryFromPanel() {
@@ -590,13 +592,11 @@ export async function refreshConversationMemoryFromPanel() {
     }
 
     const groupId = getConversationGroupIdForAvatar(avatar);
-    const refreshed = await updateConversationMemorySummary(avatar, { force: true, groupId, notify: true });
-    if (!refreshed) {
-        renderConversationMemoryPanel();
-    }
+    await updateConversationMemorySummary(avatar, { force: true, groupId, notify: true });
+    renderConversationMemoryPanel();
 }
 
-export function clearConversationMemoryFromPanel() {
+export async function clearConversationMemoryFromPanel() {
     const avatar = getCurrentCharAvatar();
     if (!avatar) {
         toastr.warning('Pick a DM first.');
@@ -611,8 +611,10 @@ export function clearConversationMemoryFromPanel() {
     }
 
     const groupId = getConversationGroupIdForAvatar(avatar);
-    if (clearConversationMemorySummary(avatar, { groupId })) {
-        toastr.success('Conversation memory cleared.');
+    try {
+        if (await clearConversationMemorySummary(avatar, { groupId })) toastr.success('Conversation memory cleared.');
+    } catch (error) {
+        toastr.warning(error.message || 'Conversation memory could not be cleared.');
     }
 }
 

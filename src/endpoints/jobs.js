@@ -4,6 +4,8 @@ import { acceptJob, dismissJob, getJob, listJobs, requestCancellation, retryConv
 import { abortJob, capacity, noteOwner, ownerCount } from '../jobs/runner.js';
 import { readArtifact } from '../jobs/artifacts.js';
 import { startOperation } from '../mewmory/operations.js';
+import { retryConversationRoot } from '../generation/conversation-jobs.js';
+import { retainConversationAutomaticAcceptance } from '../generation/conversation-effects.js';
 
 export const router = express.Router();
 
@@ -119,11 +121,12 @@ router.post('/submit', (request, response) => {
     }
 });
 
-router.post('/:id/cancel', (request, response) => {
+router.post('/:id/cancel', async (request, response) => {
     try {
         const { owner, directories } = directoriesFor(request);
         const job = getJob(directories, request.params.id);
         if (!job || job.owner !== owner) return response.status(404).json({ error: 'No such job.' });
+        await retainConversationAutomaticAcceptance(request, job);
         const requested = requestCancellation(directories, job.id, { reason: request.body?.reason ?? null });
         // A family root's participants hold their own controllers; stop them too
         // so an in-flight provider call or delay does not run to completion.
@@ -154,6 +157,9 @@ router.post('/:id/retry', async (request, response) => {
         if (!['failed', 'interrupted'].includes(job.state)) return response.status(409).json({ error: 'Only failed or interrupted work can be retried.' });
         if (job.type === 'conversation.reply' && (job.children ?? []).length) {
             return response.json({ job: retryConversationFamily(directories, job.id).job });
+        }
+        if (job.type === 'conversation.reply' && job.intent?.mode === 'auto' && readArtifact(directories, job.id, 'request') === undefined) {
+            return response.json({ job: await retryConversationRoot(request, job) });
         }
         if (job.error?.status === 409 && ['mewmory.index', 'mewmory.recall'].includes(job.type)) {
             const accepted = await startOperation(directories, owner, job.type.split('.')[1], {

@@ -2,7 +2,7 @@
 
 The Conversation Mode REST API provides JSON endpoints for reading and modifying Conversation Mode stores, groups, threads, and messages. It can also generate and save a character reply through SillyBunny’s existing chat-completion or text-completion backends.
 
-The browser interface does not use this router as its primary Conversation Mode driver. Features such as proactive messages, schedules, reminders, notifications, image generation, and text-to-speech remain browser-side behavior.
+The browser now submits Conversation replies and memory work through this router and observes saved jobs. Enabled reminders, schedules, proactive messages and other automatic replies run on the server after ownership is configured. Notifications and audio playback still need an eligible page; supported speech synthesis and reply-image delivery run on the server. WebLLM and bundled browser Kokoro remain explicit page-open exceptions, with no substituted provider.
 
 ## What and Who Is This For?
 
@@ -23,6 +23,12 @@ Supported alias:
 
 ```text
 /api/sillybunny/conversation
+```
+
+The current browser uses the equivalent path:
+
+```text
+/api/neconyan-conversation
 ```
 
 For a default local installation:
@@ -46,6 +52,28 @@ All endpoints use `POST`, including read-only operations.
 | `/thread/save`    | Replaces the active branch’s messages.                     |
 | `/message/append` | Appends one message without generating a reply.            |
 | `/message/send`   | Appends a user message, generates a reply, and saves both. |
+| `/reply/submit`   | Accepts a durable reply family for native generation and delivery. |
+| `/aside/submit`   | Accepts a private reaction to a saved Roleplay source. |
+| `/summary/submit` | Accepts a saved summary job, or applies explicit memory text/clear. |
+| `/schedule/submit` | Accepts a saved schedule-generation job. |
+| `/automation/configure` | Saves automatic ownership, timezone and background settings acknowledgement. |
+| `/presentation/claim` | Claims pending presentation and acknowledges an observed read boundary. |
+
+### Automatic ownership
+
+Send the current store version, `mode: 'server'` and an IANA `timeZone` to `/automation/configure`. An optional `acknowledgement` contains the authenticated `account` and the saved general `settingsRevision`. A stale revision or different account returns 409. The response includes `automation` and `migratedBranches`; legacy message identities and unread boundaries migrate in the same write.
+
+Loading the app with existing Conversation usage, or starting Conversation usage, configures this automatically; existing users do not need to visit the Conversation panel. Later successful browser general-settings saves acknowledge the new revision atomically. Background work reads saved settings, not unsaved controls. A named profile remains usable independently of this active-settings acknowledgement. The server checks automatic work every 30 seconds, and accepted work continues with every page closed.
+
+`mode: 'browser'` remains accepted for compatibility but disables server automatic selection; the current app has no browser periodic sender and restores server ownership when it configures Conversation. The last configuring page supplies the account timezone. Old non-browser settings saves can leave an active binding stale until a new browser acknowledgement.
+
+Failed or interrupted automatic jobs require explicit retry through the jobs API. Exception: an unfinished legacy summary without a saved memory fingerprint cannot safely complete and needs a new explicit Refresh memory request; retrying its old job refuses again. Cancelled occurrences are not recreated. Accepted reminder, chime and summary identities survive job-history pruning and settings restoration. Capacity exhaustion refuses new acceptance rather than forgetting those identities.
+
+### Memory and presentation
+
+Normal `/summary/submit` requests contain a `submissionKey` and `target`, plus the selected binding/acknowledgement when required. Accepted work returns a job whose saved result can be observed through the jobs API. HTTP 200 can instead return `created: false` with a `skipped` reason and no job, for example when there is insufficient new history. Forced refresh still refuses genuinely empty history; attachment descriptions count as content. To overwrite or clear memory without a model, include `summary` and the observed `branchCreatedAt`. Empty `summary` with `clearAll: true` clears every branch's saved memory in that thread. These writes advance coverage and prevent an earlier pending summary from overwriting them.
+
+`/presentation/claim` takes a target including `createdAt`, an array of `messageIds`, and an optional `readThrough` message ID. Only the winning caller receives each pending presentation. A read boundary acknowledges only observed messages, never later arrivals. IDs may contain up to 512 characters. Replaced branches return a conflict; transient failures can be retried after reading the current store.
 
 ## Authentication and CSRF
 
@@ -79,9 +107,9 @@ curl -fsS \
 
 ## Settings Version
 
-Every request requires the current SillyBunny settings version.
+The store mutations listed below require the current SillyBunny settings version. Read-only requests and durable job submissions do not require that client version.
 
-Read operations return a top-level `version`:
+Read `/store/get` for a top-level `version`:
 
 ```json
 {
@@ -99,7 +127,7 @@ Send that value with the next mutation:
 }
 ```
 
-A successful request returns the new version. An older version returns:
+A successful version-checked store mutation returns its resulting version. An older submitted version returns:
 
 ```json
 {
@@ -118,6 +146,9 @@ The following operations require `version`:
 * `/message/append`
 * `/message/send`
 * `/thread/get` when `create` is `true`
+* `/automation/configure`
+
+Durable `/reply/submit`, `/aside/submit`, `/summary/submit` and `/schedule/submit` requests use their own submission and target contracts. Their responses do not consistently include a settings `version`; fetch `/store/get` before a subsequent version-checked mutation. `/presentation/claim` uses the observed branch identity and message boundary rather than a client settings version.
 
 ## Conversation Scope
 
@@ -528,7 +559,7 @@ The commands are removed from the visible reply and stored under:
 }
 ```
 
-The REST API does not execute image generation, schedule updates, or reminder timers. External clients must process those commands themselves.
+The older `/message/send` response exposes parsed commands for its caller. Durable `/reply/submit` jobs instead apply supported reply images, reminders and status effects natively with saved completion records. Use that accepted workflow when the work must outlive your connection.
 
 ## Status Codes
 
@@ -570,16 +601,4 @@ The REST API supports:
 * Generating one selected character reply.
 * Building external clients, bots, bridges, and import/export tools.
 
-The REST API does not support running these automatically:
-
-* Proactive or idle messages.
-* Scheduled messages.
-* Reminder timers.
-* Automatic group-speaker selection.
-* Character-to-character conversations.
-* Notifications.
-* Image generation.
-* Text-to-speech.
-* Roleplay-triggered private reactions.
-
-Clients that need those features must implement their own scheduling and sidecar handling.
+The native worker runs enabled proactive/idle messages, schedules, reminders, chimes, character chat and memory summaries using saved ownership and connections. Durable replies select eligible group speakers and apply supported images and narration. A browser still samples rendered Roleplay messages before submitting their saved source to `/aside/submit`; the server owns the accepted reaction afterwards. Notifications and audio playback remain presentation work in the page. Manual regeneration, polishing, schedule controls and selfie coordination still need native completion-write migration; the whole application is not yet page-independent.

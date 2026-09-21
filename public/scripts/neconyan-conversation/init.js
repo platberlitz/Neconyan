@@ -1,4 +1,5 @@
-import { chat } from '../../script.js';
+import { chat, main_api, settings } from '../../script.js';
+import { getCurrentUserHandle } from '../user.js';
 import { event_types, eventSource } from '../events.js';
 import { selected_group } from '../group-chats.js';
 import {
@@ -6,22 +7,20 @@ import {
     captureRoleplayDMRequest,
     checkGroupChatMention,
     handleChatChanged,
-    startConversationAutoWorker,
-    stopConversationAutoWorker,
     triggerGroupAsideDM,
     triggerRoleplayDM,
 } from './auto-engine.js';
 import { disableConversationModeForCurrentCharacter, ensureConversationStylesheet, getDefaultConversationAvatar, selectConversationThread } from './chrome.js';
 import { GROUP_ASIDE_RANDOM_CHANCE, NATIVE_DISCOVERY_INTERVAL_MS } from './constants.js';
-import { getConversationGroupById, getConversationPersonaId, getRoleplayCurrentCharacter, getRoleplayGroupById, migrateConversationLocalStorage } from './context.js';
+import { getConversationGroupById, getConversationPersonaId, getConversationStore, getRoleplayCurrentCharacter, getRoleplayGroupById, migrateConversationLocalStorage } from './context.js';
 import { loadCurrentPanelSettings } from './interface.js';
 import { resumeNativeConversationObservation } from './native-jobs.js';
 import { sanitizeConversationUnreadCounts, updateConversationNotificationIndicators } from './notifications.js';
-import { getCharacterForGroupChatMessage, getCurrentGroupConversationMembers } from './pals-rail.js';
+import { getCharacterForGroupChatMessage, getConversationRailItems, getCurrentGroupConversationMembers } from './pals-rail.js';
 import { scheduleInterfaceRefresh } from './render-scheduler.js';
 import { closeConversationSettings } from './settings-panel.js';
 import { getSettings, hasAnyConversationModeUsage } from './settings-store.js';
-import { initConversationStoreSync } from './store-sync.js';
+import { ensureConversationAutomationOwnership, initConversationStoreSync } from './store-sync.js';
 import { conversationState, setExternalConversationGenerationActive } from './state.js';
 
 function hasConversationRuntimeUsage() {
@@ -34,12 +33,49 @@ function scheduleInterfaceRefreshIfOpen() {
     }
 }
 
+let ownershipConfirmed = false;
+let ownershipPending = false;
+let lastRefusedRevision = null;
+
+function ownershipProof() {
+    // Background work reads the saved file, not the potentially edited controls.
+    return { account: getCurrentUserHandle(), settingsRevision: Number.isSafeInteger(settings?._settingsRevision) ? settings._settingsRevision : 0 };
+}
+
+async function confirmConversationOwnership() {
+    if (!conversationState.runtimeStarted || ownershipPending) return;
+    const acknowledgement = ownershipProof();
+    const stored = getConversationStore().automation;
+    if (stored?.mode === 'server' && stored.timeZone === (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')
+        && stored.acknowledgement?.account === acknowledgement.account
+        && stored.acknowledgement.settingsRevision >= acknowledgement.settingsRevision) return;
+    if (lastRefusedRevision === acknowledgement.settingsRevision) return;
+    ownershipPending = true;
+    try {
+        const automation = await ensureConversationAutomationOwnership({ acknowledgement });
+        if (!automation?.acknowledgement || automation.acknowledgement.settingsRevision < acknowledgement.settingsRevision) lastRefusedRevision = acknowledgement.settingsRevision;
+        if (!ownershipConfirmed && !['openai', 'textgenerationwebui'].includes(main_api)
+            && getConversationRailItems().some(item => !String(item.settings?.connection_profile || '').trim())) {
+            toastr.warning('Automatic Conversation messages now run on the server. Your current connection needs this page open. Choose a saved connection profile for background messages.');
+        }
+        ownershipConfirmed = true;
+    } catch (error) {
+        console.warn('Conversation ownership could not be saved; discovery will retry.', error);
+    } finally {
+        ownershipPending = false;
+        // A save may finish while configure is in flight. Acknowledge that newer
+        // saved revision immediately rather than waiting for another page visit.
+        if (ownershipProof().settingsRevision !== acknowledgement.settingsRevision) void confirmConversationOwnership();
+    }
+}
+
 function ensureConversationRuntimeStarted() {
-    if (conversationState.autoWorkerStarted || !hasConversationRuntimeUsage()) {
+    if (conversationState.runtimeStarted || !hasConversationRuntimeUsage()) {
         return;
     }
 
-    startConversationAutoWorker();
+    conversationState.runtimeStarted = true;
+    void confirmConversationOwnership();
     updateConversationNotificationIndicators();
 }
 
@@ -61,6 +97,7 @@ export function init() {
     // ponytail: readback polling also retries failed claims; use push if traffic warrants it.
     window.setInterval(() => {
         if (globalThis.document?.visibilityState === 'visible' && hasConversationRuntimeUsage()) {
+            void confirmConversationOwnership();
             void resumeNativeConversationObservation();
         }
     }, NATIVE_DISCOVERY_INTERVAL_MS);
@@ -72,6 +109,7 @@ export function init() {
         });
     }
     window.addEventListener('sb:frontend-icon-changed', updateConversationNotificationIndicators);
+    eventSource.on(event_types.SETTINGS_UPDATED, () => { void confirmConversationOwnership(); });
     eventSource.on(event_types.USER_MESSAGE_RENDERED, (messageId) => {
         if (!hasConversationRuntimeUsage()) {
             return;
@@ -202,7 +240,6 @@ export function init() {
     });
     window.addEventListener('sb:close-conversation-workspace', () => disableConversationModeForCurrentCharacter({ focusRoleplay: false }));
     window.addEventListener('sb:conversation-runtime-needed', ensureConversationRuntimeStarted);
-    window.addEventListener('beforeunload', stopConversationAutoWorker);
 
     if (hasAnyConversationModeUsage()) {
         ensureConversationRuntimeStarted();

@@ -94,9 +94,6 @@ export function sanitizeConversationUnreadCounts() {
         return isUnreadThreadCountable(avatar, groupId);
     });
 
-    if (result.changed) {
-        persistConversationStore();
-    }
     return result;
 }
 

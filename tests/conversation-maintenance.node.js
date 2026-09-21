@@ -11,12 +11,17 @@ setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.ur
 const { SETTINGS_FILE, CONVERSATION_STORE_KEY } = await import('../src/constants.js').then(async constants => ({
     ...constants, CONVERSATION_STORE_KEY: 'sillybunny_conversation',
 }));
-const { acceptConversationSchedule, acceptConversationSummary, registerConversationMaintenanceJobs } = await import('../src/generation/conversation-maintenance.js');
-const { commitConversationStoreEffect } = await import('../src/generation/conversation-effects.js');
-const { getJob, listJobs } = await import('../src/jobs/store.js');
+const { acceptConversationSchedule, acceptConversationSummary, registerConversationMaintenanceJobs, buildConversationSummaryPrompt, finalizeConversationMaintenanceSubmission } = await import('../src/generation/conversation-maintenance.js');
+const { commitConversationStoreEffect, wasConversationAutomaticOccurrenceAccepted } = await import('../src/generation/conversation-effects.js');
+const { getConversationSummarySubmissionKey } = await import('../src/generation/conversation-auto-policy.js');
+const { getJob, listJobs, mutateJobs, updateJob } = await import('../src/jobs/store.js');
 const { runChatProfile } = await import('../src/generation/service.js');
 const { testExports: { runJob }, setDirectoriesResolver } = await import('../src/jobs/runner.js');
 const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
+const { readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
+const { scanConversationAutonomy } = await import('../src/generation/conversation-worker.js');
+const { write: writeCard } = await import('../src/character-card-parser.js');
+const { prepareSettingsSave } = await import('../src/settings-version.js');
 
 after(() => cancelAutoSaves());
 
@@ -109,6 +114,175 @@ test('a schedule runs natively and replaces the character schedule', async () =>
     assert.equal(typeof autoSchedule.generatedAt, 'number');
     assert.equal(character.settings.inactivity_threshold, 90);
     assert.equal(saved.extension_settings[CONVERSATION_STORE_KEY].settings.auto_schedule, undefined);
+});
+
+test('automatic summaries require enabled server ownership and forced summaries still require history', async t => {
+    const directories = makeDirectories();
+    t.after(() => fs.rmSync(directories.root, { recursive: true, force: true }));
+    const saved = writeSettings(directories);
+    const store = saved.extension_settings[CONVERSATION_STORE_KEY];
+    const thread = store.characters['nova.png'];
+    const persist = () => fs.writeFileSync(path.join(directories.root, SETTINGS_FILE), JSON.stringify(saved));
+    const request = { user: { profile: { handle: 'tester' }, directories } };
+    const body = { submissionKey: 'auto-enabled', target: { avatar: 'nova.png', branchId: 'main' } };
+    thread.branches.main.messages = Array.from({ length: 40 }, (_, i) => ({ id: `m${i}`, role: 'character', mes: 'Hello' }));
+    store.automation = { mode: 'server' };
+    thread.settings.enabled = false;
+    persist();
+    assert.equal((await acceptConversationSummary(request, body, { automatic: true })).skipped, 'disabled');
+    thread.settings.enabled = true;
+    delete store.automation;
+    persist();
+    assert.equal((await acceptConversationSummary(request, body, { automatic: true })).skipped, 'disabled');
+    thread.branches.main.messages = [{ id: 'empty', role: 'system', mes: '' }];
+    persist();
+    assert.equal((await acceptConversationSummary(request, { ...body, force: true })).skipped, 'not-enough-messages');
+    assert.equal(listJobs(directories, { owner: 'tester' }).length, 0);
+    thread.branches.main.messages = Array.from({ length: 40 }, (_, i) => ({ id: `m${i}`, role: 'character', mes: 'Hello' }));
+    store.automation = { mode: 'server' };
+    persist();
+    assert.equal((await acceptConversationSummary(request, body, { automatic: true })).created, true);
+});
+
+test('accepted summaries cannot overwrite intervening handwritten memory or clear operations', async t => {
+    for (const [legacy, summary] of [[false, ''], [true, 'Handwritten memory'], [true, '']]) {
+        const directories = makeDirectories();
+        t.after(() => fs.rmSync(directories.root, { recursive: true, force: true }));
+        writeSettings(directories);
+        const request = { user: { profile: { handle: 'tester' }, directories } };
+        setDirectoriesResolver(() => directories);
+        registerConversationMaintenanceJobs({ generate: async () => ({ text: 'Old generated memory' }) });
+        const target = { avatar: 'nova.png', branchId: 'main' };
+        const accepted = await acceptConversationSummary(request, { submissionKey: 'pending-summary', force: true, target });
+        if (legacy) {
+            const snapshot = readArtifact(directories, accepted.job.id, 'request');
+            delete snapshot.memoryFingerprint;
+            writeArtifact(directories, accepted.job.id, 'request', snapshot);
+        }
+        await acceptConversationSummary(request, { submissionKey: 'manual', target, branchCreatedAt: 1, summary });
+        await runJob(getJob(directories, accepted.job.id));
+        const job = getJob(directories, accepted.job.id);
+        assert.equal(job.state, 'interrupted', JSON.stringify(job.error));
+        assert.match(job.error.message, /memory changed/);
+        assert.equal(readBranch(directories).branches.main.memorySummary, summary);
+    }
+});
+
+test('automatic summaries retain the frozen history before release and pruning', async t => {
+    const directories = makeDirectories();
+    t.after(() => fs.rmSync(directories.root, { recursive: true, force: true }));
+    const saved = writeSettings(directories);
+    const store = saved.extension_settings[CONVERSATION_STORE_KEY];
+    store.automation = { mode: 'server' };
+    store.characters['nova.png'].settings.enabled = true;
+    store.characters['nova.png'].branches.main.messages = Array.from({ length: 40 }, (_, i) => ({ id: `m${i}`, role: 'character', mes: 'Hello' }));
+    const file = path.join(directories.root, SETTINGS_FILE);
+    fs.writeFileSync(file, JSON.stringify(saved));
+    const request = { user: { profile: { handle: 'tester' }, directories } };
+    const target = { avatar: 'nova.png', branchId: 'main' };
+    const scanKey = getConversationSummarySubmissionKey(target, 'm38');
+    const frozenKey = getConversationSummarySubmissionKey(target, 'm39');
+    const accepted = await acceptConversationSummary(request, { submissionKey: scanKey, target }, { automatic: true });
+    const retained = JSON.parse(fs.readFileSync(file, 'utf8'));
+    for (const key of [scanKey, frozenKey]) assert.ok(wasConversationAutomaticOccurrenceAccepted(retained.extension_settings[CONVERSATION_STORE_KEY], key));
+    updateJob(directories, accepted.job.id, { state: 'waiting', stage: 'preparing' });
+    fs.writeFileSync(file, '{');
+    await assert.rejects(finalizeConversationMaintenanceSubmission(request, getJob(directories, accepted.job.id)));
+    assert.equal(getJob(directories, accepted.job.id).state, 'waiting');
+    fs.writeFileSync(file, JSON.stringify(retained));
+    await finalizeConversationMaintenanceSubmission(request, getJob(directories, accepted.job.id));
+    assert.equal(getJob(directories, accepted.job.id).state, 'queued');
+    mutateJobs(directories, ledger => { ledger.jobs = {}; });
+    assert.equal((await acceptConversationSummary(request, { submissionKey: frozenKey, target }, { automatic: true })).skipped, 'already-accepted');
+    assert.equal(listJobs(directories, { owner: 'tester' }).length, 0);
+});
+
+test('attachment-only and mixed messages retain their descriptions in native memory', async t => {
+    const directories = makeDirectories();
+    t.after(() => fs.rmSync(directories.root, { recursive: true, force: true }));
+    const saved = writeSettings(directories);
+    const branch = saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].branches.main;
+    branch.messages = [
+        { id: 'image', role: 'user', mes: '', extra: { image_url: 'selfie.png' } },
+        { id: 'mixed', role: 'character', mes: 'Look', extra: { media: [{ url: 'a.png', type: 'image', title: 'Selfie' }] } },
+        { id: 'file', role: 'user', mes: '', extra: { files: [{ url: 'f', name: 'notes.txt' }] } },
+    ];
+    fs.writeFileSync(path.join(directories.root, SETTINGS_FILE), JSON.stringify(saved));
+    const request = { user: { profile: { handle: 'tester' }, directories } };
+    const target = { avatar: 'nova.png', branchId: 'main' };
+    const accepted = await acceptConversationSummary(request, { submissionKey: 'attachments', force: true, target });
+    const snapshot = readArtifact(directories, accepted.job.id, 'request');
+    assert.equal(snapshot.count, 3);
+    assert.equal(snapshot.throughId, 'file');
+    const prompt = buildConversationSummaryPrompt(snapshot);
+    assert.match(prompt, /\[Attachments: generated image\]/);
+    assert.match(prompt, /Look \[Attachments: image: Selfie\]/);
+    assert.match(prompt, /\[Attachments: file: notes.txt\]/);
+    await acceptConversationSummary(request, { submissionKey: 'manual-attachments', target, branchCreatedAt: 1, summary: 'Seen' });
+    assert.equal(readBranch(directories).branches.main.memoryMessageCount, 3);
+    branch.messages = [branch.messages[0]];
+    fs.writeFileSync(path.join(directories.root, SETTINGS_FILE), JSON.stringify(saved));
+    assert.equal((await acceptConversationSummary(request, { submissionKey: 'image-only', force: true, target })).created, true);
+});
+
+test('automatic scans summarise attachment-only history and use its new attachment cursor', async t => {
+    const directories = makeDirectories();
+    t.after(() => fs.rmSync(directories.root, { recursive: true, force: true }));
+    const saved = writeSettings(directories);
+    const store = saved.extension_settings[CONVERSATION_STORE_KEY];
+    store.automation = { mode: 'server' };
+    store.userStatus = 'offline';
+    store.characters['nova.png'].settings.enabled = true;
+    store.characters['nova.png'].branches.main.messages = [];
+    const file = path.join(directories.root, SETTINGS_FILE);
+    fs.writeFileSync(file, JSON.stringify(saved));
+    const png = fs.readFileSync(new URL('../default/content/backgrounds/__transparent.png', import.meta.url));
+    fs.writeFileSync(path.join(directories.characters, 'nova.png'), writeCard(png, JSON.stringify({ name: 'Nova' })));
+    setDirectoriesResolver(() => directories);
+    registerConversationMaintenanceJobs({ generate: async () => ({ text: 'Attachment memory.' }) });
+    for (const round of [1, 2]) {
+        const current = JSON.parse(fs.readFileSync(file, 'utf8'));
+        const incoming = structuredClone(current);
+        incoming.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].branches.main.messages.push(
+            ...Array.from({ length: 40 }, (_, i) => ({ id: `image-${round}-${i}`, role: 'user', mes: '', extra: { image_url: `data:image/png;base64,${png.toString('base64')}` } })),
+        );
+        const prepared = prepareSettingsSave(incoming, current, { conversationOnly: true, trustedConversationEffects: true });
+        assert.equal(prepared.ok, true);
+        fs.writeFileSync(file, JSON.stringify(prepared.settings));
+        const result = await scanConversationAutonomy({ owners: ['tester'], directoriesFor: () => directories });
+        assert.equal(result.accepted.length, 1);
+        const job = getJob(directories, result.accepted[0]);
+        assert.equal(job.type, 'conversation.summary');
+        const snapshot = readArtifact(directories, job.id, 'request');
+        assert.equal(snapshot.throughId, `image-${round}-39`);
+        assert.equal(snapshot.count, round * 40);
+        await runJob(job);
+        assert.equal(getJob(directories, job.id).state, 'completed');
+    }
+});
+
+test('manual memory text and clearing advance native summary coverage without a provider request', async t => {
+    const directories = makeDirectories();
+    t.after(() => fs.rmSync(directories.root, { recursive: true, force: true }));
+    const saved = writeSettings(directories);
+    const branch = saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].branches.main;
+    branch.messages = Array.from({ length: 40 }, (_, i) => ({ id: `m${i}`, role: 'character', mes: `Message ${i}` }));
+    fs.writeFileSync(path.join(directories.root, SETTINGS_FILE), JSON.stringify(saved));
+    const request = { user: { profile: { handle: 'tester' }, directories } };
+    const body = { submissionKey: 'manual-text', target: { avatar: 'nova.png', branchId: 'main' }, branchCreatedAt: 1, summary: 'Hand-written memory' };
+    assert.deepEqual(await acceptConversationSummary(request, body), { created: false, applied: true });
+    assert.equal(readBranch(directories).branches.main.memorySummaryThrough, 'm39');
+    assert.equal(readBranch(directories).branches.main.memoryMessageCount, 40);
+    assert.equal((await acceptConversationSummary(request, { submissionKey: 'auto-after-manual', target: body.target }, { automatic: true })).skipped, 'not-enough-messages');
+    assert.deepEqual(await acceptConversationSummary(request, { ...body, submissionKey: 'clear', summary: '', clearAll: true }), { created: false, applied: true });
+    assert.equal(readBranch(directories).memorySummary, '');
+    assert.equal((await acceptConversationSummary(request, { submissionKey: 'auto-after-clear', target: body.target }, { automatic: true })).skipped, 'not-enough-messages');
+    assert.equal(listJobs(directories, { owner: 'tester' }).length, 0);
+    await assert.rejects(acceptConversationSummary(request, { ...body, branchCreatedAt: 2 }), /replaced/);
+    const legacy = JSON.parse(fs.readFileSync(path.join(directories.root, SETTINGS_FILE), 'utf8'));
+    delete legacy.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].branches.main.memorySummaryThrough;
+    fs.writeFileSync(path.join(directories.root, SETTINGS_FILE), JSON.stringify(legacy));
+    assert.equal((await acceptConversationSummary(request, { submissionKey: 'auto-after-legacy-manual', target: body.target }, { automatic: true })).skipped, 'not-enough-messages');
 });
 
 test('a store effect is applied once and remembered across retries', async () => {

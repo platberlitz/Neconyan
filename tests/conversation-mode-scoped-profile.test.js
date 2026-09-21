@@ -95,12 +95,15 @@ describe('conversation mode scoped connection profile', () => {
     });
 
     test('replaces every generation call site with the scoped helper', () => {
-        const consumers = ['generation.js', 'interface.js', 'prompt.js', 'schedule.js', 'timeline-render.js'];
+        const consumers = ['generation.js', 'interface.js', 'schedule.js', 'timeline-render.js'];
         for (const file of consumers) {
             const source = readConversationSource(file);
             expect(source).toContain('generateConversationRaw');
             expect(source).not.toContain('withConversationConnectionProfile');
         }
+        expect(promptSource).toContain('captureConversationTextBinding');
+        expect(promptSource).toContain('requestConversationBinding(\'summary/submit\'');
+        expect(promptSource).not.toContain('generateConversationRaw');
     });
 
     test('keeps Conversation DM selection decoupled from roleplay chats and groups', () => {

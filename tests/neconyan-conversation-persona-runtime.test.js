@@ -2,7 +2,12 @@
 import { describe, expect, jest, test } from '@jest/globals';
 
 const handlers = new Map();
-const startConversationAutoWorker = jest.fn();
+const savedSettings = { _settingsRevision: 2 };
+const store = {};
+const ensureConversationAutomationOwnership = jest.fn(async ({ acknowledgement }) => {
+    store.automation = { mode: 'server', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', acknowledgement };
+    return store.automation;
+});
 const triggerRoleplayDM = jest.fn();
 const roleplayChat = [];
 const personaChangeOrder = [];
@@ -12,7 +17,7 @@ const selectConversationThread = jest.fn();
 const windowHandlers = new Map();
 let hasUsage = false;
 const conversationState = {
-    autoWorkerStarted: false,
+    runtimeStarted: false,
     conversationReplyTarget: { messageId: 'old-target' },
     conversationSelectedGroupId: null,
     conversationWorkspaceOpen: false,
@@ -31,7 +36,8 @@ globalThis.CustomEvent = class CustomEvent {
     }
 };
 
-await jest.unstable_mockModule('../public/script.js', () => ({ chat: roleplayChat }));
+await jest.unstable_mockModule('../public/script.js', () => ({ chat: roleplayChat, main_api: 'openai', settings: savedSettings }));
+await jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => 'tester' }));
 await jest.unstable_mockModule('../public/scripts/events.js', () => ({
     eventSource: { on: (event, handler) => handlers.set(event, handler) },
     event_types: {
@@ -43,6 +49,7 @@ await jest.unstable_mockModule('../public/scripts/events.js', () => ({
         GENERATION_STARTED: 'generation-started',
         GENERATION_STOPPED: 'generation-stopped',
         PERSONA_CHANGED: 'persona-changed',
+        SETTINGS_UPDATED: 'settings-updated',
         USER_MESSAGE_RENDERED: 'user-message-rendered',
     },
 }));
@@ -52,11 +59,6 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/auto-eng
     captureRoleplayDMRequest: options => ({ ...options, branchId: 'branch-a', roleplayContext: 'captured roleplay' }),
     checkGroupChatMention: jest.fn(),
     handleChatChanged,
-    startConversationAutoWorker: () => {
-        conversationState.autoWorkerStarted = true;
-        startConversationAutoWorker();
-    },
-    stopConversationAutoWorker: jest.fn(),
     triggerGroupAsideDM: jest.fn(),
     triggerRoleplayDM,
 }));
@@ -69,6 +71,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/chrome.j
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.js', () => ({
     getConversationGroupById: () => null,
     getConversationPersonaId: () => 'persona-b.png',
+    getConversationStore: () => store,
     getRoleplayCurrentCharacter: () => ({ avatar: 'roleplay.png', name: 'Roleplay' }),
     getRoleplayGroupById: () => null,
     migrateConversationLocalStorage: jest.fn(),
@@ -81,6 +84,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/notifica
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/pals-rail.js', () => ({
     getCharacterForGroupChatMessage: () => null,
     getCurrentGroupConversationMembers: () => [],
+    getConversationRailItems: () => [],
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/render-scheduler.js', () => ({ scheduleInterfaceRefresh: jest.fn() }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/settings-panel.js', () => ({
@@ -93,6 +97,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/settings
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({
     assertConversationAccount: () => {},
     initConversationStoreSync: jest.fn(),
+    ensureConversationAutomationOwnership,
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/native-jobs.js', () => ({
     resumeNativeConversationObservation: jest.fn(),
@@ -104,27 +109,21 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js
         conversationState.generationActive = active;
     },
 }));
-await jest.unstable_mockModule('../public/scripts/neconyan-conversation/timers.js', () => ({
-    setConversationTimeout: (callback) => {
-        callback();
-        return 1;
-    },
-}));
 
 const { init } = await import('../public/scripts/neconyan-conversation/init.js');
 
 describe('conversation persona runtime', () => {
     test('starts autonomous runtime and clears context-bound reply UI after persona change', () => {
         init();
-        expect(startConversationAutoWorker).not.toHaveBeenCalled();
+        expect(ensureConversationAutomationOwnership).not.toHaveBeenCalled();
 
         hasUsage = true;
         conversationState.conversationWorkspaceOpen = true;
         personaChangeOrder.length = 0;
         handlers.get('persona-changed')();
 
-        expect(startConversationAutoWorker).toHaveBeenCalledTimes(1);
-        expect(conversationState.autoWorkerStarted).toBe(true);
+        expect(ensureConversationAutomationOwnership).toHaveBeenCalledWith({ acknowledgement: { account: 'tester', settingsRevision: 2 } });
+        expect(conversationState.runtimeStarted).toBe(true);
         expect(conversationState.conversationReplyTarget).toBeNull();
         expect(personaChangeOrder).toEqual(['close', 'handle', 'load']);
     });
@@ -145,6 +144,22 @@ describe('conversation persona runtime', () => {
             personaId: 'persona-b.png',
         }));
         random.mockRestore();
+    });
+
+    test('captures a successful save during configure and ignores already acknowledged revisions', async () => {
+        await Promise.resolve();
+        let finish;
+        ensureConversationAutomationOwnership.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+        savedSettings._settingsRevision = 3;
+        handlers.get('settings-updated')();
+        savedSettings._settingsRevision = 4;
+        handlers.get('settings-updated')();
+        finish({ mode: 'server', acknowledgement: { account: 'tester', settingsRevision: 3 } });
+        await new Promise(resolve => setImmediate(resolve));
+        expect(ensureConversationAutomationOwnership).toHaveBeenLastCalledWith({ acknowledgement: { account: 'tester', settingsRevision: 4 } });
+        ensureConversationAutomationOwnership.mockClear();
+        handlers.get('settings-updated')();
+        expect(ensureConversationAutomationOwnership).not.toHaveBeenCalled();
     });
 
     test('passes captured persona identity through workspace-open events', () => {

@@ -18,12 +18,12 @@ import {
     parsePositiveInt,
     isObject,
     isSafeConversationPropertyKey,
-    isSafeConversationMessageId,
+    ORIGINAL_CONVERSATION_MESSAGE_ID,
+    repairConversationMessageIds,
+    applyConversationIdRemap,
     normalizeConversationAttachments,
 } from './conversation-utils.js';
 import { getConversationThreadKey } from './conversation-store.js';
-
-const ORIGINAL_CONVERSATION_MESSAGE_ID = Symbol('originalConversationMessageId');
 
 function getSafeBranchId(value, fallback = DEFAULT_BRANCH_ID) {
     const branchId = String(value || '').trim();
@@ -77,7 +77,9 @@ export function normalizeConversationBranch(branch, id = DEFAULT_BRANCH_ID) {
             return normalizedMessage;
         })
         : target.messages;
-    target.messages = repairConversationMessageIds(safeParseThread(messages));
+    const remappedIds = new Map();
+    target.messages = repairConversationMessageIds(safeParseThread(messages), remappedIds);
+    applyConversationIdRemap(target, remappedIds);
     target.preview = typeof target.preview === 'string' ? target.preview : 'Conversation ready';
     target.unread = parsePositiveInt(target.unread, 0, 0);
     target.lastActivity = parsePositiveInt(target.lastActivity, now, 0);
@@ -91,63 +93,6 @@ export function normalizeConversationBranch(branch, id = DEFAULT_BRANCH_ID) {
     target.createdAt = parsePositiveInt(target.createdAt, now, 0);
     target.updatedAt = parsePositiveInt(target.updatedAt, target.createdAt, 0);
     return target;
-}
-
-function repairConversationMessageIds(messages) {
-    const reservedSafeIds = new Set(messages
-        .map(message => typeof message[ORIGINAL_CONVERSATION_MESSAGE_ID] === 'string'
-            ? message[ORIGINAL_CONVERSATION_MESSAGE_ID]
-            : '')
-        .filter(isSafeConversationMessageId));
-    const usedIds = new Set(reservedSafeIds);
-    const retainedSafeIds = new Set();
-    const remappedIds = new Map();
-    for (let index = 0; index < messages.length; index++) {
-        const message = messages[index];
-        const originalValue = message[ORIGINAL_CONVERSATION_MESSAGE_ID];
-        delete message[ORIGINAL_CONVERSATION_MESSAGE_ID];
-        const originalId = typeof originalValue === 'string' ? originalValue : String(originalValue ?? '');
-        const originalIdIsSafe = typeof originalValue === 'string' && isSafeConversationMessageId(originalId);
-        if (originalIdIsSafe && !retainedSafeIds.has(originalId)) {
-            message.id = originalId;
-            retainedSafeIds.add(originalId);
-            continue;
-        }
-
-        const timestamp = Number(message.created_at);
-        const createdAt = Number.isSafeInteger(timestamp) && timestamp >= 0 ? timestamp : index;
-        const baseId = `legacy-${createdAt}-${index}`;
-        let nextId = baseId;
-        let suffix = 1;
-        while (usedIds.has(nextId)) {
-            nextId = `${baseId}-${suffix}`;
-            suffix += 1;
-        }
-        message.id = nextId;
-        usedIds.add(nextId);
-        if (originalId && !originalIdIsSafe && !remappedIds.has(originalId)) {
-            remappedIds.set(originalId, nextId);
-        }
-    }
-
-    if (!remappedIds.size) {
-        return messages;
-    }
-    for (const message of messages) {
-        const extra = getObject(message.extra);
-        const replyReference = getObject(extra.conversation_reply_to);
-        const nextReplyId = remappedIds.get(String(replyReference.messageId || ''));
-        if (nextReplyId) {
-            message.extra = {
-                ...extra,
-                conversation_reply_to: {
-                    ...replyReference,
-                    messageId: nextReplyId,
-                },
-            };
-        }
-    }
-    return messages;
 }
 
 function getLegacyMessageFingerprint(message) {

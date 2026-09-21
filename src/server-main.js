@@ -829,6 +829,13 @@ function setDnsResolutionOrder() {
     }
 }
 
+async function migrateConversationOwnership() {
+    const [{ migrateConversationAutomaticOwnership }, { getUserDirectories, getAllUserHandles }] = await Promise.all([
+        import('./generation/conversation-worker.js'), import('./users.js'),
+    ]);
+    await migrateConversationAutomaticOwnership({ directoriesFor: getUserDirectories, owners: getAllUserHandles });
+}
+
 // User storage module needs to be initialized before starting the server
 initUserStorage(globalThis.DATA_ROOT)
     .then(setDnsResolutionOrder)
@@ -836,6 +843,7 @@ initUserStorage(globalThis.DATA_ROOT)
     .then(migrateUserData)
     .then(migrateSystemPrompts)
     .then(verifySecuritySettings)
+    .then(migrateConversationOwnership)
     .then(preSetupTasks)
     .then(applyHtmlErrorMiddleware)
     .then(apply404Middleware)

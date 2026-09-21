@@ -26,6 +26,13 @@ export const TERMINAL_STATES = Object.freeze(['completed', 'cancelled', 'failed'
 export const CANCELLABLE_STATES = Object.freeze(['queued', 'running', 'waiting']);
 
 const STORE_FILE = 'index.json';
+const pruneHolds = new Set();
+
+/** Keep upgrade evidence until the account's durable ownership has been copied. */
+export function holdJobPruning(owner, held = true) {
+    if (held) pruneHolds.add(owner);
+    else pruneHolds.delete(owner);
+}
 
 function stateDir(directories) {
     return path.join(directories.root, 'jobs');
@@ -170,7 +177,7 @@ function familyLocked(job, jobs) {
     return false;
 }
 
-const removable = (job, jobs = {}) => baseRemovable(job) && !familyLocked(job, jobs);
+const removable = (job, jobs = {}) => !pruneHolds.has(job.owner) && baseRemovable(job) && !familyLocked(job, jobs);
 
 function pruneJobs(jobs, protectedId) {
     const entries = Object.entries(jobs);

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { setConfigFilePath } from '../src/util.js';
 
@@ -12,14 +12,69 @@ const {
     getConversationAutomationClock, selectConversationReminder, selectConversationScheduledMessage,
     selectConversationIdleMessage, selectConversationProactiveMessage, selectConversationChime,
     selectConversationCharacterChat, selectNextConversationThreadAutomation, getConversationOccurrenceKey,
+    isConversationOccurrenceEnabled, conversationReminderIdentityKey,
 } = await import('../src/generation/conversation-auto-policy.js');
-const { applyConversationBookkeeping } = await import('../src/generation/conversation-effects.js');
-const { scanConversationAutonomy } = await import('../src/generation/conversation-worker.js');
+const { applyConversationBookkeeping, wasConversationAutomaticOccurrenceAccepted } = await import('../src/generation/conversation-effects.js');
+const { migrateConversationAutomaticOwnership, scanConversationAutonomy } = await import('../src/generation/conversation-worker.js');
+const { acceptJob, getJob, holdJobPruning, jobKey, readJobStore, updateJob } = await import('../src/jobs/store.js');
+const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
+after(() => cancelAutoSaves());
 const { getConversationThreadKey } = await import('../src/endpoints/conversation-store.js');
 
 const target = { avatar: 'a.png', groupId: '', personaId: 'p.png', branchId: 'main' };
 const branch = overrides => ({ messages: [], lastActivity: 0, followupCount: 0, ...overrides });
 const partner = (avatar, name, extra = {}) => ({ avatar, name, status: 'online', ...extra });
+
+test('upgrade ownership is copied before pruning, and damaged settings hold all pruning until repaired', async t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'conversation-upgrade-'));
+    const directories = { root };
+    const owner = 'upgrade-test';
+    t.after(() => { holdJobPruning(owner, false); fs.rmSync(root, { recursive: true, force: true }); });
+    fs.mkdirSync(path.join(root, 'jobs'));
+    const legacy = { id: 'legacy', owner, type: 'conversation.reply', submissionKey: 'old-reminder-key|0',
+        intent: { mode: 'auto', automation: { kind: 'reminder', patch: { reminder: { id: 'legacy-reminder' } } } },
+        state: 'failed', dismissed: true, createdAt: 1, updatedAt: 1 };
+    const jobs = Object.fromEntries([legacy, ...Array.from({ length: 200 }, (_, i) => ({
+        id: `filler-${i}`, owner, type: 'other.task', state: 'completed', createdAt: Date.now(), updatedAt: Date.now(),
+    }))].map(job => [jobKey(job.id), job]));
+    fs.writeFileSync(path.join(root, 'jobs/index.json'), JSON.stringify({ schema: 1, revision: 7, jobs }));
+    fs.writeFileSync(path.join(root, 'settings.json'), '{');
+    const options = { owners: [owner], directoriesFor: () => directories };
+    await migrateConversationAutomaticOwnership(options);
+    assert.equal(readJobStore(directories).revision, 7);
+    updateJob(directories, 'filler-0', { label: 'changed' });
+    assert.equal(Object.keys(readJobStore(directories).jobs).length, 201);
+    assert.throws(() => acceptJob(directories, { owner, type: 'other.task', submissionKey: 'new', intent: {} }), error => error.code === 'JOB_STORE_FULL');
+    fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify({ _version: 1, extension_settings: { sillybunny_conversation: { characters: {}, reminders: [], groups: [] } } }));
+    const revision = readJobStore(directories).revision;
+    await migrateConversationAutomaticOwnership(options);
+    assert.equal(readJobStore(directories).revision, revision);
+    updateJob(directories, 'filler-0', { label: 'migrated' });
+    assert.equal(getJob(directories, legacy.id), null);
+    const store = JSON.parse(fs.readFileSync(path.join(root, 'settings.json'), 'utf8')).extension_settings.sillybunny_conversation;
+    assert.equal(wasConversationAutomaticOccurrenceAccepted(store, conversationReminderIdentityKey('legacy-reminder')), true);
+    const boot = fs.readFileSync(new URL('../src/server-main.js', import.meta.url), 'utf8');
+    assert.ok(boot.indexOf('.then(migrateConversationOwnership)') < boot.indexOf('.then(preSetupTasks)'));
+    assert.ok(boot.indexOf('.then(migrateConversationOwnership)') < boot.indexOf('.then(() => new ServerStartup'));
+});
+
+test('fresh chime checks honour mentions, disabled unsolicited chimes and the frozen activity', () => {
+    const input = { kind: 'chime', settings: { enabled: true, multi_char: false }, store: { automation: { mode: 'server' } },
+        target, branch: branch({ lastActivity: 100, messages: [{ role: 'user', mes: 'Hello' }] }),
+        partners: [partner('kit.png', 'Kit')], plan: [{ avatar: 'kit.png', purpose: 'chime' }],
+        patch: { sessionMarkers: { sb_conv_last_chime_session_: '100' } }, now: 1000000 };
+    assert.equal(isConversationOccurrenceEnabled(input), false);
+    input.branch.messages[0].mes = 'Hey @Kit';
+    assert.equal(isConversationOccurrenceEnabled(input), true);
+    input.branch.messages[0].mes = 'Hello';
+    input.settings.multi_char = true;
+    assert.equal(isConversationOccurrenceEnabled(input), true);
+    input.branch.lastActivity = 101;
+    assert.equal(isConversationOccurrenceEnabled(input), false);
+    input.branch.lastActivity = 100;
+    input.branch.sessionMarkers = { sb_conv_last_chime_session_: '100' };
+    assert.equal(isConversationOccurrenceEnabled(input), false);
+});
 
 test('reminders fire once, defer while retrying, and can be skipped or invalidated', () => {
     const now = 10_000_000;
@@ -68,6 +123,17 @@ test('weekly and legacy schedules match the named-timezone clock', () => {
     assert.equal(triggered, null);
     const nextWeek = selectConversationScheduledMessage({ settings: weekly, branch: branch({ lastActivity: monday, scheduleTriggers: { 'weekly:2025-12-29:09:00:standup': 1 } }), target, now: monday, timeZone: 'UTC' });
     assert.equal(nextWeek.kind, 'schedule');
+});
+
+test('reminder acceptance retry keeps its identity and a submitted failure cannot starve the next reminder', () => {
+    const first = { id: 'first', personaId: 'p.png', triggerAt: 100, text: 'tea', target: { target, settings: { enabled: true } } };
+    const second = { ...first, id: 'second', text: 'water' };
+    const due = selectConversationReminder({ reminders: [first], personaId: 'p.png', now: 200 });
+    first.retryAfter = 300;
+    assert.equal(selectConversationReminder({ reminders: [first], personaId: 'p.png', now: 250 }), null);
+    assert.equal(selectConversationReminder({ reminders: [first], personaId: 'p.png', now: 400 }).key, due.key);
+    const next = selectConversationReminder({ reminders: [first, second], submitted: new Set([due.key]), personaId: 'p.png', now: 400 });
+    assert.equal(next.bookkeeping.reminder.id, 'second');
 });
 
 test('idle follow-ups and spontaneous pings respect their session markers', () => {
@@ -123,6 +189,21 @@ test('thread selection obeys the per-thread cooldown and reminder priority', () 
     const due = selectNextConversationThreadAutomation({ settings, branch: branch({ lastActivity: 0 }), target, now });
     assert.equal(due.kind, 'idle-followup');
     assert.equal(selectNextConversationThreadAutomation({ settings, branch: branch({ lastActivity: 0 }), target, userStatus: 'offline', now }), null);
+});
+
+test('an already accepted automatic candidate does not mask later schedules or idle work', () => {
+    const options = { target, branch: branch({ lastActivity: 0 }), now: 100 * 60000,
+        settings: { enabled: true, cooldown: 0, auto_message: true, ai_schedule: '1 - first\n2 - second', idle_followup: true, idle_spontaneous: true, idle_limit: 15 } };
+    const takenKeys = new Set();
+    const kinds = [];
+    for (let i = 0; i < 4; i++) {
+        const next = selectNextConversationThreadAutomation({ ...options, taken: key => takenKeys.has(key) });
+        assert.ok(next);
+        kinds.push(next.kind);
+        takenKeys.add(next.key);
+    }
+    assert.deepEqual(kinds, ['schedule', 'schedule', 'idle-followup', 'idle-spontaneous']);
+    assert.equal(selectNextConversationThreadAutomation({ ...options, taken: key => takenKeys.has(key) }), null);
 });
 
 test('an occurrence key is deterministic and excludes scan time', () => {

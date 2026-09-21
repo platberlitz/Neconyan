@@ -1,6 +1,5 @@
 import { getConversationGroupIdForAvatar, getConversationPersonaId, getCurrentCharAvatar, getCurrentCharName } from './context.js';
 import { incrementUnreadCount, isConversationActiveThread, notifyNewConversationMessage } from './notifications.js';
-import { scheduleConversationMemorySummary } from './prompt.js';
 import { scheduleInterfaceRefresh, schedulePalsRailRender } from './render-scheduler.js';
 import { conversationState } from './state.js';
 import { appendConversationThreadMessage, markConversationSeen } from './thread-store.js';
@@ -41,7 +40,6 @@ export async function appendConversationMessage(messageText, { name = getCurrent
     if (isCurrentPersona) {
         notifyNewConversationMessage(avatar, message, shouldNotify, { branchId, groupId: resolvedGroupId, personaId });
     }
-    scheduleConversationMemorySummary(avatar, { branchId, groupId: resolvedGroupId, personaId });
 
     return message;
 }

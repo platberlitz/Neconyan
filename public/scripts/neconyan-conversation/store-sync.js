@@ -140,6 +140,36 @@ export function refreshConversationStore(account = getCurrentUserHandle()) {
     return run;
 }
 
+/** Persist the background worker's ownership before this page is needed again. */
+export function ensureConversationAutomationOwnership({ acknowledgement = null, account = getCurrentUserHandle() } = {}) {
+    const configure = async () => {
+        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+        for (let attempt = 0; attempt < 2; attempt++) {
+            const current = await refreshOnce(account);
+            if (current.conflict) throw new Error('Conversation settings changed in another tab. Reload to continue.');
+            const automation = current.store.automation;
+            if (automation?.mode === 'server' && automation.timeZone === timeZone
+                && (!acknowledgement || (automation.acknowledgement?.account === acknowledgement.account
+                    && automation.acknowledgement.settingsRevision >= acknowledgement.settingsRevision))) return automation;
+            try {
+                await postJson('/api/neconyan-conversation/automation/configure', {
+                    mode: 'server', timeZone, version: current.version,
+                    ...(acknowledgement ? { acknowledgement } : {}),
+                }, account);
+                const refreshed = await refreshOnce(account);
+                if (refreshed.conflict) throw new Error('Conversation settings changed in another tab. Reload to continue.');
+                return refreshed.store.automation;
+            } catch (error) {
+                if (attempt || error.status !== 409 || error.message === 'account_changed') throw error;
+                if (error.message === 'active_settings_ack_stale') acknowledgement = null;
+            }
+        }
+    };
+    const run = syncQueue.then(configure, configure);
+    syncQueue = run.then(swallow, swallow);
+    return run;
+}
+
 /**
  * Adopt the server's confirmation without dropping edits the browser made while
  * the request was in flight: merge the returned copy with the current store

@@ -20,13 +20,13 @@ export default [
     },
     {
         id: 'conversation.automation', title: 'Proactive messages and automatic Conversation replies', keys: ['proactive messaging', 'automatic messages', 'followups', 'inactivity threshold', 'talkativeness', 'auto message'],
-        sources: [conversation + 'constants.js', conversation + 'timers.js', 'docs/conversation-mode-rest-api.md'], anchors: ['proactive_messaging', 'max_followups'],
-        content: 'Conversation settings control automatic messages, cooldowns, inactivity thresholds, talkativeness and maximum follow-ups. These features can make additional model requests. Automatic/proactive messaging starts disabled. Browser timers perform this work, so do not promise that closing the app leaves all automation running on the server. The separate Conversation HTTP API does not automatically run reminders, schedules, autonomous group chats, images or speech.',
+        sources: [conversation + 'constants.js', 'src/generation/conversation-worker.js', 'docs/conversation-mode-rest-api.md'], anchors: ['proactive_messaging', 'max_followups'],
+        content: 'Conversation settings control automatic messages, cooldowns, inactivity thresholds, talkativeness and maximum follow-ups. These features can make additional model requests. Automatic/proactive messaging starts disabled. Once the app has saved server ownership and a supported connection, the server runs enabled automation with every page closed. WebLLM and browser Kokoro still need the page open. Failed or interrupted automatic work needs an explicit retry.',
     },
     {
         id: 'conversation.schedule', title: 'Schedules, reminders and quiet hours', keys: ['schedule', 'reminder', 'weekly schedule', 'quiet hours', 'notifications'],
         sources: [conversation + 'constants.js', conversation + 'timeline-render.js', 'docs/conversation-mode-glossary.md'], anchors: ['quiet_hours_start', 'schedule_command_enabled'],
-        content: 'Conversation has availability schedules, optional schedule commands, reminders and notification controls. Quiet hours restrict alerts; muting and notification priority are separate. Browser/OS permission is also needed for supported system notifications. A model mentioning a reminder is not proof it was scheduled: look for the app\'s recognised command/result. Automatic timing relies on the running browser and is not a guaranteed delivery service while the app is closed.',
+        content: 'Conversation has availability schedules, optional schedule commands, reminders and notification controls. Quiet hours restrict alerts; muting and notification priority are separate. Browser/OS permission is also needed for supported system notifications. A model mentioning a reminder is not proof it was scheduled: look for the app\'s recognised command/result. The server checks saved reminders and schedules even with the app closed, using the saved timezone and connection.',
     },
     {
         id: 'conversation.groups', title: 'Conversation group DMs', keys: ['group DM', 'Conversation group', 'automatic character chat', 'multi character DM'],
@@ -46,7 +46,7 @@ export default [
     {
         id: 'conversation.connection', title: 'A separate model connection for Conversation', keys: ['DM model', 'Conversation connection', 'Conversation profile', 'reply delay', 'DM reply length'],
         sources: [conversation + 'generation.js', conversation + 'constants.js'], anchors: ['connection_profile', 'reply_max_tokens'],
-        content: 'Conversation\'s Connection profile selects a saved connection by name. With a valid selected profile, DM requests use its provider/model and preset; otherwise the normal generation route is used. Reply token limits and delay multipliers are separate from model selection. A connection error can trigger the existing fallback route, so check the actual connection before assuming which model answered. Conversation does not supply the normal Roleplay assistant editing tools.',
+        content: 'Conversation\'s Connection profile selects a saved connection by name. DM requests retain that provider/model and preset; an invalid profile is refused rather than replaced. Without a named profile, requests use acknowledged saved active settings. Background work uses the settings revision saved for the server, not unsaved controls. Reply token limits and delay multipliers are separate from model selection. Conversation does not supply the normal Roleplay assistant editing tools.',
     },
     {
         id: 'story.writing', title: 'Writing in Story Mode', keys: ['Story Mode', 'manuscript', 'Continue story', 'Direction'],

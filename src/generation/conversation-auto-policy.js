@@ -9,7 +9,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { buildPartnerChimeDirective, chooseChimePartners, getRecentlySilentMentionedPartnerFromThread, selectChimePartners } from '../../public/scripts/neconyan-conversation/partners-utils.js';
+import { buildPartnerChimeDirective, CHIME_DIRECTIVE_MARKER, chooseChimePartners, getRecentlySilentMentionedPartnerFromThread, selectChimePartners } from '../../public/scripts/neconyan-conversation/partners-utils.js';
 import { getCurrentActivityFromSchedule } from '../../public/scripts/neconyan-conversation/schedule-utils.js';
 import { clamp, parsePositiveInt } from '../endpoints/conversation-utils.js';
 import { manualActivity } from './conversation-participants.js';
@@ -27,6 +27,16 @@ const LAST_CHIME_SESSION_PREFIX = 'sb_conv_last_chime_session_';
 const SCHEDULE_TRIGGER_LIMIT = 100;
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// Legacy pages used these directives in their browser-owned automatic calls.
+export function isConversationAutomaticDirective(text) {
+    return typeof text === 'string' && text.startsWith('[System directive:') && [
+        'This is a scheduled reminder.', 'Your weekly schedule is due:', 'Your schedule is due:',
+        'You are sending a check-in due to', 'The user has been quiet for a while.',
+        'Send a spontaneous ping to the user', 'and you are currently',
+        'speaking autonomously in a private group DM', CHIME_DIRECTIVE_MARKER,
+    ].some(marker => text.includes(marker));
+}
 
 function finiteNumber(value, fallback) {
     return Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -62,6 +72,35 @@ export function getConversationOccurrenceKey({ owner, target, kind, basis }) {
     return joined.length <= 180 ? joined : `conv-auto:${createHash('sha256').update(joined).digest('hex')}`;
 }
 
+export const conversationReminderIdentityKey = id => `reminder:${id}`;
+export const conversationChimeOccurrenceKey = (target, activity) => getConversationOccurrenceKey({ owner: '', target, kind: 'chime', basis: activity });
+export const getConversationSummarySubmissionKey = (target, throughId) => `summary:${createHash('sha256')
+    .update(JSON.stringify([target.avatar, target.groupId || '', target.personaId || '', target.branchId, throughId])).digest('hex')}`;
+
+/** Recheck saved switches after asynchronous card/binding reads, before acceptance. */
+export function isConversationOccurrenceEnabled({ kind, settings, store, reminderId, roleplaySource, branch, target, partners = [], plan = [], patch, now = Date.now() }) {
+    if (roleplaySource) return true; // The aside path checks its source group's own settings.
+    if (store.automation?.mode !== 'server' || settings.enabled === false || store.userStatus === 'offline') return false;
+    switch (kind) {
+        case 'reminder': return Boolean(store.reminders?.some(item => item.id === reminderId && !item.fired && !item.invalidAt));
+        case 'schedule': return Boolean(settings.auto_message);
+        case 'idle-followup': return Boolean(settings.idle_followup && !settings.proactive_messaging);
+        case 'idle-spontaneous': return Boolean(settings.idle_spontaneous && !settings.proactive_messaging);
+        case 'proactive': return Boolean(settings.proactive_messaging && store.userStatus !== 'dnd');
+        case 'chat': return Boolean(settings.auto_character_chat);
+        case 'chime': {
+            const frozen = patch?.sessionMarkers?.[LAST_CHIME_SESSION_PREFIX]
+                ?? patch?.sessionMarkers?.[`${LAST_CHIME_SESSION_PREFIX}${target?.groupId || 'solo'}`];
+            if (frozen !== undefined && String(frozen) !== String(lastUserActivity(branch))) return false;
+            const chosen = selectChimePartners({ settings, branch, partners, groupId: target?.groupId || '', now });
+            if (!chosen.length) return false;
+            const allowed = new Set((settings.multi_char ? partners : chosen).map(partner => partner.avatar));
+            return plan.every(participant => allowed.has(participant.avatar));
+        }
+        default: return false;
+    }
+}
+
 function lastUserActivity(branch) {
     return finiteNumber(branch?.lastActivity, 0);
 }
@@ -84,9 +123,10 @@ function occurrence(target, kind, key, directive, participants, extra, bookkeepi
  * a per-reminder retry window. Returns a send occurrence, or an invalidate/skip
  * instruction the worker applies without a provider call.
  */
-export function selectConversationReminder({ reminders = [], targets = new Map(), personaId = '', now = Date.now() } = {}) {
+export function selectConversationReminder({ reminders = [], targets = new Map(), submitted = new Set(), taken = key => submitted.has(key), personaId = '', now = Date.now() } = {}) {
     for (const reminder of reminders) {
         if (!reminder || reminder.fired || reminder.invalidAt) continue;
+        if (taken(conversationReminderIdentityKey(reminder.id))) continue;
         if (String(reminder.personaId || '') !== String(personaId || '')) continue;
         if (now < finiteNumber(reminder.triggerAt, 0)) continue;
         if (reminder.retryAfter && now < finiteNumber(reminder.retryAfter, 0)) continue;
@@ -95,7 +135,8 @@ export function selectConversationReminder({ reminders = [], targets = new Map()
         const settings = target.settings || {};
         if (settings.enabled === false) return { action: 'skip', reminderId: reminder.id };
         const directive = `[System directive: This is a scheduled reminder. Send a DM to the user reminding them about: "${reminder.text}". Do not mention system/bracketed code, just say it naturally in-character as a DM ping.]`;
-        const key = getConversationOccurrenceKey({ owner: reminder.owner || '', target: target.target, kind: 'reminder', basis: [reminder.id, reminder.triggerAt, reminder.retryAfter || 0] });
+        const key = getConversationOccurrenceKey({ owner: reminder.owner || '', target: target.target, kind: 'reminder', basis: [reminder.id, reminder.triggerAt] });
+        if (taken(key)) continue;
         return occurrence(target.target, 'reminder', key, directive,
             [{ avatar: target.target.avatar, purpose: 'reminder', extra: { conversation_mode_auto: true, conversation_mode_reminder: true, reminder_text: reminder.text, reminder_id: reminder.id, groupId: target.target.groupId || '' } }],
             { conversation_mode_auto: true, conversation_mode_reminder: true, reminder_text: reminder.text, reminder_id: reminder.id, groupId: target.target.groupId || '' },
@@ -105,7 +146,7 @@ export function selectConversationReminder({ reminders = [], targets = new Map()
 }
 
 /** A due weekly or legacy scheduled message for one thread. */
-export function selectConversationScheduledMessage({ settings = {}, branch = null, target = null, now = Date.now(), timeZone = 'UTC' } = {}) {
+export function selectConversationScheduledMessage({ settings = {}, branch = null, target = null, now = Date.now(), timeZone = 'UTC', taken = () => false } = {}) {
     if (!settings.auto_message || !branch || !target) return null;
     const { dayOfWeek, minuteKey, dateKey } = getConversationAutomationClock(now, timeZone);
     const triggers = branch.scheduleTriggers || {};
@@ -137,6 +178,7 @@ export function selectConversationScheduledMessage({ settings = {}, branch = nul
     for (const candidate of candidates) {
         if (triggers[candidate.key]) continue;
         const key = getConversationOccurrenceKey({ owner: '', target, kind: 'schedule', basis: candidate.key });
+        if (taken(key)) continue;
         return occurrence(target, 'schedule', key, candidate.directive,
             [{ avatar: target.avatar, purpose: 'schedule', extra: { conversation_mode_auto: true, schedule: candidate.label, groupId: target.groupId || '' } }],
             { conversation_mode_auto: true, schedule: candidate.label, groupId: target.groupId || '' },
@@ -146,7 +188,7 @@ export function selectConversationScheduledMessage({ settings = {}, branch = nul
 }
 
 /** The idle follow-up or spontaneous ping, one per burst of user inactivity. */
-export function selectConversationIdleMessage({ settings = {}, branch = null, target = null, now = Date.now() } = {}) {
+export function selectConversationIdleMessage({ settings = {}, branch = null, target = null, now = Date.now(), taken = () => false } = {}) {
     if (!branch || !target) return null;
     if (!settings.idle_followup && !settings.idle_spontaneous) return null;
     const idleLimit = positiveSettings(settings.idle_limit, DEFAULT_IDLE_LIMIT, 1);
@@ -158,7 +200,7 @@ export function selectConversationIdleMessage({ settings = {}, branch = null, ta
     if (settings.idle_followup && markers[followupMarker] !== String(lastUserActivity(branch))) {
         const directive = '[System directive: The user has been quiet for a while. Send a casual auto follow-up checking in or asking what they are up to.]';
         const key = getConversationOccurrenceKey({ owner: '', target, kind: 'idle-followup', basis: lastUserActivity(branch) });
-        return occurrence(target, 'idle-followup', key, directive,
+        if (!taken(key)) return occurrence(target, 'idle-followup', key, directive,
             [{ avatar: target.avatar, purpose: 'idle-followup', extra: { conversation_mode_auto: true, idle_action: 'followup', groupId: target.groupId || '' } }],
             { conversation_mode_auto: true, idle_action: 'followup', groupId: target.groupId || '' },
             { sessionMarkers: { [followupMarker]: String(lastUserActivity(branch)) }, markAutoMessage: true });
@@ -167,7 +209,7 @@ export function selectConversationIdleMessage({ settings = {}, branch = null, ta
     if (settings.idle_spontaneous && elapsedMinutes >= spontaneousLimit && markers[spontaneousMarker] !== String(lastUserActivity(branch))) {
         const directive = '[System directive: Send a spontaneous ping to the user, starting a new topic or sharing a casual thought.]';
         const key = getConversationOccurrenceKey({ owner: '', target, kind: 'idle-spontaneous', basis: lastUserActivity(branch) });
-        return occurrence(target, 'idle-spontaneous', key, directive,
+        if (!taken(key)) return occurrence(target, 'idle-spontaneous', key, directive,
             [{ avatar: target.avatar, purpose: 'idle-spontaneous', extra: { conversation_mode_auto: true, idle_action: 'spontaneous', groupId: target.groupId || '' } }],
             { conversation_mode_auto: true, idle_action: 'spontaneous', groupId: target.groupId || '' },
             { sessionMarkers: { [spontaneousMarker]: String(lastUserActivity(branch)) }, markAutoMessage: true });
@@ -276,23 +318,24 @@ export function resolveAutomationActivity(characters, avatar, personaId, overrid
  * idle, then chime, then character chat. Reminders are decided separately and
  * always take priority in the worker.
  */
-export function selectNextConversationThreadAutomation({ settings = {}, branch = null, target = null, partners = [], hostName, userName, characters = {}, personaId = '', overrides = {}, userStatus = 'online', now = Date.now(), timeZone = 'UTC', random = Math.random } = {}) {
+export function selectNextConversationThreadAutomation({ settings = {}, branch = null, target = null, partners = [], hostName, userName, characters = {}, personaId = '', overrides = {}, userStatus = 'online', now = Date.now(), timeZone = 'UTC', random = Math.random, taken = () => false } = {}) {
     if (settings.enabled === false || userStatus === 'offline') return null;
     const since = now - finiteNumber(branch?.lastAutoMessageAt, 0);
     if (since < positiveSettings(settings.cooldown, DEFAULT_COOLDOWN_SECONDS, 0) * 1000) return null;
-    const scheduled = selectConversationScheduledMessage({ settings, branch, target, now, timeZone });
+    const scheduled = selectConversationScheduledMessage({ settings, branch, target, now, timeZone, taken });
     if (scheduled) return scheduled;
     const activity = resolveAutomationActivity(characters, target.avatar, personaId, overrides, now, timeZone);
     if (settings.proactive_messaging) {
         const proactive = selectConversationProactiveMessage({ settings, branch, target, activity, userStatus, now, timeZone });
-        if (proactive) return proactive;
+        if (proactive && !taken(proactive.key)) return proactive;
     } else {
-        const idle = selectConversationIdleMessage({ settings, branch, target, now });
+        const idle = selectConversationIdleMessage({ settings, branch, target, now, taken });
         if (idle) return idle;
     }
     const chime = selectConversationChime({ settings, branch, target, partners, hostName, userName, now, random });
-    if (chime) return chime;
-    return selectConversationCharacterChat({ settings, branch, target, partners, now, random });
+    if (chime && !taken(chime.key)) return chime;
+    const characterChat = selectConversationCharacterChat({ settings, branch, target, partners, now, random });
+    return characterChat && !taken(characterChat.key) ? characterChat : null;
 }
 
 export const testExports = { mergePartnerRecords, recentlySilentMentionedPartner, buildProactiveDirective, scheduleTriggerCap, REMINDER_RETRY_DELAY_MS };

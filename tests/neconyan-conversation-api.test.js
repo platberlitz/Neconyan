@@ -257,7 +257,7 @@ describe('SillyBunny Conversation REST API', () => {
     });
 
     test('native outgoing messages do not mark identifier-less read history unread', async () => {
-        const { captureConversationTarget, appendConversationJobMessage } = await import('../src/generation/conversation-effects.js');
+        const { prepareConversationTarget, appendConversationJobMessage } = await import('../src/generation/conversation-effects.js');
         const { acceptJob } = await import('../src/jobs/store.js');
         await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [{ role: 'character', mes: 'Old one' }, { role: 'character', mes: 'Old two' }] });
         const settings = readSettings();
@@ -265,10 +265,11 @@ describe('SillyBunny Conversation REST API', () => {
         for (const message of branch.messages) delete message.id;
         delete branch.messageContentHash;
         delete branch.messageEditRevision;
+        delete branch.readThrough;
         branch.unread = 0;
         fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(settings));
         const request = { user: { directories: userDirectories, profile: { handle: userHandle } } };
-        const target = captureConversationTarget(request, { avatar: 'nova.png', branchId: 'main' });
+        const target = await prepareConversationTarget(request, { avatar: 'nova.png', branchId: 'main' });
         const job = acceptJob(userDirectories, { owner: userHandle, type: 'test.conversation', submissionKey: 'legacy-read', intent: {} }).job;
         const context = { job, owner: userHandle, directories: userDirectories, signal: new AbortController().signal };
         await appendConversationJobMessage(context, target, 'outgoing', { role: 'user', mes: 'New outgoing' });
@@ -448,6 +449,9 @@ describe('SillyBunny Conversation REST API', () => {
         saved.oai_settings = { chat_completion_source: 'openai', temp_openai: 0.2, top_p_openai: 1, n: 1 };
         saved.extension_settings[CONVERSATION_STORE_KEY].settings.connection_profile = 'saved';
         saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].settings.connection_profile = 'saved';
+        saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].settings.idle_followup = true;
+        saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].settings.enabled = true;
+        saved.extension_settings[CONVERSATION_STORE_KEY].automation = { mode: 'server', timeZone: 'UTC' };
         fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(saved));
 
         const request = { user: { profile: { handle: userHandle }, directories: userDirectories } };
@@ -476,6 +480,109 @@ describe('SillyBunny Conversation REST API', () => {
         expect(branch.messages[1].extra.conversation_mode_auto).toBe(true);
         expect(branch.sessionMarkers.sb_conv_last_idle_session_followup).toBe('123');
         expect(branch.lastAutoMessageAt).toBe(4242);
+        const { mutateJobs } = await import('../src/jobs/store.js');
+        mutateJobs(userDirectories, store => { store.jobs = {}; });
+        await expect(acceptConversationAutonomousReply(request, occurrence)).rejects.toThrow('already ran');
+        expect(upstreamRequests).toHaveLength(1);
+    });
+
+    test('ownership capture migrates every legacy branch and validates its saved-settings acknowledgement', async () => {
+        await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [{ role: 'character', mes: 'Read' }, { role: 'character', mes: 'Unread' }] });
+        const saved = readSettings();
+        const branch = saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].branches.main;
+        delete branch.readThrough;
+        delete branch.messageContentHash;
+        delete branch.messageEditRevision;
+        branch.unread = 1;
+        branch.messages.forEach(message => { delete message.id; });
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(saved));
+        const body = { mode: 'server', timeZone: 'Asia/Manila', version: saved._version,
+            acknowledgement: { account: userHandle, settingsRevision: saved._settingsRevision || 0 } };
+        const invalid = await postJson('/automation/configure', { ...body, acknowledgement: { ...body.acknowledgement, settingsRevision: 999 } });
+        expect(invalid.status).toBe(409);
+        expect((await invalid.json()).error).toBe('active_settings_ack_stale');
+        expect((await postJson('/automation/configure', { ...body, acknowledgement: { ...body.acknowledgement, account: 'someone-else' } })).status).toBe(409);
+        expect((await postJson('/automation/configure', { ...body, acknowledgement: [] })).status).toBe(400);
+        const configured = await postJson('/automation/configure', body);
+        expect(configured.status).toBe(200);
+        expect((await configured.json()).migratedBranches).toBe(1);
+        const result = readConversationStore();
+        expect(result.automation).toMatchObject({ mode: 'server', timeZone: 'Asia/Manila', acknowledgement: body.acknowledgement });
+        const migrated = result.characters['nova.png'].branches.main;
+        expect(migrated.messages.map(message => message.mes)).toEqual(['Read', 'Unread']);
+        expect(migrated.unread).toBe(1);
+        expect(migrated.readThrough).toBe(migrated.messages[0].id);
+    });
+
+    test('automatic active connections use the persisted acknowledgement and reject stale revisions', async () => {
+        const { acceptConversationAutonomousReply } = await import('../src/generation/conversation-jobs.js');
+        await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [{ role: 'user', mes: 'Hello' }] });
+        const saved = readSettings();
+        saved.main_api = 'openai';
+        saved._settingsRevision = 4;
+        saved.active_generation = { api: 'openai', source: 'custom', model: 'active-fixture' };
+        saved.oai_settings = { chat_completion_source: 'custom', custom_url: upstreamUrl, custom_model: 'active-fixture', stream_openai: false };
+        saved.extension_settings[CONVERSATION_STORE_KEY].automation = { mode: 'server', timeZone: 'UTC', acknowledgement: { account: userHandle, settingsRevision: 4 } };
+        saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].settings.idle_followup = true;
+        saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].settings.enabled = true;
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(saved));
+        const occurrence = { kind: 'idle-followup', key: 'active-auto', directive: '[System directive: ping.]',
+            target: { avatar: 'nova.png', branchId: 'main' }, participants: [{ avatar: 'nova.png' }] };
+        const request = { user: { profile: { handle: userHandle }, directories: userDirectories } };
+        const accepted = await acceptConversationAutonomousReply(request, occurrence);
+        expect(accepted.job.config.participantBindings['nova.png'].kind).toBe('active');
+        const changed = readSettings();
+        changed._settingsRevision = 5;
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(changed));
+        await expect(acceptConversationAutonomousReply(request, { ...occurrence, key: 'stale-active-auto' })).rejects.toThrow(/acknowledged|changed|stale/i);
+    });
+
+    test('ownership backfills old failed reminders, send chimes and persona-specific summaries before ledger pruning', async () => {
+        const { acceptJob, updateJob, listJobs, mutateJobs } = await import('../src/jobs/store.js');
+        const { writeArtifact } = await import('../src/jobs/artifacts.js');
+        const { backfillConversationAutomaticAcceptances, wasConversationAutomaticOccurrenceAccepted } = await import('../src/generation/conversation-effects.js');
+        const { getConversationOccurrenceKey, conversationChimeOccurrenceKey, getConversationSummarySubmissionKey, selectConversationReminder } = await import('../src/generation/conversation-auto-policy.js');
+        await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [{ role: 'user', mes: 'Hello' }] });
+        const target = { avatar: 'nova.png', personaId: '', groupId: '', branchId: 'main' };
+        const oldKey = getConversationOccurrenceKey({ owner: '', target, kind: 'reminder', basis: ['legacy-reminder', 100, 0] });
+        const reminder = acceptJob(userDirectories, { owner: userHandle, type: 'conversation.reply', submissionKey: oldKey,
+            intent: { mode: 'auto', target, automation: { kind: 'reminder' }, plan: [{ extra: { reminder_id: 'legacy-reminder' } }] } }).job;
+        updateJob(userDirectories, reminder.id, { state: 'failed' });
+        const send = acceptJob(userDirectories, { owner: userHandle, type: 'conversation.reply', submissionKey: 'legacy-send', intent: { mode: 'send', target } }).job;
+        writeArtifact(userDirectories, send.id, 'request', { target, participants: [{ purpose: 'chime', automation: { patch: { sessionMarkers: { sb_conv_last_chime_session_solo: '42' } } } }] });
+        updateJob(userDirectories, send.id, { state: 'cancelled' });
+        const summary = acceptJob(userDirectories, { owner: userHandle, type: 'conversation.summary', automatic: true,
+            submissionKey: 'summary:nova.png::main:m1', intent: { target } }).job;
+        writeArtifact(userDirectories, summary.id, 'request', { throughId: 'm1' });
+        updateJob(userDirectories, summary.id, { state: 'completed' });
+        await backfillConversationAutomaticAcceptances({ user: { profile: { handle: userHandle }, directories: userDirectories } }, listJobs(userDirectories, { owner: userHandle, includeDismissed: true }));
+        mutateJobs(userDirectories, store => { store.jobs = {}; });
+        const store = readConversationStore();
+        const taken = key => wasConversationAutomaticOccurrenceAccepted(store, key);
+        const legacy = { id: 'legacy-reminder', personaId: '', triggerAt: 100, text: 'Do not repeat', target: { target: { ...target, branchId: 'other' }, settings: { enabled: true } } };
+        expect(selectConversationReminder({ reminders: [legacy], taken, now: 200 })).toBeNull();
+        expect(taken(conversationChimeOccurrenceKey(target, '42'))).toBe(true);
+        expect(taken(getConversationSummarySubmissionKey(target, 'm1'))).toBe(true);
+        expect(taken(getConversationSummarySubmissionKey({ ...target, personaId: 'another-persona' }, 'm1'))).toBe(false);
+        expect(upstreamRequests).toHaveLength(0);
+    });
+
+    test('ownership preserves empty historical messages through HTTP saves and acknowledges long valid IDs', async () => {
+        await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [{ role: 'character', mes: 'Unread' }] });
+        const saved = readSettings();
+        const branch = saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].branches.main;
+        branch.messages = [{ id: 'empty-legacy', role: 'system', mes: '' }, { id: 'x'.repeat(300), role: 'character', mes: 'Unread' }];
+        branch.readThrough = 'empty-legacy'; branch.unread = 1;
+        delete branch.messageContentHash; delete branch.messageEditRevision;
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(saved));
+        const current = await (await postJson('/store/get', {})).json();
+        expect((await postJson('/store/save', current)).status).toBe(200);
+        const acknowledged = await postJson('/presentation/claim', { target: { avatar: 'nova.png', branchId: 'main', createdAt: branch.createdAt }, messageIds: [], readThrough: 'x'.repeat(300) });
+        expect(acknowledged.status).toBe(200);
+        expect((await acknowledged.json()).unread).toBe(0);
+        const next = await (await postJson('/store/get', {})).json();
+        next.store.characters['nova.png'].branches.main.messages.push({ id: 'new-empty', role: 'system', mes: '' });
+        expect((await postJson('/store/save', next)).status).toBe(400);
     });
 
     test('a composer send appends its user messages natively before any provider call and is idempotent', async () => {
@@ -921,7 +1028,7 @@ describe('SillyBunny Conversation REST API', () => {
             '/store/get',
             '/message/send',
         ]));
-        expect(json.caveats.join(' ')).toContain('Browser-only automation');
+        expect(json.caveats.join(' ')).toContain('server worker');
         expect(json.caveats.join(' ')).toContain('Bracket commands are extracted');
 
         const aliasResponse = await postAliasJson('/info', {});
@@ -1405,7 +1512,7 @@ describe('SillyBunny Conversation REST API', () => {
         const disabledKey = `persona:${personaId}:group:${groupId}:disabled.png`;
         const makeBranch = (id, messageId, unread, updatedAt) => ({
             id,
-            messages: [{ id: messageId, role: 'user', mes: messageId, created_at: updatedAt }],
+            messages: Array.from({ length: unread }, (_, index) => ({ id: index ? `${messageId}-${index}` : messageId, role: 'character', mes: messageId, created_at: updatedAt + index })),
             unread,
             updatedAt,
         });
@@ -1470,7 +1577,7 @@ describe('SillyBunny Conversation REST API', () => {
             'beta-branch',
         ]));
         expect(canonical.branches[DEFAULT_BRANCH_ID].messages.map(message => message.id))
-            .toEqual(['alpha-main', 'beta-main', 'new-group-message']);
+            .toEqual(['alpha-main', 'alpha-main-1', 'beta-main', 'beta-main-1', 'beta-main-2', 'new-group-message']);
         expect(canonical.branches[DEFAULT_BRANCH_ID].unread).toBe(5);
         expect(canonical.branches['alpha-branch'].unread).toBe(4);
         expect(canonical.branches['beta-branch'].unread).toBe(1);
@@ -1490,7 +1597,7 @@ describe('SillyBunny Conversation REST API', () => {
         const betaKey = `group:${groupId}:beta.png`;
         const makeMessages = (prefix, offset) => Array.from({ length: 130 }, (_, index) => ({
             id: `${prefix}-${index}`,
-            role: 'user',
+            role: 'character',
             mes: `${prefix} ${index}`,
             created_at: offset + index,
         }));

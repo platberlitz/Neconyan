@@ -2,7 +2,7 @@ import express from 'express';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget } from '../../public/scripts/neconyan-assistant-knowledge.js';
 
-import { getSettingsVersion } from '../settings-version.js';
+import { getSettingsRevision, getSettingsVersion } from '../settings-version.js';
 import { extractCharacterReplyCommandParts, normalizeConversationOutputText } from '../../public/scripts/neconyan-conversation/generation-utils.js';
 import { CONVERSATION_STORE_KEY, MAX_THREAD_MESSAGES } from '../../public/scripts/neconyan-conversation/constants.js';
 import { getIpAddress, retryAfter } from '../express-common.js';
@@ -20,7 +20,10 @@ import {
     validateGenerationPayload,
     validateCharacterOverride,
     validateStoreStructure,
+    repairConversationBranchMessageIds,
+    seedConversationReadBoundary,
     MAX_CONVERSATION_MESSAGE_TEXT_LENGTH,
+    MAX_CONVERSATION_MESSAGE_FIELD_LENGTH,
     MAX_CONVERSATION_STORE_BYTES,
     MAX_CONVERSATION_STORE_ENTRIES,
 } from './conversation-utils.js';
@@ -137,6 +140,8 @@ const CONVERSATION_API_INFO = {
             { method: 'POST', path: '/info', purpose: 'Describe Conversation Mode REST capabilities and caveats.' },
             { method: 'POST', path: '/store/get', purpose: 'Read the Conversation Mode store.' },
             { method: 'POST', path: '/store/save', purpose: 'Replace the Conversation Mode store.' },
+            { method: 'POST', path: '/automation/configure', purpose: 'Persist background ownership, timezone and the saved active-connection acknowledgement.' },
+            { method: 'POST', path: '/presentation/claim', purpose: 'Claim incoming alerts or narration and acknowledge an observed read boundary.' },
             { method: 'POST', path: '/group/list', purpose: 'List Conversation-owned group DMs for a persona.' },
             { method: 'POST', path: '/group/create', purpose: 'Create a Conversation-owned group DM.' },
             { method: 'POST', path: '/thread/get', purpose: 'Read a solo or group DM thread.' },
@@ -148,8 +153,8 @@ const CONVERSATION_API_INFO = {
         ],
     },
     caveats: [
-        'Accepted replies and composer sends run server-side; the browser only observes job status and reads the authoritative store. The browser auto worker (idle followups, scheduled and proactive messages) still runs in the browser, and the WebLLM and browser Kokoro providers require the page open.',
-        'Browser-only automation is not run by the REST API: idle followups, scheduled messages, proactive messages, partner chimes, and reminder timers. Roleplay aside sampling stays in the browser, but /aside/submit accepts and generates the message server-side.',
+        'Accepted replies, composer sends and automatic messages run server-side after the app persists server ownership. The browser observes job status and reads the authoritative store. WebLLM and browser Kokoro require the page open.',
+        'The server worker checks reminders, schedules, idle follow-ups, proactive messages, partner chimes and character chat using saved settings and timezone. Roleplay aside sampling stays in the browser, but /aside/submit accepts and generates the message server-side.',
         'Bracket commands are extracted into reply metadata by accepted replies, which also run image generation, schedule edits, and reminder side effects server-side.',
         'REST callers must provide the backend generation payload shape used by the existing completion endpoints.',
     ],
@@ -391,9 +396,29 @@ router.post('/automation/configure', asyncRoute(async (request, response) => {
     if (!result.ok) {
         return response.status(result.status).send(result.body);
     }
-    result.store.automation = { ...(result.store.automation || {}), mode, timeZone };
+    const acknowledgement = request.body?.acknowledgement;
+    if (acknowledgement !== undefined) {
+        if (!isObject(acknowledgement) || typeof acknowledgement.account !== 'string' || acknowledgement.account.length > 256
+            || !Number.isSafeInteger(acknowledgement.settingsRevision) || acknowledgement.settingsRevision < 0) {
+            return response.status(400).send({ error: 'invalid_acknowledgement' });
+        }
+        if (acknowledgement.account !== request.user.profile.handle) return response.status(409).send({ error: 'account_changed' });
+        const settingsRevision = getSettingsRevision(result.settings);
+        if (acknowledgement.settingsRevision !== settingsRevision) return response.status(409).send({ error: 'active_settings_ack_stale', settingsRevision });
+    }
+    result.store.automation = { ...(result.store.automation || {}), mode, timeZone,
+        ...(acknowledgement ? { acknowledgement: { account: acknowledgement.account, settingsRevision: acknowledgement.settingsRevision } } : {}) };
+    let migratedBranches = 0;
+    for (const thread of Object.values(result.store.characters || {})) {
+        for (const branch of Object.values(thread.branches || {})) {
+            const repaired = repairConversationBranchMessageIds(branch);
+            if (!repaired && typeof branch.readThrough === 'string') continue;
+            seedConversationReadBoundary(branch);
+            migratedBranches++;
+        }
+    }
     const saveResult = await saveConversationStore(request, result.store, result.version, { trustedConversationEffects: true });
-    return respondSaveResult(response, saveResult, { automation: saveResult.store?.automation || result.store.automation });
+    return respondSaveResult(response, saveResult, { automation: saveResult.store?.automation || result.store.automation, migratedBranches });
 }));
 
 /**
@@ -409,11 +434,11 @@ router.post('/presentation/claim', asyncRoute(async (request, response) => {
     }
     const messageIds = request.body?.messageIds;
     const readThrough = request.body?.readThrough;
-    if (readThrough !== undefined && (typeof readThrough !== 'string' || !readThrough || readThrough.length > 128)) {
+    if (readThrough !== undefined && (typeof readThrough !== 'string' || !readThrough || readThrough.length > MAX_CONVERSATION_MESSAGE_FIELD_LENGTH)) {
         return response.status(400).send({ error: 'invalid_read_through' });
     }
     if (messageIds !== undefined && (!Array.isArray(messageIds) || messageIds.length > 200
-        || messageIds.some(id => typeof id !== 'string' || !id || id.length > 128))) {
+        || messageIds.some(id => typeof id !== 'string' || !id || id.length > MAX_CONVERSATION_MESSAGE_FIELD_LENGTH))) {
         return response.status(400).send({ error: 'invalid_message_ids' });
     }
     try {
@@ -650,6 +675,7 @@ router.post('/binding/generate', asyncRoute(async (request, response) => {
     try {
         return response.send(await generateBoundConversationText(request, request.body || {}, controller.signal));
     } catch (error) {
+        if (error.apiError === 'automation_server_owned') return response.status(409).send({ error: error.apiError, message: error.message });
         return response.status(error.status || 500).send({ error: 'bound_generation_failed', message: 'The captured connection could not complete this request. Check its saved settings and try again.' });
     } finally {
         response.removeListener('close', abort);
@@ -661,6 +687,7 @@ router.post('/binding/preflight', asyncRoute(async (request, response) => {
         return response.send(await preflightConversationBindings(request, request.body || {}));
     } catch (error) {
         const needsAcknowledgement = error.apiError === 'active_settings_ack_required';
+        if (error.apiError === 'automation_server_owned') return response.status(409).send({ error: error.apiError, message: error.message });
         return response.status(error.status || 500).send({
             error: needsAcknowledgement ? error.apiError : 'connection_binding_invalid',
             message: needsAcknowledgement ? 'Save the active connection settings before generating a reply.'

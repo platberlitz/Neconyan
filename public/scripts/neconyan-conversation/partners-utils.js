@@ -50,8 +50,10 @@ export function selectChimePartners({ settings = {}, branch, partners = [], grou
     return !settings.multi_char ? [mentioned] : chooseChimePartners(partners, branch.messages || [], mentioned, 2, random);
 }
 
+export const CHIME_DIRECTIVE_MARKER = 'chiming in on a private group DM conversation between';
+
 export function buildPartnerChimeDirective(partner, hostName, userName) {
-    return `[System directive: You are ${partner.name}, chiming in on a private group DM conversation between ${hostName} and ${userName}. You are currently ${partner.activity || 'free'} (status: ${partner.status || 'online'}). If you were mentioned recently, answer naturally. Otherwise add one short message only if you have something distinct to contribute. Other people may be typing at the same time; do not wait for them. Output only your message body, without a name prefix.]`;
+    return `[System directive: You are ${partner.name}, ${CHIME_DIRECTIVE_MARKER} ${hostName} and ${userName}. You are currently ${partner.activity || 'free'} (status: ${partner.status || 'online'}). If you were mentioned recently, answer naturally. Otherwise add one short message only if you have something distinct to contribute. Other people may be typing at the same time; do not wait for them. Output only your message body, without a name prefix.]`;
 }
 
 export function escapeRegExp(value) {

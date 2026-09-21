@@ -15,6 +15,7 @@ import ipaddr from 'ipaddr.js';
 import mime from 'mime-types';
 
 import { MAX_THREAD_MESSAGES } from '../../public/scripts/neconyan-conversation/constants.js';
+import { countConversationUnread } from '../../public/scripts/neconyan-conversation/notification-utils.js';
 import { isPathInside } from '../path-containment.js';
 
 // Validation constants
@@ -486,6 +487,85 @@ export function isSafeConversationMessageId(value) {
         && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
 }
 
+export const ORIGINAL_CONVERSATION_MESSAGE_ID = Symbol('originalConversationMessageId');
+
+export function repairConversationMessageIds(messages, remappedIds = new Map()) {
+    const reservedSafeIds = new Set(messages
+        .map(message => typeof message[ORIGINAL_CONVERSATION_MESSAGE_ID] === 'string'
+            ? message[ORIGINAL_CONVERSATION_MESSAGE_ID] : '')
+        .filter(isSafeConversationMessageId));
+    const usedIds = new Set(reservedSafeIds);
+    const retainedSafeIds = new Set();
+    for (let index = 0; index < messages.length; index++) {
+        const message = messages[index];
+        const originalValue = message[ORIGINAL_CONVERSATION_MESSAGE_ID];
+        delete message[ORIGINAL_CONVERSATION_MESSAGE_ID];
+        const originalId = typeof originalValue === 'string' ? originalValue : String(originalValue ?? '');
+        const originalIdIsSafe = typeof originalValue === 'string' && isSafeConversationMessageId(originalId);
+        if (originalIdIsSafe && !retainedSafeIds.has(originalId)) {
+            message.id = originalId;
+            retainedSafeIds.add(originalId);
+            continue;
+        }
+        const timestamp = Number(message.created_at);
+        const createdAt = Number.isSafeInteger(timestamp) && timestamp >= 0 ? timestamp : index;
+        const baseId = `legacy-${createdAt}-${index}`;
+        let nextId = baseId;
+        let suffix = 1;
+        while (usedIds.has(nextId)) nextId = `${baseId}-${suffix++}`;
+        message.id = nextId;
+        usedIds.add(nextId);
+        if (originalId && !originalIdIsSafe && !remappedIds.has(originalId)) remappedIds.set(originalId, nextId);
+    }
+    for (const message of messages) {
+        const extra = getObject(message.extra);
+        const replyReference = getObject(extra.conversation_reply_to);
+        const nextReplyId = remappedIds.get(String(replyReference.messageId || ''));
+        if (nextReplyId) message.extra = { ...extra, conversation_reply_to: { ...replyReference, messageId: nextReplyId } };
+    }
+    return messages;
+}
+
+export function applyConversationIdRemap(branch, remappedIds) {
+    for (const key of ['readThrough', 'memorySummaryThrough']) {
+        if (remappedIds.has(branch[key])) branch[key] = remappedIds.get(branch[key]);
+    }
+    if (isObject(branch.pendingPresentations)) {
+        branch.pendingPresentations = Object.fromEntries(Object.entries(branch.pendingPresentations)
+            .map(([id, entry]) => [remappedIds.get(id) || id, entry]));
+    }
+}
+
+/** Repair only identities, preserving even empty legacy messages byte-for-byte otherwise. */
+export function repairConversationBranchMessageIds(branch) {
+    const messages = Array.isArray(branch.messages) ? branch.messages : [];
+    if (messages.every(message => isSafeConversationMessageId(message.id)) && new Set(messages.map(message => message.id)).size === messages.length) return false;
+    const remappedIds = new Map();
+    branch.messages = repairConversationMessageIds(messages.map(message => ({ ...message, [ORIGINAL_CONVERSATION_MESSAGE_ID]: message.id })), remappedIds);
+    applyConversationIdRemap(branch, remappedIds);
+    return true;
+}
+
+/** Convert the existing unread suffix into a server-owned observed boundary once. */
+export function seedConversationReadBoundary(branch) {
+    if (typeof branch.readThrough === 'string') return branch.readThrough;
+    const messages = Array.isArray(branch.messages) ? branch.messages : [];
+    const unread = Math.max(0, Math.floor(Number(branch.unread) || 0));
+    const incoming = messages.filter(message => !['user', 'system'].includes(message.role));
+    const first = unread ? incoming.slice(-unread)[0] : null;
+    const index = first ? messages.indexOf(first) : messages.length;
+    const boundary = index === 0 ? '' : messages[index - 1]?.id;
+    if (typeof boundary !== 'string') return null;
+    branch.readThrough = boundary;
+    branch.unread = countConversationUnread(messages, boundary);
+    return boundary;
+}
+
+export function isAutomaticConversationMessage(message) {
+    return ['conversation_mode_auto', 'conversation_mode_chime', 'conversation_mode_auto_chat', 'conversation_mode_reminder', 'conversation_mode_auto_responder']
+        .some(key => message?.extra?.[key] === true);
+}
+
 function validateStoredMessage(message, { strictMessages, baselineMessages = null }) {
     if (!isObject(message)) {
         return { valid: false, error: 'invalid_stored_message' };
@@ -538,7 +618,7 @@ function validateStoredMessage(message, { strictMessages, baselineMessages = nul
         || (Array.isArray(extra.attachments) && extra.attachments.length)
         || (typeof extra.image_url === 'string' && extra.image_url),
     );
-    return hasContent ? { valid: true } : { valid: false, error: 'invalid_stored_message' };
+    return hasContent || !strict ? { valid: true } : { valid: false, error: 'invalid_stored_message' };
 }
 
 function validateStoredThread(threadStore, { strictMessages, baselineThreadStore = null }) {

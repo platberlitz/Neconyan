@@ -8,7 +8,10 @@ import { authorizeConversationGroup, normalizeConversationGroupRecord } from '..
 import { normalizeConversationSettings } from '../endpoints/conversation-generation.js';
 import { createConversationMessage, refreshBranchPreview } from '../endpoints/conversation-messages.js';
 import { ensureConversationStore, getConversationThreadKey, readUserSettingsWithStatus, saveConversationStore } from '../endpoints/conversation-store.js';
-import { getJob } from '../jobs/store.js';
+import { repairConversationBranchMessageIds, seedConversationReadBoundary } from '../endpoints/conversation-utils.js';
+import { getJob, holdJobPruning } from '../jobs/store.js';
+import { readArtifact } from '../jobs/artifacts.js';
+import { conversationChimeOccurrenceKey, conversationReminderIdentityKey, getConversationSummarySubmissionKey } from './conversation-auto-policy.js';
 import { getConversationMessagesHash, getSettingsVersion } from '../settings-version.js';
 
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -60,13 +63,77 @@ export function captureConversationTarget(request, target) {
 /** Stamp legacy history before freezing new work; old frozen requests stay conservative. */
 export async function prepareConversationTarget(request, target) {
     const captured = captureConversationTarget(request, target);
-    if (Number.isSafeInteger(captured.messageEditRevision)) return captured;
     const current = readConversationTarget(request, captured);
+    const repaired = repairConversationBranchMessageIds(current.branch);
+    const needsBoundary = typeof current.branch.readThrough !== 'string';
+    seedConversationReadBoundary(current.branch);
+    if (!repaired && !needsBoundary && Number.isSafeInteger(captured.messageEditRevision)) return captured;
+    const preparedHash = digest(current.branch.messages);
     const saved = await saveConversationStore(request, current.store, current.version, { trustedConversationEffects: true });
     if (!saved.ok) conflict('The Conversation history could not be prepared.');
     const prepared = captureConversationTarget(request, target);
-    if (prepared.createdAt !== captured.createdAt || prepared.messagesHash !== captured.messagesHash) conflict('The Conversation history changed during preparation.');
+    if (prepared.createdAt !== captured.createdAt || prepared.messagesHash !== preparedHash) conflict('The Conversation history changed during preparation.');
     return prepared;
+}
+
+/** Record acceptance before preparation or cancellation can make a job prunable.
+ * Unlike completion bookkeeping, this survives failed attempts and branch resets.
+ * Storage limits refuse new work rather than forgetting a paid occurrence. */
+export async function retainConversationAutomaticAcceptance(request, job) {
+    const keys = [];
+    if (job.type === 'conversation.reply') {
+        if (job.intent?.mode === 'auto') keys.push(job.submissionKey);
+        if (job.intent?.automation?.kind === 'reminder') {
+            const id = job.intent.automation.patch?.reminder?.id || job.intent.plan?.[0]?.extra?.reminder_id;
+            if (id) keys.push(conversationReminderIdentityKey(id));
+        }
+        const snapshot = readArtifact(request.user.directories, job.id, 'request');
+        const chime = snapshot?.participants?.find(participant => participant.purpose === 'chime');
+        const markers = chime?.automation?.patch?.sessionMarkers;
+        const activity = markers?.sb_conv_last_chime_session_ ?? markers?.[`sb_conv_last_chime_session_${snapshot?.target?.groupId || 'solo'}`];
+        if (activity !== undefined) keys.push(conversationChimeOccurrenceKey(snapshot.target, activity));
+    } else if (job.type === 'conversation.summary' && job.automatic) {
+        keys.push(job.submissionKey);
+        const snapshot = readArtifact(request.user.directories, job.id, 'request');
+        if (snapshot?.throughId) keys.push(getConversationSummarySubmissionKey(job.intent.target, snapshot.throughId));
+    }
+    if (!keys.length) return;
+    if (job.owner !== request.user.profile.handle) conflict('The Conversation job belongs to another account.');
+    const saved = readUserSettingsWithStatus(request);
+    if (!saved.ok) conflict('The Conversation settings could not be read.');
+    const store = ensureConversationStore(saved.data, normalizeGroup);
+    store.automation ??= {};
+    store.automation.acceptedOccurrences ??= {};
+    let changed = false;
+    for (const value of keys) {
+        const key = digest(value);
+        // A legacy duplicate cannot replace the first durable owner. Chime
+        // dispatch checks that owner, while unrelated Send participants proceed.
+        if (store.automation.acceptedOccurrences[key]) continue;
+        store.automation.acceptedOccurrences[key] = job.id;
+        changed = true;
+    }
+    if (!changed) return;
+    const result = await saveConversationStore(request, store, getSettingsVersion(saved.data), { trustedConversationEffects: true });
+    if (!result.ok) conflict('The automatic Conversation acceptance could not be saved.');
+}
+
+export function wasConversationAutomaticOccurrenceAccepted(store, key) {
+    return Object.hasOwn(store.automation?.acceptedOccurrences || {}, digest(key));
+}
+
+export function acceptedConversationOccurrenceOwner(store, key) {
+    return store.automation?.acceptedOccurrences?.[digest(key)];
+}
+
+/** Upgrade ledger-only ownership before any new automatic selection. */
+export async function backfillConversationAutomaticAcceptances(request, jobs) {
+    const owner = request.user.profile.handle;
+    holdJobPruning(owner);
+    const ordered = [...jobs].sort((a, b) => Number(Boolean(b.config?.chimeClaim)) - Number(Boolean(a.config?.chimeClaim)) || a.createdAt - b.createdAt);
+    for (const job of ordered) await retainConversationAutomaticAcceptance(request, job);
+    // A failed copy deliberately leaves pruning held; the next scan retries it.
+    holdJobPruning(owner, false);
 }
 
 function readConversationEffectState(context, target, effectId) {
@@ -149,20 +216,10 @@ export function appendConversationJobMessage(context, target, effectId, value, {
     return commitConversationEffect(context, target, effectId, (branch, store, settings) => {
         const message = createConversationMessage({ ...value, id: `job_${digest([context.job.id, effectId]).slice(0, 32)}` });
         if (!message) throw Object.assign(new Error('The generated Conversation message is invalid.'), { status: 400 });
-        const isIncoming = !['user', 'system'].includes(message.role);
-        if (isIncoming && typeof branch.readThrough !== 'string') {
-            // Seed a legacy branch from its existing unread suffix once. All
-            // subsequent native counts are derived from the observed boundary.
-            const unread = Math.max(0, Number(branch.unread) || 0);
-            const incoming = branch.messages.filter(item => !['user', 'system'].includes(item.role));
-            const firstUnread = unread ? incoming.slice(-unread)[0] : null;
-            const index = firstUnread ? branch.messages.indexOf(firstUnread) : branch.messages.length;
-            const boundary = index === 0 ? '' : branch.messages[index - 1]?.id;
-            if (typeof boundary === 'string') branch.readThrough = boundary;
-        }
+        if (seedConversationReadBoundary(branch) === null) conflict('The Conversation message identities must be prepared before delivery.');
         branch.messages.push(message);
         branch.messages = branch.messages.slice(-MAX_THREAD_MESSAGES);
-        branch.unread = countConversationUnread(branch.messages, branch.readThrough) ?? (Number(branch.unread) || 0) + Number(isIncoming);
+        branch.unread = countConversationUnread(branch.messages, branch.readThrough);
         if (message.role === 'user') {
             branch.lastActivity = Date.now();
             branch.followupCount = 0;
@@ -302,11 +359,18 @@ export function commitConversationJobCommands(context, target, effectId, parts, 
     });
 }
 
+export function getConversationMemoryFingerprint(branch) {
+    return digest([branch.memorySummary ?? null, branch.memoryMessageCount ?? null, branch.memoryUpdatedAt ?? null, branch.memorySummaryThrough ?? null]);
+}
+
 /** Save a native memory summary on the branch, receipt-protected like any other effect. */
-export function commitConversationMemorySummary(context, target, { summary, throughId = '', count = 0 } = {}) {
+export function commitConversationMemorySummary(context, target, { summary, throughId = '', count = 0, memoryFingerprint } = {}) {
     const text = String(summary || '').trim();
     if (!text) throw conflict('The new memory summary was empty.');
     return commitConversationEffect(context, target, 'memory-summary', (branch, store) => {
+        if (memoryFingerprint === undefined || getConversationMemoryFingerprint(branch) !== memoryFingerprint) {
+            conflict('The Conversation memory changed before this summary could be saved.');
+        }
         const updatedAt = Date.now();
         branch.memorySummary = text;
         branch.memoryMessageCount = Number.isFinite(count) && count > 0 ? count : (branch.messages || []).length;

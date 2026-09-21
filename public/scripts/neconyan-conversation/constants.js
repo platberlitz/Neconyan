@@ -99,10 +99,6 @@ export const LAST_PREVIEW_PREFIX = 'sb_conv_last_preview_';
 export const UNREAD_PREFIX = 'sb_conv_unread_';
 export const SCHEDULE_PREFIX = 'sb_conv_schedule_';
 export const FOLLOWUP_COUNT_PREFIX = 'sb_conv_followup_count_';
-export const AUTO_WORKER_INTERVAL_MS = 30000;
-export const AUTO_WORKER_WAIT_TIMEOUT_MS = 45000;
-export const AUTO_WORKER_WAIT_POLL_MS = 200;
-export const AUTO_WORKER_INTERVAL_GLOBAL_KEY = '__sbConversationAutoWorkerIntervalId';
 export const MAX_THREAD_MESSAGES = 250;
 export const TRANSCRIPT_MESSAGE_LIMIT = 32;
 export const SCHEDULE_STATUSES = Object.freeze(['online', 'idle', 'dnd', 'offline']);
@@ -118,7 +114,6 @@ export const DEFAULT_CONVERSATION_REPLY_MAX_TOKENS = 16000;
 export const MAX_CONVERSATION_REPLY_MAX_TOKENS = 64000;
 export const CONVERSATION_ERROR_DETAIL_MAX_LENGTH = 180;
 export const STATUS_NOTICE_COOLDOWN_MS = 30 * 60 * 1000;
-export const REMINDER_RETRY_DELAY_MS = 60 * 1000;
 export const CONVERSATION_ATTACHMENT_MAX_FILES = 4;
 export const CONVERSATION_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
 export const CONVERSATION_ATTACHMENT_ALLOWED_EXTENSIONS = Object.freeze([
@@ -132,7 +127,6 @@ export const CONVERSATION_ATTACHMENT_ACCEPT = [
     ...CONVERSATION_ATTACHMENT_ALLOWED_EXTENSIONS,
 ].join(',');
 export const PARTNER_FOLLOWUP_RECENT_WINDOW = 6;
-export const PARALLEL_CHIME_MAX_PARTNERS = 2;
 export const GROUP_MAX_CONCURRENT_SPEAKERS = 2;
 export const GROUP_SECOND_REPLY_CHANCE = 0.3;
 export const GROUP_ASIDE_CONTEXT_LIMIT = 8;

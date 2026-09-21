@@ -3,7 +3,11 @@ import fs from 'node:fs';
 import { tryWriteFileSync } from './util.js';
 import { MAX_THREAD_MESSAGES } from '../public/scripts/neconyan-conversation/constants.js';
 import { countConversationUnread } from '../public/scripts/neconyan-conversation/notification-utils.js';
-import { validateStoreStructure } from './endpoints/conversation-utils.js';
+import { isAutomaticConversationMessage, repairConversationBranchMessageIds, seedConversationReadBoundary, validateStoreStructure } from './endpoints/conversation-utils.js';
+
+const PROTECTED_STORE_KEYS = ['serverOperations', 'groupAsideLastSent', 'runtimeStatusOverrides', 'automation'];
+const REMINDER_STATUS_KEYS = ['fired', 'firedAt', 'skippedAt', 'invalidAt', 'invalidReason', 'retryAfter'];
+const MEMORY_FIELDS = ['memorySummary', 'memoryMessageCount', 'memoryUpdatedAt', 'memorySummaryThrough'];
 
 export function getSettingsVersion(settings) {
     const version = Number(settings?._version);
@@ -69,6 +73,14 @@ function stampConversationMessages(conversation, previous, allowRetention, write
             const after = Array.isArray(branch.messages) ? branch.messages : [];
             const beforeHash = getConversationMessagesHash(before);
             let appendOnly = after.length >= before.length && getConversationMessagesHash(after.slice(0, before.length)) === beforeHash;
+            if (!appendOnly && after.length >= before.length) {
+                // Only the exact server identity repair is exempt, never arbitrary
+                // ID/timestamp changes that could retarget an accepted reply.
+                const repaired = { messages: before };
+                if (repairConversationBranchMessageIds(repaired)) {
+                    appendOnly = getConversationMessagesHash(after.slice(0, before.length)) === getConversationMessagesHash(repaired.messages);
+                }
+            }
             if (!appendOnly && allowRetention && after.length === MAX_THREAD_MESSAGES) {
                 // Only a retained, unchanged suffix followed by new messages is a trim.
                 for (let dropped = 1; dropped < before.length; dropped += 1) {
@@ -106,9 +118,12 @@ function stripProtectedConversationState(conversation) {
         return conversation;
     }
     const stripped = { ...conversation };
-    delete stripped.serverOperations;
-    delete stripped.groupAsideLastSent;
-    delete stripped.runtimeStatusOverrides;
+    for (const key of PROTECTED_STORE_KEYS) delete stripped[key];
+    if (Array.isArray(stripped.reminders)) stripped.reminders = stripped.reminders.map(reminder => {
+        const value = { ...reminder };
+        for (const key of REMINDER_STATUS_KEYS) delete value[key];
+        return value;
+    });
 
     const characters = stripped.characters;
     if (!isPlainObject(characters)) {
@@ -127,15 +142,18 @@ function stripProtectedConversationState(conversation) {
                 continue;
             }
             const rest = { ...branch };
+            for (const field of MEMORY_FIELDS) delete rest[field];
             delete rest.serverOperations;
             delete rest.automationClaims;
             delete rest.pendingPresentations;
             delete rest.readThrough;
+            delete rest.unread;
             delete rest.messageEditRevision;
             delete rest.messageContentHash;
             branches[id] = rest;
         }
         nextCharacters[key] = { ...thread, branches };
+        for (const field of MEMORY_FIELDS) delete nextCharacters[key][field];
     }
     return { ...stripped, characters: nextCharacters };
 }
@@ -150,7 +168,7 @@ function isConversationManaged(conversation) {
     if (!isPlainObject(conversation)) {
         return false;
     }
-    if (hasEntries(conversation.serverOperations) || hasEntries(conversation.groupAsideLastSent) || hasEntries(conversation.runtimeStatusOverrides)) {
+    if (PROTECTED_STORE_KEYS.some(key => hasEntries(conversation[key]))) {
         return true;
     }
     const characters = conversation.characters;
@@ -189,7 +207,7 @@ function protectedConversationShape(conversation) {
         return null;
     }
     const shape = {};
-    for (const key of ['serverOperations', 'groupAsideLastSent', 'runtimeStatusOverrides']) {
+    for (const key of PROTECTED_STORE_KEYS) {
         shape[key] = conversation[key] ?? null;
     }
     const characters = conversation.characters;
@@ -231,33 +249,66 @@ function conversationChanged(incoming, current) {
  * stripped: copying a branch does not copy another branch's execution history.
  * Store-level bookkeeping always comes from the server.
  */
-function restoreProtectedConversationState(conversation, currentConversation) {
+function restoreProtectedConversationState(conversation, currentConversation, { restoreSnapshot = false } = {}) {
     if (!isPlainObject(conversation)) {
         return conversation;
     }
     const currentCharacters = currentConversation?.characters;
     const restored = { ...conversation };
-    for (const key of ['serverOperations', 'groupAsideLastSent', 'runtimeStatusOverrides']) {
+    for (const key of PROTECTED_STORE_KEYS) {
         if (currentConversation?.[key] !== undefined) {
             restored[key] = currentConversation[key];
         } else {
             delete restored[key];
         }
     }
+    if (Array.isArray(restored.reminders)) {
+        const previousReminders = new Map((currentConversation?.reminders || []).map(reminder => [reminder.id, reminder]));
+        restored.reminders = restored.reminders.map(reminder => {
+            const value = { ...reminder };
+            const previous = previousReminders.get(reminder.id);
+            if (!previous) return value;
+            for (const key of REMINDER_STATUS_KEYS) {
+                if (Object.hasOwn(previous, key)) value[key] = previous[key];
+                else delete value[key];
+            }
+            return value;
+        });
+    }
     if (!isPlainObject(conversation.characters)) {
         return restored;
     }
+    let automaticAppend = false;
+    let knownAutomatic;
     const characters = Object.fromEntries(Object.entries(conversation.characters).map(([key, thread]) => {
         if (!isPlainObject(thread) || !isPlainObject(thread.branches)) return [key, thread];
         const branches = Object.fromEntries(Object.entries(thread.branches).map(([id, branch]) => {
             if (!isPlainObject(branch)) return [id, branch];
-            const previous = currentCharacters?.[key]?.branches?.[id];
+            const original = currentCharacters?.[key]?.branches?.[id];
+            const previous = isPlainObject(original) ? { ...original } : null;
             const updated = { ...branch };
+            if (!restoreSnapshot && currentConversation?.automation?.mode === 'server') {
+                const oldIds = new Set((previous?.messages || []).map(message => message.id).filter(Boolean));
+                for (const message of branch.messages || []) {
+                    if (!isAutomaticConversationMessage(message) || oldIds.has(message.id)) continue;
+                    knownAutomatic ??= new Set(Object.values(currentCharacters || {}).flatMap(savedThread => Object.values(savedThread?.branches || {})
+                        .flatMap(savedBranch => (savedBranch.messages || []).filter(item => item.id && isAutomaticConversationMessage(item))
+                            .map(item => `${item.id}\u001f${getConversationMessagesHash([item])}`))));
+                    if (!message.id || !knownAutomatic.has(`${message.id}\u001f${getConversationMessagesHash([message])}`)) automaticAppend = true;
+                }
+            }
+            repairConversationBranchMessageIds(updated);
             delete updated.serverOperations;
             delete updated.automationClaims;
             delete updated.pendingPresentations;
             delete updated.readThrough;
             if (isPlainObject(previous) && String(previous.createdAt || '') === String(branch.createdAt || '')) {
+                repairConversationBranchMessageIds(previous);
+                seedConversationReadBoundary(previous);
+                for (const field of MEMORY_FIELDS) {
+                    if (Object.hasOwn(previous, field)) updated[field] = previous[field];
+                    else delete updated[field];
+                }
                 if (previous.serverOperations) updated.serverOperations = previous.serverOperations;
                 if (hasEntries(previous.automationClaims)) updated.automationClaims = previous.automationClaims;
                 const messages = Array.isArray(updated.messages) ? updated.messages : [];
@@ -282,11 +333,17 @@ function restoreProtectedConversationState(conversation, currentConversation) {
                     if (kept.length) updated.pendingPresentations = Object.fromEntries(kept);
                 }
             }
+            seedConversationReadBoundary(updated);
             return [id, updated];
         }));
-        return [key, { ...thread, branches }];
+        const restoredThread = { ...thread, branches };
+        if (currentCharacters?.[key]) for (const field of MEMORY_FIELDS) {
+            if (Object.hasOwn(currentCharacters[key], field)) restoredThread[field] = currentCharacters[key][field];
+            else delete restoredThread[field];
+        }
+        return [key, restoredThread];
     }));
-    return { ...restored, characters };
+    return automaticAppend ? null : { ...restored, characters };
 }
 
 /**
@@ -302,7 +359,7 @@ function restoreProtectedConversationState(conversation, currentConversation) {
  *   `trustedConversationEffects` - server-owned Conversation effect write; Conversation may change freely.
  *   `conversationOnly` - explicit version-checked Conversation store save; message content may change but server records are restored.
  */
-export function prepareSettingsSave(incomingSettings, currentSettings = {}, { trustedConversationEffects = false, conversationOnly = false, trustedConversationAppend = false, restoreSnapshot = false } = {}) {
+export function prepareSettingsSave(incomingSettings, currentSettings = {}, { trustedConversationEffects = false, conversationOnly = false, trustedConversationAppend = false, restoreSnapshot = false, acknowledgeAccount = '' } = {}) {
     const incomingVersion = getSettingsVersion(incomingSettings);
     const currentVersion = getSettingsVersion(currentSettings);
     const currentRevision = getSettingsRevision(currentSettings);
@@ -336,12 +393,15 @@ export function prepareSettingsSave(incomingSettings, currentSettings = {}, { tr
         // An explicit, version-checked Conversation store save may intentionally
         // edit or delete messages, but it may not forge the server's records or
         // drop its bookkeeping. A deleted or reset branch is left as supplied.
-        settings = isPlainObject(incomingConversation)
+        const restore = isPlainObject(incomingConversation) || isConversationManaged(currentConversation);
+        const restored = restore ? restoreProtectedConversationState(isPlainObject(incomingConversation) ? incomingConversation : {}, currentConversation, { restoreSnapshot }) : null;
+        if (restore && !restored) return { ok: false, currentVersion, conversationConflict: true };
+        settings = restore
             ? {
                 ...incomingSettings,
                 extension_settings: {
                     ...incomingSettings.extension_settings,
-                    sillybunny_conversation: restoreProtectedConversationState(incomingConversation, currentConversation),
+                    sillybunny_conversation: restored,
                 },
             }
             : incomingSettings;
@@ -368,11 +428,13 @@ export function prepareSettingsSave(incomingSettings, currentSettings = {}, { tr
         settingsRevision += 1;
         settings = incomingSettings;
         if (isPlainObject(incomingConversation)) {
+            const restored = restoreProtectedConversationState(incomingConversation, currentConversation);
+            if (!restored) return { ok: false, currentVersion, conversationConflict: true };
             settings = {
                 ...incomingSettings,
                 extension_settings: {
                     ...incomingSettings.extension_settings,
-                    sillybunny_conversation: restoreProtectedConversationState(incomingConversation, currentConversation),
+                    sillybunny_conversation: restored,
                 },
             };
         }
@@ -389,6 +451,12 @@ export function prepareSettingsSave(incomingSettings, currentSettings = {}, { tr
             sillybunny_conversation: stampConversationMessages(conversation, currentConversation, trustedConversationEffects || trustedConversationAppend, version) } };
         const validation = validateStoreStructure(settings.extension_settings.sillybunny_conversation, { strictMessages: false });
         if (!validation.valid) throw Object.assign(new Error(validation.error), { status: 400 });
+    }
+
+    if (acknowledgeAccount && incomingSettings._conversationOmitted === true && conversation?.automation?.mode === 'server') {
+        settings = { ...settings, extension_settings: { ...settings.extension_settings,
+            sillybunny_conversation: { ...settings.extension_settings.sillybunny_conversation,
+                automation: { ...conversation.automation, acknowledgement: { account: acknowledgeAccount, settingsRevision } } } } };
     }
 
     return {

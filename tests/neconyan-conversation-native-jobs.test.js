@@ -77,48 +77,32 @@ test('a successful readback hands pending presentations to the presenter', async
     expect(present).not.toHaveBeenCalled();
 });
 
-test('the chime fence reports an in-flight observation until it stops', () => {
-    expect(native.isObservingNativeConversationJob()).toBe(false);
-    native.observeNativeConversationJob('fence');
-    expect(native.isObservingNativeConversationJob()).toBe(true);
-    observers.get('fence').onStop();
-    expect(native.isObservingNativeConversationJob()).toBe(false);
-});
-
-test('the chime fence stands down until the first job list resolves', async () => {
-    let release;
-    list.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
-    const pending = native.resumeNativeConversationObservation();
-    expect(native.isObservingNativeConversationJob()).toBe(true);
-    release([]);
-    await pending;
-    expect(native.isObservingNativeConversationJob()).toBe(false);
-});
-
-test('a pruned job merges the saved store before releasing the chime fence', async () => {
+test('a pruned job stops observation and reads back its saved effects', async () => {
     let release;
     refresh.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
     native.observeNativeConversationJob('gone');
     observers.get('gone').onStop('missing');
     expect(refresh).toHaveBeenCalledWith('alice');
-    expect(native.isObservingConversationJob('gone')).toBe(true);
-    expect(native.isObservingNativeConversationJob()).toBe(true);
+    expect(native.isObservingConversationJob('gone')).toBe(false);
     release({ conflict: false });
     await tick();
     await tick();
     expect(native.isObservingConversationJob('gone')).toBe(false);
-    expect(native.isObservingNativeConversationJob()).toBe(false);
+    expect(present).toHaveBeenCalledWith('alice');
 });
 
-test('a failed refresh keeps the chime fence up instead of trusting stale state', async () => {
+test('a failed pruned-job refresh can be retried by discovery', async () => {
     refresh.mockRejectedValueOnce(new Error('offline'));
     native.observeNativeConversationJob('gone');
     observers.get('gone').onStop('missing');
     await tick();
     await tick();
-    expect(native.isObservingConversationJob('gone')).toBe(true);
-    expect(native.isObservingNativeConversationJob()).toBe(true);
-    native.stopNativeConversationObservation();
+    expect(native.isObservingConversationJob('gone')).toBe(false);
+    expect(present).not.toHaveBeenCalled();
+    list.mockResolvedValueOnce([]);
+    refresh.mockResolvedValueOnce({ conflict: false });
+    await native.resumeNativeConversationObservation();
+    expect(present).toHaveBeenCalledWith('alice');
 });
 
 test('late lists and readbacks are not adopted after an account change', async () => {

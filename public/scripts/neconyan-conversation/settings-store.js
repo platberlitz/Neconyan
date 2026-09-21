@@ -33,6 +33,10 @@ import {
 import { collectGroupConversationMemorySummaries, collectSoloConversationMemorySummary } from './memory-utils.js';
 import { renderConversationMemoryPanel } from './settings-panel.js';
 import { getConversationMessagePreviewText } from './thread-store.js';
+import { requestConversationBinding } from './bindings.js';
+import { refreshConversationStore } from './store-sync.js';
+import { getCurrentUserHandle } from '../user.js';
+import { createConversationSubmissionKey } from './message-identity-utils.js';
 
 export { collectGroupConversationMemorySummaries, collectSoloConversationMemorySummary };
 
@@ -375,45 +379,17 @@ export function getConversationSoloMemorySummary(avatar = getCurrentCharAvatar()
     return collectSoloConversationMemorySummary(getCurrentPersonaMemoryCharactersStore(personaId), avatar);
 }
 
-export function saveConversationMemorySummary(avatar, summary, messageCount, { branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {
-    const threadStore = getConversationThreadStore(avatar, { create: false, groupId, personaId });
+export async function saveConversationMemorySummary(avatar, summary, { branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId(), clearAll = false } = {}) {
+    const account = getCurrentUserHandle();
     const branch = getActiveConversationBranch(avatar, { branchId, create: false, groupId, personaId });
-    if (!threadStore || !branch) {
-        return;
-    }
-
-    const memorySummary = String(summary || '').trim();
-    const memoryMessageCount = Math.max(0, messageCount || 0);
-    branch.memorySummary = memorySummary;
-    branch.memoryMessageCount = memoryMessageCount;
-    branch.memoryUpdatedAt = Date.now();
-    if (!branchId || threadStore.activeBranchId === branch.id) {
-        threadStore.memorySummary = memorySummary;
-        threadStore.memoryMessageCount = memoryMessageCount;
-        threadStore.memoryUpdatedAt = branch.memoryUpdatedAt;
-    }
-    persistConversationStore();
+    if (!branch) return false;
+    await requestConversationBinding('summary/submit', { target: { avatar, groupId, personaId, branchId: branch.id },
+        branchCreatedAt: branch.createdAt, submissionKey: createConversationSubmissionKey(), summary: String(summary || '').trim(), clearAll }, account);
+    await refreshConversationStore(account);
     renderConversationMemoryPanel();
+    return true;
 }
 
 export function clearConversationMemorySummary(avatar = getCurrentCharAvatar(), { groupId = getConversationGroupIdForAvatar(avatar) } = {}) {
-    const threadStore = getConversationThreadStore(avatar, { create: false, groupId });
-    const branch = getActiveConversationBranch(avatar, { create: false, groupId });
-    if (!threadStore || !branch) {
-        return false;
-    }
-
-    threadStore.memorySummary = '';
-    threadStore.memoryMessageCount = 0;
-    threadStore.memoryUpdatedAt = Date.now();
-    Object.values(threadStore.branches || {}).forEach((item) => {
-        if (item && typeof item === 'object') {
-            item.memorySummary = '';
-            item.memoryMessageCount = 0;
-            item.memoryUpdatedAt = threadStore.memoryUpdatedAt;
-        }
-    });
-    persistConversationStore();
-    renderConversationMemoryPanel();
-    return true;
+    return saveConversationMemorySummary(avatar, '', { groupId, clearAll: true });
 }

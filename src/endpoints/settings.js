@@ -283,7 +283,7 @@ router.post('/save', function (request, response) {
             : {};
 
         // Neconyan: prevent one open device or tab from overwriting newer settings from another.
-        const preparedSave = prepareSettingsSave(request.body, currentSettings);
+        const preparedSave = prepareSettingsSave(request.body, currentSettings, { acknowledgeAccount: request.user.profile.handle });
         if (!preparedSave.ok) {
             return response.status(409).send({
                 error: preparedSave.conversationConflict ? 'conversation_conflict' : 'settings_conflict',

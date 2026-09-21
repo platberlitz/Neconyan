@@ -18,6 +18,10 @@ const threadStore = {
 };
 const composeConversationPersonaDescription = jest.fn(() => 'captured persona appendix');
 const generateConversationRaw = jest.fn(async () => 'new branch summary');
+const captureConversationTextBinding = jest.fn(async scope => ({ account: 'tester', scope: { target: scope }, bindingRequest: { participants: {} } }));
+const requestConversationBinding = jest.fn(async () => ({ job: { id: 'summary-job' } }));
+const refreshConversationStore = jest.fn(async () => ({}));
+const observeJob = jest.fn((_id, options) => { void options.onSnapshot().then(() => { options.onStop('done'); options.onDone({ state: 'completed' }); }); });
 const getConversationGroupMemorySummaries = jest.fn(() => [{ groupId: 'group-a', groupName: 'Group A', summary: 'captured group memory' }]);
 const getConversationParticipants = jest.fn(() => [{ avatar: 'char.png', name: 'Aster' }]);
 const getConversationSoloMemorySummary = jest.fn(() => ({ summary: 'captured solo memory' }));
@@ -36,7 +40,10 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.
     getCurrentCharName: () => 'Aster',
     parsePositiveInt: (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback,
 }));
-await jest.unstable_mockModule('../public/scripts/neconyan-conversation/generation.js', () => ({ generateConversationRaw }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/generation.js', () => ({ generateConversationRaw, captureConversationTextBinding }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/bindings.js', () => ({ requestConversationBinding }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({ refreshConversationStore }));
+await jest.unstable_mockModule('../public/scripts/jobs.js', () => ({ observeJob }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/media.js', () => ({
     getCharacterAuthorNote: () => '',
     getCharacterForAvatar: avatar => ({ avatar, name: 'Aster' }),
@@ -93,6 +100,10 @@ describe('conversation prompt captured identity', () => {
         });
         composeConversationPersonaDescription.mockClear();
         generateConversationRaw.mockReset().mockResolvedValue('new branch summary');
+        captureConversationTextBinding.mockClear();
+        requestConversationBinding.mockClear();
+        refreshConversationStore.mockClear();
+        observeJob.mockClear();
         getConversationGroupMemorySummaries.mockClear();
         getConversationParticipants.mockClear();
         getConversationSoloMemorySummary.mockClear();
@@ -134,37 +145,42 @@ describe('conversation prompt captured identity', () => {
         });
     });
 
-    test('uses selected branch memory count instead of the thread-level count', async () => {
+    test('submits the captured branch to native summary work and observes its saved completion', async () => {
         await expect(updateConversationMemorySummary('char.png', {
             branchId: 'branch-a',
             groupId: '',
             personaId: 'persona-a.png',
         })).resolves.toBe(true);
 
-        expect(generateConversationRaw).toHaveBeenCalledTimes(1);
-        expect(generateConversationRaw.mock.calls[0][0].prompt).toContain('Captured User');
-        expect(saveConversationMemorySummary).toHaveBeenCalledWith('char.png', 'new branch summary', 24, {
-            branchId: 'branch-a',
-            groupId: '',
-            personaId: 'persona-a.png',
-        });
+        expect(captureConversationTextBinding).toHaveBeenCalledWith({ avatar: 'char.png', branchId: 'branch-a', groupId: '', personaId: 'persona-a.png' });
+        expect(requestConversationBinding).toHaveBeenCalledWith('summary/submit', expect.objectContaining({ target: { avatar: 'char.png', branchId: 'branch-a', groupId: '', personaId: 'persona-a.png' }, force: false }), 'tester');
+        expect(refreshConversationStore).toHaveBeenCalledWith('tester');
+        expect(generateConversationRaw).not.toHaveBeenCalled();
+        expect(saveConversationMemorySummary).not.toHaveBeenCalled();
     });
 
-    test('does not save a memory completion after branch messages change', async () => {
-        let resolveGeneration;
-        generateConversationRaw.mockImplementationOnce(() => new Promise((resolve) => {
-            resolveGeneration = resolve;
-        }));
-
+    test('a refused native completion never writes a browser summary', async () => {
+        observeJob.mockImplementationOnce((_id, options) => { options.onStop('done'); options.onDone({ state: 'failed' }); });
         const update = updateConversationMemorySummary('char.png', {
             branchId: 'branch-a',
             groupId: '',
             personaId: 'persona-a.png',
         });
         branch.messages[0].mes = 'edited while summarizing';
-        resolveGeneration('stale summary');
 
         await expect(update).resolves.toBe(false);
         expect(saveConversationMemorySummary).not.toHaveBeenCalled();
+    });
+
+    test('native memory refresh submits on HTTP browsers without randomUUID', async () => {
+        const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+        Object.defineProperty(globalThis, 'crypto', { value: {}, configurable: true });
+        try {
+            await expect(updateConversationMemorySummary('char.png', { branchId: 'branch-a' })).resolves.toBe(true);
+            expect(requestConversationBinding.mock.calls[0][1].submissionKey).toMatch(/^sub_\d+_/);
+        } finally {
+            if (descriptor) Object.defineProperty(globalThis, 'crypto', descriptor);
+            else delete globalThis.crypto;
+        }
     });
 });

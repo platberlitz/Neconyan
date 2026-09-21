@@ -14,7 +14,7 @@ import {
     getConversationThreadStore,
     getCurrentCharAvatar,
 } from './context.js';
-import { createConversationMessageAnchors, getConversationMessageRevision } from './message-identity-utils.js';
+import { createConversationMessageAnchors, createConversationSubmissionKey, getConversationMessageRevision } from './message-identity-utils.js';
 import { observeNativeConversationJob } from './native-jobs.js';
 import { preflightConversationBinding } from './bindings.js';
 import { getConversationPersonaName } from './personas.js';
@@ -502,24 +502,13 @@ function resolveReplyTargetAnchor(replyTarget, messages) {
 
 let pendingSubmission = null;
 
-function createSubmissionKey() {
-    try {
-        if (globalThis.crypto?.randomUUID) {
-            return globalThis.crypto.randomUUID();
-        }
-    } catch {
-        /* fall through to a timestamp key */
-    }
-    return `sub_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-}
-
 /** Reuse the key of a submission whose response was lost, so a retry cannot duplicate it. */
 function resolveSubmissionKey(payload, account) {
     const signature = JSON.stringify([payload.mode, payload.target, payload.branchCreatedAt, payload.messages, payload.triggers, payload.replyTarget, payload.force, payload.timeZone, payload.bindingRequest]);
     if (pendingSubmission && pendingSubmission.account === account && pendingSubmission.signature === signature) {
         return pendingSubmission.key;
     }
-    return createSubmissionKey();
+    return createConversationSubmissionKey();
 }
 
 async function acceptConversationSubmission(payload, meta = {}) {

@@ -20,6 +20,135 @@ const submitPresentationReply = account => account.post('/api/neconyan-conversat
 });
 
 for (const phone of [false, true]) {
+    test(`${phone ? 'phone' : 'desktop'} ownership memory refresh updates its open panel and cannot undo a later clear`, async ({ app }) => {
+        const account = await app.account({ phone });
+        const page = await account.open();
+        await page.locator('[data-sb-conversation-action="open-settings"]').click();
+        const navigation = page.locator('[data-sb-conversation-settings-navigation]');
+        if (await navigation.isVisible()) await navigation.selectOption('memory');
+        else await page.locator('[data-sb-conversation-settings-section="memory"]').click();
+        app.provider.mode.reply = { choices: [{ message: { content: 'Visible new memory.' } }] };
+        await page.locator('[data-sb-conversation-action="refresh-memory"]').click();
+        await expect(page.locator('#sb_conv_memory_summary')).toHaveValue('Visible new memory.');
+        app.provider.mode.hold = MODEL;
+        const response = page.waitForResponse(response => response.url().endsWith('/summary/submit'));
+        await page.locator('[data-sb-conversation-action="refresh-memory"]').click();
+        const accepted = await (await response).json();
+        await expect.poll(() => app.provider.calls.length).toBe(2);
+        page.once('dialog', dialog => dialog.accept());
+        await page.locator('[data-sb-conversation-action="clear-memory"]').click();
+        await expect(page.locator('#sb_conv_memory_summary')).toHaveValue('');
+        await app.release();
+        await account.settled(accepted.job.id, 'interrupted');
+        expect((await account.branch()).memorySummary).toBe('');
+        await expect(page.locator('#sb_conv_memory_summary')).toHaveValue('');
+        expect(app.provider.calls).toHaveLength(2);
+    });
+
+    test(`${phone ? 'phone' : 'desktop'} ownership memory refresh finishes after closing its page and rejects old timer writes`, async ({ app, browser }) => {
+        const account = await app.account({ phone });
+        const page = await account.open();
+        await page.locator('[data-sb-conversation-action="open-settings"]').click();
+        const navigation = page.locator('[data-sb-conversation-settings-navigation]');
+        if (await navigation.isVisible()) await navigation.selectOption('memory');
+        else await page.locator('[data-sb-conversation-settings-section="memory"]').click();
+        app.provider.mode.hold = MODEL;
+        app.provider.mode.reply = { choices: [{ message: { content: 'Server-kept memory.' } }] };
+        const response = page.waitForResponse(response => response.url().endsWith('/summary/submit'));
+        await page.locator('[data-sb-conversation-action="refresh-memory"]').click();
+        const accepted = await (await response).json();
+        expect(accepted.job.type).toBe('conversation.summary');
+        await expect.poll(() => app.provider.calls.length).toBe(1);
+        await page.close();
+        expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
+        await app.release();
+        await account.settled(accepted.job.id);
+        const branch = await account.branch();
+        expect(branch.memorySummary).toBe('Server-kept memory.');
+        expect(branch.memorySummaryThrough).toBe(branch.messages.at(-1).id);
+        await account.changeStore(store => {
+            const thread = store.characters[account.threadKey];
+            thread.memorySummary = thread.branches.main.memorySummary = 'Stale automatic timer';
+        });
+        expect((await account.branch()).memorySummary).toBe('Server-kept memory.');
+        const reopened = await account.open();
+        await reopened.locator('[data-sb-conversation-action="open-settings"]').click();
+        const select = reopened.locator('[data-sb-conversation-settings-navigation]');
+        if (await select.isVisible()) await select.selectOption('memory');
+        else await reopened.locator('[data-sb-conversation-settings-section="memory"]').click();
+        await expect(reopened.locator('#sb_conv_memory_summary')).toHaveValue('Server-kept memory.');
+        reopened.once('dialog', dialog => dialog.accept());
+        await reopened.locator('[data-sb-conversation-action="clear-memory"]').click();
+        await expect(reopened.locator('#sb_conv_memory_summary')).toHaveValue('');
+        expect((await account.branch()).memorySummaryThrough).toBe(branch.messages.at(-1).id);
+        expect(app.provider.calls).toHaveLength(1);
+    });
+
+    test(`${phone ? 'phone' : 'desktop'} ownership captures saved active settings and fires with every page closed`, async ({ app, browser }) => {
+        const account = await app.account({ phone, activeConnection: true });
+        const page = await account.open();
+        await page.evaluate(async () => { await (await import('/script.js')).saveSettings(0, { returnResult: true }); });
+        await expect.poll(async () => {
+            const settings = JSON.parse((await account.post('/api/settings/get')).settings);
+            const automation = (await account.store()).automation;
+            return automation?.mode === 'server' && automation?.acknowledgement?.account === 'default-user'
+                && automation?.acknowledgement?.settingsRevision === settings._settingsRevision;
+        }, { timeout: 25000 }).toBe(true);
+        expect((await account.store()).automation.timeZone).toBe(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone));
+        expect(await page.evaluate(() => window.__sbConversationAutoWorkerIntervalId)).toBeUndefined();
+        await page.close();
+        expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
+        await account.changeStore(store => { store.reminders.push({ id: 'ownership-reminder', avatar: account.avatar, personaId: account.personaId,
+            branchId: 'main', triggerAt: Date.now() - 1, text: 'Background saved connection', fired: false }); });
+        await expect.poll(async () => (await account.store()).reminders.find(item => item.id === 'ownership-reminder')?.fired, { timeout: 60000 }).toBe(true);
+        expect(app.provider.calls.filter(call => call.model === MODEL)).toHaveLength(1);
+        expect(Object.keys((await account.store()).automation.acceptedOccurrences)).toHaveLength(2);
+    });
+}
+
+test('ownership keeps failed reminders stopped until an explicit retry', async ({ app }) => {
+    const account = await app.account();
+    const page = await account.open();
+    await expect.poll(async () => (await account.store()).automation?.mode).toBe('server');
+    await page.close();
+    app.provider.mode.reply = null;
+    app.provider.mode.fail = true;
+    await account.changeStore(store => { store.reminders.push({ id: 'failed-reminder', avatar: account.avatar, personaId: account.personaId,
+        branchId: 'main', triggerAt: Date.now() - 1, text: 'Try only when I ask', fired: false }); });
+    let failed;
+    await expect.poll(async () => {
+        const { jobs } = await (await account.context.request.get('/api/jobs/list')).json();
+        failed = jobs.find(job => job.type === 'conversation.reply' && job.intent?.automation?.kind === 'reminder');
+        return failed?.state;
+    }, { timeout: 60000 }).toBe('failed');
+    expect(app.provider.calls).toHaveLength(1);
+    await delay(65000);
+    expect(app.provider.calls).toHaveLength(1);
+    app.provider.mode.fail = false;
+    app.provider.mode.reply = { choices: [{ message: { content: 'Retried reminder.' } }] };
+    await account.post(`/api/jobs/${failed.id}/retry`);
+    await account.settled(failed.id);
+    expect((await account.store()).reminders.find(item => item.id === 'failed-reminder').fired).toBe(true);
+    expect(app.provider.calls).toHaveLength(2);
+});
+
+test('ownership refuses an old browser automatic append while retaining manual image captions', async ({ app }) => {
+    const account = await app.account();
+    const page = await account.open();
+    await expect.poll(async () => (await account.store()).automation?.mode).toBe('server');
+    await page.close();
+    const current = await account.post('/api/neconyan-conversation/store/get');
+    const messages = current.store.characters[account.threadKey].branches.main.messages;
+    messages.push({ id: 'old-auto', role: 'character', mes: 'Old browser automatic reply', extra: { conversation_mode_auto: true } });
+    const rejected = await account.context.request.post('/api/neconyan-conversation/store/save', { headers: account.headers, data: current });
+    expect(rejected.status()).toBe(409);
+    expect((await account.branch()).messages.some(message => message.id === 'old-auto')).toBe(false);
+    messages.at(-1).extra = { conversation_mode_image: true };
+    await account.post('/api/neconyan-conversation/store/save', current);
+    expect((await account.branch()).messages.at(-1).mes).toBe('Old browser automatic reply');
+});
+
+for (const phone of [false, true]) {
     test(`${phone ? 'phone' : 'desktop'} presentation claims play zero-page narration once across two tabs`, async ({ app, browser }) => {
         const account = await app.account({ phone, tts: true });
         const accepted = await submitPresentationReply(account);
@@ -267,6 +396,8 @@ for (const condition of ['offline primary', 'autoresponder primary', 'explicit t
         const { account, partner } = await chimeAccount(app);
         await account.changeStore(store => {
             const thread = store.characters[account.threadKey];
+            // This case tests Send selection, not the later periodic mention policy.
+            store.userStatus = 'offline';
             if (condition === 'offline primary') thread.settings.availability = 'offline';
             if (condition === 'autoresponder primary') thread.settings.availability = 'dnd';
             if (condition === 'explicit target') thread.branches.main.messages.push({ id: 'reply-host', role: 'character', name: 'Durable Nova', mes: 'Ask me.', timestamp: 1700000000001 });
@@ -316,7 +447,7 @@ test('an image-only partner chime records its session and survives restart witho
     await reopened.close();
 });
 
-test('a refused chime-only occurrence finishes and leaves later reminders runnable after restart', async ({ app }) => {
+test('a cancelled send chime never repeats as automatic work and leaves later reminders runnable after restart', async ({ app }) => {
     const { account } = await chimeAccount(app);
     const page = await account.open();
     app.provider.mode.hold = MODEL;
@@ -333,14 +464,14 @@ test('a refused chime-only occurrence finishes and leaves later reminders runnab
     const current = await account.post('/api/neconyan-conversation/store/get');
     await account.post('/api/neconyan-conversation/automation/configure', { mode: 'server', timeZone: 'UTC', version: current.version });
     await app.restart();
-    let skipped;
-    await expect.poll(async () => {
-        const jobs = (await (await account.context.request.get('/api/jobs/list', { headers: account.headers })).json()).jobs;
-        skipped = jobs.find(job => job.type === 'conversation.reply' && job.id !== first.job.id && job.result?.skipped === 'chime-already-owned');
-        return skipped?.state;
-    }, { timeout: 40000 }).toBe('completed');
-    expect(skipped.children).toEqual([]);
+    // Observe two full scan intervals: ownership now prevents accepting a duplicate at all.
+    await delay(65000);
+    const jobs = (await (await account.context.request.get('/api/jobs/list', { headers: account.headers })).json()).jobs;
+    expect(jobs.filter(job => job.type === 'conversation.reply' && job.id !== first.job.id)).toEqual([]);
+    expect(Object.values((await account.store()).automation.acceptedOccurrences)).toContain(first.job.id);
+    expect((await account.branch()).messages.filter(message => message.role === 'partner')).toHaveLength(0);
     expect(app.provider.calls).toHaveLength(2);
+    expect(app.provider.calls.filter(isChimeCall)).toHaveLength(1);
     await account.changeStore(store => store.reminders.push({ id: 'after-refused-chime', avatar: account.avatar, personaId: account.personaId,
         groupId: '', branchId: 'main', triggerAt: Date.now() - 1, text: 'A later reminder still runs.', fired: false }));
     await app.restart();
@@ -687,6 +818,11 @@ for (const phone of [false, true]) {
             const account = await app.account({ phone, settings: { reply_delay_multiplier: restart ? 300 : 0 } });
             const history = Array.from({ length: count }, (_, index) => ({ id: `history-${index}`, role: 'user', name: 'User', mes: `Earlier ${index}`, timestamp: 1700000000000 + index }));
             await account.changeStore(store => { store.characters[account.threadKey].branches.main.messages = history; });
+            await account.post('/api/neconyan-conversation/summary/submit', {
+                submissionKey: 'retention-memory-coverage', summary: 'Earlier history already summarised.',
+                target: { avatar: account.avatar, personaId: account.personaId, branchId: 'main' },
+                branchCreatedAt: (await account.branch()).createdAt,
+            });
             app.provider.mode.reply = { choices: [{ message: { content: 'First. [reminder: 1h | Retention reminder]\n\n' + 'Remaining reply. '.repeat(40) } }] };
             const page = await account.open();
             const accepted = await send(page, 'First new input.\n\nSecond new input.');
@@ -750,6 +886,7 @@ for (const method of ['snapshot', 'folder', 'zip', 'reset then snapshot']) test(
     }
     const restored = await account.post('/api/neconyan-conversation/store/get');
     expect(restored.version).toBeGreaterThan(before.version);
+    expect(restored.store.automation.mode).toBe('server');
     expect(restored.store.characters[account.threadKey].branches.main.messages.map(message => message.mes)).toEqual(['Original question.']);
     await app.release();
     await account.settled(accepted.job.id, 'interrupted');

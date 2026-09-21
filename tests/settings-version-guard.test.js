@@ -43,6 +43,138 @@ describe('settings version guard', () => {
 
     const canonicalCopy = value => JSON.parse(JSON.stringify(value));
 
+    test('authoritative automatic history can be copied to branches and groups but new automatic content is refused', () => {
+        const message = { id: 'auto1', role: 'character', mes: 'Ping', extra: { conversation_mode_auto: true } };
+        const current = branchWrap(1, 1, { createdAt: 1, messages: [message] });
+        current.extension_settings.sillybunny_conversation.automation = { mode: 'server' };
+        for (const options of [{ conversationOnly: true }]) {
+            const incoming = canonicalCopy(current);
+            const chars = incoming.extension_settings.sillybunny_conversation.characters;
+            chars['nova.png'].branches.fork = { createdAt: 2, memorySummary: 'Copied memory', messages: [canonicalCopy(message)] };
+            chars['group:g1:nova.png'] = { branches: { main: canonicalCopy(chars['nova.png'].branches.fork) } };
+            const result = prepareSettingsSave(incoming, current, options);
+            expect(result.ok).toBe(true);
+            // Legacy whole-settings writers still cannot replace managed Conversation history.
+            expect(prepareSettingsSave(incoming, current)).toMatchObject({ ok: false, conversationConflict: true });
+            expect(result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.fork.memorySummary).toBe('Copied memory');
+            chars['nova.png'].branches.fork.messages[0].mes = 'New browser result';
+            expect(prepareSettingsSave(incoming, current, options)).toMatchObject({ ok: false, conversationConflict: true });
+            chars['nova.png'].branches.fork.messages[0] = { ...message, id: 'new-auto' };
+            expect(prepareSettingsSave(incoming, current, options)).toMatchObject({ ok: false, conversationConflict: true });
+            delete chars['nova.png'].branches.fork;
+            chars['nova.png'].branches.main.messages[0].mes = 'Edited in place';
+            expect(prepareSettingsSave(incoming, current, options).ok).toBe(true);
+        }
+    });
+
+    test('deterministic identity repair preserves accepted edit revisions and remaps the read boundary', () => {
+        const messages = [{ id: 'old unsafe id', role: 'character', mes: 'Already read' }, { role: 'system', mes: '' }];
+        const original = { createdAt: 1, messages, readThrough: 'old unsafe id', unread: 0, messageEditRevision: 3, messageContentHash: getConversationMessagesHash(messages) };
+        const current = branchWrap(5, 1, original);
+        const result = prepareSettingsSave(canonicalCopy(current), current, { conversationOnly: true });
+        const branch = result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main;
+        expect(branch.messageEditRevision).toBe(3);
+        expect(branch.readThrough).toBe(branch.messages[0].id);
+        expect(branch.unread).toBe(0);
+        expect(branch.messageContentHash).toBe(getConversationMessagesHash(branch.messages));
+        const edited = canonicalCopy(result.settings);
+        edited.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main.messages[0].mes = 'Changed text';
+        const changed = prepareSettingsSave(edited, result.settings, { conversationOnly: true });
+        expect(changed.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main.messageEditRevision).not.toBe(3);
+    });
+
+    test('stale summary timers cannot replace native memory on surviving branches or threads', () => {
+        const memory = { memorySummary: 'Server memory', memoryMessageCount: 2, memoryUpdatedAt: 7, memorySummaryThrough: 'last' };
+        const current = branchWrap(2, 1, { createdAt: 1, messages: [{ id: 'last', mes: 'Hello' }], ...memory });
+        Object.assign(current.extension_settings.sillybunny_conversation.characters['nova.png'], memory);
+        const incoming = canonicalCopy(current);
+        const thread = incoming.extension_settings.sillybunny_conversation.characters['nova.png'];
+        thread.memorySummary = thread.branches.main.memorySummary = 'Stale browser summary';
+        for (const options of [{ conversationOnly: true }, {}]) {
+            const result = prepareSettingsSave(incoming, current, options);
+            expect(result.ok).toBe(true);
+            const saved = result.settings.extension_settings.sillybunny_conversation.characters['nova.png'];
+            expect(saved).toMatchObject(memory);
+            expect(saved.branches.main).toMatchObject(memory);
+        }
+    });
+
+    test('legacy numeric unread is protected on every save, with id-less and empty messages retained', () => {
+        const original = { createdAt: 1, unread: 1, messages: [
+            { role: 'character', mes: 'Read' }, { role: 'system', mes: '' }, { role: 'character', mes: 'Unread' },
+        ] };
+        const current = branchWrap(2, 0, original);
+        const incoming = branchWrap(2, 0, { ...original, unread: 0 });
+        for (const options of [{ conversationOnly: true }, { restoreSnapshot: true }, {}]) {
+            const result = prepareSettingsSave(incoming, current, options);
+            expect(result.ok).toBe(true);
+            const branch = result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main;
+            expect(branch.unread).toBe(1);
+            expect(branch.readThrough).toBe(branch.messages[1].id);
+            expect(branch.messages.map(message => message.mes)).toEqual(['Read', '', 'Unread']);
+            expect(new Set(branch.messages.map(message => message.id)).size).toBe(3);
+        }
+        expect(original.messages.every(message => !message.id)).toBe(true);
+    });
+
+    test('ownership and receipts survive Conversation saves, imports and block-less resets', () => {
+        const current = branchWrap(2, 1, { createdAt: 1, messages: [] });
+        const protectedState = { automation: { mode: 'server', timeZone: 'Asia/Manila', acknowledgement: { account: 'alice', settingsRevision: 1 } },
+            serverOperations: { job: { at: 1 } }, groupAsideLastSent: { aside: 1 }, runtimeStatusOverrides: { speaker: { status: 'online' } } };
+        Object.assign(current.extension_settings.sillybunny_conversation, protectedState);
+        const forged = canonicalCopy(current);
+        forged.extension_settings.sillybunny_conversation.automation = { mode: 'browser' };
+        expect(prepareSettingsSave(forged, current).ok).toBe(false);
+        for (const options of [{ conversationOnly: true }, { restoreSnapshot: true }]) {
+            const result = prepareSettingsSave(forged, current, options);
+            expect(result.settings.extension_settings.sillybunny_conversation).toMatchObject(protectedState);
+        }
+        const reset = prepareSettingsSave({ _version: 2, _settingsRevision: 1, extension_settings: {} }, current, { restoreSnapshot: true });
+        expect(reset.settings.extension_settings.sillybunny_conversation).toEqual(protectedState);
+        expect(reset.settingsRevision).toBe(2);
+    });
+
+    test('only acknowledged new-client general saves refresh the background binding revision', () => {
+        const current = branchWrap(3, 1, { createdAt: 1, messages: [] });
+        current.extension_settings.sillybunny_conversation.automation = { mode: 'server', timeZone: 'UTC' };
+        const incoming = { _version: 3, _settingsRevision: 1, _conversationOmitted: true, extension_settings: {} };
+        const result = prepareSettingsSave(incoming, current, { acknowledgeAccount: 'alice' });
+        expect(result.settings.extension_settings.sillybunny_conversation.automation).toEqual({ mode: 'server', timeZone: 'UTC', acknowledgement: { account: 'alice', settingsRevision: 2 } });
+        expect(prepareSettingsSave(canonicalCopy(current), current, { acknowledgeAccount: 'alice' }).settings.extension_settings.sillybunny_conversation.automation.acknowledgement).toBeUndefined();
+        expect(current.extension_settings.sillybunny_conversation.automation.acknowledgement).toBeUndefined();
+    });
+
+    test('server ownership refuses stale automatic appends but permits manual images and historical imports', () => {
+        const original = { createdAt: 1, messages: [{ id: 'first', role: 'user', mes: 'Hello' }], unread: 0 };
+        const current = branchWrap(1, 0, original);
+        current.extension_settings.sillybunny_conversation.automation = { mode: 'server', timeZone: 'UTC' };
+        const incoming = canonicalCopy(current);
+        const extra = { conversation_mode_auto: true };
+        incoming.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main.messages.push({ id: 'stale', role: 'character', mes: 'Browser reply', extra });
+        expect(prepareSettingsSave(incoming, current, { conversationOnly: true })).toMatchObject({ ok: false, conversationConflict: true });
+        expect(prepareSettingsSave(incoming, current)).toMatchObject({ ok: false, conversationConflict: true });
+        expect(prepareSettingsSave(incoming, current, { restoreSnapshot: true }).ok).toBe(true);
+        delete extra.conversation_mode_auto;
+        extra.conversation_mode_image = true;
+        expect(prepareSettingsSave(incoming, current, { conversationOnly: true }).ok).toBe(true);
+    });
+
+    test('stale reminder status cannot undo firing or forget an accepted automatic occurrence', () => {
+        const current = branchWrap(2, 1, { createdAt: 1, messages: [] });
+        const store = current.extension_settings.sillybunny_conversation;
+        store.automation = { mode: 'server', acceptedOccurrences: { hashed: 'job-id' } };
+        store.reminders = [{ id: 'reminder', triggerAt: 123, text: 'Tea', fired: true, firedAt: 234 }];
+        const incoming = canonicalCopy(current);
+        incoming.extension_settings.sillybunny_conversation.reminders = [{ id: 'reminder', triggerAt: 123, text: 'Tea', fired: false }];
+        delete incoming.extension_settings.sillybunny_conversation.automation;
+        for (const options of [{ conversationOnly: true }, { restoreSnapshot: true }]) {
+            const result = prepareSettingsSave(incoming, current, options);
+            expect(result.ok).toBe(true);
+            expect(result.settings.extension_settings.sillybunny_conversation.reminders[0]).toMatchObject({ fired: true, firedAt: 234 });
+            expect(result.settings.extension_settings.sillybunny_conversation.automation).toEqual(store.automation);
+        }
+    });
+
     test('omitted messages, restores and same-identity recreation cannot reuse an old checkpoint', () => {
         const messages = [{ id: 'first', mes: 'First' }, { id: 'second', mes: 'Second' }];
         const original = { createdAt: 'same', messages, messageEditRevision: 3, messageContentHash: getConversationMessagesHash(messages) };

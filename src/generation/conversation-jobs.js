@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { deliverConversationReply } from '../../public/scripts/neconyan-conversation/reply-delivery.js';
 import { getConversationMessageRevision } from '../../public/scripts/neconyan-conversation/message-identity-utils.js';
 import { MAX_THREAD_MESSAGES } from '../../public/scripts/neconyan-conversation/constants.js';
-import { isConversationGroupSpeakerEligible } from '../../public/scripts/neconyan-conversation/partners-utils.js';
+import { collectConversationPartnerAvatars, isConversationGroupSpeakerEligible } from '../../public/scripts/neconyan-conversation/partners-utils.js';
 import { getCharacterData, getConversationSettings, getDefaultDirective } from '../endpoints/conversation-generation.js';
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import { validateConversationPayload } from '../endpoints/conversation-utils.js';
@@ -10,13 +10,14 @@ import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { acceptChildJobs, acceptJob, getJob, listJobs, mutateJobs, releaseChildJobs, releaseJob, requestCancellation, setJobResume, submissionKey as fingerprintSubmission, updateJob } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { createMacroEnvironment } from '../macros/index.js';
-import { appendConversationJobMessage, applyConversationBookkeeping, captureConversationTarget, prepareConversationTarget, commitConversationEffect, commitConversationJobCommands, commitConversationReplyNotice, readConversationEffectReceipt, readConversationTarget } from './conversation-effects.js';
+import { appendConversationJobMessage, applyConversationBookkeeping, captureConversationTarget, prepareConversationTarget, commitConversationEffect, commitConversationJobCommands, commitConversationReplyNotice, readConversationEffectReceipt, readConversationTarget, retainConversationAutomaticAcceptance, wasConversationAutomaticOccurrenceAccepted, acceptedConversationOccurrenceOwner } from './conversation-effects.js';
 import { runChatProfile } from './service.js';
 import { getChatProfileContextLimit } from './profiles.js';
 import { createConversationImageGenerator, conversationReplyWantsImage, lastUserMessageText } from './conversation-images.js';
 import { createConversationNarrator } from './conversation-narration.js';
-import { buildConversationParticipantPlan, buildConversationParticipantSnapshot, captureConversationParticipantBindings, buildAvailabilityAutoResponderText, buildDelayedReplyNoticeText, getConversationAvailabilityDecision, getInitialAvailabilityDelayMs, getReplyDelayMsForStatus, manualActivity, resolveParticipantActivity } from './conversation-participants.js';
+import { buildConversationParticipantPlan, buildConversationParticipantSnapshot, captureConversationParticipantBindings, buildAvailabilityAutoResponderText, buildDelayedReplyNoticeText, getConversationAvailabilityDecision, getInitialAvailabilityDelayMs, getReplyDelayMsForStatus, manualActivity, resolveParticipantActivity, resolveConversationPartners } from './conversation-participants.js';
 import { captureConversationRoleplaySource, getConversationAsideOccurrenceKey, getConversationGroupAsideCooldownMs, getConversationGroupAsideLastSent, normalizeConversationAsideSubmission } from './conversation-roleplay-source.js';
+import { isConversationAutomaticDirective, isConversationOccurrenceEnabled, conversationChimeOccurrenceKey, conversationReminderIdentityKey } from './conversation-auto-policy.js';
 
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const TERMINAL_JOB_STATES = new Set(['completed', 'cancelled', 'failed', 'interrupted', 'conflict']);
@@ -127,6 +128,7 @@ export async function preflightConversationBindings(request, body = {}) {
     verifyConversationAnchors(current, target, anchors);
     const explicitSpeaker = resolveManualSpeaker(current, target, anchors, body.speakerAvatar);
     const manualOptions = body.options ? validateManualOptions(body.options) : undefined;
+    assertBrowserAutomationAllowed(current, manualOptions);
     const proposedMessages = body.messages === undefined ? [] : normalizeInputMessages(body.messages);
     if (body.directive !== undefined && (typeof body.directive !== 'string' || body.directive.length > 20000)) fail('The Conversation directive is invalid.', 400);
     const participants = await captureConversationParticipantBindings(request, current, target, { explicitSpeaker, acknowledgement: body.acknowledgement,
@@ -171,6 +173,18 @@ function validateManualOptions(options) {
     return options;
 }
 
+function assertBrowserAutomationAllowed(current, options) {
+    if (current.store.automation?.mode !== 'server' || !options) return;
+    const prompt = options.prompt;
+    const message = Array.isArray(prompt)
+        ? prompt.find(entry => entry.identifier === 'conversation-reply-directive') || prompt.findLast(entry => entry.role === 'user')
+        : { content: prompt };
+    const text = Array.isArray(message?.content) ? message.content.filter(part => part.type === 'text').map(part => part.text).join('\n') : message?.content;
+    if (options.cacheScope === 'conversation-mode-memory' || isConversationAutomaticDirective(text)) {
+        throw Object.assign(new Error('Automatic Conversation messages are owned by the server for this account.'), { status: 409, apiError: 'automation_server_owned' });
+    }
+}
+
 export async function generateBoundConversationText(request, body, signal) {
     const options = validateManualOptions(body.options);
     const submitted = normalizeBindingRequest(body.bindingRequest);
@@ -187,6 +201,7 @@ export async function generateBoundConversationText(request, body, signal) {
     const assertSource = () => {
         const fresh = captureConversationTarget(request, body.target);
         const latest = readConversationTarget(request, fresh);
+        assertBrowserAutomationAllowed(latest, options);
         verifyConversationAnchors(latest, fresh, normalizeSubmissionAnchors(body));
         resolveManualSpeaker(latest, fresh, normalizeSubmissionAnchors(body), avatar);
     };
@@ -375,6 +390,9 @@ export async function finalizeConversationSubmission(request, job) {
     const directories = request.user.directories;
     job = getJob(directories, job.id);
     if (!job || job.cancellation?.requested || TERMINAL_JOB_STATES.has(job.state)) return job;
+    // A failed marker write leaves the paused job recoverable, never terminal
+    // and prunable before its occurrence has been durably remembered.
+    await retainConversationAutomaticAcceptance(request, job);
     if (!readArtifact(directories, job.id, 'request')) {
         try {
             verifyAcceptedBranch(request, job, captureConversationTarget(request, job.intent.target));
@@ -412,6 +430,9 @@ export async function finalizeConversationSubmission(request, job) {
             return getJob(directories, job.id);
         }
     }
+    // The frozen Send snapshot can add chime ownership. Keep the marker write
+    // outside preparation failure handling so a disk failure cannot be pruned.
+    await retainConversationAutomaticAcceptance(request, getJob(directories, job.id));
     releaseJob(directories, job.id);
     return getJob(directories, job.id);
 }
@@ -597,7 +618,15 @@ export async function acceptConversationAutonomousReply(request, occurrence) {
         if (existing.job.type !== 'conversation.reply' || hash(existing.job.intent) !== hash(intent)) fail('This occurrence key already belongs to another operation.');
         return { job: existing.job, created: false };
     }
-    const bindings = await captureConversationParticipantBindings(request, current, target, { plan: occurrence.participants });
+    const bindings = await captureConversationParticipantBindings(request, current, target, {
+        plan: occurrence.participants, acknowledgement: current.store.automation?.acknowledgement,
+    });
+    const fresh = await assertAutomaticOccurrenceEnabled(request, target, intent.automation, intent.plan);
+    const reminderId = intent.automation.patch?.reminder?.id || intent.plan[0]?.extra?.reminder_id;
+    if (wasConversationAutomaticOccurrenceAccepted(fresh.store, occurrence.key)
+        || (reminderId && wasConversationAutomaticOccurrenceAccepted(fresh.store, conversationReminderIdentityKey(reminderId)))) {
+        fail('This automatic occurrence already ran. Retry its saved job explicitly.');
+    }
     const accepted = acceptJob(directories, { owner, type: 'conversation.reply', submissionKey: occurrence.key, intent, automatic: true, paused: true,
         coalesce: { deadline: 0, members: [] },
         target: { kind: 'conversation', id: getConversationThreadKey(target.avatar, target.groupId, target.personaId), branchId: target.branchId, createdAt: target.createdAt },
@@ -605,6 +634,48 @@ export async function acceptConversationAutonomousReply(request, occurrence) {
     noteOwner(owner);
     await finalizeConversationSubmission(request, accepted.job);
     return { job: getJob(directories, accepted.job.id), created: accepted.created };
+}
+
+async function assertAutomaticOccurrenceEnabled(request, target, automation, plan) {
+    let current = readConversationTarget(request, target);
+    let partners = [];
+    if (automation.kind === 'chime') {
+        partners = await resolveConversationPartners(request, current, target, Date.now(), current.store.automation?.timeZone || 'UTC');
+        current = readConversationTarget(request, target);
+    }
+    const settings = getConversationSettings(request, current.store, target.avatar, target.groupId, {}, { personaId: target.personaId });
+    const eligible = new Set(collectConversationPartnerAvatars(target.avatar, settings, current.branch.messages, current.group)
+        .filter(avatar => !target.groupId || isConversationGroupSpeakerEligible(current.group, avatar)));
+    if (!isConversationOccurrenceEnabled({ kind: automation.kind, roleplaySource: automation.roleplaySource, settings, store: current.store,
+        branch: current.branch, target, plan, patch: automation.patch, partners: partners.filter(partner => eligible.has(partner.avatar)),
+        reminderId: automation.patch?.reminder?.id || plan?.[0]?.extra?.reminder_id })) {
+        fail('This automatic Conversation behaviour is no longer enabled.');
+    }
+    return current;
+}
+
+/** Explicit retry can rebuild preparation only when no frozen request exists. */
+export async function retryConversationRoot(request, job) {
+    const directories = request.user.directories;
+    if (job.owner !== request.user.profile.handle || job.type !== 'conversation.reply' || job.intent?.mode !== 'auto'
+        || job.children?.length || !['failed', 'interrupted'].includes(job.state)) fail('This Conversation preparation cannot be retried.');
+    if (readArtifact(directories, job.id, 'request') !== undefined) fail('This Conversation already has a saved request.');
+    const target = await prepareConversationTarget(request, job.intent.target);
+    verifyAcceptedBranch(request, job, target);
+    const current = readConversationTarget(request, target);
+    const bindings = await captureConversationParticipantBindings(request, current, target, {
+        plan: job.intent.plan, acknowledgement: current.store.automation?.acknowledgement,
+    });
+    await assertAutomaticOccurrenceEnabled(request, target, job.intent.automation, job.intent.plan);
+    const latest = getJob(directories, job.id);
+    if (!latest || !['failed', 'interrupted'].includes(latest.state) || latest.cancellation?.requested) fail('This Conversation can no longer be retried.');
+    const retried = updateJob(directories, job.id, {
+        state: 'waiting', stage: 'preparing', error: null, result: null, finishedAt: null, dismissed: false,
+        recoverability: 'resumable', credentialRef: Object.values(bindings)[0],
+        config: { ...latest.config, participantBindings: bindings },
+    }).job;
+    noteOwner(job.owner);
+    return retried;
 }
 
 /**
@@ -701,7 +772,9 @@ function claimChimeOccurrence(context, snapshot) {
     const { avatar, groupId, personaId, branchId, createdAt } = snapshot.target;
     const key = hash({ avatar, groupId, personaId, branchId, createdAt, activity });
     const request = { user: { profile: { handle: context.owner }, directories: context.directories } };
-    const branch = readConversationTarget(request, snapshot.target).branch;
+    const { branch, store: conversation } = readConversationTarget(request, snapshot.target);
+    const durableOwner = acceptedConversationOccurrenceOwner(conversation, conversationChimeOccurrenceKey(snapshot.target, activity));
+    if (durableOwner && durableOwner !== context.job.id) return false;
     return mutateJobs(context.directories, store => {
         const jobs = Object.values(store.jobs);
         const owner = jobs.find(job => job.config?.chimeClaim === key);

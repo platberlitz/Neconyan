@@ -1,3 +1,10 @@
+export function createConversationSubmissionKey(prefix = 'sub') {
+    try {
+        if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+    } catch { /* HTTP connections can lack the secure-context UUID method. */ }
+    return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
 function normalizeConversationRevisionValue(value) {
     if (Array.isArray(value)) {
         return value.map(normalizeConversationRevisionValue);

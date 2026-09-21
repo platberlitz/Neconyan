@@ -7,7 +7,42 @@ document; this file only records what is actually finished and what is not.
 Status values: `done` (implemented and verified), `partial` (implemented but an
 acceptance case is unproven), `pending` (not started).
 
-## Current checkpoint: native unread, presentation and narration
+## Current checkpoint: automatic Conversation ownership
+
+- `done` The app persists server ownership, timezone and acknowledged saved settings
+  for background use. Successful general saves acknowledge their new revision in
+  the same write. Browser periodic execution, automatic timers, the memory-summary
+  timer and native-observation chime fence are removed; Roleplay rendered-message
+  sampling still submits native asides.
+- `done` Ownership, accepted occurrences and all legacy unread state are protected
+  across saves, imports and reset. Exact deterministic identity repair preserves
+  accepted history revisions. Authoritative automatic history can be copied into
+  branches/groups while stale new automatic appends are refused.
+- `done` Stable reminder identity and durable chime/summary ownership survive
+  cancellation and job pruning. Boot migration runs before plugins/listeners/jobs;
+  failed migration holds pruning. Markers are not evicted to permit repeat work.
+  Failed/interrupted occurrences require explicit retry through their saved job.
+- `done` Memory refresh and manual memory writes are native. Current fingerprints
+  prevent a pending summary from undoing a later clear or overwrite. Legacy jobs
+  lacking this proof refuse before provider dispatch and need a new explicit
+  Refresh memory request rather than retrying their old job. Summary scheduling and
+  preparation share attachment-aware eligibility and persona-scoped identity.
+- `done` All 145 disposable Chromium cases passed in one full serial run (1.3 hours),
+  including eight new ownership cases at desktop 1280x900 and touch 393x852.
+  The first run passed 144/145; one old assertion expected a duplicate chime job
+  now prevented at acceptance. The corrected no-duplicate/two-scan/later-reminder
+  case passed alone and in the complete rerun. The earlier focused 21-case run
+  is recorded separately in the handover.
+- `done` Independent reviews verified actual pura-openai/gpt-6-astra assistant
+  metadata with variant max. Every stage-local finding was fixed and re-reviewed.
+  Full checks: 335 Jest suites, 4,409 passed and two skipped (4,411 total), one
+  snapshot; 267 Node tests passed; root lint, budgets and whitespace passed.
+  Changed-test lint: zero errors, 45 warnings.
+- `pending` Roleplay generation and completion writes, followed by the remaining
+  whole-application scope below. Manual Conversation regeneration, polishing,
+  schedule controls and selfie coordination still need native completion writes.
+
+## Historical checkpoint: native unread, presentation and narration
 
 - `done` Native messages save unread and pending presentations with completion
   receipts. One tab wins each claim; observed read boundaries preserve unseen
@@ -43,7 +78,7 @@ acceptance case is unproven), `pending` (not started).
   uploads and preliminary aside saves, initial settings ownership, queued saves,
   observer read coalescing and test opt-in/process handling. Thumbnail responses
   also have deterministic coverage for equal-size/equal-time cache collisions.
-- Latest checks: 335 unit suites, 4,395 tests passed and two skipped (4,397
+- Checks at that checkpoint: 335 unit suites, 4,395 tests passed and two skipped (4,397
   total), one snapshot; 257 Node tests passed. Root lint, frontend budgets and
   whitespace checks passed. Changed-test lint: zero errors, 43 warnings.
 - `done` Resolve findings a-e: pre-migration baseline/version capture, bounded
@@ -74,12 +109,8 @@ acceptance case is unproven), `pending` (not started).
 - `done` Native solo partner chimes run through the durable jobs: a server-side
   occurrence claim gives exactly one root ownership, and the browser chime path
   stands down while a native job is in flight, awaiting or syncing.
-- `pending` Automatic-ownership handover: persist ownership/timezone and acknowledged
-  background bindings, remove browser periodic execution and timers, protect
-  ownership and legacy unread through saves/import/reset, preserve Roleplay
-  rendered-message sampling and fix reminder retry identity. Current guards refuse
-  browser dispatch/delivery after learning server mode, not before a stale page
-  learns it. Roleplay generation/completion migration follows.
+- `done` Automatic-ownership handover followed this checkpoint; see the current
+  checkpoint above. The browser worker and observation fence are now removed.
 - Safari, unresolved image-provider crash recovery and reload-persistent send
   retry identity are unverified. Manual Conversation completion writes still
   depend on the browser. Deployment remains unauthorised.
@@ -216,12 +247,13 @@ The older results below describe earlier checkpoints, not the latest totals.
   revisions and explicit reply-target anchors, browser observation merges
   authoritative results, and a version-checked Conversation save path plus a
   strengthened settings guard protect server-owned messages and records from old
-  whole-store writes. Send-triggered solo partner chimes run through the same family with a server-side
-  occurrence claim and a browser fence while a native reply is observed.
-  Native unread/presentation claims and supported narration are verified. Remaining:
-  full automatic-ownership handover, including removal of the browser worker and
-  legacy unread fallback. Text-completion and acknowledged active bindings are
-  implemented.
+  whole-store writes. Send-triggered solo partner chimes run through the same family
+  with durable occurrence ownership. Native unread/presentation claims, supported
+  narration, automatic ownership and native memory controls are verified. The
+  browser automatic worker and legacy unread fallback are removed. Remaining
+  Conversation work includes manual regeneration, polishing, scheduling and image
+  coordination completion writes. Text-completion and acknowledged active bindings
+  are implemented.
 - `pending` Meower.
 - `pending` Prompting Lab, Distiller, LoreStitch, World Info Lab.
 - `pending` remaining bundled model and file workflows.

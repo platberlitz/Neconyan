@@ -1,10 +1,7 @@
 export const conversationState = {
     initialized: false,
-    autoWorkerStarted: false,
+    runtimeStarted: false,
     conversationCssLoaded: false,
-    autoWorkerIntervalId: null,
-    autoWorkerAbortController: null,
-    autoWorkerBusy: false,
     externalGenerationActive: false,
     generationActive: false,
     conversationReplyBusy: false,
@@ -32,12 +29,8 @@ export const conversationState = {
 
 export const runtimeStatusOverrides = new Map();
 export const memorySummaryBusyAvatars = new Set();
-export const memorySummaryTimers = new Map();
 export const activeTypingParticipants = new Map();
-export const partnerReplyBusyKeys = new Set();
 export const groupAsideBusyKeys = new Set();
-export const groupAsideLastSent = new Map();
-export const conversationTimeouts = new Set();
 export const activeConversationGenerationOperations = new Set();
 export const activeConversationReplyOperations = new Set();
 export const regenerationBusyKeys = new Set();

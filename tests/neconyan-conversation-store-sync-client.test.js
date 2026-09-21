@@ -70,6 +70,53 @@ afterEach(() => {
 });
 
 describe('conversation store synchronisation', () => {
+    test('ownership capture persists the timezone and acknowledged settings once', async () => {
+        const saved = store({});
+        seed(saved, 7);
+        const acknowledgement = { account: 'tester', settingsRevision: 3 };
+        let version = 7;
+        const configurations = [];
+        globalThis.fetch = async (url, options) => {
+            if (url.endsWith('/automation/configure')) {
+                const body = JSON.parse(options.body);
+                configurations.push(body);
+                saved.automation = { mode: body.mode, timeZone: body.timeZone, acknowledgement: body.acknowledgement };
+                version++;
+                return jsonResponse(200, { version, automation: saved.automation });
+            }
+            return jsonResponse(200, { store: saved, version });
+        };
+        await storeSync.ensureConversationAutomationOwnership({ acknowledgement });
+        await storeSync.ensureConversationAutomationOwnership({ acknowledgement });
+        expect(configurations).toEqual([{ mode: 'server', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', version: 7, acknowledgement }]);
+        expect(storeSync.getConversationSavedVersion()).toBe(8);
+        expect(extension_settings[KEY].automation.acknowledgement).toEqual(acknowledgement);
+    });
+
+    test('ownership capture refreshes a raced version and never acknowledges stale controls', async () => {
+        seed(store({}), 7);
+        const saved = store({});
+        let version = 7;
+        const configurations = [];
+        globalThis.fetch = async (url, options) => {
+            if (url.endsWith('/automation/configure')) {
+                const body = JSON.parse(options.body);
+                configurations.push(body);
+                if (configurations.length === 1) {
+                    version = 9;
+                    return jsonResponse(409, { error: 'active_settings_ack_stale', version });
+                }
+                saved.automation = { mode: body.mode, timeZone: body.timeZone };
+                return jsonResponse(200, { version: ++version });
+            }
+            return jsonResponse(200, { store: saved, version });
+        };
+        await storeSync.ensureConversationAutomationOwnership({ acknowledgement: { account: 'tester', settingsRevision: 1 } });
+        expect(configurations).toHaveLength(2);
+        expect(configurations[1]).toMatchObject({ mode: 'server', version: 9 });
+        expect(configurations[1].acknowledgement).toBeUndefined();
+    });
+
     test('a lost new-branch save response can recover against server-added history metadata', async () => {
         seed(store({}), 7);
         extension_settings[KEY].characters['nova.png'] = thread([message('new', 'New branch')]);

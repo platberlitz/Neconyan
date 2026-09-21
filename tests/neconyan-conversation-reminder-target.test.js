@@ -98,10 +98,6 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js
     groupAsideLastSent: new Map(),
     partnerReplyBusyKeys: new Set(),
 }));
-await jest.unstable_mockModule('../public/scripts/neconyan-conversation/timers.js', () => ({
-    clearConversationTimeouts: jest.fn(),
-    setConversationTimeout: jest.fn(),
-}));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/thread-store.js', () => ({
     getConversationThread: () => [],
     getImageCooldownRemainingSeconds: () => 0,
@@ -113,7 +109,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/typing.j
     withTypingParticipant: (_participant, task) => task(),
 }));
 
-const { checkConversationReminders, triggerRoleplayDM, triggerGroupAsideDM } = await import('../public/scripts/neconyan-conversation/auto-engine.js');
+const { triggerRoleplayDM, triggerGroupAsideDM } = await import('../public/scripts/neconyan-conversation/auto-engine.js');
 
 describe('conversation reminder target identity', () => {
     test('both native aside paths refuse a refreshed identity before saving the old chat', async () => {
@@ -125,13 +121,5 @@ describe('conversation reminder target identity', () => {
         expect(assertConversationAccount).toHaveBeenCalledWith('tester');
         expect(saveChatConditional).not.toHaveBeenCalled();
         assertConversationAccount.mockReset();
-    });
-    test('marks a missing captured branch invalid without posting or falsely firing', async () => {
-        await expect(checkConversationReminders(100)).resolves.toBe(false);
-        expect(generateConversationReply).not.toHaveBeenCalled();
-        expect(reminder.fired).toBe(false);
-        expect(reminder.invalidAt).toBe(100);
-        expect(reminder.invalidReason).toBe('missing_branch');
-        expect(persistConversationStore).toHaveBeenCalled();
     });
 });

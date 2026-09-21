@@ -16,12 +16,15 @@ globalThis.HTMLTextAreaElement = class HTMLTextAreaElement extends FakeElement {
 const drawer = new FakeElement();
 const backdrop = new FakeElement();
 const saveCurrentPanelSettings = jest.fn();
+const memoryInput = new globalThis.HTMLTextAreaElement();
+let memoryText = 'Old memory';
 let currentPersonaId = 'persona-b.png';
 
 globalThis.document = {
     getElementById: (id) => {
         if (id === 'settings-drawer') return drawer;
         if (id === 'settings-backdrop') return backdrop;
+        if (id === 'sb_conv_memory_summary') return memoryInput;
         return null;
     },
 };
@@ -59,7 +62,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/pickers.
     bindWeeklyScheduleEditor: jest.fn(),
     updateUserFooter: jest.fn(),
 }));
-await jest.unstable_mockModule('../public/scripts/neconyan-conversation/prompt.js', () => ({ updateConversationMemorySummary: jest.fn() }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/prompt.js', () => ({ updateConversationMemorySummary: jest.fn(async () => { memoryText = 'Fresh memory'; return true; }) }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/render-utils.js', () => ({
     escapeHtmlAttribute: value => value,
     escapeHtmlText: value => value,
@@ -74,7 +77,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/schedule
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/settings-store.js', () => ({
     clearConversationMemorySummary: jest.fn(),
-    getConversationMemorySummary: () => '',
+    getConversationMemorySummary: () => memoryText,
     getSettings: () => ({}),
     saveConversationMemorySummary: jest.fn(),
     saveSettings: jest.fn(),
@@ -91,7 +94,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/timeline
     ensureConversationChrome: () => null,
 }));
 
-const { closeConversationSettings } = await import('../public/scripts/neconyan-conversation/settings-panel.js');
+const { closeConversationSettings, refreshConversationMemoryFromPanel } = await import('../public/scripts/neconyan-conversation/settings-panel.js');
 
 describe('Conversation settings close identity', () => {
     beforeEach(() => {
@@ -129,5 +132,11 @@ describe('Conversation settings close identity', () => {
             groupId: 'drawer-group',
             personaId: 'drawer-persona.png',
         });
+    });
+
+    test('successful native memory refresh redraws the currently visible field', async () => {
+        memoryText = memoryInput.value = 'Old memory';
+        await refreshConversationMemoryFromPanel();
+        expect(memoryInput.value).toBe('Fresh memory');
     });
 });
