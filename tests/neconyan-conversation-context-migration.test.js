@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 
 const extensionSettings = {};
 const saveSettingsDebounced = jest.fn();
+const persistConversationStoreDebounced = jest.fn();
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({ persistConversationStoreDebounced }));
 
 await jest.unstable_mockModule('../public/script.js', () => ({
     characters: [],
@@ -46,6 +48,7 @@ describe('conversation persona migration', () => {
             delete extensionSettings[key];
         }
         saveSettingsDebounced.mockClear();
+        persistConversationStoreDebounced.mockClear();
     });
 
     test('assigns and persists missing reminder persona IDs without changing reminder metadata', () => {
@@ -66,7 +69,8 @@ describe('conversation persona migration', () => {
         const store = getConversationStore();
 
         expect(store.reminders[0]).toEqual({ ...reminder, personaId: 'persona-a.png' });
-        expect(saveSettingsDebounced).toHaveBeenCalled();
+        expect(persistConversationStoreDebounced).toHaveBeenCalled();
+        expect(saveSettingsDebounced).not.toHaveBeenCalled();
     });
 
     test('keeps the browser raw key format compatible with persisted and backend keys', () => {

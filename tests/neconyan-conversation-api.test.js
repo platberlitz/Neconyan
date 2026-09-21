@@ -230,6 +230,8 @@ describe('SillyBunny Conversation REST API', () => {
         const first = await appendConversationJobMessage(context, target, 'bubble-0', message);
         expect(await appendConversationJobMessage(context, target, 'bubble-0', message)).toEqual(first);
         expect(readConversationStore().characters['nova.png'].branches.main.messages).toHaveLength(2);
+        expect(readConversationStore().characters['nova.png'].branches.main.unread).toBe(1);
+        expect(Object.keys(readConversationStore().characters['nova.png'].branches.main.pendingPresentations)).toEqual([first.id]);
         const settings = readSettings();
         settings.unrelatedSetting = 'preserved';
         settings._version++;
@@ -252,6 +254,63 @@ describe('SillyBunny Conversation REST API', () => {
         expect(readConversationStore().characters['nova.png']).toBeUndefined();
         requestCancellation(userDirectories, job.id);
         await expect(appendConversationJobMessage(context, target, 'bubble-1', message)).rejects.toMatchObject({ name: 'AbortError' });
+    });
+
+    test('native outgoing messages do not mark identifier-less read history unread', async () => {
+        const { captureConversationTarget, appendConversationJobMessage } = await import('../src/generation/conversation-effects.js');
+        const { acceptJob } = await import('../src/jobs/store.js');
+        await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [{ role: 'character', mes: 'Old one' }, { role: 'character', mes: 'Old two' }] });
+        const settings = readSettings();
+        const branch = settings.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].branches.main;
+        for (const message of branch.messages) delete message.id;
+        delete branch.messageContentHash;
+        delete branch.messageEditRevision;
+        branch.unread = 0;
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(settings));
+        const request = { user: { directories: userDirectories, profile: { handle: userHandle } } };
+        const target = captureConversationTarget(request, { avatar: 'nova.png', branchId: 'main' });
+        const job = acceptJob(userDirectories, { owner: userHandle, type: 'test.conversation', submissionKey: 'legacy-read', intent: {} }).job;
+        const context = { job, owner: userHandle, directories: userDirectories, signal: new AbortController().signal };
+        await appendConversationJobMessage(context, target, 'outgoing', { role: 'user', mes: 'New outgoing' });
+        expect(readConversationStore().characters['nova.png'].branches.main.unread).toBe(0);
+        await appendConversationJobMessage(context, target, 'incoming', { role: 'character', mes: 'New incoming' });
+        expect(readConversationStore().characters['nova.png'].branches.main.unread).toBe(1);
+    });
+
+    test('presentation claims are consumed exactly once and can clear unread', async () => {
+        const { captureConversationTarget, appendConversationJobMessage } = await import('../src/generation/conversation-effects.js');
+        const { acceptJob } = await import('../src/jobs/store.js');
+        expect((await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [{ role: 'user', mes: 'Hello', name: 'User' }] })).status).toBe(200);
+        const request = { user: { directories: userDirectories, profile: { handle: userHandle } } };
+        const target = captureConversationTarget(request, { avatar: 'nova.png', branchId: DEFAULT_BRANCH_ID });
+        const job = acceptJob(userDirectories, { owner: userHandle, type: 'test.conversation', submissionKey: 'presentation-claim', intent: {} }).job;
+        const context = { job, owner: userHandle, directories: userDirectories, signal: new AbortController().signal };
+        const appended = await appendConversationJobMessage(context, target, 'bubble-0', { role: 'character', name: 'Nova', mes: 'First bubble' });
+        const branch = readConversationStore().characters['nova.png'].branches.main;
+        expect(branch.unread).toBe(1);
+        expect(Object.keys(branch.pendingPresentations)).toEqual([appended.id]);
+
+        const claim = { target: { avatar: 'nova.png', branchId: DEFAULT_BRANCH_ID, createdAt: branch.createdAt }, messageIds: [appended.id], readThrough: appended.id };
+        const first = await postJson('/presentation/claim', claim);
+        expect(first.status).toBe(200);
+        expect(await first.json()).toEqual({ won: { [appended.id]: null }, version: expect.any(Number), unread: 0, readThrough: appended.id });
+        const after = readConversationStore().characters['nova.png'].branches.main;
+        expect(after.unread).toBe(0);
+        expect(after.pendingPresentations).toBeUndefined();
+
+        const second = await postJson('/presentation/claim', claim);
+        expect(second.status).toBe(200);
+        expect((await second.json()).won).toEqual({});
+        expect((await postJson('/presentation/claim', { target: { avatar: 'nova.png', branchId: DEFAULT_BRANCH_ID }, messageIds: [1] })).status).toBe(400);
+        expect((await postJson('/presentation/claim', { target: { avatar: 'nova.png', branchId: 'missing', createdAt: branch.createdAt } })).status).toBe(409);
+        expect((await postJson('/presentation/claim', { ...claim, target: { ...claim.target, createdAt: branch.createdAt + 1 } })).status).toBe(409);
+        const unseen = await appendConversationJobMessage(context, target, 'bubble-1', { role: 'character', name: 'Nova', mes: 'Not seen yet' });
+        expect((await (await postJson('/presentation/claim', claim)).json()).unread).toBe(1);
+        const latest = readConversationStore().characters['nova.png'].branches.main;
+        expect(latest.pendingPresentations).toHaveProperty(unseen.id);
+        expect((await (await postJson('/presentation/claim', { ...claim, messageIds: [], readThrough: unseen.id })).json()).unread).toBe(0);
+        // An older tab cannot move the read boundary backwards.
+        expect((await (await postJson('/presentation/claim', claim)).json()).readThrough).toBe(unseen.id);
     });
 
     test('a legacy capture cannot acquire trusted revision metadata after a raw history edit', async () => {
@@ -356,6 +415,8 @@ describe('SillyBunny Conversation REST API', () => {
         expect(root.result.participants).toHaveLength(1);
         const branch = readConversationStore().characters['nova.png'].branches.main;
         expect(branch.messages.map(message => message.mes)).toEqual(['Please reply', 'First reply.', 'Second reply.']);
+        expect(branch.unread).toBe(2);
+        expect(Object.keys(branch.pendingPresentations)).toHaveLength(2);
         expect(readConversationStore().reminders).toHaveLength(1);
         expect(upstreamRequests).toHaveLength(1);
         // Model work and native effects survived, but the participant's final marker did not.

@@ -7,7 +7,25 @@ document; this file only records what is actually finished and what is not.
 Status values: `done` (implemented and verified), `partial` (implemented but an
 acceptance case is unproven), `pending` (not started).
 
-## Current checkpoint: native solo partner chimes
+## Current checkpoint: native unread, presentation and narration
+
+- `done` Native messages save unread and pending presentations with completion
+  receipts. One tab wins each claim; observed read boundaries preserve unseen
+  arrivals. Discovery retries both presentation and read-only acknowledgement
+  failures without idle settings-save churn.
+- `done` OpenAI, OpenAI Compatible, ElevenLabs and Pollinations narration uses
+  saved audio and provider uncertainty records. Unknown outcomes remain interrupted
+  until explicit retry. Image captions are included; browser Kokoro remains an
+  explicit page-open exception. Stop, visibility, persona, source identity,
+  speaker eligibility and freshness survive asynchronous playback waits.
+- `done` All 137 disposable Conversation Chromium cases passed in one full serial
+  run (1.2 hours), including 21 new presentation cases at desktop 1280x900 and
+  touch 393x852. The first full run was 136/137 due to the known legacy merge
+  fixture's startup-save race. A bounded quiet-version setup preserved its single
+  exact-version append; five focused repetitions and the second full run passed.
+- `done` Fresh independent review used actual assistant-message metadata verified
+  as pura-openai/gpt-6-astra, variant max. All stage-local findings were fixed and
+  re-reviewed; the automatic-ownership boundary below remains outstanding.
 
 - `done` Native solo partner chimes are implemented and verified: the full 116-case
   disposable Conversation suite passed in one serial Chromium run (57.8 minutes),
@@ -25,9 +43,9 @@ acceptance case is unproven), `pending` (not started).
   uploads and preliminary aside saves, initial settings ownership, queued saves,
   observer read coalescing and test opt-in/process handling. Thumbnail responses
   also have deterministic coverage for equal-size/equal-time cache collisions.
-- Latest checks: 334 unit suites, 4,341 tests passed and two skipped (4,343
-  total); 233 Node tests passed; root lint, frontend budgets and whitespace
-  checks passed.
+- Latest checks: 335 unit suites, 4,395 tests passed and two skipped (4,397
+  total), one snapshot; 257 Node tests passed. Root lint, frontend budgets and
+  whitespace checks passed. Changed-test lint: zero errors, 43 warnings.
 - `done` Resolve findings a-e: pre-migration baseline/version capture, bounded
   history retention, branch identity during batching/repair, complete member-key
   intent matching and identifier-less message merging. Settings imports, restore
@@ -48,7 +66,7 @@ acceptance case is unproven), `pending` (not started).
   Native summaries and schedules accept the same acknowledged bindings.
 - `done` The complete browser run passed 95 durable cases and two scoped-formatting
   cases. Both acknowledgement cases passed after correcting an unrelated queued-save
-  fixture race; nine added durable cases passed separately. Coverage now comprises
+  fixture race; nine added durable cases passed separately. That checkpoint covered
   104 durable and four formatting/acknowledgement cases, not one green 108-case run.
   Checks include active Chat/Text controls at both sizes, lost acceptance followed
   by 429, pre-upload refusal, manual source/speaker races, character-script changes
@@ -56,9 +74,12 @@ acceptance case is unproven), `pending` (not started).
 - `done` Native solo partner chimes run through the durable jobs: a server-side
   occurrence claim gives exactly one root ownership, and the browser chime path
   stands down while a native job is in flight, awaiting or syncing.
-- `pending` Native unread alerts and narration, plus the automatic-ownership
-  handover (including stopping the browser's 30-second worker). Roleplay
-  generation/completion migration follows.
+- `pending` Automatic-ownership handover: persist ownership/timezone and acknowledged
+  background bindings, remove browser periodic execution and timers, protect
+  ownership and legacy unread through saves/import/reset, preserve Roleplay
+  rendered-message sampling and fix reminder retry identity. Current guards refuse
+  browser dispatch/delivery after learning server mode, not before a stale page
+  learns it. Roleplay generation/completion migration follows.
 - Safari, unresolved image-provider crash recovery and reload-persistent send
   retry identity are unverified. Manual Conversation completion writes still
   depend on the browser. Deployment remains unauthorised.
@@ -136,7 +157,8 @@ The older results below describe earlier checkpoints, not the latest totals.
   preset conversion and provider-specific parameters share the browser code;
   named profiles without a preset retain their existing raw-request behaviour.
   Provider artifacts, cancellation and uncertainty markers use the job runtime.
-  Text-completion profiles and instruct formatting remain pending.
+  Named text-completion profiles, instruct formatting and acknowledged saved-active
+  requests are implemented; remaining workflow callers still need migration.
 - `done` `src/tools/registry.js`: typed, permission-checked tool definitions with
   a server-side invoke that records a before-receipt and an after-receipt around a
   mutating handler, so a missing after-receipt means the effect is unknown.
@@ -196,8 +218,10 @@ The older results below describe earlier checkpoints, not the latest totals.
   strengthened settings guard protect server-owned messages and records from old
   whole-store writes. Send-triggered solo partner chimes run through the same family with a server-side
   occurrence claim and a browser fence while a native reply is observed.
-  Remaining: disabling the browser worker after ownership handover, and
-  text-completion/active-connection profile support.
+  Native unread/presentation claims and supported narration are verified. Remaining:
+  full automatic-ownership handover, including removal of the browser worker and
+  legacy unread fallback. Text-completion and acknowledged active bindings are
+  implemented.
 - `pending` Meower.
 - `pending` Prompting Lab, Distiller, LoreStitch, World Info Lab.
 - `pending` remaining bundled model and file workflows.
@@ -216,7 +240,7 @@ The older results below describe earlier checkpoints, not the latest totals.
 - `npm run lint`
 - `npm run check:frontend-budgets`
 
-## Current checkpoint
+## Historical checkpoint: participant and image delivery
 
 This is a saved implementation checkpoint, not a release-ready full migration.
 Production has not been changed. The main Conversation composer, forced reply and

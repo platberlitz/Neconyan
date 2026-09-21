@@ -9,6 +9,7 @@ const list = jest.fn();
 jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => account }));
 jest.unstable_mockModule('../public/scripts/jobs.js', () => ({
     cancelJob: cancel, listJobs: list,
+    TERMINAL: new Set(['completed', 'cancelled', 'failed', 'interrupted', 'conflict']),
     observeJob: (id, options) => {
         observers.set(id, options);
         return () => options.onStop();
@@ -16,6 +17,8 @@ jest.unstable_mockModule('../public/scripts/jobs.js', () => ({
 }));
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({ refreshConversationStore: refresh }));
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/render-scheduler.js', () => ({ scheduleInterfaceRefresh: repaint }));
+const present = jest.fn();
+jest.unstable_mockModule('../public/scripts/neconyan-conversation/presentation.js', () => ({ presentPendingConversationClaims: present }));
 const native = await import('../public/scripts/neconyan-conversation/native-jobs.js');
 
 beforeEach(() => {
@@ -27,6 +30,20 @@ beforeEach(() => {
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 
+test('discovery reads completions with no active observer and retries presentation on the next discovery', async () => {
+    list.mockResolvedValue([{ id: 'finished', type: 'conversation.reply', state: 'completed' }]);
+    refresh.mockResolvedValue({ conflict: false });
+    await native.resumeNativeConversationObservation();
+    expect(observers.size).toBe(0);
+    expect(present).toHaveBeenCalledTimes(1);
+    await native.resumeNativeConversationObservation();
+    expect(present).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(repaint).not.toHaveBeenCalled();
+    list.mockReset();
+    refresh.mockReset();
+});
+
 test('concurrent observations await one follow-up read and retain account-bound cancellation', async () => {
     let releaseFirst;
     let releaseSecond;
@@ -35,7 +52,7 @@ test('concurrent observations await one follow-up read and retain account-bound 
     for (const id of ['one', 'two', 'three']) native.observeNativeConversationJob(id);
     const promises = [...observers.values()].map(options => options.onSnapshot());
     expect(refresh).toHaveBeenCalledTimes(1);
-    releaseFirst({ conflict: false });
+    releaseFirst({ conflict: false, changed: true });
     await Promise.resolve();
     expect(refresh).toHaveBeenCalledTimes(2);
     expect(repaint).not.toHaveBeenCalled();
@@ -47,6 +64,17 @@ test('concurrent observations await one follow-up read and retain account-bound 
     await native.cancelNativeConversationJob('one');
     expect(cancel).toHaveBeenCalledWith('one', { reason: 'Cancelled from Conversation Mode.', account: 'alice' });
     expect(native.isObservingConversationJob('one')).toBe(false);
+});
+
+test('a successful readback hands pending presentations to the presenter', async () => {
+    refresh.mockResolvedValueOnce({ conflict: false });
+    native.observeNativeConversationJob('present');
+    await observers.get('present').onSnapshot();
+    expect(present).toHaveBeenCalledWith('alice');
+    present.mockClear();
+    refresh.mockRejectedValueOnce(Object.assign(new Error('conflict'), { conflict: true }));
+    await expect(observers.get('present').onSnapshot()).rejects.toThrow('conflict');
+    expect(present).not.toHaveBeenCalled();
 });
 
 test('the chime fence reports an in-flight observation until it stops', () => {

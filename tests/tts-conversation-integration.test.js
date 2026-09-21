@@ -54,6 +54,26 @@ function createEpochAwareAddAudioJob(context, audioJobQueue) {
     };
 }
 
+function preparedPlaybackContext() {
+    const listeners = {};
+    const context = createTtsContext({
+        AbortController, Blob, setTimeout, clearTimeout, console: { debug: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() },
+        DEFAULT_VOICE_MARKER: '[Default Voice]',
+        extension_settings: { tts: { enabled: true, auto_generation: true } },
+        window: { _ttsExtensionInitialized: true }, ttsShellInitializationPromise: null,
+        ttsPlaybackEpoch: 1, preparedDownloads: new Set(), ttsGenerationAbortController: null,
+        ttsJobQueue: [], audioJobQueue: [], currentTtsJob: null, currentAudioJob: null,
+        audioQueueProcessorReady: true, audioQueuePumpPromise: null, audioPaused: false,
+        audioElement: { play: jest.fn(), addEventListener: (name, callback) => { listeners[name] = callback; } },
+        getBase64Async: jest.fn(async () => 'data:audio/wav;base64,AA=='),
+        resetNarrateButtonIcon: jest.fn(), cancelTtsPlay: jest.fn(),
+        wrapper: { update: jest.fn() }, toastr: { error: jest.fn() },
+        fetch: jest.fn(async () => ({ ok: true, blob: async () => new Blob(['audio'], { type: 'audio/wav' }) })),
+    });
+    for (const name of ['isTtsEpochCurrent', 'beginPlayback', 'isTtsProcessing', 'resetTtsPlayback', 'completeCurrentAudioJob', 'playAudioData', 'processAudioJobQueue', 'addAudioJob', 'playPreparedAudio']) evaluateInContext(name, context);
+    return { context, listeners };
+}
+
 async function importConversationTts() {
     jest.resetModules();
     await jest.unstable_mockModule('../public/script.js', () => ({ name1: 'User' }));
@@ -70,6 +90,94 @@ afterEach(() => {
 });
 
 describe('TTS Conversation integration', () => {
+    test('Stop invalidates the token captured before a claim and during Kokoro readiness', async () => {
+        const { context } = preparedPlaybackContext();
+        const token = context.beginPlayback();
+        expect(context.isTtsProcessing()).toBe(true);
+        context.resetTtsPlayback();
+        await expect(context.playPreparedAudio('/saved/audio', { token })).resolves.toBe(false);
+        expect(context.fetch).not.toHaveBeenCalled();
+        token.end();
+        Object.assign(context, {
+            ensureTtsProviderLoaded: async () => context.resetTtsPlayback(),
+            initVoiceMap: async () => {}, hasVoiceMapForSpeaker: () => true,
+            processAndQueueTtsMessage: jest.fn(),
+        });
+        const narrate = evaluateInContext('narrateTtsMessage', context);
+        await expect(narrate({ name: 'Nova', mes: 'Hello' })).resolves.toBe(false);
+        expect(context.processAndQueueTtsMessage).not.toHaveBeenCalled();
+        expect(context.isTtsProcessing()).toBe(false);
+    });
+
+    test('a stalled prepared download is aborted at its deadline', async () => {
+        jest.useFakeTimers();
+        try {
+            const { context } = preparedPlaybackContext();
+            context.fetch.mockImplementation((_url, { signal }) => new Promise((_resolve, reject) => {
+                signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+            }));
+            const pending = context.playPreparedAudio('/saved/audio');
+            await jest.advanceTimersByTimeAsync(30000);
+            await expect(pending).resolves.toBe(false);
+            expect(context.isTtsProcessing()).toBe(false);
+        } finally { jest.useRealTimers(); }
+    });
+    /* eslint-disable playwright/no-standalone-expect -- Jest test.each callbacks are test bodies. */
+    test.each(['initialisation', 'download'])('Stop during prepared %s cancels pending audio', async phase => {
+        const { context } = preparedPlaybackContext();
+        let release;
+        const gate = new Promise(resolve => { release = resolve; });
+        if (phase === 'initialisation') context.ttsShellInitializationPromise = gate;
+        else context.fetch.mockImplementationOnce(async (_url, { signal }) => {
+            await gate;
+            signal.throwIfAborted();
+        });
+        const playing = context.playPreparedAudio('/saved/audio');
+        expect(context.isTtsProcessing()).toBe(true);
+        context.resetTtsPlayback();
+        release();
+        await expect(playing).resolves.toBe(false);
+        expect(context.audioElement.play).not.toHaveBeenCalled();
+        expect(context.audioJobQueue).toHaveLength(0);
+        expect(context.isTtsProcessing()).toBe(false);
+    });
+
+    test.each(['body', 'conversion', 'queue', 'canplay'])('visibility is rechecked after the %s wait', async phase => {
+        const { context, listeners } = preparedPlaybackContext();
+        let visible = true;
+        if (phase === 'body') context.fetch.mockResolvedValueOnce({ ok: true, blob: async () => {
+            visible = false;
+            return new Blob(['audio'], { type: 'audio/wav' });
+        } });
+        if (phase === 'conversion') context.getBase64Async.mockImplementationOnce(async () => { visible = false; return 'data:audio/wav;base64,AA=='; });
+        if (phase === 'queue') context.audioQueueProcessorReady = false;
+        await context.playPreparedAudio('/saved/audio', { isStillVisible: () => visible });
+        visible = false;
+        if (phase === 'queue') {
+            context.audioQueueProcessorReady = true;
+            await context.processAudioJobQueue();
+        }
+        listeners.canplay?.();
+        expect(context.audioElement.play).not.toHaveBeenCalled();
+        expect(context.currentAudioJob).toBeNull();
+        expect(context.audioJobQueue).toHaveLength(0);
+    });
+
+    /* eslint-enable playwright/no-standalone-expect */
+    test('prepared playback honours automatic narration being turned off before and during download', async () => {
+        const { context } = preparedPlaybackContext();
+        context.extension_settings.tts.auto_generation = false;
+        await expect(context.playPreparedAudio('/saved/audio')).resolves.toBe(false);
+        expect(context.fetch).not.toHaveBeenCalled();
+        context.extension_settings.tts.auto_generation = true;
+        context.fetch.mockResolvedValueOnce({ ok: true, blob: async () => {
+            context.extension_settings.tts.enabled = false;
+            return new Blob(['audio'], { type: 'audio/wav' });
+        } });
+        await expect(context.playPreparedAudio('/saved/audio')).resolves.toBe(false);
+        expect(context.audioJobQueue).toHaveLength(0);
+    });
+
     test('uses only the activated TTS capability while preserving manual narration', async () => {
         const conversationTts = await importConversationTts();
         await expect(conversationTts.narrateConversationMessage({ role: 'character', name: 'Mona', mes: 'Hello' })).resolves.toBe(false);
@@ -231,10 +339,13 @@ describe('TTS Conversation integration', () => {
             resetTtsPlayback: jest.fn(),
             toastr: { info: jest.fn(), warning: jest.fn() },
             ttsShellInitializationPromise: Promise.resolve(),
+            ttsPlaybackEpoch: 1,
+            isTtsEpochCurrent: epoch => epoch === 1,
             window: { _ttsExtensionInitialized: true },
             wrapper: { update: jest.fn(async () => {}) },
         });
         const narrateTtsMessage = evaluateInContext('narrateTtsMessage', context);
+        context.beginPlayback = () => null;
         const message = { name: 'Mona', mes: 'Hello' };
 
         let visible = true;
@@ -466,6 +577,7 @@ describe('TTS Conversation integration', () => {
         await new Promise(resolve => setTimeout(resolve, 0));
         expect(audioJobQueue).toHaveLength(1);
         context.ttsPlaybackEpoch = 2;
+        context.currentTtsJob = null;
         context.ttsGenerationAbortController?.abort();
         releaseSecond();
         await cancelled;

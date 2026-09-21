@@ -67,6 +67,7 @@ import {
 } from './conversation-generation.js';
 import { acceptConversationAside, acceptConversationSubmission, preflightConversationBindings, generateBoundConversationText } from '../generation/conversation-jobs.js';
 import { acceptConversationSchedule, acceptConversationSummary } from '../generation/conversation-maintenance.js';
+import { claimConversationPresentations } from '../generation/conversation-effects.js';
 
 const PREFER_REAL_IP_HEADER = getConfigValue('rateLimiting.preferRealIpHeader', false, 'boolean');
 const MESSAGE_SEND_RATE_LIMIT = getConfigValue('rateLimiting.conversationMessageSendPoints', 20, 'number');
@@ -393,6 +394,41 @@ router.post('/automation/configure', asyncRoute(async (request, response) => {
     result.store.automation = { ...(result.store.automation || {}), mode, timeZone };
     const saveResult = await saveConversationStore(request, result.store, result.version, { trustedConversationEffects: true });
     return respondSaveResult(response, saveResult, { automation: saveResult.store?.automation || result.store.automation });
+}));
+
+/**
+ * Consume native presentation claims for one branch. The browser may ask only
+ * for messages it has observed; the server deletes each claim it reports won,
+ * so exactly one tab presents a given message. The observed read boundary never
+ * clears unread messages that arrived after the browser's copy.
+ */
+router.post('/presentation/claim', asyncRoute(async (request, response) => {
+    const target = request.body?.target;
+    if (!target || typeof target !== 'object' || Array.isArray(target) || !Number.isSafeInteger(target.createdAt) || target.createdAt <= 0) {
+        return response.status(400).send({ error: 'invalid_target' });
+    }
+    const messageIds = request.body?.messageIds;
+    const readThrough = request.body?.readThrough;
+    if (readThrough !== undefined && (typeof readThrough !== 'string' || !readThrough || readThrough.length > 128)) {
+        return response.status(400).send({ error: 'invalid_read_through' });
+    }
+    if (messageIds !== undefined && (!Array.isArray(messageIds) || messageIds.length > 200
+        || messageIds.some(id => typeof id !== 'string' || !id || id.length > 128))) {
+        return response.status(400).send({ error: 'invalid_message_ids' });
+    }
+    try {
+        const result = await claimConversationPresentations(request, {
+            target,
+            messageIds: messageIds || [],
+            readThrough,
+        });
+        return response.send(result);
+    } catch (error) {
+        if (error?.status === 409) {
+            return response.status(409).send(error.body || { error: 'conversation_conflict', recoverable: true });
+        }
+        throw error;
+    }
 }));
 
 router.post('/group/list', (request, response) => {

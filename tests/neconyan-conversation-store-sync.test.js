@@ -23,6 +23,16 @@ function store(characters, extra = {}) {
 }
 
 describe('conversation store sync merge', () => {
+    test('a repeated server unread count wins over a stale local clear', () => {
+        const wrap = (messages, unread, readThrough) => store({ alice: thread({ main: branch('main', messages, 10, { unread, readThrough }) }) });
+        const messages = [message('read', 'Seen'), message('a', 'First')];
+        const saved = wrap(messages, 1, 'read');
+        const local = wrap(messages, 0, 'read');
+        const server = wrap([...messages, message('b', 'New')], 1, 'a');
+        const merged = mergeConversationStore(server, local, saved).characters.alice.branches.main;
+        expect(merged.unread).toBe(1);
+        expect(merged.readThrough).toBe('a');
+    });
     test('legacy occurrences survive local edits, native appends and repeated refreshes without duplication', () => {
         const legacy = { role: 'user', mes: 'Repeated without an id or timestamp', extra: { b: 2, a: 1 } };
         const wrap = messages => store({ alice: thread({ main: branch('main', messages, 10) }) });
@@ -191,6 +201,19 @@ describe('conversation store sync merge', () => {
         const merged = mergeConversationStore(server, local, saved);
         expect(merged.characters.alice.branches.main.messages[0].id).toBe('fresh');
         expect(merged.characters.alice.branches.main.serverOperations).toBeUndefined();
+    });
+
+    test('a server-consumed presentation claim is not resurrected from a stale local copy', () => {
+        const claims = { 'msg-1': { at: 1, narration: null } };
+        const saved = store({ alice: thread({ main: branch('main', [message('a', 'one')], 10, { serverOperations: { job: {} }, pendingPresentations: claims }) }) });
+        const local = store({ alice: thread({ main: branch('main', [message('a', 'one')], 10, { serverOperations: { job: {} }, pendingPresentations: claims }) }) });
+        const server = store({ alice: thread({ main: branch('main', [message('a', 'one')], 10, { serverOperations: { job: {} } }) }) });
+        const merged = mergeConversationStore(server, local, saved);
+        expect(merged.characters.alice.branches.main.pendingPresentations).toBeUndefined();
+
+        const replaced = store({ alice: thread({ main: branch('main', [message('a', 'one')], 10, { serverOperations: { job: {} }, pendingPresentations: { 'msg-2': { at: 2, narration: null } } }) }) });
+        const second = mergeConversationStore(replaced, local, saved);
+        expect(second.characters.alice.branches.main.pendingPresentations).toEqual({ 'msg-2': { at: 2, narration: null } });
     });
 
     test('unknown store fields and unrelated groups are preserved', () => {

@@ -12,7 +12,7 @@ import {
     triggerRoleplayDM,
 } from './auto-engine.js';
 import { disableConversationModeForCurrentCharacter, ensureConversationStylesheet, getDefaultConversationAvatar, selectConversationThread } from './chrome.js';
-import { GROUP_ASIDE_RANDOM_CHANCE } from './constants.js';
+import { GROUP_ASIDE_RANDOM_CHANCE, NATIVE_DISCOVERY_INTERVAL_MS } from './constants.js';
 import { getConversationGroupById, getConversationPersonaId, getRoleplayCurrentCharacter, getRoleplayGroupById, migrateConversationLocalStorage } from './context.js';
 import { loadCurrentPanelSettings } from './interface.js';
 import { resumeNativeConversationObservation } from './native-jobs.js';
@@ -58,6 +58,12 @@ export function init() {
     // Reattach to native roots accepted before this page loaded, so a reload
     // during generation still shows the remaining saved bubbles.
     void resumeNativeConversationObservation();
+    // ponytail: readback polling also retries failed claims; use push if traffic warrants it.
+    window.setInterval(() => {
+        if (globalThis.document?.visibilityState === 'visible' && hasConversationRuntimeUsage()) {
+            void resumeNativeConversationObservation();
+        }
+    }, NATIVE_DISCOVERY_INTERVAL_MS);
     if (typeof document !== 'undefined') {
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {

@@ -13,6 +13,204 @@ test.setTimeout(180000);
 
 const isChimeCall = call => JSON.stringify(call.messages).includes('chiming in on a private group DM');
 
+const speechCalls = app => app.provider.calls.filter(call => call.url.endsWith('/audio/speech'));
+const submitPresentationReply = account => account.post('/api/neconyan-conversation/reply/submit', {
+    submissionKey: 'presentation-reply', timeZone: 'UTC',
+    target: { avatar: account.avatar, personaId: account.personaId, branchId: 'main' },
+});
+
+for (const phone of [false, true]) {
+    test(`${phone ? 'phone' : 'desktop'} presentation claims play zero-page narration once across two tabs`, async ({ app, browser }) => {
+        const account = await app.account({ phone, tts: true });
+        const accepted = await submitPresentationReply(account);
+        await account.settled(accepted.job.id);
+        expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
+        const branch = await account.branch();
+        expect(branch.unread).toBe(2);
+        expect(Object.keys(branch.pendingPresentations)).toHaveLength(2);
+        expect(speechCalls(app)).toHaveLength(2);
+        let release;
+        const gate = new Promise(resolve => { release = resolve; });
+        const claims = [];
+        const audio = [];
+        await account.context.route('**/presentation/claim', async route => { claims.push(route.request().postDataJSON()); await gate; await route.continue(); });
+        account.context.on('response', response => { if (response.url().includes('/audio/provider')) audio.push(response); });
+        const first = await account.open();
+        const second = await account.open();
+        release();
+        await expect.poll(async () => (await first.evaluate(() => window.fixtureAudioPlays.length))
+            + (await second.evaluate(() => window.fixtureAudioPlays.length)), { timeout: 30000 }).toBe(2);
+        expect(audio).toHaveLength(2);
+        expect(audio.every(response => response.status() === 200)).toBe(true);
+        expect(claims.some(claim => claim.target.createdAt === branch.createdAt && claim.readThrough === branch.messages.at(-1).id)).toBe(true);
+        expect((await account.branch()).unread).toBe(0);
+        expect((await account.branch()).pendingPresentations).toBeUndefined();
+        await first.close(); await second.close();
+        const reopened = await account.open();
+        expect(await reopened.evaluate(() => window.fixtureAudioPlays.length)).toBe(0);
+        expect(audio).toHaveLength(2);
+        expect(speechCalls(app)).toHaveLength(2);
+    });
+
+    test(`${phone ? 'phone' : 'desktop'} presentation retries a failed final claim automatically`, async ({ app }) => {
+        const account = await app.account({ phone, tts: true });
+        const page = await account.open();
+        let failed = false;
+        await page.route('**/presentation/claim', route => {
+            if (route.request().postDataJSON().messageIds.length && !failed) {
+                failed = true;
+                return route.fulfill({ status: phone ? 503 : 409, contentType: 'application/json', body: JSON.stringify({ error: 'conversation_conflict', recoverable: true }) });
+            }
+            return route.continue();
+        });
+        const accepted = await submitPresentationReply(account);
+        await account.settled(accepted.job.id);
+        await expect.poll(() => page.evaluate(() => window.fixtureAudioPlays.length), { timeout: 45000 }).toBe(2);
+        expect(failed).toBe(true);
+        expect((await account.branch()).unread).toBe(0);
+        expect((await account.branch()).pendingPresentations).toBeUndefined();
+    });
+
+    test(`${phone ? 'phone' : 'desktop'} presentation Stop covers the pending claim`, async ({ app }) => {
+        const account = await app.account({ phone, tts: true });
+        const page = await account.open();
+        let release;
+        const gate = new Promise(resolve => { release = resolve; });
+        let waiting = false;
+        let downloads = 0;
+        await page.route('**/presentation/claim', async route => {
+            if (route.request().postDataJSON().messageIds.length) { waiting = true; await gate; }
+            await route.continue();
+        });
+        page.on('request', request => { if (request.url().includes('/audio/provider')) downloads++; });
+        await submitPresentationReply(account);
+        await expect.poll(() => waiting, { timeout: 35000 }).toBe(true);
+        await page.evaluate(() => document.querySelector('#ttsExtensionMenuItem').click());
+        release();
+        await delay(1500);
+        expect(downloads).toBe(0);
+        expect(await page.evaluate(() => window.fixtureAudioPlays.length)).toBe(0);
+    });
+
+    test(`${phone ? 'phone' : 'desktop'} presentation retries a read-only acknowledgement without pending alerts`, async ({ app }) => {
+        const account = await app.account({ phone });
+        const accepted = await submitPresentationReply(account);
+        await account.settled(accepted.job.id);
+        const branch = await account.branch();
+        // A different, non-viewing client consumes the alert without reading the thread.
+        await account.post('/api/neconyan-conversation/presentation/claim', {
+            target: { avatar: account.avatar, personaId: account.personaId, branchId: 'main', createdAt: branch.createdAt },
+            messageIds: Object.keys(branch.pendingPresentations),
+        });
+        expect((await account.branch()).unread).toBe(2);
+        expect((await account.branch()).pendingPresentations).toBeUndefined();
+        let failReads = true;
+        const reads = [];
+        await account.context.route('**/presentation/claim', route => {
+            const body = route.request().postDataJSON();
+            if (!body.messageIds.length) {
+                reads.push(body);
+                if (failReads) return route.fulfill({ status: 503, contentType: 'application/json', body: '{}' });
+            }
+            return route.continue();
+        });
+        const page = await account.open();
+        await delay(5000);
+        expect(reads.length).toBeGreaterThan(0);
+        expect((await account.branch()).unread).toBe(2);
+        failReads = false;
+        await expect.poll(async () => (await account.branch()).unread, { timeout: 45000 }).toBe(0);
+        expect(reads.filter(body => body.readThrough === branch.messages.at(-1).id).length).toBeGreaterThan(1);
+        await expect(page).not.toHaveTitle(/^\(\d+\)/);
+        const writes = [];
+        page.on('request', request => {
+            if (request.method() === 'POST' && /\/(?:settings\/save|neconyan-conversation\/store\/save)$/.test(request.url())) writes.push(request.url());
+        });
+        await delay(25000);
+        expect(writes).toEqual([]);
+    });
+
+    test(`${phone ? 'phone' : 'desktop'} presentation discovery leaves two idle tabs without settings writes`, async ({ app }) => {
+        const account = await app.account({ phone });
+        const first = await account.open();
+        const second = await account.open();
+        await delay(5000);
+        const writes = [];
+        account.context.on('request', request => {
+            if (request.method() === 'POST' && /\/(?:settings\/save|neconyan-conversation\/store\/save)$/.test(request.url())) writes.push(request.url());
+        });
+        await delay(45000);
+        expect(writes).toEqual([]);
+        for (const page of [first, second]) await expect(page.locator('.popup')).not.toBeVisible();
+    });
+
+    for (const interruption of ['Stop', 'hidden page', 'thread change', 'message edit']) {
+        test(`${phone ? 'phone' : 'desktop'} presentation cancels a held audio download on ${interruption}`, async ({ app }) => {
+            const account = await app.account({ phone, tts: true });
+            const other = await account.context.request.post('/api/characters/create', { headers: account.headers, data: { ch_name: 'Durable Kit', first_mes: 'Hello.' } });
+            const otherAvatar = await other.text();
+            const page = await account.open();
+            let release;
+            const gate = new Promise(resolve => { release = resolve; });
+            const downloads = [];
+            await page.route('**/api/jobs/*/audio/*', async route => {
+                downloads.push(route.request().url());
+                await gate;
+                await route.continue().catch(() => {});
+            });
+            await submitPresentationReply(account);
+            await expect.poll(() => downloads.length, { timeout: 35000 }).toBe(1);
+            if (interruption === 'Stop') await page.evaluate(() => document.querySelector('#ttsExtensionMenuItem').click());
+            else if (interruption === 'hidden page') await page.evaluate(() => {
+                Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+                document.dispatchEvent(new Event('visibilitychange'));
+            });
+            else if (interruption === 'thread change') await page.evaluate(async avatar => { await (await import('/scripts/neconyan-conversation/chrome.js')).selectConversationThread(avatar); }, otherAvatar);
+            else {
+                await account.changeStore(store => { store.characters[account.threadKey].branches.main.messages.find(message => message.role !== 'user').mes = 'Edited during download'; });
+                await page.evaluate(async () => { await (await import('/scripts/neconyan-conversation/store-sync.js')).refreshConversationStore(); });
+            }
+            release();
+            await delay(1500);
+            expect(await page.evaluate(() => window.fixtureAudioPlays.length)).toBe(0);
+            expect(downloads).toHaveLength(1);
+        });
+    }
+}
+
+test('presentation leaves unknown speech interrupted after a server crash until explicit retry', async ({ app }) => {
+    const account = await app.account({ tts: true });
+    app.provider.mode.hold = 'tts-1';
+    const accepted = await submitPresentationReply(account);
+    await expect.poll(() => speechCalls(app).length, { timeout: 30000 }).toBe(1);
+    await app.restart();
+    await account.settled(accepted.job.id, 'interrupted');
+    expect(speechCalls(app)).toHaveLength(1);
+    expect((await account.branch()).messages.filter(message => message.role !== 'user')).toHaveLength(0);
+    await app.release();
+    await account.post(`/api/jobs/${accepted.job.id}/retry`);
+    await account.settled(accepted.job.id);
+    expect(speechCalls(app)).toHaveLength(3);
+    expect(app.provider.calls.filter(call => call.model === MODEL)).toHaveLength(1);
+    expect((await account.branch()).unread).toBe(2);
+});
+
+for (const failure of ['http', 'html']) {
+    test(`presentation delivers text when speech returns ${failure} without serving invalid audio`, async ({ app }) => {
+        const account = await app.account({ tts: true });
+        app.provider.mode.audioFail = failure === 'http';
+        app.provider.mode.audioType = failure === 'html' ? 'text/html' : 'audio/wav';
+        const accepted = await submitPresentationReply(account);
+        await account.settled(accepted.job.id);
+        const branch = await account.branch();
+        expect(branch.unread).toBe(2);
+        expect(Object.values(branch.pendingPresentations).every(entry => entry.narration.status === 'failed')).toBe(true);
+        const page = await account.open();
+        expect(await page.evaluate(() => window.fixtureAudioPlays.length)).toBe(0);
+        expect(speechCalls(app)).toHaveLength(2);
+    });
+}
+
 async function chimeAccount(app, phone = false, image = false) {
     const account = await app.account({ phone, configureSettings(saved) {
         saved.extension_settings.connectionManager.profiles.push({ ...saved.extension_settings.connectionManager.profiles[0],
@@ -658,11 +856,21 @@ test('legacy repeated messages survive concurrent native additions and unrelated
     const page = await account.context.newPage();
     await page.goto('/');
     await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+    // Let both startup save debounces settle before the exact-version external write.
+    let settledVersion = (await account.post('/api/neconyan-conversation/store/get')).version;
+    await expect.poll(async () => {
+        await delay(1500);
+        const next = (await account.post('/api/neconyan-conversation/store/get')).version;
+        const unchanged = next === settledVersion;
+        settledVersion = next;
+        return unchanged;
+    }, { timeout: 20000 }).toBe(true);
     await page.evaluate(async () => {
         const { getConversationStore } = await import('/scripts/neconyan-conversation/context.js');
         getConversationStore().settings.custom_instructions = 'Keep this local edit.';
     });
     const current = await account.post('/api/neconyan-conversation/store/get');
+    expect(current.version).toBe(settledVersion);
     await account.post('/api/neconyan-conversation/message/append', { avatar: account.avatar, personaId: account.personaId, version: current.version,
         message: { id: 'native-addition', role: 'character', name: 'Nova', mes: 'New server message.' } });
     expect(await page.evaluate(async () => {

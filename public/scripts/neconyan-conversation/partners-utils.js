@@ -1,5 +1,9 @@
 import { escapeRegex } from '../util/escape-regex.js';
 
+export function isConversationGroupSpeakerEligible(group, avatar) {
+    return Boolean(group?.members?.includes(avatar) && !group.disabled_members?.includes(avatar));
+}
+
 export function parseAvatarList(value) {
     return String(value || '')
         .split(',')

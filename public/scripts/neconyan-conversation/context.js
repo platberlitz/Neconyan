@@ -1,5 +1,5 @@
 import { normalizeChatroomPromptSettings } from './shared-helpers.js';
-import { characters, saveSettingsDebounced, this_chid } from '../../script.js';
+import { characters, this_chid } from '../../script.js';
 import { persistConversationStoreDebounced } from './store-sync.js';
 import { extension_settings } from '../extensions.js';
 import { editGroup, groups, selected_group } from '../group-chats.js';
@@ -794,7 +794,6 @@ export function persistConversationStore() {
     // general settings save (which now omits the Conversation block). The
     // acknowledged baseline only moves once the server confirms the write.
     persistConversationStoreDebounced();
-    saveSettingsDebounced();
 }
 
 export function createConversationBranch(name = 'Main', id = `br_${Date.now()}_${Math.random().toString(36).slice(2)}`) {

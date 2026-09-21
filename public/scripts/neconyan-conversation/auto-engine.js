@@ -73,7 +73,7 @@ import { getConversationThread, getImageCooldownRemainingSeconds, markImageGener
 import { getConversationActivityContext, withTypingParticipant } from './typing.js';
 
 function isAutoWorkerAborted(signal = conversationState.autoWorkerAbortController?.signal) {
-    return Boolean(signal?.aborted);
+    return Boolean(signal?.aborted) || getConversationStore().automation?.mode === 'server';
 }
 
 export function stopConversationAutoWorker() {
@@ -111,7 +111,7 @@ export function buildAutoMessageDirective(directive) {
 }
 
 export async function maybeGenerateSpontaneousImage(settings, avatar = getCurrentCharAvatar(), { branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {
-    if (!settings.image_gen_enabled || !settings.spontaneous_selfies || getImageCooldownRemainingSeconds(avatar, settings, Date.now(), { branchId, groupId, personaId }) > 0) {
+    if (isAutoWorkerAborted() || !settings.image_gen_enabled || !settings.spontaneous_selfies || getImageCooldownRemainingSeconds(avatar, settings, Date.now(), { branchId, groupId, personaId }) > 0) {
         return;
     }
 
@@ -123,7 +123,7 @@ export async function maybeGenerateSpontaneousImage(settings, avatar = getCurren
         avatar,
     );
     const imageUrl = await generateConversationImage(prompt, settings.image_gen_negative || '', { avatar, character });
-    if (imageUrl) {
+    if (imageUrl && !isAutoWorkerAborted()) {
         markImageGenerated(avatar, Date.now(), { branchId, groupId, personaId });
         await appendConversationMessage('Snapped something for you.', {
             name: charName,
@@ -142,7 +142,7 @@ export async function maybeGenerateSpontaneousImage(settings, avatar = getCurren
 
 export async function triggerAutoMessage(directive, settings, extra = {}, avatar = getCurrentCharAvatar(), { branchId = '', personaId = getConversationPersonaId() } = {}) {
     const character = getCharacterForAvatar(avatar);
-    if (conversationState.autoWorkerBusy || conversationState.conversationReplyBusy || is_send_press || !character || !avatar) {
+    if (isAutoWorkerAborted() || conversationState.autoWorkerBusy || conversationState.conversationReplyBusy || is_send_press || !character || !avatar) {
         return false;
     }
 
@@ -168,6 +168,7 @@ export async function triggerAutoMessage(directive, settings, extra = {}, avatar
 
         if (response?.trim()) {
             const postedText = await withTypingParticipant(character, () => postCharacterReply(response.trim(), settings, {
+                validateTarget: () => !isAutoWorkerAborted(),
                 extra: {
                     conversation_mode_auto: true,
                     ...extra,
@@ -539,6 +540,7 @@ export async function triggerConversationPartnerChime(partner, settings, avatar 
 
         if (response?.trim()) {
             await postPartnerConversationReply(response.trim(), partner, partnerSettings, {
+                validateTarget: () => !isAutoWorkerAborted(),
                 avatar,
                 branchId,
                 extra: {
@@ -644,6 +646,7 @@ export async function triggerAutoCharacterChat(avatar, settings, { branchId = ''
 
         if (response?.trim()) {
             await postPartnerConversationReply(response.trim(), partner, partnerSettings, {
+                validateTarget: () => !isAutoWorkerAborted(),
                 avatar,
                 branchId,
                 extra: { conversation_mode_auto_chat: true, partner_avatar: partner.avatar },
@@ -958,6 +961,8 @@ export async function checkConversationReminders(now) {
 }
 
 export async function conversationModeAutoMessageWorker({ signal = conversationState.autoWorkerAbortController?.signal } = {}) {
+    // ponytail: ownership cutover removes this browser worker entirely.
+    if (getConversationStore().automation?.mode === 'server') return;
     if (isAutoWorkerAborted(signal) || getUserStatus() === 'offline') {
         return;
     }

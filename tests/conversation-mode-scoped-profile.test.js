@@ -58,6 +58,7 @@ const conversationTtsSource = readConversationSource('tts.js');
 const extensionTtsSource = normalizeSource(readFileSync(path.join(repoRoot, 'public', 'scripts', 'extensions', 'tts', 'index.js'), 'utf8'));
 const pollinationsTtsSource = normalizeSource(readFileSync(path.join(repoRoot, 'public', 'scripts', 'extensions', 'tts', 'pollinations.js'), 'utf8'));
 const speechEndpointSource = normalizeSource(readFileSync(path.join(repoRoot, 'src', 'endpoints', 'speech.js'), 'utf8'));
+const speechTransportsSource = normalizeSource(readFileSync(path.join(repoRoot, 'src', 'endpoints', 'speech-transports.js'), 'utf8'));
 const conversationParticipantsSource = normalizeSource(readFileSync(path.join(repoRoot, 'src', 'generation', 'conversation-participants.js'), 'utf8'));
 const serverEndpointSource = normalizeSource(readFileSync(path.join(repoRoot, 'src', 'endpoints', 'neconyan-conversation.js'), 'utf8'));
 const conversationGenerationSource = normalizeSource(readFileSync(path.join(repoRoot, 'src', 'endpoints', 'conversation-generation.js'), 'utf8'));
@@ -264,7 +265,7 @@ describe('conversation mode scoped connection profile', () => {
         expect(extensionTtsSource).toContain('await wrapper.update()');
         expect(extensionTtsSource).toContain('await processTtsQueue()');
         expect(extensionTtsSource).toContain('setTimeout(() => void wrapper.update(), 0)');
-        expect(extensionTtsSource).toContain('processAndQueueTtsMessage({ ...message, name: speaker }, messageId, { manual: isManual })');
+        expect(extensionTtsSource).toContain('processAndQueueTtsMessage({ ...message, name: speaker }, messageId, { manual: isManual, isStillVisible })');
         expect(conversationTtsSource).toContain('getExtensionCapability(\'tts\')');
         expect(conversationTtsSource).not.toContain('../extensions/tts/index.js');
         expect(conversationTtsSource).toContain('narrateTtsMessage(ttsMessage');
@@ -277,9 +278,9 @@ describe('conversation mode scoped connection profile', () => {
     test('sends Pollinations TTS text as literal speech input', () => {
         expect(pollinationsTtsSource).toContain('text: chunk');
         expect(pollinationsTtsSource).not.toContain('Say exactly this and nothing else');
-        expect(speechEndpointSource).toContain('https://gen.pollinations.ai/v1/audio/speech');
-        expect(speechEndpointSource).toContain('model === \'openai-audio\' ? \'tts-1\' : model');
-        expect(speechEndpointSource).toContain('input: text');
+        expect(speechTransportsSource).toContain('https://gen.pollinations.ai/v1/audio/speech');
+        expect(speechTransportsSource).toContain('model === \'openai-audio\' ? \'tts-1\' : model');
+        expect(speechTransportsSource).toContain('input: text');
         expect(speechEndpointSource).not.toContain('modalities: [\'text\', \'audio\']');
     });
 

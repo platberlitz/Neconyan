@@ -150,6 +150,40 @@ describe('settings version guard', () => {
         expect(result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main.serverOperations).toEqual({ job: {} });
     });
 
+    test('only the server may consume or forge pending presentation claims', () => {
+        const withClaims = { createdAt: 123, messages: [{ id: 'server', mes: 'one' }], serverOperations: { job: {} }, pendingPresentations: { server: { at: 1, narration: null } } };
+        const current = branchWrap(5, 1, withClaims);
+        const forged = { createdAt: 123, messages: [{ id: 'server', mes: 'one' }], serverOperations: { job: {} }, pendingPresentations: { forged: true } };
+
+        const result = prepareSettingsSave(branchWrap(5, 1, forged), current, { conversationOnly: true });
+        const branch = result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main;
+        expect(result).toMatchObject({ ok: true, version: 6 });
+        expect(branch.pendingPresentations).toEqual({ server: { at: 1, narration: null } });
+
+        const emptied = prepareSettingsSave(branchWrap(5, 1, { createdAt: 123, messages: [{ id: 'server', mes: 'one' }], serverOperations: { job: {} } }), current, { conversationOnly: true });
+        expect(emptied.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main.pendingPresentations).toEqual({ server: { at: 1, narration: null } });
+    });
+
+    /* eslint-disable playwright/no-standalone-expect -- Jest test.each callbacks are test bodies. */
+    test.each(['edit', 'delete'])('a %s invalidates only the affected pending narration and cannot forge unread', action => {
+        const original = { createdAt: 1, readThrough: 'read', unread: 2, messages: [
+            { id: 'read', role: 'character', mes: 'Seen' },
+            { id: 'a', role: 'character', mes: 'First' },
+            { id: 'b', role: 'character', mes: 'Second' },
+        ], pendingPresentations: { a: { at: 1 }, b: { at: 2 } } };
+        const incoming = canonicalCopy(original);
+        incoming.readThrough = 'b';
+        incoming.unread = 0;
+        if (action === 'edit') incoming.messages[1].mes = 'Edited';
+        else incoming.messages.splice(1, 1);
+        const result = prepareSettingsSave(branchWrap(1, 0, incoming), branchWrap(1, 0, original), { conversationOnly: true });
+        const branch = result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main;
+        expect(branch.readThrough).toBe('read');
+        expect(branch.unread).toBe(action === 'edit' ? 2 : 1);
+        expect(branch.pendingPresentations).toEqual({ b: { at: 2 } });
+    });
+    /* eslint-enable playwright/no-standalone-expect */
+
     test('an explicit Conversation save may edit and delete messages but keeps records', () => {
         const withReceipts = { createdAt: 123, messages: [{ id: 'server' }], serverOperations: { job: { effects: { first: 'saved' } } }, automationClaims: { occurrence: 1 } };
         const current = branchWrap(5, 1, withReceipts);

@@ -2,6 +2,7 @@ import { cancelTtsPlay, eventSource, event_types, getCurrentChatId, isStreamingE
 import { ModuleWorkerWrapper, extension_settings, getContext, renderExtensionTemplateAsync } from '../../extensions.js';
 import { delay, escapeRegex, getBase64Async, getStringHash, onlyUnique, regexFromString } from '../../utils.js';
 import { accountStorage } from '../../util/AccountStorage.js';
+import { parseMessageSegments, filterTtsAsterisks, stripTtsTaggedBlocks, joinQuotedBlocks } from './lib/text-prep.js';
 import { EdgeTtsProvider } from './edge.js';
 import { ElevenLabsTtsProvider } from './elevenlabs.js';
 import { SileroTtsProvider } from './silerotts.js';
@@ -331,67 +332,62 @@ function hasVoiceMapForSpeaker(name) {
     });
 }
 
-export async function narrateTtsMessage(message, { messageId = null, manual = false, force = false, isStillVisible = null, propagateErrors = false, unrestrictedVoiceMap = false } = {}) {
+export async function narrateTtsMessage(message, { messageId = null, manual = false, force = false, isStillVisible = null, propagateErrors = false, unrestrictedVoiceMap = false, token = null } = {}) {
+    const epoch = ttsPlaybackEpoch;
     if (!message || typeof message !== 'object') {
         return false;
     }
 
     const isManual = Boolean(manual || force);
+    const ownedToken = !isManual && !token ? beginPlayback() : null;
+    token ||= ownedToken;
+    const current = () => token ? token.isCurrent() : isTtsEpochCurrent(epoch);
     try {
-        if (!ttsShellInitializationPromise && !window._ttsExtensionInitialized) {
-            init();
-        }
-        if (ttsShellInitializationPromise) {
-            await ttsShellInitializationPromise;
-        }
-    } catch (error) {
-        console.warn('TTS initialization failed', error);
-        if (propagateErrors) throw error;
-        return false;
-    }
-
-    if (!extension_settings.tts.enabled) {
-        if (isManual) toastr.warning('TTS is disabled. Please enable it in the extension settings.');
-        return false;
-    }
-    if (!isManual && !extension_settings.tts.auto_generation) {
-        return false;
-    }
-    if (!isManual && message.is_user && !extension_settings.tts.narrate_user) {
-        return false;
-    }
-    if (!String(message.mes || '').trim() && !message.extra?.display_text) {
-        if (isManual) toastr.info('No text to narrate.');
-        return false;
-    }
-
-    const speaker = String(message.name || DEFAULT_VOICE_MARKER).trim() || DEFAULT_VOICE_MARKER;
-    try {
-        // Provider readiness is retried per request; earlier failures never
-        // permanently reject narration.
-        await ensureTtsProviderLoaded();
-        await initVoiceMap(Boolean(unrestrictedVoiceMap), [speaker]);
-        if (!hasVoiceMapForSpeaker(speaker)) {
-            if (isManual) toastr.info(`Specified voice for ${speaker} was not found. Check the TTS extension settings.`);
+        try {
+            if (!ttsShellInitializationPromise && !window._ttsExtensionInitialized) init();
+            if (ttsShellInitializationPromise) await ttsShellInitializationPromise;
+        } catch (error) {
+            console.warn('TTS initialization failed', error);
+            if (propagateErrors) throw error;
             return false;
         }
-    } catch (error) {
-        console.warn('TTS voice map initialization failed', error);
-        if (isManual) toastr.warning('Could not load TTS voices. Check the TTS extension settings.');
-        if (propagateErrors) throw error;
-        return false;
-    }
 
-    // Readiness may have awaited network work; automatic narration must
-    // revalidate that its exact source thread is still the visible one.
-    if (!isManual && typeof isStillVisible === 'function' && !isStillVisible()) {
-        return false;
-    }
+        if (!extension_settings.tts.enabled) {
+            if (isManual) toastr.warning('TTS is disabled. Please enable it in the extension settings.');
+            return false;
+        }
+        if (!isManual && (!current() || !extension_settings.tts.auto_generation || (message.is_user && !extension_settings.tts.narrate_user))) return false;
+        if (!String(message.mes || '').trim() && !message.extra?.display_text) {
+            if (isManual) toastr.info('No text to narrate.');
+            return false;
+        }
 
-    if (isManual) resetTtsPlayback();
-    processAndQueueTtsMessage({ ...message, name: speaker }, messageId, { manual: isManual });
-    await wrapper.update();
-    return true;
+        const speaker = String(message.name || DEFAULT_VOICE_MARKER).trim() || DEFAULT_VOICE_MARKER;
+        try {
+            // Retry readiness per request; earlier failures never permanently reject narration.
+            await ensureTtsProviderLoaded();
+            await initVoiceMap(Boolean(unrestrictedVoiceMap), [speaker]);
+            if (!hasVoiceMapForSpeaker(speaker)) {
+                if (isManual) toastr.info(`Specified voice for ${speaker} was not found. Check the TTS extension settings.`);
+                return false;
+            }
+        } catch (error) {
+            console.warn('TTS voice map initialization failed', error);
+            if (isManual) toastr.warning('Could not load TTS voices. Check the TTS extension settings.');
+            if (propagateErrors) throw error;
+            return false;
+        }
+
+        // Revalidate after readiness and voice-map waits.
+        if (!isManual && (!current() || !extension_settings.tts.enabled || !extension_settings.tts.auto_generation
+            || (typeof isStillVisible === 'function' && !isStillVisible()))) return false;
+        if (isManual) resetTtsPlayback();
+        processAndQueueTtsMessage({ ...message, name: speaker }, messageId, { manual: isManual, isStillVisible });
+        await wrapper.update();
+        return isManual || current();
+    } finally {
+        ownedToken?.end();
+    }
 }
 
 async function moduleWorker() {
@@ -412,6 +408,8 @@ function resetTtsPlayback() {
     // Abort in-flight provider generation where signals are supported.
     ttsGenerationAbortController?.abort();
     ttsGenerationAbortController = null;
+    for (const controller of preparedDownloads) controller.abort();
+    preparedDownloads.clear();
 
     // Stop system TTS utterance
     cancelTtsPlay();
@@ -444,7 +442,7 @@ function isTtsProcessing() {
     let processing = false;
 
     // Check job queues
-    if (ttsJobQueue.length > 0 || audioJobQueue.length > 0) {
+    if (ttsJobQueue.length > 0 || audioJobQueue.length > 0 || preparedDownloads.size > 0) {
         processing = true;
     }
     // Check current jobs
@@ -467,11 +465,12 @@ function isTtsProcessing() {
  * @param {boolean} [options.manual=false] - Whether this TTS job was manually triggered (e.g., from the UI) rather than automatically from a new chat message.
  * @returns {void}
  */
-function processAndQueueTtsMessage(message, messageId = null, { manual = false } = {}) {
+function processAndQueueTtsMessage(message, messageId = null, { manual = false, isStillVisible = null } = {}) {
     /** @type {TtsMessage} */
     const clone = safeClone(message);
     clone.id = messageId ?? null;
     clone.manual = manual ?? false;
+    clone.isStillVisible = isStillVisible;
 
     if (!extension_settings.tts.narrate_by_paragraphs) {
         ttsJobQueue.push(clone);
@@ -518,13 +517,25 @@ globalThis.debugTtsPlayback = debugTtsPlayback;
 
 let audioElement = new Audio();
 audioElement.id = 'tts_audio';
-audioElement.autoplay = true;
+audioElement.autoplay = false;
 
 /**
  * @type AudioJob[] Audio job queue
  * @typedef {{audioBlob: Blob | string, char: string}} AudioJob Audio job object
  */
 const audioJobQueue = [];
+const preparedDownloads = new Set();
+
+/** Register the whole automatic presentation, including claim/provider readiness waits. */
+function beginPlayback() {
+    if (!extension_settings.tts?.enabled || !extension_settings.tts.auto_generation) return null;
+    const epoch = ttsPlaybackEpoch;
+    const controller = new AbortController();
+    preparedDownloads.add(controller);
+    return { epoch, signal: controller.signal,
+        isCurrent: () => isTtsEpochCurrent(epoch) && !controller.signal.aborted,
+        end: () => preparedDownloads.delete(controller) };
+}
 /**
  * @type AudioJob Current audio job
  */
@@ -539,29 +550,32 @@ let audioQueueProcessorReady = true;
  */
 async function playAudioData(audioJob) {
     const { audioBlob, char } = audioJob;
+    const isCurrent = () => currentAudioJob === audioJob && audioJob.isCurrent?.() !== false;
+    const discard = () => { if (currentAudioJob === audioJob) completeCurrentAudioJob(audioJob); };
     if (currentAudioJob !== audioJob) {
         console.log('Cancelled TTS playback because currentAudioJob was null');
         return;
     }
     if (audioBlob instanceof Blob) {
         const srcUrl = await getBase64Async(audioBlob);
-        if (currentAudioJob !== audioJob) return;
+        if (!isCurrent()) { discard(); return; }
 
         // VRM lip sync
         if (extension_settings.vrm?.enabled && typeof globalThis.vrmLipSync === 'function') {
             await globalThis.vrmLipSync(audioBlob, char);
-            if (currentAudioJob !== audioJob) return;
+            if (!isCurrent()) { discard(); return; }
         }
 
         audioElement.src = srcUrl;
     } else if (typeof audioBlob === 'string') {
+        if (!isCurrent()) { discard(); return; }
         audioElement.src = audioBlob;
     } else {
         throw `TTS received invalid audio data type ${typeof audioBlob}`;
     }
     audioElement.addEventListener('ended', () => completeCurrentAudioJob(audioJob), { once: true });
     audioElement.addEventListener('canplay', () => {
-        if (currentAudioJob !== audioJob) return;
+        if (!isCurrent()) { discard(); return; }
         console.debug('Starting TTS playback');
         audioElement.playbackRate = extension_settings.tts.playback_rate;
         void audioElement.play();
@@ -666,7 +680,7 @@ function completeCurrentAudioJob(audioJob = currentAudioJob) {
  * @param {string} char
  * @returns {Promise<{audioBlob: Blob|string, mimeType: string}>}
  */
-async function addAudioJob(response, char, epoch = ttsPlaybackEpoch) {
+async function addAudioJob(response, char, epoch = ttsPlaybackEpoch, isCurrent = null) {
     let audioBlob, mimeType;
     if (typeof response === 'string') {
         audioBlob = response;
@@ -679,13 +693,53 @@ async function addAudioJob(response, char, epoch = ttsPlaybackEpoch) {
         mimeType = audioBlob.type;
     }
     // Late chunks from a cancelled/reset job must never resume playback.
-    if (!isTtsEpochCurrent(epoch)) {
+    if (!isTtsEpochCurrent(epoch) || isCurrent?.() === false) {
         return null;
     }
-    audioJobQueue.push({ audioBlob, char, epoch });
+    audioJobQueue.push({ audioBlob, char, epoch, isCurrent });
     console.debug('Pushed audio job to queue.');
     await processAudioJobQueue();
     return { audioBlob, mimeType };
+}
+
+/**
+ * Play audio the server already prepared for a native completion. The audio is
+ * fetched as a Blob so VRM lip sync keeps working, exactly like extension TTS.
+ * @param {string} url Server audio URL
+ * @param {{speaker?: string, isStillVisible?: () => boolean}} [options]
+ * @returns {Promise<boolean>}
+ */
+async function playPreparedAudio(url, { speaker = '', isStillVisible = null, token = null } = {}) {
+    const epoch = token?.epoch ?? ttsPlaybackEpoch;
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    token?.signal.addEventListener('abort', abort, { once: true });
+    const timeout = setTimeout(abort, 30000);
+    const current = () => isTtsEpochCurrent(epoch) && token?.isCurrent() !== false && !controller.signal.aborted
+        && extension_settings.tts?.enabled === true && extension_settings.tts.auto_generation === true
+        && (typeof isStillVisible !== 'function' || isStillVisible());
+    preparedDownloads.add(controller);
+    try {
+        if (!ttsShellInitializationPromise && !window._ttsExtensionInitialized) {
+            init();
+        }
+        if (ttsShellInitializationPromise) {
+            await ttsShellInitializationPromise;
+        }
+        if (!current()) return false;
+        const response = await fetch(url, { credentials: 'same-origin', signal: controller.signal });
+        if (!response.ok || !current()) return false;
+        const char = String(speaker || DEFAULT_VOICE_MARKER).trim() || DEFAULT_VOICE_MARKER;
+        const result = await addAudioJob(response, char, epoch, current);
+        return result !== null && current();
+    } catch (error) {
+        if (error?.name !== 'AbortError') console.warn('Prepared TTS playback failed', error);
+        return false;
+    } finally {
+        clearTimeout(timeout);
+        token?.signal.removeEventListener('abort', abort);
+        preparedDownloads.delete(controller);
+    }
 }
 
 async function processAudioJobQueue() {
@@ -696,7 +750,7 @@ async function processAudioJobQueue() {
     if (audioQueuePumpPromise) return audioQueuePumpPromise;
 
     const audioJob = audioJobQueue.shift();
-    if (audioJob?.epoch != null && !isTtsEpochCurrent(audioJob.epoch)) {
+    if ((audioJob?.epoch != null && !isTtsEpochCurrent(audioJob.epoch)) || audioJob?.isCurrent?.() === false) {
         return processAudioJobQueue();
     }
     audioQueueProcessorReady = false;
@@ -764,9 +818,11 @@ async function pumpAsyncTtsResponses(response, processResponse, isCurrent = () =
 }
 
 async function tts(text, voiceId, char, voiceMapKey = null) {
+    const job = currentTtsJob;
     const messageId = currentTtsJob?.id ?? null;
     const jobEpoch = ttsPlaybackEpoch;
-    const isCurrent = () => isTtsEpochCurrent(jobEpoch);
+    const isCurrent = () => isTtsEpochCurrent(jobEpoch) && (job?.manual || !job?.isStillVisible ||
+        (extension_settings.tts.enabled && extension_settings.tts.auto_generation && job.isStillVisible()));
     const controller = new AbortController();
     ttsGenerationAbortController = controller;
     let terminalStatus = 'error';
@@ -779,13 +835,14 @@ async function tts(text, voiceId, char, voiceMapKey = null) {
             response = await globalThis.rvcVoiceConversion(response, char, text);
 
         if (!isCurrent()) return;
-        const audioResult = await addAudioJob(response, char, jobEpoch);
+        const audioResult = await addAudioJob(response, char, jobEpoch, isCurrent);
         if (!audioResult) return;
         const eventData = { messageId, characterName: char, text, audio: audioResult.audioBlob, mimeType: audioResult.mimeType };
         await eventSource.emit(event_types.TTS_AUDIO_READY, eventData);
     }
 
     try {
+        if (!isCurrent()) { terminalStatus = 'cancelled'; return; }
         // voiceMapKey can also include segment qualifiers, e.g. '{char} ("Quotes")'.
         // The abort signal is a trailing optional argument; providers without
         // cancellation support simply ignore it.
@@ -797,103 +854,11 @@ async function tts(text, voiceId, char, voiceMapKey = null) {
         terminalStatus = controller.signal.aborted || !isCurrent() || error?.name === 'AbortError' ? 'cancelled' : 'error';
         if (terminalStatus === 'error') throw error;
     } finally {
+        if (currentTtsJob === job && terminalStatus === 'cancelled') completeTtsJob();
         if (ttsGenerationAbortController === controller) ttsGenerationAbortController = null;
         // Every started job ends with exactly one terminal event.
         await eventSource.emit(event_types.TTS_JOB_COMPLETE, { messageId, characterName: char, status: terminalStatus });
     }
-}
-
-function parseMessageSegments(text) {
-    if (!extension_settings.tts.multi_voice_enabled) {
-        return [{ type: 'other', text: text }];
-    }
-
-    const segments = [];
-    const segmentRegex = /(\*[^*]*?\*)|(".*?")|(\u201C.*?\u201D)|(\u00AB.*?\u00BB)|(\u300C.*?\u300D)|(\u300E.*?\u300F)|(\uFF02.*?\uFF02)/gim;
-    let lastIndex = 0;
-    let match;
-
-    segmentRegex.lastIndex = 0;
-
-    while ((match = segmentRegex.exec(text)) !== null) {
-        // Add other text before this match
-        if (match.index > lastIndex) {
-            const otherText = text.substring(lastIndex, match.index).trim();
-            if (otherText && otherText.length > 0) {
-                segments.push({ type: 'other', text: otherText });
-            }
-        }
-
-        const matchedText = match[0];
-        let segmentType = 'other';
-        let content = '';
-
-        if (match[1]) {
-            // Asterisk content (*action*)
-            segmentType = 'action';
-            content = matchedText.slice(1, -1);
-        } else if (match[2] || match[3] || match[4] || match[5] || match[6] || match[7]) {
-            // Various quote types ("dialogue")
-            segmentType = 'dialogue';
-            content = matchedText.slice(1, -1);
-        }
-
-        // Trim and check for actual content
-        content = content.trim();
-        if (content.length > 0) {
-            segments.push({
-                type: segmentType,
-                text: content,
-            });
-        }
-
-        lastIndex = match.index + matchedText.length;
-    }
-
-    // Add remaining other text after last match
-    if (lastIndex < text.length) {
-        const otherText = text.substring(lastIndex).trim();
-        if (otherText.length > 0) {
-            segments.push({ type: 'other', text: otherText });
-        }
-    }
-
-    // If no segments found and not empty, treat whole text as other text
-    if (segments.length === 0 && text.trim().length > 0) {
-        segments.push({ type: 'other', text: text.trim() });
-    }
-
-    return segments;
-}
-
-// SillyBunny: filter action blocks before quote extraction so quoted actions remain excluded from dialogue-only narration.
-function filterTtsAsterisks(text, { narrateDialoguesOnly = false, passAsterisks = false } = {}) {
-    if (passAsterisks) {
-        return text;
-    }
-
-    return narrateDialoguesOnly
-        ? text.replace(/\*[^*]*?(\*|$)/g, '').trim()
-        : text.replaceAll('*', '').trim();
-}
-
-// SillyBunny: discard semantic blocks before quote extraction without dropping dialogue wrapped in presentation tags.
-function stripTtsTaggedBlocks(text, { preserveFormatting = false } = {}) {
-    const formattingTags = new Set([
-        'b', 'big', 'em', 'font', 'i', 'mark', 's', 'small', 'span', 'strike', 'strong', 'sub', 'sup', 'u',
-    ]);
-    let filteredText = String(text ?? '');
-    let previousText;
-
-    do {
-        previousText = filteredText;
-        filteredText = filteredText.replace(
-            /<([a-z][\w:-]*)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi,
-            (_block, tagName, content) => preserveFormatting && formattingTags.has(tagName.toLowerCase()) ? content : '',
-        );
-    } while (filteredText !== previousText);
-
-    return filteredText;
 }
 
 async function processTtsQueue() {
@@ -1034,7 +999,7 @@ async function processTtsQueue() {
         }
 
         // Parse message into segments if multi-voice is enabled
-        const segments = parseMessageSegments(text);
+        const segments = parseMessageSegments(text, extension_settings.tts.multi_voice_enabled);
 
         if (segments.length === 0) {
             console.warn('No valid segments found in text.');
@@ -1053,6 +1018,7 @@ async function processTtsQueue() {
                 extra: currentTtsJob.extra,
                 id: currentTtsJob.id,
                 manual: currentTtsJob.manual,
+                isStillVisible: currentTtsJob.isStillVisible,
             };
             ttsJobQueue.unshift(segmentJob);
         }
@@ -1066,82 +1032,6 @@ async function processTtsQueue() {
         currentTtsJob = null;
         scheduleTtsQueueWakeup();
     }
-}
-
-/**
- * Extract and join quoted blocks with proper matching pairs and nesting.
- * - Captures outermost quotes and everything inside (including different inner quote styles).
- * - Requires matching opener/closer style (e.g., “ ... ”, 「 ... 」, « ... », etc.).
- * - Ignores incomplete/unclosed quotes (doesn't include them in the result).
- * - Symmetric quotes like "..." and ＂...＂ are supported (not nesting the same symmetric style).
- *
- * @param {string} text - The text to process
- * @param {object} [opts={}] - Optional options object
- * @param {string} [opts.separator=' ... '] - String to join multiple quoted blocks
- * @param {boolean} [opts.includeQuotes=true] - Keep the quote chars around the captured text
- * @param {boolean} [opts.returnEmptyOnNoQuotes=false] - Return an empty string if no quotes are found
- * @param {Array<[string,string]>} [opts.pairs] - Custom quote pairs; defaults cover EN/DE/FR/JP
- * @returns {string} The joined quoted blocks, or the original text if no quotes found
- */
-function joinQuotedBlocks(text, opts = {}) {
-    const {
-        separator = ' ... ',
-        includeQuotes = true,
-        returnEmptyOnNoQuotes = false,
-        pairs = [
-            // typographic doubles
-            ['„', '“'],          // DE low-high
-            ['“', '”'],          // EN
-            ['«', '»'],          // FR open « close »
-            ['»', '«'],          // Some locales open »
-            // typographic singles
-            ['‘', '’'],
-            ['‚', '‘'],
-            // Japanese corner quotes
-            ['「', '」'],
-            ['『', '』'],
-            // symmetric doubles
-            ['"', '"'],
-            ['＂', '＂'],
-        ],
-    } = opts;
-
-    if (!text || typeof text !== 'string') return text;
-
-    const openToClose = Object.fromEntries(pairs);
-
-    const segments = [];
-    const stack = []; // [{ opener, expectedClose, start }]
-    for (let i = 0; i < text.length; i++) {
-        const ch = text[i];
-        const top = stack[stack.length - 1];
-
-        // Prefer closing the current open pair if the char matches its expected closer
-        if (top && ch === top.expectedClose) {
-            const finished = stack.pop();
-            if (stack.length === 0) {
-                // Only collect outermost quotes (contains all nested content)
-                segments.push(text.slice(finished.start, i + 1));
-            }
-            continue;
-        }
-
-        // Otherwise, see if this is a new opener
-        if (openToClose[ch]) {
-            stack.push({ opener: ch, expectedClose: openToClose[ch], start: i });
-            continue;
-        }
-
-        // If it's a stray closer that doesn't match current top, ignore
-    }
-
-    if (!segments.length) return returnEmptyOnNoQuotes ? '' : text;
-
-    const cleaned = includeQuotes
-        ? segments
-        : segments.map(s => s.slice(1, -1)); // all defined pairs are single-char quotes
-
-    return cleaned.join(separator);
 }
 
 async function playFullConversation() {
@@ -2000,6 +1890,8 @@ function registerTtsCapability() {
     unregisterTtsCapability = registerExtensionCapability('tts', Object.freeze({
         ensureReady: ensureTtsInitialized,
         narrateTtsMessage,
+        playPreparedAudio,
+        beginPlayback,
     }));
 }
 

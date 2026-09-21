@@ -14,11 +14,14 @@ import {
     getConversationBranches,
     getConversationGroupIdForAvatar,
     getConversationPersonaId,
+    getConversationStore,
     getConversationThreadStore,
     getCurrentCharacter,
     getCurrentCharAvatar,
     getRoleplayCurrentCharacter,
     isAvatarInConversationGroup,
+    isConversationThreadKeyForPersona,
+    parseConversationThreadKey,
     parsePositiveInt,
     renameConversationBranch,
     resetCharacterConversationBranches,
@@ -39,6 +42,7 @@ import { getCharacterForAvatar } from './media.js';
 import { clearAllConversationUnreadCounts, clearUnreadCount, isConversationActiveThread } from './notifications.js';
 import { getConversationPals, getConversationRailItems, getCurrentGroupConversationMembers } from './pals-rail.js';
 import { switchConversationPersona } from './persona-switch.js';
+import { markConversationBranchRead } from './presentation.js';
 import { editUserPersonaStatus, setActiveConversationPersonaAppendixIds, setUserStatus } from './personas.js';
 import {
     addWeeklyScheduleRow,
@@ -509,6 +513,13 @@ export function bindConversationChromeControls(sheld) {
                 break;
             case 'mark-all-read': {
                 const { cleared, removedLegacy } = clearAllConversationUnreadCounts();
+                for (const [key, thread] of Object.entries(getConversationStore().characters || {})) {
+                    if (!isConversationThreadKeyForPersona(key)) continue;
+                    const { avatar, groupId, personaId } = parseConversationThreadKey(key);
+                    for (const branchId of Object.keys(thread?.branches || {})) {
+                        await markConversationBranchRead(avatar, { branchId, groupId, personaId });
+                    }
+                }
                 schedulePalsRailRender();
                 if (cleared > 0 || removedLegacy > 0) {
                     toastr.success('Marked all Conversation pings as read.');

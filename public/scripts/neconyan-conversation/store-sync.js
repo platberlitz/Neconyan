@@ -122,14 +122,15 @@ async function refreshOnce(account) {
         // Do not move the baseline: the browser's copy still disagrees.
         return { store: serverStore, version, conflict: true };
     }
-    if (!conversationValuesEqual(merged, localStore)) {
+    const changed = !conversationValuesEqual(merged, localStore);
+    if (changed) {
         setLocalStore(merged);
     }
     // The baseline is the server's copy, not the merged one. The merged copy can
     // contain unsaved local edits; recording those as acknowledged would let the
     // next read treat them as unchanged and replace them with the older value.
     captureConversationStore(serverStore, version);
-    return { store: merged, version, conflict: false };
+    return { store: merged, version, conflict: false, changed };
 }
 
 export function refreshConversationStore(account = getCurrentUserHandle()) {

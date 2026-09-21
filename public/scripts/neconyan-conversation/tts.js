@@ -36,7 +36,11 @@ function getConversationTtsMessage(message) {
     };
 }
 
-export async function narrateConversationMessage(message, { isStillVisible = null, manual = false, force = false } = {}) {
+export function beginConversationNarration() {
+    return getExtensionCapability('tts')?.beginPlayback?.() ?? null;
+}
+
+export async function narrateConversationMessage(message, { isStillVisible = null, manual = false, force = false, token = null } = {}) {
     const ttsMessage = getConversationTtsMessage(message);
     if (!ttsMessage) {
         return false;
@@ -61,12 +65,33 @@ export async function narrateConversationMessage(message, { isStillVisible = nul
             isStillVisible,
             propagateErrors: true,
             unrestrictedVoiceMap: true,
+            token,
         });
     } catch (error) {
         console.warn('Conversation Mode: TTS narration failed', error);
         if (manual || force) {
             globalThis.toastr?.warning?.('TTS narration failed. Check the TTS extension settings.');
         }
+        return false;
+    }
+}
+
+/** Play server-prepared narration audio for a native completion record. */
+export async function playConversationNarration(record, message, isStillVisible = null, token = null) {
+    if (!record || record.status !== 'ready' || !record.job || !record.artifact) {
+        return false;
+    }
+
+    const tts = getExtensionCapability('tts');
+    if (!tts?.playPreparedAudio) {
+        return false;
+    }
+
+    const url = `/api/jobs/${encodeURIComponent(record.job)}/audio/${encodeURIComponent(record.artifact)}`;
+    try {
+        return await tts.playPreparedAudio(url, { speaker: String(message?.name || 'Character'), isStillVisible, token });
+    } catch (error) {
+        console.warn('Conversation Mode: prepared narration playback failed', error);
         return false;
     }
 }

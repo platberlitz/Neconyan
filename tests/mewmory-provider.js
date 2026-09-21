@@ -26,13 +26,24 @@ export async function createMewmoryProvider(port = 0) {
             return response.end('{}');
         }
         const name = typeof body.prompt === 'string' ? 'text-writer' : body.model;
-        const call = { model: name, messages: body.messages, prompt: body.prompt, tools: body.tools, headers: request.headers, url: request.url, startedAt: Date.now(), completedAt: null };
+        const call = { model: name, messages: body.messages, prompt: body.prompt, input: body.input, tools: body.tools, headers: request.headers, url: request.url, startedAt: Date.now(), completedAt: null };
         calls.push(call);
         if ([].concat(mode.hold).includes(name)) await new Promise(resolve => held.add(resolve));
         call.completedAt = Date.now();
         if (mode.redirect) {
             response.writeHead(mode.redirectStatus || 307, { Location: mode.redirect });
             return response.end('{}');
+        }
+        if (request.url.endsWith('/audio/speech')) {
+            response.statusCode = mode.audioFail ? 503 : 200;
+            response.setHeader('Content-Type', mode.audioType || 'audio/wav');
+            // One second of valid PCM audio exercises the actual browser decoder.
+            const wav = Buffer.alloc(44 + 16000);
+            wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8);
+            wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+            wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(16000, 28);
+            wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(16000, 40);
+            return response.end(wav);
         }
         if (mode.reply) return response.end(JSON.stringify(typeof mode.reply === 'function' ? mode.reply(body) : mode.reply));
         if (mode.fail) {

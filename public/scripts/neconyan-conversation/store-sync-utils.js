@@ -170,10 +170,11 @@ function mergeBranch(serverBranch, localBranch, savedBranch) {
     if (!isPlainConversationObject(localBranch)) {
         return copyBranch(serverBranch);
     }
-    const merged = mergePlainFields(serverBranch, localBranch, savedBranch, new Set(['messages', 'serverOperations', 'automationClaims', 'messageEditRevision', 'messageContentHash']));
-    for (const key of ['messageEditRevision', 'messageContentHash']) {
+    const merged = mergePlainFields(serverBranch, localBranch, savedBranch, new Set(['messages', 'serverOperations', 'automationClaims', 'pendingPresentations', 'readThrough', 'messageEditRevision', 'messageContentHash']));
+    for (const key of ['pendingPresentations', 'readThrough', 'messageEditRevision', 'messageContentHash']) {
         if (serverBranch[key] !== undefined) merged[key] = serverBranch[key];
     }
+    if (serverBranch.readThrough !== undefined) merged.unread = serverBranch.unread;
     merged.messages = mergeMessageLists(serverBranch.messages, localBranch.messages, savedBranch?.messages);
     if (!merged.messages) return null;
     if (isSameConversationBranchIdentity(savedBranch, localBranch)) {
@@ -207,7 +208,7 @@ function mergeBranchMap(serverBranches, localBranches, savedBranches) {
         }
         if (!Object.hasOwn(savedMap, id)) {
             // Different new branches under one key cannot be combined safely.
-            const content = branch => Object.fromEntries(Object.entries(branch).filter(([key]) => !['messageEditRevision', 'messageContentHash', 'serverOperations', 'automationClaims'].includes(key)));
+            const content = branch => Object.fromEntries(Object.entries(branch).filter(([key]) => !['messageEditRevision', 'messageContentHash', 'serverOperations', 'automationClaims', 'pendingPresentations', 'readThrough'].includes(key)));
             if (!conversationValuesEqual(content(serverMap[id]), content(localMap[id]))) return { conflict: true };
             merged[id] = copyBranch(serverMap[id]);
             continue;

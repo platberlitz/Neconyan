@@ -1,3 +1,11 @@
+/** Undefined means legacy state; an empty or trimmed boundary precedes this history. */
+export function countConversationUnread(messages, readThrough) {
+    if (typeof readThrough !== 'string') return null;
+    const list = Array.isArray(messages) ? messages : [];
+    const index = list.findIndex(message => message?.id === readThrough);
+    return list.slice(index + 1).filter(message => message && !['user', 'system'].includes(message.role)).length;
+}
+
 export function normalizeConversationUnreadCount(value) {
     const parsed = Number.parseInt(String(value), 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
@@ -15,22 +23,26 @@ export function setConversationThreadUnreadCount(threadStore, count, { branchId 
         if (!branches[branchId] || typeof branches[branchId] !== 'object') {
             return false;
         }
+        if (normalizeConversationUnreadCount(branches[branchId].unread) === unread) return false;
         branches[branchId].unread = unread;
         return true;
     }
 
     const activeBranchId = threadStore?.activeBranchId;
     if (unread > 0 && activeBranchId && branches[activeBranchId]) {
+        if (normalizeConversationUnreadCount(branches[activeBranchId].unread) === unread) return false;
         branches[activeBranchId].unread = unread;
         return true;
     }
     if (unread === 0) {
+        let changed = false;
         Object.values(branches).forEach((branch) => {
-            if (branch && typeof branch === 'object') {
+            if (branch && typeof branch === 'object' && normalizeConversationUnreadCount(branch.unread) !== 0) {
                 branch.unread = 0;
+                changed = true;
             }
         });
-        return true;
+        return changed;
     }
 
     return false;

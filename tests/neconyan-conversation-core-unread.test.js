@@ -49,8 +49,16 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/typing.js', () => ({ stripPreviewText: value => String(value || '') }));
 
 const { getUnreadCount } = await import('../public/scripts/neconyan-conversation/notifications.js');
+const { setConversationThreadUnreadCount } = await import('../public/scripts/neconyan-conversation/notification-utils.js');
 
 describe('Conversation unread aggregation', () => {
+    test('unchanged counts do not schedule another save', () => {
+        const thread = { activeBranchId: 'main', branches: { main: { unread: 2 }, side: { unread: 0 } } };
+        expect(setConversationThreadUnreadCount(thread, 2, { branchId: 'main' })).toBe(false);
+        expect(setConversationThreadUnreadCount(thread, 2)).toBe(false);
+        expect(setConversationThreadUnreadCount(thread, 0)).toBe(true);
+        expect(setConversationThreadUnreadCount(thread, 0)).toBe(false);
+    });
     test('aggregates inactive branches for a DM row while exposing individual branch counts', () => {
         expect(getUnreadCount('char.png', { groupId: '', personaId: 'persona-a.png' })).toBe(4);
         expect(getUnreadCount('char.png', { branchId: 'side', groupId: '', personaId: 'persona-a.png' })).toBe(3);

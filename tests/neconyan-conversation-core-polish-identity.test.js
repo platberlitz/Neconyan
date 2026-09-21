@@ -20,6 +20,7 @@ function getStore(personaId, avatar = 'char.png', groupId = '') {
 await jest.unstable_mockModule('../public/script.js', () => ({ online_status: 'no_connection' }));
 
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/chrome.js', () => ({ setConversationInterfaceActive: jest.fn() }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/presentation.js', () => ({ markConversationBranchRead: jest.fn() }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.js', () => ({
     getConversationBranches: () => [],
     getConversationGroupById: () => null,

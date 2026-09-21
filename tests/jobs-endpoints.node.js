@@ -16,6 +16,7 @@ globalThis.DATA_ROOT = root;
 
 const { router: jobsRouter } = await import('../src/endpoints/jobs.js');
 const { JOB_INTENT_LIMIT_BYTES, JOB_INTENT_MAX_BYTES } = await import('../src/jobs/store.js');
+const { writeArtifact } = await import('../src/jobs/artifacts.js');
 
 process.on('exit', () => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -124,6 +125,26 @@ test('job reads, cancels and capacity are isolated between two accounts', async 
 
     const aliceList = await (await request('GET', '/api/jobs/list', { account: 'alice' })).json();
     assert.ok(aliceList.jobs.every(job => job.owner === 'alice'));
+});
+
+test('prepared audio artifacts are owner-scoped and served as bytes', async () => {
+    const { job } = await (await submit('alice', { key: 'audio-a' })).json();
+    const name = 'narration:reply:0';
+    writeArtifact(aliceDirs, job.id, name, { mimeType: 'audio/wav', base64: Buffer.from('RIFFfake').toString('base64') });
+    const path = `/api/jobs/${job.id}/audio/${encodeURIComponent(name)}`;
+
+    const mine = await request('GET', path, { account: 'alice' });
+    assert.equal(mine.status, 200);
+    assert.equal(mine.headers.get('content-type'), 'audio/wav');
+    assert.equal(mine.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(Buffer.from(await mine.arrayBuffer()).toString(), 'RIFFfake');
+
+    assert.equal((await request('GET', path, { account: 'bob' })).status, 404, 'another account cannot read the audio');
+    assert.equal((await request('GET', `/api/jobs/${job.id}/audio/missing`, { account: 'alice' })).status, 404, 'a missing artifact is not found');
+    for (const invalid of [{ mimeType: 'text/html', base64: 'PHNjcmlwdD4=' }, { ok: false, error: 'offline' }]) {
+        writeArtifact(aliceDirs, job.id, name, invalid);
+        assert.equal((await request('GET', path, { account: 'alice' })).status, 404);
+    }
 });
 
 test('an account with a damaged ledger gets an actionable error while healthy accounts keep working', async () => {

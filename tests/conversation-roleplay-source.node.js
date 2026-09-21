@@ -156,6 +156,76 @@ test('a solo side DM is accepted with its own delay and no group cooldown', asyn
     assert.equal(readStore(directories).groupAsideLastSent, undefined);
 });
 
+test('a delivered aside stores narration once and recovery never narrates an already delivered bubble', async () => {
+    const { directories, request } = setup();
+    const messages = [
+        { id: 'n0', role: 'user', name: 'User', mes: 'The dragon roars.' },
+        { id: 'n1', role: 'character', name: 'Nova', mes: 'I draw my blade.', original_avatar: 'nova.png' },
+    ];
+    writeChat(path.join(directories.chats, 'nova', 'narration.jsonl'), messages);
+
+    const narration = { status: 'ready', job: 'narration-child', artifact: 'narration:reply:0', mimeType: 'audio/mpeg' };
+    let narratedText = '';
+    let narrationCalls = 0;
+    registerConversationReplyJob({
+        generate: async () => ({ text: 'narrated aside' }),
+        narrate: async (context, snapshot, text) => { narrationCalls++; narratedText = text; return narration; },
+    });
+
+    const accepted = await acceptConversationAside(request, {
+        target: { avatar: 'nova.png', personaId: '', branchId: 'main' },
+        source: { locator: { chat: 'narration', avatar: 'nova.png', group: false } },
+        messageIndex: 1,
+        messageRevision: getRoleplaySourceMessageRevision(messages[1]),
+        reason: 'reaction',
+    });
+
+    await runFamily(directories, accepted.job.id);
+    assert.equal(getJob(directories, accepted.job.id).state, 'completed');
+
+    const branch = readStore(directories).characters['nova.png'].branches.main;
+    const delivered = branch.messages[branch.messages.length - 1];
+    assert.equal(narratedText, 'narrated aside');
+    assert.equal(branch.unread, 1);
+    assert.deepEqual(branch.pendingPresentations[delivered.id].narration, narration);
+    const { writeArtifact } = await import('../src/jobs/artifacts.js');
+    const { updateJob } = await import('../src/jobs/store.js');
+    const child = getJob(directories, accepted.job.id).children[0];
+    writeArtifact(directories, child, 'result', null);
+    updateJob(directories, child, { state: 'queued' });
+    await runJob(getJob(directories, child));
+    assert.equal(getJob(directories, child).state, 'completed');
+    assert.equal(narrationCalls, 1);
+    // A delivered receipt must not bypass source validation on a later recovery.
+    messages[1].mes = 'The source has changed';
+    writeChat(path.join(directories.chats, 'nova', 'narration.jsonl'), messages);
+    writeArtifact(directories, child, 'result', null);
+    updateJob(directories, child, { state: 'queued' });
+    await runJob(getJob(directories, child));
+    assert.notEqual(getJob(directories, child).state, 'completed');
+    assert.equal(narrationCalls, 1);
+});
+
+test('an aside source edited during speech synthesis is rejected before delivery', async () => {
+    const { directories, request } = setup();
+    const messages = [{ id: 'n0', role: 'character', name: 'Nova', mes: 'Original', original_avatar: 'nova.png' }];
+    const filename = path.join(directories.chats, 'nova', 'pending-speech.jsonl');
+    writeChat(filename, messages);
+    registerConversationReplyJob({
+        generate: async () => ({ text: 'Must not be delivered' }),
+        narrate: async () => { messages[0].mes = 'Edited'; writeChat(filename, messages); return null; },
+    });
+    const accepted = await acceptConversationAside(request, {
+        target: { avatar: 'nova.png', personaId: '', branchId: 'main' },
+        source: { locator: { chat: 'pending-speech', avatar: 'nova.png', group: false } },
+        messageIndex: 0, messageRevision: getRoleplaySourceMessageRevision(messages[0]), reason: 'reaction',
+    });
+    await runFamily(directories, accepted.job.id);
+    assert.notEqual(getJob(directories, accepted.job.id).state, 'completed');
+    const branch = readStore(directories).characters['nova.png'].branches.main;
+    assert.equal(branch.messages.some(message => message.mes === 'Must not be delivered'), false);
+});
+
 test('the bridge refuses changed revisions, unknown fields and missing chats', async () => {
     const { directories, request } = setup();
     const group = { id: 'g1', name: 'Crew', members: ['nova.png'], disabled_members: [], chats: ['crew'] };

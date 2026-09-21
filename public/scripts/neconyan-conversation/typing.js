@@ -169,7 +169,7 @@ export function setLastConversationPreview(avatar, messageText, { branchId = '',
     }
 
     const branch = getActiveConversationBranch(avatar, { branchId, create: !branchId, groupId, personaId });
-    if (branch) {
+    if (branch && branch.preview !== preview) {
         branch.preview = preview;
         branch.updatedAt = Date.now();
         persistConversationStore();

@@ -66,7 +66,7 @@ export async function retryJob(id, { base = '', account = getCurrentUserHandle()
     return requestJson(endpoint(base, `/${encodeURIComponent(id)}/retry`), { account, method: 'POST', body: '{}' });
 }
 
-const TERMINAL = new Set(['completed', 'cancelled', 'failed', 'interrupted', 'conflict']);
+export const TERMINAL = new Set(['completed', 'cancelled', 'failed', 'interrupted', 'conflict']);
 
 /**
  * Observe a job until it reaches a terminal state. onUpdate receives the

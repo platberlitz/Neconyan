@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 const extensionSettings = {};
 const charactersByAvatar = new Map();
 const saveSettingsDebounced = jest.fn();
+const persistConversationStoreDebounced = jest.fn();
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({ persistConversationStoreDebounced }));
 
 await jest.unstable_mockModule('../public/script.js', () => ({
     characters: [],
@@ -65,6 +67,7 @@ describe('Conversation core persisted data regressions', () => {
         }
         charactersByAvatar.clear();
         saveSettingsDebounced.mockClear();
+        persistConversationStoreDebounced.mockClear();
     });
 
     test('defaults missing legacy group cross-talk keys on while preserving explicit false', () => {
@@ -184,7 +187,8 @@ describe('Conversation core persisted data regressions', () => {
             'from-enabled',
         ]);
         expect(anchor.threadStore.branches.main.unread).toBe(9);
-        expect(saveSettingsDebounced).toHaveBeenCalled();
+        expect(persistConversationStoreDebounced).toHaveBeenCalled();
+        expect(saveSettingsDebounced).not.toHaveBeenCalled();
     });
 
     test('seeds reset branches from retained thread memory', () => {

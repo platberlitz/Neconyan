@@ -6,8 +6,8 @@ import fetch from 'node-fetch';
 import FormData from 'form-data';
 import mime from 'mime-types';
 import { getPipeline } from '../transformers.js';
-import { forwardFetchResponse } from '../util.js';
 import { readSecret, SECRET_KEYS } from './secrets.js';
+import { fetchElevenLabsHistoryAudio, generatePollinationsSpeech, listElevenLabsHistory, listElevenLabsVoices, synthesizeElevenLabs } from './speech-transports.js';
 
 export const router = express.Router();
 
@@ -122,36 +122,15 @@ pollinations.post('/generate', async (req, res) => {
             return res.sendStatus(400);
         }
 
-        const text = req.body.text;
-        const model = req.body.model || 'openai-audio';
-        const voice = req.body.voice || 'alloy';
-        // Neconyan divergence: Pollinations TTS must hit the provider's audio endpoint directly so Conversation narration receives literal speech output.
-        const speechModel = model === 'openai-audio' ? 'tts-1' : model;
-
-        console.debug('Pollinations TTS request', { text, model: speechModel, voice });
-
-        const response = await fetch('https://gen.pollinations.ai/v1/audio/speech', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${key}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: speechModel,
-                input: text,
-                voice: voice,
-            }),
+        const result = await generatePollinationsSpeech({
+            key,
+            text: req.body.text,
+            model: req.body.model,
+            voice: req.body.voice,
         });
 
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to generate audio from Pollinations: ${text}`);
-        }
-
-        const contentType = response.headers.get('content-type') || 'audio/mpeg';
-        const audioData = await response.arrayBuffer();
-        res.set('Content-Type', contentType);
-        return res.send(Buffer.from(audioData));
+        res.set('Content-Type', result.mimeType);
+        return res.send(Buffer.from(result.base64, 'base64'));
     } catch (error) {
         console.error(error);
         return res.sendStatus(500);
@@ -170,19 +149,7 @@ elevenlabs.post('/voices', async (req, res) => {
             return res.sendStatus(400);
         }
 
-        const response = await fetch('https://api.elevenlabs.io/v1/voices', {
-            headers: {
-                'xi-api-key': apiKey,
-            },
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            console.warn(`ElevenLabs voices fetch failed: HTTP ${response.status} - ${text}`);
-            return res.sendStatus(500);
-        }
-
-        const responseJson = await response.json();
+        const responseJson = await listElevenLabsVoices({ apiKey });
         return res.json(responseJson);
     } catch (error) {
         console.error(error);
@@ -232,25 +199,10 @@ elevenlabs.post('/synthesize', async (req, res) => {
             return res.sendStatus(400);
         }
 
-        console.debug('ElevenLabs TTS request:', request);
+        const result = await synthesizeElevenLabs({ apiKey, voiceId, request });
 
-        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-            method: 'POST',
-            headers: {
-                'xi-api-key': apiKey,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(request),
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            console.warn(`ElevenLabs synthesis failed: HTTP ${response.status} - ${text}`);
-            return res.sendStatus(500);
-        }
-
-        res.set('Content-Type', 'audio/mpeg');
-        await forwardFetchResponse(response, res);
+        res.set('Content-Type', result.mimeType);
+        return res.send(Buffer.from(result.base64, 'base64'));
     } catch (error) {
         console.error(error);
         return res.sendStatus(500);
@@ -265,19 +217,7 @@ elevenlabs.post('/history', async (req, res) => {
             return res.sendStatus(400);
         }
 
-        const response = await fetch('https://api.elevenlabs.io/v1/history', {
-            headers: {
-                'xi-api-key': apiKey,
-            },
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            console.warn(`ElevenLabs history fetch failed: HTTP ${response.status} - ${text}`);
-            return res.sendStatus(500);
-        }
-
-        const responseJson = await response.json();
+        const responseJson = await listElevenLabsHistory({ apiKey });
         return res.json(responseJson);
     } catch (error) {
         console.error(error);
@@ -301,20 +241,9 @@ elevenlabs.post('/history-audio', async (req, res) => {
 
         console.debug('ElevenLabs history audio request for ID:', historyItemId);
 
-        const response = await fetch(`https://api.elevenlabs.io/v1/history/${historyItemId}/audio`, {
-            headers: {
-                'xi-api-key': apiKey,
-            },
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            console.warn(`ElevenLabs history audio fetch failed: HTTP ${response.status} - ${text}`);
-            return res.sendStatus(500);
-        }
-
-        res.set('Content-Type', 'audio/mpeg');
-        await forwardFetchResponse(response, res);
+        const audio = await fetchElevenLabsHistoryAudio({ apiKey, historyItemId });
+        res.set('Content-Type', audio.mimeType);
+        return res.send(Buffer.from(audio.base64, 'base64'));
     } catch (error) {
         console.error(error);
         return res.sendStatus(500);

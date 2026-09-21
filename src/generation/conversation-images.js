@@ -2,9 +2,10 @@ import { getCharacterData } from '../endpoints/conversation-generation.js';
 import { DEFAULT_SETTINGS } from '../../public/scripts/neconyan-conversation/constants.js';
 import { formatPromptText } from '../../public/scripts/neconyan-conversation/shared-helpers.js';
 import { buildSelfieImagePromptTemplate } from '../../public/scripts/neconyan-conversation/generation-utils.js';
+import { isConversationGroupSpeakerEligible } from '../../public/scripts/neconyan-conversation/partners-utils.js';
 import { parsePositiveInt } from '../endpoints/conversation-utils.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
-import { appendConversationJobMessage, applyConversationBookkeeping, commitConversationEffect, readConversationTarget } from './conversation-effects.js';
+import { appendConversationJobMessage, applyConversationBookkeeping, commitConversationEffect, readConversationEffectReceipt, readConversationTarget } from './conversation-effects.js';
 import { captureConversationRoleplaySource } from './conversation-roleplay-source.js';
 import { generateQuickImageGenImage, saveQuickImageToUserImages } from './quick-image-gen.js';
 
@@ -53,7 +54,7 @@ async function loadCharacter(directories, avatar) {
  * selfie template plus the model's request text is enough until that fidelity is needed.
  */
 export function createConversationImageGenerator() {
-    return async function generateConversationImage(context, snapshot, requestText, speaker, delivery = {}) {
+    return async function generateConversationImage(context, snapshot, requestText, speaker, delivery = {}, { narrate } = {}) {
         const settings = snapshot?.settings || {};
         if (!settings.image_gen_enabled) return false;
         const directories = context.directories;
@@ -68,6 +69,7 @@ export function createConversationImageGenerator() {
             }
         };
         assertSource();
+        if (readConversationEffectReceipt(context, snapshot.target, effectName) !== undefined) return true;
         const cached = readArtifact(directories, context.job.id, effectName);
         let imageUrl = typeof cached?.url === 'string' ? cached.url : '';
         let prompt = typeof cached?.prompt === 'string' ? cached.prompt : '';
@@ -101,7 +103,12 @@ export function createConversationImageGenerator() {
             });
         }
         const partner = speaker.avatar !== snapshot.target.avatar;
+        const narration = narrate ? await narrate(context, snapshot, 'Here, I can show you.', speaker, { ...delivery, effectId: effectName }) : null;
         assertSource();
+        const group = readConversationTarget(request, snapshot.target).group;
+        if (snapshot.target.groupId && !isConversationGroupSpeakerEligible(group, speaker.avatar)) {
+            throw Object.assign(new Error('The reply participant is no longer available.'), { status: 409 });
+        }
         await appendConversationJobMessage(context, snapshot.target, effectName, {
             role: partner ? 'partner' : 'character',
             name: speaker.name,
@@ -115,7 +122,7 @@ export function createConversationImageGenerator() {
                 ...(delivery.attachReplyReference && snapshot.replyReference ? { conversation_reply_to: snapshot.replyReference } : {}),
                 ...(partner ? { partner_avatar: speaker.avatar } : {}),
             },
-        }, { mutate: (branch, store) => {
+        }, { presentation: { narration }, mutate: (branch, store) => {
             if (snapshot.automation) applyConversationBookkeeping(branch, store, snapshot.automation.patch, snapshot.automation.key);
         } });
         return true;

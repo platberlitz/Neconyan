@@ -91,7 +91,7 @@ export const test = base.extend({
             async release() {
                 await fetch(provider.url.replace(/\/v1$/, '') + '/fixture/release', { method: 'POST', body: '{}' });
             },
-            async account({ handle = 'default-user', phone = false, textProfile = false, activeConnection = false, settings = {}, configureSettings = () => {} } = {}) {
+            async account({ handle = 'default-user', phone = false, textProfile = false, activeConnection = false, tts = false, settings = {}, configureSettings = () => {} } = {}) {
                 const context = await browser.newContext({ baseURL: app.url, serviceWorkers: 'block', reducedMotion: 'reduce',
                     viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone });
                 contexts.push(context);
@@ -132,6 +132,19 @@ export const test = base.extend({
                     saved.extension_settings.connectionManager.profiles[0].model = 'unused-named-model';
                     settings = { ...settings, connection_profile: '' };
                 }
+                if (tts) {
+                    saved.extension_settings.tts = { enabled: true, auto_generation: true, currentProvider: 'OpenAI Compatible', playback_rate: 1,
+                        'OpenAI Compatible': { provider_endpoint: provider.url + '/audio/speech', model: 'tts-1', response_format: 'wav',
+                            voiceMap: { 'Durable Nova': 'nova', 'Durable Kit': 'nova', '[Default Voice]': 'nova' } } };
+                    await context.addInitScript(() => {
+                        window.fixtureAudioPlays = [];
+                        const play = window.HTMLMediaElement.prototype.play;
+                        window.HTMLMediaElement.prototype.play = async function () {
+                            await play.call(this);
+                            if (this.src.startsWith('data:audio/')) window.fixtureAudioPlays.push({ src: this.src, at: Date.now() });
+                        };
+                    });
+                }
                 configureSettings(saved);
                 await post('/api/settings/save', saved);
                 const created = await context.request.post('/api/characters/create', { headers, data: {
@@ -150,6 +163,7 @@ export const test = base.extend({
                     messages: [{ id: 'seed-user', role: 'user', name: 'User', mes: 'Original question.', timestamp: 1700000000000 }] });
                 const latest = await post('/api/neconyan-conversation/store/get');
                 Object.assign(latest.store.characters[thread.threadKey].settings, { enabled: true, availability: 'online', reply_delay_multiplier: 0,
+                    connection_profile: activeConnection ? '' : 'durable',
                     auto_message: false, proactive_messaging: false, auto_character_chat: false,
                     roleplay_reactions: false, multi_char: false, image_gen_enabled: false, ...settings });
                 await post('/api/neconyan-conversation/store/save', latest);
@@ -160,7 +174,7 @@ export const test = base.extend({
                         const store = await account.store();
                         const branch = store.characters[thread.threadKey]?.branches.main;
                         // Opening a thread legitimately refreshes its preview and display timestamp.
-                        if (branch) { delete branch.preview; delete branch.updatedAt; }
+                        if (branch) { delete branch.preview; delete branch.updatedAt; delete branch.unread; delete branch.readThrough; delete branch.pendingPresentations; }
                         return { branch, reminders: store.reminders,
                             runtimeStatusOverrides: store.runtimeStatusOverrides };
                     },
@@ -182,7 +196,7 @@ export const test = base.extend({
                         }
                         return job;
                     },
-                    async open() {
+                    async open({ workspace = true } = {}) {
                         const page = await context.newPage();
                         navigationErrors.push(trackNavigationErrors(page).errors);
                         page.setDefaultTimeout(20000);
@@ -190,6 +204,7 @@ export const test = base.extend({
                         await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
                         const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
                         if (await skip.isVisible()) await skip.click();
+                        if (!workspace) return page;
                         await page.evaluate(async avatar => {
                             await window.SillyTavern.getContext().getCharacters();
                             await (await import('/scripts/neconyan-conversation/chrome.js')).openConversationWorkspaceForAvatar(avatar);

@@ -26,6 +26,7 @@ import {
 } from './notifications.js';
 import { getConversationRailItems } from './pals-rail.js';
 import { getAvailabilityCopy, getConnectionProfiles } from './personas.js';
+import { markConversationBranchRead } from './presentation.js';
 import { readChimingPartnersFromList, readWeeklyScheduleFromEditor, updateUserFooter } from './pickers.js';
 import { clamp, getConversationReplyMaxTokens, getCurrentActivityFromSchedule, getStoredSchedule } from './schedule.js';
 import { getSettings, saveSettings } from './settings-store.js';
@@ -448,6 +449,7 @@ export function refreshConversationInterface({ syncControls = false } = {}) {
         if (avatar) {
             const branchId = getConversationThreadStore(avatar, { create: false, groupId, personaId })?.activeBranchId || '';
             clearUnreadCount(avatar, { branchId, groupId, personaId });
+            if (document.visibilityState === 'visible') void markConversationBranchRead(avatar, { branchId, groupId, personaId });
             updateLastPreviewFromConversation(avatar, { groupId, personaId });
         }
         renderConversationTimeline();

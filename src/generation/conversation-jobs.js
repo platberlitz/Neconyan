@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { deliverConversationReply } from '../../public/scripts/neconyan-conversation/reply-delivery.js';
 import { getConversationMessageRevision } from '../../public/scripts/neconyan-conversation/message-identity-utils.js';
 import { MAX_THREAD_MESSAGES } from '../../public/scripts/neconyan-conversation/constants.js';
+import { isConversationGroupSpeakerEligible } from '../../public/scripts/neconyan-conversation/partners-utils.js';
 import { getCharacterData, getConversationSettings, getDefaultDirective } from '../endpoints/conversation-generation.js';
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import { validateConversationPayload } from '../endpoints/conversation-utils.js';
@@ -9,10 +10,11 @@ import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { acceptChildJobs, acceptJob, getJob, listJobs, mutateJobs, releaseChildJobs, releaseJob, requestCancellation, setJobResume, submissionKey as fingerprintSubmission, updateJob } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { createMacroEnvironment } from '../macros/index.js';
-import { appendConversationJobMessage, applyConversationBookkeeping, captureConversationTarget, prepareConversationTarget, commitConversationEffect, commitConversationJobCommands, commitConversationReplyNotice, readConversationTarget } from './conversation-effects.js';
+import { appendConversationJobMessage, applyConversationBookkeeping, captureConversationTarget, prepareConversationTarget, commitConversationEffect, commitConversationJobCommands, commitConversationReplyNotice, readConversationEffectReceipt, readConversationTarget } from './conversation-effects.js';
 import { runChatProfile } from './service.js';
 import { getChatProfileContextLimit } from './profiles.js';
 import { createConversationImageGenerator, conversationReplyWantsImage, lastUserMessageText } from './conversation-images.js';
+import { createConversationNarrator } from './conversation-narration.js';
 import { buildConversationParticipantPlan, buildConversationParticipantSnapshot, captureConversationParticipantBindings, buildAvailabilityAutoResponderText, buildDelayedReplyNoticeText, getConversationAvailabilityDecision, getInitialAvailabilityDelayMs, getReplyDelayMsForStatus, manualActivity, resolveParticipantActivity } from './conversation-participants.js';
 import { captureConversationRoleplaySource, getConversationAsideOccurrenceKey, getConversationGroupAsideCooldownMs, getConversationGroupAsideLastSent, normalizeConversationAsideSubmission } from './conversation-roleplay-source.js';
 
@@ -761,6 +763,16 @@ async function runConversationParticipantJob(context, deps) {
     // An autonomous message was already chosen by the server's policy, so it
     // skips the interactive availability gate and writes with its own metadata.
     const automation = snapshot.automation || null;
+    const assertDeliverable = (avatar = speaker.avatar) => {
+        context.signal.throwIfAborted();
+        if (automation?.roleplaySource) {
+            captureConversationRoleplaySource({ user: { directories } }, automation.roleplaySource, { characterName: speaker.name, userName });
+        }
+        if (target.groupId && !isConversationGroupSpeakerEligible(readConversationTarget({ user: { directories } }, target).group, avatar)) {
+            fail('The reply participant is no longer available.');
+        }
+        return true;
+    };
     // A snapshot accepted before participant support already passed the browser's
     // own gate; re-gating it here would skip or auto-answer work it chose to do.
     const legacy = snapshot.activity === undefined && snapshot.gate === undefined;
@@ -774,10 +786,15 @@ async function runConversationParticipantJob(context, deps) {
     // A receipt-only checkpoint validates ownership and the source before any work.
     await commitConversationEffect(context, target, 'accepted', () => null);
     if (decision.action === 'autoresponder') {
+        assertDeliverable();
+        const autoresponderText = buildAvailabilityAutoResponderText(settings, speaker.name, userName);
+        const delivered = readConversationEffectReceipt(context, target, 'autoresponder');
+        const narration = delivered !== undefined ? null : await deps.narrate(context, snapshot, autoresponderText, speaker, { effectId: 'autoresponder' });
+        assertDeliverable();
         await appendConversationJobMessage(context, target, 'autoresponder', {
-            role: 'character', name: speaker.name, mes: buildAvailabilityAutoResponderText(settings, speaker.name, userName),
+            role: 'character', name: speaker.name, mes: autoresponderText,
             extra: { conversation_mode_auto_responder: true, availability: settings.availability, ...(speaker.avatar !== target.avatar ? { partner_avatar: speaker.avatar } : {}) },
-        });
+        }, { presentation: { narration } });
         writeArtifact(directories, context.job.id, 'result', { skipped: 'autoresponder' });
         return { artifact: true };
     }
@@ -829,18 +846,18 @@ async function runConversationParticipantJob(context, deps) {
     const result = await deliverConversationReply(response.text, settings, {
         fallbackSpeaker: speaker, groupId: target.groupId, splitEveryLine: speaker.avatar !== target.avatar,
         getSpeakers: () => snapshot.speakers,
-        validateTarget: () => { context.signal.throwIfAborted(); return true; },
+        validateTarget: () => assertDeliverable(),
         append: async (text, author, delivery) => {
+            assertDeliverable(author.avatar);
+            const effectId = `bubble:${delivery.chunk}:${delivery.bubble}`;
+            const delivered = readConversationEffectReceipt(context, target, effectId);
+            if (delivered !== undefined) return delivered;
             const delayMs = getReplyDelayMsForStatus(text, settings, activity.status);
             await waitForConversationJobDelay(context, `bubble-delay:${delivery.chunk}:${delivery.bubble}`, delayMs, deps);
-            // Reassert the saved source after each delivery delay, including a
-            // resumed delivery: the source chat or its group may have changed.
-            if (automation?.roleplaySource) {
-                captureConversationRoleplaySource({ user: { directories } }, automation.roleplaySource, { characterName: speaker.name, userName });
-            }
-            const group = readConversationTarget({ user: { directories } }, target).group;
-            if (target.groupId && (!group?.members?.includes(author.avatar) || group.disabled_members?.includes(author.avatar))) fail('The reply participant is no longer available.');
-            return appendConversationJobMessage(context, target, `bubble:${delivery.chunk}:${delivery.bubble}`, {
+            assertDeliverable(author.avatar);
+            const narration = await deps.narrate(context, snapshot, text, author, { ...delivery, effectId });
+            assertDeliverable(author.avatar);
+            return appendConversationJobMessage(context, target, effectId, {
                 role: author.avatar === target.avatar ? 'character' : 'partner', name: author.name, mes: text,
                 extra: { ...metadata, ...delivery.extra, ...(author.avatar !== target.avatar ? { partner_avatar: author.avatar } : {}),
                     ...(delivery.attachReplyReference && snapshot.replyReference ? { conversation_reply_to: snapshot.replyReference } : {}) },
@@ -850,11 +867,15 @@ async function runConversationParticipantJob(context, deps) {
                 mutate: automation && !bookkeepingApplied
                     ? (branch, store) => { applyConversationBookkeeping(branch, store, automation.patch, automation.key, deps.now()); bookkeepingApplied = true; }
                     : undefined,
+                presentation: { narration },
             });
         },
-        commitCommands: (parts, avatar, delivery) => commitConversationJobCommands(context, target, `commands:${delivery.chunk}`, parts, avatar, snapshot.timeZone || context.job.intent.timeZone, snapshot.now),
+        commitCommands: (parts, avatar, delivery) => {
+            assertDeliverable(avatar);
+            return commitConversationJobCommands(context, target, `commands:${delivery.chunk}`, parts, avatar, snapshot.timeZone || context.job.intent.timeZone, snapshot.now);
+        },
         generateImage: async (requestText, imageSpeaker, delivery) => {
-            const saved = await deps.generateImage(context, snapshot, requestText, imageSpeaker, delivery);
+            const saved = await deps.generateImage(context, snapshot, requestText, imageSpeaker, delivery, { narrate: deps.narrate });
             imageDelivered = imageDelivered || saved === true;
             return saved;
         },
@@ -865,15 +886,15 @@ async function runConversationParticipantJob(context, deps) {
     const imageEligible = ['reply', 'reminder', 'schedule', 'idle-followup', 'idle-spontaneous', 'proactive'].includes(snapshot.purpose || 'reply');
     const imageText = automation ? response.text : lastUserMessageText(snapshot.macros?.extra?.chat || []);
     if (imageEligible && !imageDelivered && conversationReplyWantsImage(settings, imageText)) {
-        await deps.generateImage(context, snapshot, '', speaker, { chunk: 'spontaneous', image: 0, attachReplyReference: false, extra: {} });
+        await deps.generateImage(context, snapshot, '', speaker, { chunk: 'spontaneous', image: 0, attachReplyReference: false, extra: {} }, { narrate: deps.narrate });
     }
     writeArtifact(directories, context.job.id, 'result', result);
     return { artifact: true };
 }
 
 /** Register the Conversation root coordinator and its sibling participant worker. */
-export function registerConversationReplyJob({ generate = runChatProfile, generateImage = createConversationImageGenerator(), now = Date.now, random = Math.random, sleep = defaultSleep } = {}) {
-    const deps = { generate, generateImage, now, random, sleep };
+export function registerConversationReplyJob({ generate = runChatProfile, generateImage = createConversationImageGenerator(), narrate = createConversationNarrator(), now = Date.now, random = Math.random, sleep = defaultSleep } = {}) {
+    const deps = { generate, generateImage, narrate, now, random, sleep };
     registerHandler('conversation.reply', context => runConversationRootJob(context, deps));
     registerHandler('conversation.participant', context => runConversationParticipantJob(context, deps), { allowSiblingConcurrency: true });
 }

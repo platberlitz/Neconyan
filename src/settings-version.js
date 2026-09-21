@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { tryWriteFileSync } from './util.js';
 import { MAX_THREAD_MESSAGES } from '../public/scripts/neconyan-conversation/constants.js';
+import { countConversationUnread } from '../public/scripts/neconyan-conversation/notification-utils.js';
 import { validateStoreStructure } from './endpoints/conversation-utils.js';
 
 export function getSettingsVersion(settings) {
@@ -128,6 +129,8 @@ function stripProtectedConversationState(conversation) {
             const rest = { ...branch };
             delete rest.serverOperations;
             delete rest.automationClaims;
+            delete rest.pendingPresentations;
+            delete rest.readThrough;
             delete rest.messageEditRevision;
             delete rest.messageContentHash;
             branches[id] = rest;
@@ -196,10 +199,12 @@ function protectedConversationShape(conversation) {
             if (!isPlainObject(thread?.branches)) continue;
             for (const [id, branch] of Object.entries(thread.branches)) {
                 if (!isPlainObject(branch)) continue;
-                if (branch.serverOperations !== undefined || hasEntries(branch.automationClaims) || branch.messageContentHash) {
+                if (branch.serverOperations !== undefined || hasEntries(branch.automationClaims) || hasEntries(branch.pendingPresentations) || branch.readThrough !== undefined || branch.messageContentHash) {
                     receipts[`${key}\u001f${id}`] = {
                         serverOperations: branch.serverOperations ?? null,
                         automationClaims: branch.automationClaims ?? null,
+                        pendingPresentations: branch.pendingPresentations ?? null,
+                        readThrough: branch.readThrough ?? null,
                         messageEditRevision: branch.messageEditRevision ?? null,
                         messageContentHash: branch.messageContentHash ?? null,
                     };
@@ -250,9 +255,32 @@ function restoreProtectedConversationState(conversation, currentConversation) {
             const updated = { ...branch };
             delete updated.serverOperations;
             delete updated.automationClaims;
+            delete updated.pendingPresentations;
+            delete updated.readThrough;
             if (isPlainObject(previous) && String(previous.createdAt || '') === String(branch.createdAt || '')) {
                 if (previous.serverOperations) updated.serverOperations = previous.serverOperations;
                 if (hasEntries(previous.automationClaims)) updated.automationClaims = previous.automationClaims;
+                const messages = Array.isArray(updated.messages) ? updated.messages : [];
+                if (typeof previous.readThrough === 'string') {
+                    updated.readThrough = previous.readThrough;
+                    if (previous.readThrough && !messages.some(message => message.id === previous.readThrough)) {
+                        const before = Array.isArray(previous.messages) ? previous.messages : [];
+                        const readIndex = before.findIndex(message => message.id === previous.readThrough);
+                        const retained = new Set(messages.map(message => message.id));
+                        updated.readThrough = before.slice(0, readIndex + 1).findLast(message => retained.has(message.id))?.id || '';
+                    }
+                    updated.unread = countConversationUnread(messages, updated.readThrough);
+                }
+                if (hasEntries(previous.pendingPresentations)) {
+                    const oldMessages = new Map((previous.messages || []).map(message => [message.id, message]));
+                    const kept = Object.entries(previous.pendingPresentations).filter(([messageId]) => {
+                        const old = oldMessages.get(messageId);
+                        const message = messages.find(item => item.id === messageId);
+                        return old && message && old.mes === message.mes && old.extra?.display_text === message.extra?.display_text
+                            && old.name === message.name && old.role === message.role && old.extra?.partner_avatar === message.extra?.partner_avatar;
+                    });
+                    if (kept.length) updated.pendingPresentations = Object.fromEntries(kept);
+                }
             }
             return [id, updated];
         }));

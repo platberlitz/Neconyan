@@ -5,6 +5,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sy
     assertConversationAccount,
     refreshConversationStore: jest.fn(),
 }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/presentation.js', () => ({ presentPendingConversationClaims: jest.fn() }));
 
 import { resolveConversationReminderBranchId } from '../public/scripts/neconyan-conversation/thread-store-utils.js';
 

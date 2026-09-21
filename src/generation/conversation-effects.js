@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { MAX_THREAD_MESSAGES, STATUS_NOTICE_COOLDOWN_MS } from '../../public/scripts/neconyan-conversation/constants.js';
 import { resolveConversationScheduleUpdate } from '../../public/scripts/neconyan-conversation/generation-utils.js';
 import { parseReminderDelayToMs } from '../../public/scripts/neconyan-conversation/reminder-time.js';
+import { countConversationUnread } from '../../public/scripts/neconyan-conversation/notification-utils.js';
+import { isConversationGroupSpeakerEligible } from '../../public/scripts/neconyan-conversation/partners-utils.js';
 import { authorizeConversationGroup, normalizeConversationGroupRecord } from '../endpoints/conversation-groups.js';
 import { normalizeConversationSettings } from '../endpoints/conversation-generation.js';
 import { createConversationMessage, refreshBranchPreview } from '../endpoints/conversation-messages.js';
@@ -12,6 +14,19 @@ import { getConversationMessagesHash, getSettingsVersion } from '../settings-ver
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const conflict = message => { throw Object.assign(new Error(message), { status: 409, recoverable: true }); };
 const normalizeGroup = group => normalizeConversationGroupRecord(group, normalizeConversationSettings);
+
+const MAX_PENDING_PRESENTATIONS = 50;
+
+/** Keep only un-consumed claims whose message still exists, in arrival order, bounded. */
+function prunePendingPresentations(entries, messages) {
+    const ids = new Set((Array.isArray(messages) ? messages : []).map(message => message?.id).filter(Boolean));
+    const kept = Object.entries(entries).filter(([id]) => ids.has(id));
+    if (kept.length <= MAX_PENDING_PRESENTATIONS) return Object.fromEntries(kept);
+    // Presentation iterates the stored key order, so keep the newest 50 in
+    // chronological order; reversing here would narrate later bubbles first.
+    kept.sort((left, right) => (Number(left[1]?.at) || 0) - (Number(right[1]?.at) || 0));
+    return Object.fromEntries(kept.slice(-MAX_PENDING_PRESENTATIONS));
+}
 
 export function readConversationTarget(request, target) {
     const key = getConversationThreadKey(target.avatar, target.groupId, target.personaId);
@@ -54,8 +69,7 @@ export async function prepareConversationTarget(request, target) {
     return prepared;
 }
 
-/** Write a native effect and its receipt in the same settings-file replacement. */
-export async function commitConversationEffect(context, target, effectId, mutate) {
+function readConversationEffectState(context, target, effectId) {
     context.signal?.throwIfAborted();
     const currentJob = getJob(context.directories, context.job.id);
     if (!currentJob || currentJob.owner !== context.owner) conflict('The Conversation job is no longer available.');
@@ -74,6 +88,17 @@ export async function commitConversationEffect(context, target, effectId, mutate
     // valid; a child namespaces its own effects below the shared checkpoint.
     const effectKey = currentJob.parentId ? digest([currentJob.id, effectId]) : digest(effectId);
     const receipt = current.branch.serverOperations?.[jobKey];
+    return { request, current, jobKey, effectKey, receipt };
+}
+
+export function readConversationEffectReceipt(context, target, effectId) {
+    const { receipt, effectKey } = readConversationEffectState(context, target, effectId);
+    return receipt && Object.hasOwn(receipt.effects, effectKey) ? receipt.effects[effectKey] : undefined;
+}
+
+/** Write a native effect and its receipt in the same settings-file replacement. */
+export async function commitConversationEffect(context, target, effectId, mutate) {
+    const { request, current, jobKey, effectKey, receipt } = readConversationEffectState(context, target, effectId);
     if (receipt && Object.hasOwn(receipt.effects, effectKey)) return receipt.effects[effectKey];
     const currentMessages = current.branch.messages;
     // Verify both the frozen request's captured prefix and this family's
@@ -120,20 +145,81 @@ export async function commitConversationEffect(context, target, effectId, mutate
     return result;
 }
 
-export function appendConversationJobMessage(context, target, effectId, value, { mutate } = {}) {
+export function appendConversationJobMessage(context, target, effectId, value, { mutate, presentation } = {}) {
     return commitConversationEffect(context, target, effectId, (branch, store, settings) => {
         const message = createConversationMessage({ ...value, id: `job_${digest([context.job.id, effectId]).slice(0, 32)}` });
         if (!message) throw Object.assign(new Error('The generated Conversation message is invalid.'), { status: 400 });
+        const isIncoming = !['user', 'system'].includes(message.role);
+        if (isIncoming && typeof branch.readThrough !== 'string') {
+            // Seed a legacy branch from its existing unread suffix once. All
+            // subsequent native counts are derived from the observed boundary.
+            const unread = Math.max(0, Number(branch.unread) || 0);
+            const incoming = branch.messages.filter(item => !['user', 'system'].includes(item.role));
+            const firstUnread = unread ? incoming.slice(-unread)[0] : null;
+            const index = firstUnread ? branch.messages.indexOf(firstUnread) : branch.messages.length;
+            const boundary = index === 0 ? '' : branch.messages[index - 1]?.id;
+            if (typeof boundary === 'string') branch.readThrough = boundary;
+        }
         branch.messages.push(message);
         branch.messages = branch.messages.slice(-MAX_THREAD_MESSAGES);
+        branch.unread = countConversationUnread(branch.messages, branch.readThrough) ?? (Number(branch.unread) || 0) + Number(isIncoming);
         if (message.role === 'user') {
             branch.lastActivity = Date.now();
             branch.followupCount = 0;
+        }
+        if (!['user', 'system'].includes(message.role)) {
+            branch.pendingPresentations = prunePendingPresentations({
+                ...(branch.pendingPresentations || {}),
+                [message.id]: { at: Date.now(), job: context.job.id, narration: presentation?.narration ?? null },
+            }, branch.messages);
         }
         refreshBranchPreview(branch);
         mutate?.(branch, store, settings);
         return { id: message.id };
     });
+}
+
+/**
+ * Consume pending presentation claims. Deleting a claim inside the same
+ * settings write that saves it is the exactly-once gate: whichever caller's
+ * replace lands on disk owns the presentation, and every later caller finds
+ * the claim gone. A read boundary clears only messages the caller observed.
+ */
+export async function claimConversationPresentations(request, { target, messageIds, readThrough } = {}) {
+    const current = readConversationTarget(request, target);
+    const branch = current.branch;
+    if (branch.createdAt !== target.createdAt) conflict('The Conversation branch was replaced.');
+    const won = {};
+    let changed = false;
+    const existing = branch.pendingPresentations;
+    if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+        const entries = { ...existing };
+        for (const id of Array.isArray(messageIds) ? messageIds : []) {
+            if (typeof id !== 'string' || !Object.hasOwn(entries, id)) continue;
+            const message = branch.messages.find(item => item.id === id);
+            const speaker = message?.extra?.partner_avatar || target.avatar;
+            if (message && (!target.groupId || isConversationGroupSpeakerEligible(current.group, speaker))) {
+                won[id] = entries[id]?.narration ?? null;
+            }
+            delete entries[id];
+            changed = true;
+        }
+        if (changed) {
+            if (Object.keys(entries).length) branch.pendingPresentations = entries;
+            else delete branch.pendingPresentations;
+        }
+    }
+    const readIndex = typeof readThrough === 'string' ? branch.messages.findIndex(message => message.id === readThrough) : -1;
+    const previousIndex = branch.messages.findIndex(message => message.id === branch.readThrough);
+    if (readIndex >= 0 && readIndex >= previousIndex && branch.readThrough !== readThrough) {
+        branch.readThrough = readThrough;
+        branch.unread = countConversationUnread(branch.messages, readThrough);
+        changed = true;
+    }
+    if (!changed) return { won: {}, version: current.version, unread: branch.unread, readThrough: branch.readThrough };
+    const saved = await saveConversationStore(request, current.store, current.version, { trustedConversationEffects: true });
+    if (!saved.ok) throw Object.assign(new Error(saved.body?.error || 'Conversation save failed.'), { status: saved.status, body: saved.body, recoverable: true });
+    return { won, version: saved.version, unread: branch.unread, readThrough: branch.readThrough };
 }
 
 /**

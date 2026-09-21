@@ -70,6 +70,23 @@ router.get('/:id/result', (request, response) => {
     }
 });
 
+router.get('/:id/audio/:name', (request, response) => {
+    try {
+        const { owner, directories } = directoriesFor(request);
+        const job = getJob(directories, request.params.id);
+        if (!job || job.owner !== owner) return response.status(404).json({ error: 'No such job.' });
+        const artifact = readArtifact(directories, job.id, request.params.name);
+        if (typeof artifact?.base64 !== 'string' || !/^audio\/[a-z0-9.+-]+$/i.test(artifact?.mimeType || '')) {
+            return response.status(404).json({ error: 'No such audio.' });
+        }
+        response.set('X-Content-Type-Options', 'nosniff');
+        response.type(artifact.mimeType);
+        return response.send(Buffer.from(artifact.base64, 'base64'));
+    } catch (error) {
+        return fail(response, error);
+    }
+});
+
 // Conversation work needs native preparation (input writes, private captures)
 // that this generic route cannot perform. Its own endpoint owns acceptance.
 const RESERVED_JOB_TYPES = new Set(['conversation.reply', 'conversation.participant', 'conversation.summary', 'conversation.schedule']);

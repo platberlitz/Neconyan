@@ -23,6 +23,7 @@ const conversationState = {
 
 globalThis.window = {
     addEventListener: (event, handler) => windowHandlers.set(event, handler),
+    setInterval: jest.fn(),
 };
 globalThis.CustomEvent = class CustomEvent {
     constructor(detail) {

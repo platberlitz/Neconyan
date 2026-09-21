@@ -6,8 +6,9 @@
  * authoritative store back, then repaints. It never calls a generation or
  * delivery function, so a reload or a second tab cannot execute a reply twice.
  */
-import { cancelJob, listJobs, observeJob } from '../jobs.js';
+import { cancelJob, listJobs, observeJob, TERMINAL } from '../jobs.js';
 import { getCurrentUserHandle } from '../user.js';
+import { presentPendingConversationClaims } from './presentation.js';
 import { scheduleInterfaceRefresh } from './render-scheduler.js';
 import { refreshConversationStore } from './store-sync.js';
 
@@ -30,14 +31,19 @@ function readback(account) {
     }
     const entry = { again: false, promise: null };
     entry.promise = (async () => {
+        let changed = false;
         do {
             entry.again = false;
             const result = await refreshConversationStore(account);
             if (account !== getCurrentUserHandle()) throw new Error('account_changed');
             // Throw so a terminal job keeps polling until its readback succeeds.
             if (result?.conflict) throw new Error('Conversation store merge conflict.');
+            changed ||= result?.changed === true;
         } while (entry.again);
-        scheduleInterfaceRefresh({ syncControls: false });
+        // Present after each successful merge so a closed workspace still badges,
+        // and a reopened one narrates. Never await: playback must not pin polling.
+        void presentPendingConversationClaims(account);
+        if (changed) scheduleInterfaceRefresh({ syncControls: false });
     })().finally(() => readbacks.delete(account));
     readbacks.set(account, entry);
     return entry.promise;
@@ -134,10 +140,11 @@ export async function resumeNativeConversationObservation() {
             return;
         }
         for (const job of jobs) {
-            if (job?.type === 'conversation.reply' && !job.parentId) {
+            if (job?.type === 'conversation.reply' && !job.parentId && !TERMINAL.has(job.state)) {
                 observeNativeConversationJob(job.id, account);
             }
         }
+        await readback(account).catch(() => {});
     } finally {
         syncCount -= 1;
     }

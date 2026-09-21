@@ -1,3 +1,5 @@
+export const NATIVE_DISCOVERY_INTERVAL_MS = 20000;
+
 export const DEFAULT_CHATROOM_PROMPT = `Write messages as {{char}} in this conversation with {{user}}.
 Use the character details and recent messages below.
 Write what {{char}} says. Leave other participants' messages and choices to them.
