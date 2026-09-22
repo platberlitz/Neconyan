@@ -4,7 +4,7 @@
 
 This is an explicitly requested checkpoint of unfinished work. Production has not been changed. Continue the migration through planning, implementation, independent review, fixes and verification. Verified local commits are authorised. Deployment is not authorised during this migration.
 
-Use the configured planner, implement in the main agent, then obtain an independent review using exactly pura-openai/gpt-6-astra with variant max. Verify the actual reviewer session's assistant-message model and variant metadata; an agent name or saved configuration is insufficient. If that selection cannot be verified, stop and report the blocker. No provider substitution or autonomous process/session restart is authorised. Fix real findings, verify and make one local commit for each coherent stage.
+Use the configured planner, implement in the main agent, then obtain an independent review using exactly pura-openai/gpt-6-astra with variant max. The owner authorised that same Pura/max selection for planning after the previous provider failed; fresh planner and reviewer execution were verified after the owner restarted OpenCode. Verify actual assistant-message provider, model and variant metadata; an agent name or saved configuration is insufficient. If that selection cannot be verified, stop and report the blocker. No further provider substitution or autonomous process/session restart is authorised. Fix real findings, verify and make one local commit for each coherent stage.
 
 The goal is server ownership of accepted workflows, authoritative state, scheduling, cancellation, recovery and completion writes. Server provider calls alone are insufficient. WebLLM and bundled browser Kokoro are the only approved browser-only exceptions so far. Their controls say to keep the page open. Do not silently replace those providers.
 
@@ -23,7 +23,15 @@ Read the repository instructions, product and design documents, the phase checkl
 - The older Conversation send API retains user messages on provider failure, preserves an old reply during failed regeneration and merges completed replies without overwriting unrelated threads. External callers must retry a failed generation using the returned version and `reuseLastUser: true`; repeating the original message ID is rejected as a duplicate.
 - Reminder clock parsing now treats a value such as '21:30' as a local clock time rather than 21 minutes; timezone, daylight-saving and spelled-out duration units have checks.
 
-## Immediate continuation: connect the real Conversation workflow
+## Current continuation: Roleplay storage preparation
+
+The first Roleplay preparation stage adds a trusted native read-modify-write operation through the existing chat lock, save, backup, exact recovery and branch-memory paths. It requires the captured raw-file hash even when legacy integrity checks are disabled, refuses unsafe or corrupt sources before mutation, validates synchronous JSON-only changes and returns authoritative records with their saved integrity value. No-op writes retain original bytes and file identity; native metadata changes are not discarded by legacy display-equivalence comparisons.
+
+Errors distinguish a committed chat with failed follow-up cleanup or memory capture from an uncertain write. Callers must reconcile uncertain saved/recovered content before repeating a mutation or associated external work. Lock cleanup cannot replace an earlier error or erase its outcome. This is storage preparation only: there is no Roleplay job handler, acceptance endpoint, protected receipt schema or browser generation cutover yet.
+
+Next is protected Roleplay instance identity, full-intent acceptance records and repeat-safe completion mutations across ordinary saves, forced saves, branches, imports, restores, renames and deletion. The ordered continuation stages are recorded in the phase checklist. Full prompt construction, progressive group turns, tools and extension processing must run without further browser-prepared requests; the earlier single-request-only proposal was rejected, not accepted as a reduced scope.
+
+## Preserved Conversation integration checkpoints
 
 The main Conversation composer, the forced-reply action and the branch-from-message reply now submit to the accepted-reply API. These entry points observe accepted jobs and read the server's saved messages. Their browser checks are recorded below; this does not establish complete Conversation migration.
 
@@ -68,7 +76,13 @@ Do not treat arbitrary DOM-dependent user scripts as portable server code. Ident
 
 ## Verification and release gates
 
-Latest automatic-ownership checkpoint: all 335 Jest suites passed, with 4,409 tests passed and two skipped (4,411 total), plus one snapshot. All 267 Node tests passed. Root lint, frontend budgets and whitespace checks passed. Changed-test lint had zero errors and 45 warnings; this is not a clean full tests-folder lint claim.
+Latest Roleplay storage preparation: all 335 Jest suites passed, with 4,413 tests passed and two skipped (4,415 total), plus one snapshot. All 294 Node tests passed, including 27 new native-mutation checks. Root lint, frontend budgets and whitespace checks passed. Lint of the four changed test files had zero errors and 14 warnings; no full tests-folder lint claim is made.
+
+All 149 disposable Chromium cases passed in one complete serial run (1.3 hours): the existing 145 Conversation cases and four new solo/group storage cases at desktop 1280x900 and touch 393x852. The new cases use real edit and branch controls, close every page, invoke the trusted storage helper on the disposable branch, restart the actual serving process and reopen its authoritative content. They check retained swipes/reasoning, visible chat geometry and zero model-provider calls. They do not establish native Roleplay generation. The first full run passed 148/149; a phone Conversation message-edit setup received a settings-version conflict. That unchanged case passed in isolation, then the complete second run passed. No served runtime files changed during either full browser run. Safari remains unverified.
+
+The fresh independent reviewer's actual assistant-message metadata was verified as pura-openai/gpt-6-astra, variant max before assignment and checked again after review. Three initial findings and one follow-up were fixed and re-reviewed: committed/uncertain writes retain their outcome through write and lock cleanup failures, unsafe paths cannot trigger recovery before rejection, and exact snapshots preserve an opening UTF-8 marker. Added failure-injection checks reproduced these failures before their fixes. The final source review found no remaining concrete stage-local problem. The final lint-safe cleanup structure was re-reviewed and the full checks rerun.
+
+Historical automatic-ownership checkpoint: all 335 Jest suites passed, with 4,409 tests passed and two skipped (4,411 total), plus one snapshot. All 267 Node tests passed. Root lint, frontend budgets and whitespace checks passed. Changed-test lint had zero errors and 45 warnings; this is not a clean full tests-folder lint claim.
 
 All 145 disposable Conversation cases passed in one complete serial Chromium run (1.3 hours), at desktop 1280x900 and touch 393x852. Eight added ownership cases cover saved-active acknowledgement followed by zero-page reminders, failed reminders remaining stopped for 65 seconds before explicit retry, stale automatic append refusal, actual memory controls completing with the page closed, a live memory panel updating and a later clear surviving an earlier pending result. Existing presentation, chime, retention, restore, account-isolation and real-process crash cases also passed. The first full run passed 144/145: one older test expected a duplicate chime job that the new pre-acceptance ownership correctly prevents. Its replacement asserts no duplicate job, retained ownership, unchanged provider calls across two scan intervals and a later reminder firing after restart. It passed in isolation and in the second full run. The earlier focused 21-case run is a separate result.
 
@@ -131,6 +145,9 @@ Conversation sync: public/scripts/neconyan-conversation/store-sync.js, store-syn
 Browser delivery: public/scripts/neconyan-conversation/generation.js
 Shared delivery: public/scripts/neconyan-conversation/reply-delivery.js
 Browser persistence: public/scripts/neconyan-conversation/context.js
+Native chat mutation: src/endpoints/chats.js (mutateChat)
+Storage regressions: tests/chat-mutation.node.js, tests/chat-save-interprocess-lock.test.js,
+                     tests/chat-recovery-endpoints.test.js, tests/neconyan-roleplay-storage.e2e.js
 
 Focused checks: tests/neconyan-conversation-api.test.js
                tests/generation-profiles.node.js
@@ -148,6 +165,7 @@ npm run lint
 npm run check:frontend-budgets
 git diff --check
 NECONYAN_CONVERSATION_TEST_DISPOSABLE=1 node tests/node_modules/@playwright/test/cli.js test --config tests/playwright.config.js neconyan-conversation-durable.e2e.js --browser=chromium --workers=1 --reporter=line --trace=retain-on-failure
+NECONYAN_CONVERSATION_TEST_DISPOSABLE=1 node tests/node_modules/@playwright/test/cli.js test --config tests/playwright.config.js neconyan-conversation-durable.e2e.js neconyan-roleplay-storage.e2e.js --browser=chromium --workers=1 --reporter=line --trace=retain-on-failure
 ```
 
 Run browser checks at 1280x900 and touch 393x852 with the Chromium installed under the tests package. The existing Mewmory fixture server and disposable-data safeguards are documented in its test. Lint changed tests using their own configuration; historical unrelated test-folder lint errors are not permission to add new ones.

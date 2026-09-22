@@ -7,7 +7,68 @@ document; this file only records what is actually finished and what is not.
 Status values: `done` (implemented and verified), `partial` (implemented but an
 acceptance case is unproven), `pending` (not started).
 
-## Current checkpoint: automatic Conversation ownership
+## Current checkpoint: Roleplay storage preparation
+
+- `done` Trusted native chat mutation shares the existing lock, writer, backups,
+  exact recovery and Mewmory branch capture. A mandatory raw-byte source hash
+  rejects stale writes even with legacy integrity checks disabled. Strict path,
+  UTF-8 and synchronous JSON-record validation precede mutation; native no-ops
+  preserve bytes and file identity, while real metadata changes remain writes.
+- `done` Native failures retain committed or uncertain outcome information through
+  write cleanup, memory capture and lock release. Uncertain outcomes require
+  reconciliation before repeating work. This does not add workflow receipts.
+- `done` Full checks: 335 Jest suites, 4,413 passed and two skipped (4,415 total),
+  one snapshot; 294 Node tests passed, including 27 native-mutation checks; root
+  lint, budgets and whitespace passed. Four changed test files: zero lint errors,
+  14 warnings, not a full tests-folder lint result.
+- `done` All 149 disposable Chromium cases passed in one full serial run (1.3 hours):
+  145 Conversation cases plus four solo/group storage cases at desktop 1280x900
+  and touch 393x852. New checks edit and branch through real controls, close all
+  pages, apply a trusted native storage mutation, restart the serving process and
+  reopen retained messages/swipes/reasoning. No model requests occur in these
+  four cases. They verify storage compatibility, not Roleplay generation.
+- The first full browser run passed 148/149: one Conversation message-edit setup
+  hit a settings-version conflict. That unchanged case passed alone and the full
+  second run passed. Runtime files stayed fixed throughout each full browser run.
+- `done` Fresh Pura/max planner and reviewer execution was verified through actual
+  assistant-message metadata. Review findings about uncertain writes, unsafe-path
+  recovery, exact UTF-8 bytes and lock-release outcome loss were fixed, covered by
+  failure-injection checks and re-reviewed without remaining concrete findings.
+- `pending` Roleplay accepted workflows and completion writes. This stage adds no
+  handler, native acceptance endpoint or browser generation cutover. Safari is
+  unverified; the whole migration remains unfinished and deployment is forbidden.
+
+### Ordered full-ownership continuation
+
+These stages implement the accepted full migration, not a reduced single-provider
+request design. Each requires planning, main-agent implementation, a verified
+independent review, fixes, checks, canonical updates and one local commit.
+
+| Stage | Status | Required boundary |
+| --- | --- | --- |
+| 1. Strict native chat mutation | done | Preparatory storage operation described above. |
+| 2. Protected Roleplay identity and effects | pending | Server-assigned instance identity, exact message/swipe/range anchors, full-intent acceptance and completion records surviving job pruning, saves and all lifecycle operations. |
+| 3. Bound execution and output processing | pending | Real Roleplay request semantics, all configured native backends, streaming/results, reasoning, cleanup and custom request semantics without embedding credentials in artifacts. |
+| 4. Shared World Info activation | pending | Extract actual recursive selection, budgets, timed effects and hooks with saved random choices. |
+| 5. Complete prompt assembly | pending | Shared DOM-free character/persona/history, instruct/context and PromptManager budgets, tools, attachments, Mewmory and extension ordering. |
+| 6. Prompt contributors and media | pending | Native retrieval, translation, captions, sprites, speech and the complete configured QIG pipeline with durable inputs/results. |
+| 7. Tools, Agents and generation hooks | pending | Before/after processing, companions, trackers, history, lorebook/tool actions and explicit approval gates. |
+| 8. Whole-Roleplay execution | pending | One saved progressive workflow for group speakers, tools, Agents, continuations, automatic swipes, cancellation, known-result recovery and native completion. |
+| 9. Named workflows and browser cutover | pending | Story, Guided and Deep Swipe semantics; real Roleplay controls submit/observe; reopen without replay; native aside events. This is the Roleplay ownership checkpoint. |
+| 10. Remaining manual Conversation | pending | Regeneration, polishing, schedule controls and selfie coordination with native completion writes. |
+| 11. Meower | pending | Saved profile/feed/interaction waves using its revisioned native store. |
+| 12. Labs | pending | Prompting Lab, Distiller, LoreStitch and World Info Lab compute saved proposals, with separate reviewed, version-checked apply. |
+| 13. Remaining application and final audit | pending | Translation, vectors, automation, archive, import, backup, maintenance and every remaining bundled workflow; final ownership verification. |
+
+Accepted work must finish with every page closed. Keep old replies, selected
+swipes and unrelated history until replacements are durable. Unknown unqueryable
+provider or mutating-tool outcomes remain interrupted, never automatically repeated.
+Receipt retention must outlive replayable jobs/artifacts; capacity exhaustion refuses
+new work instead of deleting evidence. Busy targets never absorb a different intent.
+WebLLM and bundled browser Kokoro remain the only approved page-open providers.
+No hidden browser, fake DOM or silent provider substitution establishes portability.
+
+## Historical checkpoint: automatic Conversation ownership
 
 - `done` The app persists server ownership, timezone and acknowledged saved settings
   for background use. Successful general saves acknowledge their new revision in

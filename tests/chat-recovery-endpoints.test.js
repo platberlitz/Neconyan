@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import express from 'express';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,7 +18,7 @@ const {
     markChatDeleted,
     writeLatestChatSnapshot,
 } = await import('../src/chat-recovery.js');
-const { router: chatsRouter, trySaveChat } = await import('../src/endpoints/chats.js');
+const { router: chatsRouter, trySaveChat, mutateChat } = await import('../src/endpoints/chats.js');
 const { router: charactersRouter } = await import('../src/endpoints/characters.js');
 const { router: groupsRouter } = await import('../src/endpoints/groups.js');
 
@@ -110,6 +111,35 @@ describe('chat recovery endpoint fallbacks', () => {
         expect(response.status).toBe(200);
         expect(body).toEqual({ ok: true, integrity: expect.any(String) });
         expect(fs.readFileSync(chatPath, 'utf8')).toContain('"mes":"new chat"');
+    });
+
+    test.each([false, true])('native writes reopen through existing routes and retain account assertions (group=%s)', async group => {
+        const name = 'Native Storage';
+        const recoveryTarget = group
+            ? createGroupChatTarget({ groupChatsDirectory: directories.groupChats, backupDirectory: directories.backups, filename: name + '.jsonl' })
+            : createCharacterChatTarget({ chatsDirectory: directories.chats, backupDirectory: directories.backups, owner: 'Test Card', filename: name + '.jsonl' });
+        fs.mkdirSync(path.dirname(recoveryTarget.activePath), { recursive: true });
+        const data = createChatData('Original');
+        fs.writeFileSync(recoveryTarget.activePath, data);
+        const saved = mutateChat({ filePath: recoveryTarget.activePath, expectedHash: crypto.createHash('sha256').update(data).digest('hex'),
+            handle: 'native-test', cardName: name, backupDirectory: directories.backups, recoveryTarget, deferBackup: true }, records => {
+            records[1].mes = 'Native saved result';
+            return records;
+        });
+        const locator = group ? { id: name } : { avatar_url: 'Test Card.png', file_name: name };
+        const base = group ? '/api/chats/group' : '/api/chats';
+        const loaded = await postJson(base + '/get', locator);
+        expect(loaded.status).toBe(200);
+        await expect(loaded.json()).resolves.toEqual(saved.records);
+        const wrongAccount = await fetch(baseUrl + base + '/save', { method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Neconyan-Account': 'another-account' },
+            body: JSON.stringify({ ...locator, chat: saved.records, force: true }) });
+        expect(wrongAccount.status).toBe(409);
+        await expect(wrongAccount.json()).resolves.toEqual({ error: 'account_changed' });
+        fs.writeFileSync(recoveryTarget.activePath, '{corrupt');
+        const recovered = await postJson(base + '/get', locator);
+        expect(recovered.status).toBe(200);
+        await expect(recovered.json()).resolves.toEqual(saved.records);
     });
 
     test('keeps a noncanonical character chat file untouched on a semantic no-op save', async () => {

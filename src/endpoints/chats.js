@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import readline from 'node:readline';
 import process from 'node:process';
-import { isDeepStrictEqual } from 'node:util';
+import { isDeepStrictEqual, TextDecoder, types } from 'node:util';
 
 import express from 'express';
 import sanitize from 'sanitize-filename';
@@ -823,7 +823,20 @@ function importRisuChat(userName, characterName, jsonData) {
     return chat.map(obj => JSON.stringify(obj)).join('\n');
 }
 
-function readChatFileSnapshot(filePath) {
+function assertNativeChatPath(filePath) {
+    let stats;
+    try {
+        stats = fs.lstatSync(filePath, { bigint: true });
+    } catch (error) {
+        if (error?.code === 'ENOENT') throw Object.assign(new IntegrityMismatchError('Native chat source is missing.'), { code: 'ESTALE' });
+        throw error;
+    }
+    if (!stats.isFile() || stats.nlink !== 1n || fs.realpathSync(filePath) !== path.resolve(filePath)) {
+        throw Object.assign(new Error(`Chat path is unsafe for native mutation: ${filePath}`), { code: 'EINVAL' });
+    }
+}
+
+function readChatFileSnapshot(filePath, { strict = false } = {}) {
     let initialPathStats;
     try {
         initialPathStats = fs.lstatSync(filePath, { bigint: true });
@@ -836,8 +849,11 @@ function readChatFileSnapshot(filePath) {
     if (!initialPathStats.isFile() && !initialPathStats.isSymbolicLink()) {
         throw Object.assign(new Error(`Chat path is not a regular file: ${filePath}`), { code: 'EINVAL' });
     }
+    if (strict) assertNativeChatPath(filePath);
 
-    const fileDescriptor = fs.openSync(filePath, 'r');
+    const fileDescriptor = fs.openSync(filePath, strict
+        ? fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0)
+        : 'r');
     try {
         const initialDescriptorStats = fs.fstatSync(fileDescriptor, { bigint: true });
         if (!initialDescriptorStats.isFile() || initialDescriptorStats.size > BigInt(Number.MAX_SAFE_INTEGER)) {
@@ -861,12 +877,13 @@ function readChatFileSnapshot(filePath) {
             || finalDescriptorStats.ctimeNs !== initialDescriptorStats.ctimeNs;
         const regularPathChangedTarget = initialPathStats.isFile()
             && (initialDescriptorStats.dev !== initialPathStats.dev || initialDescriptorStats.ino !== initialPathStats.ino);
-        if (pathChanged || descriptorChanged || regularPathChangedTarget || offset !== data.byteLength) {
+        if (pathChanged || descriptorChanged || regularPathChangedTarget || offset !== data.byteLength
+            || (strict && finalDescriptorStats.nlink !== 1n)) {
             throw Object.assign(new Error(`Chat file changed while it was being read: ${filePath}`), { code: 'ESTALE' });
         }
 
         return {
-            data: data.toString('utf8'),
+            data: strict ? new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(data) : data.toString('utf8'),
             hash: crypto.createHash('sha256').update(data).digest('hex'),
             pathStats: initialPathStats,
             descriptorStats: initialDescriptorStats,
@@ -1166,7 +1183,88 @@ export async function trySaveChat(chatData, filePath, skipIntegrityCheck = false
     }
 }
 
-function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handle, cardName, backupDirectory, { deferBackup = false, deferSequenceId = undefined, recoveryTarget = null, allowShrink = false, persistDerivedMetadata = false } = {}) {
+/**
+ * Mutates an existing server-resolved chat under its save lock. The callback must be
+ * synchronous and return JSON records; it must not perform external effects.
+ * The exact SHA-256 source hash is mandatory even when legacy integrity checks are disabled.
+ * Failed post-save memory capture or lock cleanup carries chatCommitted=true: do not repeat the mutation.
+ * A write failure carries chatWriteUncertain=true and the attempted integrity: reconcile recovery
+ * and the saved content before deciding whether to repeat any mutation or associated external work.
+ * @param {object} options Trusted native write options (never an HTTP request body).
+ * @param {string} options.filePath Absolute path of the existing chat.
+ * @param {string} options.expectedHash SHA-256 of the captured JSONL bytes.
+ * @param {string} options.handle Account handle for backup scheduling.
+ * @param {string} options.cardName Name for backups.
+ * @param {string} options.backupDirectory Account backup directory.
+ * @param {object} [options.recoveryTarget] Exact recovery target for this chat.
+ * @param {object} [options.mewmory] Account directories and chat locator for branch capture.
+ * @param {boolean} [options.allowShrink] Explicit permission to remove history.
+ * @param {boolean} [options.deferBackup] Defer the regular backup.
+ * @param {string} [options.deferSequenceId] Existing deferred-backup sequence identity.
+ * @param {(records: object[]) => object[]} mutate Native synchronous mutation.
+ * @returns {{integrity: string, records: object[]}} Authoritative saved content.
+ */
+export function mutateChat({ filePath, expectedHash, handle, cardName, backupDirectory,
+    recoveryTarget = null, mewmory, allowShrink = false, deferBackup = false, deferSequenceId }, mutate) {
+    if (typeof filePath !== 'string' || !path.isAbsolute(filePath)
+        || typeof expectedHash !== 'string' || !/^[a-f0-9]{64}$/.test(expectedHash) || typeof mutate !== 'function' || types.isAsyncFunction(mutate)
+        || typeof handle !== 'string' || typeof cardName !== 'string'
+        || typeof backupDirectory !== 'string' || !path.isAbsolute(backupDirectory)
+        || (recoveryTarget && path.resolve(recoveryTarget.activePath) !== path.resolve(filePath))) {
+        throw new TypeError('Invalid native chat mutation options or asynchronous callback.');
+    }
+
+    assertNativeChatPath(filePath);
+    const release = acquireChatFileLock(filePath);
+    let result;
+    try {
+        assertNativeChatPath(filePath);
+        recoverFileWriteSync(filePath);
+        const snapshot = readChatFileSnapshot(filePath, { strict: true });
+        if (!snapshot || snapshot.hash !== expectedHash) {
+            throw Object.assign(new IntegrityMismatchError('Native chat source changed or is missing.'), { code: 'ESTALE' });
+        }
+        const source = parseChatJsonl(snapshot.data);
+        if (source.status !== 'ok') throw new InvalidChatDataError('Native chat source is corrupt.');
+        const changed = mutate(source.records);
+        if (changed && typeof changed.then === 'function') {
+            // A rejected promise must not escape after the synchronous contract is refused.
+            Promise.resolve(changed).catch(() => {});
+            throw new TypeError('Native chat mutation callbacks must be synchronous.');
+        }
+        if (!isValidChatSavePayload(changed)) throw new InvalidChatDataError('Invalid native chat mutation records.');
+        const detached = parseChatJsonl(changed.map(record => JSON.stringify(record)).join('\n'));
+        if (detached.status !== 'ok' || !isDeepStrictEqual(detached.records, changed)) {
+            throw new InvalidChatDataError('Native chat mutation records must contain only JSON values.');
+        }
+        result = trySaveChatLocked(detached.records, filePath, false, handle, cardName, backupDirectory,
+            { recoveryTarget, allowShrink, deferBackup, deferSequenceId, expectedSnapshot: snapshot });
+        try {
+            if (mewmory) captureBranchMemory(mewmory.directories, mewmory.locator,
+                { metadata: result.records[0].chat_metadata, messages: result.records.slice(1) });
+        } catch (cause) {
+            throw Object.assign(new Error('Chat was saved, but its branch memory could not be captured.', { cause }),
+                { chatCommitted: true, integrity: result.integrity });
+        }
+    } catch (failure) {
+        try {
+            release();
+        } catch (cause) {
+            // Preserve the original rejection or tagged write/memory outcome through cleanup.
+            console.warn('Native chat lock cleanup also failed:', cause?.code || cause?.name);
+        }
+        throw failure;
+    }
+    try {
+        release();
+    } catch (cause) {
+        throw Object.assign(new Error('Chat was saved, but its lock could not be released.', { cause }),
+            { chatCommitted: true, integrity: result.integrity });
+    }
+    return result;
+}
+
+function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handle, cardName, backupDirectory, { deferBackup = false, deferSequenceId = undefined, recoveryTarget = null, allowShrink = false, persistDerivedMetadata = false, expectedSnapshot = null } = {}) {
     const doIntegrityCheck = (checkIntegrity && !skipIntegrityCheck);
     const incomingIntegrity = chatData?.[0]?.chat_metadata?.integrity;
     const chatIntegritySlug = doIntegrityCheck && typeof incomingIntegrity === 'string' ? incomingIntegrity : '';
@@ -1201,11 +1299,12 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
     let currentSnapshot = null;
     let existingFile = false;
 
+    if (expectedSnapshot) assertNativeChatPath(filePath);
     try {
         recoverFileWriteSync(filePath);
         existingFile = fs.existsSync(filePath);
         if (existingFile) {
-            currentSnapshot = readChatFileSnapshot(filePath);
+            currentSnapshot = readChatFileSnapshot(filePath, { strict: Boolean(expectedSnapshot) });
         }
     } catch (error) {
         if (error?.code === 'ESTALE') {
@@ -1215,6 +1314,14 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
             throw new DestructiveChatSaveError('unreadable', `Refused a chat save for "${cardName}": the existing chat file could not be read, so it cannot be backed up before being replaced.`);
         }
         existingFile = fs.existsSync(filePath);
+    }
+
+    // Native mutations never use the legacy append-retry exemption to accept a changed source.
+    // Check before backups or recovery snapshots can replace evidence of that source.
+    if (expectedSnapshot && (!currentSnapshot || currentSnapshot.hash !== expectedSnapshot.hash
+        || currentSnapshot.pathStats.dev !== expectedSnapshot.pathStats.dev
+        || currentSnapshot.pathStats.ino !== expectedSnapshot.pathStats.ino)) {
+        throw Object.assign(new IntegrityMismatchError('Native chat source changed during mutation.'), { code: 'ESTALE' });
     }
 
     if (existingFile) {
@@ -1273,7 +1380,10 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
                 deferSequenceId,
             });
 
-            if (isSameChatSaveContent(jsonlData, currentChatData, { ignoreDerivedMetadata: !persistDerivedMetadata })) {
+            const unchanged = expectedSnapshot
+                ? isDeepStrictEqual(chatData, parseChatJsonl(currentChatData).records)
+                : isSameChatSaveContent(jsonlData, currentChatData, { ignoreDerivedMetadata: !persistDerivedMetadata });
+            if (unchanged) {
                 unchangedChatData = currentChatData;
                 unchangedIntegrity = existingIntegrity;
             } else {
@@ -1338,13 +1448,15 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
                 durable: !existingFile,
             });
         } catch (error) {
+            let failure = error;
             if (['EMLINK', 'ESTALE'].includes(error?.code)) {
                 if (hasRecoverySnapshot && recoveryTarget) {
                     repairRejectedChatRecoverySnapshot(recoveryTarget, persistedChatData);
                 }
-                throw new IntegrityMismatchError(`Chat changed after it was checked: "${filePath}".`, { cause: error });
+                failure = new IntegrityMismatchError(`Chat changed after it was checked: "${filePath}".`, { cause: error });
             }
-            throw error;
+            if (expectedSnapshot) Object.assign(failure, { chatWriteUncertain: true, integrity: nextIntegrity });
+            throw failure;
         }
         logBackupEvent('chat-save-written', {
             handle,
@@ -1364,7 +1476,8 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
     } else {
         logBackupEvent('chat-backup-skipped', { type: 'regular', handle, chat: cardName, reason: 'deferred', ...savedChatSizeDetails });
     }
-    return { integrity: unchangedIntegrity ?? nextIntegrity };
+    return { integrity: unchangedIntegrity ?? nextIntegrity,
+        ...(expectedSnapshot ? { records: parseChatJsonl(persistedChatData).records } : {}) };
 }
 
 router.post('/save', validateAvatarUrlMiddleware, async function (request, response) {

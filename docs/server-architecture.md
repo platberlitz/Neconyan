@@ -17,11 +17,12 @@ The application is not fully server-owned. Provider requests reaching a server e
 | Mewmory extraction, interviews and backfill | Server scheduling, model calls, credentials, accepted-source checks, saved progress and restart recovery | An interrupted provider request can run again. Four extraction jobs can run at once; scanning is periodic. |
 | Mewmory recall, indexing and prompt preparation | Manual controls submit saved jobs; server retrieval, token counting, memory assembly and full index batching; fresh automatic recall runs independently of the page | Final Roleplay prompt construction remains in the browser. Legacy non-background endpoints remain available during migration. |
 | Roleplay replies | Server provider calls and resumable response buffering | Buffers live in process memory. Browser recovery applies the reply to the chat; server restart can lose an unfinished reply. |
+| Native Roleplay storage preparation | Trusted lock-scoped mutation through existing chat save, backup, recovery and branch-memory paths; exact source checks and committed/uncertain outcome reporting | Preparatory only. Protected instance identity, repeat-safe effects, accepted Roleplay workflows and browser cutover are still pending. |
 | Conversation send API | Server prompt assembly, provider call and thread persistence | The main composer instead submits accepted sends and replies, which save the user message durably before generation; this older resumable endpoint remains available. |
 | Accepted Conversation reply API | Named chat/text profiles and acknowledged saved-active bindings, validation before uploads/acceptance, captured prompt context, source checks, durable user messages, provider-result recovery and repeat-safe native bubbles, reminders, status effects and supported image delivery | Send-triggered chimes, presentation/narration and automatic ownership are implemented. Other manual completion writes remain unfinished. |
 | Native Conversation presentation and narration | Incoming unread/pending records saved with completion receipts; atomic owner-scoped claims and observed read boundaries; migrated legacy unread state; server speech synthesis and saved audio for OpenAI, OpenAI Compatible, ElevenLabs and Pollinations | The browser presents claimed results and plays audio only while eligible. Kokoro needs the page open. |
 | Manual Conversation text helpers | Server-bound requests retain account, connection and source identity; failed profiles cannot select another connection. Memory refresh, overwrite and clear have native completion writes and conflict checks. | Regeneration, polishing, manual schedule controls and selfie coordination still apply completion writes in the browser. Native schedule jobs exist but the control remains to migrate. |
-| Conversation interface and automatic work | Saved server ownership/timezone and acknowledged background settings; server-only automatic sender; no browser automatic timers; visible discovery every 20 seconds presents saved results | Opening Conversation configures ownership. Roleplay rendered-message sampling still originates in the page. Old generic provider calls cannot be attributed, but stale automatic completion writes are refused. |
+| Conversation interface and automatic work | Saved server ownership/timezone and acknowledged background settings; server-only automatic sender; no browser automatic timers; visible discovery every 20 seconds presents saved results | Loading the updated app configures ownership for existing Conversation users without requiring a panel visit. Roleplay rendered-message sampling still originates in the page. Old generic provider calls cannot be attributed, but stale automatic completion writes are refused. |
 | Meower | Native server storage | Feed generation and its surrounding workflow remain browser-owned. |
 | Story Mode | Shared backend model requests | Story progression and generation coordination remain browser-owned. |
 | Agents | Native server collection storage and backend model requests | Agent execution, transformations and multi-step coordination remain browser-owned. |
@@ -33,6 +34,27 @@ The remaining migrations need server-side workflow entry points and completion w
 WebLLM and bundled browser Kokoro are explicit owner-approved exceptions. Their controls state that the page must stay open; their providers must not be silently replaced.
 
 ## Verification
+
+The Roleplay storage preparation checkpoint passed all 335 Jest suites (4,413 passed,
+two skipped; 4,415 total), one snapshot, all 294 Node tests, root lint, budgets and
+whitespace checks. Changed-test lint covered four files: zero errors, 14 warnings.
+All 149 disposable Chromium cases passed in a complete serial run (1.3 hours):
+the 145 Conversation cases and four new solo/group storage cases at 1280x900 and
+touch 393x852. The new cases use edit/branch controls, native storage mutation with
+zero pages, a real serving-process restart and reopening, with zero model calls.
+They do not verify native Roleplay generation. The first run passed 148/149 due to
+a Conversation edit setup's settings-version conflict; the unchanged case passed
+alone, then the entire second run passed. Safari remains unverified.
+
+Fresh planner and reviewer execution was verified as pura-openai/gpt-6-astra,
+variant max through actual assistant-message metadata. Review findings were fixed
+and re-reviewed: write/lock cleanup cannot lose committed or uncertain outcomes,
+unsafe paths are refused before recovery side effects, and exact backup bytes retain
+the opening UTF-8 marker. Native no-ops retain file identity, metadata-only changes
+are not silently dropped, and raw source checks remain mandatory independently of
+legacy integrity settings. Later workflow callers must reconcile uncertain writes
+before repeating any mutation or external effect; this helper supplies no receipt
+or provider-retry policy by itself.
 
 The automatic-ownership checkpoint passed all 335 Jest suites (4,409 passed, two skipped; 4,411 total), one snapshot, all 267 Node tests, root lint, budgets and whitespace checks. Changed-test lint had zero errors and 45 warnings. All 145 disposable Conversation Chromium cases passed in one complete serial run (1.3 hours), including eight new ownership cases at desktop 1280x900 and touch 393x852. The first run passed 144/145 because an old test expected creation of a duplicate chime job; durable ownership now refuses before acceptance. The replacement checks no duplicate over two scan intervals and a later reminder firing after restart, then passed alone and in the full rerun. The earlier focused 21-case run is separate.
 
@@ -68,6 +90,11 @@ src/endpoints/mewmory.js
 src/request-cancellation.js
 src/endpoints/conversation-generation.js
 src/endpoints/neconyan-conversation.js
+src/endpoints/chats.js (mutateChat)
+tests/chat-mutation.node.js
+tests/chat-save-interprocess-lock.test.js
+tests/chat-recovery-endpoints.test.js
+tests/neconyan-roleplay-storage.e2e.js
 public/scripts/neconyan-conversation/native-jobs.js
 public/scripts/neconyan-conversation/store-sync.js
 public/scripts/jobs.js

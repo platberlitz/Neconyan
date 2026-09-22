@@ -1,3 +1,4 @@
+/* eslint playwright/no-standalone-expect: off -- Assertions are inside Jest test.each. */
 import { afterEach, describe, expect, test } from '@jest/globals';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -16,7 +17,7 @@ afterEach(() => {
 });
 
 describe('chat save interprocess lock', () => {
-    test('keeps the lock through a complete save and rejects the stale process', async () => {
+    test.each(['legacy', 'native-first', 'native-second'])('keeps the lock through a complete save and rejects the stale process (%s)', async mode => {
         tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-chat-process-lock-'));
         const chatDirectory = path.join(tempRoot, 'chats');
         const backupDirectory = path.join(tempRoot, 'backups');
@@ -32,9 +33,10 @@ describe('chat save interprocess lock', () => {
         const firstPayload = createChat('shared-integrity', 'first writer');
         const firstScript = `
             import fs from 'node:fs';
+            import crypto from 'node:crypto';
             import { setConfigFilePath } from ${JSON.stringify(utilUrl)};
             setConfigFilePath(${JSON.stringify(configPath)});
-            const { trySaveChat } = await import(${JSON.stringify(chatsUrl)});
+            const { trySaveChat, mutateChat } = await import(${JSON.stringify(chatsUrl)});
             const identity = fs.statSync(${JSON.stringify(chatFile)}, { bigint: true });
             const writeSync = fs.writeSync.bind(fs);
             let paused = false;
@@ -49,7 +51,12 @@ describe('chat save interprocess lock', () => {
                 }
                 return writeSync(descriptor, ...args);
             };
-            await trySaveChat(
+            if (${JSON.stringify(mode)} === 'native-first') {
+                mutateChat({ filePath: ${JSON.stringify(chatFile)},
+                    expectedHash: crypto.createHash('sha256').update(fs.readFileSync(${JSON.stringify(chatFile)})).digest('hex'),
+                    handle: 'first-process', cardName: 'Test Card', backupDirectory: ${JSON.stringify(backupDirectory)}, deferBackup: true },
+                    records => { records[1].mes = 'first writer'; return records; });
+            } else await trySaveChat(
                 ${JSON.stringify(firstPayload)},
                 ${JSON.stringify(chatFile)},
                 false,
@@ -72,6 +79,7 @@ describe('chat save interprocess lock', () => {
 
         const secondPayload = createChat('shared-integrity', 'second writer');
         const secondScript = `
+            import crypto from 'node:crypto';
             import { createRequire } from 'node:module';
             import { setConfigFilePath } from ${JSON.stringify(utilUrl)};
             const require = createRequire(import.meta.url);
@@ -90,10 +98,15 @@ describe('chat save interprocess lock', () => {
                 }
             };
             setConfigFilePath(${JSON.stringify(configPath)});
-            const { trySaveChat } = await import(${JSON.stringify(chatsUrl)});
+            const { trySaveChat, mutateChat } = await import(${JSON.stringify(chatsUrl)});
             process.stdout.write('second-saving\\n');
             try {
-                await trySaveChat(
+                if (${JSON.stringify(mode)} === 'native-second') {
+                    mutateChat({ filePath: ${JSON.stringify(chatFile)},
+                        expectedHash: crypto.createHash('sha256').update(${JSON.stringify(createChat('shared-integrity', 'before').map(JSON.stringify).join('\n'))}).digest('hex'),
+                        handle: 'second-process', cardName: 'Test Card', backupDirectory: ${JSON.stringify(backupDirectory)}, deferBackup: true },
+                        records => { records[1].mes = 'second writer'; return records; });
+                } else await trySaveChat(
                     ${JSON.stringify(secondPayload)},
                     ${JSON.stringify(chatFile)},
                     false,
@@ -121,7 +134,7 @@ describe('chat save interprocess lock', () => {
         await Promise.all([firstExit, secondExit]);
 
         expect(firstOutput).toContain('first-saved');
-        expect(secondOutput).toMatch(/second-rejected:.*integrity/i);
+        expect(secondOutput).toMatch(/second-rejected:.*(?:integrity|source changed)/i);
         expect(secondOutput).not.toContain('second-saved');
         expect(fs.readFileSync(chatFile, 'utf8')).toContain('first writer');
     });
