@@ -113,13 +113,14 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             assertWorldInfoDepthHistory(assertSource().records, request.messages, request.historyStart);
         }
         const hasOutlets = Object.keys(worldInfo.outletEntries).length > 0;
-        if (Object.keys(worldInfo.outletEntries).length) {
+        const storyLore = request.worldInfo.storyTemplate && (worldInfo.worldInfoBefore || worldInfo.worldInfoAfter);
+        if (hasOutlets || storyLore) {
             messages = insertWorldInfoOutlets(messages, worldInfo.outletEntries, request.worldInfo, request.historyStart,
                 request.userName || 'User', request.characterName, worldInfo.worldInfoBefore, worldInfo.worldInfoAfter);
         }
-        const lore = hasOutlets ? '' : [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
+        const lore = hasOutlets || storyLore ? '' : [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
         if (lore) messages.unshift({ role: 'system', content: lore });
-        let historyStart = request.historyStart + Number(Boolean(lore)) + Number(hasOutlets);
+        let historyStart = request.historyStart + Number(Boolean(lore)) + Number(Boolean(hasOutlets || storyLore));
         if (worldInfo.EMEntries.length) {
             const beforeExamples = messages.length;
             messages = insertWorldInfoExamples(messages, worldInfo.EMEntries, request.worldInfo.characterExamples,

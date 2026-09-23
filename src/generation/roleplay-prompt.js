@@ -21,7 +21,7 @@ export function insertWorldInfoOutlets(messages, outlets, snapshot, historyStart
         }
         fields[`outlet::${name}`] = entries.join('\n');
     }
-    if (!Object.keys(fields).length) return messages;
+    if (!Object.keys(fields).length && !before && !after) return messages;
     const global = snapshot.global;
     if ((before && !['wiBefore', 'loreBefore'].some(name => snapshot.storyTemplate.includes(`{{${name}}}`)))
         || (after && !['wiAfter', 'loreAfter'].some(name => snapshot.storyTemplate.includes(`{{${name}}}`)))) {

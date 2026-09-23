@@ -69,6 +69,11 @@ test('named lore outlets render at their saved story template positions', () => 
     ]);
     assert.throws(() => insertWorldInfoOutlets(history, { harbour: ['Safe waters'] }, snapshot,
         0, 'User', 'Nova', 'Missing placement'), { code: 'ROLEPLAY_INVALID' });
+    assert.deepEqual(insertWorldInfoOutlets(history, {}, {
+        ...snapshot, storyTemplate: '{{wiBefore}}\n{{description}}\n{{wiAfter}}',
+    }, 0, 'User', 'Nova', 'Earlier', 'Later'), [
+        { role: 'system', content: 'Earlier\nA harbour\nLater' }, ...history,
+    ]);
 });
 
 test('a bound reply uses the saved story outlet and retains its decision on replay', async t => {
@@ -110,6 +115,50 @@ test('a bound reply uses the saved story outlet and retains its decision on repl
     await runRoleplayReplyJob(context, options);
     assert.equal(calls, 1);
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'A safe answer');
+});
+
+test('saved story lore without outlets follows its template and refuses missing placement', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Original', 'Saved harbour', { position: 0, constant: true }),
+    } }));
+    const settingsFile = path.join(f.scope.directories.root, 'settings.json');
+    fs.writeFileSync(settingsFile, JSON.stringify({
+        power_user: { context: { story_string: 'Bound: {{wiBefore}}', story_string_position: 0 } },
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, historyStart: 0,
+        messages: [{ role: 'user', content: 'Original' }, { role: 'assistant', content: 'Answer' }],
+        maxTokens: 32, characterName: 'Nova', worldInfo: captureRoleplayWorldInfo(f.scope, account, source,
+            { avatar: 'Nova.png', maxContext: 200 }) };
+    const first = admitRoleplayJob(f.scope, account, { operationKey: 'saved-story', effect: 'append', source, request });
+    releaseJob(f.scope.directories, first.jobId);
+    const context = jobId => ({ job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal });
+    await runRoleplayReplyJob(context(first.jobId), { generate: async ({ messages, beforeDispatch }) => {
+        beforeDispatch();
+        assert.deepEqual(messages.map(message => message.content), ['Bound: Saved harbour', 'Original', 'Answer']);
+        return { text: 'Safe' };
+    } });
+    fs.writeFileSync(settingsFile, JSON.stringify({
+        power_user: { context: { story_string: 'Bound but missing lore', story_string_position: 0 } },
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const updatedSource = captureRoleplaySource(f.scope, { locator: f.locator });
+    const refused = admitRoleplayJob(f.scope, account, { operationKey: 'missing-story-position', effect: 'append',
+        source: updatedSource, request: { ...request,
+            messages: [...request.messages, { role: 'assistant', content: 'Safe' }],
+            worldInfo: captureRoleplayWorldInfo(f.scope, account, updatedSource, { avatar: 'Nova.png', maxContext: 200 }) } });
+    releaseJob(f.scope.directories, refused.jobId);
+    await assert.rejects(runRoleplayReplyJob(context(refused.jobId), {
+        generate: () => { throw Error('Provider called'); },
+    }), { code: 'ROLEPLAY_INVALID' });
 });
 
 test('a scan without selected entries does not call the per-pass hook', async () => {
