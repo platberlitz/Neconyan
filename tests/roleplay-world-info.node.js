@@ -85,6 +85,19 @@ test('scan hooks and random choices cannot escape bounded saved decision states'
         { code: 'ROLEPLAY_INVALID' });
 });
 
+test('a scan hook cannot replace its saved activation set with an unselected entry', async () => {
+    const selected = entry(1, 'cat', 'Selected');
+    const foreign = entry(2, 'cat', 'Unsaved');
+    await assert.rejects(scan([selected], { onScan: hook => { hook.activated.entries.add(foreign); } }),
+        { code: 'ROLEPLAY_INVALID' });
+});
+
+test('a scan hook cannot change an accepted entry after its token budget was checked', async () => {
+    await assert.rejects(scan([entry(1, 'cat', 'Short')], { onScan: hook => {
+        if (hook.new.successful.length) hook.new.successful[0].content = 'Unbudgeted '.repeat(100);
+    } }), { code: 'ROLEPLAY_INVALID' });
+});
+
 test('the account captures saved books and refuses a changed book before the provider runs', async t => {
     const f = fixture(t);
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');

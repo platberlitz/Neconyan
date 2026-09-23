@@ -1,6 +1,6 @@
 import { applyWorldInfoTimedEffects, filterWorldInfoInclusionGroups, matchesWorldInfoEntry, normalizeWorldInfoKey,
     passesWorldInfoProbability, resolveWorldInfoTimedEffects } from '../../public/scripts/world-info-scan-core.js';
-import { roleplayError } from '../roleplay-store.js';
+import { roleplayError, roleplayHash } from '../roleplay-store.js';
 
 const INITIAL = 1;
 const RECURSION = 2;
@@ -135,8 +135,18 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
             new: { all: candidates, successful: accepted }, activated: { entries: activated, text: activatedText },
             sortedEntries: sorted, recursionDelay: { availableLevels: delayed, currentLevel: currentDelay },
             budget: { current: budget, overflowed }, timedEffects: effects };
+        const entryHash = roleplayHash(sorted);
+        const activeEntries = [...activated];
         await onScan(hook);
-        if (![INITIAL, RECURSION, MIN_ACTIVATIONS, 0].includes(hook.state.next)
+        if (roleplayHash(sorted) !== entryHash || !Array.isArray(hook.sortedEntries) || hook.sortedEntries.length !== sorted.length
+            || hook.sortedEntries.some((entry, index) => entry !== sorted[index])
+            || !(hook.activated.entries instanceof Set) || hook.activated.entries.size !== activeEntries.length
+            || [...hook.activated.entries].some((entry, index) => entry !== activeEntries[index])
+            || !Array.isArray(hook.new.all) || hook.new.all.length !== candidates.length
+            || hook.new.all.some((entry, index) => entry !== candidates[index])
+            || !Array.isArray(hook.new.successful) || hook.new.successful.length !== accepted.length
+            || hook.new.successful.some((entry, index) => entry !== accepted[index])
+            || ![INITIAL, RECURSION, MIN_ACTIVATIONS, 0].includes(hook.state.next)
             || !Number.isFinite(hook.budget.current) || hook.budget.current < 1
             || typeof hook.budget.overflowed !== 'boolean' || typeof hook.activated.text !== 'string') {
             throw roleplayError('ROLEPLAY_INVALID', 'A World Info scan hook returned an invalid scan state.', 409);
