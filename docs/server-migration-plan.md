@@ -7,14 +7,15 @@ document; this file only records what is actually finished and what is not.
 Status values: `done` (implemented and verified), `partial` (implemented but an
 acceptance case is unproven), `pending` (not started).
 
-## Current checkpoint: protected chat-file imports
+## Current checkpoint: Stage 2 lifecycles (unreviewed local checkpoints)
 
 - Last reviewed checkpoint commit: `9fddf069004d7a349dd95f255af40a819a9e3395`. This Stage 2 checkpoint is committed; Stage 2 remains incomplete.
 - Completed: one-file composite import of every converted history, required memory and group linking; all existing parsers, frozen names/timestamps/vacancies, permanent intent and exact replay/recovery. Chooser and Backup Restore retain their retry identity across reopening and cannot redirect imports or history refreshes to another target.
 - Review: all concrete findings were fixed and accepted in bounded independent re-review. Proven unaccepted refusals permit a fresh explicit retry; uncertain/pending keys survive. Older acknowledgements cannot clear newer attempts. No known checkpoint finding remains.
 - Exact final gates: 338 Jest suites, 4,502 passed/two skipped/one snapshot; 664 Node tests; root lint, budgets and whitespace; six-file JavaScript test lint with zero errors/120 warnings; all 22 storage/import Chromium cases in one serial run at desktop/touch sizes, with zero generation calls. An unfinished accepted import reconciles after every page closes and the actual serving process is killed/restarted. Safari/WebKit is unverified.
-- Unfinished: folder/ZIP, character-card and temporary assistant imports, complete chat/entity/account lifecycles, auxiliary writers, startup coverage, private typed-effect admission and stable aside guards. The complete combined Conversation/storage/import browser suite and whole-stage audit remain mandatory before Stage 2 is done.
-- Next action: paused for the owner's requested continuation handover. Resume the remaining Stage 2 checklist in a new session; do not start another checkpoint here.
+- Local checkpoints since then, not yet reviewed: `7702a14db` chat delete/rename, `8a7c05c43` group create/delete, `08f424c43` character lifecycles including BYAF, `c05b5c673` Data Maid, retirement/restore, seeding and folder/ZIP imports, `df71fc588` account reset/purge with fresh data epochs, `fc872e2cd` paused-job admission with typed effects and instance-bound asides. All share one recorded lifecycle transaction.
+- Unfinished: browser callers for paused-job admission (Stages 3 and 8), retrying browser keys for card/maid/import writes, full combined Stage 2 browser suite and the stage-end review. Details and limits are in `server-migration-handover.md`.
+- Next action: run the full combined Stage 2 browser command, then the stage-end review and one correction pass. Do not push or deploy.
 
 Small, coherent local checkpoints are authorised within stages. They record implementation progress, not reviewed stage completion. No push or deployment is authorised. The session model plans and implements the whole stage; one independent stage-end review covers all of its checkpoints, with batched corrections and correction-only follow-up review. Full final verification standards remain unchanged. The detailed current record is in `server-migration-handover.md`; historical counts below are not current approval.
 
@@ -61,7 +62,7 @@ owner resumes this paused migration, continue automatically between verified che
 | Stage | Status | Required boundary |
 | --- | --- | --- |
 | 1. Strict native chat mutation | done | Preparatory storage operation described above. |
-| 2. Protected Roleplay identity and effects | partial | Server-assigned instance identity, exact message/swipe/range anchors, full-intent acceptance and completion records surviving job pruning, saves and all lifecycle operations. Protected storage, existing-group updates and single-file chat imports are committed; complete remaining import/lifecycle/reset/recovery coverage, private admission, typed effects and aside guards, then run full combined browser verification and the whole-stage audit. |
+| 2. Protected Roleplay identity and effects | partial | Server-assigned instance identity, exact message/swipe/range anchors, full-intent acceptance and completion records surviving job pruning, saves and all lifecycle operations. Protected storage, group updates, chat imports, chat/group/character lifecycles, Data Maid, retirement, seeding, backup imports, reset/purge, paused-job admission with typed effects and aside guards are committed as local checkpoints; full combined browser verification and the stage-end review remain. |
 | 3. Bound execution and output processing | pending | Real Roleplay request semantics, all configured native backends, streaming/results, reasoning, cleanup and custom request semantics without embedding credentials in artifacts. |
 | 4. Shared World Info activation | pending | Extract actual recursive selection, budgets, timed effects and hooks with saved random choices. |
 | 5. Complete prompt assembly | pending | Shared DOM-free character/persona/history, instruct/context and PromptManager budgets, tools, attachments, Mewmory and extension ordering. |
