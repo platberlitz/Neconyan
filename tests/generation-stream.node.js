@@ -81,6 +81,11 @@ test('provider formats preserve text, reasoning and signatures in a bounded resu
     assert.equal(response.choices[0].message.content, 'Claude GeminiCohere');
     assert.equal(response.choices[0].message.reasoning_content, 'Thought idea');
     assert.equal(response.responseContent.parts.at(-1).thoughtSignature, 'sig');
+    const mistral = assembleGenerationStream(event({ choices: [{ delta: { content: [
+        { thinking: [{ text: 'Private thought' }] },
+    ] } }] }) + event({ choices: [{ delta: { content: 'Visible answer' }, finish_reason: 'stop' }] }));
+    assert.equal(mistral.choices[0].message.content, 'Visible answer');
+    assert.equal(mistral.choices[0].message.reasoning_content, 'Private thought');
 });
 
 test('a bound stream ignores other choices and refuses tool or image output instead of saving a partial reply', () => {

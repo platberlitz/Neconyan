@@ -34,6 +34,9 @@ export function assembleGenerationStream(raw) {
             ?? chunk.delta?.message?.content?.text ?? chunk.token ?? (typeof chunk.content === 'string' ? chunk.content : ''), { excludeReasoning: true });
         let nextReasoning = normalizeContentText(delta?.reasoning_content ?? delta?.reasoning ?? delta?.thinking
             ?? chunk.delta?.thinking ?? choice?.thinking ?? '', { excludeReasoning: false });
+        if (Array.isArray(delta?.content)) for (const item of delta.content) {
+            if (Array.isArray(item?.thinking)) nextReasoning += item.thinking.map(part => part?.text ?? '').join('');
+        }
         if (Array.isArray(parts)) for (const part of parts) {
             if (part?.thought) nextReasoning += part.text ?? '';
             else nextText += part?.text ?? '';
