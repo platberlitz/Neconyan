@@ -85,6 +85,14 @@ test('scan hooks and random choices cannot escape bounded saved decision states'
         { code: 'ROLEPLAY_INVALID' });
 });
 
+test('a scan hook cannot expand its budget or recursive text beyond the saved context limit', async () => {
+    const entries = [entry(1, 'cat', 'Present'), entry(2, 'Present', 'Long '.repeat(100))];
+    await assert.rejects(scan(entries, { onScan: hook => { hook.budget.current = 10000; } }),
+        { code: 'ROLEPLAY_INVALID' });
+    await assert.rejects(scan([entries[0]], { onScan: hook => { hook.activated.text = 'Unbudgeted '.repeat(100); } }),
+        { code: 'ROLEPLAY_INVALID' });
+});
+
 test('a scan hook cannot replace its saved activation set with an unselected entry', async () => {
     const selected = entry(1, 'cat', 'Selected');
     const foreign = entry(2, 'cat', 'Unsaved');
