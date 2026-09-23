@@ -173,7 +173,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     if (request.serverPrompt || worldInfo?.activated.length) {
         const { count } = await getCounter(request.worldInfo.tokenizer);
         const budget = contextLimit(directories, request.binding) - request.maxTokens;
-        const tokens = prompt => count(prompt.map(message => message.content).join('\n'));
+        const tokens = prompt => count(prompt.map(message => [message.name, message.content].filter(Boolean).join('\n')).join('\n'));
         let size = await tokens(messages);
         if (size > budget && savedHistory && savedHistory.length > 1) {
             // ponytail: search saved suffixes instead of rebuilding once per old message; the latest stays intact.

@@ -89,7 +89,13 @@ test('group history keeps the selected Chat Completion speaker naming policy', (
     records[1].name = 'Visitor';
     assert.deepEqual(buildRoleplaySavedHistory(records, { group: true, characterName: 'Nova', namesBehavior: 0 })
         .map(message => message.content), ['Question', 'Nova: Answer']);
-    assert.throws(() => buildRoleplaySavedHistory(records, { ...base, namesBehavior: 1 }), { code: 'ROLEPLAY_INVALID' });
+    assert.deepEqual(buildRoleplaySavedHistory(records, { ...base, namesBehavior: 1 }), [
+        { role: 'user', content: 'Question', name: 'Visitor' },
+        { role: 'assistant', content: 'Answer', name: 'Nova' },
+    ]);
+    records[1].name = 'Visitor, guest';
+    assert.equal(buildRoleplaySavedHistory(records, { ...base, namesBehavior: 1 })[0].name, 'Visitor__guest');
+    records[1].name = 'User';
     assert.throws(() => buildRoleplaySavedHistory(records, base), { code: 'ROLEPLAY_INVALID' });
 });
 
@@ -116,6 +122,37 @@ test('a server-owned group reply uses its saved Chat Completion naming controls'
             beforeDispatch();
             assert.equal(userName, 'Visitor');
             assert.deepEqual(messages.map(message => message.content), ['Story: Original', 'Original', 'Nova: Answer']);
+            return { text: 'Group answer' };
+        } });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Group answer');
+});
+
+test('a server-owned group reply sends saved speaker names as provider fields', async t => {
+    const f = fixture(t, true);
+    f.records[0].user_name = 'Visitor';
+    f.records[1].name = 'Visitor';
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ power_user: {
+        context: { story_string: 'Story: {{description}}', story_string_position: 0 },
+    } }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = f.source();
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'group-name-field', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true, messages: [],
+            maxTokens: 20, characterName: 'Nova', worldInfo: snapshot } });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    await runRoleplayReplyJob(context, { promptBackend: () => ({ backend: 'chat', preset: { names_behavior: 1 } }),
+        generate: async ({ messages, beforeDispatch }) => {
+            beforeDispatch();
+            assert.deepEqual(messages, [
+                { role: 'system', content: 'Story: Original' },
+                { role: 'user', content: 'Original', name: 'Visitor' },
+                { role: 'assistant', content: 'Answer', name: 'Nova' },
+            ]);
             return { text: 'Group answer' };
         } });
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Group answer');
