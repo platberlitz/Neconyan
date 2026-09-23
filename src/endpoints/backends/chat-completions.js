@@ -2736,12 +2736,20 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
                         finishStream();
                         break;
                     }
+                    if (['response.failed', 'response.incomplete', 'error'].includes(event.type) && expressResponse.reportStreamError) {
+                        expressResponse.reportStreamError(new Error('The Responses API stream did not complete successfully.'));
+                        closeStream();
+                        break;
+                    }
                     const chatDelta = convertResponsesEventToChatDelta(event);
                     if (chatDelta) {
                         expressResponse.write(`data: ${JSON.stringify(chatDelta)}\n\n`);
                     }
-                } catch {
-                    // Skip unparseable events
+                } catch (error) {
+                    if (expressResponse.reportStreamError) {
+                        expressResponse.reportStreamError(new Error('The Responses API stream contains an invalid event.', { cause: error }));
+                        closeStream();
+                    }
                 }
             } else if (line.startsWith('event: ')) {
                 const eventType = line.slice(7).trim();
@@ -2754,7 +2762,11 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
     });
 
     fetchResponse.body.on('end', () => {
-        finishStream();
+        if (done) return;
+        done = true;
+        stopPolling();
+        expressResponse.reportStreamError?.(new Error('The Responses API stream ended before completion.'));
+        if (!expressResponse.writableEnded) expressResponse.end();
     });
 
     fetchResponse.body.on('error', (err) => {
@@ -2769,6 +2781,7 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
 
         done = true;
         console.error('Responses API stream error:', err);
+        expressResponse.reportStreamError?.(err);
         if (!expressResponse.writableEnded) {
             expressResponse.end();
         }

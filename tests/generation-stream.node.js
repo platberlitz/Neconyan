@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import './roleplay-transactions-fixture.js';
 import { assembleGenerationStream } from '../src/generation/stream-result.js';
 const { runBackendRequest } = await import('../src/endpoints/conversation-generation.js');
+const { handleChatCompletionsGenerate } = await import('../src/endpoints/backends/chat-completions.js');
 const { forwardFetchResponse } = await import('../src/util.js');
 const { runTextGeneration } = await import('../src/generation/service.js');
 
@@ -39,6 +40,17 @@ test('an upstream error after a completion marker does not commit a partial resu
             throw failure;
         })()) }, response, request);
     await assert.rejects(runBackendRequest({}, handler, { stream: true }), /upstream connection failed/);
+});
+
+test('a Responses API stream without its completion event is refused', async () => {
+    const run = body => runBackendRequest({ headers: {}, socket: new EventEmitter(), user: { directories: { root: '/tmp/opencode' } } },
+        handleChatCompletionsGenerate, { chat_completion_source: 'openai_responses', model: 'gpt-5.4',
+            messages: [{ role: 'user', content: 'Hi' }], reverse_proxy: 'https://provider.invalid/v1',
+            proxy_password: 'test', stream: true }, { fetch: async () => ({ status: 200, statusText: 'OK', ok: true,
+            body: Readable.from([body]) }) });
+    await assert.rejects(run('data: {"type":"response.output_text.delta","delta":"Partial"}\n\n'), /before completion/);
+    await assert.rejects(run('data: {broken}\n\n'), /invalid event/);
+    await assert.rejects(run('data: {"type":"response.failed"}\n\n'), /did not complete successfully/);
 });
 
 test('the capture refuses an oversized streamed response before saving it', async () => {
