@@ -4,14 +4,14 @@ The application is not fully server-owned. Provider requests reaching a server e
 
 ## Current migration checkpoint
 
-- Last reviewed checkpoint commit: `5c4d2729bc6f8dc81e6c6dc18162b04b5db90e45`. Existing-group metadata updates now join the previously committed protected storage foundation. Stage 2 remains incomplete.
-- Completed: exact recorded group updates and replay/recovery; strict generation reads alongside supported legacy storage reads; retained legacy metadata; independent editor/background authority; safe deferred-save coalescing and late-list guards. Independent re-review found no remaining concrete checkpoint issue.
-- Exact final gates: 338 Jest suites (4,502 passed/two skipped/one snapshot), 641 Node tests, root lint/budgets/whitespace, nine-file test lint (zero errors/84 warnings), and eight desktop/touch Chromium storage cases with zero generation calls. Files stayed frozen during the final run; Safari/WebKit is unverified.
-- Current next checkpoint: one protected import owns all chats produced by an uploaded file, required memory and group membership linking. Freeze complete input/target/parser intent, names, vacancies and timestamps; use the existing ledger for an explicit composite transaction and keep chooser/backup retries immutable.
-- Unfinished: folder/ZIP and other import/entity/account lifecycles, all recovering readers and auxiliary writers, private typed-effect admission and stable aside guards. Complete combined browser verification and a whole-stage audit remain required before Stage 2 completion.
-- Next action: implement and verify the import transaction and both real entry points, commit the reviewed checkpoint locally, then continue Stage 2 and the remaining migration. Do not push or deploy.
+- Last reviewed checkpoint commit: `9fddf069004d7a349dd95f255af40a819a9e3395`. Single-file protected chat imports join the committed storage and group-update foundations. Stage 2 remains incomplete.
+- Completed: one recorded operation owns every converted history, required memory and final group links. Frozen inputs/output plans, exact recovery and closed-only cleanup preserve accepted work and later edits/deletion. Chooser/Restore retries survive reopening; proven refusal and uncertainty stay distinct; stale acknowledgements and history views retain the correct owner.
+- Review: bounded independent re-review accepted all corrections; no known checkpoint-local finding remains.
+- Exact final gates: 338 Jest suites (4,502 passed/two skipped/one snapshot), 664 Node tests, root lint/budgets/whitespace, six-file JavaScript test lint (zero errors/120 warnings), and 22 serial desktop/touch storage/import Chromium cases. The unfinished accepted-import case closes every page before actual process death and reconciles before reopening. Provider calls were zero. Safari/WebKit is unverified.
+- Unfinished: folder/ZIP and other import/entity/account lifecycles, every recovering reader and auxiliary writer, private typed-effect admission and stable aside guards. Complete combined Conversation/storage/import verification and a whole-stage audit remain required before Stage 2 completion.
+- Next action: paused for the owner's requested handover after the local checkpoint. Resume the remaining scope in a new session. Do not push or deploy or begin another checkpoint here.
 
-First-edit read authority does not make group creation a recorded lifecycle. Legacy refusal does not implement reset or account reincarnation. The complete current record is in `server-migration-handover.md`.
+First-edit read authority does not make group creation a recorded lifecycle. Legacy refusal does not implement reset or account reincarnation. The complete current record and efficient checkpoint/review policy are in `server-migration-handover.md`.
 
 ## Fixed in this audit
 
@@ -28,7 +28,7 @@ First-edit read authority does not make group creation a recorded lifecycle. Leg
 | Mewmory extraction, interviews and backfill | Server scheduling, model calls, credentials, accepted-source checks, saved progress and restart recovery | An interrupted provider request can run again. Four extraction jobs can run at once; scanning is periodic. |
 | Mewmory recall, indexing and prompt preparation | Manual controls submit saved jobs; server retrieval, token counting, memory assembly and full index batching; fresh automatic recall runs independently of the page | Final Roleplay prompt construction remains in the browser. Legacy non-background endpoints remain available during migration. |
 | Roleplay replies | Server provider calls and resumable response buffering | Buffers live in process memory. Browser recovery applies the reply to the chat; server restart can lose an unfinished reply. |
-| Protected Roleplay storage | Account/file identities, bounded keyed receipts, exact chat and existing-group publication/recovery, branch memory, protected browser authority and bounded legacy-maintenance handling | Import, group creation/deletion, character/account and other lifecycles, complete recovering-reader/auxiliary-writer coverage, private typed effects, accepted Roleplay workflows and browser generation cutover remain unfinished. |
+| Protected Roleplay storage | Account/file identities, bounded keyed receipts, exact chat/existing-group publication and composite single-file import recovery, branch memory, protected browser authority and bounded legacy-maintenance handling | Folder/ZIP and other imports, group creation/deletion, character/account and other lifecycles, complete recovering-reader/auxiliary-writer coverage, private typed effects, accepted Roleplay workflows and browser generation cutover remain unfinished. |
 | Conversation send API | Server prompt assembly, provider call and thread persistence | The main composer instead submits accepted sends and replies, which save the user message durably before generation; this older resumable endpoint remains available. |
 | Accepted Conversation reply API | Named chat/text profiles and acknowledged saved-active bindings, validation before uploads/acceptance, captured prompt context, source checks, durable user messages, provider-result recovery and repeat-safe native bubbles, reminders, status effects and supported image delivery | Send-triggered chimes, presentation/narration and automatic ownership are implemented. Other manual completion writes remain unfinished. |
 | Native Conversation presentation and narration | Incoming unread/pending records saved with completion receipts; atomic owner-scoped claims and observed read boundaries; migrated legacy unread state; server speech synthesis and saved audio for OpenAI, OpenAI Compatible, ElevenLabs and Pollinations | The browser presents claimed results and plays audio only while eligible. Kokoro needs the page open. |
@@ -38,7 +38,7 @@ First-edit read authority does not make group creation a recorded lifecycle. Leg
 | Story Mode | Shared backend model requests | Story progression and generation coordination remain browser-owned. |
 | Agents | Native server collection storage and backend model requests | Agent execution, transformations and multi-step coordination remain browser-owned. |
 | Quick Image Gen and other bundled tools | Mixed native endpoints, shared provider endpoints and browser coordination | These need individual workflow migrations; server model access alone does not establish restart recovery. |
-| Imports and translation | Server endpoints perform the requested work | Import progress follows the active response; there is no general durable job history for reconnecting clients. Multi-request translation coordination can still depend on the browser. |
+| Imports and translation | Single-file chat imports have recorded server publication, memory/group completion and durable replay; other existing endpoints perform their requested work | Folder/ZIP and other import lifecycles remain to migrate. There is no general durable import job history for reconnecting clients. Multi-request translation coordination can still depend on the browser. |
 
 The remaining migrations need server-side workflow entry points and completion writes, with the interface submitting work and displaying saved results. Routing model traffic through the existing backend alone would leave these gaps intact.
 
@@ -106,6 +106,8 @@ tests/chat-mutation.node.js
 tests/chat-save-interprocess-lock.test.js
 tests/chat-recovery-endpoints.test.js
 tests/neconyan-roleplay-storage.e2e.js
+tests/neconyan-roleplay-import-retry.e2e.js
+tests/roleplay-import.node.js
 public/scripts/neconyan-conversation/native-jobs.js
 public/scripts/neconyan-conversation/store-sync.js
 public/scripts/jobs.js
