@@ -169,7 +169,7 @@ export function filterWorldInfoInclusionGroups(candidates, activated, {
     const groups = candidates.filter(entry => entry.group).reduce((result, entry) => {
         for (const name of getWorldInfoGroupNames(entry.group)) (result[name] ??= []).push(entry);
         return result;
-    }, {});
+    }, Object.create(null));
     const remove = entry => {
         const index = candidates.indexOf(entry);
         if (index !== -1) candidates.splice(index, 1);

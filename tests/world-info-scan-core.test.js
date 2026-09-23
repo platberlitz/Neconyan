@@ -81,6 +81,13 @@ describe('World Info inclusion groups shared with the server', () => {
         expect(select([low, high, elsewhere], { scoring: true })).toEqual([high, elsewhere]);
         expect(select([low, high], { activated: [{ group: 'a' }] })).toEqual([]);
     });
+
+    test('reserved group names remain selectable without inherited object keys', () => {
+        const first = { uid: 1, group: 'constructor', groupWeight: 1 };
+        const second = { uid: 2, group: 'constructor', groupWeight: 3 };
+        expect(select([first, second])).toEqual([second]);
+        expect(select([{ uid: 3, group: '__proto__' }])).toEqual([{ uid: 3, group: '__proto__' }]);
+    });
 });
 
 describe('World Info scan normalization', () => {

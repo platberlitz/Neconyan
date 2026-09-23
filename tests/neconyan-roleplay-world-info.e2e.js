@@ -13,6 +13,10 @@ for (const phone of [false, true]) {
         await account.post('/api/worldinfo/edit', { name: 'Stage4-fixture', data: { entries: {
             1: { uid: 1, key: ['Original question'], keysecondary: [], content: 'The harbour is safe.',
                 order: 100, position: 0, probability: 100, useProbability: true },
+            2: { uid: 2, key: ['Original question'], keysecondary: [], content: 'The constructor is safe.',
+                order: 90, position: 0, probability: 100, useProbability: true, group: 'constructor' },
+            3: { uid: 3, key: ['Original question'], keysecondary: [], content: 'The prototype is safe.',
+                order: 80, position: 0, probability: 100, useProbability: true, group: '__proto__' },
         } } });
         const page = await account.open({ workspace: false });
         const result = await page.evaluate(async () => {
@@ -20,6 +24,8 @@ for (const phone of [false, true]) {
             return world.checkWorldInfo(['Original question.'], 4096, true);
         });
         expect(result.worldInfoBefore).toContain('The harbour is safe.');
+        expect(result.worldInfoBefore).toContain('The constructor is safe.');
+        expect(result.worldInfoBefore).toContain('The prototype is safe.');
         await page.close();
     });
 }
