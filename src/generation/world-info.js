@@ -172,6 +172,12 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
     const result = await scanWorldInfo({ entries, chat: snapshot.chat, metadata: snapshot.metadata,
         settings: snapshot.settings, global: { ...snapshot.global, characterFile: snapshot.characterFile },
         maxContext: snapshot.maxContext, countTokens: count, substitute, random, onScan, transform });
+    const outputText = [result.worldInfoBefore, result.worldInfoAfter,
+        ...result.EMEntries.map(entry => entry.content), ...result.WIDepthEntries.flatMap(entry => entry.entries),
+        ...result.ANBeforeEntries, ...result.ANAfterEntries, ...Object.values(result.outletEntries).flat()].join('\n');
+    if (await count(outputText) > snapshot.maxContext) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The transformed World Info exceeds the saved context limit.', 409);
+    }
     const afterScan = captureRoleplayWorldInfo(base, snapshot.account, snapshot.source, {
         avatar: snapshot.avatar, maxContext: snapshot.maxContext, tokenizer: snapshot.tokenizer,
         trigger: snapshot.global.trigger,

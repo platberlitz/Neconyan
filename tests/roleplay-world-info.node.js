@@ -359,6 +359,23 @@ test('saved World Info prompt transformations apply before the scan is saved', a
     assert.equal(selected.worldInfoBefore, 'The new harbour');
 });
 
+test('a saved World Info transformation cannot expand lore beyond the context limit', async t => {
+    const f = fixture(t);
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Original', 'short', { world: undefined, hash: undefined }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+        extension_settings: { regex: [{ findRegex: '/short/g', replaceString: 'long '.repeat(200), placement: [5],
+            promptOnly: true, markdownOnly: false }] },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, f.source(), { avatar: 'Nova.png', maxContext: 100 });
+    await assert.rejects(prepareRoleplayWorldInfo(f.scope, snapshot), { code: 'ROLEPLAY_INVALID' });
+});
+
 test('a macro-dependent World Info transformation refuses before dispatch', async t => {
     const f = fixture(t);
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
