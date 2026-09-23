@@ -107,18 +107,11 @@ export function assertRoleplayGroupData(data, id, { storage = false } = {}) {
     return data;
 }
 
-function inspectEntity(lease, kind, id, { storage = false } = {}) {
-    const { scope, state } = roleplayLease(lease);
-    if (!['character', 'group'].includes(kind)) throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay resource kind.', 400);
-    if (kind === 'character') normaliseRoleplayLocator({ group: false, chat: 'source', avatar: id });
-    else identifier(id);
-    const locator = kind === 'character' ? { avatar: id } : { groupId: id };
-    const filename = path.join(kind === 'character' ? scope.directories.characters : scope.directories.groups, kind === 'character' ? id : id + '.json');
-    const file = readRoleplayFile(filename, 64 * 1024 * 1024);
-    if (!file) throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'A required Roleplay character or group no longer exists.', 404);
+/** Parses saved character or group bytes and returns the content hash protected resources record. */
+export function roleplayEntityContent(kind, id, bytes, { storage = false } = {}) {
     let data;
     try {
-        data = JSON.parse(kind === 'character' ? readCharacterCard(file.bytes) : new TextDecoder('utf-8', { fatal: true }).decode(file.bytes));
+        data = JSON.parse(kind === 'character' ? readCharacterCard(bytes) : new TextDecoder('utf-8', { fatal: true }).decode(bytes));
         if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid resource');
         if (kind === 'character') {
             const validator = new TavernCardValidator(data);
@@ -130,7 +123,19 @@ function inspectEntity(lease, kind, id, { storage = false } = {}) {
     } catch (cause) {
         throw Object.assign(roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'A required Roleplay character or group is damaged.'), { cause });
     }
-    const contentHash = kind === 'group' ? roleplayGroupContentHash(data) : roleplayHash(data);
+    return { data, contentHash: kind === 'group' ? roleplayGroupContentHash(data) : roleplayHash(data) };
+}
+
+function inspectEntity(lease, kind, id, { storage = false } = {}) {
+    const { scope, state } = roleplayLease(lease);
+    if (!['character', 'group'].includes(kind)) throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay resource kind.', 400);
+    if (kind === 'character') normaliseRoleplayLocator({ group: false, chat: 'source', avatar: id });
+    else identifier(id);
+    const locator = kind === 'character' ? { avatar: id } : { groupId: id };
+    const filename = path.join(kind === 'character' ? scope.directories.characters : scope.directories.groups, kind === 'character' ? id : id + '.json');
+    const file = readRoleplayFile(filename, 64 * 1024 * 1024);
+    if (!file) throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'A required Roleplay character or group no longer exists.', 404);
+    const { data, contentHash } = roleplayEntityContent(kind, id, file.bytes, { storage });
     const existing = state.paths[roleplayPathKey(state, kind, locator)];
     if (existing) {
         const resource = state.resources[existing.instanceId];

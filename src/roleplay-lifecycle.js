@@ -8,14 +8,15 @@ import { clearChatRecoveryState, createCharacterChatTarget, createGroupChatTarge
     rekeyChatRecoveryState, restoreChatSnapshotIfMatches, runChatRecoveryBestEffort } from './chat-recovery.js';
 import { assertRoleplaySourceLocked, assertPendingRoleplayDependencies, captureRoleplayDependenciesLocked, normaliseRoleplayLocator,
     roleplayChatPath, roleplayContentHash, roleplayPathKey, roleplayGroupContentHash, normaliseRoleplayGroupId,
-    assertRoleplayGroupData, readRoleplayEntityLocked } from './generation/roleplay-source.js';
+    assertRoleplayGroupData, readRoleplayEntityLocked, roleplayEntityContent } from './generation/roleplay-source.js';
 import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, createRoleplayDirectory, readRoleplayFile, readRoleplayPayload,
     roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, stageRoleplayPayload, withRoleplayAccountLock, ROLEPLAY_LARGEST_PHYSICAL,
     largestRoleplayJournal, roleplayPayloadDirectory, initialiseRoleplayAccount, readRoleplayWriteJournal, roleplayAvatarOwner,
-    validRoleplayAvatar, ROLEPLAY_IMPORT_MAX_OUTPUTS, roleplayImportPlan } from './roleplay-store.js';
+    validRoleplayAvatar, ROLEPLAY_IMPORT_MAX_OUTPUTS, ROLEPLAY_LIFECYCLE_MAX_STEPS, roleplayImportPlan } from './roleplay-store.js';
 import { applyPreparedBranchMemoryCapture, assertPreparedBranchMemory, prepareBranchMemoryCapture } from './mewmory/prepared-branch.js';
 import { read as readCharacterCard } from './character-card-parser.js';
-import { MAX_ARCHIVE_BYTES, chatMemoryExists, removeChatMemory, renameChatMemory } from './mewmory/store.js';
+import { MAX_ARCHIVE_BYTES, chatMemoryExists, removeChatMemory, removeSourceMemory, renameChatMemory } from './mewmory/store.js';
+import { createEntityDateAdded, removeEntityDateAdded } from './entity-date-added.js';
 import { decodeFileWriteRecovery, fsyncDirectorySync, humanizedDateTime, tryWriteFileSync, FILE_WRITE_RECOVERY_SUFFIX } from './util.js';
 
 const CHAT_LIMIT = 64 * 1024 * 1024;
@@ -77,7 +78,7 @@ function cleanupEffect(lease, effect) {
     for (const [name, hash] of Object.entries(effect.cleanup.payloads)) {
         const filename = path.join(directory, name);
         const file = readRoleplayFile(filename, ['chat.after.jsonl', 'group.after.json', 'import.group.after.json'].includes(name)
-            || /^import\.chat\.\d+\.jsonl$/.test(name) ? CHAT_LIMIT : MAX_ARCHIVE_BYTES, { allowMissingParent: true });
+            || /^import\.chat\.\d+\.jsonl$|^lifecycle\.\d+\.bin$/.test(name) ? CHAT_LIMIT : MAX_ARCHIVE_BYTES, { allowMissingParent: true });
         if (!file) continue;
         if (file.rawHash !== hash) {
             console.warn('Roleplay cleanup retained a changed staged file.');
@@ -908,11 +909,43 @@ function lifecycleRecoveryTarget(scope, locator, host) {
     return host.recoveryTarget?.(locator) ?? target(scope, locator);
 }
 
-function planLifecycleStep(lease, input) {
+function lifecycleEntityId(kind, locator) {
+    return kind === 'character' ? locator.avatar : kind === 'group' ? locator.groupId : locator.chat;
+}
+
+function planLifecycleStep(lease, input, index) {
     const { state, scope } = roleplayLease(lease);
-    if (!input || !['delete', 'move'].includes(input.op)) throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay lifecycle step.', 400);
+    if (!input || !['delete', 'move', 'discard', 'create', 'update'].includes(input.op)) {
+        throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay lifecycle step.', 400);
+    }
     const locator = lifecycleLocator(input.kind, input.locator);
-    const instanceId = state.paths[roleplayPathKey(state, input.kind, locator)]?.instanceId;
+    const filename = roleplayEntityPath(scope, input.kind, locator);
+    const slot = state.paths[roleplayPathKey(state, input.kind, locator)];
+    const file = readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: true });
+    if (input.op === 'discard' || input.op === 'create') {
+        if (slot?.instanceId) throw roleplayError('ROLEPLAY_TARGET_EXISTS', 'That protected name is already in use.');
+        rejectUndoJournal(filename);
+    }
+    if (input.op === 'discard') {
+        // Ordinary-storage files that were never recorded: retire exactly the observed bytes, or nothing.
+        if (!file) return null;
+        if (Object.values(state.resources).some(resource => isDeepStrictEqual(resource.head.physical, file.physical))) throw conflict();
+        return { op: 'discard', kind: input.kind, locator, before: { rawHash: file.rawHash, physical: file.physical } };
+    }
+    const after = bytes => {
+        if (input.kind === 'chat' || !Buffer.isBuffer(bytes) || bytes.length > CHAT_LIMIT) {
+            throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay lifecycle contents.', 400);
+        }
+        const { contentHash } = roleplayEntityContent(input.kind, lifecycleEntityId(input.kind, locator), bytes, { storage: true });
+        return { rawHash: crypto.createHash('sha256').update(bytes).digest('hex'), contentHash, byteLength: bytes.length,
+            payload: `lifecycle.${index}.bin` };
+    };
+    if (input.op === 'create') {
+        if (file) throw roleplayError('ROLEPLAY_TARGET_EXISTS', 'That name is already in use.');
+        return { op: 'create', kind: input.kind, locator, instanceId: crypto.randomUUID(), expectedVacancy: slot?.generation ?? 0,
+            after: { revision: 1, ...after(input.bytes) }, physical: null };
+    }
+    const instanceId = slot?.instanceId;
     const resource = instanceId && state.resources[instanceId];
     if (!resource || resource.status !== 'live' || resource.kind !== input.kind) {
         throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The protected file is not live.', 404);
@@ -920,39 +953,52 @@ function planLifecycleStep(lease, input) {
     if (resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch || resource.busySubmission) {
         throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The protected file has unsettled work.');
     }
-    const filename = roleplayEntityPath(scope, input.kind, locator);
-    const file = readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: true });
     const before = { revision: resource.revision, ...resource.head };
     // A tracked file removed outside the lock may still be retired; any other difference is retained.
-    if ((file || input.op === 'move') && !sameObservation(file, before)) {
+    if ((file || input.op !== 'delete') && !sameObservation(file, before)) {
         throw file ? conflict() : roleplayError('ROLEPLAY_SOURCE_MISSING', 'The protected file is missing.', 404);
     }
     rejectUndoJournal(filename);
     const step = { op: input.op, kind: input.kind, locator, instanceId, before };
+    if (input.op === 'update') return { ...step, after: { revision: before.revision + 1, ...after(input.bytes) }, physical: null };
     if (input.op === 'move') {
         const destination = lifecycleLocator(input.kind, input.destination);
-        const slot = state.paths[roleplayPathKey(state, input.kind, destination)];
+        const destinationSlot = state.paths[roleplayPathKey(state, input.kind, destination)];
         const destinationFile = roleplayEntityPath(scope, input.kind, destination);
-        if (slot?.instanceId || fs.existsSync(destinationFile)) {
+        if (destinationSlot?.instanceId || fs.existsSync(destinationFile)) {
             throw roleplayError('ROLEPLAY_TARGET_EXISTS', 'The destination name is already in use.');
         }
         rejectUndoJournal(destinationFile);
-        Object.assign(step, { destination, destinationVacancy: slot?.generation ?? 0 });
+        Object.assign(step, { destination, destinationVacancy: destinationSlot?.generation ?? 0 });
     }
     return step;
 }
 
 function lifecycleResult(pending) {
-    const [primary] = pending.steps;
+    const primary = pending.steps.find(step => step.op !== 'discard');
+    const head = primary.after ?? primary.before;
     return { kind: 'lifecycle', mode: 'lifecycle', action: pending.action, instanceId: primary.instanceId,
-        revision: primary.before.revision, rawHash: primary.before.rawHash, integrity: '', writeId: pending.id, changed: true };
+        revision: head.revision, rawHash: head.rawHash, integrity: '', writeId: pending.id, changed: true };
 }
 
 function finishedLifecycle(state, pending) {
     const next = JSON.parse(JSON.stringify(state));
+    const payloads = {};
     for (const step of pending.steps) {
-        const resource = next.resources[step.instanceId];
         const key = roleplayPathKey(state, step.kind, step.locator);
+        if (step.op === 'discard') continue;
+        if (step.after) payloads[step.after.payload] = step.after.rawHash;
+        if (step.op === 'create' || step.op === 'update') {
+            const physical = step.physical ?? ROLEPLAY_LARGEST_PHYSICAL;
+            const head = { rawHash: step.after.rawHash, contentHash: step.after.contentHash, physical, writeId: null };
+            next.resources[step.instanceId] = step.op === 'create'
+                ? { accountId: state.accountId, dataEpoch: state.dataEpoch, kind: step.kind, locator: step.locator, status: 'live',
+                    revision: 1, head, busySubmission: null }
+                : { ...next.resources[step.instanceId], revision: step.after.revision, head };
+            next.paths[key] = { generation: step.op === 'create' ? step.expectedVacancy + 1 : next.paths[key].generation, instanceId: step.instanceId };
+            continue;
+        }
+        const resource = next.resources[step.instanceId];
         next.paths[key] = { generation: next.paths[key].generation, instanceId: null };
         if (step.op === 'delete') resource.status = 'deleted';
         if (step.op !== 'move') continue;
@@ -960,19 +1006,49 @@ function finishedLifecycle(state, pending) {
         next.paths[roleplayPathKey(state, step.kind, step.destination)] = { generation: step.destinationVacancy + 1, instanceId: step.instanceId };
     }
     const result = lifecycleResult(pending);
+    const effect = { effectHash: pending.intentHash, writeId: pending.id, instanceId: result.instanceId, appliedRevision: result.revision, result };
+    if (Object.keys(payloads).length) effect.cleanup = { payloads, journal: null };
     next.submissions[pending.operationKeyHash] = { accountId: state.accountId, dataEpoch: state.dataEpoch,
         intentHash: pending.intentHash, jobId: null, targetInstanceId: result.instanceId, state: 'closed',
-        reservedReceiptBytes: 0, outcome: result,
-        effects: { [LIFECYCLE_EFFECT_KEY]: { effectHash: pending.intentHash, writeId: pending.id,
-            instanceId: result.instanceId, appliedRevision: result.revision, result } } };
+        reservedReceiptBytes: 0, outcome: result, effects: { [LIFECYCLE_EFFECT_KEY]: effect } };
     next.pending = null;
     return next;
+}
+
+function writeLifecycleContents(lease, pending, step) {
+    const { scope } = roleplayLease(lease);
+    const filename = roleplayEntityPath(scope, step.kind, step.locator);
+    return withChatFileLocks([filename], () => {
+        const file = readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: true });
+        if (step.physical) {
+            if (!sameObservation(file, { rawHash: step.after.rawHash, physical: step.physical })) throw conflict();
+            return false;
+        }
+        // A file carrying exactly the staged bytes is this transaction's interrupted publication.
+        if (file?.rawHash === step.after.rawHash && (step.op === 'create' || isDeepStrictEqual(file.physical, step.before.physical))) {
+            step.physical = file.physical;
+            return true;
+        }
+        if (step.op === 'create' ? file : !sameObservation(file, step.before)) throw conflict();
+        const { bytes } = readRoleplayPayload(lease, pending.id, step.after.payload, step.after.rawHash, CHAT_LIMIT);
+        createRoleplayDirectory(path.dirname(filename), scope.directories.root);
+        const written = step.op === 'create'
+            ? tryWriteFileSync(filename, bytes, {}, { expectedFileAbsent: true, durable: true, preserveOnCreateError: true })
+            : tryWriteFileSync(filename, bytes, {}, { preserveFileIdentity: true, invalidateBeforeWrite: true, preserveOnWriteError: true,
+                expectedFileIdentity: Object.fromEntries(Object.entries(step.before.physical).map(([name, value]) => [name, BigInt(value)])),
+                expectedFileHash: step.before.rawHash, maxFileBytes: CHAT_LIMIT });
+        if (written === false) throw roleplayError('ROLEPLAY_WRITE_UNCERTAIN', 'The protected file could not be written.', 503);
+        const saved = readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
+        if (saved?.rawHash !== step.after.rawHash) throw conflict();
+        step.physical = saved.physical;
+        return true;
+    });
 }
 
 function applyLifecycleStep(scope, step, host) {
     const source = roleplayEntityPath(scope, step.kind, step.locator);
     const read = filename => readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: true });
-    if (step.op === 'delete') {
+    if (step.op === 'delete' || step.op === 'discard') {
         withChatFileLocks([source], () => {
             const file = read(source);
             if (!file) return;
@@ -1012,8 +1088,15 @@ function applyLifecycleStep(scope, step, host) {
 }
 
 function applyLifecycleTask(scope, task, host) {
+    const dateRoot = scope.directories.root || path.dirname(scope.directories.groups);
     if (task.task === 'chat-memory-remove') removeChatMemory(scope.directories, task.locator);
-    else if (task.task === 'chat-memory-rename') renameChatMemory(scope.directories, task.from, task.to, { resume: true });
+    else if (task.task === 'source-memory-remove') removeSourceMemory(scope.directories, task);
+    else if (task.task === 'date-added-create' || task.task === 'date-added-remove') {
+        try {
+            if (task.task === 'date-added-create') createEntityDateAdded(dateRoot, task.entity, task.id, task.time);
+            else removeEntityDateAdded(dateRoot, task.entity, task.id);
+        } catch (error) { console.warn('Could not update date-added metadata.', error); }
+    } else if (task.task === 'chat-memory-rename') renameChatMemory(scope.directories, task.from, task.to, { resume: true });
     else runChatRecoveryBestEffort(() => clearChatRecoveryState(lifecycleRecoveryTarget(scope, task.locator, host)),
         'Failed to clear chat recovery state after deletion.');
 }
@@ -1023,7 +1106,10 @@ function applyPendingLifecycle(lease, host = {}) {
     const pending = state.pending;
     if (pending?.kind !== 'lifecycle') throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'There is no matching lifecycle operation.');
     if (pending.phase === 'prepared') {
-        for (const step of pending.steps) applyLifecycleStep(scope, step, host);
+        for (const step of pending.steps) {
+            if (step.op !== 'create' && step.op !== 'update') applyLifecycleStep(scope, step, host);
+            else if (writeLifecycleContents(lease, pending, step)) saveRoleplayAccount(lease);
+        }
         pending.phase = 'files-applied';
         saveRoleplayAccount(lease);
     }
@@ -1041,7 +1127,7 @@ export function commitRoleplayLifecycleLocked(lease, { operationKey, action, int
     confirmRoleplayAccount(lease);
     const { state } = roleplayLease(lease);
     if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 256 || !/^[a-z][a-z-]{0,63}$/.test(action)
-        || !Array.isArray(steps) || steps.length < 1 || steps.length > 64) throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay lifecycle operation.', 400);
+        || !Array.isArray(steps) || steps.length < 1 || steps.length > ROLEPLAY_LIFECYCLE_MAX_STEPS) throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay lifecycle operation.', 400);
     const operationKeyHash = roleplayHash([state.accountId, 'lifecycle', operationKey]);
     const intentHash = roleplayHash({ accountId: state.accountId, dataEpoch: state.dataEpoch, action, intent: intent ?? null });
     const prior = state.submissions[operationKeyHash];
@@ -1056,7 +1142,8 @@ export function commitRoleplayLifecycleLocked(lease, { operationKey, action, int
         if (state.pending.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'The pending lifecycle operation has different contents.');
         return applyPendingLifecycle(lease, host);
     }
-    const planned = steps.map(step => planLifecycleStep(lease, step));
+    const planned = steps.map((step, index) => planLifecycleStep(lease, step, index)).filter(Boolean);
+    if (!planned.some(step => step.op !== 'discard')) throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'There is no protected file to change.', 404);
     for (const task of auxiliary) {
         if (task.task === 'chat-memory-rename' && chatMemoryExists(roleplayLease(lease).scope.directories, task.to)) {
             throw roleplayError('ROLEPLAY_TARGET_EXISTS', 'A Mewmory archive already exists for that chat name.');
@@ -1066,6 +1153,10 @@ export function commitRoleplayLifecycleLocked(lease, { operationKey, action, int
         accountId: state.accountId, dataEpoch: state.dataEpoch, action, phase: 'prepared', steps: planned,
         auxiliary: JSON.parse(JSON.stringify(auxiliary)), reservedBytes: 8 * 1024 };
     assertRoleplayTransactionCapacity(lease, pending, finishedLifecycle(state, pending));
+    steps.forEach((step, index) => {
+        const planStep = planned.find(item => item.after?.payload === `lifecycle.${index}.bin`);
+        if (planStep) stageRoleplayPayload(lease, pending.id, planStep.after.payload, step.bytes, CHAT_LIMIT);
+    });
     state.pending = pending;
     try {
         saveRoleplayAccount(lease);

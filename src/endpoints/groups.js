@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { promises as fsPromises } from 'node:fs';
 import path from 'node:path';
@@ -6,14 +7,14 @@ import express from 'express';
 import sanitize from 'sanitize-filename';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 
-import { color, getConfigValue, tryParse, tryWriteFileSync } from '../util.js';
+import { color, getConfigValue, tryParse } from '../util.js';
 import { getFileNameValidationFunction } from '../middleware/validateFileName.js';
 import { clearChatRecoveryState, createGroupChatTarget, markChatDeleted, runChatRecoveryBestEffort } from '../chat-recovery.js';
-import { createEntityDateAdded, ensureEntityDateAdded, reconcileEntityDateAdded, removeEntityDateAdded } from '../entity-date-added.js';
+import { ensureEntityDateAdded, reconcileEntityDateAdded, removeEntityDateAdded } from '../entity-date-added.js';
 import { removeChatMemory } from '../mewmory/store.js';
 import { readRoleplayEntityLocked } from '../generation/roleplay-source.js';
-import { commitSingleGroupUpdateLocked } from '../roleplay-lifecycle.js';
-import { saveRoleplayAccount, withRoleplayAccount, withUntrackedRoleplayFiles } from '../roleplay-store.js';
+import { commitRoleplayLifecycleLocked, commitSingleGroupUpdateLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
+import { roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, withRoleplayAccount, withUntrackedRoleplayFiles } from '../roleplay-store.js';
 
 export const router = express.Router();
 const isChatBackupEnabled = !!getConfigValue('backups.chat.enabled', true, 'boolean');
@@ -219,56 +220,75 @@ router.post('/all', (request, response) => {
     return response.send(groups);
 });
 
+/** The optional browser `roleplay` block: `{ account?, operationKey? }`. Unkeyed callers get a fresh identity. */
+function lifecycleBlock(request) {
+    if (request.get('X-Neconyan-Account') && request.get('X-Neconyan-Account') !== request.user.profile.handle) {
+        throw roleplayError('ROLEPLAY_ACCOUNT_CHANGED', 'The signed-in account changed.');
+    }
+    const block = request.body?.roleplay;
+    if (block !== undefined && (!block || typeof block !== 'object' || Array.isArray(block)
+        || Object.keys(block).some(key => !['account', 'operationKey'].includes(key))
+        || (block.operationKey !== undefined && (typeof block.operationKey !== 'string' || !block.operationKey || block.operationKey.length > 200))
+        || (block.account !== undefined && (!block.account || typeof block.account !== 'object' || typeof block.account.accountId !== 'string'
+            || !Number.isSafeInteger(block.account.dataEpoch))))) {
+        throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay lifecycle request.', 400);
+    }
+    // ponytail: unkeyed extension callers get single-attempt semantics; the bundled browser sends a key.
+    return { account: block?.account ?? null, operationKey: block?.operationKey ?? crypto.randomUUID() };
+}
+
+function sendLifecycleError(response, error) {
+    console.error('Protected group lifecycle failed:', error);
+    const code = String(error?.code ?? '').startsWith('ROLEPLAY_') ? error.code : 'ROLEPLAY_IO_ERROR';
+    const uncertain = error?.roleplayWritePending || code === 'ROLEPLAY_WRITE_UNCERTAIN' || code === 'ROLEPLAY_RECOVERY_REQUIRED';
+    const status = uncertain ? 503 : code === 'ROLEPLAY_STORE_FULL' ? 507 : code === 'ROLEPLAY_IO_ERROR' ? 503 : error.status || 409;
+    return response.status(status).send({ error: code.slice(9).toLowerCase(), code });
+}
+
+const groupBase = request => ({ owner: request.user.profile.handle, directories: request.user.directories });
+
 router.post('/create', (request, response) => {
     if (!request.body) {
         return response.sendStatus(400);
     }
 
-    warnOnGroupMetadata(request.body);
-    const id = String(Date.now());
-    const groupMetadata = {
-        id: id,
-        name: request.body.name ?? 'New Group',
-        members: request.body.members ?? [],
-        avatar_url: request.body.avatar_url,
-        allow_self_responses: !!request.body.allow_self_responses,
-        activation_strategy: request.body.activation_strategy ?? 0,
-        generation_mode: request.body.generation_mode ?? 0,
-        disabled_members: request.body.disabled_members ?? [],
-        fav: request.body.fav,
-        chat_id: request.body.chat_id ?? id,
-        chats: request.body.chats ?? [id],
-        generation_mode_join_prefix: request.body.generation_mode_join_prefix ?? '',
-        generation_mode_join_suffix: request.body.generation_mode_join_suffix ?? '',
-        conversation_settings: request.body.conversation_settings ?? {},
-    };
-    const pathToFile = path.join(request.user.directories.groups, sanitize(`${id}.json`));
-    const fileData = JSON.stringify(groupMetadata, null, 4);
-
-    if (!fs.existsSync(request.user.directories.groups)) {
-        fs.mkdirSync(request.user.directories.groups);
-    }
-
-    const operationTime = Date.now();
-    const dateAddedRoot = getEntityDateAddedRoot(request.user.directories);
-    const fileName = path.basename(pathToFile);
-    tryWriteFileSync(pathToFile, fileData);
     try {
-        createEntityDateAdded(dateAddedRoot, 'groups', fileName, operationTime);
-    } catch (metadataError) {
-        console.error('Could not record date-added metadata after creating a group.', metadataError);
-    }
-    try {
-        const saved = withRoleplayAccount({ owner: request.user.profile.handle, directories: request.user.directories }, null,
-            (lease, account) => {
-                const result = readRoleplayEntityLocked(lease, 'group', id);
-                if (result.changed) saveRoleplayAccount(lease);
-                return { ...result, account };
-            });
-        return response.send({ ...groupMetadata, __roleplay: { account: saved.account,
-            locator: { kind: 'group', groupId: id }, source: { instanceId: saved.instanceId, revision: saved.revision, rawHash: saved.rawHash } } });
+        const { account, operationKey } = lifecycleBlock(request);
+        const body = { ...request.body };
+        delete body.roleplay;
+        warnOnGroupMetadata(body);
+        const id = String(Date.now());
+        const groupMetadata = {
+            id: id,
+            name: body.name ?? 'New Group',
+            members: body.members ?? [],
+            avatar_url: body.avatar_url,
+            allow_self_responses: !!body.allow_self_responses,
+            activation_strategy: body.activation_strategy ?? 0,
+            generation_mode: body.generation_mode ?? 0,
+            disabled_members: body.disabled_members ?? [],
+            fav: body.fav,
+            chat_id: body.chat_id ?? id,
+            chats: body.chats ?? [id],
+            generation_mode_join_prefix: body.generation_mode_join_prefix ?? '',
+            generation_mode_join_suffix: body.generation_mode_join_suffix ?? '',
+            conversation_settings: body.conversation_settings ?? {},
+        };
+        const saved = withRoleplayAccount(groupBase(request), account, (lease, current) => {
+            const result = commitRoleplayLifecycleLocked(lease, { operationKey, action: 'group-create', intent: body,
+                steps: [{ op: 'create', kind: 'group', locator: { groupId: id }, bytes: Buffer.from(JSON.stringify(groupMetadata, null, 4)) }],
+                auxiliary: [{ task: 'date-added-create', entity: 'groups', id: `${id}.json`, time: Date.now() }] });
+            // A replay answers with the group the first attempt created, not a second group.
+            const resource = roleplayLease(lease).state.resources[result.instanceId];
+            const data = resource.status === 'live'
+                ? JSON.parse(fs.readFileSync(path.join(request.user.directories.groups, `${resource.locator.groupId}.json`), 'utf8'))
+                : { id: resource.locator.groupId };
+            return { data, account: current, result };
+        });
+        return response.send({ ...saved.data, __roleplay: { account: saved.account, locator: { kind: 'group', groupId: String(saved.data.id) },
+            source: { instanceId: saved.result.instanceId, revision: saved.result.revision, rawHash: saved.result.rawHash } } });
     } catch (error) {
-        return response.status(error.status || 503).send({ error: error.code || 'ROLEPLAY_ACCOUNT_UNAVAILABLE' });
+        return sendLifecycleError(response, error);
     }
 });
 
@@ -308,47 +328,74 @@ router.post('/delete', getFileNameValidationFunction('id'), async (request, resp
         return response.sendStatus(400);
     }
 
-    const id = request.body.id;
+    const id = String(request.body.id);
     const pathToGroup = path.join(request.user.directories.groups, sanitize(`${id}.json`));
     const dateAddedRoot = getEntityDateAddedRoot(request.user.directories);
     const groupFileName = path.basename(pathToGroup);
+
+    try {
+        const { account, operationKey } = lifecycleBlock(request);
+        const handled = withRoleplayAccount(groupBase(request), account, lease => {
+            const { state } = roleplayLease(lease);
+            if (!state.submissions[roleplayHash([state.accountId, 'lifecycle', operationKey])]
+                && !roleplayTrackedInstance(lease, 'group', { groupId: id })) return null;
+            let chats = [];
+            if (roleplayTrackedInstance(lease, 'group', { groupId: id })) {
+                const group = readRoleplayEntityLocked(lease, 'group', id, { storage: true });
+                if (group.changed) saveRoleplayAccount(lease);
+                chats = [...new Set((group.data.chats ?? []).map(chat => path.parse(sanitize(`${chat}.jsonl`)).name).filter(Boolean))];
+            }
+            const locators = chats.map(chat => ({ group: true, chat }));
+            return commitRoleplayLifecycleLocked(lease, { operationKey, action: 'group-delete', intent: { groupId: id },
+                steps: [{ op: 'delete', kind: 'group', locator: { groupId: id } }, ...locators.map(locator => ({
+                    op: roleplayTrackedInstance(lease, 'chat', locator) ? 'delete' : 'discard', kind: 'chat', locator }))],
+                auxiliary: [...locators.flatMap(locator => [{ task: 'chat-memory-remove', locator }, { task: 'chat-recovery-clear', locator }]),
+                    { task: 'date-added-remove', entity: 'groups', id: groupFileName }] },
+            { backups: isChatBackupEnabled, recoveryTarget: locator => createGroupChatTarget({
+                groupChatsDirectory: request.user.directories.groupChats, backupDirectory: request.user.directories.backups,
+                filename: `${locator.chat}.jsonl`, maxRecoveryStates: maxTotalChatBackups }) });
+        });
+        if (handled) return response.send({ ok: true, roleplay: { operationKey, result: handled } });
+    } catch (error) {
+        return sendLifecycleError(response, error);
+    }
 
     try {
         // Delete group chats
         const group = JSON.parse(fs.readFileSync(pathToGroup, 'utf8'));
         /** @type {ReturnType<typeof createGroupChatTarget>[]} */
         let recoveryTargets = [];
-
-        if (group && Array.isArray(group.chats)) {
-            const chatFiles = group.chats.map(chat => sanitize(`${chat}.jsonl`));
-            recoveryTargets = chatFiles.map(chatFile => createGroupChatTarget({
-                groupChatsDirectory: request.user.directories.groupChats,
-                backupDirectory: request.user.directories.backups,
-                filename: chatFile,
-                maxRecoveryStates: maxTotalChatBackups,
-            }));
-            if (isChatBackupEnabled) {
-                // Neconyan: tombstones keep intentional group deletion from looking like recoverable loss.
-                for (const recoveryTarget of recoveryTargets) {
-                    runChatRecoveryBestEffort(
-                        () => markChatDeleted(recoveryTarget),
-                        'Failed to mark chat recovery state for deletion; continuing with group deletion.',
-                    );
+        const chatFiles = group && Array.isArray(group.chats) ? group.chats.map(chat => sanitize(`${chat}.jsonl`)) : [];
+        withUntrackedRoleplayFiles(groupBase(request),
+            [pathToGroup, ...chatFiles.map(chatFile => path.join(request.user.directories.groupChats, chatFile))], () => {
+                recoveryTargets = chatFiles.map(chatFile => createGroupChatTarget({
+                    groupChatsDirectory: request.user.directories.groupChats,
+                    backupDirectory: request.user.directories.backups,
+                    filename: chatFile,
+                    maxRecoveryStates: maxTotalChatBackups,
+                }));
+                if (isChatBackupEnabled) {
+                    // Neconyan: tombstones keep intentional group deletion from looking like recoverable loss.
+                    for (const recoveryTarget of recoveryTargets) {
+                        runChatRecoveryBestEffort(
+                            () => markChatDeleted(recoveryTarget),
+                            'Failed to mark chat recovery state for deletion; continuing with group deletion.',
+                        );
+                    }
                 }
-            }
-            for (const chatFile of chatFiles) {
-                console.info('Deleting group chat', chatFile);
-                const pathToFile = path.join(request.user.directories.groupChats, chatFile);
+                for (const chatFile of chatFiles) {
+                    console.info('Deleting group chat', chatFile);
+                    const pathToFile = path.join(request.user.directories.groupChats, chatFile);
 
-                if (fs.existsSync(pathToFile)) {
-                    fs.unlinkSync(pathToFile);
+                    if (fs.existsSync(pathToFile)) {
+                        fs.unlinkSync(pathToFile);
+                    }
+                    removeChatMemory(request.user.directories, { chat: path.parse(chatFile).name, group: true });
                 }
-                removeChatMemory(request.user.directories, { chat: path.parse(chatFile).name, group: true });
-            }
-        }
-        if (fs.existsSync(pathToGroup)) {
-            fs.unlinkSync(pathToGroup);
-        }
+                if (fs.existsSync(pathToGroup)) {
+                    fs.unlinkSync(pathToGroup);
+                }
+            });
         try {
             removeEntityDateAdded(dateAddedRoot, 'groups', groupFileName);
         } catch (metadataError) {
@@ -361,6 +408,7 @@ router.post('/delete', getFileNameValidationFunction('id'), async (request, resp
             );
         }
     } catch (error) {
+        if (String(error?.code ?? '').startsWith('ROLEPLAY_')) return sendLifecycleError(response, error);
         console.error('Could not delete group chats. Clean them up manually.', error);
         return response.sendStatus(500);
     }

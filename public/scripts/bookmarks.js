@@ -35,7 +35,7 @@ import { commonEnumProviders } from './slash-commands/SlashCommandCommonEnumsPro
 import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
 import { createTagMapFromList } from './tags.js';
 import { renderTemplateAsync } from './templates.js';
-import { beginRoleplaySave, finishRoleplaySave } from './roleplay-save-chain.js';
+import { beginRoleplaySave, finishRoleplaySave, sendRoleplayLifecycle } from './roleplay-save-chain.js';
 import { t } from './i18n.js';
 
 import {
@@ -388,11 +388,8 @@ export async function convertSoloToGroupChat() {
         generation_mode: group_generation_mode.SWAP,
     };
 
-    const createGroupResponse = await fetch('/api/groups/create', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify(groupCreateModel),
-    });
+    const createGroupResponse = await sendRoleplayLifecycle('/api/groups/create', groupCreateModel, uuidv4(),
+        body => fetch('/api/groups/create', { method: 'POST', headers: getRequestHeaders(), body }));
 
     if (!createGroupResponse.ok) {
         console.error('Group creation unsuccessful');

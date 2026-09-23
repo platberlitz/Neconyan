@@ -2155,11 +2155,8 @@ function activateNaturalOrder(members, input, lastMessage, allowSelfResponses, i
 async function deleteGroup(id) {
     const group = groups.find((x) => x.id === id);
 
-    const response = await fetch('/api/groups/delete', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({ id: id }),
-    });
+    const response = await sendRoleplayLifecycle('/api/groups/delete', { id }, uuidv4(),
+        body => fetch('/api/groups/delete', { method: 'POST', headers: getRequestHeaders(), body }));
 
     if (group && Array.isArray(group.chats)) {
         for (const chatId of group.chats) {
@@ -3160,11 +3157,8 @@ async function createGroup() {
         conversation_settings: {},
     };
 
-    const createGroupResponse = await fetch('/api/groups/create', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify(groupCreateModel),
-    });
+    const createGroupResponse = await sendRoleplayLifecycle('/api/groups/create', groupCreateModel, uuidv4(),
+        body => fetch('/api/groups/create', { method: 'POST', headers: getRequestHeaders(), body }));
 
     if (createGroupResponse.ok) {
         newGroupMembers = [];

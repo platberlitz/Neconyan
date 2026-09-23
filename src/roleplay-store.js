@@ -273,6 +273,9 @@ function validSubmissionResult(value) {
 
 function validCleanup(value) {
     if (!object(value) || Object.keys(value).length !== 2 || !object(value.payloads)) return false;
+    if (Object.keys(value.payloads).some(name => LIFECYCLE_PAYLOAD.test(name))) {
+        return value.journal === null && Object.entries(value.payloads).every(([name, hash]) => LIFECYCLE_PAYLOAD.test(name) && HASH.test(hash));
+    }
     if (Object.hasOwn(value.payloads, 'import.chat.0.jsonl')) {
         return value.journal === null && Object.keys(value.payloads).every(name =>
             /^import\.chat\.\d+\.jsonl$|^import\.memory\.\d+\.(?:archive|guard)\.json$|^import\.group\.after\.json$/.test(name)
@@ -333,10 +336,11 @@ function validateState(state, identity) {
             if (effect.result && (effect.result.instanceId !== effect.instanceId || effect.result.revision !== effect.appliedRevision
                 || effect.result.writeId !== effect.writeId || (value.outcome && !isDeepStrictEqual(effect.result, value.outcome)))) throw damaged();
             if (effect.cleanup !== undefined && (!validCleanup(effect.cleanup)
-                || (effect.result?.kind === 'import'
-                    ? effect.result.outputs.some((output, index) => effect.cleanup.payloads[`import.chat.${index}.jsonl`] !== output.rawHash)
+                || (effect.result?.kind === 'lifecycle' ? Object.keys(effect.cleanup.payloads).some(name => !LIFECYCLE_PAYLOAD.test(name))
+                    : effect.result?.kind === 'import'
+                        ? effect.result.outputs.some((output, index) => effect.cleanup.payloads[`import.chat.${index}.jsonl`] !== output.rawHash)
                         || (effect.result.group && effect.cleanup.payloads['import.group.after.json'] !== effect.result.group.rawHash)
-                    : (effect.cleanup.payloads['group.after.json'] ?? effect.cleanup.payloads['chat.after.jsonl']) !== effect.result?.rawHash)
+                        : (effect.cleanup.payloads['group.after.json'] ?? effect.cleanup.payloads['chat.after.jsonl']) !== effect.result?.rawHash)
                 || (effect.result?.kind === 'group') !== Object.hasOwn(effect.cleanup.payloads, 'group.after.json')
                 || (effect.result.mode === 'create' && effect.cleanup.journal !== null))) throw damaged();
         }
@@ -517,16 +521,44 @@ function validateGroupTransaction(pending, state) {
 }
 
 const LIFECYCLE_ACTION = /^[a-z][a-z-]{0,63}$/;
+const LIFECYCLE_PAYLOAD = /^lifecycle\.\d+\.bin$/;
+// ponytail: whole-entity deletes are one transaction; a pending record past 2 MiB is refused before any effect.
+export const ROLEPLAY_LIFECYCLE_MAX_STEPS = 4096;
+const LIFECYCLE_PENDING_MAX_BYTES = 2 * 1024 * 1024;
 const LIFECYCLE_STEP_KEYS = {
     delete: ['op', 'kind', 'locator', 'instanceId', 'before'],
     move: ['op', 'kind', 'locator', 'instanceId', 'before', 'destination', 'destinationVacancy'],
+    discard: ['op', 'kind', 'locator', 'before'],
+    create: ['op', 'kind', 'locator', 'instanceId', 'expectedVacancy', 'after', 'physical'],
+    update: ['op', 'kind', 'locator', 'instanceId', 'before', 'after', 'physical'],
 };
+const DATE_ADDED_ENTITIES = ['characters', 'groups'];
 
 function validLifecycleTask(task) {
     if (!object(task)) return false;
     if (['chat-memory-remove', 'chat-recovery-clear'].includes(task.task)) return Object.keys(task).length === 2 && isStoredLocator('chat', task.locator);
+    if (task.task === 'date-added-remove') return Object.keys(task).length === 3 && DATE_ADDED_ENTITIES.includes(task.entity) && safeIdentifier(task.id);
+    if (task.task === 'date-added-create') {
+        return Object.keys(task).length === 4 && DATE_ADDED_ENTITIES.includes(task.entity) && safeIdentifier(task.id) && integer(task.time);
+    }
+    if (task.task === 'source-memory-remove') {
+        return Object.keys(task).length === 4 && validRoleplayAvatar(task.avatar) && typeof task.world === 'string' && task.world.length <= 256
+            && typeof task.deleteChats === 'boolean';
+    }
     return task.task === 'chat-memory-rename' && Object.keys(task).length === 3
         && isStoredLocator('chat', task.from) && isStoredLocator('chat', task.to);
+}
+
+function validLifecycleBefore(before, tracked) {
+    if (!tracked) return object(before) && Object.keys(before).length === 2 && HASH.test(before.rawHash) && validPhysical(before.physical);
+    return object(before) && Object.keys(before).length === 5 && integer(before.revision) && before.revision >= 1
+        && HASH.test(before.rawHash) && HASH.test(before.contentHash) && validPhysical(before.physical)
+        && (before.writeId === null || UUID.test(before.writeId));
+}
+
+function validLifecycleAfter(after, revision) {
+    return object(after) && Object.keys(after).length === 5 && after.revision === revision && HASH.test(after.rawHash)
+        && HASH.test(after.contentHash) && integer(after.byteLength) && LIFECYCLE_PAYLOAD.test(after.payload);
 }
 
 function validateLifecycleTransaction(pending, state) {
@@ -534,30 +566,48 @@ function validateLifecycleTransaction(pending, state) {
         || !HASH.test(pending.operationKeyHash) || !HASH.test(pending.intentHash) || !LIFECYCLE_ACTION.test(pending.action)
         || !['prepared', 'files-applied'].includes(pending.phase)
         || !integer(pending.reservedBytes) || pending.reservedBytes > ROLEPLAY_RECOVERY_RESERVE_BYTES
-        || !Array.isArray(pending.steps) || pending.steps.length < 1 || pending.steps.length > 64
-        || !Array.isArray(pending.auxiliary) || pending.auxiliary.length > 256 || !pending.auxiliary.every(validLifecycleTask)
-        || encodedBytes(pending) > PENDING_MAX_BYTES) throw damaged();
+        || !Array.isArray(pending.steps) || pending.steps.length < 1 || pending.steps.length > ROLEPLAY_LIFECYCLE_MAX_STEPS
+        || !pending.steps.some(step => step?.op !== 'discard')
+        || !Array.isArray(pending.auxiliary) || pending.auxiliary.length > 2 * ROLEPLAY_LIFECYCLE_MAX_STEPS
+        || !pending.auxiliary.every(validLifecycleTask)
+        || encodedBytes(pending) > LIFECYCLE_PENDING_MAX_BYTES) throw damaged();
     const keys = new Set();
     const instances = new Set();
+    const payloads = new Set();
+    const physicals = new Set(Object.values(state.resources).map(resource => JSON.stringify(resource.head.physical)));
     for (const step of pending.steps) {
         const expected = LIFECYCLE_STEP_KEYS[step?.op];
-        const before = step?.before;
         if (!object(step) || !expected || Object.keys(step).length !== expected.length || !expected.every(key => Object.hasOwn(step, key))
-            || !['chat', 'character', 'group'].includes(step.kind) || !isStoredLocator(step.kind, step.locator)
-            || !UUID.test(step.instanceId) || instances.has(step.instanceId)
-            || !object(before) || Object.keys(before).length !== 5 || !integer(before.revision) || before.revision < 1
-            || !HASH.test(before.rawHash) || !HASH.test(before.contentHash) || !validPhysical(before.physical)
-            || (before.writeId !== null && !UUID.test(before.writeId))) throw damaged();
-        const resource = state.resources[step.instanceId];
+            || !['chat', 'character', 'group'].includes(step.kind) || !isStoredLocator(step.kind, step.locator)) throw damaged();
         const key = roleplayPathKey(state, step.kind, step.locator);
-        if (!resource || resource.kind !== step.kind || resource.status !== 'live'
+        if (keys.has(key)) throw damaged();
+        keys.add(key);
+        if (step.op === 'discard') {
+            if (!validLifecycleBefore(step.before, false) || state.paths[key]?.instanceId
+                || physicals.has(JSON.stringify(step.before.physical))) throw damaged();
+            continue;
+        }
+        if (!UUID.test(step.instanceId) || instances.has(step.instanceId)) throw damaged();
+        instances.add(step.instanceId);
+        if (step.op === 'create' || step.op === 'update') {
+            if (step.kind === 'chat' || !validLifecycleAfter(step.after, step.op === 'create' ? 1 : step.before?.revision + 1)
+                || payloads.has(step.after.payload) || (step.physical !== null && !validPhysical(step.physical))) throw damaged();
+            payloads.add(step.after.payload);
+        }
+        if (step.op === 'create') {
+            if (Object.hasOwn(state.resources, step.instanceId) || state.paths[key]?.instanceId
+                || (state.paths[key]?.generation ?? 0) !== step.expectedVacancy || !integer(step.expectedVacancy)) throw damaged();
+            continue;
+        }
+        const { before } = step;
+        const resource = state.resources[step.instanceId];
+        if (!validLifecycleBefore(before, true)
+            || !resource || resource.kind !== step.kind || resource.status !== 'live'
             || resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch
             || !isDeepStrictEqual(resource.locator, step.locator) || resource.revision !== before.revision
             || !isDeepStrictEqual(resource.head, { rawHash: before.rawHash, contentHash: before.contentHash,
                 physical: before.physical, writeId: before.writeId })
-            || state.paths[key]?.instanceId !== step.instanceId || keys.has(key)) throw damaged();
-        keys.add(key);
-        instances.add(step.instanceId);
+            || state.paths[key]?.instanceId !== step.instanceId) throw damaged();
         if (step.op !== 'move') continue;
         if (!isStoredLocator(step.kind, step.destination) || isDeepStrictEqual(step.destination, step.locator)
             || (step.kind === 'chat' && (step.destination.group !== step.locator.group || step.destination.avatar !== step.locator.avatar))
@@ -655,10 +705,12 @@ export function assertRoleplayTransactionCapacity(lease, pending, finalState) {
             group: pending.group && { ...pending.group, appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL } }
         : pending.kind === 'group-update'
             ? { ...pending, phase: 'group-applied', appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL }
-            : pending.kind === 'lifecycle' ? { ...pending, phase: 'files-applied' } : { ...pending, phase: 'chat-applied', appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL,
+            : pending.kind === 'lifecycle' ? { ...pending, phase: 'files-applied', steps: pending.steps.map(step =>
+                Object.hasOwn(step, 'physical') ? { ...step, physical: ROLEPLAY_LARGEST_PHYSICAL } : step) } : { ...pending, phase: 'chat-applied', appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL,
                 repair: { rawHash: pending.after.rawHash, physical: ROLEPLAY_LARGEST_PHYSICAL }, journal: largestRoleplayJournal(pending) } };
     for (const candidate of [{ ...state, pending }, progress, finalState].filter(Boolean)) {
-        if (candidate.pending && encodedBytes(candidate.pending) > PENDING_MAX_BYTES) {
+        if (candidate.pending && encodedBytes(candidate.pending)
+            > (candidate.pending.kind === 'lifecycle' ? LIFECYCLE_PENDING_MAX_BYTES : PENDING_MAX_BYTES)) {
             throw roleplayError('ROLEPLAY_STORE_FULL', 'Protected Roleplay evidence has no room for the complete transaction.', 413);
         }
         validateState(candidate, identity);
@@ -680,7 +732,8 @@ export function roleplayPayloadDirectory(lease, transactionId) {
 
 function payloadPath(lease, transactionId, name) {
     if (!['chat.after.jsonl', 'chat.corrupt.jsonl', 'group.after.json', 'memory.archive.json', 'memory.guard.json'].includes(name)
-        && !/^import\.chat\.\d+\.jsonl$|^import\.memory\.\d+\.(?:archive|guard)\.json$|^import\.group\.after\.json$/.test(name)) throw damaged();
+        && !/^import\.chat\.\d+\.jsonl$|^import\.memory\.\d+\.(?:archive|guard)\.json$|^import\.group\.after\.json$/.test(name)
+        && !LIFECYCLE_PAYLOAD.test(name)) throw damaged();
     return path.join(roleplayPayloadDirectory(lease, transactionId), name);
 }
 

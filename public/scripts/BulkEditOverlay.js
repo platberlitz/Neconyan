@@ -25,6 +25,8 @@ import { convertCharacterToPersona } from './personas.js';
 import { callGenericPopup, POPUP_TYPE } from './popup.js';
 import { createTagInput, getTagKeyForEntity, getTagsList, printTagList, tag_map, compareTagsForSort, removeTagFromMap, importTags, tag_import_setting } from './tags.js';
 import { t } from './i18n.js';
+import { sendRoleplayLifecycle } from './roleplay-save-chain.js';
+import { uuidv4 } from './utils.js';
 
 function getBulkEntity(id) {
     if (typeof id === 'number') {
@@ -895,11 +897,8 @@ class BulkEditOverlay {
         try {
             for (const id of groupIds) {
                 const group = groups.find(item => String(item.id) === id);
-                const response = await fetch('/api/groups/delete', {
-                    method: 'POST',
-                    headers: getRequestHeaders(),
-                    body: JSON.stringify({ id }),
-                });
+                const response = await sendRoleplayLifecycle('/api/groups/delete', { id }, uuidv4(),
+                    body => fetch('/api/groups/delete', { method: 'POST', headers: getRequestHeaders(), body }));
 
                 if (!response.ok) {
                     throw new Error(`Could not delete group ${id}`);

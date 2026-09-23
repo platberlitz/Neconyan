@@ -317,6 +317,7 @@ describe('Neconyan save behaviour', () => {
             group_activation_strategy: { NATURAL: 0 }, group_generation_mode: { SWAP: 0 }, hideMutedSprites: false,
             GROUP_MEMBER_MODELS_KEY: 'member_models', fav_grp_checked: false, getRequestHeaders: () => ({}), fetch: request,
             createTagMapFromList() {}, getCharacters: async () => {}, select_rm_info() {},
+            uuidv4: () => 'key', sendRoleplayLifecycle: (_url, body, _key, send) => send(JSON.stringify(body)),
         });
         loadFunctions(context, groups, ['createGroup']);
         await expect(context.createGroup()).resolves.toBe(true);
