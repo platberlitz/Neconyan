@@ -112,6 +112,16 @@ test('a scan hook cannot bypass a saved cooldown during a later pass', async () 
     }), { code: 'ROLEPLAY_INVALID' });
 });
 
+test('a scan hook cannot invent delayed recursion levels or move the saved level', async () => {
+    const delayed = entry(2, 'cat', 'Later', { delayUntilRecursion: 2 });
+    await assert.rejects(scan([entry(1, 'cat', 'Selected'), delayed], { onScan: hook => {
+        hook.recursionDelay.availableLevels.push(999);
+    } }), { code: 'ROLEPLAY_INVALID' });
+    await assert.rejects(scan([entry(1, 'cat', 'Selected'), delayed], { onScan: hook => {
+        hook.recursionDelay.currentLevel = 999;
+    } }), { code: 'ROLEPLAY_INVALID' });
+});
+
 test('the account captures saved books and refuses a changed book before the provider runs', async t => {
     const f = fixture(t);
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
