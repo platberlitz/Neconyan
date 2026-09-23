@@ -17,7 +17,9 @@ setConfigFilePath(path.join(repoRoot, 'default', 'config.yaml'));
 
 const { router: charactersRouter } = await import('../src/endpoints/characters.js');
 const { migrateGroupChatsMetadataFormat, router: groupsRouter } = await import('../src/endpoints/groups.js');
-const { initialiseRoleplayAccount } = await import('../src/roleplay-store.js');
+const { initialiseRoleplayAccount, readRoleplayAccount } = await import('../src/roleplay-store.js');
+const { reconcilePendingChatWrite } = await import('../src/roleplay-lifecycle.js');
+const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
 
 describe('entity date added endpoints', () => {
     let baseUrl;
@@ -140,7 +142,7 @@ describe('entity date added endpoints', () => {
         expect(recreated.date_added).toBeGreaterThan(originalDateAdded);
     });
 
-    test('restores character chats when a rename cannot remove the old avatar', async () => {
+    test('finishes an interrupted recorded rename instead of rolling it back', async () => {
         jest.spyOn(console, 'error').mockImplementation(() => {});
         jest.spyOn(console, 'info').mockImplementation(() => {});
         const createResponse = await postJson('/api/characters/create', {
@@ -154,9 +156,9 @@ describe('entity date added endpoints', () => {
         const oldChatsPath = path.join(directories.chats, 'Alice');
         const newChatsPath = path.join(directories.chats, 'Alicia');
         fs.mkdirSync(oldChatsPath, { recursive: true });
-        fs.writeFileSync(path.join(oldChatsPath, 'Chat.jsonl'), '{}\n');
+        fs.writeFileSync(path.join(oldChatsPath, 'Chat.jsonl'), '{"user_name":"User","character_name":"Alice"}\n');
         const unlinkSync = fs.unlinkSync.bind(fs);
-        jest.spyOn(fs, 'unlinkSync').mockImplementation(filePath => {
+        const unlink = jest.spyOn(fs, 'unlinkSync').mockImplementation(filePath => {
             if (path.resolve(String(filePath)) === path.resolve(oldAvatarPath)) {
                 const error = new Error('The old avatar is locked.');
                 error.code = 'EBUSY';
@@ -170,54 +172,44 @@ describe('entity date added endpoints', () => {
             new_name: 'Alicia',
         });
 
-        expect(renameResponse.status).toBe(500);
-        expect(fs.existsSync(oldAvatarPath)).toBe(true);
-        expect(fs.existsSync(newAvatarPath)).toBe(false);
-        expect(fs.existsSync(path.join(oldChatsPath, 'Chat.jsonl'))).toBe(true);
-        expect(fs.existsSync(newChatsPath)).toBe(false);
-        const [restored] = await getCharacters();
-        expect(restored.avatar).toBe('Alice.png');
-        expect(restored.date_added).toBe(created.date_added);
+        expect(renameResponse.status).toBe(503);
+        const scope = initialiseRoleplayAccount({ owner: 'date-added-test-user', directories });
+        expect(readRoleplayAccount(scope).pending.action).toBe('character-rename');
+        unlink.mockRestore();
+        reconcilePendingChatWrite(scope, roleplayNativeHost);
+        expect(readRoleplayAccount(scope).pending).toBeNull();
+        expect(fs.existsSync(oldAvatarPath)).toBe(false);
+        expect(fs.existsSync(newAvatarPath)).toBe(true);
+        expect(fs.existsSync(path.join(newChatsPath, 'Chat.jsonl'))).toBe(true);
+        expect(fs.existsSync(oldChatsPath)).toBe(false);
+        const [renamed] = await getCharacters();
+        expect(renamed.avatar).toBe('Alicia.png');
+        expect(renamed.date_added).toBe(created.date_added);
     });
 
-    test('restores a complete chat snapshot after partial rename cleanup', async () => {
+    test('moves every chat, including unreadable ones, with a recorded rename', async () => {
         jest.spyOn(console, 'error').mockImplementation(() => {});
         const createResponse = await postJson('/api/characters/create', {
             ch_name: 'Alice',
             file_name: 'Alice',
         });
         expect(createResponse.status).toBe(200);
-        const oldAvatarPath = path.join(directories.characters, 'Alice.png');
-        const newAvatarPath = path.join(directories.characters, 'Alicia.png');
         const oldChatsPath = path.join(directories.chats, 'Alice');
         const newChatsPath = path.join(directories.chats, 'Alicia');
         fs.mkdirSync(oldChatsPath, { recursive: true });
-        fs.writeFileSync(path.join(oldChatsPath, 'First.jsonl'), '{}\n');
-        fs.writeFileSync(path.join(oldChatsPath, 'Second.jsonl'), '{}\n');
-        const rmSync = fs.rmSync.bind(fs);
-        let removalFailed = false;
-        jest.spyOn(fs, 'rmSync').mockImplementation((targetPath, options) => {
-            if (!removalFailed && path.resolve(String(targetPath)) === path.resolve(oldChatsPath)) {
-                removalFailed = true;
-                rmSync(path.join(oldChatsPath, 'First.jsonl'), { force: true });
-                const error = new Error('Chat directory cleanup was interrupted.');
-                error.code = 'EBUSY';
-                throw error;
-            }
-            return rmSync(targetPath, options);
-        });
+        fs.writeFileSync(path.join(oldChatsPath, 'First.jsonl'), '{"user_name":"User","character_name":"Alice"}\n');
+        fs.writeFileSync(path.join(oldChatsPath, 'Second.jsonl'), 'not json\n');
 
         const renameResponse = await postJson('/api/characters/rename', {
             avatar_url: 'Alice.png',
             new_name: 'Alicia',
         });
 
-        expect(renameResponse.status).toBe(500);
-        expect(fs.existsSync(oldAvatarPath)).toBe(true);
-        expect(fs.existsSync(newAvatarPath)).toBe(false);
-        expect(fs.existsSync(path.join(oldChatsPath, 'First.jsonl'))).toBe(true);
-        expect(fs.existsSync(path.join(oldChatsPath, 'Second.jsonl'))).toBe(true);
-        expect(fs.existsSync(newChatsPath)).toBe(false);
+        expect(renameResponse.status).toBe(200);
+        expect(fs.existsSync(path.join(directories.characters, 'Alice.png'))).toBe(false);
+        expect(fs.existsSync(path.join(newChatsPath, 'First.jsonl'))).toBe(true);
+        expect(fs.existsSync(path.join(newChatsPath, 'Second.jsonl'))).toBe(true);
+        expect(fs.existsSync(oldChatsPath)).toBe(false);
     });
 
     test('preserves group addition time across atomic edits', async () => {

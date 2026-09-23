@@ -408,7 +408,7 @@ router.post('/delete', getFileNameValidationFunction('id'), async (request, resp
             );
         }
     } catch (error) {
-        if (String(error?.code ?? '').startsWith('ROLEPLAY_')) return sendLifecycleError(response, error);
+        if (error?.roleplayWritePending || String(error?.code ?? '').startsWith('ROLEPLAY_')) return sendLifecycleError(response, error);
         console.error('Could not delete group chats. Clean them up manually.', error);
         return response.sendStatus(500);
     }

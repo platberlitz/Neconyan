@@ -523,7 +523,7 @@ describe('chat recovery endpoint fallbacks', () => {
         expect(fs.existsSync(avatarPath)).toBe(false);
         expect(fs.existsSync(chatDirectory)).toBe(false);
         expect(consoleWarn).toHaveBeenCalledWith(
-            'Failed to mark chat recovery state for deletion; continuing with character deletion.',
+            'Failed to mark chat recovery state for deletion; continuing with chat deletion.',
             expect.any(Error),
         );
     });

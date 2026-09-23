@@ -545,6 +545,11 @@ function validLifecycleTask(task) {
         return Object.keys(task).length === 4 && validRoleplayAvatar(task.avatar) && typeof task.world === 'string' && task.world.length <= 256
             && typeof task.deleteChats === 'boolean';
     }
+    if (task.task === 'character-memory-rename') {
+        return Object.keys(task).length === 3 && validRoleplayAvatar(task.from) && validRoleplayAvatar(task.to);
+    }
+    if (task.task === 'chat-folder-move') return Object.keys(task).length === 3 && validRoleplayAvatar(task.from) && validRoleplayAvatar(task.to);
+    if (task.task === 'chat-folder-remove') return Object.keys(task).length === 2 && validRoleplayAvatar(task.avatar);
     return task.task === 'chat-memory-rename' && Object.keys(task).length === 3
         && isStoredLocator('chat', task.from) && isStoredLocator('chat', task.to);
 }
@@ -610,7 +615,7 @@ function validateLifecycleTransaction(pending, state) {
             || state.paths[key]?.instanceId !== step.instanceId) throw damaged();
         if (step.op !== 'move') continue;
         if (!isStoredLocator(step.kind, step.destination) || isDeepStrictEqual(step.destination, step.locator)
-            || (step.kind === 'chat' && (step.destination.group !== step.locator.group || step.destination.avatar !== step.locator.avatar))
+            || (step.kind === 'chat' && step.destination.group !== step.locator.group)
             || !integer(step.destinationVacancy)) throw damaged();
         const destinationKey = roleplayPathKey(state, step.kind, step.destination);
         if (state.paths[destinationKey]?.instanceId || (state.paths[destinationKey]?.generation ?? 0) !== step.destinationVacancy
@@ -888,7 +893,7 @@ export function withUntrackedRoleplayFiles(base, filenames, operation) {
     });
 }
 
-function assertUntrackedRoleplayFiles(lease, filenames) {
+export function assertUntrackedRoleplayFiles(lease, filenames) {
     const { state, scope } = roleplayLease(lease);
     if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'Pending protected Roleplay work must finish first.');
     for (const filename of filenames) {
@@ -903,7 +908,7 @@ function assertUntrackedRoleplayFiles(lease, filenames) {
         const group = child('groups');
         const groupChat = child('groupChats');
         const soloChat = child('chats');
-        if (character && !character.includes(path.sep) && character.endsWith('.png')) {
+        if (character && !character.includes(path.sep) && character.toLowerCase().endsWith('.png')) {
             kind = 'character'; locator = { avatar: character };
         } else if (group && !group.includes(path.sep) && group.endsWith('.json')) {
             kind = 'group'; locator = { groupId: group.slice(0, -5) };
@@ -931,7 +936,9 @@ function assertUntrackedRoleplayFiles(lease, filenames) {
         const journal = readRoleplayWriteJournal(filename);
         const journalTarget = journal && decodeFileWriteRecovery(journal.bytes, 64 * 1024 * 1024);
         if (journal && !journalTarget) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'Legacy recovery evidence could not be proved untracked.');
-        const physicals = [readRoleplayFile(filename, 64 * 1024 * 1024)?.physical, journal?.physical].filter(Boolean);
+        // Aliases (hard links, symlinks) are untrackable; their lstat identity still must not match a protected file.
+        const alias = fs.lstatSync(filename, { bigint: true, throwIfNoEntry: false });
+        const physicals = [alias && { dev: String(alias.dev), ino: String(alias.ino), birthtimeNs: String(alias.birthtimeNs) }, journal?.physical].filter(Boolean);
         const protectedPhysicals = Object.values(state.resources).map(value => value.head.physical);
         if (state.pending) protectedPhysicals.push(state.pending.before?.physical, state.pending.appliedPhysical, state.pending.journal?.physical);
         if (physicals.some(physical => protectedPhysicals.some(saved => saved && isDeepStrictEqual(physical, saved)))

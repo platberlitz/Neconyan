@@ -28,6 +28,7 @@ process.env[diskCacheEnvironmentKey] = 'false';
 process.chdir(repoRoot);
 setConfigFilePath(path.join(repoRoot, 'default', 'config.yaml'));
 
+const { initialiseRoleplayAccount } = await import('../src/roleplay-store.js');
 const { router: charactersRouter, sanitiseFilenameForWindows } = await import('../src/endpoints/characters.js');
 const worldInfoSource = fs.readFileSync(new URL('../public/scripts/world-info.js', import.meta.url), 'utf8');
 const conversionFunctions = ['convertCharacterBook', 'getFreeWorldEntryUid', 'parseRegexFromString'].map(name => {
@@ -66,8 +67,14 @@ describe('character card metadata preservation', () => {
         baseUrl = `http://127.0.0.1:${server.address().port}`;
     });
 
+    // Models a card Neconyan has not recorded yet, such as one edited by an outside tool before first use.
+    function forgetProtectedRecords() {
+        fs.rmSync(path.join(path.dirname(tempRoot), '_roleplay'), { recursive: true, force: true });
+        initialiseRoleplayAccount({ owner: 'card-metadata-test-user', directories });
+    }
+
     beforeEach(() => {
-        tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-card-metadata-'));
+        tempRoot = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-card-metadata-')), 'card-metadata-test-user');
         directories = {
             root: tempRoot,
             backups: path.join(tempRoot, 'backups'),
@@ -82,11 +89,12 @@ describe('character card metadata preservation', () => {
         for (const directory of Object.values(directories)) {
             fs.mkdirSync(directory, { recursive: true });
         }
+        initialiseRoleplayAccount({ owner: 'card-metadata-test-user', directories });
     });
 
     afterEach(() => {
         jest.restoreAllMocks();
-        fs.rmSync(tempRoot, { recursive: true, force: true });
+        fs.rmSync(path.dirname(tempRoot), { recursive: true, force: true });
     });
 
     afterAll(async () => {
@@ -107,6 +115,7 @@ describe('character card metadata preservation', () => {
         await createAlice();
         const cardPath = path.join(directories.characters, 'Alice.png');
         addAncillaryChunks(cardPath);
+        forgetProtectedRecords();
         const cardBefore = fs.readFileSync(cardPath);
         const statBefore = fs.statSync(cardPath);
 
@@ -284,7 +293,7 @@ describe('character card metadata preservation', () => {
         });
     });
 
-    test('replaces only the selected path when a card has a hard-link alias', async () => {
+    test('refuses to edit a protected card that gained a hard-link alias', async () => {
         jest.spyOn(console, 'error').mockImplementation(() => {});
         jest.spyOn(console, 'info').mockImplementation(() => {});
         await createAlice();
@@ -298,10 +307,10 @@ describe('character card metadata preservation', () => {
             creator: 'Somebody',
         });
 
-        expect(response.status).toBe(200);
+        expect(response.status).toBe(400);
         expect(fs.readFileSync(aliasPath).equals(aliasBefore)).toBe(true);
-        expect(decodeCardChunks(fs.readFileSync(cardPath)).every(chunk => chunk.card.creator === 'Somebody')).toBe(true);
-        expect(fs.statSync(cardPath).ino).not.toBe(fs.statSync(aliasPath).ino);
+        expect(fs.readFileSync(cardPath).equals(aliasBefore)).toBe(true);
+        expect(fs.statSync(cardPath).ino).toBe(fs.statSync(aliasPath).ino);
     });
 
     test('keeps dotted filename stems on full and single-attribute edits', async () => {
@@ -343,7 +352,7 @@ describe('character card metadata preservation', () => {
         expect(fs.readFileSync(alicePath).equals(aliceBefore)).toBe(true);
     });
 
-    test('replaces a symlinked card path without modifying its target', async () => {
+    test('refuses a protected card path that was replaced by a symlink', async () => {
         jest.spyOn(console, 'error').mockImplementation(() => {});
         jest.spyOn(console, 'info').mockImplementation(() => {});
         await createAlice();
@@ -359,10 +368,9 @@ describe('character card metadata preservation', () => {
             creator: 'Somebody',
         });
 
-        expect(response.status).toBe(200);
-        expect(fs.lstatSync(cardPath).isSymbolicLink()).toBe(false);
+        expect(response.status).toBe(400);
+        expect(fs.lstatSync(cardPath).isSymbolicLink()).toBe(true);
         expect(fs.readFileSync(outsidePath).equals(outsideBefore)).toBe(true);
-        expect(decodeCardChunks(fs.readFileSync(cardPath)).every(chunk => chunk.card.creator === 'Somebody')).toBe(true);
     });
 
     test('deletes chats under the existing dotted-card owner name', async () => {

@@ -15,7 +15,7 @@ import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, createRolepl
     validRoleplayAvatar, ROLEPLAY_IMPORT_MAX_OUTPUTS, ROLEPLAY_LIFECYCLE_MAX_STEPS, roleplayImportPlan } from './roleplay-store.js';
 import { applyPreparedBranchMemoryCapture, assertPreparedBranchMemory, prepareBranchMemoryCapture } from './mewmory/prepared-branch.js';
 import { read as readCharacterCard } from './character-card-parser.js';
-import { MAX_ARCHIVE_BYTES, chatMemoryExists, removeChatMemory, removeSourceMemory, renameChatMemory } from './mewmory/store.js';
+import { MAX_ARCHIVE_BYTES, chatMemoryExists, removeChatMemory, removeSourceMemory, renameCharacterMemory, renameChatMemory } from './mewmory/store.js';
 import { createEntityDateAdded, removeEntityDateAdded } from './entity-date-added.js';
 import { decodeFileWriteRecovery, fsyncDirectorySync, humanizedDateTime, tryWriteFileSync, FILE_WRITE_RECOVERY_SUFFIX } from './util.js';
 
@@ -1067,7 +1067,8 @@ function applyLifecycleStep(scope, step, host) {
             const to = read(destination);
             if (!from && sameObservation(to, step.before)) return;
             if (to || !sameObservation(from, step.before)) throw conflict();
-            if (step.kind === 'chat' && host.backups) {
+            // ponytail: recovery state is keyed per owner; cross-owner moves (character renames) leave it where it was.
+            if (step.kind === 'chat' && host.backups && step.locator.avatar === step.destination.avatar) {
                 const sourceTarget = lifecycleRecoveryTarget(scope, step.locator, host);
                 const destinationTarget = lifecycleRecoveryTarget(scope, step.destination, host);
                 // ponytail: best-effort sidecars; a crash between rekey and rename leaves only recovery snapshots stale.
@@ -1078,6 +1079,7 @@ function applyLifecycleStep(scope, step, host) {
                     }
                 }
             }
+            createRoleplayDirectory(path.dirname(destination), scope.directories.root);
             // Writers that honour the chat lock cannot create the destination between this check and the rename.
             fs.renameSync(source, destination);
             fsyncDirectorySync(path.dirname(destination));
@@ -1085,6 +1087,23 @@ function applyLifecycleStep(scope, step, host) {
         });
     }
     if (step.kind === 'chat') host.clearDeferred?.(source);
+}
+
+// Leftovers only: recorded chat files were already moved or deleted by their own steps.
+function moveChatFolder(scope, task) {
+    const source = path.join(scope.directories.chats, roleplayAvatarOwner(task.from ?? task.avatar));
+    if (!fs.existsSync(source)) return;
+    if (task.task === 'chat-folder-remove') {
+        fs.rmSync(source, { recursive: true, force: true });
+        return;
+    }
+    const destination = path.join(scope.directories.chats, roleplayAvatarOwner(task.to));
+    createRoleplayDirectory(destination, scope.directories.root);
+    for (const name of fs.readdirSync(source)) {
+        // ponytail: an existing destination entry wins; the source copy stays for manual recovery.
+        if (!fs.existsSync(path.join(destination, name))) fs.renameSync(path.join(source, name), path.join(destination, name));
+    }
+    if (!fs.readdirSync(source).length) fs.rmdirSync(source);
 }
 
 function applyLifecycleTask(scope, task, host) {
@@ -1097,6 +1116,8 @@ function applyLifecycleTask(scope, task, host) {
             else removeEntityDateAdded(dateRoot, task.entity, task.id);
         } catch (error) { console.warn('Could not update date-added metadata.', error); }
     } else if (task.task === 'chat-memory-rename') renameChatMemory(scope.directories, task.from, task.to, { resume: true });
+    else if (task.task === 'character-memory-rename') renameCharacterMemory(scope.directories, task.from, task.to);
+    else if (task.task === 'chat-folder-move' || task.task === 'chat-folder-remove') moveChatFolder(scope, task);
     else runChatRecoveryBestEffort(() => clearChatRecoveryState(lifecycleRecoveryTarget(scope, task.locator, host)),
         'Failed to clear chat recovery state after deletion.');
 }

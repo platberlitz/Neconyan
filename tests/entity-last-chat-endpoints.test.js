@@ -15,6 +15,7 @@ process.env[diskCacheEnvironmentKey] = 'false';
 process.chdir(repoRoot);
 setConfigFilePath(path.join(repoRoot, 'default', 'config.yaml'));
 
+const { initialiseRoleplayAccount } = await import('../src/roleplay-store.js');
 const { router: charactersRouter } = await import('../src/endpoints/characters.js');
 const { ENTITY_LAST_CHAT_FILE } = await import('../src/entity-last-chat.js');
 
@@ -43,7 +44,7 @@ describe('entity last chat endpoints', () => {
     });
 
     beforeEach(() => {
-        tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-last-chat-endpoints-'));
+        tempRoot = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-last-chat-endpoints-')), 'last-chat-test-user');
         directories = {
             root: tempRoot,
             backups: path.join(tempRoot, 'backups'),
@@ -58,11 +59,12 @@ describe('entity last chat endpoints', () => {
         for (const directory of Object.values(directories)) {
             fs.mkdirSync(directory, { recursive: true });
         }
+        initialiseRoleplayAccount({ owner: 'last-chat-test-user', directories });
     });
 
     afterEach(() => {
         jest.restoreAllMocks();
-        fs.rmSync(tempRoot, { recursive: true, force: true });
+        fs.rmSync(path.dirname(tempRoot), { recursive: true, force: true });
     });
 
     afterAll(async () => {

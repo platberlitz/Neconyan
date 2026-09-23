@@ -1991,7 +1991,7 @@ router.post('/rename', validateAvatarUrlMiddleware, async function (request, res
         }));
         return response.status(outcome.status).send(outcome.body);
     } catch (error) {
-        if (error.code?.startsWith('ROLEPLAY_')) return sendRoleplayError(response, error);
+        if (error.roleplayWritePending || error.code?.startsWith('ROLEPLAY_')) return sendRoleplayError(response, error);
         console.error('Error renaming chat file:', error);
         return response.status(500).send({ error: true });
     }
@@ -2051,7 +2051,7 @@ router.post('/delete', validateAvatarUrlMiddleware, function (request, response)
             }
         });
     } catch (error) {
-        if (error.code?.startsWith('ROLEPLAY_')) return sendRoleplayError(response, error);
+        if (error.roleplayWritePending || error.code?.startsWith('ROLEPLAY_')) return sendRoleplayError(response, error);
         console.error(error);
         return response.sendStatus(500);
     }
@@ -2235,7 +2235,7 @@ router.post('/group/delete', (request, response) => {
             }
         });
     } catch (error) {
-        if (error.code?.startsWith('ROLEPLAY_')) return sendRoleplayError(response, error);
+        if (error.roleplayWritePending || error.code?.startsWith('ROLEPLAY_')) return sendRoleplayError(response, error);
         console.error(error);
         return response.sendStatus(500);
     }

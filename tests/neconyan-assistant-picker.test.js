@@ -21,6 +21,7 @@ const originalDiskCacheSetting = process.env[diskCacheEnvironmentKey];
 process.env[diskCacheEnvironmentKey] = 'false';
 jest.setTimeout(30000);
 setConfigFilePath(path.join(repoRoot, 'default/config.yaml'));
+const { initialiseRoleplayAccount } = await import('../src/roleplay-store.js');
 const { router: charactersRouter } = await import('../src/endpoints/characters.js');
 
 describe('Neconyan assistant catalog and installer', () => {
@@ -35,7 +36,8 @@ describe('Neconyan assistant catalog and installer', () => {
         const app = express();
         app.use(express.json({ limit: '10mb' }));
         app.use((request, _response, next) => {
-            request.user = { profile: { handle: 'assistant-endpoint-test' }, directories: request.header('x-test-profile') === 'other' ? otherDirectories : directories };
+            const other = request.header('x-test-profile') === 'other';
+            request.user = { profile: { handle: other ? 'other-profile' : 'assistant-endpoint-test' }, directories: other ? otherDirectories : directories };
             next();
         });
         app.use('/api/characters', charactersRouter);
@@ -47,7 +49,7 @@ describe('Neconyan assistant catalog and installer', () => {
     });
 
     beforeEach(() => {
-        tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-assistant-endpoint-'));
+        tempRoot = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-assistant-endpoint-')), 'assistant-endpoint-test');
         globalThis.DATA_ROOT = tempRoot;
         directories = {
             root: tempRoot,
@@ -61,10 +63,11 @@ describe('Neconyan assistant catalog and installer', () => {
             worlds: path.join(tempRoot, 'worlds'),
         };
         Object.values(directories).forEach(directory => fs.mkdirSync(directory, { recursive: true }));
+        initialiseRoleplayAccount({ owner: 'assistant-endpoint-test', directories });
     });
 
     afterEach(() => {
-        if (tempRoot) fs.rmSync(tempRoot, { recursive: true, force: true });
+        if (tempRoot) fs.rmSync(path.dirname(tempRoot), { recursive: true, force: true });
         delete globalThis.DATA_ROOT;
     });
 
@@ -140,6 +143,7 @@ describe('Neconyan assistant catalog and installer', () => {
         const otherRoot = path.join(tempRoot, 'other-profile');
         otherDirectories = Object.fromEntries(Object.entries(directories).map(([key, value]) => [key, path.join(otherRoot, path.relative(tempRoot, value))]));
         Object.values(otherDirectories).forEach(directory => fs.mkdirSync(directory, { recursive: true }));
+        initialiseRoleplayAccount({ owner: 'other-profile', directories: otherDirectories });
         const request = { id: 'taro-neutral', avatar: old.installed.avatar };
         expect((await requestJson('/api/characters/assistants/update-copy', request, { 'x-test-profile': 'other' })).status).toBe(404);
         expect((await requestJson('/api/characters/assistants/update-copy', { ...request, avatar: '../outside.png' })).status).toBe(404);
@@ -288,6 +292,7 @@ describe('Neconyan assistant catalog and installer', () => {
         const otherRoot = path.join(tempRoot, 'other-profile');
         otherDirectories = Object.fromEntries(Object.entries(directories).map(([key, value]) => [key, path.join(otherRoot, path.relative(tempRoot, value))]));
         Object.values(otherDirectories).forEach(directory => fs.mkdirSync(directory, { recursive: true }));
+        initialiseRoleplayAccount({ owner: 'other-profile', directories: otherDirectories });
         const responses = await Promise.all([
             requestJson('/api/characters/assistants/install', { id: 'nori-neutral' }),
             requestJson('/api/characters/assistants/install', { id: 'nori-neutral' }),

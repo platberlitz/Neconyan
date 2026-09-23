@@ -1,6 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { promises as fsPromises } from 'node:fs';
 import { Buffer } from 'node:buffer';
 import os from 'node:os';
@@ -24,8 +24,11 @@ import { invalidateThumbnail, generateThumbnail } from './thumbnails.js';
 import { importRisuSprites } from './sprites.js';
 import { getUserDirectories } from '../users.js';
 import { getChatInfo } from './chats.js';
-import { removeSourceMemory, renameCharacterMemory } from '../mewmory/store.js';
+import { removeSourceMemory } from '../mewmory/store.js';
 import { ByafParser } from '../byaf.js';
+import { assertUntrackedRoleplayFiles, roleplayAvatarOwner, roleplayError, roleplayLease, saveRoleplayAccount, validRoleplayAvatar, withRoleplayAccount, withUntrackedRoleplayFiles } from '../roleplay-store.js';
+import { commitRoleplayLifecycleLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
+import { readRoleplayChatLocked, readRoleplayEntityLocked, roleplayEntityContent } from '../generation/roleplay-source.js';
 import { CharXParser, persistCharXAssets } from '../charx.js';
 import { getSuspiciousEmptyCharacterDefinitionFields } from '../character-save-guard.js';
 import { serverDirectory } from '../server-directory.js';
@@ -616,6 +619,63 @@ async function readCharacterData(inputFile, inputFormat = 'png') {
     return result;
 }
 
+function characterBase(request) {
+    return { owner: request.user.profile.handle, directories: request.user.directories };
+}
+
+function isDamagedCard(error) {
+    return error?.code === 'ROLEPLAY_SOURCE_DAMAGED';
+}
+
+/**
+ * Every card write routes through here: protected cards change by recorded lifecycle steps, and
+ * unreadable ordinary-storage cards keep the legacy writer only after proving nothing protected is touched.
+ * @param {import('express').Request} request
+ * @param {string} avatar Card file name
+ * @param {Buffer} bytes New card bytes
+ * @param {() => void} legacyWrite Ordinary-storage writer
+ */
+function publishCharacterCard(request, avatar, bytes, legacyWrite) {
+    const filename = path.join(request.user.directories.characters, avatar);
+    return withRoleplayAccount(characterBase(request), null, lease => {
+        let valid = true;
+        try {
+            roleplayEntityContent('character', avatar, bytes, { storage: true });
+        } catch (error) {
+            if (!isDamagedCard(error)) throw error;
+            valid = false;
+        }
+        const existing = fs.lstatSync(filename, { bigint: true, throwIfNoEntry: false });
+        if (!validRoleplayAvatar(avatar) || (existing && (!existing.isFile() || existing.nlink !== 1n))) {
+            // Odd names and aliased paths cannot be protected; the guard still refuses a protected physical file.
+            assertUntrackedRoleplayFiles(lease, [filename]);
+            return legacyWrite();
+        }
+        let tracked = Boolean(roleplayTrackedInstance(lease, 'character', { avatar }));
+        if (!tracked && valid && fs.existsSync(filename)) {
+            try {
+                if (readRoleplayEntityLocked(lease, 'character', avatar, { storage: true }).changed) saveRoleplayAccount(lease);
+                tracked = true;
+            } catch (error) {
+                if (!isDamagedCard(error)) throw error;
+            }
+        }
+        if (tracked && !valid) throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'The character card is not valid.', 422);
+        if (!tracked && (!valid || fs.existsSync(filename))) {
+            assertUntrackedRoleplayFiles(lease, [filename]);
+            return legacyWrite();
+        }
+        const op = tracked ? 'update' : 'create';
+        // ponytail: server-generated keys; browser card writes are not retried with a stable key yet.
+        return commitRoleplayLifecycleLocked(lease, {
+            operationKey: randomUUID(),
+            action: `character-${op}`,
+            intent: { avatar, rawHash: createHash('sha256').update(bytes).digest('hex') },
+            steps: [{ op, kind: 'character', locator: { avatar }, bytes }],
+        });
+    });
+}
+
 /**
  * Writes the character card to the specified image file.
  * @param {string|Buffer} inputFile - Path to the image file or image buffer
@@ -708,11 +768,11 @@ async function writeCharacterData(inputFile, data, outputFile, request, crop = u
         if (fileExists) {
             ensureEntityDateAdded(getEntityDateAddedRoot(request.user.directories), 'characters', outputImageName, migrationFallback, operationTime);
         }
-        tryWriteFileSync(outputImagePath, outputImage, undefined, {
+        publishCharacterCard(request, outputImageName, outputImage, () => tryWriteFileSync(outputImagePath, outputImage, undefined, {
             preserveFileIdentity: shouldPreserveFileIdentity,
             expectedFileIdentity,
             replaceFileOnly: shouldReplaceFileOnly,
-        });
+        }));
         if (!fileExists) {
             try {
                 if (preserveDateAdded) {
@@ -1401,7 +1461,9 @@ async function importFromByaf(uploadPath, { request }, preservedFileName) {
             const filePath = path.join(request.user.directories.chats, path.basename(fileName), chatName);
             const dir = path.dirname(filePath);
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-            tryWriteFileSync(filePath, ByafParser.getChatFromScenario(scenario, request.body.user_name, card.name, byafData.chatBackgrounds));
+            const chat = ByafParser.getChatFromScenario(scenario, request.body.user_name, card.name, byafData.chatBackgrounds);
+            // ponytail: new ordinary-storage chat; it enrols as protected on first load.
+            withUntrackedRoleplayFiles(characterBase(request), [filePath], () => tryWriteFileSync(filePath, chat, undefined, { expectedFileAbsent: true }));
             console.log(`Created ${chatName} chat from BYAF import`);
             return chatName;
         };
@@ -1687,6 +1749,96 @@ router.post('/create', getFileNameValidationFunction('file_name'), async functio
     }
 });
 
+function characterChatTarget(request, owner, filename) {
+    return createCharacterChatTarget({
+        chatsDirectory: request.user.directories.chats,
+        backupDirectory: request.user.directories.backups,
+        owner,
+        filename,
+        maxRecoveryStates: maxTotalChatBackups,
+    });
+}
+
+function characterLifecycleHost(request) {
+    return {
+        backups: isChatBackupEnabled,
+        recoveryTarget: locator => characterChatTarget(request, roleplayAvatarOwner(locator.avatar), locator.chat + '.jsonl'),
+    };
+}
+
+function sendCharacterRoleplayError(response, error) {
+    const code = String(error?.code || 'ROLEPLAY_IO_ERROR');
+    const uncertain = error?.roleplayWritePending || ['ROLEPLAY_RECOVERY_REQUIRED', 'ROLEPLAY_ACCOUNT_UNAVAILABLE', 'ROLEPLAY_IO_ERROR'].includes(code)
+        || code.startsWith('ROLEPLAY_STORE_') && code !== 'ROLEPLAY_STORE_FULL';
+    const status = uncertain ? 503 : code === 'ROLEPLAY_STORE_FULL' ? 507 : error?.status || 409;
+    if (status >= 500) console.error(error);
+    return response.status(status).send({ error: code.slice(9).toLowerCase(), code });
+}
+
+/**
+ * Enrols and lists the readable chats of one character; unreadable or foreign files stay ordinary leftovers.
+ */
+function characterChats(lease, request, avatar) {
+    const directory = path.join(request.user.directories.chats, roleplayAvatarOwner(avatar));
+    const tracked = [];
+    const untracked = [];
+    let changed = false;
+    for (const entry of fs.existsSync(directory) ? fs.readdirSync(directory, { withFileTypes: true }) : []) {
+        if (!entry.isFile() || path.extname(entry.name) !== '.jsonl') continue;
+        const locator = { group: false, chat: path.parse(entry.name).name, avatar };
+        try {
+            changed = readRoleplayChatLocked(lease, locator).changed || changed;
+            tracked.push(locator);
+        } catch (error) {
+            if (!['ROLEPLAY_SOURCE_DAMAGED', 'ROLEPLAY_FOREIGN_SOURCE', 'ROLEPLAY_INVALID'].includes(error?.code)) throw error;
+            untracked.push(locator);
+        }
+    }
+    if (changed) saveRoleplayAccount(lease);
+    // Recorded chats whose files vanished out of band are still this character's; their steps decide.
+    for (const resource of Object.values(roleplayLease(lease).state.resources)) {
+        const { locator } = resource;
+        if (resource.kind === 'chat' && resource.status === 'live' && !locator.group && locator.avatar === avatar
+            && !tracked.some(item => item.chat === locator.chat)) tracked.push({ ...locator });
+    }
+    return { tracked, untracked };
+}
+
+/** Enrols a readable card; returns false when the card cannot be parsed. */
+function enrolCharacterCard(lease, avatar) {
+    if (roleplayTrackedInstance(lease, 'character', { avatar })) return true;
+    try {
+        if (readRoleplayEntityLocked(lease, 'character', avatar, { storage: true }).changed) saveRoleplayAccount(lease);
+        return true;
+    } catch (error) {
+        if (!isDamagedCard(error)) throw error;
+        return false;
+    }
+}
+
+// ponytail: server-generated keys; the browser does not retry renames with a stable key yet.
+function renameCharacterCard(request, oldAvatar, newAvatar, bytes) {
+    return withRoleplayAccount(characterBase(request), null, lease => {
+        if (!enrolCharacterCard(lease, oldAvatar)) throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'The character card cannot be read.', 422);
+        const { tracked } = characterChats(lease, request, oldAvatar);
+        return commitRoleplayLifecycleLocked(lease, {
+            operationKey: randomUUID(),
+            action: 'character-rename',
+            intent: { from: oldAvatar, to: newAvatar },
+            steps: [
+                { op: 'create', kind: 'character', locator: { avatar: newAvatar }, bytes },
+                ...tracked.map(locator => ({ op: 'move', kind: 'chat', locator, destination: { ...locator, avatar: newAvatar } })),
+                { op: 'delete', kind: 'character', locator: { avatar: oldAvatar } },
+            ],
+            auxiliary: [
+                { task: 'character-memory-rename', from: oldAvatar, to: newAvatar },
+                { task: 'chat-folder-move', from: oldAvatar, to: newAvatar },
+                { task: 'date-added-remove', entity: 'characters', id: oldAvatar },
+            ],
+        }, characterLifecycleHost(request));
+    });
+}
+
 router.post('/rename', validateAvatarUrlMiddleware, async function (request, response) {
     if (!request.body.avatar_url || !request.body.new_name) {
         return response.sendStatus(400);
@@ -1694,21 +1846,16 @@ router.post('/rename', validateAvatarUrlMiddleware, async function (request, res
 
     const oldAvatarName = request.body.avatar_url;
     const newName = sanitize(request.body.new_name);
-    const oldInternalName = path.parse(request.body.avatar_url).name;
     const newInternalName = getPngName(newName, request.user.directories);
     const newAvatarName = `${newInternalName}.png`;
 
     const oldAvatarPath = path.join(request.user.directories.characters, oldAvatarName);
     const newAvatarPath = path.join(request.user.directories.characters, newAvatarName);
 
-    const oldChatsPath = path.join(request.user.directories.chats, oldInternalName);
-    const newChatsPath = path.join(request.user.directories.chats, newInternalName);
     const dateAddedRoot = getEntityDateAddedRoot(request.user.directories);
     let dateAddedMoved = false;
-    let chatsCopied = false;
     let oldDateAdded;
     let operationTime;
-    let undoMemoryRename;
 
     try {
         operationTime = Date.now();
@@ -1734,53 +1881,21 @@ router.post('/rename', validateAvatarUrlMiddleware, async function (request, res
         _.set(oldData, 'name', newName);
         const newData = JSON.stringify(oldData);
 
-        // Write data to new location
-        const writeSucceeded = await writeCharacterData(oldAvatarPath, newData, newInternalName, request, undefined, { preserveDateAdded: true });
-        if (!writeSucceeded) {
-            throw new Error('Failed to write renamed character data.');
-        }
-
-        // Rename chats folder
-        if (fs.existsSync(oldChatsPath) && !fs.existsSync(newChatsPath)) {
-            fs.cpSync(oldChatsPath, newChatsPath, { recursive: true });
-            chatsCopied = true;
-            fs.rmSync(oldChatsPath, { recursive: true, force: true });
-        }
-
-        // Remove the old character file
-        undoMemoryRename = renameCharacterMemory(request.user.directories, oldAvatarName, newAvatarName);
-        fs.unlinkSync(oldAvatarPath);
-        try {
-            removeEntityDateAdded(dateAddedRoot, 'characters', oldAvatarName);
-        } catch (metadataError) {
-            console.error('Could not remove stale date-added metadata after character rename.', metadataError);
-        }
+        const oldBytes = await fsPromises.readFile(oldAvatarPath);
+        renameCharacterCard(request, oldAvatarName, newAvatarName, write(oldBytes, newData));
 
         // Return new avatar name to ST
         return response.send({ avatar: newAvatarName });
     } catch (err) {
-        if (dateAddedMoved && fs.existsSync(oldAvatarPath)) {
-            undoMemoryRename?.();
-            let chatsRestored = true;
-            if (chatsCopied) {
-                try {
-                    fs.cpSync(newChatsPath, oldChatsPath, { recursive: true });
-                    fs.rmSync(newChatsPath, { recursive: true, force: true });
-                } catch (rollbackError) {
-                    chatsRestored = false;
-                    console.error('Could not restore chats after a failed character rename.', rollbackError);
-                }
-            }
-            if (chatsRestored) {
-                try {
-                    fs.rmSync(newAvatarPath, { force: true });
-                    removeEntityDateAdded(dateAddedRoot, 'characters', newAvatarName, operationTime);
-                    removeEntityLastChat(dateAddedRoot, newAvatarName);
-                } catch (rollbackError) {
-                    console.error('Could not clean up date-added metadata after a failed character rename.', rollbackError);
-                }
+        if (dateAddedMoved && !err?.roleplayWritePending && fs.existsSync(oldAvatarPath) && !fs.existsSync(newAvatarPath)) {
+            try {
+                removeEntityDateAdded(dateAddedRoot, 'characters', newAvatarName, operationTime);
+                removeEntityLastChat(dateAddedRoot, newAvatarName);
+            } catch (rollbackError) {
+                console.error('Could not clean up date-added metadata after a failed character rename.', rollbackError);
             }
         }
+        if (err?.roleplayWritePending || String(err?.code).startsWith('ROLEPLAY_')) return sendCharacterRoleplayError(response, err);
         console.error(err);
         return response.sendStatus(500);
     }
@@ -2050,6 +2165,47 @@ router.post('/last-chat', getFileNameValidationFunction('avatar'), async functio
     }
 });
 
+// ponytail: server-generated keys; the browser does not retry deletions with a stable key yet.
+function deleteCharacterCard(request, avatar, avatarPath, chatsDirectory, deleteChats) {
+    return withRoleplayAccount(characterBase(request), null, lease => {
+        const cardTracked = enrolCharacterCard(lease, avatar);
+        const chats = deleteChats ? characterChats(lease, request, avatar) : { tracked: [], untracked: [] };
+        const all = [...chats.tracked, ...chats.untracked];
+        if (!cardTracked && !chats.tracked.length) {
+            const chatFiles = all.map(locator => path.join(chatsDirectory, locator.chat + '.jsonl'));
+            assertUntrackedRoleplayFiles(lease, [avatarPath, ...chatFiles]);
+            const targets = all.map(locator => characterChatTarget(request, roleplayAvatarOwner(avatar), locator.chat + '.jsonl'));
+            if (deleteChats) {
+                for (const target of isChatBackupEnabled ? targets : []) {
+                    runChatRecoveryBestEffort(() => markChatDeleted(target), 'Failed to mark chat recovery state for deletion; continuing with character deletion.');
+                }
+                fs.rmSync(chatsDirectory, { recursive: true, force: true });
+                for (const target of targets) {
+                    runChatRecoveryBestEffort(() => clearChatRecoveryState(target), 'Failed to clear chat recovery state after character deletion.');
+                }
+            }
+            fs.unlinkSync(avatarPath);
+            removeSourceMemory(request.user.directories, { avatar, deleteChats });
+            return null;
+        }
+        return commitRoleplayLifecycleLocked(lease, {
+            operationKey: randomUUID(),
+            action: 'character-delete',
+            intent: { avatar, deleteChats },
+            steps: [
+                { op: cardTracked ? 'delete' : 'discard', kind: 'character', locator: { avatar } },
+                ...chats.tracked.map(locator => ({ op: 'delete', kind: 'chat', locator })),
+                ...chats.untracked.map(locator => ({ op: 'discard', kind: 'chat', locator })),
+            ],
+            auxiliary: [
+                ...all.map(locator => ({ task: 'chat-recovery-clear', locator })),
+                { task: 'source-memory-remove', avatar, world: '', deleteChats },
+                ...deleteChats ? [{ task: 'chat-folder-remove', avatar }] : [],
+            ],
+        }, characterLifecycleHost(request));
+    });
+}
+
 router.post('/delete', validateAvatarUrlMiddleware, async function (request, response) {
     const avatar = request.body?.avatar_url;
     if (typeof avatar !== 'string' || !avatar) {
@@ -2081,48 +2237,11 @@ router.post('/delete', validateAvatarUrlMiddleware, async function (request, res
         return response.sendStatus(403);
     }
 
-    /** @type {ReturnType<typeof createCharacterChatTarget>[]} */
-    let recoveryTargets = [];
-    if (request.body.delete_chats == true) {
-        try {
-            const owner = dir_name;
-            if (fs.existsSync(chatsDirectory)) {
-                const chatFiles = await fs.promises.readdir(chatsDirectory, { withFileTypes: true });
-                recoveryTargets = chatFiles
-                    .filter(entry => entry.isFile() && path.extname(entry.name) === '.jsonl')
-                    .map(chatFile => createCharacterChatTarget({
-                        chatsDirectory: request.user.directories.chats,
-                        backupDirectory: request.user.directories.backups,
-                        owner,
-                        filename: chatFile.name,
-                        maxRecoveryStates: maxTotalChatBackups,
-                    }));
-            }
-            if (isChatBackupEnabled) {
-                for (const recoveryTarget of recoveryTargets) {
-                    runChatRecoveryBestEffort(
-                        () => markChatDeleted(recoveryTarget),
-                        'Failed to mark chat recovery state for deletion; continuing with character deletion.',
-                    );
-                }
-            }
-            await fs.promises.rm(chatsDirectory, { recursive: true, force: true });
-            for (const recoveryTarget of recoveryTargets) {
-                runChatRecoveryBestEffort(
-                    () => clearChatRecoveryState(recoveryTarget),
-                    'Failed to clear chat recovery state after character deletion.',
-                );
-            }
-        } catch (err) {
-            console.error(err);
-            return response.sendStatus(500);
-        }
-    }
-
+    const deleteChats = request.body.delete_chats == true;
     try {
-        fs.unlinkSync(avatarPath);
-        removeSourceMemory(request.user.directories, { avatar, deleteChats: request.body.delete_chats == true });
+        deleteCharacterCard(request, avatar, avatarPath, chatsDirectory, deleteChats);
     } catch (error) {
+        if (error?.roleplayWritePending || String(error?.code).startsWith('ROLEPLAY_')) return sendCharacterRoleplayError(response, error);
         console.error('Could not delete character.', error);
         return response.sendStatus(500);
     }
@@ -2458,7 +2577,8 @@ router.post('/duplicate', validateAvatarUrlMiddleware, async function (request, 
         const dateAddedRoot = getEntityDateAddedRoot(request.user.directories);
         const newAvatarName = path.basename(newFilename);
         recoverFileWriteSync(filename);
-        fs.copyFileSync(filename, newFilename, fs.constants.COPYFILE_EXCL);
+        const bytes = fs.readFileSync(filename);
+        publishCharacterCard(request, newAvatarName, bytes, () => tryWriteFileSync(newFilename, bytes, undefined, { expectedFileAbsent: true }));
         try {
             createEntityDateAdded(dateAddedRoot, 'characters', newAvatarName, operationTime);
         } catch (metadataError) {
