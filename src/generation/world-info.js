@@ -53,6 +53,9 @@ function selectedBooks(settings, saved, character, avatar) {
 export function captureRoleplayWorldInfo(base, account, source, { avatar, maxContext, tokenizer = 'o200k_base' }) {
     return withRoleplayAccount(base, account, lease => {
         const saved = assertRoleplaySourceLocked(lease, source);
+        if (!source.dependencies?.some(dependency => dependency.kind === 'character' && dependency.locator.avatar === avatar)) {
+            throw roleplayError('ROLEPLAY_INVALID', 'World Info must use a character in the accepted Roleplay source.', 409);
+        }
         const character = readRoleplayEntityLocked(lease, 'character', avatar);
         if (character.changed) saveRoleplayAccount(lease);
         const file = path.join(base.directories.root, 'settings.json');

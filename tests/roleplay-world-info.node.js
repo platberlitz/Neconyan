@@ -233,6 +233,17 @@ test('a saved World Info selection cannot name another chat in a paid Roleplay j
     assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-world-info'), undefined);
 });
 
+test('a group World Info selection cannot borrow a character outside its saved members', async t => {
+    const f = fixture(t, true);
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = f.source();
+    fs.writeFileSync(path.join(f.scope.directories.characters, 'Outside.png'), writeCard(png, JSON.stringify({
+        name: 'Outside', description: 'A different group member',
+    })));
+    assert.throws(() => captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Outside.png', maxContext: 100 }),
+        { code: 'ROLEPLAY_INVALID' });
+});
+
 test('unsupported insertion positions refuse before provider dispatch and before changing the chat', async t => {
     const f = fixture(t);
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
