@@ -5,11 +5,12 @@ import Handlebars from 'handlebars';
 const ROLES = ['system', 'user', 'assistant'];
 
 /** Render named lore only where the saved story template explicitly requests it. */
-export function insertWorldInfoOutlets(messages, outlets, snapshot, historyStart, userName, characterName) {
+export function insertWorldInfoOutlets(messages, outlets, snapshot, historyStart, userName, characterName, before = '', after = '') {
     if (!outlets || typeof outlets !== 'object' || Array.isArray(outlets)
         || typeof snapshot?.storyTemplate !== 'string' || snapshot.storyPosition !== 0
         || !Number.isSafeInteger(historyStart) || historyStart !== 0
-        || typeof userName !== 'string' || typeof characterName !== 'string') {
+        || typeof userName !== 'string' || typeof characterName !== 'string'
+        || typeof before !== 'string' || typeof after !== 'string') {
         throw roleplayError('ROLEPLAY_INVALID', 'Named World Info outlets need a saved story template.', 409);
     }
     const fields = Object.create(null);
@@ -22,6 +23,10 @@ export function insertWorldInfoOutlets(messages, outlets, snapshot, historyStart
     }
     if (!Object.keys(fields).length) return messages;
     const global = snapshot.global;
+    if ((before && !['wiBefore', 'loreBefore'].some(name => snapshot.storyTemplate.includes(`{{${name}}}`)))
+        || (after && !['wiAfter', 'loreAfter'].some(name => snapshot.storyTemplate.includes(`{{${name}}}`)))) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The saved story template does not place its selected World Info.', 409);
+    }
     let rendered;
     try {
         const allowed = new Set(['description', 'personality', 'scenario', 'persona', 'user', 'char',
@@ -41,7 +46,7 @@ export function insertWorldInfoOutlets(messages, outlets, snapshot, historyStart
         rendered = Handlebars.compile(snapshot.storyTemplate, { noEscape: true })({ ...fields,
             description: global.characterDescription, personality: global.characterPersonality,
             scenario: global.scenario, persona: global.personaDescription, user: userName, char: characterName,
-            wiBefore: '', wiAfter: '', loreBefore: '', loreAfter: '' });
+            wiBefore: before, wiAfter: after, loreBefore: before, loreAfter: after });
     } catch {
         throw roleplayError('ROLEPLAY_INVALID', 'The saved story template needs unsupported prompt macros.', 409);
     }

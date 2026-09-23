@@ -112,20 +112,19 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (worldInfo.activated.length) {
             assertWorldInfoDepthHistory(assertSource().records, request.messages, request.historyStart);
         }
+        const hasOutlets = Object.keys(worldInfo.outletEntries).length > 0;
         if (Object.keys(worldInfo.outletEntries).length) {
-            if (worldInfo.worldInfoBefore || worldInfo.worldInfoAfter) {
-                throw roleplayError('ROLEPLAY_INVALID', 'This mixed World Info story position needs complete server prompt construction.', 409);
-            }
             messages = insertWorldInfoOutlets(messages, worldInfo.outletEntries, request.worldInfo, request.historyStart,
-                request.userName || 'User', request.characterName);
+                request.userName || 'User', request.characterName, worldInfo.worldInfoBefore, worldInfo.worldInfoAfter);
         }
-        const lore = [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
+        const lore = hasOutlets ? '' : [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
         if (lore) messages.unshift({ role: 'system', content: lore });
-        let historyStart = request.historyStart + Number(Boolean(lore)) + Number(Object.keys(worldInfo.outletEntries).length > 0);
+        let historyStart = request.historyStart + Number(Boolean(lore)) + Number(hasOutlets);
         if (worldInfo.EMEntries.length) {
+            const beforeExamples = messages.length;
             messages = insertWorldInfoExamples(messages, worldInfo.EMEntries, request.worldInfo.characterExamples,
                 historyStart, request.userName || 'User', request.characterName, request.groupNames || []);
-            historyStart += messages.length - request.messages.length - Number(Boolean(lore));
+            historyStart += messages.length - beforeExamples;
         }
         if (worldInfo.WIDepthEntries.length) {
             messages = insertWorldInfoDepth(messages, worldInfo.WIDepthEntries, historyStart);

@@ -62,6 +62,13 @@ test('named lore outlets render at their saved story template positions', () => 
     assert.throws(() => insertWorldInfoOutlets(history, { harbour: ['Safe waters'] }, {
         ...snapshot, storyTemplate: '{{outlet::harbour}} {{#each description}}{{this}}{{/each}}',
     }, 0, 'User', 'Nova'), { code: 'ROLEPLAY_INVALID' });
+    assert.deepEqual(insertWorldInfoOutlets(history, { harbour: ['Safe waters'] }, {
+        ...snapshot, storyTemplate: '{{wiBefore}} {{outlet::harbour}} {{wiAfter}}',
+    }, 0, 'User', 'Nova', 'Earlier', 'Later'), [
+        { role: 'system', content: 'Earlier Safe waters Later' }, ...history,
+    ]);
+    assert.throws(() => insertWorldInfoOutlets(history, { harbour: ['Safe waters'] }, snapshot,
+        0, 'User', 'Nova', 'Missing placement'), { code: 'ROLEPLAY_INVALID' });
 });
 
 test('a bound reply uses the saved story outlet and retains its decision on replay', async t => {
@@ -73,9 +80,11 @@ test('a bound reply uses the saved story outlet and retains its decision on repl
     fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
         1: entry(1, 'Original', 'The harbour is safe', { world: undefined, hash: undefined,
             position: 7, outletName: 'harbour' }),
+        2: entry(2, 'Original', 'Before the story', { position: 0 }),
+        3: entry(3, 'Original', 'After the story', { position: 1 }),
     } }));
     fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
-        power_user: { context: { story_string: 'Harbour: {{outlet::harbour}}', story_string_position: 0 } },
+        power_user: { context: { story_string: '{{wiBefore}}\nHarbour: {{outlet::harbour}}\n{{wiAfter}}', story_string_position: 0 } },
         world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
     }));
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
@@ -92,7 +101,9 @@ test('a bound reply uses the saved story outlet and retains its decision on repl
     const options = { generate: async ({ beforeDispatch, messages }) => {
         beforeDispatch();
         calls++;
-        assert.deepEqual(messages.map(message => message.content), ['Harbour: The harbour is safe', 'Original', 'Answer']);
+        assert.deepEqual(messages.map(message => message.content), [
+            'Before the story\nHarbour: The harbour is safe\nAfter the story', 'Original', 'Answer',
+        ]);
         return { text: 'A safe answer' };
     } };
     await runRoleplayReplyJob(context, options);
