@@ -19,7 +19,7 @@ import { ENTITY_LAST_CHAT_FILE, importEntityLastChat } from '../entity-last-chat
 import { isNativeExtension } from '../neconyan-native-extensions.js';
 import { destroySession } from '../middleware/sessionAuth.js';
 import { importProgress } from '../import-progress.js';
-import { assertUntrackedRoleplayFiles, roleplayAccountBase, roleplayError, roleplayFileLocator, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
+import { assertUntrackedRoleplayFiles, roleplayAccountBase, roleplayError, roleplayFileLocator, roleplayLease, roleplayPathKey, resetRoleplayAccount, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
 import { commitRoleplayLifecycleLocked, commitSingleChatWriteLocked } from '../roleplay-lifecycle.js';
 import { readRoleplayChatLocked, ROLEPLAY_METADATA_KEY } from '../generation/roleplay-source.js';
 import { parseChatJsonl } from '../chat-recovery.js';
@@ -1106,7 +1106,9 @@ router.post('/reset-step2', async (request, response) => {
         }
 
         console.info('Resetting account data:', request.user.profile.handle);
-        await fsPromises.rm(request.user.directories.root, { recursive: true, force: true });
+        const account = roleplayAccountBase(request.user.directories);
+        if (account) resetRoleplayAccount(account, null, 'reset');
+        else await fsPromises.rm(request.user.directories.root, { recursive: true, force: true });
 
         await ensurePublicDirectoriesExist();
         await checkForNewContent([request.user.directories]);
@@ -1115,6 +1117,9 @@ router.post('/reset-step2', async (request, response) => {
         return response.sendStatus(204);
     } catch (error) {
         console.error('Recover step 2 failed:', error);
+        if (String(error?.code).startsWith('ROLEPLAY_')) {
+            return response.status(error.code === 'ROLEPLAY_INTENT_CONFLICT' ? 409 : 503).json({ error: error.code.slice(9).toLowerCase(), code: error.code });
+        }
         return response.sendStatus(500);
     }
 });

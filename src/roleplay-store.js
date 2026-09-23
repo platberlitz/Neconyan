@@ -4,7 +4,7 @@ import path from 'node:path';
 import { isDeepStrictEqual, TextDecoder, types } from 'node:util';
 import sanitize from 'sanitize-filename';
 import { acquireChatFileLock } from './chat-file-lock.js';
-import { canonical, validateOwner } from './jobs/store.js';
+import { canonical, retireJobStore, validateOwner } from './jobs/store.js';
 import { decodeFileWriteRecovery, fsyncDirectorySync, setFileWriteRecoveryGuard, tryWriteFileSync, FILE_WRITE_RECOVERY_SUFFIX, FILE_WRITE_RECOVERY_MAX_BYTES } from './util.js';
 
 export const ROLEPLAY_STORE_MAX_BYTES = 16 * 1024 * 1024;
@@ -349,6 +349,7 @@ function validateState(state, identity) {
         if (state.pending.kind === 'group-update') validateGroupTransaction(state.pending, state);
         else if (state.pending.kind === 'chat-import') validateImportTransaction(state.pending, state);
         else if (state.pending.kind === 'lifecycle') validateLifecycleTransaction(state.pending, state);
+        else if (state.pending.kind === 'account-reset') validateResetTransaction(state.pending, state);
         else validateChatTransaction(state.pending, state);
     }
     return state;
@@ -815,6 +816,83 @@ export function initialiseRoleplayAccount(scope) {
     }, true);
     observedAccounts.set(path.resolve(scope.directories.root), { ...scope, accountId: result.accountId, dataEpoch: result.dataEpoch });
     return result;
+}
+
+const RESET_KEYS = ['schema', 'kind', 'id', 'mode', 'dataEpoch', 'phase'];
+
+function validateResetTransaction(pending, state) {
+    if (Object.keys(pending).length !== RESET_KEYS.length || RESET_KEYS.some(name => !Object.hasOwn(pending, name))
+        || pending.schema !== 1 || !UUID.test(pending.id) || !['reset', 'purge'].includes(pending.mode)
+        || pending.dataEpoch !== state.dataEpoch + 1 || pending.phase !== 'prepared' || state.status !== 'maintenance') throw damaged();
+}
+
+function finishAccountReset(scope, root, identity, state, stateFile) {
+    const { pending } = state;
+    // Old jobs and artefacts stay beside the ledger; late callbacks then find neither their job nor their epoch.
+    retireJobStore(scope.directories, path.join(root, 'retired', `${state.dataEpoch}-${pending.id}`, 'jobs'));
+    const userRoot = scope.directories.root;
+    for (const name of fs.existsSync(userRoot) ? fs.readdirSync(userRoot) : []) {
+        if (name !== 'jobs') fs.rmSync(path.join(userRoot, name), { recursive: true, force: true });
+    }
+    // ponytail: a purge leaves the empty jobs lock folder; account recreation reuses it.
+    const resources = Object.fromEntries(Object.entries(state.resources)
+        .map(([id, resource]) => [id, resource.status === 'live' ? { ...resource, status: 'deleted' } : resource]));
+    const next = { ...state, revision: state.revision + 1, dataEpoch: pending.dataEpoch,
+        status: pending.mode === 'purge' ? 'deleted' : 'ready', paths: {}, resources, pending: null };
+    save(root, identity, next, stateFile);
+    const key = path.resolve(userRoot);
+    if (next.status === 'ready') observedAccounts.set(key, stamp(scope, next));
+    else observedAccounts.delete(key);
+    return stamp(scope, next);
+}
+
+/**
+ * Replace the account's saved data with a new data epoch ('reset') or retire it ('purge').
+ * The maintenance record is durable before any file is touched; receipts are kept.
+ */
+export function resetRoleplayAccount(base, expected, mode) {
+    if (!['reset', 'purge'].includes(mode)) throw new TypeError('Unknown account reset mode.');
+    return locked(base, root => {
+        const loaded = load(base);
+        let { state, stateFile } = loaded;
+        if (expected) assertAccountIdentity(expected, state);
+        if (state.pending?.kind === 'account-reset') {
+            if (state.pending.mode !== mode) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'A different account reset is already in progress.');
+        } else {
+            if (mode === 'purge' && state.status === 'deleted') return stamp(base, state);
+            assertRoleplayAccountCurrent(stamp(base, state), state);
+            if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay operation must settle first.');
+            state = { ...state, revision: state.revision + 1, status: 'maintenance',
+                pending: { schema: 1, kind: 'account-reset', id: crypto.randomUUID(), mode, dataEpoch: state.dataEpoch + 1, phase: 'prepared' } };
+            stateFile = save(root, loaded.identity, state, stateFile);
+        }
+        return finishAccountReset(base, root, loaded.identity, state, stateFile);
+    });
+}
+
+/** Startup: finish an interrupted reset. Returns the current stamp, or null for a retired account that must not be served. */
+export function settleRoleplayAccountReset(base) {
+    return locked(base, root => {
+        const loaded = load(base);
+        const current = loaded.state.pending?.kind === 'account-reset'
+            ? finishAccountReset(base, root, loaded.identity, loaded.state, loaded.stateFile) : stamp(base, loaded.state);
+        const retired = loaded.state.pending?.kind === 'account-reset' ? loaded.state.pending.mode === 'purge' : loaded.state.status === 'deleted';
+        if (retired) observedAccounts.delete(path.resolve(base.directories.root));
+        return retired ? null : current;
+    });
+}
+
+/** A retired (purged) account name gets a fresh incarnation with a new account id and data epoch. */
+export function recreateRoleplayAccount(base) {
+    return locked(base, root => {
+        const loaded = load(base);
+        if (loaded.state.status !== 'deleted' || loaded.state.pending !== null) return stamp(base, loaded.state);
+        const next = { ...loaded.state, revision: loaded.state.revision + 1, accountId: crypto.randomUUID(),
+            dataEpoch: loaded.state.dataEpoch + 1, status: 'ready', paths: {} };
+        save(root, loaded.identity, next, loaded.stateFile);
+        observedAccounts.set(path.resolve(base.directories.root), stamp(base, next));
+        return stamp(base, next);
+    });
 }
 
 function assertAccountIdentity(scope, state) {

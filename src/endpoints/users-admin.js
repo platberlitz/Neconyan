@@ -16,7 +16,7 @@ import {
     ensurePublicDirectoriesExist,
 } from '../users.js';
 import { DEFAULT_USER } from '../constants.js';
-import { roleplayStoreDirectory } from '../roleplay-store.js';
+import { recreateRoleplayAccount, resetRoleplayAccount, roleplayAccountBase, roleplayStoreDirectory } from '../roleplay-store.js';
 import { bootstrapRoleplayAccount } from '../roleplay-lifecycle.js';
 import { roleplayNativeHost } from './chats.js';
 
@@ -194,10 +194,9 @@ router.post('/create', requireAdminMiddleware, async (request, response) => {
 
         const directories = getUserDirectories(handle);
         const scope = { owner: handle, directories };
-        if (fs.lstatSync(roleplayStoreDirectory(scope), { throwIfNoEntry: false })) {
-            return response.status(409).json({ error: 'This account name has retained storage and cannot be reused until account recovery is completed.' });
-        }
-        bootstrapRoleplayAccount(scope, roleplayNativeHost);
+        // A purged name gets a fresh incarnation; data kept by a non-purging delete is adopted as before.
+        if (fs.lstatSync(roleplayStoreDirectory(scope), { throwIfNoEntry: false })) recreateRoleplayAccount(scope);
+        if (!bootstrapRoleplayAccount(scope, roleplayNativeHost)) throw new Error('The account could not be prepared.');
 
         const salt = getPasswordSalt();
         const password = request.body.password ? getPasswordHash(request.body.password, salt) : '';
@@ -247,6 +246,9 @@ router.post('/delete', requireAdminMiddleware, async (request, response) => {
         if (request.body.purge) {
             const directories = getUserDirectories(request.body.handle);
             console.info('Deleting data directories for', request.body.handle);
+            // Retire protected records (receipts and old jobs kept) before removing the data folder.
+            const account = roleplayAccountBase(directories);
+            if (account) resetRoleplayAccount(account, null, 'purge');
             await fsPromises.rm(directories.root, { recursive: true, force: true });
         }
 

@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { acquireChatFileLock } from '../chat-file-lock.js';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
+import { fsyncDirectorySync } from '../util.js';
 
 export const JOB_SCHEMA = 1;
 export const JOB_LIMIT = 200;
@@ -240,6 +241,30 @@ export function mutateJobs(directories, mutate) {
         if (result?.changed === false) return result;
         const written = writeStore(directories, store, result?.job?.id);
         return { ...result, revision: written.revision };
+    } finally {
+        release();
+    }
+}
+
+/**
+ * Move the account's job ledger and artefacts aside for a data reset. Renames keep
+ * already-durable bytes, repeat safely after a crash, and leave late writers an
+ * empty ledger that no longer knows their job.
+ */
+export function retireJobStore(directories, destination) {
+    const release = acquireChatFileLock(storePath(directories));
+    try {
+        fs.mkdirSync(destination, { recursive: true, mode: 0o700 });
+        for (const name of [STORE_FILE, 'artifacts']) {
+            const source = path.join(stateDir(directories), name);
+            const target = path.join(destination, name);
+            if (fs.existsSync(source) && !fs.existsSync(target)) fs.renameSync(source, target);
+        }
+        fsyncDirectorySync(destination);
+        for (const name of fs.readdirSync(stateDir(directories))) {
+            if (!name.endsWith('.lock')) fs.rmSync(path.join(stateDir(directories), name), { recursive: true, force: true });
+        }
+        fsyncDirectorySync(stateDir(directories));
     } finally {
         release();
     }

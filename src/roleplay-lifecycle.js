@@ -12,7 +12,7 @@ import { assertRoleplaySourceLocked, assertPendingRoleplayDependencies, captureR
 import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, createRoleplayDirectory, readRoleplayFile, readRoleplayPayload,
     roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, stageRoleplayPayload, withRoleplayAccountLock, ROLEPLAY_LARGEST_PHYSICAL,
     largestRoleplayJournal, roleplayPayloadDirectory, initialiseRoleplayAccount, readRoleplayWriteJournal, roleplayAvatarOwner,
-    validRoleplayAvatar, ROLEPLAY_IMPORT_MAX_OUTPUTS, ROLEPLAY_LIFECYCLE_MAX_STEPS, roleplayImportPlan } from './roleplay-store.js';
+    validRoleplayAvatar, ROLEPLAY_IMPORT_MAX_OUTPUTS, ROLEPLAY_LIFECYCLE_MAX_STEPS, roleplayImportPlan, settleRoleplayAccountReset } from './roleplay-store.js';
 import { applyPreparedBranchMemoryCapture, assertPreparedBranchMemory, prepareBranchMemoryCapture } from './mewmory/prepared-branch.js';
 import { read as readCharacterCard } from './character-card-parser.js';
 import { MAX_ARCHIVE_BYTES, chatMemoryExists, removeChatMemory, removeSourceMemory, renameCharacterMemory, renameChatMemory } from './mewmory/store.js';
@@ -1199,7 +1199,10 @@ export function reconcilePendingChatWrite(scope, host) {
 
 /** Explicit startup/account-creation work, never invoked by a missing-store lookup. */
 export function bootstrapRoleplayAccount(base, host) {
-    const scope = initialiseRoleplayAccount(base);
+    initialiseRoleplayAccount(base);
+    // An interrupted reset settles before any other recovery; a purged account is left retired.
+    const scope = settleRoleplayAccountReset(base);
+    if (!scope) return null;
     reconcilePendingChatWrite(scope, host);
     return scope;
 }
