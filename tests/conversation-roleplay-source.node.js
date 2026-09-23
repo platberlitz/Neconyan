@@ -375,3 +375,39 @@ test('image delivery revalidates the Roleplay aside source before any image work
         error => error.apiError === 'roleplay_chat_not_found',
     );
 });
+
+test('a protected account binds the aside to the chat instance and refuses a replaced chat', async () => {
+    const { directories, request } = setup();
+    const { initialiseRoleplayAccount } = await import('../src/roleplay-store.js');
+    initialiseRoleplayAccount({ owner: path.basename(directories.root), directories });
+    const messages = [
+        { id: 'p0', role: 'user', name: 'User', mes: 'The storm breaks.' },
+        { id: 'p1', role: 'character', name: 'Nova', mes: 'I hold the line.', original_avatar: 'nova.png' },
+    ];
+    const chatFile = path.join(directories.chats, 'nova', 'protected.jsonl');
+    writeChat(chatFile, messages);
+    const submission = {
+        target: { avatar: 'nova.png', personaId: '', branchId: 'main' },
+        source: { locator: { chat: 'protected', avatar: 'nova.png', group: false }, groupId: '' },
+        messageIndex: 1,
+        messageRevision: getRoleplaySourceMessageRevision(messages[1]),
+        groupRevision: '',
+        reason: 'random',
+    };
+    const accepted = await acceptConversationAside(request, submission);
+    assert.equal(accepted.created, true);
+    const instanceId = accepted.job.intent.automation.roleplaySource.instanceId;
+    assert.match(instanceId, /^[0-9a-f-]{36}$/);
+
+    const replay = await acceptConversationAside(request, submission);
+    assert.equal(replay.created, false);
+    assert.equal(replay.job.id, accepted.job.id);
+
+    fs.rmSync(chatFile);
+    writeChat(chatFile, messages);
+    await runFamily(directories, accepted.job.id);
+    const finished = getJob(directories, accepted.job.id);
+    assert.notEqual(finished.state, 'completed');
+    const branch = readStore(directories).characters['nova.png'].branches.main;
+    assert.equal(branch.messages.some(message => message.mes === 'private aside'), false);
+});

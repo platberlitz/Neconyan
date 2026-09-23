@@ -4,6 +4,8 @@ import path from 'node:path';
 import sanitize from 'sanitize-filename';
 import { readChatJsonlStrict } from '../chat-recovery.js';
 import { chatPath, normalizeLocator } from '../mewmory/store.js';
+import { roleplayAccountBase, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
+import { readRoleplayChatLocked, readRoleplayEntityLocked } from './roleplay-source.js';
 import { buildConversationRoleplayContext, formatPromptText } from '../../public/scripts/neconyan-conversation/shared-helpers.js';
 import { buildGroupAsideDirective, buildRoleplayDMDirective, getRoleplayGroupRevision, getRoleplaySourceMessageRevision } from '../../public/scripts/neconyan-conversation/roleplay-source.js';
 
@@ -198,6 +200,40 @@ function readRoleplayGroup(directories, groupId) {
     return group;
 }
 
+/**
+ * Protected accounts read the aside source under the account lock, enrolling it
+ * like any other Roleplay reader, so the accepted aside can bind the chat's
+ * server-assigned instance. Accounts without protected storage keep the plain read.
+ */
+function readAsideSource(directories, locator, groupId) {
+    const base = roleplayAccountBase(directories);
+    if (!base) {
+        const record = readChatJsonlStrict(chatPath(directories, locator));
+        if (record.status === 'missing') throw fail('The saved Roleplay chat could not be found.', 404, 'roleplay_chat_not_found');
+        if (record.status !== 'ok' || !Array.isArray(record.records)) {
+            throw fail('The saved Roleplay chat could not be read.', 409, 'roleplay_chat_unreadable');
+        }
+        return { records: record.records, instanceId: null, group: null };
+    }
+    try {
+        return withRoleplayAccount(base, null, lease => {
+            const chat = readRoleplayChatLocked(lease, locator);
+            const group = groupId ? readRoleplayEntityLocked(lease, 'group', groupId) : null;
+            if (chat.changed || group?.changed) saveRoleplayAccount(lease);
+            return { records: chat.records, instanceId: chat.instanceId, group: group?.data ?? null };
+        });
+    } catch (error) {
+        if (!String(error?.code || '').startsWith('ROLEPLAY_')) throw error;
+        if (error.code === 'ROLEPLAY_SOURCE_MISSING') {
+            if (groupId && fs.existsSync(chatPath(directories, locator))) {
+                throw fail('The source Roleplay group could not be found.', 404, 'roleplay_group_not_found');
+            }
+            throw fail('The saved Roleplay chat could not be found.', 404, 'roleplay_chat_not_found');
+        }
+        throw Object.assign(fail('The saved Roleplay chat could not be read.', 409, 'roleplay_chat_unreadable'), { code: error.code });
+    }
+}
+
 export function captureConversationRoleplaySource(request, submission, { characterName = 'Character', userName = 'User' } = {}) {
     const directories = request?.user?.directories || {};
     let locator;
@@ -211,14 +247,11 @@ export function captureConversationRoleplaySource(request, submission, { charact
         throw fail(error?.message || 'Invalid saved Roleplay locator.', 400, 'invalid_roleplay_locator');
     }
 
-    const record = readChatJsonlStrict(chatPath(directories, locator));
-    if (record.status === 'missing') {
-        throw fail('The saved Roleplay chat could not be found.', 404, 'roleplay_chat_not_found');
+    const saved = readAsideSource(directories, locator, locator.group ? submission.source.groupId : '');
+    if (submission.instanceId !== undefined && submission.instanceId !== saved.instanceId) {
+        throw fail('The saved Roleplay chat was replaced after this aside was accepted.', 409, 'roleplay_chat_replaced');
     }
-    if (record.status !== 'ok' || !Array.isArray(record.records)) {
-        throw fail('The saved Roleplay chat could not be read.', 409, 'roleplay_chat_unreadable');
-    }
-    const messages = record.records.slice(1);
+    const messages = saved.records.slice(1);
     if (submission.messageIndex >= messages.length) {
         throw fail('The saved Roleplay message no longer exists.', 409, 'roleplay_message_out_of_range');
     }
@@ -231,7 +264,7 @@ export function captureConversationRoleplaySource(request, submission, { charact
     }
 
     if (locator.group) {
-        const group = readRoleplayGroup(directories, submission.source.groupId);
+        const group = saved.group ?? readRoleplayGroup(directories, submission.source.groupId);
         if (getRoleplayGroupRevision(group) !== submission.groupRevision) {
             throw fail('The source Roleplay group changed after this aside was captured.', 409, 'roleplay_group_revision_mismatch');
         }
@@ -270,6 +303,7 @@ export function captureConversationRoleplaySource(request, submission, { charact
             },
             cooldownKey: JSON.stringify([submission.target.personaId, String(submission.source.groupId), submission.target.avatar]),
             locator,
+            instanceId: saved.instanceId,
         };
     }
 
@@ -284,5 +318,6 @@ export function captureConversationRoleplaySource(request, submission, { charact
         extra: { conversation_mode_gossip: true, gossip_source_roleplay: true },
         cooldownKey: '',
         locator,
+        instanceId: saved.instanceId,
     };
 }

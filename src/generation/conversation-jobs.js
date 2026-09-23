@@ -739,7 +739,9 @@ export async function acceptConversationAside(request, body = {}) {
         kind: captured.kind,
         delayMs: captured.delayMs,
         groupAsideKey: cooldownKey || null,
-        roleplaySource: submission,
+        // Bind the protected chat instance so a deleted-and-recreated chat of the
+        // same name cannot satisfy this aside; the occurrence key stays unchanged.
+        roleplaySource: captured.instanceId ? { ...submission, instanceId: captured.instanceId } : submission,
         bookkeeping: cooldownKey ? { groupAside: { key: cooldownKey } } : {},
     });
 }
