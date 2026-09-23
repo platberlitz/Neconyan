@@ -46,6 +46,8 @@ test('saved depth injections preserve the system prefix and browser history orde
     assert.deepEqual(messages.map(value => value.content), ['Rules', 'First', 'Reply', 'Latest']);
     assert.throws(() => insertWorldInfoDepth(messages, [{ depth: 1, role: 5, entries: ['bad'] }], 1),
         { code: 'ROLEPLAY_INVALID' });
+    assert.throws(() => insertWorldInfoDepth(messages, [{ depth: 1, role: '0', entries: ['lost'] }], 1),
+        { code: 'ROLEPLAY_INVALID' });
 });
 
 test('server selection recurses on saved text and places entries with a bounded budget', async () => {

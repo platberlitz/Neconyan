@@ -6,7 +6,7 @@ const ROLES = ['system', 'user', 'assistant'];
 export function insertWorldInfoDepth(messages, entries, historyStart) {
     if (!Number.isSafeInteger(historyStart) || historyStart < 0 || historyStart > messages.length
         || !Array.isArray(entries) || entries.some(value => !value || !Number.isSafeInteger(value.depth)
-            || value.depth < 0 || value.depth > 10000 || !ROLES[value.role]
+            || value.depth < 0 || value.depth > 10000 || !Number.isInteger(value.role) || !ROLES[value.role]
             || !Array.isArray(value.entries) || value.entries.some(text => typeof text !== 'string'))) {
         throw roleplayError('ROLEPLAY_INVALID', 'World Info needs a saved chat history boundary for depth insertion.', 409);
     }
