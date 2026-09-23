@@ -73,7 +73,7 @@ export function assertWorldInfoDepthHistory(records, messages, historyStart, opt
 }
 
 function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = null, regex = [], characterName,
-    group = false, userName = 'User', namesBehavior } = {}) {
+    group = false, userName = records[0]?.user_name, namesBehavior } = {}) {
     if (group && ![-1, 0, 2].includes(namesBehavior)) {
         throw roleplayError('ROLEPLAY_INVALID', 'This group naming policy needs server-side provider formatting.', 409);
     }

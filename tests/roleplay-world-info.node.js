@@ -85,12 +85,18 @@ test('group history keeps the selected Chat Completion speaker naming policy', (
         ['Question', 'Answer']);
     assert.deepEqual(buildRoleplaySavedHistory(records, { ...base, namesBehavior: 2 }).map(message => message.content),
         ['User: Question', 'Nova: Answer']);
+    records[0].user_name = 'Visitor';
+    records[1].name = 'Visitor';
+    assert.deepEqual(buildRoleplaySavedHistory(records, { group: true, characterName: 'Nova', namesBehavior: 0 })
+        .map(message => message.content), ['Question', 'Nova: Answer']);
     assert.throws(() => buildRoleplaySavedHistory(records, { ...base, namesBehavior: 1 }), { code: 'ROLEPLAY_INVALID' });
     assert.throws(() => buildRoleplaySavedHistory(records, base), { code: 'ROLEPLAY_INVALID' });
 });
 
 test('a server-owned group reply uses its saved Chat Completion naming controls', async t => {
     const f = fixture(t, true);
+    f.records[0].user_name = 'Visitor';
+    f.records[1].name = 'Visitor';
     f.records[1].extra = {};
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
@@ -106,8 +112,9 @@ test('a server-owned group reply uses its saved Chat Completion naming controls'
     const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
         owner: f.scope.owner, signal: new AbortController().signal };
     await runRoleplayReplyJob(context, { promptBackend: () => ({ backend: 'chat', preset: { names_behavior: 0 } }),
-        generate: async ({ messages, beforeDispatch }) => {
+        generate: async ({ messages, userName, beforeDispatch }) => {
             beforeDispatch();
+            assert.equal(userName, 'Visitor');
             assert.deepEqual(messages.map(message => message.content), ['Story: Original', 'Original', 'Nova: Answer']);
             return { text: 'Group answer' };
         } });

@@ -114,11 +114,12 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         || (request.userName && promptSource.records[0]?.user_name !== request.userName))) {
         throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved Roleplay speaker names differ from the accepted prompt.', 409);
     }
+    const userName = request.userName ?? promptSource?.records[0]?.user_name ?? 'User';
     const namingMaterial = source.locator.group && (request.serverPrompt || worldInfo?.activated.length)
         ? promptBackend(directories, request.binding) : null;
     const historyOptions = request.worldInfo && { reasoningInPrompt: request.worldInfo.reasoningInPrompt,
         reasoning: request.worldInfo.reasoning, regex: request.worldInfo.regex,
-        characterName: request.characterName, group: source.locator.group, userName: request.userName || 'User',
+        characterName: request.characterName, group: source.locator.group, userName,
         namesBehavior: namingMaterial?.backend === 'chat'
             ? (namingMaterial.preset?.names_behavior ?? namingMaterial.active?.names_behavior ?? 0) : undefined };
     const savedHistory = promptSource ? buildRoleplaySavedHistory(promptSource.records, historyOptions) : null;
@@ -140,7 +141,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         const hasStory = Boolean(hasOutlets || storyLore || storyNote || (request.serverPrompt && request.worldInfo.storyTemplate));
         if (hasStory) {
             messages = insertWorldInfoOutlets(messages, worldInfo.outletEntries, request.worldInfo, savedHistoryStart,
-                request.userName || 'User', request.characterName, worldInfo.worldInfoBefore, worldInfo.worldInfoAfter,
+                userName, request.characterName, worldInfo.worldInfoBefore, worldInfo.worldInfoAfter,
                 Boolean(storyNote || request.serverPrompt));
         }
         const lore = hasStory ? '' : [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
@@ -149,7 +150,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (worldInfo.EMEntries.length) {
             const beforeExamples = messages.length;
             messages = insertWorldInfoExamples(messages, worldInfo.EMEntries, request.worldInfo.characterExamples,
-                historyStart, request.userName || 'User', request.characterName, request.groupNames || []);
+                historyStart, userName, request.characterName, request.groupNames || []);
             historyStart += messages.length - beforeExamples;
         }
         if (worldInfo.WIDepthEntries.length) {
@@ -192,7 +193,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         }
     }
     const result = await generate({ context: base, jobContext: context, binding: request.binding, messages,
-        maxTokens: request.maxTokens, userName: request.userName || 'User', characterName: request.characterName,
+        maxTokens: request.maxTokens, userName, characterName: request.characterName,
         groupNames: request.groupNames || [], macroEnvironment: createMacroEnvironment(request.macros || {}),
         rawOptions: request.rawOptions || {}, ephemeralStops: request.ephemeralStops || [],
         beforeDispatch: () => {
