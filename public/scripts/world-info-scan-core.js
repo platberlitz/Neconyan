@@ -87,6 +87,8 @@ export function resolveWorldInfoTimedEffects(entries, chatLength, timedWorldInfo
     const identity = entry => `${entry.world}.${entry.uid}`;
     for (const type of ['sticky', 'cooldown']) {
         if (!metadata[type] || typeof metadata[type] !== 'object' || Array.isArray(metadata[type])) metadata[type] = {};
+    }
+    for (const type of ['sticky', 'cooldown']) {
         for (const [key, effect] of Object.entries(metadata[type])) {
             if (!effect || typeof effect !== 'object' || Array.isArray(effect)) { delete metadata[type][key]; continue; }
             if (dryRun) continue;

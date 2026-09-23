@@ -157,6 +157,14 @@ describe('World Info timed effect windows', () => {
         expect(resolveWorldInfoTimedEffects([entry], 9, result.metadata).active.cooldown.has(19)).toBe(false);
     });
 
+    test('expires a sticky window when legacy metadata has no cooldown map', () => {
+        const entry = { world: 'Town', uid: 3, hash: 19, sticky: 2, cooldown: 3 };
+        const saved = { sticky: { 'Town.3': { hash: 19, start: 4, end: 6, protected: false } } };
+        const result = resolveWorldInfoTimedEffects([entry], 6, saved);
+        expect(result.metadata.cooldown['Town.3']).toEqual({ hash: 19, start: 6, end: 9, protected: true });
+        expect(result.active.cooldown.has(19)).toBe(true);
+    });
+
     test('does not mutate timed metadata on a dry scan and preserves existing windows', () => {
         const entry = { world: 'Town', uid: 3, hash: 19, sticky: 2, cooldown: 3, delay: 4 };
         const saved = { sticky: { 'Town.3': { hash: 19, start: 1, end: 2, protected: false } } };
