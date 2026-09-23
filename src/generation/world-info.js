@@ -94,6 +94,12 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
     if (!snapshot?.account || !snapshot.source || !snapshot.character || !snapshot.names || !snapshot.bookHashes) {
         throw roleplayError('ROLEPLAY_INVALID', 'A bound World Info selection is required.', 400);
     }
+    const captured = captureRoleplayWorldInfo(base, snapshot.account, snapshot.source, {
+        avatar: snapshot.avatar, maxContext: snapshot.maxContext, tokenizer: snapshot.tokenizer,
+    });
+    if (roleplayHash(captured) !== roleplayHash(snapshot)) {
+        throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info selection differs from the account sources.');
+    }
     const selected = withRoleplayAccount(base, snapshot.account, lease => {
         assertRoleplaySourceLocked(lease, snapshot.source);
         const character = readRoleplayEntityLocked(lease, 'character', snapshot.avatar);

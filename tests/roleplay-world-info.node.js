@@ -108,6 +108,18 @@ test('a saved scan refuses changed settings or a reset before reading new accoun
     await assert.rejects(prepareRoleplayWorldInfo(f.scope, snapshot), { code: 'ROLEPLAY_ACCOUNT_CHANGED' });
 });
 
+test('a fabricated scan input cannot replace saved chat or lore controls before dispatch', async t => {
+    const f = fixture(t);
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, f.source(), { avatar: 'Nova.png', maxContext: 100 });
+    const fabricated = structuredClone(snapshot);
+    fabricated.chat = ['Invented keyword'];
+    await assert.rejects(prepareRoleplayWorldInfo(f.scope, fabricated), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    fabricated.chat = snapshot.chat;
+    fabricated.global.personaDescription = 'Invented persona';
+    await assert.rejects(prepareRoleplayWorldInfo(f.scope, fabricated), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+});
+
 test('saved default name inclusion activates speaker keys before provider work', async t => {
     const f = fixture(t);
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
@@ -187,6 +199,23 @@ test('the worker saves scan decisions before a provider call and closes timed ef
     assert.equal(hooks, 2);
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'The answer');
     assert.equal(readRoleplayChat(f.scope, f.locator).records[0].chat_metadata.timedWorldInfo.sticky['Town.7'].end, 4);
+});
+
+test('a saved World Info selection cannot name another chat in a paid Roleplay job', async t => {
+    const f = fixture(t);
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const request = { binding: { profileId: 'saved', fingerprint: 'bound' },
+        messages: [{ role: 'user', content: 'Original' }], maxTokens: 32, characterName: 'Nova',
+        worldInfo: { account, source: { ...source, locator: { ...source.locator, chat: 'Other' } },
+            avatar: 'Nova.png' } };
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'foreign-lore', effect: 'append', source, request });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    await assert.rejects(runRoleplayReplyJob(context, { generate: () => { throw Error('Provider called'); } }),
+        { code: 'ROLEPLAY_INVALID' });
+    assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-world-info'), undefined);
 });
 
 test('unsupported insertion positions refuse before provider dispatch and before changing the chat', async t => {

@@ -5,7 +5,7 @@ import { assertRoleplaySourceLocked } from './roleplay-source.js';
 import { runChatProfile } from './service.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { applyRoleplayJobEffect } from '../roleplay-jobs.js';
-import { roleplayError, withRoleplayAccount } from '../roleplay-store.js';
+import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
 import { prepareRoleplayWorldInfo } from './world-info.js';
@@ -80,6 +80,12 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     assertSource();
     let worldInfo;
     if (request.worldInfo) {
+        if (request.worldInfo.account?.accountId !== account.accountId
+            || request.worldInfo.account?.dataEpoch !== account.dataEpoch
+            || roleplayHash(request.worldInfo.source) !== roleplayHash(source)
+            || (!source.locator.group && request.worldInfo.avatar !== source.locator.avatar)) {
+            throw roleplayError('ROLEPLAY_INVALID', 'World Info must belong to the admitted Roleplay source.', 409);
+        }
         worldInfo = readArtifact(directories, job.id, 'roleplay-world-info');
         if (!worldInfo) {
             worldInfo = await prepareRoleplayWorldInfo(base, request.worldInfo, { ...worldInfoHooks, macros: request.macros });
