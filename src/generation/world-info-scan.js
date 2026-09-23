@@ -1,4 +1,4 @@
-import { applyWorldInfoTimedEffects, filterWorldInfoInclusionGroups, matchesWorldInfoEntry,
+import { applyWorldInfoTimedEffects, filterWorldInfoInclusionGroups, matchesWorldInfoEntry, normalizeWorldInfoKey,
     passesWorldInfoProbability, resolveWorldInfoTimedEffects } from '../../public/scripts/world-info-scan-core.js';
 import { roleplayError } from '../roleplay-store.js';
 
@@ -60,9 +60,13 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
         });
         const primary = entry.key?.filter(hit).length ?? 0;
         if (!entry.key?.length) return 0;
-        const secondary = entry.keysecondary?.filter(hit) ?? [];
+        const secondaryKeys = entry.keysecondary?.map(key => normalizeWorldInfoKey(key, substitute)).filter(Boolean) ?? [];
+        const secondary = secondaryKeys.filter(key => matchesWorldInfoEntry({ key: [key] }, text, {
+            caseSensitive: entry.caseSensitive ?? settings.world_info_case_sensitive,
+            wholeWords: entry.matchWholeWords ?? settings.world_info_match_whole_words,
+        }));
         if (!secondary.length) return primary;
-        if (entry.selectiveLogic === 0 || entry.selectiveLogic === 3 && secondary.length === entry.keysecondary.length) return primary + secondary.length;
+        if (entry.selectiveLogic === 0 || entry.selectiveLogic === 3 && secondary.length === secondaryKeys.length) return primary + secondary.length;
         return primary;
     };
     while (state) {

@@ -60,6 +60,14 @@ test('group scoring counts secondary hits only for the browser positive selectio
     assert.deepEqual(result.activated.map(value => value.uid), [2]);
 });
 
+test('group scoring ignores blank secondary keys before comparing complete matches', async () => {
+    const first = entry(1, 'cat', 'One', { group: 'choice', keysecondary: ['{{blank}}', 'runs'], selectiveLogic: 3 });
+    const second = entry(2, 'cat', 'Two', { group: 'choice', keysecondary: ['runs'], selectiveLogic: 2 });
+    const result = await scan([first, second], { settings: { ...settings, world_info_use_group_scoring: true },
+        substitute: key => key === '{{blank}}' ? '' : key });
+    assert.deepEqual(result.activated.map(value => value.uid), [1]);
+});
+
 test('the scan hook can change the next state and budget before any provider call', async () => {
     let calls = 0;
     const result = await scan([entry(1, 'cat', 'Present')], { onScan: async hook => {
