@@ -8,6 +8,7 @@ import { applyRoleplayJobEffect } from '../roleplay-jobs.js';
 import { roleplayError, withRoleplayAccount } from '../roleplay-store.js';
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
+import { prepareRoleplayWorldInfo } from './world-info.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
@@ -51,7 +52,7 @@ function replyOutput(result, effect, name, material) {
 }
 
 /** A private worker for a fully admitted, paused Roleplay job; browser cutover is a later stage. */
-export async function runRoleplayReplyJob(context, { generate = runChatProfile, host = roleplayNativeHost } = {}) {
+export async function runRoleplayReplyJob(context, { generate = runChatProfile, host = roleplayNativeHost, worldInfoHooks } = {}) {
     const { job, directories, owner, signal } = context;
     const { roleplay, effect, source, request } = job.intent ?? {};
     const base = { owner, directories };
@@ -77,12 +78,34 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     }
     const overridePayload = requestOverrides(request);
     assertSource();
-    const result = await generate({ context: base, jobContext: context, binding: request.binding, messages: request.messages,
+    let worldInfo;
+    if (request.worldInfo) {
+        worldInfo = readArtifact(directories, job.id, 'roleplay-world-info');
+        if (!worldInfo) {
+            worldInfo = await prepareRoleplayWorldInfo(base, request.worldInfo, { ...worldInfoHooks, macros: request.macros });
+            writeArtifact(directories, job.id, 'roleplay-world-info', worldInfo);
+        }
+    }
+    const messages = structuredClone(request.messages);
+    if (worldInfo) {
+        if (worldInfo.EMEntries.length || worldInfo.WIDepthEntries.length || worldInfo.ANBeforeEntries.length
+            || worldInfo.ANAfterEntries.length || Object.keys(worldInfo.outletEntries).length) {
+            throw roleplayError('ROLEPLAY_INVALID', 'This World Info insertion position needs server prompt construction.', 409);
+        }
+        const lore = [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
+        if (lore) messages.unshift({ role: 'system', content: lore });
+    }
+    const result = await generate({ context: base, jobContext: context, binding: request.binding, messages,
         maxTokens: request.maxTokens, userName: request.userName || 'User', characterName: request.characterName,
         groupNames: request.groupNames || [], macroEnvironment: createMacroEnvironment(request.macros || {}),
         rawOptions: request.rawOptions || {}, ephemeralStops: request.ephemeralStops || [], beforeDispatch: assertSource,
         modelOverride: request.modelOverride || '', overridePayload, stream: request.stream === true });
     const output = replyOutput(result, effect, request.characterName, result.generation);
+    if (worldInfo) {
+        output.timedWorldInfo = worldInfo.timedWorldInfo;
+        output.timedBaseline = worldInfo.timedBaseline;
+        output.timedChatLength = worldInfo.chatLength;
+    }
     writeArtifact(directories, job.id, 'roleplay-output', output);
     // The provider result is durable before recovery may revisit the chat write.
     setJobResume(directories, job.id, 'roleplay-delivery');

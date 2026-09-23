@@ -1,3 +1,6 @@
+import { getStringHash } from './macro-primitives.js';
+import { normalizeWorldInfoPosition } from './world-info-character-book.js';
+
 /**
  * Normalizes probability fields from native and CharacterBook-shaped entries.
  * @param {object} entry World Info entry
@@ -75,6 +78,86 @@ export function getTimedEffectWindow(chatLength, duration) {
         start: chatLength,
         end: chatLength + Number(duration),
     };
+}
+
+/** Advance the saved sticky/cooldown windows once, before scanning this chat length. */
+export function resolveWorldInfoTimedEffects(entries, chatLength, timedWorldInfo = {}, dryRun = false) {
+    const metadata = structuredClone(timedWorldInfo);
+    const active = { sticky: new Set(), cooldown: new Set(), delay: new Set() };
+    const identity = entry => `${entry.world}.${entry.uid}`;
+    for (const type of ['sticky', 'cooldown']) {
+        if (!metadata[type] || typeof metadata[type] !== 'object' || Array.isArray(metadata[type])) metadata[type] = {};
+        for (const [key, effect] of Object.entries(metadata[type])) {
+            if (!effect || typeof effect !== 'object' || Array.isArray(effect)) { delete metadata[type][key]; continue; }
+            if (dryRun) continue;
+            const entry = entries.find(value => String(value.hash) === String(effect.hash));
+            if (chatLength <= Number(effect.start) && !effect.protected || entry && !entry[type]) {
+                delete metadata[type][key];
+                continue;
+            }
+            if (chatLength >= Number(effect.end)) {
+                delete metadata[type][key];
+                if (type === 'sticky' && entry?.cooldown) {
+                    const window = getTimedEffectWindow(chatLength, entry.cooldown);
+                    metadata.cooldown[identity(entry)] = { hash: entry.hash, ...window, protected: true };
+                    active.cooldown.add(entry.hash);
+                }
+                continue;
+            }
+            if (entry) active[type].add(entry.hash);
+        }
+    }
+    for (const entry of entries) if (entry.delay && chatLength < entry.delay) active.delay.add(entry.hash);
+    return { metadata, active };
+}
+
+/** Apply a completed scan's windows to a copy of chat metadata. */
+export function applyWorldInfoTimedEffects(metadata, activated, chatLength) {
+    metadata = structuredClone(metadata);
+    for (const type of ['sticky', 'cooldown']) {
+        metadata[type] ??= {};
+        for (const entry of activated) {
+            if (!entry[type]) continue;
+            const key = `${entry.world}.${entry.uid}`;
+            metadata[type][key] ??= { hash: entry.hash, ...getTimedEffectWindow(chatLength, entry[type]), protected: false };
+        }
+    }
+    return metadata;
+}
+
+/** Order and normalize entries using the same identities as the browser's timed windows. */
+export function prepareWorldInfoEntries({ globalLore = [], characterLore = [], chatLore = [], personaLore = [] },
+                                        strategy = 1) {
+    const order = (a, b) => b.order - a.order;
+    let ordinary = [...globalLore, ...characterLore].sort(order);
+    if (strategy === 1) ordinary = [...characterLore.sort(order), ...globalLore.sort(order)];
+    if (strategy === 2) ordinary = [...globalLore.sort(order), ...characterLore.sort(order)];
+    const positions = { before: 0, after: 1, ANTop: 2, ANBottom: 3, atDepth: 4, EMTop: 5, EMBottom: 6, outlet: 7 };
+    return [...chatLore.sort(order), ...personaLore.sort(order), ...ordinary].map(entry => {
+        const lines = (entry.content || '').split(/\r?\n/);
+        const decorators = [];
+        let content = entry.content || '';
+        if (content.startsWith('@@')) {
+            let fallback = false;
+            content = '';
+            for (let index = 0; index < lines.length; index++) {
+                const line = lines[index];
+                if (!line.startsWith('@@')) { content = lines.slice(index).join('\n'); break; }
+                if (line.startsWith('@@@') && !fallback) continue;
+                const decorator = line.startsWith('@@@') ? line.slice(1) : line;
+                if (['@@activate', '@@dont_activate'].some(value => decorator.startsWith(value))) {
+                    decorators.push(decorator);
+                    fallback = false;
+                } else {
+                    fallback = true;
+                }
+            }
+        }
+        const decorated = { ...entry, decorators, content };
+        const hash = getStringHash(JSON.stringify(decorated));
+        return normalizeWorldInfoProbability({ ...decorated, hash,
+            position: normalizeWorldInfoPosition(entry.position, positions) ?? positions.before });
+    });
 }
 
 /** Resolve one scan pass's inclusion groups without browser state. Mutates candidates like the browser scan. */

@@ -94,6 +94,13 @@ function outputMessage(value) {
 
 function effectRecords(records, source, effect, output) {
     const next = structuredClone(records);
+    if (output?.timedWorldInfo) {
+        if (next.length - 1 !== output.timedChatLength
+            || roleplayHash(next[0].chat_metadata?.timedWorldInfo ?? {}) !== output.timedBaseline) {
+            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info timed effects changed before the reply was delivered.');
+        }
+        next[0].chat_metadata.timedWorldInfo = structuredClone(output.timedWorldInfo);
+    }
     if (effect === 'append') return [...next, outputMessage(output?.message)];
     if (effect === 'replace') {
         if (!Array.isArray(output?.messages) || !output.messages.length) throw invalid('A range replacement needs messages.');

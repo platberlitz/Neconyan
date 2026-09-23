@@ -1,7 +1,7 @@
 import { Fuse, lodash } from '../lib.js';
 
 import { saveSettings, substituteParams, getRequestHeaders, chat_metadata, this_chid, characters, saveCharacterDebounced, menu_type, eventSource, event_types, getExtensionPromptByName, saveMetadata, getCurrentChatId, extension_prompt_roles, create_save, createOrEditCharacter, name1, getOneCharacter, select_selected_character, getEntitiesList } from '../script.js';
-import { download, debounce, initScrollHeight, resetScrollHeight, parseJsonFile, extractDataFromPng, getFileBuffer, getCharaFilename, getSortableDelay, escapeRegex, PAGINATION_TEMPLATE, navigation_option, waitUntilCondition, isTrueBoolean, setValueByPath, flashHighlight, select2ModifyOptions, getSelect2OptionId, dynamicSelect2DataViaAjax, highlightRegex, select2ChoiceClickSubscribe, isFalseBoolean, getSanitizedFilename, checkOverwriteExistingData, getStringHash, parseStringArray, cancelDebounce, findChar, onlyUnique, equalsIgnoreCaseAndAccents, uuidv4, normalizeArray, getUniqueName, logSlashCommandWarn, addLongPressEvent, escapeHtml } from './utils.js';
+import { download, debounce, initScrollHeight, resetScrollHeight, parseJsonFile, extractDataFromPng, getFileBuffer, getCharaFilename, getSortableDelay, escapeRegex, PAGINATION_TEMPLATE, navigation_option, waitUntilCondition, isTrueBoolean, setValueByPath, flashHighlight, select2ModifyOptions, getSelect2OptionId, dynamicSelect2DataViaAjax, highlightRegex, select2ChoiceClickSubscribe, isFalseBoolean, getSanitizedFilename, checkOverwriteExistingData, parseStringArray, cancelDebounce, findChar, onlyUnique, equalsIgnoreCaseAndAccents, uuidv4, normalizeArray, getUniqueName, logSlashCommandWarn, addLongPressEvent, escapeHtml } from './utils.js';
 import { extension_settings, getContext } from './extensions.js';
 import { NOTE_MODULE_NAME, getAuthorsNoteDepth, getAuthorsNotePosition, getAuthorsNoteRole, shouldWIAddPrompt } from './authors-note.js';
 import { isMobile } from './RossAscends-mods.js';
@@ -23,9 +23,9 @@ import { renderTemplateAsync } from './templates.js';
 import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { getOrCreatePersonaDescriptor, setPersonaDescription, updatePersonaLorebookActions, user_avatar } from './personas.js';
-import { escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharacterBookPosition, normalizeWorldInfoPosition, serializeCharacterBookKeys, serializeWorldInfoEntry } from './world-info-character-book.js';
+import { escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharacterBookPosition, serializeCharacterBookKeys, serializeWorldInfoEntry } from './world-info-character-book.js';
 import { detectEmbeddedLorebookCandidates, findMatchingLorebookName, getLinkedAuxBooks, isEmbeddedBookLinked } from './world-info-batch-helpers.js';
-import { filterWorldInfoInclusionGroups, getTimedEffectWindow, matchesWorldInfoEntry, normalizeWorldInfoKey, normalizeWorldInfoProbability, parseWorldInfoKeyRegex, passesWorldInfoProbability } from './world-info-scan-core.js';
+import { applyWorldInfoTimedEffects, filterWorldInfoInclusionGroups, getTimedEffectWindow, matchesWorldInfoEntry, normalizeWorldInfoKey, parseWorldInfoKeyRegex, passesWorldInfoProbability, prepareWorldInfoEntries, resolveWorldInfoTimedEffects } from './world-info-scan-core.js';
 import { parseLorebookImport } from './neconyan-lorebook-tools-core.js';
 import {
     NECONYAN_LOREBOOK_FOLDERS_KEY,
@@ -136,7 +136,6 @@ export const DEFAULT_WEIGHT = 100;
 export const MAX_SCAN_DEPTH = 1000;
 const MAX_WORLD_INFO_NAME_BYTES = 234;
 const MAX_COMMENT_LENGTH = 100;
-const KNOWN_DECORATORS = ['@@activate', '@@dont_activate'];
 let worldInfoListViewFilter = WORLD_INFO_LIST_VIEW_FILTERS.all;
 
 // Typedef area
@@ -721,11 +720,11 @@ class WorldInfoTimedEffects {
      * Checks for timed effects on chat messages.
      */
     checkTimedEffects() {
-        if (!this.#isDryRun) {
-            this.#checkTimedEffectOfType('sticky', this.#buffer.sticky, this.#onEnded.sticky.bind(this));
-            this.#checkTimedEffectOfType('cooldown', this.#buffer.cooldown, this.#onEnded.cooldown.bind(this));
+        const { metadata, active } = resolveWorldInfoTimedEffects(this.#entries, this.#chat.length, chat_metadata.timedWorldInfo, this.#isDryRun);
+        chat_metadata.timedWorldInfo = metadata;
+        for (const type of ['sticky', 'cooldown', 'delay']) {
+            this.#buffer[type] = this.#entries.filter(entry => active[type].has(entry.hash));
         }
-        this.#checkDelayEffect(this.#buffer.delay);
     }
 
     /**
@@ -770,10 +769,7 @@ class WorldInfoTimedEffects {
      */
     setTimedEffects(activatedEntries) {
         if (this.#isDryRun) return;
-        for (const entry of activatedEntries) {
-            this.#setTimedEffectOfType('sticky', entry);
-            this.#setTimedEffectOfType('cooldown', entry);
-        }
+        chat_metadata.timedWorldInfo = applyWorldInfoTimedEffects(chat_metadata.timedWorldInfo, activatedEntries, this.#chat.length);
     }
 
     /**
@@ -5610,42 +5606,7 @@ export async function getSortedEntries() {
 
         await eventSource.emit(event_types.WORLDINFO_ENTRIES_LOADED, { globalLore, characterLore, chatLore, personaLore });
 
-        let entries;
-
-        switch (Number(world_info_character_strategy)) {
-            case world_info_insertion_strategy.evenly:
-                entries = [...globalLore, ...characterLore].sort(sortFn);
-                break;
-            case world_info_insertion_strategy.character_first:
-                entries = [...characterLore.sort(sortFn), ...globalLore.sort(sortFn)];
-                break;
-            case world_info_insertion_strategy.global_first:
-                entries = [...globalLore.sort(sortFn), ...characterLore.sort(sortFn)];
-                break;
-            default:
-                console.error('[WI] Unknown WI insertion strategy:', world_info_character_strategy, 'defaulting to evenly');
-                entries = [...globalLore, ...characterLore].sort(sortFn);
-                break;
-        }
-
-        // Chat lore always goes first, then persona lore, then the rest
-        entries = [...chatLore.sort(sortFn), ...personaLore.sort(sortFn), ...entries];
-
-        // Calculate hash and parse decorators. Split maps to preserve old hashes.
-        entries = entries.map((entry) => {
-            const [decorators, content] = parseDecorators(entry.content || '');
-            return { ...entry, decorators, content };
-        }).map((entry) => {
-            const hash = getStringHash(JSON.stringify(entry));
-            return { ...entry, hash };
-        }).map((entry) => {
-            // Neconyan: worlds saved before import-time position normalization (#162) can still
-            // carry string positions like 'before_char' or '0'. The prompt builder matches numeric
-            // positions strictly and silently drops anything else, so normalize at scan time.
-            // Runs after hashing to keep existing timed-effect entry hashes stable.
-            const position = normalizeWorldInfoPosition(entry.position, world_info_position) ?? world_info_position.before;
-            return normalizeWorldInfoProbability({ ...entry, position });
-        });
+        const entries = prepareWorldInfoEntries({ globalLore, characterLore, chatLore, personaLore }, Number(world_info_character_strategy));
 
         console.debug(`[WI] Found ${entries.length} world lore entries. Sorted by strategy`, Object.entries(world_info_insertion_strategy).find((x) => x[1] === world_info_character_strategy));
 
@@ -5657,59 +5618,6 @@ export async function getSortedEntries() {
     }
 }
 
-
-/**
- * Parse decorators from worldinfo content
- * @param {string} content The content to parse
- * @returns {[string[],string]} The decorators found in the content and the content without decorators
-*/
-function parseDecorators(content) {
-    /**
-     * Check if the decorator is known
-     * @param {string} data string to check
-     * @returns {boolean} true if the decorator is known
-    */
-    const isKnownDecorator = (data) => {
-        if (data.startsWith('@@@')) {
-            data = data.substring(1);
-        }
-
-        for (let i = 0; i < KNOWN_DECORATORS.length; i++) {
-            if (data.startsWith(KNOWN_DECORATORS[i])) {
-                return true;
-            }
-        }
-        return false;
-    };
-
-    if (content.startsWith('@@')) {
-        let newContent = '';
-        const splited = content.split(/\r?\n/);
-        const decorators = [];
-        let fallbacked = false;
-
-        for (let i = 0; i < splited.length; i++) {
-            if (splited[i].startsWith('@@')) {
-                if (splited[i].startsWith('@@@') && !fallbacked) {
-                    continue;
-                }
-
-                if (isKnownDecorator(splited[i])) {
-                    decorators.push(splited[i].startsWith('@@@') ? splited[i].substring(1) : splited[i]);
-                    fallbacked = false;
-                } else {
-                    fallbacked = true;
-                }
-            } else {
-                newContent = splited.slice(i).join('\n');
-                break;
-            }
-        }
-        return [decorators, newContent];
-    }
-
-    return [[], content];
-}
 
 /**
  * Performs a scan on the chat and returns the world info activated.

@@ -1,6 +1,8 @@
 import { describe, expect, jest, test } from '@jest/globals';
+import { getStringHash } from '../public/scripts/macro-primitives.js';
 
 import {
+    applyWorldInfoTimedEffects,
     getTimedEffectWindow,
     filterWorldInfoInclusionGroups,
     getWorldInfoGroupNames,
@@ -9,6 +11,8 @@ import {
     normalizeWorldInfoProbability,
     parseWorldInfoKeyRegex,
     passesWorldInfoProbability,
+    prepareWorldInfoEntries,
+    resolveWorldInfoTimedEffects,
 } from '../public/scripts/world-info-scan-core.js';
 
 describe('World Info scan probability', () => {
@@ -80,6 +84,19 @@ describe('World Info inclusion groups shared with the server', () => {
 });
 
 describe('World Info scan normalization', () => {
+    test('orders chat and persona books before character/global entries and retains pre-normalised hash', () => {
+        const lore = { globalLore: [{ uid: 1, world: 'Global', order: 2, content: 'Global', position: 0 }],
+            characterLore: [{ uid: 2, world: 'Character', order: 1, content: '@@activate\nCharacter', position: 'before_char' }],
+            chatLore: [{ uid: 3, world: 'Chat', order: 0, content: 'Chat' }],
+            personaLore: [{ uid: 4, world: 'Persona', order: 0, content: 'Persona' }] };
+        const first = prepareWorldInfoEntries(lore, 1);
+        expect(first.map(entry => entry.world)).toEqual(['Chat', 'Persona', 'Character', 'Global']);
+        expect(first[2]).toMatchObject({ content: 'Character', decorators: ['@@activate'], position: 0 });
+        expect(first[2].hash).toBe(getStringHash(JSON.stringify({ ...lore.characterLore[0], decorators: ['@@activate'], content: 'Character' })));
+        expect(prepareWorldInfoEntries(lore, 2).map(entry => entry.world)).toEqual(['Chat', 'Persona', 'Global', 'Character']);
+        expect(first[2].hash).toBe(prepareWorldInfoEntries(lore, 1)[2].hash);
+    });
+
     test('rejects keys that are empty after substitution and trimming', () => {
         expect(normalizeWorldInfoKey('   ', value => value)).toBeNull();
         expect(normalizeWorldInfoKey('{{empty}}', () => '')).toBeNull();
@@ -126,5 +143,28 @@ describe('World Info timed effect windows', () => {
 
     test('coerces string durations from legacy metadata', () => {
         expect(getTimedEffectWindow(5, '2')).toEqual({ start: 5, end: 7 });
+    });
+
+    test('expires sticky into protected cooldown without extending it on replay', () => {
+        const entry = { world: 'Town', uid: 3, hash: 19, sticky: 2, cooldown: 3, delay: 4 };
+        const saved = { sticky: { 'Town.3': { hash: 19, start: 4, end: 6, protected: false } }, cooldown: {} };
+        const result = resolveWorldInfoTimedEffects([entry], 6, saved);
+        expect(result.active.sticky.has(19)).toBe(false);
+        expect(result.active.cooldown.has(19)).toBe(true);
+        expect(result.metadata.cooldown['Town.3']).toEqual({ hash: 19, start: 6, end: 9, protected: true });
+        expect(saved.cooldown).toEqual({});
+        expect(resolveWorldInfoTimedEffects([entry], 6, saved)).toEqual(result);
+        expect(resolveWorldInfoTimedEffects([entry], 9, result.metadata).active.cooldown.has(19)).toBe(false);
+    });
+
+    test('does not mutate timed metadata on a dry scan and preserves existing windows', () => {
+        const entry = { world: 'Town', uid: 3, hash: 19, sticky: 2, cooldown: 3, delay: 4 };
+        const saved = { sticky: { 'Town.3': { hash: 19, start: 1, end: 2, protected: false } } };
+        const dry = resolveWorldInfoTimedEffects([entry], 3, saved, true);
+        expect(dry.active.sticky.size).toBe(0);
+        expect(saved.cooldown).toBeUndefined();
+        const applied = applyWorldInfoTimedEffects(dry.metadata, [entry], 3);
+        expect(applied.sticky['Town.3']).toEqual(saved.sticky['Town.3']);
+        expect(applied.cooldown['Town.3']).toEqual({ hash: 19, start: 3, end: 6, protected: false });
     });
 });
