@@ -271,6 +271,65 @@ test('server-owned prompts refuse unsupported saved media before paying a provid
     assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length);
 });
 
+test('server-owned prompts use protected history when no story template is saved', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true,
+        messages: [], maxTokens: 20, characterName: 'Nova',
+        worldInfo: captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 }) };
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'plain-server-history', effect: 'append', source, request });
+    releaseJob(f.scope.directories, jobId);
+    await runRoleplayReplyJob({ job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal }, {
+        generate: async ({ messages, beforeDispatch }) => {
+            beforeDispatch();
+            assert.deepEqual(messages, [{ role: 'user', content: 'Original' }, { role: 'assistant', content: 'Answer' }]);
+            return { text: 'Bound reply' };
+        },
+    });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Bound reply');
+});
+
+test('server-owned prompts trim old saved history and rebuild lore depth within the bound context', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    for (let index = 0; index < 24; index++) {
+        f.records.push({ name: 'User', is_user: true, mes: `Old message ${index} with repeated words to fill the prompt.` });
+    }
+    f.records.push({ name: 'Nova', is_user: false, mes: 'Most recent answer' });
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Most recent', 'Saved depth lore', { position: 4, depth: 0 }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        power_user: { context: { story_string: 'Character: {{description}}', story_string_position: 0 } },
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true,
+        messages: [], maxTokens: 20, characterName: 'Nova', userName: 'User',
+        worldInfo: captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 80 }) };
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'trim-saved-history', effect: 'append', source, request });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    await runRoleplayReplyJob(context, { contextLimit: () => 100, generate: async ({ messages, beforeDispatch }) => {
+        beforeDispatch();
+        assert.equal(messages[0].content, 'Character: Original');
+        assert.deepEqual(messages.slice(-2).map(message => message.content), ['Most recent answer', 'Saved depth lore']);
+        assert.ok(messages.length < f.records.length);
+        assert.ok(!messages.some(message => message.content.startsWith('Old message 0')));
+        return { text: 'Bound reply' };
+    } });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Bound reply');
+});
+
 test('server selection recurses on saved text and places entries with a bounded budget', async () => {
     const result = await scan([entry(1, 'cat', 'The moon is bright'), entry(2, 'moon', 'A gate opens')]);
     assert.deepEqual(result.activated.map(value => value.uid), [1, 2]);

@@ -114,9 +114,11 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         || (request.userName && promptSource.records[0]?.user_name !== request.userName))) {
         throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved Roleplay speaker names differ from the accepted prompt.', 409);
     }
-    let messages = promptSource ? buildRoleplaySavedHistory(promptSource.records) : structuredClone(request.messages);
-    const savedHistoryStart = request.serverPrompt ? 0 : request.historyStart;
-    if (worldInfo) {
+    const savedHistory = promptSource ? buildRoleplaySavedHistory(promptSource.records) : null;
+    const place = history => {
+        let messages = history;
+        const savedHistoryStart = request.serverPrompt ? 0 : request.historyStart;
+        if (!worldInfo) return messages;
         if (worldInfo.activated.some(entry => entry.automationId)) {
             throw roleplayError('ROLEPLAY_INVALID', 'This World Info entry needs a server Quick Reply action before generation.', 409);
         }
@@ -127,7 +129,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         const storyLore = request.worldInfo.storyTemplate && (worldInfo.worldInfoBefore || worldInfo.worldInfoAfter);
         const storyNote = (worldInfo.ANBeforeEntries.length || worldInfo.ANAfterEntries.length)
             && request.worldInfo.authorNote?.position !== 1 && isWorldInfoAuthorNoteActive(request.worldInfo.authorNote);
-        const hasStory = Boolean(hasOutlets || storyLore || storyNote || request.serverPrompt);
+        const hasStory = Boolean(hasOutlets || storyLore || storyNote || (request.serverPrompt && request.worldInfo.storyTemplate));
         if (hasStory) {
             messages = insertWorldInfoOutlets(messages, worldInfo.outletEntries, request.worldInfo, savedHistoryStart,
                 request.userName || 'User', request.characterName, worldInfo.worldInfoBefore, worldInfo.worldInfoAfter,
@@ -149,10 +151,28 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             messages = insertWorldInfoAuthorNote(messages, worldInfo.ANBeforeEntries, worldInfo.ANAfterEntries,
                 request.worldInfo.authorNote, historyStart, hasStory);
         }
-    }
+        return messages;
+    };
+    let messages = place(savedHistory || structuredClone(request.messages));
     if (request.serverPrompt || worldInfo?.activated.length) {
         const { count } = await getCounter(request.worldInfo.tokenizer);
-        if (await count(messages.map(message => message.content).join('\n')) > contextLimit(directories, request.binding) - request.maxTokens) {
+        const budget = contextLimit(directories, request.binding) - request.maxTokens;
+        const tokens = prompt => count(prompt.map(message => message.content).join('\n'));
+        let size = await tokens(messages);
+        if (size > budget && savedHistory && savedHistory.length > 1) {
+            // ponytail: search saved suffixes instead of rebuilding once per old message; the latest stays intact.
+            let start = 1;
+            let end = savedHistory.length - 1;
+            while (start < end) {
+                const middle = Math.floor((start + end) / 2);
+                const candidate = place(savedHistory.slice(middle));
+                if (await tokens(candidate) <= budget) end = middle;
+                else start = middle + 1;
+            }
+            messages = place(savedHistory.slice(start));
+            size = await tokens(messages);
+        }
+        if (size > budget) {
             throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay prompt exceeds the bound context budget.', 409);
         }
     }
