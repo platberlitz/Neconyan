@@ -5,6 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 import { scanWorldInfo } from '../src/generation/world-info-scan.js';
+import { insertWorldInfoDepth } from '../src/generation/roleplay-prompt.js';
 import { write as writeCard } from '../src/character-card-parser.js';
 
 const { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } = await import('../src/generation/world-info.js');
@@ -30,6 +31,21 @@ test('a scan without selected entries does not call the per-pass hook', async ()
     const result = await scan([], { onScan: () => { calls++; } });
     assert.equal(calls, 0);
     assert.equal(result.iterations, 0);
+});
+
+test('saved depth injections preserve the system prefix and browser history order', () => {
+    const messages = [{ role: 'system', content: 'Rules' }, { role: 'user', content: 'First' },
+        { role: 'assistant', content: 'Reply' }, { role: 'user', content: 'Latest' }];
+    const inserted = insertWorldInfoDepth(messages, [
+        { depth: 0, role: 0, entries: ['After latest'] },
+        { depth: 1, role: 1, entries: ['Before latest'] },
+        { depth: 3, role: 2, entries: ['Before first'] },
+    ], 1);
+    assert.deepEqual(inserted.map(value => value.content), ['Rules', 'Before first', 'First', 'Reply',
+        'Before latest', 'Latest', 'After latest']);
+    assert.deepEqual(messages.map(value => value.content), ['Rules', 'First', 'Reply', 'Latest']);
+    assert.throws(() => insertWorldInfoDepth(messages, [{ depth: 1, role: 5, entries: ['bad'] }], 1),
+        { code: 'ROLEPLAY_INVALID' });
 });
 
 test('server selection recurses on saved text and places entries with a bounded budget', async () => {
@@ -364,6 +380,16 @@ test('unsupported insertion positions refuse before provider dispatch and before
         { code: 'ROLEPLAY_INVALID' });
     assert.ok(readArtifact(f.scope.directories, jobId, 'roleplay-world-info'));
     assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length);
+    const bound = { ...request, historyStart: 0 };
+    const admitted = admitRoleplayJob(f.scope, account, { operationKey: 'depth-bound', effect: 'append', source, request: bound });
+    releaseJob(f.scope.directories, admitted.jobId);
+    const next = { ...context, job: getJob(f.scope.directories, admitted.jobId) };
+    await runRoleplayReplyJob(next, { generate: async ({ beforeDispatch, messages }) => {
+        beforeDispatch();
+        assert.deepEqual(messages.map(value => value.content), ['A note', 'Original']);
+        return { text: 'Answer' };
+    } });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Answer');
 });
 
 test('a saved timed window refuses delivery after the chat grows while the provider was away', async t => {

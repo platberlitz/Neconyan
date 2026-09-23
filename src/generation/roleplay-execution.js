@@ -9,6 +9,7 @@ import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-st
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
 import { prepareRoleplayWorldInfo } from './world-info.js';
+import { insertWorldInfoDepth } from './roleplay-prompt.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
@@ -92,14 +93,16 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             writeArtifact(directories, job.id, 'roleplay-world-info', worldInfo);
         }
     }
-    const messages = structuredClone(request.messages);
+    let messages = structuredClone(request.messages);
     if (worldInfo) {
-        if (worldInfo.EMEntries.length || worldInfo.WIDepthEntries.length || worldInfo.ANBeforeEntries.length
+        if (worldInfo.EMEntries.length || worldInfo.ANBeforeEntries.length
             || worldInfo.ANAfterEntries.length || Object.keys(worldInfo.outletEntries).length) {
             throw roleplayError('ROLEPLAY_INVALID', 'This World Info insertion position needs server prompt construction.', 409);
         }
         const lore = [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
         if (lore) messages.unshift({ role: 'system', content: lore });
+        if (worldInfo.WIDepthEntries.length) messages = insertWorldInfoDepth(messages, worldInfo.WIDepthEntries,
+            request.historyStart === undefined ? undefined : request.historyStart + Number(Boolean(lore)));
     }
     const result = await generate({ context: base, jobContext: context, binding: request.binding, messages,
         maxTokens: request.maxTokens, userName: request.userName || 'User', characterName: request.characterName,
