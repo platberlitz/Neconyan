@@ -9,7 +9,7 @@ import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-st
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
 import { assertRoleplayWorldInfoCurrent, prepareRoleplayWorldInfo } from './world-info.js';
-import { assertWorldInfoDepthHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets } from './roleplay-prompt.js';
+import { assertWorldInfoDepthHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets, isWorldInfoAuthorNoteActive } from './roleplay-prompt.js';
 import { getChatProfileContextLimit } from './profiles.js';
 import { getCounter } from '../mewmory/tokens.js';
 
@@ -114,13 +114,16 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         }
         const hasOutlets = Object.keys(worldInfo.outletEntries).length > 0;
         const storyLore = request.worldInfo.storyTemplate && (worldInfo.worldInfoBefore || worldInfo.worldInfoAfter);
-        if (hasOutlets || storyLore) {
+        const storyNote = (worldInfo.ANBeforeEntries.length || worldInfo.ANAfterEntries.length)
+            && request.worldInfo.authorNote?.position !== 1 && isWorldInfoAuthorNoteActive(request.worldInfo.authorNote);
+        const hasStory = Boolean(hasOutlets || storyLore || storyNote);
+        if (hasStory) {
             messages = insertWorldInfoOutlets(messages, worldInfo.outletEntries, request.worldInfo, request.historyStart,
-                request.userName || 'User', request.characterName, worldInfo.worldInfoBefore, worldInfo.worldInfoAfter);
+                request.userName || 'User', request.characterName, worldInfo.worldInfoBefore, worldInfo.worldInfoAfter, Boolean(storyNote));
         }
-        const lore = hasOutlets || storyLore ? '' : [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
+        const lore = hasStory ? '' : [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
         if (lore) messages.unshift({ role: 'system', content: lore });
-        let historyStart = request.historyStart + Number(Boolean(lore)) + Number(Boolean(hasOutlets || storyLore));
+        let historyStart = request.historyStart + Number(Boolean(lore)) + Number(hasStory);
         if (worldInfo.EMEntries.length) {
             const beforeExamples = messages.length;
             messages = insertWorldInfoExamples(messages, worldInfo.EMEntries, request.worldInfo.characterExamples,
@@ -132,7 +135,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         }
         if (worldInfo.ANBeforeEntries.length || worldInfo.ANAfterEntries.length) {
             messages = insertWorldInfoAuthorNote(messages, worldInfo.ANBeforeEntries, worldInfo.ANAfterEntries,
-                request.worldInfo.authorNote, historyStart);
+                request.worldInfo.authorNote, historyStart, hasStory);
         }
         if (worldInfo.activated.length) {
             const { count } = await getCounter(request.worldInfo.tokenizer);

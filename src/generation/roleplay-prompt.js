@@ -4,8 +4,11 @@ import Handlebars from 'handlebars';
 
 const ROLES = ['system', 'user', 'assistant'];
 
+export const isWorldInfoAuthorNoteActive = note => note?.interval === 1
+    || note?.interval > 1 && note.userMessages > 0 && note.userMessages % note.interval === 0;
+
 /** Render named lore only where the saved story template explicitly requests it. */
-export function insertWorldInfoOutlets(messages, outlets, snapshot, historyStart, userName, characterName, before = '', after = '') {
+export function insertWorldInfoOutlets(messages, outlets, snapshot, historyStart, userName, characterName, before = '', after = '', forceStory = false) {
     if (!outlets || typeof outlets !== 'object' || Array.isArray(outlets)
         || typeof snapshot?.storyTemplate !== 'string' || snapshot.storyPosition !== 0
         || !Number.isSafeInteger(historyStart) || historyStart !== 0
@@ -21,7 +24,7 @@ export function insertWorldInfoOutlets(messages, outlets, snapshot, historyStart
         }
         fields[`outlet::${name}`] = entries.join('\n');
     }
-    if (!Object.keys(fields).length && !before && !after) return messages;
+    if (!Object.keys(fields).length && !before && !after && !forceStory) return messages;
     const global = snapshot.global;
     if ((before && !['wiBefore', 'loreBefore'].some(name => snapshot.storyTemplate.includes(`{{${name}}}`)))
         || (after && !['wiAfter', 'loreAfter'].some(name => snapshot.storyTemplate.includes(`{{${name}}}`)))) {
@@ -132,7 +135,7 @@ export function insertWorldInfoExamples(messages, entries, cardExamples, history
 }
 
 /** Browser Author's Note timing comes from saved chat metadata and saved extension defaults. */
-export function insertWorldInfoAuthorNote(messages, before, after, note, historyStart) {
+export function insertWorldInfoAuthorNote(messages, before, after, note, historyStart, storyBound = false) {
     if (!Array.isArray(before) || !Array.isArray(after) || [...before, ...after].some(value => typeof value !== 'string')
         || !note || typeof note.prompt !== 'string' || !Number.isSafeInteger(note.interval)
         || !Number.isSafeInteger(note.depth) || note.depth < 0 || note.depth > 10000
@@ -142,8 +145,7 @@ export function insertWorldInfoAuthorNote(messages, before, after, note, history
         throw roleplayError('ROLEPLAY_INVALID', 'The saved Author\'s Note cannot be placed in this prompt.', 409);
     }
     if (!before.length && !after.length) return messages;
-    const active = note.interval === 1 || note.interval > 1 && note.userMessages > 0 && note.userMessages % note.interval === 0;
-    if (!active) return messages;
+    if (!isWorldInfoAuthorNoteActive(note)) return messages;
     let prompt = note.prompt;
     const scoped = note.scoped;
     if (scoped?.useChara) {
@@ -155,8 +157,12 @@ export function insertWorldInfoAuthorNote(messages, before, after, note, history
     }
     const content = [...before, prompt, ...after].join('\n').replace(/(^\n)|(\n$)/g, '');
     if (!content) return messages;
-    if (note.position !== 1) {
-        throw roleplayError('ROLEPLAY_INVALID', 'This Author\'s Note position needs server story prompt construction.', 409);
+    if (note.position === 1) {
+        return insertWorldInfoDepth(messages, [{ depth: note.depth, role: note.role, entries: [content] }], historyStart);
     }
-    return insertWorldInfoDepth(messages, [{ depth: note.depth, role: note.role, entries: [content] }], historyStart);
+    if (!storyBound || historyStart < 1 || messages[0]?.role !== 'system') {
+        throw roleplayError('ROLEPLAY_INVALID', 'This Author\'s Note position needs a bound story prompt.', 409);
+    }
+    const injection = { role: ROLES[note.role], content };
+    return note.position === 2 ? [injection, ...messages] : [messages[0], injection, ...messages.slice(1)];
 }

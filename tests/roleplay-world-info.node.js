@@ -43,6 +43,12 @@ test('saved Author\'s Note surrounds selected lore only at its configured interv
         { code: 'ROLEPLAY_INVALID' });
     assert.throws(() => insertWorldInfoAuthorNote(messages, ['Top'], [], { ...note, position: 0 }, 1),
         { code: 'ROLEPLAY_INVALID' });
+    for (const [position, expected] of [[2, ['Top\nCharacter note\nOriginal note', 'Rules', 'Original']],
+        [0, ['Rules', 'Top\nCharacter note\nOriginal note', 'Original']]]) {
+        assert.deepEqual(insertWorldInfoAuthorNote(messages, ['Top'], [], { ...note, position }, 1, true)
+            .map(message => message.content), expected);
+    }
+    assert.deepEqual(insertWorldInfoAuthorNote(messages, ['Top'], [], { ...note, position: 2, userMessages: 1 }, 1), messages);
 });
 
 test('named lore outlets render at their saved story template positions', () => {
@@ -859,6 +865,40 @@ test('an admitted reply places World Info around the saved active Author\'s Note
     await runRoleplayReplyJob(context, { generate: async ({ beforeDispatch, messages }) => {
         beforeDispatch();
         assert.deepEqual(messages.map(message => message.content), ['Original', 'Answer', 'Above\nSaved note\nBelow']);
+        return { text: 'Noted' };
+    } });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Noted');
+});
+
+test('an admitted reply places saved Author\'s Note lore before its bound story', async t => {
+    const f = fixture(t);
+    f.records[0].chat_metadata = { note_prompt: 'Saved note', note_interval: 1, note_position: 2,
+        note_depth: 0, note_role: 0 };
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Original', 'Above', { position: 2 }),
+        2: entry(2, 'Original', 'Below', { position: 3 }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        power_user: { context: { story_string: 'Story: {{description}}', story_string_position: 0 } },
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 });
+    const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, historyStart: 0,
+        messages: [{ role: 'user', content: 'Original' }, { role: 'assistant', content: 'Answer' }],
+        maxTokens: 32, characterName: 'Nova', worldInfo };
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'saved-note-before-story', effect: 'append', source, request });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    await runRoleplayReplyJob(context, { generate: async ({ beforeDispatch, messages }) => {
+        beforeDispatch();
+        assert.deepEqual(messages.map(message => message.content), ['Above\nSaved note\nBelow', 'Story: Original', 'Original', 'Answer']);
         return { text: 'Noted' };
     } });
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Noted');
