@@ -897,6 +897,7 @@ export async function forwardFetchResponse(from, to, request = null, onDisconnec
 
         from.body.on('error', function (error) {
             stopPolling();
+            to.reportStreamError?.(error);
             if (isRequestCancellationError(error) || to.destroyed || to.writableEnded) {
                 if (!to.destroyed && !to.writableEnded) {
                     to.end();

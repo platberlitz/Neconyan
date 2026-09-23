@@ -88,7 +88,7 @@ export async function validateActiveGenerationContext(material, macroEnvironment
 /** Execute a bound Chat Completion profile without browser globals or credential persistence. */
 export async function runChatProfile({ context, binding, messages, maxTokens, macroEnvironment,
     ephemeralStops = [], userName = 'User', characterName = 'Character', groupNames = [],
-    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch,
+    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, stream = false,
 } = {}) {
     if (!context?.directories) fail('A generation context is required.', 400);
     signal ||= jobContext?.signal;
@@ -96,7 +96,8 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     const raw = binding?.kind === 'active';
     if (binding?.backend === 'text' || raw) {
         const options = { context, binding, macroEnvironment, ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions, maxTokens };
-        const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames, modelOverride, overridePayload, ...(raw ? { rawOptions } : {}) });
+        const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames, modelOverride, overridePayload,
+            ...(stream ? { stream: true } : {}), ...(raw ? { rawOptions } : {}) });
         if (jobContext) {
             const retained = readArtifact(context.directories, jobContext.job.id, 'provider:' + key);
             if (retained !== undefined) return retained;
@@ -149,11 +150,13 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
                 payload = await prepareChatRequest({ ...options, messages: prompt }, material);
                 cleanupStops = resolveCustomStoppingStrings(material.power, substitute, ephemeralStops).filter(Boolean);
             }
+            payload.stream = stream === true;
             if (jobContext) {
                 const savedPayload = { ...payload, proxy_password: undefined, custom_include_headers: undefined, custom_include_body: undefined };
                 writeArtifact(context.directories, jobContext.job.id, preparedName, raw ? { payload: savedPayload, cleanupStops, regexScripts } : savedPayload);
             }
         }
+        payload.stream = stream === true;
         const current = resolveGenerationProfile(context.directories, binding);
         const call = async () => {
             beforeDispatch?.();
@@ -178,6 +181,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     }
     const payload = await prepareChatRequest({ context, binding, messages, maxTokens, macroEnvironment, ephemeralStops,
         userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload });
+    payload.stream = stream === true;
     const material = resolveGenerationProfile(context.directories, binding);
     const call = () => {
         beforeDispatch?.();

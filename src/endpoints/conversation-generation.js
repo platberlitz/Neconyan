@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
+import { assembleGenerationStream } from '../generation/stream-result.js';
 import sanitize from 'sanitize-filename';
 
 import { parse as parseCharacterCard } from '../character-card-parser.js';
@@ -334,7 +335,7 @@ export function buildGenerationRequestBody(generation, systemPrompt, promptMessa
 /**
  * Create a capturing response mock for backend generation
  */
-export function createCapturingResponse() {
+export function createCapturingResponse({ stream = false } = {}) {
     let statusCode = 200;
     let payload;
     let headersSent = false;
@@ -342,10 +343,16 @@ export function createCapturingResponse() {
     const headers = {};
     const chunks = [];
     const events = new EventEmitter();
+    let streamError = null;
+    let streamBytes = 0;
+    const inertCaptureSocket = stream ? new EventEmitter() : undefined;
 
     return {
         get statusCode() {
             return statusCode;
+        },
+        set statusCode(value) {
+            statusCode = value;
         },
         get body() {
             return payload;
@@ -361,6 +368,18 @@ export function createCapturingResponse() {
         },
         get destroyed() {
             return writableEnded;
+        },
+        get streamError() {
+            return streamError;
+        },
+        reportStreamError(error) {
+            streamError = error;
+        },
+        get socket() {
+            return stream ? inertCaptureSocket : undefined;
+        },
+        emit(event, ...args) {
+            return events.emit(event, ...args);
         },
         on(event, listener) {
             events.on(event, listener);
@@ -396,7 +415,16 @@ export function createCapturingResponse() {
             return this;
         },
         write(chunk) {
-            chunks.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk || ''));
+            if (writableEnded) return false;
+            const next = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk || '');
+            streamBytes += Buffer.byteLength(next);
+            if (stream && streamBytes > 2 * 1024 * 1024) {
+                streamError = new Error('The generated stream exceeded the saved result limit.');
+                events.emit('close');
+                this.end();
+                return false;
+            }
+            chunks.push(next);
             headersSent = true;
             return true;
         },
@@ -495,10 +523,18 @@ export async function runBackendRequest(request, handler, payload, { signal, fet
         },
         body: payload,
     };
-    const capture = createCapturingResponse();
+    const capture = createCapturingResponse({ stream: payload.stream === true });
+    const finished = payload.stream === true && new Promise(resolve => capture.once('finish', resolve));
+    const abort = () => {
+        capture.emit('close');
+        if (!capture.writableEnded) capture.end();
+    };
+    signal?.addEventListener('abort', abort, { once: true });
     try {
         await handler(generationRequest, capture);
+        if (finished) await finished;
     } finally {
+        signal?.removeEventListener('abort', abort);
         if (!capture.writableEnded) capture.end();
     }
 
@@ -517,7 +553,8 @@ export async function runBackendRequest(request, handler, payload, { signal, fet
         throw error;
     }
 
-    return body;
+    if (capture.streamError) throw capture.streamError;
+    return payload.stream === true && typeof body === 'string' ? assembleGenerationStream(body) : body;
 }
 
 /**

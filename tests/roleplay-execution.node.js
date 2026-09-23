@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import { test } from 'node:test';
 import { fixture } from './roleplay-transactions-fixture.js';
 
@@ -94,6 +95,72 @@ test('a saved active Custom request runs through the real provider transport and
     for (const entry of fs.readdirSync(artifacts, { recursive: true })) {
         const filename = path.join(artifacts, entry);
         if (fs.statSync(filename).isFile()) assert.doesNotMatch(fs.readFileSync(filename, 'utf8'), /private-header|private-body/);
+    }
+});
+
+test('a bound Custom stream completes before a Roleplay effect and refuses a truncated paid result', async t => {
+    const f = fixture(t);
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ _settingsRevision: 1,
+        main_api: 'openai', active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
+        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'fixture', show_thoughts: true },
+        power_user: { custom_stopping_strings: '[]' } }));
+    const binding = captureGenerationBinding(f.scope.directories, { kind: 'active' }, { settingsRevision: 1 });
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const request = { binding, messages: [{ role: 'user', content: 'Hi' }], maxTokens: 32, characterName: 'Nova', stream: true };
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'real-stream', effect: 'append', source, request });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories, owner: f.scope.owner,
+        signal: new AbortController().signal };
+    let complete = false;
+    const generate = options => runChatProfile({ ...options, fetch: async (_, config) => {
+        assert.equal(JSON.parse(config.body).stream, true);
+        return { ok: true, status: 200, statusText: 'OK', body: Readable.from((async function* () {
+            yield 'data: {"choices":[{"delta":{"reasoning_content":"Thought ","content":"Part "}}]}\n\n';
+            await new Promise(resolve => setTimeout(resolve, 10));
+            assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length);
+            yield 'data: {"choices":[{"delta":{"content":"two"},"finish_reason":"stop"}]}\n\n';
+            complete = true;
+            yield 'data: [DONE]\n\n';
+        })()) };
+    } });
+    await runRoleplayReplyJob(context, { generate });
+    assert.equal(complete, true);
+    const last = readRoleplayChat(f.scope, f.locator).records.at(-1);
+    assert.equal(last.mes, 'Part two');
+    assert.equal(last.extra.reasoning, 'Thought ');
+    assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-output').message.mes, last.mes);
+});
+
+test('a truncated bound provider stream interrupts the job without saving a partial reply', async t => {
+    const f = fixture(t);
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ _settingsRevision: 1,
+        main_api: 'openai', active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
+        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'fixture' },
+        power_user: { custom_stopping_strings: '[]' } }));
+    const binding = captureGenerationBinding(f.scope.directories, { kind: 'active' }, { settingsRevision: 1 });
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'truncated-stream', effect: 'append', source,
+        request: { binding, messages: [{ role: 'user', content: 'Hi' }], maxTokens: 32, characterName: 'Nova', stream: true } });
+    releaseJob(f.scope.directories, jobId);
+    const { registerRoleplayReplyJob } = await import('../src/generation/roleplay-execution.js');
+    const { setDirectoriesResolver } = await import('../src/jobs/runner.js');
+    registerRoleplayReplyJob({ generate: options => runChatProfile({ ...options, fetch: async () => ({
+        ok: true, status: 200, statusText: 'OK', body: Readable.from(['data: {"choices":[{"delta":{"content":"Partial"}}]}\n\n']),
+    }) }) });
+    setDirectoriesResolver(() => f.scope.directories);
+    try {
+        await runner.runJob(getJob(f.scope.directories, jobId));
+        const job = getJob(f.scope.directories, jobId);
+        assert.equal(job.state, 'interrupted');
+        assert.equal(job.recoverability, 'unknown-outcome');
+        assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length);
+        assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-output'), undefined);
+        assert.equal(recoverJobs(f.scope.directories).recoverable.length, 0);
+    } finally {
+        registerRoleplayReplyJob();
+        setDirectoriesResolver(null);
     }
 });
 

@@ -56,14 +56,16 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     }
     if (!request.binding || !Array.isArray(request.messages) || !Number.isSafeInteger(request.maxTokens)
         || request.maxTokens < 1 || request.maxTokens > 64000 || typeof request.characterName !== 'string'
-        || !request.characterName || Buffer.byteLength(JSON.stringify(request)) > 2 * 1024 * 1024) {
+        || !request.characterName || (request.stream !== undefined && typeof request.stream !== 'boolean')
+        || Buffer.byteLength(JSON.stringify(request)) > 2 * 1024 * 1024) {
         throw roleplayError('ROLEPLAY_INVALID', 'The accepted Roleplay generation input is invalid.', 400);
     }
     assertSource();
     const result = await generate({ context: base, jobContext: context, binding: request.binding, messages: request.messages,
         maxTokens: request.maxTokens, userName: request.userName || 'User', characterName: request.characterName,
         groupNames: request.groupNames || [], macroEnvironment: createMacroEnvironment(request.macros || {}),
-        rawOptions: request.rawOptions || {}, ephemeralStops: request.ephemeralStops || [], beforeDispatch: assertSource });
+        rawOptions: request.rawOptions || {}, ephemeralStops: request.ephemeralStops || [], beforeDispatch: assertSource,
+        stream: request.stream === true });
     const output = replyOutput(result, effect, request.characterName, result.generation);
     writeArtifact(directories, job.id, 'roleplay-output', output);
     // The provider result is durable before recovery may revisit the chat write.
