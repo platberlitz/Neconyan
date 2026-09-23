@@ -20,7 +20,208 @@ function saveBody(request) {
     return (request.headers()['content-encoding'] === 'gzip' ? gunzipSync(bytes) : bytes).toString('utf8');
 }
 
+function ageDeadRoleplayLocks(directory) {
+    if (!fs.existsSync(directory)) return;
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const filename = path.join(directory, entry.name);
+        if (entry.name.endsWith('.lock')) {
+            const stale = new Date(Date.now() - 600000);
+            fs.utimesSync(filename, stale, stale);
+        } else ageDeadRoleplayLocks(filename);
+    }
+}
+
 for (const phone of [false, true]) {
+    for (const group of [false, true]) {
+        test(`${phone ? 'phone' : 'desktop'} ${group ? 'group' : 'solo'} chooser and backup Restore publish protected imported chats`, async ({ app }) => {
+            test.setTimeout(180000);
+            const account = await app.account({ phone });
+            const initial = 'Import starting chat';
+            const groupData = group ? await account.post('/api/groups/create', { name: 'Imported group', members: [account.avatar],
+                chat_id: initial, chats: [initial] }) : null;
+            const otherInitial = 'Other starting chat';
+            const otherGroup = group ? await account.post('/api/groups/create', { name: 'Other group', members: [account.avatar],
+                chat_id: otherInitial, chats: [otherInitial] }) : null;
+            const otherAvatar = !group ? await (async () => {
+                const created = await account.context.request.post('/api/characters/create', { headers: account.headers,
+                    data: { ch_name: 'Other character', description: 'Another import target.', first_mes: 'Hello.' } });
+                expect(created.ok()).toBe(true);
+                return created.text();
+            })() : null;
+            if (group) {
+                const read = await account.context.request.post('/api/chats/group/get', { headers: account.headers,
+                    data: { id: initial, allow_create: true } });
+                const vacancy = JSON.parse(read.headers()['x-neconyan-roleplay']);
+                await account.post('/api/chats/group/save', { id: initial,
+                    chat: [{ user_name: 'User', character_name: 'Durable Nova', chat_metadata: {} },
+                        { name: 'Durable Nova', is_user: false, mes: 'Starting chat.', extra: {} }],
+                    roleplay: { account: vacancy.account, vacancy: vacancy.vacancy, operationKey: crypto.randomUUID() } });
+                const otherRead = await account.context.request.post('/api/chats/group/get', { headers: account.headers,
+                    data: { id: otherInitial, allow_create: true } });
+                const otherVacancy = JSON.parse(otherRead.headers()['x-neconyan-roleplay']);
+                await account.post('/api/chats/group/save', { id: otherInitial,
+                    chat: [{ user_name: 'User', character_name: 'Durable Nova', chat_metadata: {} },
+                        { name: 'Durable Nova', is_user: false, mes: 'Other group chat.', extra: {} }],
+                    roleplay: { account: otherVacancy.account, vacancy: otherVacancy.vacancy, operationKey: crypto.randomUUID() } });
+            }
+            const page = await account.open({ workspace: false });
+            await page.evaluate(async ({ avatar, groupId }) => {
+                const context = window.SillyTavern.getContext();
+                await context.getCharacters();
+                if (groupId) await (await import('/scripts/group-chats.js')).openGroupById(groupId, { switchMenu: false });
+                else await (await import('/script.js')).selectCharacterById(context.characters.findIndex(char => char.avatar === avatar), { switchMenu: false });
+            }, { avatar: account.avatar, groupId: groupData?.id });
+            const records = [{ user_name: 'User', character_name: 'Durable Nova', chat_metadata: { imported_meta: true } },
+                { name: 'User', is_user: true, mes: 'Imported question.', extra: { file: 'note.txt' } },
+                { name: 'Durable Nova', is_user: false, mes: 'Imported answer.', swipes: ['Imported answer.', 'Another answer.'],
+                    swipe_id: 0, extra: { reasoning: 'Saved reasoning.' } }];
+            const contents = Buffer.from(records.map(JSON.stringify).join('\n'));
+            const route = group ? '/api/chats/group/import' : '/api/chats/import';
+            const attempts = [];
+            await page.route('**' + route, async intercepted => {
+                const body = intercepted.request().postDataBuffer();
+                const response = await intercepted.fetch();
+                attempts.push({ key: body.toString().match(/"operationKey":"([^"]+)"/)?.[1],
+                    hasContents: body.includes(Buffer.from('Imported answer.')), result: await response.json() });
+                if (attempts.length === 1) await intercepted.abort('failed');
+                else await intercepted.fulfill({ response });
+            });
+            const chooserResponse = page.waitForResponse(response => response.url().endsWith(route) && response.status() === 200);
+            await page.locator('#chat_import_file').setInputFiles({ name: 'Fixture story.jsonl', mimeType: 'application/json', buffer: contents });
+            const first = await (await chooserResponse).json();
+            await page.unroute('**' + route);
+            expect(attempts).toHaveLength(2);
+            expect(attempts[0].key).toBeTruthy();
+            expect(attempts.map(attempt => attempt.key)).toEqual([attempts[0].key, attempts[0].key]);
+            expect(attempts.map(attempt => attempt.hasContents)).toEqual([true, true]);
+            expect(attempts[1].result).toEqual(attempts[0].result);
+            expect(first.fileNames).toHaveLength(1);
+            const root = path.join(app.directory, 'data', 'default-user');
+            const importedPath = name => path.join(root, group ? 'group chats' : path.join('chats', account.avatar.replace('.png', '')), name + '.jsonl');
+            expect(fs.existsSync(importedPath(first.fileNames[0]))).toBe(true);
+            await page.evaluate(async ({ groupId, name }) => {
+                if (groupId) await (await import('/scripts/group-chats.js')).openGroupChat(groupId, name);
+                else await (await import('/script.js')).openCharacterChat(name);
+            }, { groupId: groupData?.id, name: first.fileNames[0] });
+            await expect(page.locator('#chat .mes_text').last()).toHaveText('Imported answer.');
+            const backupName = 'chat_fixture_restore.jsonl';
+            fs.writeFileSync(path.join(root, 'backups', backupName), contents);
+            await page.locator('#option_select_chat').evaluate(element => element.click());
+            await expect(page.locator('#shadow_select_chat_popup')).toBeVisible();
+            await page.locator('[aria-controls="chat_backups_list"]').click();
+            const backup = page.locator('.chatBackupsListItem').filter({ hasText: backupName });
+            await expect(backup).toBeVisible();
+            const downloadHeaders = [];
+            await page.route('**/api/backups/chat/download', async intercepted => {
+                downloadHeaders.push(intercepted.request().headers()['x-neconyan-account']);
+                if (downloadHeaders.length === 1) await intercepted.fulfill({ status: 403, body: 'Invalid CSRF token' });
+                else await intercepted.continue();
+            });
+            const restoreAttempts = [];
+            await page.route('**' + route, async intercepted => {
+                restoreAttempts.push(intercepted.request().postDataBuffer().toString().match(/"operationKey":"([^"]+)"/)?.[1]);
+                if (restoreAttempts.length === 1) await intercepted.fulfill({ status: 403, body: 'Invalid CSRF token' });
+                else await intercepted.continue();
+            });
+            const restoreResponse = page.waitForResponse(response => response.url().endsWith(route) && response.status() === 200);
+            await backup.locator('.fa-rotate-left').click();
+            const restored = await (await restoreResponse).json();
+            await page.unroute('**/api/backups/chat/download');
+            await page.unroute('**' + route);
+            expect(downloadHeaders).toEqual(['default-user', 'default-user']);
+            expect(restoreAttempts).toEqual([restoreAttempts[0], restoreAttempts[0]]);
+            expect(restored.fileNames).toHaveLength(1);
+            expect(restored.fileNames[0]).not.toBe(first.fileNames[0]);
+            expect(fs.existsSync(importedPath(restored.fileNames[0]))).toBe(true);
+            if (group) {
+                const saved = JSON.parse(fs.readFileSync(path.join(root, 'groups', groupData.id + '.json'), 'utf8'));
+                expect(saved.chats.slice(-2)).toEqual([first.fileNames[0], restored.fileNames[0]]);
+            }
+            let releaseLate;
+            let reachedLate;
+            const held = new Promise(resolve => { releaseLate = resolve; });
+            const reached = new Promise(resolve => { reachedLate = resolve; });
+            await page.route('**' + route, async intercepted => {
+                const response = await intercepted.fetch();
+                reachedLate();
+                await held;
+                await intercepted.fulfill({ response });
+            });
+            const lateResponse = page.waitForResponse(response => response.url().endsWith(route) && response.status() === 200);
+            await page.locator('#chat_import_file').setInputFiles({ name: 'Held story.jsonl', mimeType: 'application/json', buffer: contents });
+            await reached;
+            await page.evaluate(async ({ avatar, groupId }) => {
+                const context = window.SillyTavern.getContext();
+                await context.getCharacters();
+                if (groupId) await (await import('/scripts/group-chats.js')).openGroupById(groupId, { switchMenu: false });
+                else await (await import('/script.js')).selectCharacterById(context.characters.findIndex(char => char.avatar === avatar), { switchMenu: false });
+            }, { avatar: otherAvatar, groupId: otherGroup?.id });
+            releaseLate();
+            const late = await (await lateResponse).json();
+            await page.unroute('**' + route);
+            await expect(page.locator('#chat_import_file')).toHaveValue('');
+            expect(fs.existsSync(importedPath(late.fileNames[0]))).toBe(true);
+            if (group) {
+                const other = JSON.parse(fs.readFileSync(path.join(root, 'groups', otherGroup.id + '.json'), 'utf8'));
+                expect(other.chats).not.toContain(late.fileNames[0]);
+            } else {
+                expect(fs.existsSync(path.join(root, 'chats', otherAvatar.replace('.png', ''), late.fileNames[0] + '.jsonl'))).toBe(false);
+            }
+            if (!phone) {
+                let releaseAccount;
+                let reachedAccount;
+                const accountHeld = new Promise(resolve => { releaseAccount = resolve; });
+                const accountReached = new Promise(resolve => { reachedAccount = resolve; });
+                await page.route('**' + route, async intercepted => {
+                    const response = await intercepted.fetch();
+                    reachedAccount();
+                    await accountHeld;
+                    await intercepted.fulfill({ response });
+                });
+                const accountResponse = page.waitForResponse(response => response.url().endsWith(route) && response.status() === 200);
+                await page.locator('#chat_import_file').setInputFiles({ name: 'Held account story.jsonl', mimeType: 'application/json', buffer: contents });
+                await accountReached;
+                await page.evaluate(accountId => import('/scripts/roleplay-save-chain.js').then(chain =>
+                    chain.bindRoleplayAccount('other-user', { accountId, dataEpoch: 1 })), crypto.randomUUID());
+                releaseAccount();
+                const wrongAccount = await (await accountResponse).json();
+                await page.unroute('**' + route);
+                await expect(page.locator('#chat_import_file')).toHaveValue('');
+                const destination = group ? path.join(root, 'group chats', wrongAccount.fileNames[0] + '.jsonl')
+                    : path.join(root, 'chats', otherAvatar.replace('.png', ''), wrongAccount.fileNames[0] + '.jsonl');
+                expect(fs.existsSync(destination)).toBe(true);
+                if (group) {
+                    expect(await page.evaluate(id => import('/scripts/group-chats.js').then(groups =>
+                        groups.groups.find(item => item.id === id).chats), otherGroup.id)).not.toContain(wrongAccount.fileNames[0]);
+                }
+            }
+            await page.close();
+            expect(account.context.pages()).toHaveLength(0);
+            await app.stop('SIGKILL');
+            ageDeadRoleplayLocks(path.join(app.directory, 'data', '_roleplay'));
+            await app.start();
+            const reopened = await account.open({ workspace: false });
+            await reopened.evaluate(async ({ avatar, groupId, name }) => {
+                const context = window.SillyTavern.getContext();
+                await context.getCharacters();
+                if (groupId) {
+                    const groups = await import('/scripts/group-chats.js');
+                    await groups.openGroupById(groupId, { switchMenu: false });
+                    await groups.openGroupChat(groupId, name);
+                } else {
+                    const core = await import('/script.js');
+                    await core.selectCharacterById(context.characters.findIndex(char => char.avatar === avatar), { switchMenu: false });
+                    await core.openCharacterChat(name);
+                }
+            }, { avatar: account.avatar, groupId: groupData?.id, name: restored.fileNames[0] });
+            await expect(reopened.locator('#chat .mes_text').last()).toHaveText('Imported answer.');
+            expect(app.provider.calls).toHaveLength(0);
+            await reopened.close();
+            expect(account.context.pages()).toHaveLength(0);
+        });
+    }
+
     for (const group of [false, true]) {
         test(`${phone ? 'phone' : 'desktop'} ${group ? 'group' : 'solo'} edit, branch and reopen a native storage mutation`, async ({ app }, info) => {
             test.setTimeout(180000);

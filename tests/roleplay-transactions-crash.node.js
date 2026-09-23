@@ -9,17 +9,20 @@ import { fileURLToPath } from 'node:url';
 import { fixture, memoryParent, writeJournal } from './roleplay-transactions-fixture.js';
 
 const { readRoleplayAccount, readRoleplayFile, roleplayStoreDirectory } = await import('../src/roleplay-store.js');
-const { commitSingleChatWrite, reconcileSingleChatWrite, cleanupRoleplayReceipts } = await import('../src/roleplay-lifecycle.js');
+const { commitSingleChatWrite, reconcileSingleChatWrite, commitSingleChatImport, reconcilePendingChatWrite,
+    cleanupRoleplayReceipts } = await import('../src/roleplay-lifecycle.js');
 const { commitSingleGroupUpdate, reconcileSingleGroupUpdate } = await import('../src/roleplay-lifecycle.js');
 const { readRoleplayEntity } = await import('../src/generation/roleplay-source.js');
-const { prepareNativeChatWrite, publishNativeChatWrite } = await import('../src/endpoints/chats.js');
+const { prepareNativeChatWrite, publishNativeChatWrite, convertImportedChatFile } = await import('../src/endpoints/chats.js');
 const { canonicalMemoryPaths } = await import('../src/mewmory/prepared-branch.js');
 const host = { prepare: prepareNativeChatWrite, publish: publishNativeChatWrite };
 const worker = fileURLToPath(new URL('./roleplay-transactions-crash-worker.js', import.meta.url));
 
-async function killAt(f, input, boundary, { filename = f.filename, memory, reconcile = false, groupUpdate = false } = {}) {
+async function killAt(f, input, boundary, { filename = f.filename, memory, reconcile = false, groupUpdate = false, chatImport = false } = {}) {
     const specPath = path.join(f.root, 'crash-input.json');
-    fs.writeFileSync(specPath, JSON.stringify({ scope: f.scope, input, boundary, filename, memory, reconcile, groupUpdate }));
+    fs.writeFileSync(specPath, JSON.stringify({ scope: f.scope,
+        input: chatImport ? { ...input, bytes: input.bytes.toString('base64') } : input,
+        boundary, filename, memory, reconcile, groupUpdate, chatImport }));
     const child = spawn(process.execPath, [worker, specPath], { stdio: ['ignore', 'pipe', 'pipe'] });
     const exited = once(child, 'exit');
     let stdout = '', stderr = '';
@@ -398,5 +401,52 @@ for (const boundary of ['receipt-durable', 'payload-unlinked', 'journal-unlinked
         assert.deepEqual(fs.readFileSync(statePath), savedReceipt);
         assert.equal(fs.existsSync(journal.filename), false);
         assert.deepEqual(fs.readdirSync(path.join(roleplayStoreDirectory(f.scope), 'pending', pending.id)), ['chat.corrupt.jsonl']);
+    });
+}
+
+for (const boundary of ['import-payload-durable', 'pending-durable', 'import-chat-durable', 'import-group-durable', 'receipt-durable']) {
+    test(`one composite import survives real writer death at ${boundary}`, { timeout: 20000 }, async t => {
+        const f = fixture(t, true, `crash-import-${boundary}`);
+        const group = readRoleplayEntity(f.scope, 'group', 'group', { storage: true });
+        const input = { operationKey: 'crash-import', format: 'json', originalName: 'two.json',
+            bytes: Buffer.from(JSON.stringify({ histories: { histories: [
+                { msgs: [{ src: { is_human: true }, text: 'first' }] },
+                { msgs: [{ src: { is_human: false }, text: 'second' }] },
+            ] } })), userName: 'User', characterName: 'Nova',
+            target: { group: true, groupId: 'group', source: { instanceId: group.instanceId,
+                revision: group.revision, rawHash: group.rawHash } } };
+        await killAt(f, input, boundary, { chatImport: true });
+        const interrupted = readRoleplayAccount(f.scope);
+        if (boundary === 'import-payload-durable') {
+            assert.equal(interrupted.pending, null);
+            assert.equal(fs.readdirSync(f.scope.directories.groupChats).length, 1);
+        } else if (boundary !== 'receipt-durable') assert.equal(interrupted.pending?.kind, 'chat-import');
+        const result = commitSingleChatImport(f.scope, input, host, convertImportedChatFile);
+        assert.equal(result.names.length, 2);
+        assert.equal(readRoleplayAccount(f.scope).pending, null);
+        assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.scope.directories.groups, 'group.json'), 'utf8')).chats.slice(-2), result.names);
+        const closed = commitSingleChatImport(f.scope, input, { ...host, publish() { assert.fail('Closed replay cannot publish'); } }, convertImportedChatFile);
+        assert.deepEqual(closed, result);
+        for (const name of result.names) assert.ok(readRoleplayFile(path.join(f.scope.directories.groupChats, name + '.jsonl')));
+    });
+}
+
+for (const boundary of ['import-memory-guard-durable', 'import-memory-archive-durable']) {
+    test(`one imported memory branch survives real writer death at ${boundary}`, { timeout: 20000 }, async t => {
+        const f = fixture(t, false, `crash-import-${boundary}`);
+        memoryParent(f);
+        const records = structuredClone(f.records);
+        records[0].chat_metadata.main_chat = 'Parent';
+        const input = { operationKey: 'import-memory-crash', bytes: Buffer.from(records.map(JSON.stringify).join('\n')),
+            originalName: 'branch.jsonl', format: 'jsonl', userName: 'User', characterName: 'Nova',
+            target: { group: false, avatar: 'Nova.png' } };
+        await killAt(f, input, boundary, { chatImport: true });
+        assert.equal(readRoleplayAccount(f.scope).pending?.kind, 'chat-import');
+        const result = reconcilePendingChatWrite(f.scope, host);
+        assert.equal(result.names.length, 1);
+        assert.equal(readRoleplayAccount(f.scope).pending, null);
+        const child = canonicalMemoryPaths(f.scope.directories, { group: false, avatar: 'Nova.png', chat: result.names[0] });
+        assert.ok(readRoleplayFile(child.guard));
+        assert.ok(readRoleplayFile(child.archive));
     });
 }

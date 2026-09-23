@@ -57,7 +57,6 @@ import {
     menu_type,
     select_selected_character,
     cancelTtsPlay,
-    displayPastChats,
     sendMessageAsUser,
     getBiasStrings,
     flushPendingChatSavesForNavigation,
@@ -71,6 +70,7 @@ import {
     system_avatar,
     getRequestHeaders,
     refreshCsrfToken,
+    sendChatImport,
     loadRoleplayChat,
     saveRoleplayChatRequest,
     setExternalAbortController,
@@ -139,6 +139,35 @@ const groupReadEvidence = new WeakMap();
 const groupBackgroundState = new WeakMap();
 const queuedGroupMetadataById = new Map();
 const queuedGroupChatIntegrityByFile = new Map();
+
+/** Finish the selected group's existing metadata queue before freezing an import source. */
+export async function captureGroupImportTarget(groupId = selected_group) {
+    const group = groups.find(item => item.id === groupId);
+    const stamp = roleplayAccountStamp();
+    if (!group || selected_group !== groupId || stamp.owner !== getCurrentUserHandle()) throw new Error('The selected group changed.');
+    const delayed = pendingGroupMetadataSaves.get(groupId);
+    if (delayed) {
+        clearTimeout(delayed.timer);
+        pendingGroupMetadataSaves.delete(groupId);
+        await _save(delayed.job);
+    }
+    await groupMetadataSaveQueue.catch(() => {});
+    if (selected_group !== groupId || groups.find(item => item.id === groupId) !== group
+        || roleplayAccountStamp() !== stamp || stamp.owner !== getCurrentUserHandle()
+        || (groupSaveStates.get(groupId)?.status && groupSaveStates.get(groupId).status !== 'saved')) {
+        throw new Error('The selected group changed before import.');
+    }
+    const applied = groupBackgroundState.get(group);
+    if (applied?.failed) throw new Error('Reload the group before importing a chat.');
+    if (applied && JSON.stringify(snapshotGroupMetadata(group)) !== JSON.stringify(applied.contents)) {
+        throw new Error('Save the group changes before importing a chat.');
+    }
+    const source = applied?.evidence?.source ?? groupReadEvidence.get(group)?.source;
+    if (!source) throw new Error('Reload the group before importing a chat.');
+    return { groupId, group, stamp, source: structuredClone(source),
+        revision: groupSaveStates.get(groupId)?.revision, readEvidence: groupReadEvidence.get(group),
+        backgroundState: groupBackgroundState.get(group), contents: snapshotGroupMetadata(group) };
+}
 
 const GROUP_MEMBER_MODELS_KEY = 'member_models';
 const ENTITY_SELECTION_PULSE_CLEANUP_MS = 900;
@@ -3358,35 +3387,31 @@ export async function deleteGroupChat(groupId, chatId, { jumpToNewChat = true } 
  * @param {boolean} [options.refresh] Whether to refresh the group chat list after import
  * @returns {Promise<string[]>} List of imported file names
  */
-export async function importGroupChat(formData, { refresh = true } = {}) {
-    const fetchResult = await fetch('/api/chats/group/import', {
-        method: 'POST',
-        headers: getRequestHeaders({ omitContentType: true }),
-        body: formData,
-        cache: 'no-cache',
-    });
-
-    if (fetchResult.ok) {
-        const data = await fetchResult.json();
-        if (data.res) {
-            const chatId = data.res;
-            const group = groups.find(x => x.id == selected_group);
-
-            if (group) {
-                group.chats.push(chatId);
-                await editGroup(selected_group, true, true);
-                if (refresh) {
-                    await displayPastChats();
-                }
-            }
-
-            return [data.res];
+export function applyGroupImportResult(target, result) {
+    const group = groups.find(item => item.id === target.groupId);
+    if (group !== target.group || selected_group !== target.groupId || roleplayAccountStamp() !== target.stamp) return false;
+    const unchanged = JSON.stringify(snapshotGroupMetadata(group)) === JSON.stringify(target.contents);
+    group.chats = [...new Set([...(group.chats ?? []), ...result.fileNames])];
+    const applied = groupBackgroundState.get(group);
+    if (applied) applied.contents.chats = [...new Set([...(applied.contents.chats ?? []), ...result.fileNames])];
+    const saveState = groupSaveStates.get(target.groupId);
+    if (unchanged && (!saveState || saveState.status === 'saved') && saveState?.revision === target.revision
+        && groupReadEvidence.get(group) === target.readEvidence
+        && groupBackgroundState.get(group) === target.backgroundState) {
+        const evidence = { account: target.stamp.account, source: result.roleplay.group.source };
+        const locator = { kind: 'group', groupId: target.groupId };
+        if (rememberRoleplayRead(locator, { ...evidence, locator })) {
+            groupReadEvidence.set(group, evidence);
+            groupBackgroundState.set(group, { evidence, contents: snapshotGroupMetadata(group), failed: false });
+            return true;
         }
-
-        return data?.fileNames || [];
     }
+    return false;
+}
 
-    return [];
+export async function importGroupChat(formData, options = {}) {
+    const target = options.target ?? await captureGroupImportTarget();
+    return sendChatImport(formData, { ...options, target, group: true });
 }
 
 /**

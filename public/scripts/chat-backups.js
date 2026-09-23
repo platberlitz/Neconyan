@@ -1,9 +1,10 @@
 import { t } from './i18n.js';
 import { callGenericPopup, Popup, POPUP_TYPE } from './popup.js';
 import { clamp, escapeHtml, getFileExtension, sortMoments, timestampToMoment } from './utils.js';
-import { displayPastChats, getRequestHeaders, importCharacterChat, refreshCsrfToken } from '/script.js';
+import { captureChatImportTarget, displayPastChats, getRequestHeaders, importCharacterChat, isCurrentChatImportTarget, refreshCsrfToken } from '/script.js';
 import { fetchWithCsrfRetry } from './csrf-token-refresh.js';
 import { importGroupChat } from './group-chats.js';
+import { roleplayAccountStamp } from './roleplay-save-chain.js';
 
 const DEFAULT_BACKUP_CLEANUP_AGE = 30;
 const DEFAULT_BACKUP_CLEANUP_KEEP = 25;
@@ -16,11 +17,11 @@ const BACKUPS_LIST_ID = 'chat_backups_list';
  * @param {RequestInit} init Request options
  * @returns {Promise<Response>} Fetch response
  */
-function fetchBackupApi(resource, init = {}) {
-    return fetchWithCsrfRetry(resource, () => ({
-        ...init,
-        headers: getRequestHeaders(),
-    }), { refreshCsrfToken });
+function fetchBackupApi(resource, init = {}, stamp = roleplayAccountStamp()) {
+    return fetchWithCsrfRetry(resource, () => {
+        if (roleplayAccountStamp() !== stamp) throw new Error('The account changed before downloading the backup.');
+        return { ...init, headers: { ...getRequestHeaders(), 'X-Neconyan-Account': stamp.owner } };
+    }, { refreshCsrfToken });
 }
 
 /**
@@ -150,12 +151,20 @@ class BackupsBrowser {
      * @returns {Promise<void>}
      */
     async restoreBackup(name) {
+        const context = SillyTavern.getContext();
+        const userName = context.name1;
+        const characterName = context.name2;
+        let target;
+        try { target = await captureChatImportTarget(); } catch (error) {
+            toastr.error(String(error?.message || error));
+            return;
+        }
         let response;
         try {
             response = await fetchBackupApi('/api/backups/chat/download', {
                 method: 'POST',
                 body: JSON.stringify({ name: name }),
-            });
+            }, target.stamp);
         } catch (error) {
             if (error?.name === 'AbortError') {
                 return;
@@ -172,6 +181,7 @@ class BackupsBrowser {
         }
 
         const blob = await response.blob();
+        if (!isCurrentChatImportTarget(target)) return;
         const file = new File([blob], name, { type: 'application/octet-stream' });
 
         const extension = getFileExtension(file);
@@ -181,17 +191,19 @@ class BackupsBrowser {
             return;
         }
 
-        const context = SillyTavern.getContext();
-
         const formData = new FormData();
         formData.set('file_type', extension);
         formData.set('avatar', file);
-        formData.set('avatar_url', context.characters[context.characterId]?.avatar || '');
-        formData.set('user_name', context.name1);
-        formData.set('character_name', context.name2);
+        formData.set('user_name', userName);
+        formData.set('character_name', characterName);
 
-        const importFn = context.groupId ? importGroupChat : importCharacterChat;
-        const result = await importFn(formData, { refresh: false });
+        const importFn = target.groupId ? importGroupChat : importCharacterChat;
+        let result;
+        try { result = await importFn(formData, { refresh: false, target }); } catch (error) {
+            toastr.error(String(error?.message || error));
+            return;
+        }
+        if (!isCurrentChatImportTarget(target)) return;
 
         if (result.length === 0) {
             toastr.error(t`Failed to import chat backup, try again later.`);
@@ -199,7 +211,7 @@ class BackupsBrowser {
         }
 
         toastr.success(`Chat imported: ${result.join(', ')}`);
-        await displayPastChats(result);
+        if (isCurrentChatImportTarget(target)) await displayPastChats(result);
     }
 
     /**

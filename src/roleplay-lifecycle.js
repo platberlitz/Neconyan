@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import sanitize from 'sanitize-filename';
 import { withChatFileLocks } from './chat-file-lock.js';
 import { createCharacterChatTarget, createGroupChatTarget, parseChatJsonl, restoreChatSnapshotIfMatches } from './chat-recovery.js';
 import { assertRoleplaySourceLocked, assertPendingRoleplayDependencies, captureRoleplayDependenciesLocked, normaliseRoleplayLocator,
@@ -9,14 +10,17 @@ import { assertRoleplaySourceLocked, assertPendingRoleplayDependencies, captureR
     assertRoleplayGroupData, readRoleplayEntityLocked } from './generation/roleplay-source.js';
 import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, createRoleplayDirectory, readRoleplayFile, readRoleplayPayload,
     roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, stageRoleplayPayload, withRoleplayAccountLock, ROLEPLAY_LARGEST_PHYSICAL,
-    largestRoleplayJournal, roleplayPayloadDirectory, initialiseRoleplayAccount, readRoleplayWriteJournal, roleplayAvatarOwner } from './roleplay-store.js';
+    largestRoleplayJournal, roleplayPayloadDirectory, initialiseRoleplayAccount, readRoleplayWriteJournal, roleplayAvatarOwner,
+    validRoleplayAvatar, ROLEPLAY_IMPORT_MAX_OUTPUTS, roleplayImportPlan } from './roleplay-store.js';
 import { applyPreparedBranchMemoryCapture, assertPreparedBranchMemory, prepareBranchMemoryCapture } from './mewmory/prepared-branch.js';
+import { read as readCharacterCard } from './character-card-parser.js';
 import { MAX_ARCHIVE_BYTES } from './mewmory/store.js';
-import { decodeFileWriteRecovery, fsyncDirectorySync, tryWriteFileSync, FILE_WRITE_RECOVERY_SUFFIX } from './util.js';
+import { decodeFileWriteRecovery, fsyncDirectorySync, humanizedDateTime, tryWriteFileSync, FILE_WRITE_RECOVERY_SUFFIX } from './util.js';
 
 const CHAT_LIMIT = 64 * 1024 * 1024;
 const EFFECT_KEY = roleplayHash('chat-write');
 const GROUP_EFFECT_KEY = roleplayHash('group-update');
+const IMPORT_EFFECT_KEY = roleplayHash('chat-import');
 const conflict = () => roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved chat differs from the recorded transaction; its current contents were retained.');
 
 function key(state, operationKey) {
@@ -71,7 +75,8 @@ function cleanupEffect(lease, effect) {
     const directory = roleplayPayloadDirectory(lease, effect.writeId);
     for (const [name, hash] of Object.entries(effect.cleanup.payloads)) {
         const filename = path.join(directory, name);
-        const file = readRoleplayFile(filename, ['chat.after.jsonl', 'group.after.json'].includes(name) ? CHAT_LIMIT : MAX_ARCHIVE_BYTES, { allowMissingParent: true });
+        const file = readRoleplayFile(filename, ['chat.after.jsonl', 'group.after.json', 'import.group.after.json'].includes(name)
+            || /^import\.chat\.\d+\.jsonl$/.test(name) ? CHAT_LIMIT : MAX_ARCHIVE_BYTES, { allowMissingParent: true });
         if (!file) continue;
         if (file.rawHash !== hash) {
             console.warn('Roleplay cleanup retained a changed staged file.');
@@ -435,6 +440,318 @@ export function reconcileSingleGroupUpdate(scope, operationKey) {
     });
 }
 
+function importRequestHash(scope, input) {
+    if (typeof input.operationKey !== 'string' || !input.operationKey || input.operationKey.length > 256
+        || !Buffer.isBuffer(input.bytes) || input.bytes.length > CHAT_LIMIT || !['json', 'jsonl'].includes(input.format)
+        || typeof input.originalName !== 'string' || !input.originalName || input.originalName.length > 2048
+        || typeof input.userName !== 'string' || typeof input.characterName !== 'string') {
+        throw roleplayError('ROLEPLAY_INVALID', 'Invalid uploaded chat file or parser options.', 400);
+    }
+    const target = input.target;
+    if (!target || typeof target.group !== 'boolean'
+        || (target.group ? typeof target.groupId !== 'string' || !target.groupId || !target.source
+            : !validRoleplayAvatar(target.avatar))) throw roleplayError('ROLEPLAY_INVALID', 'Invalid chat import target.', 400);
+    return roleplayHash({ accountId: scope.accountId, dataEpoch: scope.dataEpoch, target,
+        originalName: input.originalName, format: input.format, userName: input.userName, characterName: input.characterName,
+        bytes: crypto.createHash('sha256').update(input.bytes).digest('hex'), byteLength: input.bytes.length });
+}
+
+function importedChatName(scope, targetValue, characterName, timestamp, reserved, state) {
+    const base = targetValue.group ? humanizedDateTime(timestamp)
+        : `${sanitize(characterName) || 'Character'} - ${humanizedDateTime(timestamp)} imported`;
+    for (let attempt = 0; attempt < 1000; attempt++) {
+        const suffix = attempt ? ` (${attempt + 1})` : '';
+        let stem = '';
+        for (const char of sanitize(base)) {
+            if (Buffer.byteLength(stem + char + suffix + '.jsonl') > 255) break;
+            stem += char;
+        }
+        const name = stem + suffix;
+        const locator = normaliseRoleplayLocator(targetValue.group ? { group: true, chat: name }
+            : { group: false, avatar: targetValue.avatar, chat: name });
+        const filename = roleplayChatPath(scope, locator);
+        if (!reserved.has(name) && !state.paths[roleplayPathKey(state, 'chat', locator)]
+            && !readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: true })) {
+            reserved.add(name);
+            return { locator, filename, expectedVacancy: 0 };
+        }
+    }
+    throw roleplayError('ROLEPLAY_STORE_FULL', 'No safe imported chat name is available.', 413);
+}
+
+function legacyGroupMembers(scope, members) {
+    const byName = new Map();
+    for (const avatar of fs.readdirSync(scope.directories.characters).filter(name => validRoleplayAvatar(name))) {
+        const file = readRoleplayFile(path.join(scope.directories.characters, avatar), CHAT_LIMIT);
+        if (!file) continue;
+        try {
+            const card = JSON.parse(readCharacterCard(file.bytes));
+            const name = card.data?.name ?? card.name;
+            if (typeof name === 'string' && !byName.has(name)) byName.set(name, avatar);
+        } catch { /* A damaged unrelated card cannot name a group member. */ }
+    }
+    return members.map(name => byName.get(name) ?? (validRoleplayAvatar(name) ? name : null)).filter(Boolean);
+}
+
+function prepareImportGroupLink(lease, saved, names, transactionId) {
+    const { scope, state } = roleplayLease(lease);
+    const group = JSON.parse(JSON.stringify(saved.data));
+    if (group.chat_id === undefined) {
+        group.members = legacyGroupMembers(scope, group.members);
+        group.chat_id = String(group.id);
+        group.chats = [String(group.id)];
+    }
+    group.chats = [...new Set([...(Array.isArray(group.chats) ? group.chats.map(String) : []), ...names])];
+    const bytes = Buffer.from(JSON.stringify(group, null, 4));
+    if (bytes.length > CHAT_LIMIT) throw roleplayError('ROLEPLAY_STORE_FULL', 'Linked group metadata exceeds its storage limit.', 413);
+    const before = { ...state.resources[saved.instanceId].head, revision: saved.revision };
+    return { locator: { groupId: String(group.id) }, instanceId: saved.instanceId, before,
+        after: { revision: before.revision + 1, rawHash: crypto.createHash('sha256').update(bytes).digest('hex'),
+            contentHash: roleplayGroupContentHash(group), writeId: transactionId, byteLength: bytes.length, payload: 'import.group.after.json' },
+        appliedPhysical: null, bytes };
+}
+
+function finishedImportState(state, pending, physical = null) {
+    const next = JSON.parse(JSON.stringify(state));
+    const payloads = {};
+    for (const [index, output] of pending.outputs.entries()) {
+        const currentPhysical = physical ?? output.physical;
+        next.resources[output.instanceId] = { accountId: state.accountId, dataEpoch: state.dataEpoch,
+            kind: 'chat', locator: output.locator, status: 'live', revision: 1, busySubmission: null,
+            head: { rawHash: output.after.rawHash, contentHash: output.after.contentHash,
+                writeId: output.after.writeId, physical: currentPhysical } };
+        next.paths[roleplayPathKey(state, 'chat', output.locator)] = { generation: output.expectedVacancy + 1, instanceId: output.instanceId };
+        payloads[output.after.payload] = output.after.rawHash;
+        for (const item of output.memoryPayloads) payloads[`import.memory.${index}.${item.kind}.json`] = item.hash;
+    }
+    if (pending.group) {
+        const group = next.resources[pending.group.instanceId];
+        group.revision = pending.group.after.revision;
+        group.head = { rawHash: pending.group.after.rawHash, contentHash: pending.group.after.contentHash,
+            writeId: pending.group.after.writeId, physical: physical ?? pending.group.appliedPhysical };
+        payloads[pending.group.after.payload] = pending.group.after.rawHash;
+    }
+    const first = pending.outputs[0];
+    const result = { kind: 'import', mode: 'create', instanceId: first.instanceId, revision: 1,
+        rawHash: first.after.rawHash, integrity: first.after.integrity, writeId: pending.id, changed: true,
+        names: pending.outputs.map(output => output.locator.chat),
+        outputs: pending.outputs.map(output => ({ name: output.locator.chat, instanceId: output.instanceId,
+            rawHash: output.after.rawHash, writeId: output.after.writeId })),
+        group: pending.group ? { id: pending.group.locator.groupId, source: {
+            instanceId: pending.group.instanceId, revision: pending.group.after.revision,
+            rawHash: pending.group.after.rawHash }, rawHash: pending.group.after.rawHash } : null };
+    next.submissions[pending.operationKeyHash] = { accountId: state.accountId, dataEpoch: state.dataEpoch,
+        intentHash: pending.planHash, requestHash: pending.requestHash, jobId: null,
+        targetInstanceId: first.instanceId, state: 'closed', reservedReceiptBytes: 0, outcome: result,
+        effects: { [IMPORT_EFFECT_KEY]: { effectHash: pending.planHash, writeId: pending.id,
+            instanceId: first.instanceId, appliedRevision: 1, result,
+            cleanup: { payloads, journal: null } } } };
+    next.pending = null;
+    return next;
+}
+
+function prepareChatImport(lease, input, host, convert, requestHash, operationKeyHash) {
+    const { scope, state } = roleplayLease(lease);
+    const targetValue = input.target;
+    let group = null;
+    let character = null;
+    if (targetValue.group) {
+        const saved = readRoleplayEntityLocked(lease, 'group', targetValue.groupId, { storage: true });
+        if (saved.instanceId !== targetValue.source?.instanceId || saved.revision !== targetValue.source?.revision
+            || saved.rawHash !== targetValue.source?.rawHash) throw conflict();
+        group = saved;
+    } else {
+        const filename = path.join(scope.directories.characters, targetValue.avatar);
+        character = readRoleplayFile(filename, CHAT_LIMIT);
+        if (!character) throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The character owning this imported chat is missing.', 404);
+    }
+    const timestamp = Date.now();
+    const converted = convert(input.bytes, { format: input.format, userName: input.userName,
+        characterName: input.characterName, timestamp });
+    if (!Array.isArray(converted) || converted.length < 1 || converted.length > ROLEPLAY_IMPORT_MAX_OUTPUTS) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The uploaded file has an unsupported number of histories.', 400);
+    }
+    const reserved = new Set(group?.data.chats?.map(String) ?? []);
+    const id = crypto.randomUUID();
+    const staged = [];
+    const outputs = converted.map((chat, index) => {
+        if (typeof chat !== 'string') throw roleplayError('ROLEPLAY_INVALID', 'A converted history is invalid.', 400);
+        const parsed = parseChatJsonl(chat);
+        if (parsed.status !== 'ok') throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'The uploaded history is malformed.', 422);
+        const destination = importedChatName(scope, targetValue, input.characterName, timestamp, reserved, state);
+        const instanceId = crypto.randomUUID();
+        const writeId = crypto.randomUUID();
+        const prepared = host.prepare(parsed.records, { marker: { schema: 1, instanceId, revision: 1, writeId } });
+        const bytes = Buffer.from(prepared.serialized, 'utf8');
+        if (bytes.length > CHAT_LIMIT) throw roleplayError('ROLEPLAY_STORE_FULL', 'An imported history is too large.', 413);
+        const memory = prepareBranchMemoryCapture(scope.directories, destination.locator,
+            { metadata: prepared.records[0].chat_metadata, messages: prepared.records.slice(1) }, { mode: 'create' });
+        const memoryPayloads = memory.payloads.map(payload => ({ kind: payload.name === 'memory.archive.json' ? 'archive' : 'guard',
+            hash: crypto.createHash('sha256').update(payload.bytes).digest('hex'), bytes: payload.bytes.length }));
+        staged.push({ name: `import.chat.${index}.jsonl`, bytes });
+        for (const payload of memory.payloads) staged.push({ name: `import.memory.${index}.${payload.name.slice(7)}`, bytes: payload.bytes });
+        return { locator: destination.locator, instanceId, expectedVacancy: destination.expectedVacancy,
+            after: { revision: 1, rawHash: crypto.createHash('sha256').update(bytes).digest('hex'),
+                contentHash: roleplayContentHash(prepared.records), integrity: prepared.integrity,
+                writeId, byteLength: bytes.length, payload: `import.chat.${index}.jsonl` },
+            physical: null, memory: memory.plan, memoryPayloads, memoryDone: false };
+    });
+    const linked = group && prepareImportGroupLink(lease, group, outputs.map(output => output.locator.chat), id);
+    if (linked) staged.push({ name: linked.after.payload, bytes: linked.bytes });
+    const pending = { schema: 1, kind: 'chat-import', id, operationKeyHash, requestHash, planHash: '',
+        accountId: state.accountId, dataEpoch: state.dataEpoch,
+        target: targetValue.group ? { group: true, groupId: targetValue.groupId }
+            : { group: false, avatar: targetValue.avatar, character: { rawHash: character.rawHash, physical: character.physical } },
+        timestamp, outputs, group: linked && { locator: linked.locator, instanceId: linked.instanceId,
+            before: linked.before, after: linked.after, appliedPhysical: null },
+        phase: 'prepared', reservedBytes: 32 * 1024 };
+    pending.planHash = roleplayHash(roleplayImportPlan(pending));
+    assertRoleplayTransactionCapacity(lease, pending, finishedImportState(state, pending, ROLEPLAY_LARGEST_PHYSICAL));
+    for (const payload of staged) stageRoleplayPayload(lease, id, payload.name, payload.bytes,
+        payload.name.includes('.memory.') ? MAX_ARCHIVE_BYTES : CHAT_LIMIT);
+    state.pending = pending;
+    try {
+        saveRoleplayAccount(lease);
+        return applyPendingChatImport(lease, host);
+    } catch (error) { throw Object.assign(error, { roleplayWritePending: true }); }
+}
+
+function assertImportTarget(lease, pending) {
+    const { scope } = roleplayLease(lease);
+    if (!pending.target.group) {
+        const character = readRoleplayFile(path.join(scope.directories.characters, pending.target.avatar), CHAT_LIMIT);
+        if (!sameObservation(character, pending.target.character)) throw conflict();
+        return;
+    }
+    const groupFile = readRoleplayFile(groupUpdatePath(scope, pending.group.locator), CHAT_LIMIT);
+    const expected = pending.group.appliedPhysical
+        ? { rawHash: pending.group.after.rawHash, physical: pending.group.appliedPhysical } : pending.group.before;
+    if (!sameObservation(groupFile, expected)
+        && !(pending.group.appliedPhysical === null && groupFile?.rawHash === pending.group.after.rawHash
+            && isDeepStrictEqual(groupFile.physical, pending.group.before.physical))) throw conflict();
+}
+
+function importedOutputFile(lease, output) {
+    const file = readRoleplayFile(roleplayChatPath(roleplayLease(lease).scope, output.locator), CHAT_LIMIT, { allowMissingParent: true });
+    if (!file || file.rawHash !== output.after.rawHash || (output.physical && !isDeepStrictEqual(file.physical, output.physical))) throw conflict();
+    const parsed = parseChatJsonl(file.bytes);
+    if (parsed.status !== 'ok' || roleplayContentHash(parsed.records) !== output.after.contentHash
+        || !isDeepStrictEqual(parsed.records[0].chat_metadata.neconyan_roleplay,
+            { schema: 1, instanceId: output.instanceId, revision: 1, writeId: output.after.writeId })) throw conflict();
+    return file;
+}
+
+function applyPendingChatImport(lease, host) {
+    const { scope, state } = roleplayLease(lease);
+    const pending = state.pending;
+    if (pending?.kind !== 'chat-import') throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'There is no matching chat import.');
+    assertImportTarget(lease, pending);
+    for (const [index, output] of pending.outputs.entries()) {
+        assertImportTarget(lease, pending);
+        for (const prior of pending.outputs.slice(0, index)) {
+            if (prior.physical) importedOutputFile(lease, prior);
+        }
+        const filename = roleplayChatPath(scope, output.locator);
+        let file = readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: true });
+        if (!file) {
+            if (output.physical) throw conflict();
+            const payload = readRoleplayPayload(lease, pending.id, output.after.payload, output.after.rawHash, CHAT_LIMIT);
+            const parsed = parseChatJsonl(payload.bytes);
+            if (parsed.status !== 'ok' || roleplayContentHash(parsed.records) !== output.after.contentHash) throw conflict();
+            const inputRecords = structuredClone(parsed.records);
+            delete inputRecords[0].chat_metadata.neconyan_roleplay;
+            delete inputRecords[0].chat_metadata.integrity;
+            createRoleplayDirectory(path.dirname(filename), scope.directories.root);
+            file = host.publish({ filePath: filename, before: null, payloadPath: payload.filename,
+                payloadHash: output.after.rawHash,
+                prepared: { changed: true, inputRecords, records: parsed.records,
+                    serialized: payload.bytes.toString('utf8'), integrity: output.after.integrity },
+                handle: scope.owner, cardName: output.locator.group ? output.locator.chat : roleplayAvatarOwner(output.locator.avatar),
+                backupDirectory: scope.directories.backups, recoveryTarget: target(scope, output.locator), deferBackup: true }).file;
+        }
+        file = importedOutputFile(lease, output);
+        if (!output.physical) {
+            output.physical = file.physical;
+            pending.phase = 'publishing';
+            saveRoleplayAccount(lease);
+        }
+        applyPreparedBranchMemoryCapture(scope.directories, output.locator, output.memory, {
+            mode: 'create', chat: { rawHash: file.rawHash, physical: file.physical },
+            payload: (name, hash) => readRoleplayPayload(lease, pending.id,
+                `import.memory.${index}.${name.slice(7)}`, hash, MAX_ARCHIVE_BYTES).bytes,
+        });
+        if (!output.memoryDone) {
+            output.memoryDone = true;
+            saveRoleplayAccount(lease);
+        }
+    }
+    for (const output of pending.outputs) importedOutputFile(lease, output);
+    pending.phase = 'linking';
+    saveRoleplayAccount(lease);
+    if (pending.group) {
+        assertImportTarget(lease, pending);
+        const group = pending.group;
+        const filename = groupUpdatePath(scope, group.locator);
+        let file = readRoleplayFile(filename, CHAT_LIMIT);
+        if (!group.appliedPhysical && sameObservation(file, group.before)) {
+            const payload = readRoleplayPayload(lease, pending.id, group.after.payload, group.after.rawHash, CHAT_LIMIT);
+            file = withChatFileLocks([filename], () => {
+                const current = readRoleplayFile(filename, CHAT_LIMIT);
+                if (!sameObservation(current, group.before)) throw conflict();
+                tryWriteFileSync(filename, payload.bytes, { mode: 0o600 }, {
+                    preserveFileIdentity: true, invalidateBeforeWrite: true, preserveOnWriteError: true,
+                    expectedFileIdentity: { dev: BigInt(current.physical.dev), ino: BigInt(current.physical.ino),
+                        birthtimeNs: BigInt(current.physical.birthtimeNs) }, expectedFileHash: current.rawHash, maxFileBytes: CHAT_LIMIT,
+                });
+                return readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
+            });
+        } else file = readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
+        if (!file || file.rawHash !== group.after.rawHash || !isDeepStrictEqual(file.physical, group.before.physical)
+            || (group.appliedPhysical && !isDeepStrictEqual(file.physical, group.appliedPhysical))) throw conflict();
+        if (!group.appliedPhysical) {
+            group.appliedPhysical = file.physical;
+            pending.phase = 'linked';
+            saveRoleplayAccount(lease);
+        }
+    } else {
+        pending.phase = 'linked';
+        saveRoleplayAccount(lease);
+    }
+    const final = finishedImportState(state, pending);
+    Object.assign(state, final);
+    saveRoleplayAccount(lease);
+    cleanupRoleplayReceiptsLocked(lease, pending.operationKeyHash);
+    return final.submissions[pending.operationKeyHash].outcome;
+}
+
+export function commitSingleChatImport(scope, input, host, convert) {
+    return withRoleplayAccountLock(scope, lease => {
+        confirmRoleplayAccount(lease);
+        const { state, scope: current } = roleplayLease(lease);
+        const requestHash = importRequestHash(current, input);
+        const operationKeyHash = roleplayHash([state.accountId, 'chat-import', input.operationKey]);
+        const prior = state.submissions[operationKeyHash];
+        if (prior) {
+            if (prior.requestHash !== requestHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'This import key was used for another file or target.');
+            cleanupRoleplayReceiptsLocked(lease, operationKeyHash);
+            return completedResult(prior);
+        }
+        if (state.pending) {
+            if (state.pending.kind !== 'chat-import' || state.pending.operationKeyHash !== operationKeyHash) {
+                throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'Another Roleplay operation must settle first.');
+            }
+            if (state.pending.requestHash !== requestHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'The pending import has another request.');
+            return applyPendingChatImport(lease, host);
+        }
+        try {
+            return prepareChatImport(lease, input, host, convert, requestHash, operationKeyHash);
+        } catch (error) {
+            if (!error.roleplayWritePending && state.pending === null) error.roleplayImportUnaccepted = true;
+            throw error;
+        }
+    });
+}
+
 /** Private storage transaction; the concrete endpoint host supplies the existing writer, never a client callback. */
 export function commitSingleChatWrite(scope, input, host) {
     return withRoleplayAccountLock(scope, lease => commitSingleChatWriteLocked(lease, input, host));
@@ -569,7 +886,8 @@ export function reconcilePendingChatWrite(scope, host) {
     return withRoleplayAccountLock(scope, lease => {
         confirmRoleplayAccount(lease);
         const pending = roleplayLease(lease).state.pending;
-        const result = pending ? pending.kind === 'group-update' ? applyPendingGroupUpdate(lease) : applyPending(lease, host) : null;
+        const result = pending ? pending.kind === 'group-update' ? applyPendingGroupUpdate(lease)
+            : pending.kind === 'chat-import' ? applyPendingChatImport(lease, host) : applyPending(lease, host) : null;
         cleanupRoleplayReceiptsLocked(lease);
         return result;
     });

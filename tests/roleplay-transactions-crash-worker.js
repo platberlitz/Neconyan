@@ -7,8 +7,9 @@ import { setConfigFilePath, FILE_WRITE_RECOVERY_SUFFIX } from '../src/util.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { roleplayStoreDirectory } = await import('../src/roleplay-store.js');
-const { commitSingleChatWrite, reconcileSingleChatWrite, commitSingleGroupUpdate, reconcileSingleGroupUpdate } = await import('../src/roleplay-lifecycle.js');
-const { prepareNativeChatWrite, publishNativeChatWrite } = await import('../src/endpoints/chats.js');
+const { commitSingleChatWrite, reconcileSingleChatWrite, commitSingleGroupUpdate, reconcileSingleGroupUpdate,
+    commitSingleChatImport, reconcilePendingChatWrite } = await import('../src/roleplay-lifecycle.js');
+const { prepareNativeChatWrite, publishNativeChatWrite, convertImportedChatFile } = await import('../src/endpoints/chats.js');
 const { parseChatJsonl } = await import('../src/chat-recovery.js');
 const spec = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const root = roleplayStoreDirectory(spec.scope);
@@ -54,6 +55,7 @@ fs.fsyncSync = fd => {
     originals.fsyncSync(fd);
     const filename = descriptors.get(fd);
     if (filename?.startsWith(path.join(root, 'pending') + path.sep) && filename.endsWith('/chat.after.jsonl')) pause('payload-durable');
+    if (filename?.startsWith(path.join(root, 'pending') + path.sep) && filename.endsWith('/import.chat.0.jsonl')) pause('import-payload-durable');
     if (filename?.startsWith(path.join(root, 'pending') + path.sep) && filename.endsWith('/group.after.json')) pause('group-payload-durable');
     if (filename === spec.filename && spec.groupUpdate) {
         const pending = JSON.parse(fs.readFileSync(path.join(root, 'state.json'), 'utf8')).state.pending;
@@ -62,8 +64,18 @@ fs.fsyncSync = fd => {
         }
     }
     if (filename === spec.filename && !spec.groupUpdate && parseChatJsonl(fs.readFileSync(filename)).status === 'ok') pause('chat-durable');
+    if (spec.chatImport && filename?.startsWith(spec.scope.directories.groupChats + path.sep)
+        && filename.endsWith('.jsonl') && parseChatJsonl(fs.readFileSync(filename)).status === 'ok') pause('import-chat-durable');
+    if (spec.chatImport && filename === path.join(spec.scope.directories.groups, spec.input.target.groupId + '.json')) {
+        const pending = JSON.parse(fs.readFileSync(path.join(root, 'state.json'), 'utf8')).state.pending;
+        if (pending?.kind === 'chat-import' && fs.readFileSync(filename).equals(fs.readFileSync(path.join(root, 'pending', pending.id, 'import.group.after.json')))) {
+            pause('import-group-durable');
+        }
+    }
     if (filename === spec.memory?.guard) pause('memory-guard-durable');
     if (filename === spec.memory?.archive) pause('memory-archive-durable');
+    if (spec.chatImport && filename?.startsWith(path.join(spec.scope.directories.root, 'mewmory', 'recovery') + path.sep)) pause('import-memory-guard-durable');
+    if (spec.chatImport && filename?.startsWith(path.join(spec.scope.directories.root, 'mewmory', 'stories') + path.sep)) pause('import-memory-archive-durable');
     if (filename === root) {
         const state = JSON.parse(fs.readFileSync(path.join(root, 'state.json'), 'utf8')).state;
         if (state.pending?.journal && state.pending.phase === 'prepared') pause('journal-recorded');
@@ -84,8 +96,13 @@ fs.unlinkSync = filename => {
 };
 
 const host = { prepare: prepareNativeChatWrite, publish: publishNativeChatWrite };
-const result = spec.groupUpdate
-    ? spec.reconcile ? reconcileSingleGroupUpdate(spec.scope, spec.input.operationKey) : commitSingleGroupUpdate(spec.scope, spec.input)
-    : spec.reconcile ? reconcileSingleChatWrite(spec.scope, spec.input.operationKey, host) : commitSingleChatWrite(spec.scope, spec.input, host);
+if (spec.chatImport) spec.input.bytes = Buffer.from(spec.input.bytes, 'base64');
+let result;
+if (spec.chatImport) result = spec.reconcile ? reconcilePendingChatWrite(spec.scope, host)
+    : commitSingleChatImport(spec.scope, spec.input, host, convertImportedChatFile);
+else if (spec.groupUpdate) result = spec.reconcile ? reconcileSingleGroupUpdate(spec.scope, spec.input.operationKey)
+    : commitSingleGroupUpdate(spec.scope, spec.input);
+else result = spec.reconcile ? reconcileSingleChatWrite(spec.scope, spec.input.operationKey, host)
+    : commitSingleChatWrite(spec.scope, spec.input, host);
 for (const [name, fn] of Object.entries(originals)) fs[name] = fn;
 process.stdout.write(JSON.stringify({ result }) + '\n');

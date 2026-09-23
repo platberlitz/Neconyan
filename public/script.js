@@ -85,6 +85,8 @@ import {
     deleteGroupChat,
     renameGroupChat,
     importGroupChat,
+    captureGroupImportTarget,
+    applyGroupImportResult,
     getGroupBlock,
     getGroupCharacterCardsLazy,
     getGroupDepthPrompts,
@@ -14962,7 +14964,15 @@ async function runChatCleanup() {
  * displayed chats based on a search query.
  * @param {string[]} hightlightNames - An array of chat names to highlight
  */
+let chatHistorySession = 0;
+let chatHistoryQuery = 0;
+
 export async function displayPastChats(hightlightNames = []) {
+    const session = ++chatHistorySession;
+    const groupId = selected_group;
+    const characterAvatar = groupId ? null : characters[this_chid]?.avatar;
+    const ownerKey = getChatExportOwnerKey();
+    const isCurrent = () => session === chatHistorySession && getChatExportOwnerKey() === ownerKey;
     $('#select_chat_div').empty();
     $('#select_chat_search').val('').off('input');
     setChatHistoryStatus('');
@@ -14971,12 +14981,11 @@ export async function displayPastChats(hightlightNames = []) {
     const currentChat = chatDetails.sessionName;
     const displayName = chatDetails.characterName;
     const avatarImg = chatDetails.avatarImgURL;
-    const ownerKey = getChatExportOwnerKey();
-
-    await displayChats('', currentChat, displayName, avatarImg, selected_group, hightlightNames, ownerKey);
+    await displayChats('', currentChat, displayName, avatarImg, groupId, characterAvatar, hightlightNames, ownerKey, session);
+    if (!isCurrent()) return;
 
     const debouncedDisplay = debounce((searchQuery) => {
-        displayChats(searchQuery, currentChat, displayName, avatarImg, selected_group, [], ownerKey);
+        if (isCurrent()) void displayChats(searchQuery, currentChat, displayName, avatarImg, groupId, characterAvatar, [], ownerKey, session);
     });
 
     // Define the search input listener
@@ -14987,6 +14996,7 @@ export async function displayPastChats(hightlightNames = []) {
 
     // UX convenience: Focus the search field when the Manage Chat Files view opens.
     setTimeout(function () {
+        if (!isCurrent()) return;
         const textSearchElement = $('#select_chat_search');
         textSearchElement.trigger('click').trigger('focus').trigger('select');
     }, 200);
@@ -15000,9 +15010,13 @@ function getChatExportOwnerKey() {
         : JSON.stringify(['character', characters[this_chid]?.avatar ?? null]);
 }
 
-async function displayChats(searchQuery, currentChat, displayName, avatarImg, selected_group, highlightNames, ownerKey) {
+async function displayChats(searchQuery, currentChat, displayName, avatarImg, groupId, characterAvatar, highlightNames, ownerKey, session) {
+    const query = ++chatHistoryQuery;
+    const isCurrent = () => session === chatHistorySession && query === chatHistoryQuery && getChatExportOwnerKey() === ownerKey;
     try {
-        const filteredData = await searchPastChats(searchQuery, selected_group, this_chid);
+        const characterId = groupId ? undefined : characters.findIndex(item => item.avatar === characterAvatar);
+        const filteredData = await searchPastChats(searchQuery, groupId, characterId);
+        if (!isCurrent()) return;
         $('#select_chat_div').empty();
 
         for (const chat of filteredData) {
@@ -15034,6 +15048,7 @@ async function displayChats(searchQuery, currentChat, displayName, avatarImg, se
             }
         }
     } catch (error) {
+        if (!isCurrent()) return;
         console.error('Error loading chats:', error);
         toastr.error('Could not load chat data. Try reloading the page.');
     }
@@ -16201,23 +16216,106 @@ export async function saveChatConditional(options = {}) {
  * @param {boolean} [options.refresh] Whether to refresh the group chat list after import
  * @returns {Promise<string[]>} List of imported file names.
  */
-export async function importCharacterChat(formData, { refresh = true } = {}) {
-    const fetchResult = await fetch('/api/chats/import', {
-        method: 'POST',
-        body: formData,
-        headers: getRequestHeaders({ omitContentType: true }),
-        cache: 'no-cache',
-    });
+export function captureChatImportTarget() {
+    const stamp = roleplayAccountStamp();
+    const groupId = selected_group;
+    if (groupId) return captureGroupImportTarget(groupId);
+    const avatar = characters[this_chid]?.avatar;
+    if (!avatar || stamp.owner !== getCurrentUserHandle()) throw new Error('Choose a character before importing a chat.');
+    return { avatar, characterId: this_chid, stamp };
+}
 
-    if (fetchResult.ok) {
-        const data = await fetchResult.json();
-        if (data.res && refresh) {
-            await displayPastChats();
+export function isCurrentChatImportTarget(target) {
+    try {
+        if (roleplayAccountStamp() !== target.stamp || target.stamp.owner !== getCurrentUserHandle()) return false;
+        if (target.groupId) return selected_group === target.groupId
+            && groups.find(group => group.id === target.groupId) === target.group;
+        return !selected_group && this_chid === target.characterId && characters[this_chid]?.avatar === target.avatar;
+    } catch { return false; }
+}
+
+const CHAT_IMPORT_RETRY_PREFIX = 'neconyan.pending.chat-import.v1.';
+
+function durableChatImportAttempt(key, attemptId, operationKey, source) {
+    try {
+        const stored = localStorage.getItem(key);
+        if (stored !== null) {
+            const prior = JSON.parse(stored);
+            if (prior?.attemptId !== attemptId || typeof prior.operationKey !== 'string' || !prior.operationKey
+                || (source !== null && (!prior.source || typeof prior.source !== 'object'))) throw new Error('Invalid saved import intent.');
+            return prior;
         }
-        return data?.fileNames || [];
+        const attempt = { attemptId, operationKey, source };
+        const frozen = JSON.stringify(attempt);
+        localStorage.setItem(key, frozen);
+        if (localStorage.getItem(key) !== frozen) throw new Error('Import intent was not retained.');
+        return attempt;
+    } catch (cause) {
+        throw Object.assign(new Error('This browser cannot retain the import retry identity. The upload was not started.'), { cause });
     }
+}
 
-    return [];
+function clearDurableChatImportAttempt(key, attempt) {
+    try {
+        if (localStorage.getItem(key) !== JSON.stringify(attempt)) return false;
+        localStorage.removeItem(key);
+        if (localStorage.getItem(key) !== null) throw new Error('Import identity was not cleared.');
+        return true;
+    } catch (cause) {
+        throw Object.assign(new Error('The saved import retry identity could not be cleared.'), { cause });
+    }
+}
+
+/** Send one frozen file and import key; CSRF retries rebuild only the header. */
+export async function sendChatImport(formData, { target, group, refresh = true, operationKey = uuidv4(), onAccepted }) {
+    if (!isCurrentChatImportTarget(target)) throw new Error('The selected chat changed before import.');
+    const file = formData.get('avatar');
+    if (!(file instanceof File)) throw new Error('Choose one chat file to import.');
+    const bytes = await file.arrayBuffer();
+    const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(value => value.toString(16).padStart(2, '0')).join('');
+    if (!isCurrentChatImportTarget(target)) throw new Error('The selected chat changed before import.');
+    const attemptId = JSON.stringify([target.stamp.owner, target.stamp.account.accountId, target.stamp.account.dataEpoch,
+        group ? target.groupId : target.avatar,
+        file.name, hash, formData.get('file_type'), formData.get('user_name'), formData.get('character_name')]);
+    const keyHash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(attemptId)))].map(value => value.toString(16).padStart(2, '0')).join('');
+    if (!isCurrentChatImportTarget(target)) throw new Error('The selected chat changed before import.');
+    const retryKey = CHAT_IMPORT_RETRY_PREFIX + keyHash;
+    const attempt = durableChatImportAttempt(retryKey, attemptId, operationKey, group ? structuredClone(target.source) : null);
+    formData.set('roleplay', JSON.stringify({ account: target.stamp.account, operationKey: attempt.operationKey,
+        ...(group ? { source: attempt.source } : {}) }));
+    if (group) formData.set('group_id', target.groupId);
+    else formData.set('avatar_url', target.avatar);
+    const resource = group ? '/api/chats/group/import' : '/api/chats/import';
+    const send = () => fetchWithCsrfRetry(resource, () => {
+        if (!isCurrentChatImportTarget(target)) throw new Error('The selected chat changed before import.');
+        return { method: 'POST', body: formData, headers: {
+            ...getRequestHeaders({ omitContentType: true }), 'X-Neconyan-Account': target.stamp.owner }, cache: 'no-cache' };
+    }, { refreshCsrfToken });
+    let response;
+    try { response = await send(); } catch (error) {
+        if (!isCurrentChatImportTarget(target)) throw error;
+        response = await send();
+    }
+    if (!response.ok) {
+        if (response.headers.get('X-Neconyan-Import-Unaccepted') === '1') clearDurableChatImportAttempt(retryKey, attempt);
+        throw new Error(`Chat import failed (${response.status}).`);
+    }
+    const result = await response.json();
+    if (!result.res || !Array.isArray(result.fileNames)) throw new Error('The chat import response was incomplete.');
+    const owned = clearDurableChatImportAttempt(retryKey, attempt);
+    if (owned && isCurrentChatImportTarget(target)) {
+        const applied = group && JSON.stringify(attempt.source) === JSON.stringify(target.source)
+            ? applyGroupImportResult(target, result) : !group;
+        if (typeof onAccepted === 'function') onAccepted(result, applied);
+        if (refresh) await displayPastChats(result.fileNames);
+    }
+    return result.fileNames;
+}
+
+export async function importCharacterChat(formData, options = {}) {
+    const target = options.target ?? await captureChatImportTarget();
+    if (target.groupId) throw new Error('The import target is a group.');
+    return sendChatImport(formData, { ...options, target, group: false });
 }
 
 export function updateViewMessageIds(startIndex = null) {
@@ -19118,9 +19216,16 @@ jQuery(async function () {
             return;
         }
 
+        const files = Array.from(targetElement.files);
+        let target;
+        try { target = await captureChatImportTarget(); } catch (error) {
+            toastr.error(String(error?.message || error));
+            targetElement.value = '';
+            return;
+        }
         const importedFileNames = [];
 
-        for (const file of targetElement.files) {
+        for (const [index, file] of files.entries()) {
             const ext = file.name.match(/\.(\w+)$/);
             const format = ext?.[1]?.toLowerCase();
 
@@ -19129,26 +19234,35 @@ jQuery(async function () {
                 continue;
             }
 
-            if (selected_group && format === 'json') {
-                toastr.warning(t`Only SillyTavern's own format is supported for group chat imports. Sorry!`);
-                continue;
-            }
-
             const formData = new FormData(formElement);
             formData.set('file_type', format);
             formData.set('avatar', file);
             formData.set('user_name', name1);
 
-            const importFn = selected_group ? importGroupChat : importCharacterChat;
-            const result = await importFn(formData, { refresh: false });
-            importedFileNames.push(...result);
+            const importFn = target.groupId ? importGroupChat : importCharacterChat;
+            try {
+                let acceptedGroupSource = null;
+                const result = await importFn(formData, { refresh: false, target,
+                    onAccepted: (accepted, applied) => { if (applied) acceptedGroupSource = accepted.roleplay?.group?.source ?? null; } });
+                importedFileNames.push(...result);
+                if (target.groupId && index < files.length - 1) {
+                    if (!acceptedGroupSource) throw new Error('The first group import needs a fresh group read before another file.');
+                    const next = await captureGroupImportTarget(target.groupId);
+                    if (JSON.stringify(next.source) !== JSON.stringify(acceptedGroupSource)) throw new Error('The group changed between imported files.');
+                    target = next;
+                }
+            } catch (error) {
+                console.error('Could not import chat:', error);
+                toastr.error(String(error?.message || error));
+                break;
+            }
         }
 
-        if (importedFileNames.length > 0) {
+        if (importedFileNames.length > 0 && isCurrentChatImportTarget(target)) {
             toastr.success(t`Successfully imported ${importedFileNames.length} chat(s).`);
         }
 
-        await displayPastChats(importedFileNames);
+        if (isCurrentChatImportTarget(target)) await displayPastChats(importedFileNames);
 
         targetElement.value = '';
     });

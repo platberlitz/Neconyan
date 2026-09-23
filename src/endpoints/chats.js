@@ -7,7 +7,6 @@ import { isDeepStrictEqual, TextDecoder, types } from 'node:util';
 
 import express from 'express';
 import sanitize from 'sanitize-filename';
-import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import _ from 'lodash';
 
 import { acquireChatFileLock, withChatFileLocks } from '../chat-file-lock.js';
@@ -16,7 +15,7 @@ import { renameChatFile } from '../chat-rename.js';
 import { captureBranchMemory, removeChatMemory, renameChatMemory } from '../mewmory/store.js';
 import { confirmRoleplayAccount, readRoleplayFile, readRoleplayWriteJournal, roleplayAvatarOwner, roleplayError, roleplayHash, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
 import { normaliseRoleplayLocator, readRoleplayChatLocked, roleplayChatPath, ROLEPLAY_METADATA_KEY } from '../generation/roleplay-source.js';
-import { cleanupRoleplayReceiptsLocked, commitSingleChatWriteLocked, repairSingleChatWriteLocked } from '../roleplay-lifecycle.js';
+import { cleanupRoleplayReceiptsLocked, commitSingleChatImport, commitSingleChatWriteLocked, repairSingleChatWriteLocked } from '../roleplay-lifecycle.js';
 import {
     clearChatRecoveryState,
     createCharacterChatTarget,
@@ -36,7 +35,6 @@ import {
 } from '../chat-recovery.js';
 import {
     getConfigValue,
-    humanizedDateTime,
     tryParse,
     generateTimestamp,
     removeOldBackups,
@@ -637,7 +635,7 @@ process.on('exit', () => {
  * @param {object} jsonData JSON data
  * @returns {string} Chat data
  */
-function importOobaChat(userName, characterName, jsonData) {
+function importOobaChat(userName, characterName, jsonData, timestamp) {
     /** @type {object[]} */
     const chat = [{
         chat_metadata: {},
@@ -650,7 +648,7 @@ function importOobaChat(userName, characterName, jsonData) {
             const userMessage = {
                 name: userName,
                 is_user: true,
-                send_date: new Date().toISOString(),
+                send_date: new Date(timestamp).toISOString(),
                 mes: arr[0],
                 extra: {},
             };
@@ -660,7 +658,7 @@ function importOobaChat(userName, characterName, jsonData) {
             const charMessage = {
                 name: characterName,
                 is_user: false,
-                send_date: new Date().toISOString(),
+                send_date: new Date(timestamp).toISOString(),
                 mes: arr[1],
                 extra: {},
             };
@@ -678,7 +676,7 @@ function importOobaChat(userName, characterName, jsonData) {
  * @param {object} jsonData Chat data
  * @returns {string} Chat data
  */
-function importAgnaiChat(userName, characterName, jsonData) {
+function importAgnaiChat(userName, characterName, jsonData, timestamp) {
     /** @type {object[]} */
     const chat = [{
         chat_metadata: {},
@@ -691,7 +689,7 @@ function importAgnaiChat(userName, characterName, jsonData) {
         chat.push({
             name: isUser ? userName : characterName,
             is_user: isUser,
-            send_date: new Date().toISOString(),
+            send_date: new Date(timestamp).toISOString(),
             mes: message.msg,
             extra: {},
         });
@@ -707,7 +705,7 @@ function importAgnaiChat(userName, characterName, jsonData) {
  * @param {object} jsonData JSON data
  * @returns {string[]} Converted data
  */
-function importCAIChat(userName, characterName, jsonData) {
+function importCAIChat(userName, characterName, jsonData, timestamp) {
     /**
      * Converts the chat data to suitable format.
      * @param {object} history Imported chat data
@@ -723,7 +721,7 @@ function importCAIChat(userName, characterName, jsonData) {
         const historyData = history.msgs.map((msg) => ({
             name: msg.src.is_human ? userName : characterName,
             is_user: msg.src.is_human,
-            send_date: new Date().toISOString(),
+            send_date: new Date(timestamp).toISOString(),
             mes: msg.text,
             extra: {},
         }));
@@ -731,8 +729,7 @@ function importCAIChat(userName, characterName, jsonData) {
         return [starter, ...historyData];
     }
 
-    const newChats = (jsonData.histories.histories ?? []).map(history => newChats.push(convert(history).map(obj => JSON.stringify(obj)).join('\n')));
-    return newChats;
+    return (jsonData.histories.histories ?? []).map(history => convert(history).map(obj => JSON.stringify(obj)).join('\n'));
 }
 
 /**
@@ -742,7 +739,7 @@ function importCAIChat(userName, characterName, jsonData) {
  * @param {object} data JSON data
  * @returns {string} Chat data
  */
-function importKoboldLiteChat(_userName, _characterName, data) {
+function importKoboldLiteChat(_userName, _characterName, data, timestamp) {
     const inputToken = '{{[INPUT]}}';
     const outputToken = '{{[OUTPUT]}}';
 
@@ -753,7 +750,7 @@ function importKoboldLiteChat(_userName, _characterName, data) {
             name: isUser ? userName : characterName,
             is_user: isUser,
             mes: msg.replaceAll(inputToken, '').replaceAll(outputToken, '').trim(),
-            send_date: new Date().toISOString(),
+            send_date: new Date(timestamp).toISOString(),
             extra: {},
         };
     }
@@ -815,7 +812,7 @@ function flattenChubChat(userName, characterName, lines) {
  * @param {object} jsonData Imported chat data
  * @returns {string} Chat data
  */
-function importRisuChat(userName, characterName, jsonData) {
+function importRisuChat(userName, characterName, jsonData, timestamp) {
     /** @type {object[]} */
     const chat = [{
         chat_metadata: {},
@@ -828,13 +825,40 @@ function importRisuChat(userName, characterName, jsonData) {
         chat.push({
             name: message.name ?? (isUser ? userName : characterName),
             is_user: isUser,
-            send_date: new Date(Number(message.time ?? Date.now())).toISOString(),
+            send_date: new Date(Number(message.time ?? timestamp)).toISOString(),
             mes: message.data ?? '',
             extra: {},
         });
     }
 
     return chat.map(obj => JSON.stringify(obj)).join('\n');
+}
+
+/** Convert one uploaded file completely before any import destination is published. */
+export function convertImportedChatFile(bytes, { format, userName, characterName, timestamp }) {
+    if (!Buffer.isBuffer(bytes) || !Number.isSafeInteger(timestamp) || timestamp < 0) throw new InvalidChatDataError('Invalid chat import.');
+    let data;
+    try { data = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { throw new InvalidChatDataError('Invalid chat text encoding.'); }
+    if (format === 'jsonl') {
+        const first = data.split('\n').find(line => line.trim());
+        let header;
+        try { header = JSON.parse(first); } catch { throw new InvalidChatDataError('Invalid chat JSONL header.'); }
+        if (!isRecognizedChatHeader(header)) throw new InvalidChatDataError('Invalid chat JSONL header.');
+        return [flattenChubChat(userName, characterName, data.split('\n'))];
+    }
+    if (format !== 'json') throw new InvalidChatDataError('Unsupported chat import format.');
+    let json;
+    try { json = JSON.parse(data); } catch { throw new InvalidChatDataError('Invalid chat JSON.'); }
+    if (!json || typeof json !== 'object' || Array.isArray(json)) throw new InvalidChatDataError('Invalid chat JSON.');
+    const converter = json.savedsettings !== undefined ? importKoboldLiteChat
+        : json.histories !== undefined ? importCAIChat
+            : Array.isArray(json.data_visible) ? importOobaChat
+                : Array.isArray(json.messages) ? importAgnaiChat
+                    : json.type === 'risuChat' ? importRisuChat : null;
+    if (!converter) throw new InvalidChatDataError('Unsupported chat JSON format.');
+    let converted;
+    try { converted = converter(userName, characterName, json, timestamp); } catch { throw new InvalidChatDataError('Invalid chat JSON data.'); }
+    return Array.isArray(converted) ? converted : [converted];
 }
 
 function assertNativeChatPath(filePath) {
@@ -2032,126 +2056,40 @@ router.post('/export', validateAvatarUrlMiddleware, async function (request, res
     }
 });
 
-router.post('/group/import', function (request, response) {
+function importProtectedChat(request, response, group) {
+    const uploaded = request.file && path.join(request.file.destination, request.file.filename);
     try {
-        const filedata = request.file;
-
-        if (!filedata) {
-            return response.sendStatus(400);
+        if (!uploaded) throw roleplayError('ROLEPLAY_INVALID', 'Choose one chat file to import.', 400);
+        let block;
+        try { block = JSON.parse(request.body?.roleplay ?? 'null'); } catch { throw roleplayError('ROLEPLAY_INVALID', 'Invalid chat import authority.', 400); }
+        if (!isPlainObject(block) || typeof block.operationKey !== 'string' || !block.operationKey
+            || block.operationKey.length > 256 || !isPlainObject(block.account)
+            || typeof block.account.accountId !== 'string' || !ROLEPLAY_UUID.test(block.account.accountId)
+            || !Number.isSafeInteger(block.account.dataEpoch) || block.account.dataEpoch < 1) {
+            throw roleplayError('ROLEPLAY_REQUIRED', 'Reload before importing; account and import key are required.', 400);
         }
-
-        const chatname = humanizedDateTime();
-        const pathToUpload = path.join(filedata.destination, filedata.filename);
-        const pathToNewFile = path.join(request.user.directories.groupChats, `${chatname}.jsonl`);
-        fs.copyFileSync(pathToUpload, pathToNewFile);
-        fs.unlinkSync(pathToUpload);
-        return response.send({ res: chatname });
+        const owner = request.user.profile.handle;
+        if (request.get('X-Neconyan-Account') !== owner) throw roleplayError('ROLEPLAY_ACCOUNT_CHANGED', 'The selected account changed.');
+        const source = group ? block.source : undefined;
+        const target = group
+            ? { group: true, groupId: String(request.body.group_id), source }
+            : { group: false, avatar: String(request.body.avatar_url) };
+        const result = commitSingleChatImport({ owner, directories: request.user.directories, ...block.account }, {
+            operationKey: block.operationKey, bytes: fs.readFileSync(uploaded), originalName: request.file.originalname,
+            format: request.body.file_type, userName: request.body.user_name, characterName: request.body.character_name,
+            target,
+        }, roleplayNativeHost, convertImportedChatFile);
+        return response.set('Cache-Control', 'no-store').send({ res: true, fileNames: result.names, roleplay: result });
     } catch (error) {
-        console.error(error);
-        return response.send({ error: true });
+        if (error.roleplayImportUnaccepted === true) response.set('X-Neconyan-Import-Unaccepted', '1');
+        return sendRoleplayError(response, error);
+    } finally {
+        if (uploaded) try { fs.unlinkSync(uploaded); } catch { /* A failed temporary-file cleanup cannot change the receipt. */ }
     }
-});
+}
 
-router.post('/import', validateAvatarUrlMiddleware, function (request, response) {
-    if (!request.body) return response.sendStatus(400);
-
-    const format = request.body.file_type;
-    const avatarUrl = (request.body.avatar_url).replace('.png', '');
-    const characterName = sanitize(request.body.character_name) || 'Character';
-    const userName = sanitize(request.body.user_name) || 'User';
-    const fileNames = [];
-
-    if (!request.file) {
-        return response.sendStatus(400);
-    }
-
-    const directoryPath = path.join(request.user.directories.chats, avatarUrl);
-    if (!isPathUnderParent(request.user.directories.chats, directoryPath)) {
-        return response.sendStatus(400);
-    }
-
-    try {
-        const pathToUpload = path.join(request.file.destination, request.file.filename);
-        const data = fs.readFileSync(pathToUpload, 'utf8');
-
-        if (format === 'json') {
-            fs.unlinkSync(pathToUpload);
-            const jsonData = JSON.parse(data);
-
-            /** @type {function(string, string, object): string|string[]} */
-            let importFunc;
-
-            if (jsonData.savedsettings !== undefined) { // Kobold Lite format
-                importFunc = importKoboldLiteChat;
-            } else if (jsonData.histories !== undefined) { // CAI Tools format
-                importFunc = importCAIChat;
-            } else if (Array.isArray(jsonData.data_visible)) { // oobabooga's format
-                importFunc = importOobaChat;
-            } else if (Array.isArray(jsonData.messages)) { // Agnai's format
-                importFunc = importAgnaiChat;
-            } else if (jsonData.type === 'risuChat') { // RisuAI format
-                importFunc = importRisuChat;
-            } else { // Unknown format
-                console.error('Incorrect chat format .json');
-                return response.send({ error: true });
-            }
-
-            const handleChat = (chat) => {
-                const fileName = `${characterName} - ${humanizedDateTime()} imported.jsonl`;
-                const filePath = path.join(directoryPath, fileName);
-                fileNames.push(fileName);
-                writeFileAtomicSync(filePath, chat, 'utf8');
-            };
-
-            const chat = importFunc(userName, characterName, jsonData);
-
-            if (Array.isArray(chat)) {
-                chat.forEach(handleChat);
-            } else {
-                handleChat(chat);
-            }
-
-            return response.send({ res: true, fileNames });
-        }
-
-        if (format === 'jsonl') {
-            let lines = data.split('\n');
-            const header = lines[0];
-
-            const jsonData = JSON.parse(header);
-
-            if (!isRecognizedChatHeader(jsonData)) {
-                console.error('Incorrect chat format .jsonl');
-                return response.send({ error: true });
-            }
-
-            // Do a tiny bit of work to import Chub Chat data
-            // Processing the entire file is so fast that it's not worth checking if it's a Chub chat first
-            let flattenedChat = data;
-            try {
-                // flattening is unlikely to break, but it's not worth failing to
-                // import normal chats in an attempt to import a Chub chat
-                flattenedChat = flattenChubChat(userName, characterName, lines);
-            } catch (error) {
-                console.warn('Failed to flatten Chub Chat data: ', error);
-            }
-
-            const fileName = `${characterName} - ${humanizedDateTime()} imported.jsonl`;
-            const filePath = path.join(directoryPath, fileName);
-            fileNames.push(fileName);
-            if (flattenedChat !== data) {
-                writeFileAtomicSync(filePath, flattenedChat, 'utf8');
-            } else {
-                fs.copyFileSync(pathToUpload, filePath);
-            }
-            fs.unlinkSync(pathToUpload);
-            response.send({ res: true, fileNames });
-        }
-    } catch (error) {
-        console.error(error);
-        return response.send({ error: true });
-    }
-});
+router.post('/group/import', (request, response) => importProtectedChat(request, response, true));
+router.post('/import', validateAvatarUrlMiddleware, (request, response) => importProtectedChat(request, response, false));
 
 router.post('/group/get', (request, response) => sendProtectedChatLoad(request, response, true));
 

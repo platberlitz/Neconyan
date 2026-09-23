@@ -14,6 +14,8 @@ const HASH = /^[a-f0-9]{64}$/;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const PENDING_MAX_BYTES = 64 * 1024;
 const SUBMISSION_RESULT_MAX_BYTES = 2 * 1024;
+export const ROLEPLAY_IMPORT_MAX_OUTPUTS = 64;
+const IMPORT_RESULT_MAX_BYTES = 32 * 1024;
 const DEFER_SEQUENCE_MAX_LENGTH = 256;
 const RESERVED_IDENTIFIERS = new Set(['.', '..', '__proto__', 'constructor', 'prototype']);
 const leases = new WeakMap();
@@ -243,6 +245,19 @@ function validRangeAnchor(value) {
 }
 
 function validSubmissionResult(value) {
+    if (value?.kind === 'import') {
+        return object(value) && value.mode === 'create' && value.changed === true
+            && UUID.test(value.instanceId) && value.revision === 1 && HASH.test(value.rawHash)
+            && typeof value.integrity === 'string' && UUID.test(value.writeId)
+            && Array.isArray(value.names) && value.names.length >= 1 && value.names.length <= ROLEPLAY_IMPORT_MAX_OUTPUTS
+            && value.names.every(name => typeof name === 'string' && name.length > 0 && name.length <= 256)
+            && Array.isArray(value.outputs) && value.outputs.length === value.names.length
+            && value.outputs.every((output, index) => object(output) && output.name === value.names[index]
+                && UUID.test(output.instanceId) && HASH.test(output.rawHash) && UUID.test(output.writeId))
+            && (value.group === null || (object(value.group) && typeof value.group.id === 'string' && HASH.test(value.group.rawHash)))
+            && value.outputs[0].instanceId === value.instanceId && value.outputs[0].rawHash === value.rawHash
+            && encodedBytes(value) <= IMPORT_RESULT_MAX_BYTES;
+    }
     return object(value) && UUID.test(value.instanceId) && integer(value.revision) && value.revision >= 1
         && HASH.test(value.rawHash) && validIntegrity(value.integrity) && UUID.test(value.writeId)
         && typeof value.changed === 'boolean' && ['update', 'create'].includes(value.mode)
@@ -253,6 +268,11 @@ function validSubmissionResult(value) {
 
 function validCleanup(value) {
     if (!object(value) || Object.keys(value).length !== 2 || !object(value.payloads)) return false;
+    if (Object.hasOwn(value.payloads, 'import.chat.0.jsonl')) {
+        return value.journal === null && Object.keys(value.payloads).every(name =>
+            /^import\.chat\.\d+\.jsonl$|^import\.memory\.\d+\.(?:archive|guard)\.json$|^import\.group\.after\.json$/.test(name)
+                && HASH.test(value.payloads[name]));
+    }
     if (Object.hasOwn(value.payloads, 'group.after.json')) {
         return Object.keys(value.payloads).length === 1 && HASH.test(value.payloads['group.after.json']) && value.journal === null;
     }
@@ -293,10 +313,12 @@ function validateState(state, identity) {
             || !integer(value.reservedReceiptBytes) || !object(value.effects)
             || (value.state === 'closed' && Object.keys(value.effects).length === 0)
              || (value.state === 'closed' && !validSubmissionResult(value.outcome))
-             || (value.outcome !== undefined && value.outcome !== null && !validSubmissionResult(value.outcome))) throw damaged();
+             || (value.outcome !== undefined && value.outcome !== null && !validSubmissionResult(value.outcome))
+             || (value.outcome?.kind === 'import' && !HASH.test(value.requestHash))) throw damaged();
         const target = state.resources[value.targetInstanceId];
         if (target.accountId !== value.accountId || target.dataEpoch !== value.dataEpoch
-            || (value.outcome?.kind === 'group' && target.kind !== 'group')) throw damaged();
+            || (value.outcome?.kind === 'group' && target.kind !== 'group')
+            || (value.outcome?.kind === 'import' && target.kind !== 'chat')) throw damaged();
         for (const [effectKey, effect] of Object.entries(value.effects)) {
             if (!HASH.test(effectKey) || !object(effect) || !HASH.test(effect.effectHash) || !UUID.test(effect.writeId)
                 || !Object.hasOwn(state.resources, effect.instanceId) || !integer(effect.appliedRevision)
@@ -306,13 +328,17 @@ function validateState(state, identity) {
             if (effect.result && (effect.result.instanceId !== effect.instanceId || effect.result.revision !== effect.appliedRevision
                 || effect.result.writeId !== effect.writeId || (value.outcome && !isDeepStrictEqual(effect.result, value.outcome)))) throw damaged();
             if (effect.cleanup !== undefined && (!validCleanup(effect.cleanup)
-                || (effect.cleanup.payloads['group.after.json'] ?? effect.cleanup.payloads['chat.after.jsonl']) !== effect.result?.rawHash
+                || (effect.result?.kind === 'import'
+                    ? effect.result.outputs.some((output, index) => effect.cleanup.payloads[`import.chat.${index}.jsonl`] !== output.rawHash)
+                        || (effect.result.group && effect.cleanup.payloads['import.group.after.json'] !== effect.result.group.rawHash)
+                    : (effect.cleanup.payloads['group.after.json'] ?? effect.cleanup.payloads['chat.after.jsonl']) !== effect.result?.rawHash)
                 || (effect.result?.kind === 'group') !== Object.hasOwn(effect.cleanup.payloads, 'group.after.json')
                 || (effect.result.mode === 'create' && effect.cleanup.journal !== null))) throw damaged();
         }
     }
     if (state.pending !== null) {
         if (state.pending.kind === 'group-update') validateGroupTransaction(state.pending, state);
+        else if (state.pending.kind === 'chat-import') validateImportTransaction(state.pending, state);
         else validateChatTransaction(state.pending, state);
     }
     return state;
@@ -414,6 +440,20 @@ function validateChatSource(pending, state) {
     }
 }
 
+function validPendingMemory(memory, mode, locator) {
+    if (memory === null) return true;
+    const validFile = value => object(value) && HASH.test(value.rawHash) && validPhysical(value.physical);
+    const validPair = value => object(value) && validFile(value.archive) && (value.guard === null || validFile(value.guard));
+    if (!object(memory) || !['absent', 'existing', 'create'].includes(memory.kind)) return false;
+    if (memory.kind === 'existing') return mode !== 'create' && validPair(memory.child);
+    if (!isStoredLocator('chat', memory.parentLocator) || memory.parentLocator.group !== locator.group
+        || memory.parentLocator.avatar !== locator.avatar || memory.parentLocator.chat === locator.chat) return false;
+    if (memory.kind === 'absent') return memory.parent === null;
+    return validPair(memory.parent) && UUID.test(memory.branchId) && HASH.test(memory.archiveHash)
+        && HASH.test(memory.guardHash) && integer(memory.archiveBytes) && integer(memory.guardBytes)
+        && memory.archiveBytes <= 256 * 1024 * 1024 && memory.guardBytes <= 256 * 1024 * 1024;
+}
+
 function validateChatTransaction(pending, state) {
     if (pending.schema !== 1 || pending.kind !== 'chat-write' || !UUID.test(pending.id)
         || pending.accountId !== state.accountId || pending.dataEpoch !== state.dataEpoch
@@ -431,23 +471,7 @@ function validateChatTransaction(pending, state) {
         || !HASH.test(pending.journal.rawHash) || !validPhysical(pending.journal.physical) || !HASH.test(pending.journal.nextHash)
         || pending.mode !== 'update' || pending.journal.originalHash !== pending.before.rawHash)) throw damaged();
     if (encodedBytes(pending) > PENDING_MAX_BYTES) throw damaged();
-    if (pending.memory !== null) {
-        const memory = pending.memory;
-        const validFile = value => object(value) && HASH.test(value.rawHash) && validPhysical(value.physical);
-        const validPair = value => object(value) && validFile(value.archive) && (value.guard === null || validFile(value.guard));
-        if (!object(memory) || !['absent', 'existing', 'create'].includes(memory.kind)) throw damaged();
-        if (memory.kind === 'existing') {
-            if (pending.mode === 'create' || !validPair(memory.child)) throw damaged();
-        } else {
-            if (!isStoredLocator('chat', memory.parentLocator) || memory.parentLocator.group !== pending.locator.group
-                || memory.parentLocator.avatar !== pending.locator.avatar || memory.parentLocator.chat === pending.locator.chat) throw damaged();
-            if (memory.kind === 'absent') {
-                if (memory.parent !== null) throw damaged();
-            } else if (!validPair(memory.parent) || !UUID.test(memory.branchId) || !HASH.test(memory.archiveHash)
-                || !HASH.test(memory.guardHash) || !integer(memory.archiveBytes) || !integer(memory.guardBytes)
-                || memory.archiveBytes > 256 * 1024 * 1024 || memory.guardBytes > 256 * 1024 * 1024) throw damaged();
-        }
-    }
+    if (!validPendingMemory(pending.memory, pending.mode, pending.locator)) throw damaged();
 }
 
 function validPhysical(value) {
@@ -486,6 +510,78 @@ function validateGroupTransaction(pending, state) {
         || state.paths[roleplayPathKey(state, 'group', pending.locator)]?.instanceId !== pending.instanceId) throw damaged();
 }
 
+export function roleplayImportPlan(pending) {
+    return { target: pending.target, timestamp: pending.timestamp,
+        outputs: pending.outputs.map(({ locator, instanceId, expectedVacancy, after, memory, memoryPayloads }) =>
+            ({ locator, instanceId, expectedVacancy, after, memory, memoryPayloads })),
+        group: pending.group && { locator: pending.group.locator, instanceId: pending.group.instanceId,
+            before: pending.group.before, after: pending.group.after } };
+}
+
+function validateImportTransaction(pending, state) {
+    if (pending.schema !== 1 || pending.kind !== 'chat-import' || !UUID.test(pending.id)
+        || pending.accountId !== state.accountId || pending.dataEpoch !== state.dataEpoch
+        || !HASH.test(pending.operationKeyHash) || !HASH.test(pending.requestHash) || !HASH.test(pending.planHash)
+        || !object(pending.target) || typeof pending.target.group !== 'boolean'
+        || (pending.target.group ? !isStoredLocator('group', { groupId: pending.target.groupId })
+            : !validRoleplayAvatar(pending.target.avatar) || !object(pending.target.character)
+                || !HASH.test(pending.target.character.rawHash) || !validPhysical(pending.target.character.physical))
+        || !integer(pending.timestamp) || !['prepared', 'publishing', 'linking', 'linked'].includes(pending.phase)
+        || !Array.isArray(pending.outputs) || pending.outputs.length < 1 || pending.outputs.length > ROLEPLAY_IMPORT_MAX_OUTPUTS
+        || !integer(pending.reservedBytes) || pending.reservedBytes > ROLEPLAY_RECOVERY_RESERVE_BYTES
+        || (pending.group !== null) !== pending.target.group) throw damaged();
+    const names = new Set();
+    const instances = new Set();
+    for (const [index, output] of pending.outputs.entries()) {
+        if (!object(output) || !isStoredLocator('chat', output.locator) || output.locator.group !== pending.target.group
+            || (!pending.target.group && output.locator.avatar !== pending.target.avatar)
+            || !UUID.test(output.instanceId) || !integer(output.expectedVacancy)
+            || (output.physical !== null && !validPhysical(output.physical)) || typeof output.memoryDone !== 'boolean'
+            || (output.memoryDone && output.physical === null)
+            || !object(output.after) || output.after.revision !== 1 || !HASH.test(output.after.rawHash)
+            || !HASH.test(output.after.contentHash) || typeof output.after.integrity !== 'string'
+            || !UUID.test(output.after.writeId) || !integer(output.after.byteLength)
+            || output.after.byteLength > 64 * 1024 * 1024 || output.after.payload !== `import.chat.${index}.jsonl`
+            || !Array.isArray(output.memoryPayloads) || output.memoryPayloads.length > 2
+            || output.memoryPayloads.some(item => !object(item) || !['archive', 'guard'].includes(item.kind)
+                || !HASH.test(item.hash) || !integer(item.bytes) || item.bytes > 256 * 1024 * 1024)
+            || !validPendingMemory(output.memory, 'create', output.locator)
+            || (output.memory?.kind === 'create'
+                ? output.memoryPayloads.length !== 2
+                    || output.memoryPayloads.find(item => item.kind === 'archive')?.hash !== output.memory.archiveHash
+                    || output.memoryPayloads.find(item => item.kind === 'archive')?.bytes !== output.memory.archiveBytes
+                    || output.memoryPayloads.find(item => item.kind === 'guard')?.hash !== output.memory.guardHash
+                    || output.memoryPayloads.find(item => item.kind === 'guard')?.bytes !== output.memory.guardBytes
+                : output.memoryPayloads.length !== 0)
+            || names.has(output.locator.chat) || instances.has(output.instanceId)
+            || state.resources[output.instanceId]
+            || state.paths[roleplayPathKey(state, 'chat', output.locator)]?.instanceId
+            || (state.paths[roleplayPathKey(state, 'chat', output.locator)]?.generation ?? 0) !== output.expectedVacancy) throw damaged();
+        names.add(output.locator.chat);
+        instances.add(output.instanceId);
+    }
+    if (pending.group) {
+        const group = pending.group;
+        const resource = state.resources[group.instanceId];
+        if (!object(group) || !isStoredLocator('group', group.locator) || group.locator.groupId !== pending.target.groupId
+            || !UUID.test(group.instanceId) || !object(group.before) || !validPhysical(group.before.physical)
+            || !HASH.test(group.before.rawHash) || !HASH.test(group.before.contentHash)
+            || !integer(group.before.revision) || group.before.revision < 1
+            || (group.before.writeId !== null && !UUID.test(group.before.writeId))
+            || !object(group.after) || !HASH.test(group.after.rawHash) || !HASH.test(group.after.contentHash)
+            || group.after.revision !== group.before.revision + 1 || group.after.writeId !== pending.id
+            || group.after.payload !== 'import.group.after.json' || !integer(group.after.byteLength)
+            || group.after.byteLength > 64 * 1024 * 1024
+            || (group.appliedPhysical !== null && !validPhysical(group.appliedPhysical))
+            || !resource || resource.kind !== 'group' || resource.status !== 'live'
+            || resource.revision !== group.before.revision
+            || !isDeepStrictEqual(resource.locator, group.locator)
+            || !isDeepStrictEqual(resource.head, { rawHash: group.before.rawHash, contentHash: group.before.contentHash,
+                physical: group.before.physical, writeId: group.before.writeId })) throw damaged();
+    }
+    if (roleplayHash(roleplayImportPlan(pending)) !== pending.planHash || encodedBytes(pending) > PENDING_MAX_BYTES) throw damaged();
+}
+
 export function largestRoleplayJournal(pending) {
     return pending?.mode === 'update' ? { rawHash: 'f'.repeat(64), physical: ROLEPLAY_LARGEST_PHYSICAL,
         originalHash: pending.before.rawHash, nextHash: 'f'.repeat(64) } : null;
@@ -495,10 +591,13 @@ export function largestRoleplayJournal(pending) {
 export function assertRoleplayTransactionCapacity(lease, pending, finalState) {
     const { state, identity } = roleplayLease(lease);
     // Reserve the largest recovery progress record before staging or publishing any content.
-    const progress = pending && { ...state, pending: pending.kind === 'group-update'
-        ? { ...pending, phase: 'group-applied', appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL }
-        : { ...pending, phase: 'chat-applied', appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL,
-            repair: { rawHash: pending.after.rawHash, physical: ROLEPLAY_LARGEST_PHYSICAL }, journal: largestRoleplayJournal(pending) } };
+    const progress = pending && { ...state, pending: pending.kind === 'chat-import'
+        ? { ...pending, phase: 'linked', outputs: pending.outputs.map(output => ({ ...output, physical: ROLEPLAY_LARGEST_PHYSICAL, memoryDone: true })),
+            group: pending.group && { ...pending.group, appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL } }
+        : pending.kind === 'group-update'
+            ? { ...pending, phase: 'group-applied', appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL }
+            : { ...pending, phase: 'chat-applied', appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL,
+                repair: { rawHash: pending.after.rawHash, physical: ROLEPLAY_LARGEST_PHYSICAL }, journal: largestRoleplayJournal(pending) } };
     for (const candidate of [{ ...state, pending }, progress, finalState].filter(Boolean)) {
         if (candidate.pending && encodedBytes(candidate.pending) > PENDING_MAX_BYTES) {
             throw roleplayError('ROLEPLAY_STORE_FULL', 'Protected Roleplay evidence has no room for the complete transaction.', 413);
@@ -521,7 +620,8 @@ export function roleplayPayloadDirectory(lease, transactionId) {
 }
 
 function payloadPath(lease, transactionId, name) {
-    if (!['chat.after.jsonl', 'chat.corrupt.jsonl', 'group.after.json', 'memory.archive.json', 'memory.guard.json'].includes(name)) throw damaged();
+    if (!['chat.after.jsonl', 'chat.corrupt.jsonl', 'group.after.json', 'memory.archive.json', 'memory.guard.json'].includes(name)
+        && !/^import\.chat\.\d+\.jsonl$|^import\.memory\.\d+\.(?:archive|guard)\.json$|^import\.group\.after\.json$/.test(name)) throw damaged();
     return path.join(roleplayPayloadDirectory(lease, transactionId), name);
 }
 

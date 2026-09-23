@@ -8,7 +8,8 @@ import express from 'express';
 import { parse } from 'acorn';
 import { fixture } from './roleplay-transactions-fixture.js';
 import { assertRoleplaySource, readRoleplayEntity } from '../src/generation/roleplay-source.js';
-import { commitSingleGroupUpdate } from '../src/roleplay-lifecycle.js';
+import { commitSingleGroupUpdate, commitSingleChatImport } from '../src/roleplay-lifecycle.js';
+import { convertImportedChatFile, roleplayNativeHost } from '../src/endpoints/chats.js';
 import { readRoleplayAccount, readRoleplayFile } from '../src/roleplay-store.js';
 import { router as groupRouter } from '../src/endpoints/groups.js';
 import { beginRoleplaySave, bindRoleplayAccount, finishRoleplaySave, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave } from '../public/scripts/roleplay-save-chain.js';
@@ -42,6 +43,7 @@ async function groupHttpRuntime(t, owner) {
     const sends = [];
     const runtime = vm.createContext({
         groups: [], characters: [{ name: 'Nova', avatar: 'Nova.png' }], groupReadEvidence: new WeakMap(),
+        selected_group: 'group',
         groupBackgroundState: new WeakMap(), queuedGroupMetadataById: new Map(), groupListReadGeneration: 0,
         groupSaveStates: new Map(), groupMetadataSaveQueue: Promise.resolve(), pendingGroupMetadataSaves: new Map(),
         debounce_timeout: { relaxed: 1 }, console, structuredClone, uuidv4: randomUUID,
@@ -56,11 +58,40 @@ async function groupHttpRuntime(t, owner) {
         },
         fetchWithCsrfRetry: (url, build, options) => fetchWithCsrfRetry(url, build, { ...options, fetchFn: runtime.fetch }),
     });
-    loadGroupFunctions(runtime, ['markGroupSaveDirty', 'snapshotGroupMetadata', 'saveGroupDebounced', '_save', 'getGroups', 'editGroup']);
+    loadGroupFunctions(runtime, ['markGroupSaveDirty', 'snapshotGroupMetadata', 'saveGroupDebounced', '_save', 'getGroups',
+        'editGroup', 'captureGroupImportTarget', 'applyGroupImportResult']);
     await runtime.getGroups();
     assert.equal(runtime.groups.length, 1);
     return { f, runtime, sends, filename };
 }
+
+test('import receipt keeps an independently changed local group draft on its stale authority', async t => {
+    const { f, runtime, filename } = await groupHttpRuntime(t, 'group-import-draft');
+    const target = await runtime.captureGroupImportTarget('group');
+    const result = commitSingleChatImport(f.scope, { operationKey: 'group-import-draft',
+        bytes: Buffer.from(f.records.map(JSON.stringify).join('\n')), originalName: 'draft.jsonl', format: 'jsonl',
+        userName: 'User', characterName: 'Nova', target: { group: true, groupId: 'group', source: target.source } },
+    roleplayNativeHost, convertImportedChatFile);
+    runtime.groups[0].name = 'Local draft after upload started';
+    runtime.applyGroupImportResult(target, { fileNames: result.names, roleplay: result });
+    assert.equal(runtime.groups[0].name, 'Local draft after upload started');
+    assert.equal(JSON.stringify(runtime.groups[0].chats.slice(-1)), JSON.stringify(result.names));
+    assert.equal(runtime.groupReadEvidence.get(runtime.groups[0]), target.readEvidence);
+    await assert.rejects(runtime.editGroup('group', true, false), /Could not save group/);
+    assert.notEqual(JSON.parse(fs.readFileSync(filename, 'utf8')).name, 'Local draft after upload started');
+});
+
+test('import target waits for the captured group metadata edit before freezing its source', async t => {
+    const { runtime, filename } = await groupHttpRuntime(t, 'group-import-flush');
+    runtime.debounce_timeout.relaxed = 10000;
+    runtime.setGroupSaveStatus = (status, id, revision) => runtime.groupSaveStates.set(id, { status, revision });
+    runtime.groups[0].name = 'Metadata saved before import';
+    await runtime.editGroup('group', false, false);
+    const target = await runtime.captureGroupImportTarget('group');
+    assert.equal(JSON.parse(fs.readFileSync(filename, 'utf8')).name, 'Metadata saved before import');
+    assert.equal(target.source.revision, 2);
+    assert.equal(runtime.pendingGroupMetadataSaves.size, 0);
+});
 
 test('recorded group edit updates its semantic dependency and exact physical head', t => {
     const f = fixture(t, true, 'group-update');
