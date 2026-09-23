@@ -58,7 +58,7 @@ export function insertWorldInfoOutlets(messages, outlets, snapshot, historyStart
 }
 
 /** Depth positions may use only an exact plain-text suffix of the protected chat. */
-export function assertWorldInfoDepthHistory(records, messages, historyStart) {
+export function assertWorldInfoDepthHistory(records, messages, historyStart, { reasoningInPrompt = false } = {}) {
     if (!Array.isArray(records) || !Array.isArray(messages) || !Number.isSafeInteger(historyStart)
         || historyStart < 0 || historyStart > messages.length) {
         throw roleplayError('ROLEPLAY_INVALID', 'World Info needs a saved chat history boundary for depth insertion.', 409);
@@ -67,7 +67,8 @@ export function assertWorldInfoDepthHistory(records, messages, historyStart) {
         if (typeof record.mes !== 'string' || typeof record.is_user !== 'boolean'
             || Object.keys(record).some(key => !['name', 'is_user', 'mes', 'swipes', 'swipe_id', 'swipe_info', 'extra', 'send_date'].includes(key))
             || (record.extra && (typeof record.extra !== 'object' || Array.isArray(record.extra)
-                || Object.keys(record.extra).some(key => !['token_count', 'isSmallSys'].includes(key))))) {
+                || Object.keys(record.extra).some(key => !['token_count', 'isSmallSys', 'reasoning'].includes(key))
+                || record.extra.reasoning !== undefined && (reasoningInPrompt || typeof record.extra.reasoning !== 'string')))) {
             throw roleplayError('ROLEPLAY_INVALID', 'This saved chat needs server handling for its non-text content.', 409);
         }
         return { role: record.is_user ? 'user' : 'assistant', content: record.mes };
@@ -79,13 +80,13 @@ export function assertWorldInfoDepthHistory(records, messages, historyStart) {
 }
 
 /** Derive the plain-text history from the protected chat, rather than an accepted page payload. */
-export function buildRoleplaySavedHistory(records) {
+export function buildRoleplaySavedHistory(records, options) {
     if (!Array.isArray(records) || !records.length) {
         throw roleplayError('ROLEPLAY_INVALID', 'A saved Roleplay chat is required for prompt construction.', 409);
     }
     if (records.length === 1) return [];
     const messages = records.slice(1).map(record => ({ role: record?.is_user ? 'user' : 'assistant', content: record?.mes }));
-    assertWorldInfoDepthHistory(records, messages, 0);
+    assertWorldInfoDepthHistory(records, messages, 0, options);
     return messages;
 }
 

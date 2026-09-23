@@ -95,6 +95,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             characterExamples: character.data?.data?.mes_example ?? character.data?.mes_example ?? '',
             storyTemplate: settings.power_user?.context?.story_string ?? '',
             storyPosition: settings.power_user?.context?.story_string_position ?? 0,
+            reasoningInPrompt: Boolean(settings.power_user?.reasoning?.add_to_prompts),
             settingsHash: roleplayHash(savedSettings),
             names, settings: Object.fromEntries(SETTINGS.map(key => [key, settings[key] ?? DEFAULTS[key]])),
             bookHashes: Object.fromEntries(Object.entries(selected).map(([name, value]) => [name, value.hash])),

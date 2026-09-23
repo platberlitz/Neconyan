@@ -231,6 +231,11 @@ test('saved display metadata does not block a protected text history', t => {
         { role: 'user', content: 'Original' }, { role: 'assistant', content: 'Answer' },
     ]);
     f.records[2].extra.reasoning = 'A hidden thought';
+    assert.deepEqual(buildRoleplaySavedHistory(f.records), [
+        { role: 'user', content: 'Original' }, { role: 'assistant', content: 'Answer' },
+    ]);
+    assert.throws(() => buildRoleplaySavedHistory(f.records, { reasoningInPrompt: true }), { code: 'ROLEPLAY_INVALID' });
+    f.records[2].extra.reasoning_signature = 'model-bound signature';
     assert.throws(() => buildRoleplaySavedHistory(f.records), { code: 'ROLEPLAY_INVALID' });
 });
 
@@ -303,6 +308,38 @@ test('server-owned prompts use protected history when no story template is saved
         },
     });
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Bound reply');
+});
+
+test('a saved reply with disabled prompt reasoning can be used on the next server-owned turn', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        power_user: { context: { story_string: 'Character: {{description}}', story_string_position: 0 },
+            reasoning: { add_to_prompts: false } },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const context = (key, source) => {
+        const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true,
+            messages: [], maxTokens: 20, characterName: 'Nova',
+            worldInfo: captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 }) };
+        const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: key, effect: 'append', source, request });
+        releaseJob(f.scope.directories, jobId);
+        return { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+            owner: f.scope.owner, signal: new AbortController().signal };
+    };
+    await runRoleplayReplyJob(context('first-reasoning', captureRoleplaySource(f.scope, { locator: f.locator })), {
+        generate: async ({ beforeDispatch }) => { beforeDispatch(); return { text: 'First reply', response: { thinking: 'Private note' } }; },
+    });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).extra.reasoning, 'Private note');
+    await runRoleplayReplyJob(context('second-reasoning', captureRoleplaySource(f.scope, { locator: f.locator })), {
+        generate: async ({ beforeDispatch, messages }) => {
+            beforeDispatch();
+            assert.deepEqual(messages.map(item => item.content), ['Character: Original', 'Original', 'Answer', 'First reply']);
+            return { text: 'Second reply' };
+        },
+    });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Second reply');
 });
 
 test('a fresh protected chat uses its saved story and refuses an empty prompt', async t => {

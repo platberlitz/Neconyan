@@ -114,7 +114,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         || (request.userName && promptSource.records[0]?.user_name !== request.userName))) {
         throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved Roleplay speaker names differ from the accepted prompt.', 409);
     }
-    const savedHistory = promptSource ? buildRoleplaySavedHistory(promptSource.records) : null;
+    const savedHistory = promptSource ? buildRoleplaySavedHistory(promptSource.records,
+        { reasoningInPrompt: request.worldInfo.reasoningInPrompt }) : null;
     const place = history => {
         let messages = history;
         const savedHistoryStart = request.serverPrompt ? 0 : request.historyStart;
@@ -123,7 +124,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             throw roleplayError('ROLEPLAY_INVALID', 'This World Info entry needs a server Quick Reply action before generation.', 409);
         }
         if (worldInfo.activated.length) {
-            if (!promptSource) assertWorldInfoDepthHistory(assertSource().records, request.messages, request.historyStart);
+            if (!promptSource) assertWorldInfoDepthHistory(assertSource().records, request.messages, request.historyStart,
+                { reasoningInPrompt: request.worldInfo.reasoningInPrompt });
         }
         const hasOutlets = Object.keys(worldInfo.outletEntries).length > 0;
         const storyLore = request.worldInfo.storyTemplate && (worldInfo.worldInfoBefore || worldInfo.worldInfoAfter);
