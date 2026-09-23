@@ -222,8 +222,10 @@ export function insertRoleplayPostHistory(messages, saved, backend, effect, mate
         const position = order.findIndex(value => value?.identifier === 'jailbreak');
         if (position < 0 || order[position].enabled !== true) return messages;
         const history = order.findIndex(value => value?.identifier === 'chatHistory');
-        if (history < 0 || history >= position || order.slice(history + 1).some(value => value?.enabled && value.identifier !== 'jailbreak')
-            || prompt.forbid_overrides === true || prompt.role !== 'system' || prompt.injection_position != null
+        if (history < 0 || history >= position || order[history].enabled !== true
+            || order.slice(history + 1).some(value => value?.enabled && value.identifier !== 'jailbreak')
+            || prompt.forbid_overrides === true || prompt.role !== 'system' || prompt.system_prompt !== true
+            || prompt.injection_position != null
             || saved.character.includes('{{') || /<(?:USER|BOT|CHAR|GROUP)>/i.test(saved.character)
             || (Array.isArray(prompt.injection_trigger) && prompt.injection_trigger.length
                 && !prompt.injection_trigger.includes(effect === 'append' ? 'normal' : effect === 'replace' ? 'regenerate' : effect))) {

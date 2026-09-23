@@ -43,13 +43,18 @@ test('saved post-history instructions follow the selected provider and continuat
     const controls = { prompt_order: [{ character_id: 100001, order: [
         { identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true },
         { identifier: 'jailbreak', enabled: true },
-    ] }], prompts: [{ identifier: 'jailbreak', role: 'system', content: '' }] };
+    ] }], prompts: [{ identifier: 'jailbreak', role: 'system', system_prompt: true, content: '' }] };
     assert.deepEqual(insertRoleplayPostHistory(messages, saved, 'chat', 'append', { preset: controls }).at(-1),
         { role: 'system', content: 'Character instruction' });
     assert.throws(() => insertRoleplayPostHistory(messages, { ...saved, character: '{{unsafe}}' }, 'chat', 'append',
         { preset: controls }), { code: 'ROLEPLAY_INVALID' });
     assert.throws(() => insertRoleplayPostHistory(messages, saved, 'chat', 'append', { preset: {
         ...controls, prompts: [{ identifier: 'jailbreak', role: 'user' }],
+    } }), { code: 'ROLEPLAY_INVALID' });
+    assert.throws(() => insertRoleplayPostHistory(messages, saved, 'chat', 'append', { preset: {
+        ...controls, prompt_order: [{ character_id: 100001, order: [
+            { identifier: 'chatHistory', enabled: false }, { identifier: 'jailbreak', enabled: true },
+        ] }],
     } }), { code: 'ROLEPLAY_INVALID' });
     assert.equal(insertRoleplayPostHistory(messages, saved, 'chat', 'append', { preset: {
         ...controls, prompt_order: [{ character_id: 100001, order: [
@@ -111,7 +116,7 @@ test('server-owned replies place saved post-history instructions according to th
     await assert.rejects(runRoleplayReplyJob(chat, {
         promptBackend: () => ({ backend: 'chat' }), generate: () => { throw Error('Provider called'); },
     }), { code: 'ROLEPLAY_INVALID' });
-    const controls = { prompts: [{ identifier: 'jailbreak', role: 'system', content: '' }],
+    const controls = { prompts: [{ identifier: 'jailbreak', role: 'system', system_prompt: true, content: '' }],
         prompt_order: [{ character_id: 100001, order: [
             { identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true },
             { identifier: 'jailbreak', enabled: true },
