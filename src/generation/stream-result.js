@@ -26,6 +26,10 @@ export function assembleGenerationStream(raw) {
         const delta = choice?.delta ?? choice?.message;
         const candidate = chunk.candidates?.[0];
         const parts = candidate?.content?.parts;
+        if (choice?.index > 0 || candidate?.index > 0) continue;
+        if (delta?.tool_calls?.length || parts?.some(part => part?.functionCall || part?.inlineData)) {
+            throw new Error('The provider stream contains an output this Roleplay reply cannot save.');
+        }
         let nextText = normalizeContentText(delta?.content ?? delta?.text ?? choice?.text ?? chunk.delta?.text
             ?? chunk.delta?.message?.content?.text ?? chunk.token ?? (typeof chunk.content === 'string' ? chunk.content : ''), { excludeReasoning: true });
         let nextReasoning = normalizeContentText(delta?.reasoning_content ?? delta?.reasoning ?? delta?.thinking

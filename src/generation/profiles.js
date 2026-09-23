@@ -117,6 +117,9 @@ function readChatProfile(directories, profile, settings, source, activeBinding =
     if (!websiteDefault && (typeof profile.model !== 'string' || !profile.model.trim())) fail('Save a model in this connection profile.', 409);
     const active = settings.oai_settings;
     if (!active || typeof active !== 'object' || Array.isArray(active)) fail('The saved Chat Completion settings are missing.', 409);
+    const power = Object.fromEntries(['collapse_newlines', 'allow_name1_display', 'allow_name2_display',
+        'disable_group_trimming', 'auto_fix_generated_markdown', 'trim_spaces']
+        .map(key => [key, settings.power_user?.[key]]));
     let preset;
     if (profile.preset) {
         if (typeof profile.preset !== 'string' || sanitize(profile.preset) !== profile.preset || !directories.openAI_Settings) fail('The profile has an invalid completion preset.', 409);
@@ -136,14 +139,14 @@ function readChatProfile(directories, profile, settings, source, activeBinding =
         if (source === 'custom' && !active.custom_url) fail('Save the active Custom server URL before generating a reply.', 409);
     }
     // Credential values are resolved again at execution, not copied to a job record.
-    const fingerprint = hash({ profile, active: { ...active, proxy_password: undefined }, preset: preset && { ...preset, proxy_password: undefined }, proxy: proxy.reverse_proxy,
+    const fingerprint = hash({ profile, active: { ...active, proxy_password: undefined }, preset: preset && { ...preset, proxy_password: undefined }, proxy: proxy.reverse_proxy, power,
         requestControls: {
             custom_stopping_strings: settings.power_user?.custom_stopping_strings,
             custom_stopping_strings_macro: settings.power_user?.custom_stopping_strings_macro,
             request_token_probabilities: settings.power_user?.request_token_probabilities,
             console_log_prompts: settings.power_user?.console_log_prompts,
         } });
-    return { profile, source, active, preset, proxy, fingerprint };
+    return { profile, source, active, preset, proxy, power, fingerprint };
 }
 
 function readActiveConnection(directories) {

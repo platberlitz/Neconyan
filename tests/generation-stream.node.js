@@ -45,6 +45,8 @@ test('the capture refuses an oversized streamed response before saving it', asyn
     const handler = async (request, response) => forwardFetchResponse({ ok: true, status: 200, statusText: 'OK',
         body: Readable.from([event({ choices: [{ delta: { content: 'A'.repeat(2 * 1024 * 1024) } }] })]) }, response, request);
     await assert.rejects(runBackendRequest({}, handler, { stream: true }), /limit/);
+    await assert.rejects(runBackendRequest({}, (_, response) => response.end('A'.repeat(2 * 1024 * 1024 + 1)),
+        { stream: true }), /limit/);
 });
 
 test('cancelling a bound stream closes its upstream body without a saved reply', async () => {
@@ -67,6 +69,17 @@ test('provider formats preserve text, reasoning and signatures in a bounded resu
     assert.equal(response.choices[0].message.content, 'Claude GeminiCohere');
     assert.equal(response.choices[0].message.reasoning_content, 'Thought idea');
     assert.equal(response.responseContent.parts.at(-1).thoughtSignature, 'sig');
+});
+
+test('a bound stream ignores other choices and refuses tool or image output instead of saving a partial reply', () => {
+    const primary = assembleGenerationStream(event({ choices: [{ index: 1, delta: { content: 'Wrong reply' }, finish_reason: 'stop' }] })
+        + event({ choices: [{ index: 0, delta: { content: 'Right reply' }, finish_reason: 'stop' }] }));
+    assert.equal(primary.choices[0].message.content, 'Right reply');
+    assert.throws(() => assembleGenerationStream(event({ choices: [{ delta: { content: 'Partial', tool_calls: [{ id: 'call' }] } }] })
+        + 'data: [DONE]\n\n'), /cannot save/);
+    assert.throws(() => assembleGenerationStream(event({ candidates: [{ content: { parts: [
+        { text: 'Partial' }, { inlineData: { mimeType: 'image/png', data: 'abc' } },
+    ] }, finishReason: 'STOP' }] })), /cannot save/);
 });
 
 test('the native Ollama text backend waits for its converted stream completion', async () => {

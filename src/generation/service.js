@@ -193,7 +193,10 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         beforeDispatch?.();
         return runTextGeneration({ context, backend: 'chat', payload, signal, fetch: fetchImpl,
             anonymousCustom: payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy })
-            .then(result => ({ ...result, generation: { backend: 'chat', source: material.source,
+            .then(result => ({ ...result, text: cleanGeneratedText(removePartialStops(result.text,
+                Array.isArray(payload.stop) ? payload.stop : []), { power: material.power,
+                mainApi: 'openai', name1: userName, name2: characterName, groupNames, displayIncompleteSentences: true }),
+            generation: { backend: 'chat', source: material.source,
                 showThoughts: Boolean(material.active.show_thoughts || material.active.auto_append_reasoning_tags) } }));
     };
     return jobContext ? providerStep(jobContext, hash({ binding, payload: { ...payload, proxy_password: undefined } }), call) : call();

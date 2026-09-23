@@ -448,7 +448,10 @@ export function createCapturingResponse({ stream = false } = {}) {
         },
         end(data = undefined) {
             if (data !== undefined) {
-                chunks.push(Buffer.isBuffer(data) ? data.toString('utf8') : String(data));
+                if (stream) {
+                    this.write(data);
+                    if (writableEnded) return this;
+                } else chunks.push(Buffer.isBuffer(data) ? data.toString('utf8') : String(data));
             }
             if (payload === undefined && chunks.length) {
                 payload = chunks.join('');

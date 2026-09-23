@@ -816,7 +816,7 @@ test('server profile execution uses saved controls, caches completed calls and p
         extension_settings: { connectionManager: { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o', preset: 'saved', proxy: 'local' }] } },
         proxies: [{ name: 'local', url: 'https://provider.invalid/v1', password: 'private-token' }],
         oai_settings: { chat_completion_source: 'openai', temp_openai: 1, top_p_openai: 1, n: 1 },
-        power_user: { custom_stopping_strings: '["END"]' },
+        power_user: { custom_stopping_strings: '["END"]', collapse_newlines: true, trim_spaces: true },
     };
     const save = () => fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify(settings));
     save();
@@ -835,15 +835,20 @@ test('server profile execution uses saved controls, caches completed calls and p
             assert.equal(body.max_tokens, 80);
             assert.deepEqual(body.stop, ['END']);
             assert.equal(getJob(directories, job.id).recoverability, 'unknown-outcome');
-            return new Response(JSON.stringify({ choices: [{ message: { content: 'Saved reply' } }] }));
+            return new Response(JSON.stringify({ choices: [{ message: { content: 'Character: Saved\n\nreplyEN' } }] }));
         },
     };
-    assert.equal((await runChatProfile(options)).text, 'Saved reply');
+    assert.equal((await runChatProfile(options)).text, 'Saved\nreply');
     settings.proxies[0].password = 'rotated-token';
     save();
-    assert.equal((await runChatProfile(options)).text, 'Saved reply');
+    assert.equal((await runChatProfile(options)).text, 'Saved\nreply');
     assert.equal(calls, 1);
     assert.ok(!fs.readFileSync(path.join(root, 'jobs', 'index.json'), 'utf8').includes('private-token'));
+    settings.power_user.collapse_newlines = false;
+    save();
+    assert.notEqual(captureChatProfile(directories, 'saved').fingerprint, binding.fingerprint);
+    settings.power_user.collapse_newlines = true;
+    save();
     let started;
     const ready = new Promise(resolve => { started = resolve; });
     const pending = runChatProfile({ ...options, messages: [{ role: 'user', content: 'Second call' }], fetch: async (_url, request) => {
