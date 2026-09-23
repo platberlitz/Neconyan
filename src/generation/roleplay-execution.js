@@ -114,8 +114,10 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         || (request.userName && promptSource.records[0]?.user_name !== request.userName))) {
         throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved Roleplay speaker names differ from the accepted prompt.', 409);
     }
-    const savedHistory = promptSource ? buildRoleplaySavedHistory(promptSource.records,
-        { reasoningInPrompt: request.worldInfo.reasoningInPrompt }) : null;
+    const historyOptions = request.worldInfo && { reasoningInPrompt: request.worldInfo.reasoningInPrompt,
+        reasoning: request.worldInfo.reasoning, regex: request.worldInfo.regex,
+        characterName: request.characterName, group: source.locator.group };
+    const savedHistory = promptSource ? buildRoleplaySavedHistory(promptSource.records, historyOptions) : null;
     const place = history => {
         let messages = history;
         const savedHistoryStart = request.serverPrompt ? 0 : request.historyStart;
@@ -125,7 +127,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         }
         if (worldInfo.activated.length) {
             if (!promptSource) assertWorldInfoDepthHistory(assertSource().records, request.messages, request.historyStart,
-                { reasoningInPrompt: request.worldInfo.reasoningInPrompt });
+                historyOptions);
         }
         const hasOutlets = Object.keys(worldInfo.outletEntries).length > 0;
         const storyLore = request.worldInfo.storyTemplate && (worldInfo.worldInfoBefore || worldInfo.worldInfoAfter);

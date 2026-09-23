@@ -1,6 +1,7 @@
 import { roleplayError } from '../roleplay-store.js';
 import { isDeepStrictEqual } from 'node:util';
 import Handlebars from 'handlebars';
+import { AGENT_REGEX_PLACEMENT } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 
 const ROLES = ['system', 'user', 'assistant'];
 
@@ -58,25 +59,48 @@ export function insertWorldInfoOutlets(messages, outlets, snapshot, historyStart
 }
 
 /** Depth positions may use only an exact plain-text suffix of the protected chat. */
-export function assertWorldInfoDepthHistory(records, messages, historyStart, { reasoningInPrompt = false } = {}) {
+export function assertWorldInfoDepthHistory(records, messages, historyStart, options = {}) {
     if (!Array.isArray(records) || !Array.isArray(messages) || !Number.isSafeInteger(historyStart)
         || historyStart < 0 || historyStart > messages.length) {
         throw roleplayError('ROLEPLAY_INVALID', 'World Info needs a saved chat history boundary for depth insertion.', 409);
     }
+    const history = buildPromptHistory(records, options);
+    const selected = messages.slice(historyStart);
+    if (!selected.length || selected.length > history.length || !isDeepStrictEqual(selected, history.slice(-selected.length))) {
+        throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'World Info depth history differs from the protected chat.', 409);
+    }
+}
+
+function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = null, regex = [], characterName, group = false } = {}) {
     const history = records.slice(1).map(record => {
         if (typeof record.mes !== 'string' || typeof record.is_user !== 'boolean'
             || Object.keys(record).some(key => !['name', 'is_user', 'mes', 'swipes', 'swipe_id', 'swipe_info', 'extra', 'send_date'].includes(key))
             || (record.extra && (typeof record.extra !== 'object' || Array.isArray(record.extra)
                 || Object.keys(record.extra).some(key => !['token_count', 'isSmallSys', 'reasoning'].includes(key))
-                || record.extra.reasoning !== undefined && (reasoningInPrompt || typeof record.extra.reasoning !== 'string')))) {
+                || record.extra.reasoning !== undefined && typeof record.extra.reasoning !== 'string'))) {
             throw roleplayError('ROLEPLAY_INVALID', 'This saved chat needs server handling for its non-text content.', 409);
         }
         return { role: record.is_user ? 'user' : 'assistant', content: record.mes };
     });
-    const selected = messages.slice(historyStart);
-    if (!selected.length || selected.length > history.length || !isDeepStrictEqual(selected, history.slice(-selected.length))) {
-        throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'World Info depth history differs from the protected chat.', 409);
+    if (reasoningInPrompt && records.some(record => record.extra?.reasoning)) {
+        if (!reasoning || !Number.isSafeInteger(reasoning.max_additions) || reasoning.max_additions < 0
+            || !Array.isArray(regex) || regex.some(script => script?.placement?.includes(AGENT_REGEX_PLACEMENT.REASONING)
+                && !script.disabled && script.promptOnly && !script.markdownOnly)
+            || ['prefix', 'suffix', 'separator'].some(key => typeof reasoning[key] !== 'string'
+                || reasoning[key].includes('{{') || /<(?:USER|BOT|CHAR|GROUP)>/i.test(reasoning[key]))) {
+            throw roleplayError('ROLEPLAY_INVALID', 'The saved reasoning prompt settings need server-side macro handling.', 409);
+        }
+        let added = 0;
+        for (let index = history.length - 1; index >= 0 && added < reasoning.max_additions; index--) {
+            const record = records[index + 1];
+            if (group && record.name !== characterName) continue;
+            const thought = record.extra?.reasoning;
+            if (!thought || thought === '\u200B') continue;
+            history[index].content = `${reasoning.prefix}${thought}${reasoning.suffix}${reasoning.separator}${history[index].content}`;
+            added++;
+        }
     }
+    return history;
 }
 
 /** Derive the plain-text history from the protected chat, rather than an accepted page payload. */
@@ -85,7 +109,7 @@ export function buildRoleplaySavedHistory(records, options) {
         throw roleplayError('ROLEPLAY_INVALID', 'A saved Roleplay chat is required for prompt construction.', 409);
     }
     if (records.length === 1) return [];
-    const messages = records.slice(1).map(record => ({ role: record?.is_user ? 'user' : 'assistant', content: record?.mes }));
+    const messages = buildPromptHistory(records, options);
     assertWorldInfoDepthHistory(records, messages, 0, options);
     return messages;
 }

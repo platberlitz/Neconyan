@@ -96,6 +96,12 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             storyTemplate: settings.power_user?.context?.story_string ?? '',
             storyPosition: settings.power_user?.context?.story_string_position ?? 0,
             reasoningInPrompt: Boolean(settings.power_user?.reasoning?.add_to_prompts),
+            reasoning: settings.power_user?.reasoning?.add_to_prompts ? {
+                prefix: settings.power_user.reasoning.prefix ?? '<think>',
+                suffix: settings.power_user.reasoning.suffix ?? '</think>',
+                separator: settings.power_user.reasoning.separator ?? '\n',
+                max_additions: settings.power_user.reasoning.max_additions ?? 1,
+            } : null,
             settingsHash: roleplayHash(savedSettings),
             names, settings: Object.fromEntries(SETTINGS.map(key => [key, settings[key] ?? DEFAULTS[key]])),
             bookHashes: Object.fromEntries(Object.entries(selected).map(([name, value]) => [name, value.hash])),

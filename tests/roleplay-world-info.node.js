@@ -239,6 +239,55 @@ test('saved display metadata does not block a protected text history', t => {
     assert.throws(() => buildRoleplaySavedHistory(f.records), { code: 'ROLEPLAY_INVALID' });
 });
 
+test('saved reasoning is added from newest to oldest only within the saved prompt limit', t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    f.records[2].extra = { reasoning: 'First thought' };
+    f.records.push({ name: 'Nova', is_user: false, mes: 'Later', extra: { reasoning: 'Latest thought' } });
+    const options = { reasoningInPrompt: true, reasoning: {
+        prefix: '<think>', suffix: '</think>', separator: '\n', max_additions: 1,
+    } };
+    const messages = buildRoleplaySavedHistory(f.records, options);
+    assert.deepEqual(messages.map(message => message.content), ['Original', 'Answer', '<think>Latest thought</think>\nLater']);
+    assert.doesNotThrow(() => assertWorldInfoDepthHistory(f.records, messages, 0, options));
+    f.records.at(-1).name = 'Another character';
+    assert.deepEqual(buildRoleplaySavedHistory(f.records, { ...options, characterName: 'Nova', group: true })
+        .map(message => message.content), ['Original', '<think>First thought</think>\nAnswer', 'Later']);
+    f.records.at(-1).name = 'Nova';
+    assert.deepEqual(buildRoleplaySavedHistory(f.records, { ...options, reasoning: { ...options.reasoning, max_additions: 0 } })
+        .map(message => message.content), ['Original', 'Answer', 'Later']);
+    assert.throws(() => buildRoleplaySavedHistory(f.records, { ...options,
+        reasoning: { ...options.reasoning, prefix: '{{unsafe}}' } }), { code: 'ROLEPLAY_INVALID' });
+    assert.throws(() => buildRoleplaySavedHistory(f.records, { ...options,
+        regex: [{ placement: [6], findRegex: 'thought', replaceString: 'idea', promptOnly: true }] }),
+    { code: 'ROLEPLAY_INVALID' });
+});
+
+test('a server-owned next turn formats saved reasoning when enabled', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    f.records[2].extra = { reasoning: 'Private thought' };
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        power_user: { reasoning: { add_to_prompts: true, max_additions: 1,
+            prefix: '<think>', suffix: '</think>', separator: '\n' } },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true,
+        messages: [], maxTokens: 20, characterName: 'Nova',
+        worldInfo: captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 }) };
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'enabled-prompt-reasoning', effect: 'append', source, request });
+    releaseJob(f.scope.directories, jobId);
+    await runRoleplayReplyJob({ job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal }, { generate: async ({ messages, beforeDispatch }) => {
+        beforeDispatch();
+        assert.deepEqual(messages.map(message => message.content), ['Original', '<think>Private thought</think>\nAnswer']);
+        return { text: 'Next reply' };
+    } });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Next reply');
+});
+
 test('server-owned prompts derive history from the protected chat and reject browser-prepared text', async t => {
     const f = fixture(t);
     f.records[1].extra = {};
