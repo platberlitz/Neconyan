@@ -51,7 +51,10 @@ function selectedBooks(settings, saved, character, avatar) {
 }
 
 /** Capture the actual saved book selection before private job admission. */
-export function captureRoleplayWorldInfo(base, account, source, { avatar, maxContext, tokenizer = 'o200k_base' }) {
+export function captureRoleplayWorldInfo(base, account, source, { avatar, maxContext, tokenizer = 'o200k_base', trigger = 'normal' }) {
+    if (!['normal', 'continue', 'swipe', 'regenerate'].includes(trigger)) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The World Info generation trigger is invalid.', 400);
+    }
     return withRoleplayAccount(base, account, lease => {
         const saved = assertRoleplaySourceLocked(lease, source);
         if (!source.dependencies?.some(dependency => dependency.kind === 'character' && dependency.locator.avatar === avatar)) {
@@ -86,7 +89,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             bookHashes: Object.fromEntries(Object.entries(selected).map(([name, value]) => [name, value.hash])),
             characterFile: path.parse(avatar).name, avatar, maxContext, tokenizer, chat, regex,
             metadata: structuredClone(saved.records[0].chat_metadata ?? {}), global: {
-                trigger: 'normal', characterDescription: character.data?.data?.description ?? character.data?.description ?? '',
+                trigger, characterDescription: character.data?.data?.description ?? character.data?.description ?? '',
                 characterPersonality: character.data?.data?.personality ?? character.data?.personality ?? '',
                 personaDescription: settings.power_user?.persona_description ?? '',
                 characterDepthPrompt: character.data?.data?.extensions?.depth_prompt?.prompt
@@ -110,6 +113,7 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
     }
     const captured = captureRoleplayWorldInfo(base, snapshot.account, snapshot.source, {
         avatar: snapshot.avatar, maxContext: snapshot.maxContext, tokenizer: snapshot.tokenizer,
+        trigger: snapshot.global?.trigger,
     });
     if (roleplayHash(captured) !== roleplayHash(snapshot)) {
         throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info selection differs from the account sources.');

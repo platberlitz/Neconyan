@@ -84,7 +84,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (request.worldInfo.account?.accountId !== account.accountId
             || request.worldInfo.account?.dataEpoch !== account.dataEpoch
             || roleplayHash(request.worldInfo.source) !== roleplayHash(source)
-            || (!source.locator.group && request.worldInfo.avatar !== source.locator.avatar)) {
+            || (!source.locator.group && request.worldInfo.avatar !== source.locator.avatar)
+            || request.worldInfo.global?.trigger !== ({ append: 'normal', continue: 'continue', swipe: 'swipe', replace: 'regenerate' }[effect])) {
             throw roleplayError('ROLEPLAY_INVALID', 'World Info must belong to the admitted Roleplay source.', 409);
         }
         worldInfo = readArtifact(directories, job.id, 'roleplay-world-info');

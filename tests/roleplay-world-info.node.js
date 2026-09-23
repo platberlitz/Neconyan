@@ -264,6 +264,36 @@ test('saved default name inclusion activates speaker keys before provider work',
     assert.equal(selected.worldInfoBefore, 'The user speaks');
 });
 
+test('a saved swipe trigger selects only swipe lore and remains bound to that effect', async t => {
+    const f = fixture(t);
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Original', 'Swipe lore', { world: undefined, hash: undefined, triggers: ['swipe'] }),
+        2: entry(2, 'Original', 'Normal lore', { world: undefined, hash: undefined, triggers: ['normal'] }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const swipe = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100, trigger: 'swipe' });
+    assert.equal((await prepareRoleplayWorldInfo(f.scope, swipe)).worldInfoBefore, 'Swipe lore');
+    assert.equal((await prepareRoleplayWorldInfo(f.scope, captureRoleplayWorldInfo(f.scope, account, source,
+        { avatar: 'Nova.png', maxContext: 100 }))).worldInfoBefore, 'Normal lore');
+    assert.throws(() => captureRoleplayWorldInfo(f.scope, account, source,
+        { avatar: 'Nova.png', maxContext: 100, trigger: 'quiet' }), { code: 'ROLEPLAY_INVALID' });
+    const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, messages: [{ role: 'user', content: 'Original' }],
+        maxTokens: 32, characterName: 'Nova', worldInfo: swipe };
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'wrong-trigger', effect: 'append', source, request });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    await assert.rejects(runRoleplayReplyJob(context, { generate: () => { throw Error('Provider called'); } }),
+        { code: 'ROLEPLAY_INVALID' });
+    assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-world-info'), undefined);
+});
+
 test('saved World Info prompt transformations apply before the scan is saved', async t => {
     const f = fixture(t);
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
@@ -482,7 +512,7 @@ test('a saved timed window refuses delivery after the chat grows while the provi
     }));
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const source = captureRoleplaySource(f.scope, { locator: f.locator, message: 0 });
-    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100, trigger: 'swipe' });
     const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, historyStart: 0,
         messages: [{ role: 'user', content: 'Original' }, { role: 'assistant', content: 'Answer' }],
         maxTokens: 32, characterName: 'Nova', worldInfo };
