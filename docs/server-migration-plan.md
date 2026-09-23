@@ -7,17 +7,16 @@ document; this file only records what is actually finished and what is not.
 Status values: `done` (implemented and verified), `partial` (implemented but an
 acceptance case is unproven), `pending` (not started).
 
-## Current checkpoint: protected storage and editor authority
+## Current checkpoint: recorded group metadata updates
 
-- Last reviewed checkpoint commit: `54d97f8f82851ca7632ecdf0556cfcd8edbe0b76`. This Stage 2 checkpoint is committed; Stage 2 remains incomplete.
-- Completed: protected storage publication/recovery and exact browser save permissions; late group-load/render/history/greeting guards; legacy maintenance limited to proved-untracked targets. The three original P1 findings and subsequent concrete review findings are resolved. Temporary lifecycle refusals are not lifecycle completion.
-- Exact gates: 338 Jest suites, 4,499 passed/two skipped/one snapshot; 609 Node tests; root lint, budgets and whitespace; all 30 changed test files linted with zero errors/88 warnings; all six disposable desktop/touch Chromium storage cases in one serial run. Zero generation calls; Safari/WebKit unverified.
-- Review: accepted independent re-review on the requested, verified model lineup, including an independently passing 78-case affected-flow matrix. No known checkpoint-local finding remains.
-- Current next checkpoint and acceptance: recorded updates of existing group metadata must use exact saved authority, permanent keys and restart-safe publication. Real group edits must remain readable; stale edits and altered intents must be refused; exact retries must preserve later edits/deletions. This enables later imports to publish and link their output without the page.
-- Unfinished: imports, complete recorded chat/entity/account lifecycles, auxiliary writers, startup reconciliation, private typed-effect admission and stable Conversation aside guards. The complete combined serial Conversation/storage browser suite and whole-stage audit remain required before Stage 2 is done.
-- Next action: implement and verify protected group metadata updates, commit that coherent checkpoint locally, then complete protected chat imports and the remaining Stage 2 scope.
+- Last reviewed checkpoint commit: `5c4d2729bc6f8dc81e6c6dc18162b04b5db90e45`. This Stage 2 checkpoint is committed; Stage 2 remains incomplete.
+- Completed: exact existing-group updates, permanent intent/receipt handling, staged publication and recovery, semantic versus raw-only revisions, supported legacy storage reads, and separate editor/background authority. Mixed-actor saves and same-actor coalescing preserve their captured contents and dependencies. No known finding remains in independent re-review.
+- Exact final gates: 338 Jest suites, 4,502 passed/two skipped/one snapshot; 641 Node tests; root lint, budgets and whitespace; all nine changed test files linted with zero errors/84 warnings; all eight desktop/touch Chromium storage cases in one serial run, with zero generation calls. Safari/WebKit remains unverified.
+- Current next checkpoint and acceptance: one uploaded file, all its converted histories and any group links form one recorded protected import. Both chooser and backup Restore need stable full-intent keys, destinations/vacancies/timestamps, immutable retries, closed-page completion and exact restart recovery. A completed key must preserve later edits/deletion. Reuse every currently supported parser, including corrected CAI multi-history conversion.
+- Unfinished: folder/ZIP and character-card imports, full chat/entity/account lifecycles, auxiliary writers, startup reconciliation, private typed-effect admission and stable aside guards. The complete combined browser suite and whole-stage audit remain mandatory before Stage 2 is done.
+- Next action: implement and verify the import composite transaction and real callers, obtain independent review, run checkpoint gates and commit locally; continue the remaining scope automatically.
 
-Small, coherent, independently reviewed local checkpoints are authorised within stages. They do not imply stage completion. No push or deployment is authorised. The current verification record and full Stage 2 remainder are in `server-migration-handover.md`; historical counts below are not current approval.
+Small, coherent, independently reviewed local checkpoints are authorised within stages. They do not imply stage completion. No push or deployment is authorised. The detailed current record is in `server-migration-handover.md`; historical counts below are not current approval.
 
 ## Historical committed Stage 1: Roleplay storage preparation
 
