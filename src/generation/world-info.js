@@ -108,7 +108,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
 }
 
 /** Verify named books, scan them with local token counts, and return an immutable result for a job artifact. */
-export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.random, onEntriesLoaded, onScan, macros } = {}) {
+export function assertRoleplayWorldInfoCurrent(base, snapshot) {
     if (!snapshot?.account || !snapshot.source || !snapshot.character || !snapshot.names || !snapshot.bookHashes) {
         throw roleplayError('ROLEPLAY_INVALID', 'A bound World Info selection is required.', 400);
     }
@@ -119,6 +119,10 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
     if (roleplayHash(captured) !== roleplayHash(snapshot)) {
         throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info selection differs from the account sources.');
     }
+}
+
+export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.random, onEntriesLoaded, onScan, macros } = {}) {
+    assertRoleplayWorldInfoCurrent(base, snapshot);
     const selected = withRoleplayAccount(base, snapshot.account, lease => {
         assertRoleplaySourceLocked(lease, snapshot.source);
         const character = readRoleplayEntityLocked(lease, 'character', snapshot.avatar);
@@ -179,13 +183,7 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
     if (await count(outputText) > snapshot.maxContext) {
         throw roleplayError('ROLEPLAY_INVALID', 'The transformed World Info exceeds the saved context limit.', 409);
     }
-    const afterScan = captureRoleplayWorldInfo(base, snapshot.account, snapshot.source, {
-        avatar: snapshot.avatar, maxContext: snapshot.maxContext, tokenizer: snapshot.tokenizer,
-        trigger: snapshot.global.trigger,
-    });
-    if (roleplayHash(afterScan) !== roleplayHash(snapshot)) {
-        throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info selection changed while scanning.');
-    }
+    assertRoleplayWorldInfoCurrent(base, snapshot);
     return { ...result, bookHashes: snapshot.bookHashes,
         timedBaseline: roleplayHash(snapshot.metadata.timedWorldInfo ?? {}) };
 }

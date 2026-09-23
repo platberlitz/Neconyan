@@ -543,6 +543,54 @@ test('the worker saves scan decisions before a provider call and closes timed ef
     assert.equal(readRoleplayChat(f.scope, f.locator).records[0].chat_metadata.timedWorldInfo.sticky['Town.7'].end, 4);
 });
 
+test('a saved scan cannot dispatch after its book changes between attempts', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    const filename = path.join(f.scope.directories.worlds, 'Town.json');
+    const book = { entries: { 1: entry(1, 'Original', 'Saved lore', { world: undefined, hash: undefined }) } };
+    fs.writeFileSync(filename, JSON.stringify(book));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'changed-after-scan', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, maxTokens: 32, characterName: 'Nova',
+            historyStart: 0, messages: [{ role: 'user', content: 'Original' }, { role: 'assistant', content: 'Answer' }], worldInfo } });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    await assert.rejects(runRoleplayReplyJob(context, { generate: () => { throw Error('Provider unavailable'); } }),
+        /Provider unavailable/);
+    assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-world-info').worldInfoBefore, 'Saved lore');
+    book.entries[1].content = 'Changed lore';
+    fs.writeFileSync(filename, JSON.stringify(book));
+    let calls = 0;
+    await assert.rejects(runRoleplayReplyJob(context, { generate: () => { calls++; return { text: 'Wrong' }; } }),
+        { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    assert.equal(calls, 0);
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length);
+    book.entries[1].content = 'Saved lore';
+    fs.writeFileSync(filename, JSON.stringify(book));
+    const admitted = admitRoleplayJob(f.scope, account, { operationKey: 'changed-before-dispatch', effect: 'append', source,
+        request: context.job.intent.request });
+    releaseJob(f.scope.directories, admitted.jobId);
+    await assert.rejects(runRoleplayReplyJob({ ...context, job: getJob(f.scope.directories, admitted.jobId) }, {
+        generate: ({ beforeDispatch }) => {
+            book.entries[1].content = 'Changed before dispatch';
+            fs.writeFileSync(filename, JSON.stringify(book));
+            beforeDispatch();
+            calls++;
+            return { text: 'Wrong' };
+        },
+    }), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    assert.equal(calls, 0);
+});
+
 test('a selected Quick Reply automation refuses before paid provider work', async t => {
     const f = fixture(t);
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');

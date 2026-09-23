@@ -8,7 +8,7 @@ import { applyRoleplayJobEffect } from '../roleplay-jobs.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
-import { prepareRoleplayWorldInfo } from './world-info.js';
+import { assertRoleplayWorldInfoCurrent, prepareRoleplayWorldInfo } from './world-info.js';
 import { assertWorldInfoDepthHistory, insertWorldInfoDepth } from './roleplay-prompt.js';
 import { getChatProfileContextLimit } from './profiles.js';
 
@@ -101,6 +101,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             worldInfo = await prepareRoleplayWorldInfo(base, request.worldInfo, { ...worldInfoHooks, macros: request.macros });
             writeArtifact(directories, job.id, 'roleplay-world-info', worldInfo);
         }
+        assertRoleplayWorldInfoCurrent(base, request.worldInfo);
     }
     let messages = structuredClone(request.messages);
     if (worldInfo) {
@@ -124,7 +125,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     const result = await generate({ context: base, jobContext: context, binding: request.binding, messages,
         maxTokens: request.maxTokens, userName: request.userName || 'User', characterName: request.characterName,
         groupNames: request.groupNames || [], macroEnvironment: createMacroEnvironment(request.macros || {}),
-        rawOptions: request.rawOptions || {}, ephemeralStops: request.ephemeralStops || [], beforeDispatch: assertSource,
+        rawOptions: request.rawOptions || {}, ephemeralStops: request.ephemeralStops || [],
+        beforeDispatch: () => { assertSource(); if (worldInfo) assertRoleplayWorldInfoCurrent(base, request.worldInfo); },
         modelOverride: request.modelOverride || '', overridePayload, stream: request.stream === true });
     const output = replyOutput(result, effect, request.characterName, result.generation);
     if (worldInfo) {
