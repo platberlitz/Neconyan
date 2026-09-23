@@ -316,6 +316,9 @@ body.neconyan::before {
     background: url('../img/neconyan/kitty-clouds.webp?v=20260913g') 50% 50% / cover no-repeat;
     opacity: .67;
 }
+:root[data-neconyan-calico-tone='dark'] body.neconyan::before {
+    background-image: url('../img/neconyan/kitty-clouds-dark.webp?v=20260923a');
+}
 body.neconyan:not(.sbterm) :is(#sheld, #form_sheld, #neconyan-home-host) {
     background-color: transparent !important;
 }
@@ -353,9 +356,9 @@ body.neconyan:not(.sbterm) :is(.sb-shell-panel-scroller, .sb-conversation-thread
 
 /* Character and Persona workspaces sit over the ambient canvas. Keep their
    active roots and editor cards on the solid Calico surface. */
-body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='character_edit'], [data-menu-type='create'], [data-menu-type='persona']),
-body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='character_edit'], [data-menu-type='create'], [data-menu-type='persona']) > :is(.scrollableInner, .scrollableInnerFull),
-body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='character_edit'], [data-menu-type='create'], [data-menu-type='persona']) :is(
+body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='character_edit'], [data-menu-type='create'], [data-menu-type='persona'], [data-menu-type='group_create'], [data-menu-type='group_edit'], [data-menu-type='groups']),
+body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='character_edit'], [data-menu-type='create'], [data-menu-type='persona'], [data-menu-type='group_create'], [data-menu-type='group_edit'], [data-menu-type='groups']) > :is(.scrollableInner, .scrollableInnerFull),
+body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='character_edit'], [data-menu-type='create'], [data-menu-type='persona'], [data-menu-type='group_create'], [data-menu-type='group_edit'], [data-menu-type='groups']) :is(
     #form_create,
     #spoiler_free_desc,
     #PersonaManagement,
@@ -481,6 +484,24 @@ body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > .sb-she
     margin: 0;
     transform: none;
 }
+body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > #sb_character_dock_toggle {
+    position: absolute;
+    inset: 10px 60px auto auto;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+}
+body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > #sb_character_dock_toggle[aria-pressed='true'] {
+    background: var(--neco-raised);
+    border-color: var(--neco-ginger);
+}
+@media (max-width: 768px) {
+    body.neconyan #right-nav-panel #sb_character_dock_toggle { display: none; }
+}
 body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header #sb_character_mode_toggle { order: 2; flex: 0 0 auto; }
 body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > :is(.sbtw-launch, #sbstory-mode-button) {
     order: 2;
@@ -506,6 +527,9 @@ body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > .sb-she
     margin: 0;
     white-space: normal;
     text-align: left;
+}
+@media (min-width: 769px) {
+    body.neconyan #right-nav-panel.openDrawer.pinnedOpen > .sb-character-shell-header :is(.sb-shell-title, .sb-shell-subtitle) { max-width: calc(100% - 56px); }
 }
 body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > .sb-shell-description { display: none; }
 

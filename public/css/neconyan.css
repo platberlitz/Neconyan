@@ -744,20 +744,19 @@ body.neconyan #chat .extraMesButtons > *:focus-visible {
 }
 body.neconyan.expandMessageActions #chat .extraMesButtonsHint { display: none !important; }
 body.neconyan #send_form #neconyan_connect_button { display: none; }
-/* Desktop only: the labelled pills. Phones keep the 44px icon squares from
-   neconyan-mobile-shell.css; this rule used to outrank them and blew Send up to 98px. */
 @media (min-width: 769px) {
-    body.neconyan #send_form :is(#neconyan_connect_button, #options_button, #send_but) {
-        inline-size: auto !important;
-        block-size: auto !important;
-        min-inline-size: 44px !important;
-        min-block-size: 44px !important;
-        max-inline-size: none !important;
-        max-block-size: none !important;
-        flex: 0 0 auto !important;
-        padding: 8px 10px !important;
-        gap: 6px;
+    body.neconyan #send_form :is(#options_button, #send_but) {
+        inline-size: var(--sb-composer-action-size) !important;
+        block-size: var(--sb-composer-action-size) !important;
+        min-inline-size: var(--sb-composer-action-size) !important;
+        min-block-size: var(--sb-composer-action-size) !important;
+        max-inline-size: var(--sb-composer-action-size) !important;
+        max-block-size: var(--sb-composer-action-size) !important;
+        flex: 0 0 var(--sb-composer-action-size) !important;
+        padding: 0 !important;
     }
+    body.neconyan #send_form :is(#options_button, #send_but) .neconyan-action-label { display: none; }
+    body.neconyan #send_form #neconyan_connect_button { min-height: 44px; padding: 8px 10px; }
 }
 body.neconyan #send_form :is(#options_button, #send_but) { display: inline-flex; align-items: center; }
 body.neconyan #send_form.no-connection #neconyan_connect_button {
@@ -1599,6 +1598,7 @@ body.neconyan #right-nav-panel #CharListButtonAndHotSwaps.has-favorites {
     min-height: 48px;
     max-height: 64px;
     padding-block: 6px;
+    background: var(--neco-surface);
 }
 body.neconyan #right-nav-panel #CharListButtonAndHotSwaps.has-favorites #HotSwapWrapper {
     flex-direction: row;
@@ -1648,6 +1648,25 @@ body.neconyan #right-nav-panel .sb-character-library-primary-actions > #characte
     clip-path: none !important;
     white-space: nowrap !important;
     border: 1px solid transparent !important;
+}
+@media (min-width: 769px) {
+    body.neconyan #right-nav-panel .sb-character-library-primary-actions > #character_import_button { display: none; }
+    body.neconyan #right-nav-panel #sb_character_tab_import,
+    body.neconyan #right-nav-panel .sb-entity-empty-actions > [data-empty-action='import-character'] { display: none; }
+    body.neconyan #right-nav-panel.openDrawer.pinnedOpen {
+        left: auto !important;
+        width: min(400px, 38vw) !important;
+        border-left: 1px solid var(--neco-border) !important;
+    }
+    body.neconyan:has(#right-nav-panel.openDrawer.pinnedOpen) #sheld {
+        right: min(400px, 38vw);
+        visibility: visible !important;
+        pointer-events: auto !important;
+    }
+    body.neconyan:has(#right-nav-panel.openDrawer.pinnedOpen) #neconyan-home-host {
+        visibility: visible !important;
+        pointer-events: auto !important;
+    }
 }
 body.neconyan #right-nav-panel .sb-character-library-secondary-actions #rm_button_bar {
     display: flex;

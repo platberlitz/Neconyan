@@ -290,7 +290,7 @@ export function getAgentPostProcessingTarget(message) {
 }
 
 function setPostProcessingText(message, text, target = null) {
-    if (target && (!target.valid || target.text !== message.mes || !isMessageTargetCurrent(message, target.state))) {
+    if (target && (!target.valid || !isMessageTargetCurrent(message, target.state) || target.text !== message.mes)) {
         target.valid = false;
         return false;
     }
@@ -315,9 +315,23 @@ export function captureMessageTargetState(message, messageIndex = chat.indexOf(m
     };
 }
 
+// Dialogue Colours can recolour a reply while its agents are running. Only colour markup
+// is ignored; a real text edit still invalidates the pending rewrite.
+export function isDialogueColourOnlyChange(before, after) {
+    if (typeof before !== 'string' || typeof after !== 'string' || before === after) return false;
+    const plain = value => value.replace(/<font\s+color=["']#[0-9a-f]{6}["']\s*>|<\/font>/gi, '')
+        .replace(/\s*\[COLORS:(?:[^\]\n]*)\]/gi, '');
+    return plain(before) === plain(after);
+}
+
 export function isMessageTargetCurrent(message, captured, messageIndex = null, { text = true, revision = true } = {}) {
     if (!message || !captured) {
         return false;
+    }
+    if (text && message.mes !== captured.mes && isDialogueColourOnlyChange(captured.mes, message.mes)) {
+        captured.mes = message.mes;
+        const target = postProcessingTargets.get(message);
+        if (target?.state === captured) target.text = message.mes;
     }
     if ((text && message.mes !== captured.mes) || (message.swipe_id ?? 0) !== captured.swipeId
         || captured.chatId !== getCurrentSnapshotChatId() || captured.chatLoadRevision !== chatLoadRevision
@@ -4663,6 +4677,10 @@ function onStreamTokenReceived() {
     const generationType = pendingGenerationSnapshot?.generationType
         ?? currentMainGenerationType
         ?? liveStreamingProcessor.type;
+
+    // STREAM_TOKEN_RECEIVED fires before the host paints this tick. Clean the live
+    // result here rather than waiting for the post-generation agent pipeline.
+    liveStreamingProcessor.result = stripEmptyOutputSentinelLines(liveStreamingProcessor.result);
 
     ensureMessageRegexSnapshot(
         numericMessageIndex,

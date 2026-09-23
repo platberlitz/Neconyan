@@ -1002,5 +1002,13 @@
     {
         "filename": "backgrounds/Neconyan - Woodland Cafe.jpg",
         "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Midnight Cat Cafe.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Moonlit Greenhouse.jpg",
+        "type": "background"
     }
 ]

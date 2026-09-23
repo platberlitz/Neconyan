@@ -5431,6 +5431,17 @@ describe('in-chat agent post-processing runner', () => {
         expect(message.mes).toBe('Edited after choosing');
     });
 
+    test('Dialogue Colours recolouring keeps an agent target current, while edited words do not', async () => {
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        chat.push({ mes: 'Hello there', is_user: false, extra: {} });
+        const state = runner.captureMessageTargetState(chat[0]);
+        chat[0].mes = '<font color="#aabbcc">Hello there</font> [COLORS:#aabbcc]';
+        expect(runner.isMessageTargetCurrent(chat[0], state)).toBe(true);
+        expect(state.mes).toBe(chat[0].mes);
+        chat[0].mes = '<font color="#aabbcc">Goodbye there</font> [COLORS:#aabbcc]';
+        expect(runner.isMessageTargetCurrent(chat[0], state)).toBe(false);
+    });
+
     test('starts a real successor generation even while an older raw retrieval is internally guarded', async () => {
         usePathfinderAgent();
         const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
@@ -6339,6 +6350,25 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[0].mes).toBe('User edited reply');
     });
 
+    test.each(['rewrite', 'append'])('Dialogue Colours does not interrupt a running %s post pass', async mode => {
+        useManualTransformAgents();
+        enabledAgents[0].postProcess.promptTransformMode = mode;
+        const quietResolvers = [];
+        generateQuietPrompt.mockImplementation(async () => await new Promise(resolve => quietResolvers.push(resolve)));
+        chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} });
+
+        const { runAgentOnMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const run = runAgentOnMessage('agent-manual-a', 0);
+        await waitFor(() => quietResolvers.length === 1);
+        chat[0].mes = '<font color="#aabbcc">Original reply</font>\n[COLORS:Assistant=#aabbcc]';
+        quietResolvers.shift()('Added text');
+        const result = await run;
+
+        expect(result).not.toBeNull();
+        expect(chat[0].mes).toContain('Added text');
+        await waitFor(() => eventSource.emit.mock.calls.some(([event]) => event === eventTypes.MESSAGE_UPDATED));
+    });
+
     test('starts manual agent runs immediately in parallel mode', async () => {
         useManualTransformAgents();
         globalSettings.appendAgentsExecutionMode = 'parallel';
@@ -6988,6 +7018,19 @@ describe('in-chat agent post-processing runner', () => {
             isFinished: true,
         });
         await eventSource.emit(eventTypes.GENERATION_STOPPED);
+    });
+
+    test('removes tracker-none from the live result before the streaming renderer paints', async () => {
+        useRegexOnlyAgent();
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        chat.push({ mes: '', is_user: false, extra: {} });
+        Object.assign(streamingProcessor, { messageId: 0, result: 'The door opens.\ntracker-none\nSomeone enters.' });
+        await eventSource.emit(eventTypes.STREAM_TOKEN_RECEIVED);
+        expect(streamingProcessor.result).toBe('The door opens.\n\nSomeone enters.');
+        streamingProcessor.result = 'A tracker-none clue remains';
+        await eventSource.emit(eventTypes.STREAM_TOKEN_RECEIVED);
+        expect(streamingProcessor.result).toBe('A tracker-none clue remains');
     });
 
     test('keeps deferred group-style post-processing when another generation starts first', async () => {

@@ -1092,7 +1092,7 @@ const NN_SHELLS = Object.freeze({
                 id: 'mewmory',
                 label: 'Mewmory',
                 icon: 'fa-brain',
-                description: 'Story memory, NPC references, and Pawspective histories.',
+                description: 'RAG and LLM-empowered native memory system for Neconyan~',
             },
         ],
     },
@@ -17585,6 +17585,17 @@ function injectCharacterDrawerControls() {
     ensureCharacterEditorLayout();
     bindCharacterEditorFullscreenToggle();
     bindCreatorNotesFullscreen();
+
+    const dockToggle = document.getElementById('sb_character_dock_toggle');
+    const nativePin = document.getElementById('rm_button_panel_pin');
+    if (dockToggle instanceof HTMLButtonElement && nativePin instanceof HTMLInputElement && dockToggle.dataset.sbBound !== 'true') {
+        dockToggle.dataset.sbBound = 'true';
+        const syncPin = () => dockToggle.setAttribute('aria-pressed', String(nativePin.checked));
+        nativePin.addEventListener('change', syncPin);
+        dockToggle.addEventListener('click', () => { nativePin.click(); syncPin(); });
+        new MutationObserver(syncPin).observe(getCharacterPanel(), { attributes: true, attributeFilter: ['class'] });
+        syncPin();
+    }
 
     const shellCloseButton = document.getElementById('sb_character_shell_close');
     if (shellCloseButton instanceof HTMLButtonElement && shellCloseButton.dataset.sbBound !== 'true') {

@@ -655,6 +655,26 @@
       "finalSha256": "2ff8ac1e0797af05e0f36979ec76ab6e4ed4165002a6a35539f885acef97cd1d",
       "width": 1536,
       "height": 1024
+    },
+    {
+      "id": "51-midnight-cat-cafe",
+      "title": "Midnight Cat Cafe",
+      "vibe": "cosy night cafe",
+      "visualBrief": "A cosy cat cafe at midnight with warm lamps, deep blue night and a quiet centre.",
+      "finalFile": "default/content/backgrounds/Neconyan - Midnight Cat Cafe.jpg",
+      "finalSha256": "c5e890a13d0f6f0d2f44137a56c7f0ce3d4f2a89893119fbdbc35d4037106353",
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "id": "52-moonlit-greenhouse",
+      "title": "Moonlit Greenhouse",
+      "vibe": "moonlit botanical night",
+      "visualBrief": "A moonlit greenhouse with leafy edges and a quiet centre.",
+      "finalFile": "default/content/backgrounds/Neconyan - Moonlit Greenhouse.jpg",
+      "finalSha256": "4fbe8529aaafb6af40eaa19eafef7b61d9e48fdd4c9b5a889f23752ae3a8adb2",
+      "width": 1536,
+      "height": 1024
     }
   ]
 }

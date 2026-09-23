@@ -619,6 +619,15 @@
       ],
       "frames": 1,
       "sha256": "4889d839516762d50a906fda590ace53cbff79979cf859450de0bf5285a071f4"
+    },
+    {
+      "path": "public/img/neconyan/kitty-clouds-dark.webp",
+      "size": [1536, 1024],
+      "frames": 1,
+      "sha256": "3cfecf7f4b012893e05f69519b84f7c79018c97ac96a55e47014e3f7548a2b42",
+      "model": "gpt-image-2.5-sunburst",
+      "reference": "public/img/neconyan/kitty-clouds.webp",
+      "visualBrief": "A nocturnal version of the existing sleepy kitty-cloud background with a dark starry sky and an open centre."
     }
   ]
 }

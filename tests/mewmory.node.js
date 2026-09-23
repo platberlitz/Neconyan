@@ -1715,7 +1715,7 @@ test('HTTP preparation uses only completed preservation and accepts automatic pr
     };
     const original = fs.readFileSync(filename, 'utf8');
     provider.mode.fail = true;
-    await assert.rejects(processBatch(directories, locator, { checkpoint: true }), /HTTP 503/);
+    await assert.rejects(processBatch(directories, locator, { checkpoint: true }), /The model for Facts and events returned error code 503/);
     const failed = await prepare();
     await recallInBackground(directories, locator);
     assert.deepEqual(failed.excludedIndices, []);
