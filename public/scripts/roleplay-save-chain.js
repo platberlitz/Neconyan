@@ -16,6 +16,9 @@ function validAccount(value) {
 }
 
 function locatorKey(locator) {
+    if (object(locator) && locator.kind === 'group' && typeof locator.groupId === 'string' && locator.groupId) {
+        return JSON.stringify(['group', locator.groupId]);
+    }
     if (!object(locator) || typeof locator.group !== 'boolean' || typeof locator.chat !== 'string' || !locator.chat
         || locator.chat.length > 256 || (!locator.group && (typeof locator.avatar !== 'string' || !locator.avatar))) throw missingRead();
     return JSON.stringify([locator.group, locator.group ? '' : locator.avatar, locator.chat]);
@@ -83,7 +86,7 @@ export function rememberRoleplayRead(locator, evidence) {
 }
 
 /** Existing solo/group queues schedule these tokens; they are not a second task queue. */
-export function beginRoleplaySave(locator, { operationKey, owner = roleplayAccountStamp().owner, create = false, evidence = null } = {}) {
+export function beginRoleplaySave(locator, { operationKey, owner = roleplayAccountStamp().owner, create = false, evidence = null, after = null } = {}) {
     const stamp = roleplayAccountStamp();
     if (owner !== stamp.owner) throw changedAccount();
     if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 256) throw missingRead();
@@ -91,16 +94,20 @@ export function beginRoleplaySave(locator, { operationKey, owner = roleplayAccou
     const token = Object.freeze({ owner, locator: Object.freeze({ ...locator }) });
     let resolve;
     const explicit = evidence ? readEvidence(evidence, stamp.account) : null;
+    const authorityPredecessor = after && records.get(after);
+    if (after && (locator.kind !== 'group' || create || explicit || !authorityPredecessor
+        || authorityPredecessor.binding !== binding || authorityPredecessor.entry !== entry)) throw missingRead();
+    const background = Boolean(explicit || authorityPredecessor);
     const record = { binding, entry, key: operationKey, locator: token.locator, create,
         explicit, initial: entry.head, predecessor: entry.tail?.complete ? null : entry.tail,
-        editorPredecessor: explicit ? null : entry.editorTail, lineage: entry.lineage,
+        editorPredecessor: background ? null : entry.editorTail, authorityPredecessor, background, lineage: entry.lineage,
         source: null, result: null, conflict: null,
         attempt: null, forced: false, status: 'ready', complete: false,
         done: new Promise(settle => { resolve = settle; }), resolve: null };
     record.resolve = resolve;
     records.set(token, record);
     entry.tail = record;
-    if (!explicit && !create && entry.lineage) entry.editorTail = record;
+    if (!background && !create && entry.lineage) entry.editorTail = record;
     return token;
 }
 
@@ -110,6 +117,12 @@ async function sourceFor(record) {
         if (previous.status === 'unknown') throw uncertainSave();
     }
     if (record.explicit) return record.explicit;
+    if (record.authorityPredecessor) {
+        const previous = await record.authorityPredecessor.done;
+        if (previous.status === 'unknown') throw uncertainSave();
+        if (previous.status !== 'ok') throw missingRead();
+        return previous.source;
+    }
     if (record.editorPredecessor) {
         const previous = await record.editorPredecessor.done;
         if (previous.status === 'unknown') throw uncertainSave();
@@ -120,13 +133,16 @@ async function sourceFor(record) {
 
 function acceptResult(record, data) {
     const result = data?.roleplay;
-    if (data?.ok !== true || typeof data.integrity !== 'string' || result?.operationKey !== record.key
+    const isGroup = record.locator.kind === 'group';
+    if (data?.ok !== true || (!isGroup && typeof data.integrity !== 'string') || result?.operationKey !== record.key
         || typeof result.changed !== 'boolean') throw uncertainSave();
     const evidence = readEvidence(result, record.binding.stamp.account);
     if (!evidence.source) throw uncertainSave();
     const before = record.source.source;
+    const rawChanged = isGroup ? result.rawChanged : result.changed;
+    if (typeof rawChanged !== 'boolean' || (isGroup && result.changed && !rawChanged)) throw uncertainSave();
     if (before ? evidence.source.instanceId !== before.instanceId || evidence.source.revision !== before.revision + Number(result.changed)
-        || (result.changed ? evidence.source.rawHash === before.rawHash : evidence.source.rawHash !== before.rawHash)
+        || (rawChanged ? evidence.source.rawHash === before.rawHash : evidence.source.rawHash !== before.rawHash)
         : !result.changed || evidence.source.revision !== 1) throw uncertainSave();
     record.source = evidence;
     record.status = 'ok';
@@ -159,8 +175,9 @@ export async function sendRoleplaySave(token, payload, send, loadVacancy) {
             }
             if (!record.source) throw missingRead();
             if (record.create && record.source.source && !record.forced) return refuse(record, 400, { error: 'integrity', roleplay: record.source });
-            const matchingTarget = record.locator.group ? String(payload.id) === record.locator.chat
-                : payload.file_name === record.locator.chat && payload.avatar_url === record.locator.avatar;
+            const matchingTarget = record.locator.kind === 'group' ? String(payload.id) === record.locator.groupId
+                : record.locator.group ? String(payload.id) === record.locator.chat
+                    : payload.file_name === record.locator.chat && payload.avatar_url === record.locator.avatar;
             if (!matchingTarget) throw missingRead();
             record.attempt = JSON.stringify({ ...payload, ...(record.forced ? { force: true } : {}),
                 roleplay: { ...record.source, operationKey: record.key } });
@@ -214,12 +231,14 @@ export async function finishRoleplaySave(token) {
     const record = records.get(token);
     if (!record || record.complete) return;
     if (record.status === 'ready') {
-        try { record.source = await sourceFor(record); record.status = 'refused'; } catch { record.status = 'unknown'; }
+        try { record.source = await sourceFor(record); record.status = 'refused'; } catch (error) {
+            record.status = error.code === 'ROLEPLAY_SAVE_UNCERTAIN' ? 'unknown' : 'refused';
+        }
     }
     record.complete = true;
     if (record.status === 'unknown') record.entry.blocked = true;
-    else if (!record.explicit && !record.create && record.lineage === record.entry.lineage && record.source) record.entry.head = record.source;
-    record.predecessor = record.editorPredecessor = record.initial = record.explicit = record.conflict = null;
+    else if (!record.background && !record.create && record.lineage === record.entry.lineage && record.source) record.entry.head = record.source;
+    record.predecessor = record.editorPredecessor = record.authorityPredecessor = record.initial = record.explicit = record.conflict = null;
     if (record.status !== 'unknown') record.attempt = null;
     record.resolve(record);
 }

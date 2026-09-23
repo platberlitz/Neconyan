@@ -148,6 +148,7 @@ describe('strict host chat saves', () => {
             groupMetadataSaveQueue: Promise.resolve(),
             pendingGroupMetadataSaves: new Map(),
             groupSaveStates: new Map(),
+            groupBackgroundState: new WeakMap(), queuedGroupMetadataById: new Map(),
             clearTimeout,
             selected_group: String(id),
             groups: [{ id, chat_id: 'story', chats: ['story'] }],
@@ -162,8 +163,21 @@ describe('strict host chat saves', () => {
             saveGroupDebounced: jest.fn(),
         });
         const { acknowledge } = loadQueuedSaveRuntime(context, true);
+        const beginChatSave = context.beginRoleplaySave;
+        const sendChatSave = context.sendRoleplaySave;
+        const finishChatSave = context.finishRoleplaySave;
+        Object.assign(context, {
+            markGroupSaveDirty: () => 1, groupReadEvidence: new WeakMap(),
+            beginRoleplaySave: (locator, options) => locator.kind === 'group' ? { locator } : beginChatSave(locator, options),
+            sendRoleplaySave: async (token, payload, send, vacancy) => {
+                if (token.locator.kind !== 'group') return sendChatSave(token, payload, send, vacancy);
+                const response = await send(JSON.stringify(payload), { owner: 'story-test' });
+                return { ok: response.ok, data: { roleplay: { source: {} } } };
+            },
+            finishRoleplaySave: token => token?.locator.kind === 'group' ? Promise.resolve() : finishChatSave(token),
+        });
         context.fetch.mockImplementation(async (url, init) => url === '/api/groups/edit' ? { ok: false } : acknowledge(init));
-        load(context, 'scripts/group-chats.js', ['editGroup', '_save']);
+        load(context, 'scripts/group-chats.js', ['snapshotGroupMetadata', 'editGroup', '_save']);
         await expect(context.saveMetadata({ throwOnError: true })).rejects.toThrow('Could not save group');
         expect(context.fetch).toHaveBeenCalledWith('/api/chats/group/save', expect.any(Object));
         expect(context.fetch).toHaveBeenCalledWith('/api/groups/edit', expect.any(Object));

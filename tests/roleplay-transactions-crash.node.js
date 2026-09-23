@@ -10,14 +10,16 @@ import { fixture, memoryParent, writeJournal } from './roleplay-transactions-fix
 
 const { readRoleplayAccount, readRoleplayFile, roleplayStoreDirectory } = await import('../src/roleplay-store.js');
 const { commitSingleChatWrite, reconcileSingleChatWrite, cleanupRoleplayReceipts } = await import('../src/roleplay-lifecycle.js');
+const { commitSingleGroupUpdate, reconcileSingleGroupUpdate } = await import('../src/roleplay-lifecycle.js');
+const { readRoleplayEntity } = await import('../src/generation/roleplay-source.js');
 const { prepareNativeChatWrite, publishNativeChatWrite } = await import('../src/endpoints/chats.js');
 const { canonicalMemoryPaths } = await import('../src/mewmory/prepared-branch.js');
 const host = { prepare: prepareNativeChatWrite, publish: publishNativeChatWrite };
 const worker = fileURLToPath(new URL('./roleplay-transactions-crash-worker.js', import.meta.url));
 
-async function killAt(f, input, boundary, { filename = f.filename, memory, reconcile = false } = {}) {
+async function killAt(f, input, boundary, { filename = f.filename, memory, reconcile = false, groupUpdate = false } = {}) {
     const specPath = path.join(f.root, 'crash-input.json');
-    fs.writeFileSync(specPath, JSON.stringify({ scope: f.scope, input, boundary, filename, memory, reconcile }));
+    fs.writeFileSync(specPath, JSON.stringify({ scope: f.scope, input, boundary, filename, memory, reconcile, groupUpdate }));
     const child = spawn(process.execPath, [worker, specPath], { stdio: ['ignore', 'pipe', 'pipe'] });
     const exited = once(child, 'exit');
     let stdout = '', stderr = '';
@@ -127,6 +129,62 @@ for (const boundary of ['payload-durable', 'pending-durable', 'partial-update', 
         assertFinished(f, result);
         assert.deepEqual(noRewrite([f.filename], () => commitSingleChatWrite(f.scope, input, host)), result);
         assert.deepEqual(readRoleplayFile(f.filename), saved);
+    });
+}
+
+for (const boundary of ['group-payload-durable', 'pending-durable', 'group-durable', 'receipt-durable']) {
+    test(`real group writer death at ${boundary} replays one recorded update`, { timeout: 20000 }, async t => {
+        const f = fixture(t, true, `group-crash-${boundary}`);
+        const filename = path.join(f.scope.directories.groups, 'group.json');
+        const saved = readRoleplayEntity(f.scope, 'group', 'group');
+        const input = { operationKey: 'group-crash', source: { instanceId: saved.instanceId, revision: saved.revision, rawHash: saved.rawHash },
+            group: { ...saved.data, name: 'Durable group edit' } };
+        const before = readRoleplayFile(filename);
+        await killAt(f, input, boundary, { filename, groupUpdate: true });
+        const interrupted = readRoleplayAccount(f.scope);
+        if (boundary === 'group-payload-durable' || boundary === 'pending-durable') {
+            assert.deepEqual(readRoleplayFile(filename), before);
+        }
+        if (boundary === 'group-payload-durable') assert.equal(interrupted.pending, null);
+        else if (boundary !== 'receipt-durable') assert.equal(interrupted.pending?.kind, 'group-update');
+        const staged = interrupted.pending && path.join(roleplayStoreDirectory(f.scope), 'pending', interrupted.pending.id, 'group.after.json');
+        if (boundary === 'pending-durable') {
+            assert.equal(fs.existsSync(staged), true);
+            cleanupRoleplayReceipts(f.scope);
+            assert.equal(fs.existsSync(staged), true, 'pending output cannot be cleaned before closure');
+        }
+        const alreadyApplied = ['group-durable', 'receipt-durable'].includes(boundary);
+        const result = noRewrite(alreadyApplied ? [filename] : [], () => boundary === 'group-payload-durable'
+            ? commitSingleGroupUpdate(f.scope, input) : reconcileSingleGroupUpdate(f.scope, input.operationKey));
+        const file = readRoleplayFile(filename);
+        assert.equal(file.rawHash, result.rawHash);
+        assert.equal(JSON.parse(file.bytes.toString()).name, 'Durable group edit');
+        assert.equal(readRoleplayAccount(f.scope).pending, null);
+        assert.equal(Object.values(readRoleplayAccount(f.scope).submissions).at(-1).state, 'closed');
+        if (staged) assert.equal(fs.existsSync(staged), false, 'closed receipt permits staged cleanup');
+        assert.deepEqual(noRewrite([filename], () => commitSingleGroupUpdate(f.scope, input)), result);
+    });
+}
+
+for (const thirdState of ['replaced', 'corrupt']) {
+    test(`pending group replay retains a ${thirdState} file and its evidence`, { timeout: 20000 }, async t => {
+        const f = fixture(t, true, `group-third-${thirdState}`);
+        const filename = path.join(f.scope.directories.groups, 'group.json');
+        const saved = readRoleplayEntity(f.scope, 'group', 'group');
+        const input = { operationKey: 'pending-third', source: { instanceId: saved.instanceId, revision: saved.revision, rawHash: saved.rawHash },
+            group: { ...saved.data, name: 'Pending output' } };
+        await killAt(f, input, 'pending-durable', { filename, groupUpdate: true });
+        if (thirdState === 'replaced') {
+            const replacement = filename + '.replacement';
+            fs.writeFileSync(replacement, JSON.stringify({ ...saved.data, name: 'Later replacement' }));
+            fs.renameSync(replacement, filename);
+        } else fs.writeFileSync(filename, '{corrupt');
+        const before = readRoleplayFile(filename);
+        const pending = readRoleplayAccount(f.scope).pending;
+        assert.throws(() => reconcileSingleGroupUpdate(f.scope, input.operationKey), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+        assert.deepEqual(readRoleplayFile(filename), before);
+        assert.deepEqual(readRoleplayAccount(f.scope).pending, pending);
+        assert.equal(fs.existsSync(path.join(roleplayStoreDirectory(f.scope), 'pending', pending.id, 'group.after.json')), true);
     });
 }
 

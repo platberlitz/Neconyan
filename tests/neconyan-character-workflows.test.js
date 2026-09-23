@@ -192,8 +192,16 @@ describe('Neconyan save behaviour', () => {
             GROUP_SAVE_STATUS_COPY: { draft: 'Draft, not saved', unsaved: 'Unsaved changes', saving: 'Saving...', saved: 'Saved', error: 'Could not save' },
             getRequestHeaders: () => ({}), getCharacters: jest.fn(), printCharacters: jest.fn(), fetch: jest.fn(async () => ({ ok: true })),
             debounce_timeout: { relaxed: 1 },
+            structuredClone, groupReadEvidence: new WeakMap(), getCurrentUserHandle: () => 'alice', roleplayAccountStamp: () => ({ account: {} }),
+            groupBackgroundState: new WeakMap(), queuedGroupMetadataById: new Map(),
+            uuidv4: () => 'group-key', beginRoleplaySave: () => ({}), finishRoleplaySave: async () => {}, refreshCsrfToken: async () => {},
+            fetchWithCsrfRetry: async (url, build) => context.fetch(url, await build()),
+            sendRoleplaySave: async (_token, payload, send) => {
+                const response = await send(JSON.stringify(payload), { owner: 'alice' });
+                return { ok: response.ok, data: { roleplay: { source: {} } } };
+            },
         });
-        loadFunctions(context, groups, ['setGroupSaveStatus', 'markGroupSaveDirty', 'saveGroupDebounced', '_save', 'editGroup']);
+        loadFunctions(context, groups, ['setGroupSaveStatus', 'markGroupSaveDirty', 'snapshotGroupMetadata', 'saveGroupDebounced', '_save', 'editGroup']);
         return { context, status, timers };
     }
 

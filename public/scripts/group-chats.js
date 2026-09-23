@@ -90,7 +90,7 @@ import {
 } from '../script.js';
 import { getQueuedChatSaveAbortReason } from './chat-save-guard.js';
 import { getChatBackupSaveOptions } from './chat-backup-sequence.js';
-import { beginRoleplaySave, confirmRoleplayOverwrite, finishRoleplaySave, rememberRoleplayRead, roleplayAccountStamp } from './roleplay-save-chain.js';
+import { beginRoleplaySave, confirmRoleplayOverwrite, finishRoleplaySave, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave } from './roleplay-save-chain.js';
 import { printTagList, createTagMapFromList, applyTagsOnCharacterSelect, tag_map, applyTagsOnGroupSelect, printTagFilters, tag_filter_type } from './tags.js';
 import { FILTER_TYPES, FilterHelper } from './filters.js';
 import { isExternalMediaAllowed } from './chats.js';
@@ -134,6 +134,10 @@ let newGroupMembers = [];
 let groupChatSaveQueue = Promise.resolve();
 const groupSaveStates = new Map();
 let groupMetadataSaveQueue = Promise.resolve();
+let groupListReadGeneration = 0;
+const groupReadEvidence = new WeakMap();
+const groupBackgroundState = new WeakMap();
+const queuedGroupMetadataById = new Map();
 const queuedGroupChatIntegrityByFile = new Map();
 
 const GROUP_MEMBER_MODELS_KEY = 'member_models';
@@ -621,12 +625,19 @@ export const group_generation_mode = {
 export const groupCandidatesFilter = new FilterHelper(debounce(printGroupCandidates, debounce_timeout.quick));
 export const groupMembersFilter = new FilterHelper(debounce(printGroupMembers, debounce_timeout.quick));
 const pendingGroupMetadataSaves = new Map();
-function saveGroupDebounced(group, reload, account) {
-    clearTimeout(pendingGroupMetadataSaves.get(group.id));
-    pendingGroupMetadataSaves.set(group.id, setTimeout(() => {
-        pendingGroupMetadataSaves.delete(group.id);
-        void _save(group, reload, account).catch(error => console.error('Error while saving group.', error));
-    }, debounce_timeout.relaxed));
+function snapshotGroupMetadata(group) {
+    const snapshot = structuredClone(group);
+    for (const key of ['__roleplay', 'date_added', 'create_date', 'date_last_chat', 'chat_size']) delete snapshot[key];
+    return snapshot;
+}
+
+function saveGroupDebounced(job) {
+    const timer = setTimeout(() => {
+        if (pendingGroupMetadataSaves.get(job.groupId)?.job !== job) return;
+        pendingGroupMetadataSaves.delete(job.groupId);
+        void _save(job).catch(error => console.error('Error while saving group.', error));
+    }, debounce_timeout.relaxed);
+    pendingGroupMetadataSaves.set(job.groupId, { timer, job });
 }
 /** @type {Map<string, number>} */
 let groupChatQueueOrder = new Map();
@@ -636,41 +647,47 @@ let groupChatQueueOrder = new Map();
  * @param {Group} group Group object to save
  * @param {boolean} reload Whether to refresh the character and group library after saving
  */
-async function _save(group, reload = true, account) {
-    clearTimeout(pendingGroupMetadataSaves.get(group.id));
-    pendingGroupMetadataSaves.delete(group.id);
-    const groupId = group?.id;
-    const revision = groupSaveStates.get(groupId)?.revision ?? 0;
-    const body = JSON.stringify(group);
+async function _save(job) {
+    const { group, groupId, reload, account, revision, token, snapshot, background } = job;
     // ponytail: one metadata queue; split by group only if independent saves become slow.
     const save = groupMetadataSaveQueue.catch(() => {}).then(async () => {
-        if (typeof setGroupSaveStatus === 'function') {
+        if (!background && typeof setGroupSaveStatus === 'function') {
             setGroupSaveStatus('saving', groupId, revision);
         }
         try {
-            if (account !== undefined && account !== getCurrentUserHandle()) throw new Error('account_changed');
-            const response = await fetch('/api/groups/edit', {
-                method: 'POST',
-                headers: { ...getRequestHeaders(), ...(account === undefined ? {} : { 'X-Neconyan-Account': account }) },
-                body,
-            });
-            if (account !== undefined && account !== getCurrentUserHandle()) throw new Error('account_changed');
+            if (account !== getCurrentUserHandle()) throw new Error('account_changed');
+            const response = await sendRoleplaySave(token, snapshot, (body, stamp) => fetchWithCsrfRetry('/api/groups/edit', () => ({
+                method: 'POST', headers: { ...getRequestHeaders(), 'X-Neconyan-Account': stamp.owner }, body,
+            }), { refreshCsrfToken }));
             // Neconyan: surface metadata-save failures so chat rename can roll back consistently.
-            if (!response.ok) {
+            if (!response.ok || account !== getCurrentUserHandle()) {
                 throw new Error(`Could not save group ${groupId}.`);
             }
-            if (reload && revision === (groupSaveStates.get(groupId)?.revision ?? 0)) {
+            if (groups.includes(group)) {
+                const evidence = { account: roleplayAccountStamp().account, source: response.data.roleplay.source };
+                if (!background) groupReadEvidence.set(group, evidence);
+                groupBackgroundState.set(group, { evidence, contents: snapshot, failed: false });
+            }
+            await finishRoleplaySave(token);
+            if (!background && reload && revision === (groupSaveStates.get(groupId)?.revision ?? 0)) {
                 // The edited group is already current in memory; a server reload can replace newer input.
                 await printCharacters();
             }
-            if (typeof setGroupSaveStatus === 'function') {
+            if (!background && typeof setGroupSaveStatus === 'function') {
                 setGroupSaveStatus('saved', groupId, revision);
             }
         } catch (error) {
-            if (typeof setGroupSaveStatus === 'function') {
+            if (background && groups.includes(group)) {
+                const state = groupBackgroundState.get(group);
+                if (state) state.failed = true;
+            }
+            if (!background && typeof setGroupSaveStatus === 'function') {
                 setGroupSaveStatus('error', groupId, revision);
             }
             throw error;
+        } finally {
+            await finishRoleplaySave(token);
+            if (queuedGroupMetadataById.get(groupId) === job) queuedGroupMetadataById.delete(groupId);
         }
     });
     groupMetadataSaveQueue = save;
@@ -1394,7 +1411,8 @@ export async function renameGroupMember(oldAvatar, newAvatar, newName) {
 
             // Replace group member avatar id and save the changes
             group.members[memberIndex] = newAvatar;
-            await editGroup(group.id, true, false);
+            await editGroup(group.id, true, false, getCurrentUserHandle(), { background: true,
+                backgroundChanges: { memberRename: { from: oldAvatar, to: newAvatar } } });
             console.log(`Renamed character ${newName} in group: ${group.name}`);
 
             // Load all chats from this group
@@ -1453,6 +1471,10 @@ export async function renameGroupMember(oldAvatar, newAvatar, newName) {
  * Fetches all groups from the server and processes them.
  */
 async function getGroups() {
+    const readGeneration = ++groupListReadGeneration;
+    const account = roleplayAccountStamp();
+    const started = new Map(groups.map(group => [group.id, { group, revision: groupSaveStates.get(group.id)?.revision,
+        evidence: groupReadEvidence.get(group), background: groupBackgroundState.get(group) }]));
     const response = await fetch('/api/groups/all', {
         method: 'POST',
         headers: getRequestHeaders({ omitContentType: true }),
@@ -1461,10 +1483,17 @@ async function getGroups() {
     if (response.ok) {
         /** @type {Group[]} */
         const data = await response.json();
-        groups = data.slice();
+        try {
+            if (readGeneration !== groupListReadGeneration || getCurrentUserHandle() !== account.owner
+                || roleplayAccountStamp() !== account) return;
+        } catch { return; }
+        const previous = groups;
+        const applied = [];
 
         // Convert groups to new format
-        for (const group of groups) {
+        for (const group of data) {
+            const read = group.__roleplay;
+            delete group.__roleplay;
             if (typeof group.id === 'number') {
                 group.id = String(group.id);
             }
@@ -1485,7 +1514,26 @@ async function getGroups() {
             if (Array.isArray(group.chats) && group.chats.some(x => typeof x === 'number')) {
                 group.chats = group.chats.map(x => String(x));
             }
+            const current = previous.find(item => item.id === group.id);
+            const atStart = started.get(group.id);
+            const saveState = groupSaveStates.get(group.id);
+            if (current && (current !== atStart?.group || saveState?.revision !== atStart?.revision
+                || (saveState && saveState.status !== 'saved') || groupReadEvidence.get(current) !== atStart?.evidence
+                || groupBackgroundState.get(current) !== atStart?.background || groupBackgroundState.get(current)?.failed)) {
+                applied.push(current);
+                continue;
+            }
+            if (!read || read.locator?.kind !== 'group' || read.locator.groupId !== group.id
+                || !rememberRoleplayRead(read.locator, read)) {
+                if (current) applied.push(current);
+                continue;
+            }
+            const evidence = { account: read.account, source: read.source };
+            groupReadEvidence.set(group, evidence);
+            groupBackgroundState.set(group, { evidence, contents: snapshotGroupMetadata(group), failed: false });
+            applied.push(group);
         }
+        groups = applied;
     }
 }
 
@@ -2111,21 +2159,57 @@ async function deleteGroup(id) {
  * @param {boolean} reload Whether to reload the groups after saving
  * @returns {Promise<void>} Promise that resolves when the group is edited
  */
-export async function editGroup(id, immediately, reload = true, account) {
+export async function editGroup(id, immediately, reload = true, account = getCurrentUserHandle(), { background = false, backgroundChanges = null } = {}) {
     let group = groups.find((x) => x.id === id);
 
     if (!group) {
         return;
     }
 
-    if (typeof markGroupSaveDirty === 'function') {
-        markGroupSaveDirty(id);
+    const previous = pendingGroupMetadataSaves.get(id);
+    let coalesced = null;
+    if (previous) {
+        clearTimeout(previous.timer);
+        pendingGroupMetadataSaves.delete(id);
+        if (previous.job.background === background) {
+            coalesced = previous.job;
+            if (queuedGroupMetadataById.get(id) === coalesced) queuedGroupMetadataById.delete(id);
+            void finishRoleplaySave(coalesced.token);
+        } else {
+            // Different actors own different contents and authority; dispatch both in order.
+            void _save(previous.job).catch(error => console.error('Error while saving group.', error));
+        }
     }
+    const prior = queuedGroupMetadataById.get(id);
+    const applied = groupBackgroundState.get(group);
+    if (background && (!backgroundChanges || Object.keys(backgroundChanges).some(key => !['memberRename', 'conversation_settings'].includes(key))
+        || (!prior && !coalesced && !applied))) {
+        if (applied) applied.failed = true;
+        throw new Error('Reload the group before background changes.');
+    }
+    const revision = background ? groupSaveStates.get(id)?.revision ?? 0 : markGroupSaveDirty(id);
+    const base = background ? structuredClone(coalesced?.snapshot ?? prior?.snapshot ?? applied.contents) : null;
+    const changes = background ? structuredClone(backgroundChanges) : null;
+    if (changes?.memberRename) {
+        const { from, to } = changes.memberRename;
+        if (typeof from !== 'string' || typeof to !== 'string' || !Array.isArray(base.members) || !base.members.includes(from)) {
+            throw new Error('Reload the group before renaming its member.');
+        }
+        changes.members = base.members.map(member => member === from ? to : member);
+        delete changes.memberRename;
+    }
+    const snapshot = background ? { ...base, ...changes } : snapshotGroupMetadata(group);
+    const sourceAfter = background ? coalesced ? coalesced.sourceAfter : prior?.token ?? null : null;
+    const sourceEvidence = background && !sourceAfter ? coalesced?.sourceEvidence ?? applied.evidence : null;
+    const token = beginRoleplaySave({ kind: 'group', groupId: String(id) }, { operationKey: uuidv4(), owner: account,
+        ...(background ? sourceAfter ? { after: sourceAfter } : { evidence: sourceEvidence } : {}) });
+    const job = { group, groupId: id, reload, account, revision, token, snapshot, background, sourceAfter, sourceEvidence };
+    queuedGroupMetadataById.set(id, job);
     if (immediately) {
-        return await _save(group, reload, account);
+        return await _save(job);
     }
 
-    saveGroupDebounced(group, reload, account);
+    saveGroupDebounced(job);
 }
 
 /**

@@ -5,16 +5,18 @@ import { isDeepStrictEqual } from 'node:util';
 import { withChatFileLocks } from './chat-file-lock.js';
 import { createCharacterChatTarget, createGroupChatTarget, parseChatJsonl, restoreChatSnapshotIfMatches } from './chat-recovery.js';
 import { assertRoleplaySourceLocked, assertPendingRoleplayDependencies, captureRoleplayDependenciesLocked, normaliseRoleplayLocator,
-    roleplayChatPath, roleplayContentHash, roleplayPathKey } from './generation/roleplay-source.js';
+    roleplayChatPath, roleplayContentHash, roleplayPathKey, roleplayGroupContentHash, normaliseRoleplayGroupId,
+    assertRoleplayGroupData, readRoleplayEntityLocked } from './generation/roleplay-source.js';
 import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, createRoleplayDirectory, readRoleplayFile, readRoleplayPayload,
     roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, stageRoleplayPayload, withRoleplayAccountLock, ROLEPLAY_LARGEST_PHYSICAL,
     largestRoleplayJournal, roleplayPayloadDirectory, initialiseRoleplayAccount, readRoleplayWriteJournal, roleplayAvatarOwner } from './roleplay-store.js';
 import { applyPreparedBranchMemoryCapture, assertPreparedBranchMemory, prepareBranchMemoryCapture } from './mewmory/prepared-branch.js';
 import { MAX_ARCHIVE_BYTES } from './mewmory/store.js';
-import { decodeFileWriteRecovery, fsyncDirectorySync, FILE_WRITE_RECOVERY_SUFFIX } from './util.js';
+import { decodeFileWriteRecovery, fsyncDirectorySync, tryWriteFileSync, FILE_WRITE_RECOVERY_SUFFIX } from './util.js';
 
 const CHAT_LIMIT = 64 * 1024 * 1024;
 const EFFECT_KEY = roleplayHash('chat-write');
+const GROUP_EFFECT_KEY = roleplayHash('group-update');
 const conflict = () => roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved chat differs from the recorded transaction; its current contents were retained.');
 
 function key(state, operationKey) {
@@ -69,7 +71,7 @@ function cleanupEffect(lease, effect) {
     const directory = roleplayPayloadDirectory(lease, effect.writeId);
     for (const [name, hash] of Object.entries(effect.cleanup.payloads)) {
         const filename = path.join(directory, name);
-        const file = readRoleplayFile(filename, name === 'chat.after.jsonl' ? CHAT_LIMIT : MAX_ARCHIVE_BYTES, { allowMissingParent: true });
+        const file = readRoleplayFile(filename, ['chat.after.jsonl', 'group.after.json'].includes(name) ? CHAT_LIMIT : MAX_ARCHIVE_BYTES, { allowMissingParent: true });
         if (!file) continue;
         if (file.rawHash !== hash) {
             console.warn('Roleplay cleanup retained a changed staged file.');
@@ -260,6 +262,179 @@ function applyPending(lease, host) {
     return result;
 }
 
+function groupUpdateKey(state, operationKey) {
+    if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 256) {
+        throw roleplayError('ROLEPLAY_INVALID', 'Invalid group update identity.', 400);
+    }
+    return roleplayHash([state.accountId, 'group-update', operationKey]);
+}
+
+function groupUpdateResult(pending) {
+    return { kind: 'group', mode: 'update', instanceId: pending.instanceId, revision: pending.after.revision,
+        rawHash: pending.after.rawHash, integrity: '', writeId: pending.id,
+        changed: pending.changed, rawChanged: pending.rawChanged };
+}
+
+function finishedGroupUpdate(state, pending, physical) {
+    const next = JSON.parse(JSON.stringify(state));
+    const resource = next.resources[pending.instanceId];
+    resource.revision = pending.after.revision;
+    resource.head = { rawHash: pending.after.rawHash, contentHash: pending.after.contentHash,
+        writeId: pending.after.writeId, physical };
+    const result = groupUpdateResult(pending);
+    next.submissions[pending.operationKeyHash] = { accountId: state.accountId, dataEpoch: state.dataEpoch,
+        intentHash: pending.intentHash, jobId: null, targetInstanceId: pending.instanceId, state: 'closed',
+        reservedReceiptBytes: 0, outcome: result,
+        effects: { [GROUP_EFFECT_KEY]: { effectHash: pending.intentHash, writeId: pending.id,
+            instanceId: pending.instanceId, appliedRevision: pending.after.revision, result,
+            cleanup: { payloads: { 'group.after.json': pending.after.rawHash }, journal: null } } } };
+    next.pending = null;
+    return next;
+}
+
+function groupUpdatePath(scope, locator) {
+    return path.join(scope.directories.groups, locator.groupId + '.json');
+}
+
+function groupUpdatePayload(lease, pending) {
+    const payload = readRoleplayPayload(lease, pending.id, pending.after.payload, pending.after.rawHash, CHAT_LIMIT);
+    let group;
+    try { group = JSON.parse(payload.bytes.toString('utf8')); } catch { throw conflict(); }
+    assertRoleplayGroupData(group, pending.locator.groupId, { storage: true });
+    if (roleplayGroupContentHash(group) !== pending.after.contentHash) throw conflict();
+    return payload;
+}
+
+function applyPendingGroupUpdate(lease) {
+    const { state, scope } = roleplayLease(lease);
+    const pending = state.pending;
+    if (pending?.kind !== 'group-update') throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'There is no matching group update.');
+    const filename = groupUpdatePath(scope, pending.locator);
+    let file = readRoleplayFile(filename, CHAT_LIMIT);
+    if (!file || !isDeepStrictEqual(file.physical, pending.before.physical)
+        || (pending.phase === 'group-applied' && file.rawHash !== pending.after.rawHash)
+        || (pending.appliedPhysical && !isDeepStrictEqual(file.physical, pending.appliedPhysical))) throw conflict();
+    if (file.rawHash === pending.before.rawHash && pending.rawChanged) {
+        const payload = groupUpdatePayload(lease, pending);
+        file = withChatFileLocks([filename], () => {
+            const current = readRoleplayFile(filename, CHAT_LIMIT);
+            if (!sameObservation(current, pending.before)) throw conflict();
+            tryWriteFileSync(filename, payload.bytes, { mode: 0o600 }, {
+                preserveFileIdentity: true, invalidateBeforeWrite: true, preserveOnWriteError: true,
+                expectedFileIdentity: { dev: BigInt(current.physical.dev), ino: BigInt(current.physical.ino),
+                    birthtimeNs: BigInt(current.physical.birthtimeNs) },
+                expectedFileHash: current.rawHash, maxFileBytes: CHAT_LIMIT,
+            });
+            const written = readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
+            if (!written || written.rawHash !== pending.after.rawHash
+                || !isDeepStrictEqual(written.physical, pending.before.physical)) throw conflict();
+            return written;
+        });
+    } else if (file.rawHash !== pending.after.rawHash) {
+        // A deleted, replaced, corrupt, or third-state file is retained with its pending evidence.
+        throw conflict();
+    } else {
+        file = readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
+    }
+    if (!file || file.rawHash !== pending.after.rawHash) throw conflict();
+    let saved;
+    try { saved = JSON.parse(file.bytes.toString('utf8')); } catch { throw conflict(); }
+    assertRoleplayGroupData(saved, pending.locator.groupId, { storage: true });
+    if (roleplayGroupContentHash(saved) !== pending.after.contentHash) throw conflict();
+    pending.phase = 'group-applied';
+    pending.appliedPhysical = file.physical;
+    saveRoleplayAccount(lease);
+    const final = finishedGroupUpdate(state, pending, file.physical);
+    Object.assign(state, final);
+    saveRoleplayAccount(lease);
+    cleanupRoleplayReceiptsLocked(lease, pending.operationKeyHash);
+    return groupUpdateResult(pending);
+}
+
+export function commitSingleGroupUpdate(scope, input) {
+    return withRoleplayAccountLock(scope, lease => commitSingleGroupUpdateLocked(lease, input));
+}
+
+export function commitSingleGroupUpdateLocked(lease, input) {
+    confirmRoleplayAccount(lease);
+    const { state, scope } = roleplayLease(lease);
+    const groupId = normaliseRoleplayGroupId(String(input.group?.id));
+    const group = assertRoleplayGroupData(JSON.parse(JSON.stringify(input.group)), groupId, { storage: true });
+    const source = input.source && JSON.parse(JSON.stringify(input.source));
+    const locator = { groupId };
+    const operationKeyHash = groupUpdateKey(state, input.operationKey);
+    const intentHash = roleplayHash({ accountId: state.accountId, dataEpoch: state.dataEpoch, locator,
+        source, group });
+    const prior = state.submissions[operationKeyHash];
+    if (prior) {
+        if (prior.intentHash !== intentHash || prior.dataEpoch !== state.dataEpoch) {
+            throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'This group update identity was already used for different work.');
+        }
+        cleanupRoleplayReceiptsLocked(lease, operationKeyHash);
+        return completedResult(prior);
+    }
+    if (state.pending) {
+        if (state.pending.kind !== 'group-update' || state.pending.operationKeyHash !== operationKeyHash) {
+            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay operation must settle first.');
+        }
+        if (state.pending.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'The pending group update has different contents.');
+        return applyPendingGroupUpdate(lease);
+    }
+    const saved = readRoleplayEntityLocked(lease, 'group', groupId, { storage: true });
+    if (!source || saved.instanceId !== source.instanceId || saved.revision !== source.revision
+        || saved.rawHash !== source.rawHash) throw conflict();
+    for (const key of ['chat_metadata', 'past_metadata']) {
+        if (Object.hasOwn(saved.data, key) && !isDeepStrictEqual(group[key], saved.data[key])) {
+            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'Legacy group metadata must stay with its chat migration.');
+        }
+    }
+    const filename = groupUpdatePath(scope, locator);
+    const beforeFile = readRoleplayFile(filename, CHAT_LIMIT);
+    if (!beforeFile || beforeFile.rawHash !== saved.rawHash || !isDeepStrictEqual(beforeFile.physical, saved.physical)) throw conflict();
+    rejectUndoJournal(filename);
+    const bytes = isDeepStrictEqual(group, saved.data) ? beforeFile.bytes : Buffer.from(JSON.stringify(group, null, 4), 'utf8');
+    if (bytes.length > CHAT_LIMIT) throw roleplayError('ROLEPLAY_STORE_FULL', 'The group metadata is too large.', 413);
+    const rawHash = crypto.createHash('sha256').update(bytes).digest('hex');
+    const contentHash = roleplayGroupContentHash(group);
+    const id = crypto.randomUUID();
+    const before = { ...state.resources[saved.instanceId].head, revision: saved.revision };
+    const changed = contentHash !== before.contentHash;
+    const rawChanged = rawHash !== before.rawHash;
+    if (!Number.isSafeInteger(before.revision + Number(changed))) {
+        throw roleplayError('ROLEPLAY_STORE_FULL', 'The group revision cannot advance safely.', 413);
+    }
+    const pending = { schema: 1, kind: 'group-update', id, operationKeyHash, intentHash,
+        accountId: state.accountId, dataEpoch: state.dataEpoch, locator, instanceId: saved.instanceId,
+        source: { instanceId: saved.instanceId, revision: saved.revision, rawHash: saved.rawHash }, before,
+        after: { revision: before.revision + Number(changed), rawHash, contentHash,
+            writeId: rawChanged ? id : before.writeId, byteLength: bytes.length, payload: 'group.after.json' },
+        changed, rawChanged, phase: 'prepared', appliedPhysical: null, reservedBytes: 8 * 1024 };
+    assertRoleplayTransactionCapacity(lease, pending, finishedGroupUpdate(state, pending, ROLEPLAY_LARGEST_PHYSICAL));
+    stageRoleplayPayload(lease, id, pending.after.payload, bytes, CHAT_LIMIT);
+    state.pending = pending;
+    try {
+        saveRoleplayAccount(lease);
+        return applyPendingGroupUpdate(lease);
+    } catch (error) { throw Object.assign(error, { roleplayWritePending: true }); }
+}
+
+export function reconcileSingleGroupUpdate(scope, operationKey) {
+    return withRoleplayAccountLock(scope, lease => {
+        confirmRoleplayAccount(lease);
+        const { state } = roleplayLease(lease);
+        const operationKeyHash = groupUpdateKey(state, operationKey);
+        const prior = state.submissions[operationKeyHash];
+        if (prior) {
+            cleanupRoleplayReceiptsLocked(lease, operationKeyHash);
+            return completedResult(prior);
+        }
+        if (state.pending?.kind !== 'group-update' || state.pending.operationKeyHash !== operationKeyHash) {
+            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'There is no matching group update.');
+        }
+        return applyPendingGroupUpdate(lease);
+    });
+}
+
 /** Private storage transaction; the concrete endpoint host supplies the existing writer, never a client callback. */
 export function commitSingleChatWrite(scope, input, host) {
     return withRoleplayAccountLock(scope, lease => commitSingleChatWriteLocked(lease, input, host));
@@ -328,7 +503,9 @@ export function commitSingleChatWriteLocked(lease, input, host) {
         return completedResult(prior);
     }
     if (state.pending) {
-        if (state.pending.operationKeyHash !== operationKeyHash) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier chat write must settle first.');
+        if (state.pending.kind !== 'chat-write' || state.pending.operationKeyHash !== operationKeyHash) {
+            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay operation must settle first.');
+        }
         if (state.pending.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'The pending chat write has a different intent.');
         return applyPending(lease, host);
     }
@@ -391,7 +568,8 @@ export function repairSingleChatWriteLocked(lease, { locator: inputLocator, snap
 export function reconcilePendingChatWrite(scope, host) {
     return withRoleplayAccountLock(scope, lease => {
         confirmRoleplayAccount(lease);
-        const result = roleplayLease(lease).state.pending ? applyPending(lease, host) : null;
+        const pending = roleplayLease(lease).state.pending;
+        const result = pending ? pending.kind === 'group-update' ? applyPendingGroupUpdate(lease) : applyPending(lease, host) : null;
         cleanupRoleplayReceiptsLocked(lease);
         return result;
     });
@@ -414,7 +592,9 @@ export function reconcileSingleChatWrite(scope, operationKey, host) {
             cleanupRoleplayReceiptsLocked(lease, operationKeyHash);
             return completedResult(prior);
         }
-        if (state.pending?.operationKeyHash !== operationKeyHash) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'There is no matching saved chat write.');
+        if (state.pending?.kind !== 'chat-write' || state.pending.operationKeyHash !== operationKeyHash) {
+            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'There is no matching saved chat write.');
+        }
         return applyPending(lease, host);
     });
 }

@@ -21,6 +21,8 @@ function identifier(value) {
     return value;
 }
 
+export const normaliseRoleplayGroupId = identifier;
+
 export function normaliseRoleplayLocator(locator) {
     if (!locator || typeof locator !== 'object' || Array.isArray(locator) || typeof locator.group !== 'boolean'
         || Object.keys(locator).some(key => !['group', 'chat', 'avatar'].includes(key))) {
@@ -58,7 +60,7 @@ function enrol(lease, kind, locator, file, contentHash, marker = null) {
         if (!resource || resource.status !== 'live' || resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch
             || resource.head.rawHash !== file.rawHash || !isDeepStrictEqual(resource.head.physical, file.physical)
             || resource.head.contentHash !== contentHash
-            || (resource.head.writeId !== null && !isDeepStrictEqual(marker,
+            || (kind === 'chat' && resource.head.writeId !== null && !isDeepStrictEqual(marker,
                 { schema: 1, instanceId: current.instanceId, revision: resource.revision, writeId: resource.head.writeId }))) {
             throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved Roleplay source differs from its protected identity.');
         }
@@ -82,7 +84,7 @@ function descriptor(state, entry) {
 }
 
 export function roleplayGroupContentHash(group) {
-    const copy = structuredClone(group);
+    const copy = JSON.parse(JSON.stringify(group));
     // Only navigation and derived display statistics are outside generation identity.
     for (const key of ['chat_id', 'date_last_chat', 'chat_size', 'date_added', 'create_date']) delete copy[key];
     return roleplayHash(copy);
@@ -93,7 +95,19 @@ function groupChatIds(group) {
     return group.chats.map(chat => identifier(Number.isSafeInteger(chat) ? String(chat) : chat));
 }
 
-function inspectEntity(lease, kind, id) {
+export function assertRoleplayGroupData(data, id, { storage = false } = {}) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)
+        || (typeof data.id !== 'string' && !Number.isSafeInteger(data.id)) || String(data.id) !== id
+        || !Array.isArray(data.members) || (!storage && !Array.isArray(data.chats))
+        || (data.chats !== undefined && !Array.isArray(data.chats))
+        || (data.disabled_members !== undefined && !Array.isArray(data.disabled_members))) {
+        throw roleplayError('ROLEPLAY_INVALID', 'Invalid saved group metadata.', 400);
+    }
+    if (data.chats !== undefined) groupChatIds(data);
+    return data;
+}
+
+function inspectEntity(lease, kind, id, { storage = false } = {}) {
     const { scope, state } = roleplayLease(lease);
     if (!['character', 'group'].includes(kind)) throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay resource kind.', 400);
     if (kind === 'character') normaliseRoleplayLocator({ group: false, chat: 'source', avatar: id });
@@ -112,9 +126,7 @@ function inspectEntity(lease, kind, id) {
                 : data.spec === 'chara_card_v2' ? validator.validateV2() : validator.validateV1();
             if (!valid || (data.spec && Array.isArray(data.data))) throw new Error('Invalid character card');
         }
-        if (kind === 'group' && ((typeof data.id !== 'string' && !Number.isSafeInteger(data.id)) || String(data.id) !== id || !Array.isArray(data.members)
-            || !Array.isArray(data.chats) || (data.disabled_members !== undefined && !Array.isArray(data.disabled_members)))) throw new Error('Invalid group');
-        if (kind === 'group') groupChatIds(data);
+        if (kind === 'group') assertRoleplayGroupData(data, id, { storage });
     } catch (cause) {
         throw Object.assign(roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'A required Roleplay character or group is damaged.'), { cause });
     }
@@ -128,12 +140,20 @@ function inspectEntity(lease, kind, id) {
     return { kind, locator, file, contentHash, data };
 }
 
-export function readRoleplayEntityLocked(lease, kind, id) {
+export function readRoleplayEntityLocked(lease, kind, id, { storage = false } = {}) {
     const { state } = roleplayLease(lease);
     if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay transaction must be reconciled first.');
-    const { locator, file, contentHash, data } = inspectEntity(lease, kind, id);
+    const { locator, file, contentHash, data } = inspectEntity(lease, kind, id, { storage });
     const entry = enrol(lease, kind, locator, file, contentHash);
-    return { ...descriptor(state, entry), kind, contentHash, data, changed: entry.changed };
+    return { ...descriptor(state, entry), kind, contentHash, physical: file.physical, data, changed: entry.changed };
+}
+
+export function readRoleplayEntity(scope, kind, id, options = {}) {
+    return withRoleplayAccountLock(scope, lease => {
+        const result = readRoleplayEntityLocked(lease, kind, id, options);
+        if (result.changed) saveRoleplayAccount(lease);
+        return result;
+    });
 }
 
 function checkGroupOwnership(lease, locator, groupId, read) {

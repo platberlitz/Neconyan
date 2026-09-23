@@ -310,3 +310,53 @@ for (const phone of [false, true]) {
         expect(app.provider.calls).toHaveLength(0);
     });
 }
+
+for (const phone of [false, true]) {
+    test(`${phone ? 'phone' : 'desktop'} group editor records a durable existing-group update`, async ({ app }) => {
+        test.setTimeout(180000);
+        const account = await app.account({ phone });
+        const created = await account.post('/api/groups/create', { name: 'Before group edit', members: [account.avatar], chat_id: '', chats: [] });
+        expect(created.__roleplay?.source?.revision).toBe(1);
+        const filename = path.join(app.directory, 'data', 'default-user', 'groups', created.id + '.json');
+        let page = await account.open({ workspace: false });
+        const openEditor = async () => {
+            if (phone) await page.locator('#sb-hamburger').click();
+            await page.getByRole('button', { name: 'Characters', exact: true }).click();
+            await page.getByRole('tab', { name: 'Groups', exact: true }).click();
+            await page.evaluate(async id => (await import('/scripts/group-chats.js')).select_group_chats(id, false), created.id);
+        };
+        await openEditor();
+        const control = phone ? page.locator('#group_favorite_button') : page.locator('#rm_button_selected_ch h2');
+        await expect(control).toBeVisible();
+        await control.click();
+        if (!phone) {
+            const rename = page.locator('dialog.popup:visible');
+            await rename.locator('.popup-input').fill('Saved from the group editor');
+            await rename.locator('.popup-button-ok').click();
+        }
+        await expect.poll(() => {
+            const group = JSON.parse(fs.readFileSync(filename, 'utf8'));
+            return phone ? group.fav : group.name;
+        }).toBe(phone ? true : 'Saved from the group editor');
+        const saved = fs.readFileSync(filename);
+        const geometry = await control.evaluate(element => {
+            const rect = element.getBoundingClientRect();
+            return { x: rect.x, right: rect.right, width: rect.width };
+        });
+        expect(geometry.width).toBeGreaterThan(0);
+        expect(geometry.x).toBeGreaterThanOrEqual(0);
+        expect(geometry.right).toBeLessThanOrEqual(phone ? 393 : 1280);
+        await page.close();
+        expect(account.context.pages()).toHaveLength(0);
+        await app.restart();
+        expect(app.processes[0].signal).toBe('SIGKILL');
+        page = await account.open({ workspace: false });
+        await openEditor();
+        if (phone) await expect(page.locator('#group_favorite_button')).toHaveClass(/fav_on/);
+        else await expect(page.locator('#rm_button_selected_ch h2')).toHaveText('Saved from the group editor');
+        expect(fs.readFileSync(filename)).toEqual(saved);
+        await page.close();
+        expect(account.context.pages()).toHaveLength(0);
+        expect(app.provider.calls).toHaveLength(0);
+    });
+}

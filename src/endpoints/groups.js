@@ -11,7 +11,9 @@ import { getFileNameValidationFunction } from '../middleware/validateFileName.js
 import { clearChatRecoveryState, createGroupChatTarget, markChatDeleted, runChatRecoveryBestEffort } from '../chat-recovery.js';
 import { createEntityDateAdded, ensureEntityDateAdded, reconcileEntityDateAdded, removeEntityDateAdded } from '../entity-date-added.js';
 import { removeChatMemory } from '../mewmory/store.js';
-import { withUntrackedRoleplayFiles } from '../roleplay-store.js';
+import { readRoleplayEntityLocked } from '../generation/roleplay-source.js';
+import { commitSingleGroupUpdateLocked } from '../roleplay-lifecycle.js';
+import { saveRoleplayAccount, withRoleplayAccount, withUntrackedRoleplayFiles } from '../roleplay-store.js';
 
 export const router = express.Router();
 const isChatBackupEnabled = !!getConfigValue('backups.chat.enabled', true, 'boolean');
@@ -146,12 +148,18 @@ router.post('/all', (request, response) => {
         'groups',
         dateAddedEntries,
     );
+    let protectedError;
 
     files.forEach(function (file) {
         try {
             const filePath = path.join(request.user.directories.groups, file);
-            const fileContents = fs.readFileSync(filePath, 'utf8');
-            const group = JSON.parse(fileContents);
+            const saved = withRoleplayAccount({ owner: request.user.profile.handle, directories: request.user.directories }, null,
+                (lease, account) => {
+                    const result = readRoleplayEntityLocked(lease, 'group', path.parse(file).name, { storage: true });
+                    if (result.changed) saveRoleplayAccount(lease);
+                    return { ...result, account };
+                });
+            const group = structuredClone(saved.data);
             const groupStat = groupStats.get(file) ?? fs.statSync(filePath);
             group.date_added = dateAddedByFile.get(file);
             group.create_date = new Date(groupStat.birthtimeMs).toISOString();
@@ -198,12 +206,16 @@ router.post('/all', (request, response) => {
 
             group.date_last_chat = date_last_chat;
             group.chat_size = chat_size;
+            group.__roleplay = { account: saved.account, locator: { kind: 'group', groupId: saved.locator.groupId },
+                source: { instanceId: saved.instanceId, revision: saved.revision, rawHash: saved.rawHash } };
             groups.push(group);
         } catch (error) {
+            if (error?.code?.startsWith('ROLEPLAY_')) protectedError = error;
             console.error(error);
         }
     });
 
+    if (protectedError) return response.status(protectedError.status || 503).send({ error: protectedError.code });
     return response.send(groups);
 });
 
@@ -246,7 +258,18 @@ router.post('/create', (request, response) => {
     } catch (metadataError) {
         console.error('Could not record date-added metadata after creating a group.', metadataError);
     }
-    return response.send(groupMetadata);
+    try {
+        const saved = withRoleplayAccount({ owner: request.user.profile.handle, directories: request.user.directories }, null,
+            (lease, account) => {
+                const result = readRoleplayEntityLocked(lease, 'group', id);
+                if (result.changed) saveRoleplayAccount(lease);
+                return { ...result, account };
+            });
+        return response.send({ ...groupMetadata, __roleplay: { account: saved.account,
+            locator: { kind: 'group', groupId: id }, source: { instanceId: saved.instanceId, revision: saved.revision, rawHash: saved.rawHash } } });
+    } catch (error) {
+        return response.status(error.status || 503).send({ error: error.code || 'ROLEPLAY_ACCOUNT_UNAVAILABLE' });
+    }
 });
 
 router.post('/edit', getFileNameValidationFunction('id'), (request, response) => {
@@ -254,34 +277,30 @@ router.post('/edit', getFileNameValidationFunction('id'), (request, response) =>
     if (!request.body || !request.body.id) {
         return response.sendStatus(400);
     }
-    warnOnGroupMetadata(request.body);
-    const id = request.body.id;
-    const pathToFile = path.join(request.user.directories.groups, sanitize(`${id}.json`));
-    const fileData = JSON.stringify(request.body, null, 4);
-    const operationTime = Date.now();
-    const fileExists = fs.existsSync(pathToFile);
-    const migrationFallback = fileExists ? getGroupDateAddedFallback(fs.statSync(pathToFile)) : operationTime;
-    const dateAddedRoot = getEntityDateAddedRoot(request.user.directories);
-    const fileName = path.basename(pathToFile);
-
-    if (fileExists) {
-        ensureEntityDateAdded(
-            dateAddedRoot,
-            'groups',
-            fileName,
-            migrationFallback,
-            operationTime,
-        );
-        tryWriteFileSync(pathToFile, fileData);
-    } else {
-        tryWriteFileSync(pathToFile, fileData);
-        try {
-            createEntityDateAdded(dateAddedRoot, 'groups', fileName, operationTime);
-        } catch (metadataError) {
-            console.error('Could not record date-added metadata after creating a group.', metadataError);
-        }
+    const { roleplay } = request.body;
+    const group = { ...request.body };
+    delete group.roleplay;
+    delete group.__roleplay;
+    if (!roleplay || !roleplay.account || !roleplay.source || typeof roleplay.operationKey !== 'string') {
+        return response.status(400).send({ error: 'roleplay_required' });
     }
-    return response.send({ ok: true });
+    try {
+        const result = withRoleplayAccount({ owner: request.user.profile.handle, directories: request.user.directories }, roleplay.account,
+            lease => commitSingleGroupUpdateLocked(lease, { operationKey: roleplay.operationKey, source: roleplay.source, group }));
+        const fileName = sanitize(`${group.id}.json`);
+        const pathToFile = path.join(request.user.directories.groups, fileName);
+        try {
+            ensureEntityDateAdded(getEntityDateAddedRoot(request.user.directories), 'groups', fileName,
+                getGroupDateAddedFallback(fs.statSync(pathToFile)), Date.now());
+        } catch (error) { console.warn('Could not preserve the group addition date:', error); }
+        return response.send({ ok: true, roleplay: { account: roleplay.account, operationKey: roleplay.operationKey,
+            changed: result.changed, rawChanged: result.rawChanged,
+            source: { instanceId: result.instanceId, revision: result.revision, rawHash: result.rawHash } } });
+    } catch (error) {
+        const code = error.code || 'ROLEPLAY_WRITE_UNCERTAIN';
+        const status = code === 'ROLEPLAY_STORE_FULL' ? 507 : error.status || (code === 'ROLEPLAY_WRITE_UNCERTAIN' ? 503 : 409);
+        return response.status(status).send({ error: code.toLowerCase(), code });
+    }
 });
 
 router.post('/delete', getFileNameValidationFunction('id'), async (request, response) => {

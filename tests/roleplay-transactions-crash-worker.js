@@ -7,7 +7,7 @@ import { setConfigFilePath, FILE_WRITE_RECOVERY_SUFFIX } from '../src/util.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { roleplayStoreDirectory } = await import('../src/roleplay-store.js');
-const { commitSingleChatWrite, reconcileSingleChatWrite } = await import('../src/roleplay-lifecycle.js');
+const { commitSingleChatWrite, reconcileSingleChatWrite, commitSingleGroupUpdate, reconcileSingleGroupUpdate } = await import('../src/roleplay-lifecycle.js');
 const { prepareNativeChatWrite, publishNativeChatWrite } = await import('../src/endpoints/chats.js');
 const { parseChatJsonl } = await import('../src/chat-recovery.js');
 const spec = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
@@ -54,7 +54,14 @@ fs.fsyncSync = fd => {
     originals.fsyncSync(fd);
     const filename = descriptors.get(fd);
     if (filename?.startsWith(path.join(root, 'pending') + path.sep) && filename.endsWith('/chat.after.jsonl')) pause('payload-durable');
-    if (filename === spec.filename && parseChatJsonl(fs.readFileSync(filename)).status === 'ok') pause('chat-durable');
+    if (filename?.startsWith(path.join(root, 'pending') + path.sep) && filename.endsWith('/group.after.json')) pause('group-payload-durable');
+    if (filename === spec.filename && spec.groupUpdate) {
+        const pending = JSON.parse(fs.readFileSync(path.join(root, 'state.json'), 'utf8')).state.pending;
+        if (pending?.kind === 'group-update' && fs.readFileSync(filename).equals(fs.readFileSync(path.join(root, 'pending', pending.id, 'group.after.json')))) {
+            pause('group-durable');
+        }
+    }
+    if (filename === spec.filename && !spec.groupUpdate && parseChatJsonl(fs.readFileSync(filename)).status === 'ok') pause('chat-durable');
     if (filename === spec.memory?.guard) pause('memory-guard-durable');
     if (filename === spec.memory?.archive) pause('memory-archive-durable');
     if (filename === root) {
@@ -77,8 +84,8 @@ fs.unlinkSync = filename => {
 };
 
 const host = { prepare: prepareNativeChatWrite, publish: publishNativeChatWrite };
-const result = spec.reconcile
-    ? reconcileSingleChatWrite(spec.scope, spec.input.operationKey, host)
-    : commitSingleChatWrite(spec.scope, spec.input, host);
+const result = spec.groupUpdate
+    ? spec.reconcile ? reconcileSingleGroupUpdate(spec.scope, spec.input.operationKey) : commitSingleGroupUpdate(spec.scope, spec.input)
+    : spec.reconcile ? reconcileSingleChatWrite(spec.scope, spec.input.operationKey, host) : commitSingleChatWrite(spec.scope, spec.input, host);
 for (const [name, fn] of Object.entries(originals)) fs[name] = fn;
 process.stdout.write(JSON.stringify({ result }) + '\n');

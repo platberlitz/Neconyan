@@ -214,6 +214,17 @@ describe('tryWriteFileSync atomic fallback', () => {
         expect(fs.readFileSync(filePath, 'utf8')).toBe('replacement');
     });
 
+    test('checks the saved creation identity before an in-place group write', () => {
+        const filePath = createTargetPath();
+        fs.writeFileSync(filePath, 'before', 'utf8');
+        const checked = fs.statSync(filePath, { bigint: true });
+        expect(() => tryWriteFileSync(filePath, 'after', 'utf8', {
+            preserveFileIdentity: true, invalidateBeforeWrite: true, preserveOnWriteError: true,
+            expectedFileIdentity: { dev: checked.dev, ino: checked.ino, birthtimeNs: checked.birthtimeNs + 1n },
+        })).toThrow(/replaced file/i);
+        expect(fs.readFileSync(filePath, 'utf8')).toBe('before');
+    });
+
     test('refuses an identity-preserving write after the checked bytes change in place', () => {
         const filePath = createTargetPath();
         fs.writeFileSync(filePath, 'checked bytes', 'utf8');

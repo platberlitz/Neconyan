@@ -573,7 +573,9 @@ export function saveGroupConversationSettings(groupId, settings, { personaId = g
         return;
     }
 
-    void editGroup(String(group.id), false, false);
+    void editGroup(String(group.id), false, false, undefined, { background: true,
+        backgroundChanges: { conversation_settings: group.conversation_settings } })
+        .catch(error => console.warn('Could not save group conversation settings:', error));
 }
 
 function getLegacyConversationMessageFingerprint(message) {

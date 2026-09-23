@@ -198,6 +198,56 @@ describe('protected browser save authority', () => {
         await finishRoleplaySave(editor);
     });
 
+    test('group navigation changes raw authority without advancing semantic revision', async () => {
+        const group = { kind: 'group', groupId: 'group' };
+        rememberRoleplayRead(group, evidence);
+        const first = beginRoleplaySave(group, { operationKey: 'group-navigation' });
+        const send = jest.fn(async body => {
+            const request = JSON.parse(body);
+            return response(200, { ok: true, roleplay: { account, operationKey: request.roleplay.operationKey,
+                changed: false, rawChanged: true, source: { ...source, rawHash: 'b'.repeat(64) } } });
+        });
+        await expect(sendRoleplaySave(first, { id: 'group', name: 'Same group' }, send)).resolves.toMatchObject({ ok: true });
+        await finishRoleplaySave(first);
+        const next = beginRoleplaySave(group, { operationKey: 'group-edit' });
+        const second = jest.fn(async body => {
+            const request = JSON.parse(body);
+            return response(200, { ok: true, roleplay: { account, operationKey: request.roleplay.operationKey,
+                changed: true, rawChanged: true, source: { ...source, revision: 2, rawHash: 'c'.repeat(64) } } });
+        });
+        await sendRoleplaySave(next, { id: 'group', name: 'Edited group' }, second);
+        await finishRoleplaySave(next);
+        expect(JSON.parse(second.mock.calls[0][0]).roleplay.source).toEqual({ ...source, rawHash: 'b'.repeat(64) });
+    });
+
+    test('a background group continuation uses its frozen predecessor without advancing editor authority', async () => {
+        const group = { kind: 'group', groupId: 'group' };
+        rememberRoleplayRead(group, evidence);
+        const foreground = beginRoleplaySave(group, { operationKey: 'foreground' });
+        const background = beginRoleplaySave(group, { operationKey: 'background', after: foreground });
+        const first = async body => {
+            const request = JSON.parse(body);
+            return response(200, { ok: true, roleplay: { account, operationKey: request.roleplay.operationKey,
+                changed: true, rawChanged: true, source: { ...source, revision: 2, rawHash: 'b'.repeat(64) } } });
+        };
+        const queued = jest.fn(async body => {
+            const request = JSON.parse(body);
+            return response(200, { ok: true, roleplay: { account, operationKey: request.roleplay.operationKey,
+                changed: true, rawChanged: true, source: { ...source, revision: 3, rawHash: 'c'.repeat(64) } } });
+        });
+        const waiting = sendRoleplaySave(background, { id: 'group' }, queued);
+        await sendRoleplaySave(foreground, { id: 'group' }, first);
+        await finishRoleplaySave(foreground);
+        await waiting;
+        await finishRoleplaySave(background);
+        expect(JSON.parse(queued.mock.calls[0][0]).roleplay.source).toEqual({ ...source, revision: 2, rawHash: 'b'.repeat(64) });
+        const editor = beginRoleplaySave(group, { operationKey: 'stale-editor' });
+        const refusal = jest.fn(async () => response(409, { error: 'roleplay_source_changed' }));
+        await sendRoleplaySave(editor, { id: 'group' }, refusal);
+        await finishRoleplaySave(editor);
+        expect(JSON.parse(refusal.mock.calls[0][0]).roleplay.source).toEqual({ ...source, revision: 2, rawHash: 'b'.repeat(64) });
+    });
+
     test('only explicit new destinations can discover a vacancy before writing', async () => {
         const created = beginRoleplaySave(locator, { operationKey: 'create', create: true });
         const load = jest.fn(async () => readResponse({ account, locator, vacancy: 3 }));

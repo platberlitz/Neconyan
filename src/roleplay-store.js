@@ -246,13 +246,17 @@ function validSubmissionResult(value) {
     return object(value) && UUID.test(value.instanceId) && integer(value.revision) && value.revision >= 1
         && HASH.test(value.rawHash) && validIntegrity(value.integrity) && UUID.test(value.writeId)
         && typeof value.changed === 'boolean' && ['update', 'create'].includes(value.mode)
+        && (value.kind === undefined || (value.kind === 'group' && value.mode === 'update' && typeof value.rawChanged === 'boolean'))
         && (value.mode !== 'create' || (value.revision === 1 && value.changed))
         && encodedBytes(value) <= SUBMISSION_RESULT_MAX_BYTES;
 }
 
 function validCleanup(value) {
-    if (!object(value) || Object.keys(value).length !== 2 || !object(value.payloads)
-        || !HASH.test(value.payloads['chat.after.jsonl'])
+    if (!object(value) || Object.keys(value).length !== 2 || !object(value.payloads)) return false;
+    if (Object.hasOwn(value.payloads, 'group.after.json')) {
+        return Object.keys(value.payloads).length === 1 && HASH.test(value.payloads['group.after.json']) && value.journal === null;
+    }
+    if (!HASH.test(value.payloads['chat.after.jsonl'])
         || Object.hasOwn(value.payloads, 'memory.archive.json') !== Object.hasOwn(value.payloads, 'memory.guard.json')
         || Object.entries(value.payloads).some(([name, hash]) => !['chat.after.jsonl', 'memory.archive.json', 'memory.guard.json'].includes(name) || !HASH.test(hash))) return false;
     return value.journal === null || (object(value.journal) && Object.keys(value.journal).length === 3
@@ -291,7 +295,8 @@ function validateState(state, identity) {
              || (value.state === 'closed' && !validSubmissionResult(value.outcome))
              || (value.outcome !== undefined && value.outcome !== null && !validSubmissionResult(value.outcome))) throw damaged();
         const target = state.resources[value.targetInstanceId];
-        if (target.accountId !== value.accountId || target.dataEpoch !== value.dataEpoch) throw damaged();
+        if (target.accountId !== value.accountId || target.dataEpoch !== value.dataEpoch
+            || (value.outcome?.kind === 'group' && target.kind !== 'group')) throw damaged();
         for (const [effectKey, effect] of Object.entries(value.effects)) {
             if (!HASH.test(effectKey) || !object(effect) || !HASH.test(effect.effectHash) || !UUID.test(effect.writeId)
                 || !Object.hasOwn(state.resources, effect.instanceId) || !integer(effect.appliedRevision)
@@ -301,11 +306,15 @@ function validateState(state, identity) {
             if (effect.result && (effect.result.instanceId !== effect.instanceId || effect.result.revision !== effect.appliedRevision
                 || effect.result.writeId !== effect.writeId || (value.outcome && !isDeepStrictEqual(effect.result, value.outcome)))) throw damaged();
             if (effect.cleanup !== undefined && (!validCleanup(effect.cleanup)
-                || effect.cleanup.payloads['chat.after.jsonl'] !== effect.result?.rawHash
+                || (effect.cleanup.payloads['group.after.json'] ?? effect.cleanup.payloads['chat.after.jsonl']) !== effect.result?.rawHash
+                || (effect.result?.kind === 'group') !== Object.hasOwn(effect.cleanup.payloads, 'group.after.json')
                 || (effect.result.mode === 'create' && effect.cleanup.journal !== null))) throw damaged();
         }
     }
-    if (state.pending !== null) validateChatTransaction(state.pending, state);
+    if (state.pending !== null) {
+        if (state.pending.kind === 'group-update') validateGroupTransaction(state.pending, state);
+        else validateChatTransaction(state.pending, state);
+    }
     return state;
 }
 
@@ -446,6 +455,37 @@ function validPhysical(value) {
         && ['dev', 'ino', 'birthtimeNs'].every(key => typeof value[key] === 'string' && /^\d{1,30}$/.test(value[key]));
 }
 
+function validateGroupTransaction(pending, state) {
+    if (pending.schema !== 1 || pending.kind !== 'group-update' || !UUID.test(pending.id)
+        || pending.accountId !== state.accountId || pending.dataEpoch !== state.dataEpoch
+        || !HASH.test(pending.operationKeyHash) || !HASH.test(pending.intentHash) || !UUID.test(pending.instanceId)
+        || !isStoredLocator('group', pending.locator) || !['prepared', 'group-applied'].includes(pending.phase)
+        || typeof pending.changed !== 'boolean' || typeof pending.rawChanged !== 'boolean'
+        || !integer(pending.reservedBytes) || pending.reservedBytes > ROLEPLAY_RECOVERY_RESERVE_BYTES
+        || (pending.appliedPhysical !== null && !validPhysical(pending.appliedPhysical))
+        || !object(pending.source) || pending.source.instanceId !== pending.instanceId
+        || !integer(pending.source.revision) || pending.source.revision < 1 || !HASH.test(pending.source.rawHash)
+        || !object(pending.before) || !integer(pending.before.revision) || pending.before.revision !== pending.source.revision
+        || pending.before.rawHash !== pending.source.rawHash || !HASH.test(pending.before.contentHash)
+        || !validPhysical(pending.before.physical)
+        || (pending.before.writeId !== null && !UUID.test(pending.before.writeId))
+        || !object(pending.after) || !HASH.test(pending.after.rawHash) || !HASH.test(pending.after.contentHash)
+        || pending.after.payload !== 'group.after.json' || !integer(pending.after.byteLength)
+        || pending.after.byteLength > 64 * 1024 * 1024
+        || pending.after.revision !== pending.before.revision + Number(pending.changed)
+        || pending.after.writeId !== (pending.rawChanged ? pending.id : pending.before.writeId)
+        || pending.rawChanged !== (pending.after.rawHash !== pending.before.rawHash)
+        || pending.changed !== (pending.after.contentHash !== pending.before.contentHash)
+        || encodedBytes(pending) > PENDING_MAX_BYTES) throw damaged();
+    const resource = state.resources[pending.instanceId];
+    if (!resource || resource.kind !== 'group' || resource.status !== 'live'
+        || resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch
+        || !isDeepStrictEqual(resource.locator, pending.locator) || resource.revision !== pending.before.revision
+        || !isDeepStrictEqual(resource.head, { rawHash: pending.before.rawHash, contentHash: pending.before.contentHash,
+            physical: pending.before.physical, writeId: pending.before.writeId })
+        || state.paths[roleplayPathKey(state, 'group', pending.locator)]?.instanceId !== pending.instanceId) throw damaged();
+}
+
 export function largestRoleplayJournal(pending) {
     return pending?.mode === 'update' ? { rawHash: 'f'.repeat(64), physical: ROLEPLAY_LARGEST_PHYSICAL,
         originalHash: pending.before.rawHash, nextHash: 'f'.repeat(64) } : null;
@@ -455,8 +495,10 @@ export function largestRoleplayJournal(pending) {
 export function assertRoleplayTransactionCapacity(lease, pending, finalState) {
     const { state, identity } = roleplayLease(lease);
     // Reserve the largest recovery progress record before staging or publishing any content.
-    const progress = pending && { ...state, pending: { ...pending, phase: 'chat-applied', appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL,
-        repair: { rawHash: pending.after.rawHash, physical: ROLEPLAY_LARGEST_PHYSICAL }, journal: largestRoleplayJournal(pending) } };
+    const progress = pending && { ...state, pending: pending.kind === 'group-update'
+        ? { ...pending, phase: 'group-applied', appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL }
+        : { ...pending, phase: 'chat-applied', appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL,
+            repair: { rawHash: pending.after.rawHash, physical: ROLEPLAY_LARGEST_PHYSICAL }, journal: largestRoleplayJournal(pending) } };
     for (const candidate of [{ ...state, pending }, progress, finalState].filter(Boolean)) {
         if (candidate.pending && encodedBytes(candidate.pending) > PENDING_MAX_BYTES) {
             throw roleplayError('ROLEPLAY_STORE_FULL', 'Protected Roleplay evidence has no room for the complete transaction.', 413);
@@ -479,7 +521,7 @@ export function roleplayPayloadDirectory(lease, transactionId) {
 }
 
 function payloadPath(lease, transactionId, name) {
-    if (!['chat.after.jsonl', 'chat.corrupt.jsonl', 'memory.archive.json', 'memory.guard.json'].includes(name)) throw damaged();
+    if (!['chat.after.jsonl', 'chat.corrupt.jsonl', 'group.after.json', 'memory.archive.json', 'memory.guard.json'].includes(name)) throw damaged();
     return path.join(roleplayPayloadDirectory(lease, transactionId), name);
 }
 

@@ -46,20 +46,22 @@ describe('entity date added endpoints', () => {
 
     beforeEach(() => {
         tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-date-added-endpoints-'));
+        const accountRoot = path.join(tempRoot, 'date-added-test-user');
         directories = {
-            root: tempRoot,
-            backups: path.join(tempRoot, 'backups'),
-            chats: path.join(tempRoot, 'chats'),
-            characters: path.join(tempRoot, 'characters'),
-            groupChats: path.join(tempRoot, 'group chats'),
-            groups: path.join(tempRoot, 'groups'),
-            thumbnailsAvatar: path.join(tempRoot, 'thumbnails', 'avatar'),
-            thumbnailsAvatarMobile: path.join(tempRoot, 'thumbnails', 'avatar', 'mobile'),
-            worlds: path.join(tempRoot, 'worlds'),
+            root: accountRoot,
+            backups: path.join(accountRoot, 'backups'),
+            chats: path.join(accountRoot, 'chats'),
+            characters: path.join(accountRoot, 'characters'),
+            groupChats: path.join(accountRoot, 'group chats'),
+            groups: path.join(accountRoot, 'groups'),
+            thumbnailsAvatar: path.join(accountRoot, 'thumbnails', 'avatar'),
+            thumbnailsAvatarMobile: path.join(accountRoot, 'thumbnails', 'avatar', 'mobile'),
+            worlds: path.join(accountRoot, 'worlds'),
         };
         for (const directory of Object.values(directories)) {
             fs.mkdirSync(directory, { recursive: true });
         }
+        initialiseRoleplayAccount({ owner: 'date-added-test-user', directories });
     });
 
     afterEach(() => {
@@ -225,13 +227,15 @@ describe('entity date added endpoints', () => {
         });
         expect(createResponse.status).toBe(200);
         const createdGroup = await createResponse.json();
+        expect(createdGroup.__roleplay.source.revision).toBe(1);
         const [listedGroup] = await getGroups();
         const originalDateAdded = listedGroup.date_added;
 
         await delay();
         const editResponse = await postJson('/api/groups/edit', {
-            ...createdGroup,
+            ...listedGroup,
             name: 'Updated Group',
+            roleplay: { account: listedGroup.__roleplay.account, source: listedGroup.__roleplay.source, operationKey: 'date-edited' },
         });
         expect(editResponse.status).toBe(200);
 
@@ -275,7 +279,6 @@ describe('entity date added endpoints', () => {
         });
 
         await delay();
-        initialiseRoleplayAccount({ owner: path.basename(directories.root), directories });
         await migrateGroupChatsMetadataFormat([directories]);
 
         const migratedGroup = (await getGroups()).find(group => group.id === 'legacy-group');

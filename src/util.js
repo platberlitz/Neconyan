@@ -2411,7 +2411,7 @@ export function recoverFileWritesInDirectorySync(directory) {
  * @param {string} filePath
  * @param {string|Buffer} data
  * @param {import('node:fs').WriteFileOptions} [options]
- * @param {{preserveFileIdentity?: boolean, expectedFileIdentity?: {dev: bigint, ino: bigint}, expectedFileHash?: string, expectedFileAbsent?: boolean, invalidateBeforeWrite?: boolean, replaceFileOnly?: boolean, durable?: boolean, validateBeforeReplace?: () => void, preserveOnCreateError?: boolean, preserveOnWriteError?: boolean, maxFileBytes?: number}} [writeOptions]
+ * @param {{preserveFileIdentity?: boolean, expectedFileIdentity?: {dev: bigint, ino: bigint, birthtimeNs?: bigint}, expectedFileHash?: string, expectedFileAbsent?: boolean, invalidateBeforeWrite?: boolean, replaceFileOnly?: boolean, durable?: boolean, validateBeforeReplace?: () => void, preserveOnCreateError?: boolean, preserveOnWriteError?: boolean, maxFileBytes?: number}} [writeOptions]
  */
 export function tryWriteFileSync(filePath, data, options = typeof data === 'string' ? 'utf8' : undefined, { preserveFileIdentity = false, expectedFileIdentity = undefined, expectedFileHash = undefined, expectedFileAbsent = false, invalidateBeforeWrite = false, replaceFileOnly = false, durable = false, validateBeforeReplace = undefined, preserveOnCreateError = false, preserveOnWriteError = false, maxFileBytes = Number.MAX_SAFE_INTEGER } = {}) {
     if (!Number.isSafeInteger(maxFileBytes) || maxFileBytes < 0) throw new TypeError('Invalid existing-file byte limit.');
@@ -2521,7 +2521,8 @@ export function tryWriteFileSync(filePath, data, options = typeof data === 'stri
                 const descriptorStats = fs.fstatSync(fileDescriptor, { bigint: true });
                 const pathStats = fs.lstatSync(filePath, { bigint: true });
                 const matchesExpectedIdentity = !expectedFileIdentity
-                    || (descriptorStats.dev === expectedFileIdentity.dev && descriptorStats.ino === expectedFileIdentity.ino);
+                    || (descriptorStats.dev === expectedFileIdentity.dev && descriptorStats.ino === expectedFileIdentity.ino
+                        && (expectedFileIdentity.birthtimeNs === undefined || descriptorStats.birthtimeNs === expectedFileIdentity.birthtimeNs));
                 if (!descriptorStats.isFile() || !pathStats.isFile()
                     || descriptorStats.dev !== pathStats.dev || descriptorStats.ino !== pathStats.ino
                     || !matchesExpectedIdentity) {
