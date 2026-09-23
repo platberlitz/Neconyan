@@ -104,7 +104,8 @@ test('recorded group edit updates its semantic dependency and exact physical hea
     assert.equal(result.rawChanged, true);
     assert.equal(result.revision, before.revision + 1);
     assert.equal(JSON.parse(fs.readFileSync(groupFile, 'utf8')).name, 'Edited group');
-    assert.deepEqual(readRoleplayFile(groupFile).physical, before.physical);
+    assert.notDeepEqual(readRoleplayFile(groupFile).physical, before.physical);
+    assert.deepEqual(readRoleplayFile(groupFile).physical, readRoleplayAccount(f.scope).resources[before.instanceId].head.physical);
     assert.equal(readRoleplayAccount(f.scope).resources[before.instanceId].head.rawHash, result.rawHash);
     assert.throws(() => assertRoleplaySource(f.scope, generation), { code: 'ROLEPLAY_SOURCE_CHANGED' });
     assert.deepEqual(commitSingleGroupUpdate(f.scope, { operationKey: 'edit', source: sourceOf(before), group }), result);

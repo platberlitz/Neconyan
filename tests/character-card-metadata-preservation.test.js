@@ -109,7 +109,7 @@ describe('character card metadata preservation', () => {
         process.chdir(originalWorkingDirectory);
     });
 
-    test('keeps the PNG container and file identity during a metadata edit', async () => {
+    test('keeps the PNG container and publishes a new physical file during a metadata edit', async () => {
         jest.spyOn(console, 'error').mockImplementation(() => {});
         jest.spyOn(console, 'info').mockImplementation(() => {});
         await createAlice();
@@ -132,8 +132,7 @@ describe('character card metadata preservation', () => {
         expect(decodedImage.bitmap.width).toBe(AVATAR_WIDTH);
         expect(decodedImage.bitmap.height).toBe(AVATAR_HEIGHT);
         expect(nonCardChunks(cardAfter)).toEqual(nonCardChunks(cardBefore));
-        expect(statAfter.ino).toBe(statBefore.ino);
-        expect(statAfter.birthtimeMs).toBe(statBefore.birthtimeMs);
+        expect(statAfter.ino).not.toBe(statBefore.ino);
         expect(statAfter.mtimeMs).toBeGreaterThan(statBefore.mtimeMs);
 
         const cardChunks = decodeCardChunks(cardAfter);

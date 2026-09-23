@@ -1827,12 +1827,11 @@ function enrolCharacterCard(lease, avatar) {
     }
 }
 
-/** Removes ordinary leftovers after proving, under the same account lock, that none became protected. */
-function removeLooseFiles(lease, files) {
-    const present = files.filter(file => fs.existsSync(file));
-    if (!present.length) return;
-    assertUntrackedRoleplayFiles(lease, present);
-    for (const file of present) fs.rmSync(file, { force: true });
+function looseCardTask(lease, avatar, filename) {
+    assertUntrackedRoleplayFiles(lease, [filename]);
+    const stats = fs.lstatSync(filename, { bigint: true });
+    return { task: 'loose-card-remove', avatar,
+        physical: { dev: String(stats.dev), ino: String(stats.ino), birthtimeNs: String(stats.birthtimeNs) } };
 }
 
 // ponytail: server-generated keys; the browser does not retry renames with a stable key yet.
@@ -1841,6 +1840,7 @@ function renameCharacterCard(request, oldAvatar, newAvatar, bytes) {
         const card = enrolCharacterCard(lease, oldAvatar);
         if (card === 'damaged') throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'The character card cannot be read.', 422);
         const { tracked, vanished } = characterChats(lease, request, oldAvatar);
+        const looseCard = card === 'loose' ? looseCardTask(lease, oldAvatar, path.join(request.user.directories.characters, oldAvatar)) : null;
         const result = commitRoleplayLifecycleLocked(lease, {
             action: 'character-rename',
             intent: { from: oldAvatar, to: newAvatar },
@@ -1853,10 +1853,10 @@ function renameCharacterCard(request, oldAvatar, newAvatar, bytes) {
             auxiliary: [
                 { task: 'character-memory-rename', from: oldAvatar, to: newAvatar },
                 { task: 'chat-folder-move', from: oldAvatar, to: newAvatar },
+                ...looseCard ? [looseCard] : [],
                 { task: 'date-added-remove', entity: 'characters', id: oldAvatar },
             ],
         }, characterLifecycleHost(request));
-        if (card === 'loose') removeLooseFiles(lease, [path.join(request.user.directories.characters, oldAvatar)]);
         return result;
     });
 }
@@ -2194,7 +2194,7 @@ function deleteCharacterCard(request, avatar, avatarPath, chatsDirectory, delete
         const cardTracked = card === 'tracked';
         const chats = deleteChats ? characterChats(lease, request, avatar) : { tracked: [], untracked: [], vanished: [], loose: [] };
         chats.tracked.push(...chats.vanished);
-        const loose = [...chats.loose, ...card === 'loose' ? [avatarPath] : []];
+        const looseCard = card === 'loose' ? looseCardTask(lease, avatar, avatarPath) : null;
         const all = [...chats.tracked, ...chats.untracked];
         if (!cardTracked && !chats.tracked.length) {
             const chatFiles = all.map(locator => path.join(chatsDirectory, locator.chat + '.jsonl'));
@@ -2225,9 +2225,9 @@ function deleteCharacterCard(request, avatar, avatarPath, chatsDirectory, delete
                 ...all.map(locator => ({ task: 'chat-recovery-clear', locator })),
                 { task: 'source-memory-remove', avatar, world: '', deleteChats },
                 ...deleteChats ? [{ task: 'chat-folder-remove', avatar }] : [],
+                ...looseCard ? [looseCard] : [],
             ],
         }, characterLifecycleHost(request));
-        removeLooseFiles(lease, loose);
         return result;
     });
 }

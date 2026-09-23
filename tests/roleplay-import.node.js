@@ -223,7 +223,8 @@ test('one CAI upload links every history to the captured group in one receipt', 
     assert.deepEqual(group.chats.slice(-2), result.names);
     assert.equal(group.chat_id, 'Source');
     assert.deepEqual(group.chat_metadata, { note: 'retained' });
-    assert.deepEqual(readRoleplayFile(groupFile).physical, saved.physical);
+    assert.notDeepEqual(readRoleplayFile(groupFile).physical, saved.physical);
+    assert.deepEqual(readRoleplayFile(groupFile).physical, readRoleplayAccount(f.scope).resources[saved.instanceId].head.physical);
     for (const name of result.names) {
         const file = readRoleplayFile(path.join(f.scope.directories.groupChats, name + '.jsonl'));
         assert.ok(file);

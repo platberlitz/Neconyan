@@ -30,20 +30,20 @@ function failWrite(t, matches, nth = 1) {
 const lifecycle = (f, key, op, avatar, bytes) => withRoleplayAccount(f.scope, null, lease => commitRoleplayLifecycleLocked(lease, {
     operationKey: key, action: `character-${op}`, intent: { avatar }, steps: [{ op, kind: 'character', locator: { avatar }, bytes }] }));
 
-test('a card update torn by a full disk finishes from the staged copy on retry and at startup', t => {
+test('a failed card update leaves its previous bytes intact and finishes at startup', t => {
     const f = fixture(t, false, 'torn-update');
     const card = path.join(f.scope.directories.characters, 'Nova.png');
     readRoleplayEntity(f.scope, 'character', 'Nova.png');
-    const { ino } = fs.statSync(card);
+    const original = fs.readFileSync(card);
     const bytes = writeCard(png, JSON.stringify({ name: 'Nova', description: 'Edited '.repeat(200) }));
-    const restore = failWrite(t, stat => stat.ino === ino, 2);
+    const restore = failWrite(t, () => fs.readdirSync(f.scope.directories.characters).some(name => name.endsWith('.tmp')));
     assert.throws(() => lifecycle(f, 'edit', 'update', 'Nova.png', bytes), error => error.code === 'ENOSPC' && error.roleplayWritePending);
     restore();
-    assert.equal(fs.readFileSync(card)[0], bytes[0] ^ 0xFF);
+    assert.deepEqual(fs.readFileSync(card), original);
     assert.equal(readRoleplayAccount(f.scope).pending.kind, 'lifecycle');
     bootstrapRoleplayAccount({ owner: 'torn-update', directories: f.scope.directories }, roleplayNativeHost);
     assert.deepEqual(fs.readFileSync(card), bytes);
-    assert.equal(fs.statSync(card).ino, ino);
+    assert.notDeepEqual(fs.readFileSync(card), original);
     assert.equal(readRoleplayAccount(f.scope).pending, null);
     assert.equal(lifecycle(f, 'edit', 'update', 'Nova.png', bytes).action, 'character-update');
 });
@@ -61,18 +61,19 @@ test('a card create that fails part-way never leaves a partial card', t => {
     assert.deepEqual(fs.readdirSync(f.scope.directories.characters).filter(name => name.endsWith('.tmp')), []);
 });
 
-test('a group update torn by a full disk finishes at startup', t => {
+test('a failed group update leaves its previous bytes intact and finishes at startup', t => {
     const f = fixture(t, true, 'torn-group');
     const groupFile = path.join(f.scope.directories.groups, 'group.json');
     const before = readRoleplayEntity(f.scope, 'group', 'group');
-    const { ino } = fs.statSync(groupFile);
+    const original = fs.readFileSync(groupFile);
     const group = { ...before.data, name: 'Edited group '.repeat(50) };
     const source = { instanceId: before.instanceId, revision: before.revision, rawHash: before.rawHash };
-    const restore = failWrite(t, stat => stat.ino === ino, 2);
+    const restore = failWrite(t, () => fs.readdirSync(f.scope.directories.groups).some(name => name.endsWith('.tmp')));
     assert.throws(() => commitSingleGroupUpdate(f.scope, { operationKey: 'edit', source, group }), error => error.roleplayWritePending);
     restore();
+    assert.deepEqual(fs.readFileSync(groupFile), original);
     bootstrapRoleplayAccount({ owner: 'torn-group', directories: f.scope.directories }, roleplayNativeHost);
     assert.equal(JSON.parse(fs.readFileSync(groupFile, 'utf8')).name, group.name);
-    assert.equal(fs.statSync(groupFile).ino, ino);
+    assert.notDeepEqual(fs.readFileSync(groupFile), original);
     assert.equal(readRoleplayAccount(f.scope).pending, null);
 });

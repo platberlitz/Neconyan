@@ -318,16 +318,13 @@ function applyPendingGroupUpdate(lease) {
     if (pending?.kind !== 'group-update') throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'There is no matching group update.');
     const filename = groupUpdatePath(scope, pending.locator);
     let file = readRoleplayFile(filename, CHAT_LIMIT);
-    if (!file || !isDeepStrictEqual(file.physical, pending.before.physical)
-        || (pending.phase === 'group-applied' && file.rawHash !== pending.after.rawHash)
-        || (pending.appliedPhysical && !isDeepStrictEqual(file.physical, pending.appliedPhysical))) throw conflict();
-    const staged = pending.rawChanged && file.rawHash !== pending.after.rawHash ? groupUpdatePayload(lease, pending) : null;
-    if (staged && (file.rawHash === pending.before.rawHash || isOwnTornWrite(file, pending.before, staged.bytes))) {
-        file = withChatFileLocks([filename], () => rewriteInPlace(filename, staged.bytes, pending.before));
-    } else if (file.rawHash !== pending.after.rawHash) {
-        // A deleted, replaced, corrupt, or third-state file is retained with its pending evidence.
-        throw conflict();
+    if (pending.rawChanged) {
+        const payload = groupUpdatePayload(lease, pending);
+        file = withChatFileLocks([filename], () => publishThroughTemporary(lease, filename, payload.bytes,
+            `${pending.id}-group`, pending.before, () => pending.appliedPhysical,
+            physical => { pending.appliedPhysical = physical; }));
     } else {
+        if (!sameObservation(file, pending.before)) throw conflict();
         file = readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
     }
     if (!file || file.rawHash !== pending.after.rawHash) throw conflict();
@@ -613,11 +610,8 @@ function assertImportTarget(lease, pending) {
         return;
     }
     const groupFile = readRoleplayFile(groupUpdatePath(scope, pending.group.locator), CHAT_LIMIT);
-    const expected = pending.group.appliedPhysical
-        ? { rawHash: pending.group.after.rawHash, physical: pending.group.appliedPhysical } : pending.group.before;
-    if (!sameObservation(groupFile, expected)
-        && !(pending.group.appliedPhysical === null && groupFile?.rawHash === pending.group.after.rawHash
-            && isDeepStrictEqual(groupFile.physical, pending.group.before.physical))) throw conflict();
+    if (!sameObservation(groupFile, pending.group.before)
+        && !sameObservation(groupFile, { rawHash: pending.group.after.rawHash, physical: pending.group.appliedPhysical })) throw conflict();
 }
 
 function importedOutputFile(lease, output) {
@@ -682,15 +676,12 @@ function applyPendingChatImport(lease, host) {
         const group = pending.group;
         const filename = groupUpdatePath(scope, group.locator);
         let file = readRoleplayFile(filename, CHAT_LIMIT);
-        const payload = !group.appliedPhysical && file?.rawHash !== group.after.rawHash
-            ? readRoleplayPayload(lease, pending.id, group.after.payload, group.after.rawHash, CHAT_LIMIT) : null;
-        if (payload && (sameObservation(file, group.before) || isOwnTornWrite(file, group.before, payload.bytes))) {
-            file = withChatFileLocks([filename], () => rewriteInPlace(filename, payload.bytes, group.before));
-        } else file = readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
-        if (!file || file.rawHash !== group.after.rawHash || !isDeepStrictEqual(file.physical, group.before.physical)
-            || (group.appliedPhysical && !isDeepStrictEqual(file.physical, group.appliedPhysical))) throw conflict();
-        if (!group.appliedPhysical) {
-            group.appliedPhysical = file.physical;
+        const payload = readRoleplayPayload(lease, pending.id, group.after.payload, group.after.rawHash, CHAT_LIMIT);
+        file = withChatFileLocks([filename], () => publishThroughTemporary(lease, filename, payload.bytes,
+            `${pending.id}-import-group`, group.before, () => group.appliedPhysical,
+            physical => { group.appliedPhysical = physical; }));
+        if (!sameObservation(file, { rawHash: group.after.rawHash, physical: group.appliedPhysical })) throw conflict();
+        if (pending.phase !== 'linked') {
             pending.phase = 'linked';
             saveRoleplayAccount(lease);
         }
@@ -994,46 +985,35 @@ function finishedLifecycle(state, pending) {
     return next;
 }
 
-/**
- * Publishes staged bytes through a sibling temporary file and a rename, so a failed or interrupted write never
- * leaves a torn protected file. `accept(current)` runs under the chat lock just before the rename.
- */
-function publishThroughTemporary(filename, bytes, tag, accept) {
+/** The temporary file's physical identity is persisted before publication, so replay cannot adopt a third state. */
+function publishThroughTemporary(lease, filename, bytes, tag, before, getPhysical, setPhysical) {
     const temporary = path.join(path.dirname(filename), `.neconyan-roleplay-${tag}.tmp`);
-    fs.rmSync(temporary, { force: true });
-    if (tryWriteFileSync(temporary, bytes, { mode: 0o600 }, { expectedFileAbsent: true, durable: true }) === false) {
-        throw roleplayError('ROLEPLAY_WRITE_UNCERTAIN', 'The protected file could not be written.', 503);
+    const rawHash = crypto.createHash('sha256').update(bytes).digest('hex');
+    let physical = getPhysical();
+    let current = readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: true });
+    if (physical && sameObservation(current, { rawHash, physical })) return current;
+    if (before ? !sameObservation(current, before) : Boolean(current)) throw conflict();
+    if (!physical) {
+        let staged = readRoleplayFile(temporary, CHAT_LIMIT, { allowMissingParent: true });
+        if (!staged) {
+            if (tryWriteFileSync(temporary, bytes, { mode: 0o600 }, { expectedFileAbsent: true, durable: true }) === false) {
+                throw roleplayError('ROLEPLAY_WRITE_UNCERTAIN', 'The protected file could not be written.', 503);
+            }
+            staged = readRoleplayFile(temporary, CHAT_LIMIT, { flush: true });
+        }
+        if (staged?.rawHash !== rawHash) throw conflict();
+        physical = staged.physical;
+        setPhysical(physical);
+        saveRoleplayAccount(lease);
     }
-    try {
-        accept(readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: true }));
-        fs.renameSync(temporary, filename);
-    } catch (error) {
-        fs.rmSync(temporary, { force: true });
-        throw error;
-    }
+    if (!sameObservation(readRoleplayFile(temporary, CHAT_LIMIT), { rawHash, physical })) throw conflict();
+    current = readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: true });
+    if (before ? !sameObservation(current, before) : Boolean(current)) throw conflict();
+    fs.renameSync(temporary, filename);
     fsyncDirectorySync(path.dirname(filename));
-    return readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
-}
-
-/** The identity-preserving writer's own interrupted state: same file, first byte still inverted. */
-function isOwnTornWrite(file, before, bytes) {
-    return Boolean(file && before && bytes.length && file.bytes.length && isDeepStrictEqual(file.physical, before.physical)
-        && file.bytes[0] === (bytes[0] ^ 0xFF));
-}
-
-/**
- * Rewrites a protected file in place, keeping its identity. A write that failed or was interrupted part-way
- * leaves the inverted first byte, which this recognises and finishes from the staged copy instead of refusing.
- */
-function rewriteInPlace(filename, bytes, before) {
-    const current = readRoleplayFile(filename, CHAT_LIMIT);
-    if (!sameObservation(current, before) && !isOwnTornWrite(current, before, bytes)) throw conflict();
-    tryWriteFileSync(filename, bytes, { mode: 0o600 }, {
-        preserveFileIdentity: true, invalidateBeforeWrite: true, preserveOnWriteError: true,
-        expectedFileIdentity: Object.fromEntries(Object.entries(before.physical).map(([name, value]) => [name, BigInt(value)])),
-        expectedFileHash: current.rawHash, maxFileBytes: CHAT_LIMIT,
-    });
-    return readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
+    const published = readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
+    if (!sameObservation(published, { rawHash, physical })) throw conflict();
+    return published;
 }
 
 function writeLifecycleContents(lease, pending, step) {
@@ -1042,26 +1022,13 @@ function writeLifecycleContents(lease, pending, step) {
     return withChatFileLocks([filename], () => {
         const file = readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: true });
         if (step.physical) {
-            if (!sameObservation(file, { rawHash: step.after.rawHash, physical: step.physical })) throw conflict();
-            return false;
-        }
-        // A file carrying exactly the staged bytes is this transaction's interrupted publication.
-        if (file?.rawHash === step.after.rawHash && (step.op === 'create' || isDeepStrictEqual(file.physical, step.before.physical))) {
-            step.physical = file.physical;
-            return true;
+            if (sameObservation(file, { rawHash: step.after.rawHash, physical: step.physical })) return false;
         }
         const { bytes } = readRoleplayPayload(lease, pending.id, step.after.payload, step.after.rawHash, CHAT_LIMIT);
-        let saved;
-        if (step.op === 'update') saved = rewriteInPlace(filename, bytes, step.before);
-        else {
-            if (file) throw conflict();
-            createRoleplayDirectory(path.dirname(filename), scope.directories.root);
-            saved = publishThroughTemporary(filename, bytes, `${pending.id}-${step.after.payload}`, current => {
-                if (current) throw conflict();
-            });
-        }
-        if (saved?.rawHash !== step.after.rawHash) throw conflict();
-        step.physical = saved.physical;
+        if (step.op === 'create') createRoleplayDirectory(path.dirname(filename), scope.directories.root);
+        publishThroughTemporary(lease, filename, bytes, `${pending.id}-${step.after.payload}`,
+            step.op === 'update' ? step.before : null, () => step.physical,
+            physical => { step.physical = physical; });
         return true;
     });
 }
@@ -1130,7 +1097,17 @@ function moveChatFolder(scope, task) {
 function applyLifecycleTask(scope, task, host) {
     const dateRoot = scope.directories.root || path.dirname(scope.directories.groups);
     if (task.task === 'chat-memory-remove') removeChatMemory(scope.directories, task.locator);
-    else if (task.task === 'source-memory-remove') removeSourceMemory(scope.directories, task);
+    else if (task.task === 'loose-card-remove') {
+        const filename = roleplayEntityPath(scope, 'character', { avatar: task.avatar });
+        withChatFileLocks([filename], () => {
+            const stats = fs.lstatSync(filename, { bigint: true, throwIfNoEntry: false });
+            if (!stats) return;
+            const physical = { dev: String(stats.dev), ino: String(stats.ino), birthtimeNs: String(stats.birthtimeNs) };
+            if (!isDeepStrictEqual(physical, task.physical)) throw conflict();
+            fs.unlinkSync(filename);
+            fsyncDirectorySync(path.dirname(filename));
+        });
+    } else if (task.task === 'source-memory-remove') removeSourceMemory(scope.directories, task);
     else if (task.task === 'date-added-create' || task.task === 'date-added-remove') {
         try {
             if (task.task === 'date-added-create') createEntityDateAdded(dateRoot, task.entity, task.id, task.time);

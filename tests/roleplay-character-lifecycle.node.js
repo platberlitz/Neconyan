@@ -8,6 +8,8 @@ import { readRoleplayChat, readRoleplayEntity } from '../src/generation/roleplay
 import { router as characterRouter } from '../src/endpoints/characters.js';
 import { write as writeCard } from '../src/character-card-parser.js';
 import { readRoleplayAccount, roleplayPathKey } from '../src/roleplay-store.js';
+import { bootstrapRoleplayAccount } from '../src/roleplay-lifecycle.js';
+import { roleplayNativeHost } from '../src/endpoints/chats.js';
 
 const v2 = { name: 'Nova', description: 'Original', personality: '', scenario: '', first_mes: '', mes_example: '' };
 v2.spec = 'chara_card_v2';
@@ -117,5 +119,30 @@ test('a rename retires a vanished protected chat, and a delete removes hard-link
     assert.equal(deleted.status, 200, JSON.stringify(deleted.body));
     assert.equal(fs.existsSync(loose), false);
     assert.equal(fs.existsSync(path.join(f.scope.directories.characters, 'Star.png')), false);
+    assert.equal(readRoleplayAccount(f.scope).pending, null);
+});
+
+test('loose file removal cannot fail after a protected character rename has closed', async t => {
+    const f = fixture(t, false, 'character-loose-interrupted');
+    const post = await characterServer(t, f);
+    const loose = path.join(f.scope.directories.characters, 'Nova.png');
+    fs.linkSync(loose, path.join(f.root, 'untracked-alias.png'));
+    const original = fs.unlinkSync;
+    let failed = false;
+    fs.unlinkSync = function (name, ...args) {
+        if (!failed && name === loose) {
+            failed = true;
+            throw Object.assign(new Error('interrupted loose-file cleanup'), { code: 'EIO' });
+        }
+        return original.call(fs, name, ...args);
+    };
+    try {
+        const response = await post('/rename', { avatar_url: 'Nova.png', new_name: 'Star' });
+        assert.equal(response.status, 503);
+    } finally { fs.unlinkSync = original; }
+    assert.equal(fs.existsSync(loose), true);
+    assert.equal(readRoleplayAccount(f.scope).pending?.kind, 'lifecycle');
+    bootstrapRoleplayAccount(f.scope, roleplayNativeHost);
+    assert.equal(fs.existsSync(loose), false);
     assert.equal(readRoleplayAccount(f.scope).pending, null);
 });

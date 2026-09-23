@@ -551,6 +551,7 @@ function validLifecycleTask(task) {
     }
     if (task.task === 'chat-folder-move') return Object.keys(task).length === 3 && validRoleplayAvatar(task.from) && validRoleplayAvatar(task.to);
     if (task.task === 'chat-folder-remove') return Object.keys(task).length === 2 && validRoleplayAvatar(task.avatar);
+    if (task.task === 'loose-card-remove') return Object.keys(task).length === 3 && validRoleplayAvatar(task.avatar) && validPhysical(task.physical);
     return task.task === 'chat-memory-rename' && Object.keys(task).length === 3
         && isStoredLocator('chat', task.from) && isStoredLocator('chat', task.to);
 }
@@ -576,6 +577,10 @@ function validateLifecycleTransaction(pending, state) {
         || !pending.steps.some(step => step?.op !== 'discard')
         || !Array.isArray(pending.auxiliary) || pending.auxiliary.length > 2 * ROLEPLAY_LIFECYCLE_MAX_STEPS
         || !pending.auxiliary.every(validLifecycleTask)
+        || pending.auxiliary.some(task => task.task === 'loose-card-remove'
+            && (state.paths[roleplayPathKey(state, 'character', { avatar: task.avatar })]?.instanceId
+                || Object.values(state.resources).some(resource => resource.accountId === state.accountId
+                    && resource.dataEpoch === state.dataEpoch && isDeepStrictEqual(resource.head.physical, task.physical))))
         || encodedBytes(pending) > LIFECYCLE_PENDING_MAX_BYTES) throw damaged();
     const keys = new Set();
     const instances = new Set();
@@ -1027,9 +1032,9 @@ export function assertUntrackedRoleplayFiles(lease, filenames) {
     for (const filename of filenames) {
         const found = roleplayFileLocator(scope, filename);
         const relative = path.relative(scope.directories.root, filename);
-        if (!found && relative && !relative.startsWith('..') && !path.isAbsolute(relative)) continue;
-        if (!found) throw roleplayError('ROLEPLAY_INVALID', 'Legacy target is outside recognised account data.', 400);
-        const { kind, locator } = found;
+        if (!found && (!relative || relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative))) {
+            throw roleplayError('ROLEPLAY_INVALID', 'Legacy target is outside recognised account data.', 400);
+        }
         const sameProtectedPath = value => {
             const saved = value.locator;
             const expected = value.kind === 'character' ? path.join(scope.directories.characters, saved.avatar)
@@ -1040,17 +1045,20 @@ export function assertUntrackedRoleplayFiles(lease, filenames) {
         };
         // Resources from an earlier account id or data epoch were retired by a reset; they no longer own any path.
         const current = Object.values(state.resources).filter(value => value.accountId === state.accountId && value.dataEpoch === state.dataEpoch);
-        if (current.some(value => sameProtectedPath(value) || (value.kind === kind && isDeepStrictEqual(value.locator, locator)))
-                || state.paths[roleplayPathKey(state, kind, locator)]
-                || (state.pending?.kind === 'chat-write' && kind === 'chat' && isDeepStrictEqual(state.pending.locator, locator))) {
+        if (found && (current.some(value => sameProtectedPath(value) || (value.kind === found.kind && isDeepStrictEqual(value.locator, found.locator)))
+                || state.paths[roleplayPathKey(state, found.kind, found.locator)]
+                || (state.pending?.kind === 'chat-write' && found.kind === 'chat' && isDeepStrictEqual(state.pending.locator, found.locator)))) {
             throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'Legacy work cannot change an observed Roleplay file.');
         }
         const journal = readRoleplayWriteJournal(filename, { allowMissingParent: true });
         const journalTarget = journal && decodeFileWriteRecovery(journal.bytes, 64 * 1024 * 1024);
         if (journal && !journalTarget) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'Legacy recovery evidence could not be proved untracked.');
-        // Aliases (hard links, symlinks) are untrackable; their lstat identity still must not match a protected file.
+        // Ordinary names can still alias a protected inode. Never pass a symlink to a legacy writer:
+        // a dangling link could create a protected target without having a physical identity yet.
         const alias = fs.lstatSync(filename, { bigint: true, throwIfNoEntry: false });
-        const physicals = [alias && { dev: String(alias.dev), ino: String(alias.ino), birthtimeNs: String(alias.birthtimeNs) }, journal?.physical].filter(Boolean);
+        if (alias?.isSymbolicLink()) throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'Legacy work cannot follow a symbolic link in account data.');
+        const physicals = [alias].filter(Boolean).map(stats => ({ dev: String(stats.dev), ino: String(stats.ino), birthtimeNs: String(stats.birthtimeNs) }));
+        if (journal) physicals.push(journal.physical);
         const protectedPhysicals = current.map(value => value.head.physical);
         if (state.pending) protectedPhysicals.push(state.pending.before?.physical, state.pending.appliedPhysical, state.pending.journal?.physical);
         if (physicals.some(physical => protectedPhysicals.some(saved => saved && isDeepStrictEqual(physical, saved)))
