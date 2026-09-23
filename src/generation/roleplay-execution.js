@@ -9,7 +9,7 @@ import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-st
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
 import { prepareRoleplayWorldInfo } from './world-info.js';
-import { insertWorldInfoDepth } from './roleplay-prompt.js';
+import { assertWorldInfoDepthHistory, insertWorldInfoDepth } from './roleplay-prompt.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
@@ -63,7 +63,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     }
     const assertSource = () => {
         signal.throwIfAborted();
-        withRoleplayAccount(base, account, lease => assertRoleplaySourceLocked(lease, source, { effect }));
+        return withRoleplayAccount(base, account, lease => assertRoleplaySourceLocked(lease, source, { effect }));
     };
     const saved = readArtifact(directories, job.id, 'roleplay-output');
     if (saved) {
@@ -101,8 +101,11 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         }
         const lore = [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
         if (lore) messages.unshift({ role: 'system', content: lore });
-        if (worldInfo.WIDepthEntries.length) messages = insertWorldInfoDepth(messages, worldInfo.WIDepthEntries,
-            request.historyStart === undefined ? undefined : request.historyStart + Number(Boolean(lore)));
+        if (worldInfo.WIDepthEntries.length) {
+            assertWorldInfoDepthHistory(assertSource().records, request.messages, request.historyStart);
+            messages = insertWorldInfoDepth(messages, worldInfo.WIDepthEntries,
+                request.historyStart + Number(Boolean(lore)));
+        }
     }
     const result = await generate({ context: base, jobContext: context, binding: request.binding, messages,
         maxTokens: request.maxTokens, userName: request.userName || 'User', characterName: request.characterName,

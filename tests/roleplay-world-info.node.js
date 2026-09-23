@@ -5,7 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 import { scanWorldInfo } from '../src/generation/world-info-scan.js';
-import { insertWorldInfoDepth } from '../src/generation/roleplay-prompt.js';
+import { assertWorldInfoDepthHistory, insertWorldInfoDepth } from '../src/generation/roleplay-prompt.js';
 import { write as writeCard } from '../src/character-card-parser.js';
 
 const { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } = await import('../src/generation/world-info.js');
@@ -48,6 +48,15 @@ test('saved depth injections preserve the system prefix and browser history orde
         { code: 'ROLEPLAY_INVALID' });
     assert.throws(() => insertWorldInfoDepth(messages, [{ depth: 1, role: '0', entries: ['lost'] }], 1),
         { code: 'ROLEPLAY_INVALID' });
+});
+
+test('depth placement refuses unhandled saved attachments and a fabricated empty history', t => {
+    const f = fixture(t);
+    assert.throws(() => assertWorldInfoDepthHistory(f.records, [{ role: 'user', content: 'Original' }], 0),
+        { code: 'ROLEPLAY_INVALID' });
+    f.records[1].extra = {};
+    assert.throws(() => assertWorldInfoDepthHistory(f.records, [{ role: 'system', content: 'Forged' }], 1),
+        { code: 'ROLEPLAY_SOURCE_CHANGED' });
 });
 
 test('server selection recurses on saved text and places entries with a bounded budget', async () => {
@@ -361,6 +370,8 @@ test('a group World Info selection cannot borrow a character outside its saved m
 
 test('unsupported insertion positions refuse before provider dispatch and before changing the chat', async t => {
     const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
     fs.mkdirSync(f.scope.directories.worlds);
     fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
@@ -382,13 +393,19 @@ test('unsupported insertion positions refuse before provider dispatch and before
         { code: 'ROLEPLAY_INVALID' });
     assert.ok(readArtifact(f.scope.directories, jobId, 'roleplay-world-info'));
     assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length);
-    const bound = { ...request, historyStart: 0 };
+    const bound = { ...request, historyStart: 0, messages: [{ role: 'user', content: 'Original' },
+        { role: 'assistant', content: 'Answer' }] };
+    const forged = admitRoleplayJob(f.scope, account, { operationKey: 'depth-forged', effect: 'append', source,
+        request: { ...bound, messages: [{ role: 'user', content: 'Forged' }] } });
+    releaseJob(f.scope.directories, forged.jobId);
+    await assert.rejects(runRoleplayReplyJob({ ...context, job: getJob(f.scope.directories, forged.jobId) },
+        { generate: () => { throw Error('Provider called'); } }), { code: 'ROLEPLAY_SOURCE_CHANGED' });
     const admitted = admitRoleplayJob(f.scope, account, { operationKey: 'depth-bound', effect: 'append', source, request: bound });
     releaseJob(f.scope.directories, admitted.jobId);
     const next = { ...context, job: getJob(f.scope.directories, admitted.jobId) };
     await runRoleplayReplyJob(next, { generate: async ({ beforeDispatch, messages }) => {
         beforeDispatch();
-        assert.deepEqual(messages.map(value => value.content), ['A note', 'Original']);
+        assert.deepEqual(messages.map(value => value.content), ['A note', 'Original', 'Answer']);
         return { text: 'Answer' };
     } });
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Answer');
