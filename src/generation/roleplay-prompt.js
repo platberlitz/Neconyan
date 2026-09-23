@@ -82,6 +82,7 @@ export function buildRoleplaySavedHistory(records) {
     if (!Array.isArray(records) || !records.length) {
         throw roleplayError('ROLEPLAY_INVALID', 'A saved Roleplay chat is required for prompt construction.', 409);
     }
+    if (records.length === 1) return [];
     const messages = records.slice(1).map(record => ({ role: record?.is_user ? 'user' : 'assistant', content: record?.mes }));
     assertWorldInfoDepthHistory(records, messages, 0);
     return messages;

@@ -293,6 +293,43 @@ test('server-owned prompts use protected history when no story template is saved
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Bound reply');
 });
 
+test('a fresh protected chat uses its saved story and refuses an empty prompt', async t => {
+    const f = fixture(t);
+    f.records.splice(1);
+    fs.writeFileSync(f.filename, JSON.stringify(f.records[0]));
+    assert.deepEqual(buildRoleplaySavedHistory(readRoleplayChat(f.scope, f.locator).records), []);
+    const settingsFile = path.join(f.scope.directories.root, 'settings.json');
+    fs.writeFileSync(settingsFile, JSON.stringify({
+        power_user: { context: { story_string: 'Character: {{description}}', story_string_position: 0 } },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true,
+        messages: [], maxTokens: 20, characterName: 'Nova',
+        worldInfo: captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 }) };
+    const prepare = (key, input) => {
+        const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: key, effect: 'append', source, request: input });
+        releaseJob(f.scope.directories, jobId);
+        return { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+            owner: f.scope.owner, signal: new AbortController().signal };
+    };
+    fs.writeFileSync(settingsFile, '{}');
+    const blank = prepare('empty-server-prompt', { ...request,
+        worldInfo: captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 }) });
+    await assert.rejects(runRoleplayReplyJob(blank, { generate: () => { throw Error('Provider called'); } }),
+        { code: 'ROLEPLAY_INVALID' });
+    fs.writeFileSync(settingsFile, JSON.stringify({
+        power_user: { context: { story_string: 'Character: {{description}}', story_string_position: 0 } },
+    }));
+    const context = prepare('fresh-server-prompt', request);
+    await runRoleplayReplyJob(context, { generate: async ({ messages, beforeDispatch }) => {
+        beforeDispatch();
+        assert.deepEqual(messages, [{ role: 'system', content: 'Character: Original' }]);
+        return { text: 'First reply' };
+    } });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'First reply');
+});
+
 test('server-owned prompts trim old saved history and rebuild lore depth within the bound context', async t => {
     const f = fixture(t);
     f.records[1].extra = {};

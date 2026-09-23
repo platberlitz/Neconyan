@@ -154,6 +154,9 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         return messages;
     };
     let messages = place(savedHistory || structuredClone(request.messages));
+    if (!messages.length && request.serverPrompt) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay prompt has no content to send.', 409);
+    }
     if (request.serverPrompt || worldInfo?.activated.length) {
         const { count } = await getCounter(request.worldInfo.tokenizer);
         const budget = contextLimit(directories, request.binding) - request.maxTokens;
