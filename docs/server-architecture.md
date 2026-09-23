@@ -11,7 +11,7 @@ The application is not fully server-owned. Provider requests reaching a server e
 - Unfinished: folder/ZIP and other import/entity/account lifecycles, every recovering reader and auxiliary writer, private typed-effect admission and stable aside guards. Complete combined Conversation/storage/import verification and a whole-stage audit remain required before Stage 2 completion.
 - Next action: paused for the owner's requested handover after the local checkpoint. Resume the remaining scope in a new session. Do not push or deploy or begin another checkpoint here.
 
-First-edit read authority does not make group creation a recorded lifecycle. Legacy refusal does not implement reset or account reincarnation. The complete current record and efficient checkpoint/review policy are in `server-migration-handover.md`.
+First-edit read authority does not make group creation a recorded lifecycle. Legacy refusal does not implement reset or account reincarnation. The complete current record and the stage-end review policy (session model implements; one independent review per completed stage) are in `server-migration-handover.md`.
 
 ## Fixed in this audit
 

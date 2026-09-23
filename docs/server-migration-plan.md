@@ -16,7 +16,7 @@ acceptance case is unproven), `pending` (not started).
 - Unfinished: folder/ZIP, character-card and temporary assistant imports, complete chat/entity/account lifecycles, auxiliary writers, startup coverage, private typed-effect admission and stable aside guards. The complete combined Conversation/storage/import browser suite and whole-stage audit remain mandatory before Stage 2 is done.
 - Next action: paused for the owner's requested continuation handover. Resume the remaining Stage 2 checklist in a new session; do not start another checkpoint here.
 
-Small, coherent, independently reviewed local checkpoints are authorised within stages. They do not imply stage completion. No push or deployment is authorised. Work efficiently with one concrete checkpoint plan, batched findings and correction-only re-review; do not constantly re-review unchanged accepted work. Full final verification standards remain unchanged. The detailed current record is in `server-migration-handover.md`; historical counts below are not current approval.
+Small, coherent local checkpoints are authorised within stages. They record implementation progress, not reviewed stage completion. No push or deployment is authorised. The session model plans and implements the whole stage; one independent stage-end review covers all of its checkpoints, with batched corrections and correction-only follow-up review. Full final verification standards remain unchanged. The detailed current record is in `server-migration-handover.md`; historical counts below are not current approval.
 
 ## Historical committed Stage 1: Roleplay storage preparation
 
@@ -52,10 +52,10 @@ Small, coherent, independently reviewed local checkpoints are authorised within 
 ### Ordered full-ownership continuation
 
 These stages implement the accepted full migration, not a reduced single-provider
-request design. Use the current verified planner (Astra max), implementer (Sol high)
-and independent reviewer (Astra max), with the announced verified-primary fallback
-in the current orchestration policy. Complete coherent checkpoints with fixes,
-required checks, canonical status updates and authorised local commits. Once the
+request design. The owner-selected session model plans and implements each stage,
+then requests one independent stage-end review of the complete stage. Complete
+coherent checkpoints with required checks, canonical status updates and authorised
+local commits; earlier planner/implementer/reviewer lineups are historical. Once the
 owner resumes this paused migration, continue automatically between verified checkpoints.
 
 | Stage | Status | Required boundary |
