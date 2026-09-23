@@ -82,7 +82,8 @@ export function getTimedEffectWindow(chatLength, duration) {
 
 /** Advance the saved sticky/cooldown windows once, before scanning this chat length. */
 export function resolveWorldInfoTimedEffects(entries, chatLength, timedWorldInfo = {}, dryRun = false) {
-    const metadata = structuredClone(timedWorldInfo);
+    const metadata = timedWorldInfo && typeof timedWorldInfo === 'object' && !Array.isArray(timedWorldInfo)
+        ? structuredClone(timedWorldInfo) : {};
     const active = { sticky: new Set(), cooldown: new Set(), delay: new Set() };
     const identity = entry => `${entry.world}.${entry.uid}`;
     for (const type of ['sticky', 'cooldown']) {

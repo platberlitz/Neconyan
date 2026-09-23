@@ -33,6 +33,14 @@ test('a scan without selected entries does not call the per-pass hook', async ()
     assert.equal(result.iterations, 0);
 });
 
+test('a saved null timed window uses the same empty metadata as the browser', async () => {
+    const result = await scan([entry(1, 'cat', 'Sticky lore', { sticky: 2 })], {
+        metadata: { timedWorldInfo: null },
+    });
+    assert.equal(result.worldInfoBefore, 'Sticky lore');
+    assert.equal(result.timedWorldInfo.sticky['Town.1'].end, 3);
+});
+
 test('saved depth injections preserve the system prefix and browser history order', () => {
     const messages = [{ role: 'system', content: 'Rules' }, { role: 'user', content: 'First' },
         { role: 'assistant', content: 'Reply' }, { role: 'user', content: 'Latest' }];

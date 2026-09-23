@@ -138,6 +138,10 @@ describe('World Info scan normalization', () => {
 });
 
 describe('World Info timed effect windows', () => {
+    test('initialises a null saved window before the browser inspects it', () => {
+        expect(resolveWorldInfoTimedEffects([], 1, null).metadata).toEqual({ sticky: {}, cooldown: {} });
+    });
+
     test('uses the upstream duration boundary', () => {
         const { start, end } = getTimedEffectWindow(10, 1);
         expect(start).toBe(10);
