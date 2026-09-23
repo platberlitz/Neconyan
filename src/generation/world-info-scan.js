@@ -13,6 +13,9 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
     const sorted = structuredClone(entries);
     const effects = resolveWorldInfoTimedEffects(sorted, chat.length, metadata.timedWorldInfo);
     const active = (type, entry) => effects.active[type].has(entry.hash);
+    if (!sorted.length) return { worldInfoBefore: '', worldInfoAfter: '', EMEntries: [], WIDepthEntries: [],
+        ANBeforeEntries: [], ANAfterEntries: [], outletEntries: {}, activated: [], chatLength: chat.length,
+        timedWorldInfo: effects.metadata, draws: [], iterations: 0 };
     let budget = Math.round(settings.world_info_budget * maxContext / 100) || 1;
     if (settings.world_info_budget_cap > 0) budget = Math.min(budget, settings.world_info_budget_cap);
     let state = INITIAL;

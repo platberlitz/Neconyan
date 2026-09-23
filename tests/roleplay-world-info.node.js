@@ -25,6 +25,13 @@ const entry = (uid, key, content, more = {}) => ({ world: 'Town', uid, hash: uid
 const scan = (entries, overrides = {}) => scanWorldInfo({ entries, chat: ['A cat runs'], metadata: {}, settings,
     maxContext: 100, countTokens: async text => text.length, ...overrides });
 
+test('a scan without selected entries does not call the per-pass hook', async () => {
+    let calls = 0;
+    const result = await scan([], { onScan: () => { calls++; } });
+    assert.equal(calls, 0);
+    assert.equal(result.iterations, 0);
+});
+
 test('server selection recurses on saved text and places entries with a bounded budget', async () => {
     const result = await scan([entry(1, 'cat', 'The moon is bright'), entry(2, 'moon', 'A gate opens')]);
     assert.deepEqual(result.activated.map(value => value.uid), [1, 2]);
