@@ -5,7 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 import { scanWorldInfo } from '../src/generation/world-info-scan.js';
-import { assertWorldInfoDepthHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples } from '../src/generation/roleplay-prompt.js';
+import { assertWorldInfoDepthHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets } from '../src/generation/roleplay-prompt.js';
 import { write as writeCard } from '../src/character-card-parser.js';
 
 const { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } = await import('../src/generation/world-info.js');
@@ -43,6 +43,62 @@ test('saved Author\'s Note surrounds selected lore only at its configured interv
         { code: 'ROLEPLAY_INVALID' });
     assert.throws(() => insertWorldInfoAuthorNote(messages, ['Top'], [], { ...note, position: 0 }, 1),
         { code: 'ROLEPLAY_INVALID' });
+});
+
+test('named lore outlets render at their saved story template positions', () => {
+    const snapshot = { storyTemplate: '{{#if description}}{{description}}\n{{/if}}{{outlet::harbour}}',
+        storyPosition: 0, global: { characterDescription: 'A harbour' } };
+    const history = [{ role: 'user', content: 'Original' }];
+    const placed = insertWorldInfoOutlets(history, { harbour: ['Safe waters'] }, snapshot, 0, 'User', 'Nova');
+    assert.deepEqual(placed, [{ role: 'system', content: 'A harbour\nSafe waters' }, ...history]);
+    assert.deepEqual(history, [{ role: 'user', content: 'Original' }]);
+    assert.throws(() => insertWorldInfoOutlets(history, { missing: ['Lost'] }, snapshot, 0, 'User', 'Nova'),
+        { code: 'ROLEPLAY_INVALID' });
+    assert.throws(() => insertWorldInfoOutlets([{ role: 'system', content: 'Unbound story' }, ...history],
+        { harbour: ['Safe waters'] }, snapshot, 1, 'User', 'Nova'), { code: 'ROLEPLAY_INVALID' });
+    assert.throws(() => insertWorldInfoOutlets(history, { harbour: ['Safe waters'] }, {
+        ...snapshot, storyTemplate: '{{outlet::harbour}} {{lookup description "secret"}}',
+    }, 0, 'User', 'Nova'), { code: 'ROLEPLAY_INVALID' });
+    assert.throws(() => insertWorldInfoOutlets(history, { harbour: ['Safe waters'] }, {
+        ...snapshot, storyTemplate: '{{outlet::harbour}} {{#each description}}{{this}}{{/each}}',
+    }, 0, 'User', 'Nova'), { code: 'ROLEPLAY_INVALID' });
+});
+
+test('a bound reply uses the saved story outlet and retains its decision on replay', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Original', 'The harbour is safe', { world: undefined, hash: undefined,
+            position: 7, outletName: 'harbour' }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        power_user: { context: { story_string: 'Harbour: {{outlet::harbour}}', story_string_position: 0 } },
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 });
+    const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, historyStart: 0,
+        messages: [{ role: 'user', content: 'Original' }, { role: 'assistant', content: 'Answer' }],
+        maxTokens: 32, characterName: 'Nova', worldInfo };
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'saved-outlet', effect: 'append', source, request });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    let calls = 0;
+    const options = { generate: async ({ beforeDispatch, messages }) => {
+        beforeDispatch();
+        calls++;
+        assert.deepEqual(messages.map(message => message.content), ['Harbour: The harbour is safe', 'Original', 'Answer']);
+        return { text: 'A safe answer' };
+    } };
+    await runRoleplayReplyJob(context, options);
+    await runRoleplayReplyJob(context, options);
+    assert.equal(calls, 1);
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'A safe answer');
 });
 
 test('a scan without selected entries does not call the per-pass hook', async () => {

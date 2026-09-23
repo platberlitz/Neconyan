@@ -1,7 +1,53 @@
 import { roleplayError } from '../roleplay-store.js';
 import { isDeepStrictEqual } from 'node:util';
+import Handlebars from 'handlebars';
 
 const ROLES = ['system', 'user', 'assistant'];
+
+/** Render named lore only where the saved story template explicitly requests it. */
+export function insertWorldInfoOutlets(messages, outlets, snapshot, historyStart, userName, characterName) {
+    if (!outlets || typeof outlets !== 'object' || Array.isArray(outlets)
+        || typeof snapshot?.storyTemplate !== 'string' || snapshot.storyPosition !== 0
+        || !Number.isSafeInteger(historyStart) || historyStart !== 0
+        || typeof userName !== 'string' || typeof characterName !== 'string') {
+        throw roleplayError('ROLEPLAY_INVALID', 'Named World Info outlets need a saved story template.', 409);
+    }
+    const fields = Object.create(null);
+    for (const [name, entries] of Object.entries(outlets)) {
+        if (!/^[\w-]{1,128}$/.test(name) || !Array.isArray(entries) || entries.some(value => typeof value !== 'string')
+            || !snapshot.storyTemplate.includes(`{{outlet::${name}}}`)) {
+            throw roleplayError('ROLEPLAY_INVALID', 'The saved story template does not contain this World Info outlet.', 409);
+        }
+        fields[`outlet::${name}`] = entries.join('\n');
+    }
+    if (!Object.keys(fields).length) return messages;
+    const global = snapshot.global;
+    let rendered;
+    try {
+        const allowed = new Set(['description', 'personality', 'scenario', 'persona', 'user', 'char',
+            'system', 'wiBefore', 'wiAfter', 'loreBefore', 'loreAfter', ...Object.keys(fields).map(key => `outlet::${key.slice(8)}`)]);
+        const verify = program => {
+            for (const statement of program.body) {
+                if (statement.type === 'ContentStatement') continue;
+                if (statement.type === 'MustacheStatement' && !statement.params.length
+                    && allowed.has(statement.path.original)) continue;
+                if (statement.type === 'BlockStatement' && statement.path.original === 'if'
+                    && statement.params.length === 1 && allowed.has(statement.params[0].original)
+                    && !statement.inverse) { verify(statement.program); continue; }
+                throw new Error('Unsupported story template expression');
+            }
+        };
+        verify(Handlebars.parse(snapshot.storyTemplate));
+        rendered = Handlebars.compile(snapshot.storyTemplate, { noEscape: true })({ ...fields,
+            description: global.characterDescription, personality: global.characterPersonality,
+            scenario: global.scenario, persona: global.personaDescription, user: userName, char: characterName,
+            wiBefore: '', wiAfter: '', loreBefore: '', loreAfter: '' });
+    } catch {
+        throw roleplayError('ROLEPLAY_INVALID', 'The saved story template needs unsupported prompt macros.', 409);
+    }
+    if (!rendered) throw roleplayError('ROLEPLAY_INVALID', 'The saved story template did not place its World Info outlet.', 409);
+    return [{ role: 'system', content: rendered }, ...messages];
+}
 
 /** Depth positions may use only an exact plain-text suffix of the protected chat. */
 export function assertWorldInfoDepthHistory(records, messages, historyStart) {

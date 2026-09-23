@@ -9,7 +9,7 @@ import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-st
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
 import { assertRoleplayWorldInfoCurrent, prepareRoleplayWorldInfo } from './world-info.js';
-import { assertWorldInfoDepthHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples } from './roleplay-prompt.js';
+import { assertWorldInfoDepthHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets } from './roleplay-prompt.js';
 import { getChatProfileContextLimit } from './profiles.js';
 import { getCounter } from '../mewmory/tokens.js';
 
@@ -109,15 +109,19 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (worldInfo.activated.some(entry => entry.automationId)) {
             throw roleplayError('ROLEPLAY_INVALID', 'This World Info entry needs a server Quick Reply action before generation.', 409);
         }
-        if (Object.keys(worldInfo.outletEntries).length) {
-            throw roleplayError('ROLEPLAY_INVALID', 'This World Info insertion position needs server prompt construction.', 409);
-        }
         if (worldInfo.activated.length) {
             assertWorldInfoDepthHistory(assertSource().records, request.messages, request.historyStart);
         }
+        if (Object.keys(worldInfo.outletEntries).length) {
+            if (worldInfo.worldInfoBefore || worldInfo.worldInfoAfter) {
+                throw roleplayError('ROLEPLAY_INVALID', 'This mixed World Info story position needs complete server prompt construction.', 409);
+            }
+            messages = insertWorldInfoOutlets(messages, worldInfo.outletEntries, request.worldInfo, request.historyStart,
+                request.userName || 'User', request.characterName);
+        }
         const lore = [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
         if (lore) messages.unshift({ role: 'system', content: lore });
-        let historyStart = request.historyStart + Number(Boolean(lore));
+        let historyStart = request.historyStart + Number(Boolean(lore)) + Number(Object.keys(worldInfo.outletEntries).length > 0);
         if (worldInfo.EMEntries.length) {
             messages = insertWorldInfoExamples(messages, worldInfo.EMEntries, request.worldInfo.characterExamples,
                 historyStart, request.userName || 'User', request.characterName, request.groupNames || []);
