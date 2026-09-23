@@ -25,7 +25,7 @@ import { accountStorage } from './util/AccountStorage.js';
 import { getOrCreatePersonaDescriptor, setPersonaDescription, updatePersonaLorebookActions, user_avatar } from './personas.js';
 import { escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharacterBookPosition, normalizeWorldInfoPosition, serializeCharacterBookKeys, serializeWorldInfoEntry } from './world-info-character-book.js';
 import { detectEmbeddedLorebookCandidates, findMatchingLorebookName, getLinkedAuxBooks, isEmbeddedBookLinked } from './world-info-batch-helpers.js';
-import { getTimedEffectWindow, getWorldInfoGroupNames, normalizeWorldInfoKey, normalizeWorldInfoProbability, passesWorldInfoProbability } from './world-info-scan-core.js';
+import { filterWorldInfoInclusionGroups, getTimedEffectWindow, matchesWorldInfoEntry, normalizeWorldInfoKey, normalizeWorldInfoProbability, parseWorldInfoKeyRegex, passesWorldInfoProbability } from './world-info-scan-core.js';
 import { parseLorebookImport } from './neconyan-lorebook-tools-core.js';
 import {
     NECONYAN_LOREBOOK_FOLDERS_KEY,
@@ -3355,30 +3355,7 @@ function isValidRegex(input) {
  * @returns {RegExp|null} The regex object, or null if not a valid regex
  */
 export function parseRegexFromString(input) {
-    // Extracting the regex pattern and flags
-    let match = input.match(/^\/([\w\W]+?)\/([gimsuy]*)$/);
-    if (!match) {
-        return null; // Not a valid regex format
-    }
-
-    let [, pattern, flags] = match;
-
-    // If we find any unescaped slash delimiter, we also exit out.
-    // JS doesn't care about delimiters inside regex patterns, but for this to be a valid regex outside of our implementation,
-    // we have to make sure that our delimiter is correctly escaped. Or every other engine would fail.
-    if (pattern.match(/(^|[^\\])\//)) {
-        return null;
-    }
-
-    // Now we need to actually unescape the slash delimiters, because JS doesn't care about delimiters
-    pattern = pattern.replace('\\/', '/');
-
-    // Then we return the regex. If it fails, it was invalid syntax.
-    try {
-        return new RegExp(pattern, flags);
-    } catch (e) {
-        return null;
-    }
+    return parseWorldInfoKeyRegex(input);
 }
 
 /**
@@ -5947,78 +5924,12 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
             // Cache the text to scan before the loop, it won't change its content
             const textToScan = buffer.get(entry, scanState);
 
-            // PRIMARY KEYWORDS
-            let primaryKeyMatch = entry.key.find(key => {
-                const normalizedKey = normalizeWorldInfoKey(key, substituteParams);
-                return normalizedKey && buffer.matchKeys(textToScan, normalizedKey, entry);
-            });
+            if (!matchesWorldInfoEntry(entry, textToScan, {
+                substitute: substituteParams,
+                caseSensitive: world_info_case_sensitive,
+                wholeWords: world_info_match_whole_words,
+            })) continue;
 
-            if (!primaryKeyMatch) {
-                // Don't write logs for simple no-matches
-                continue;
-            }
-
-            const normalizedSecondaryKeys = Array.isArray(entry.keysecondary)
-                ? entry.keysecondary.map(key => normalizeWorldInfoKey(key, substituteParams)).filter(Boolean)
-                : [];
-            const hasSecondaryKeywords = entry.selective && normalizedSecondaryKeys.length;
-
-            if (!hasSecondaryKeywords) {
-                // Handle cases where secondary is empty
-                log('activated by primary key match', primaryKeyMatch);
-                activatedNow.add(entry);
-                continue;
-            }
-
-
-            // SECONDARY KEYWORDS
-            const selectiveLogic = entry.selectiveLogic ?? 0; // If selectiveLogic isn't found, assume it's AND, only do this once per entry
-            log('Entry with primary key match', primaryKeyMatch, 'has secondary keywords. Checking with logic logic', Object.entries(world_info_logic).find(x => x[1] === entry.selectiveLogic));
-
-            /** @type {() => boolean} */
-            const matchSecondaryKeys = () => {
-                let hasAnyMatch = false;
-                let hasAllMatch = true;
-                for (const secondarySubstituted of normalizedSecondaryKeys) {
-                    const hasSecondaryMatch = buffer.matchKeys(textToScan, secondarySubstituted, entry);
-
-                    if (hasSecondaryMatch) hasAnyMatch = true;
-                    if (!hasSecondaryMatch) hasAllMatch = false;
-
-                    // Simplified AND ANY / NOT ALL if statement. (Proper fix for PR#1356 by Bronya)
-                    // If AND ANY logic and the main checks pass OR if NOT ALL logic and the main checks do not pass
-                    if (selectiveLogic === world_info_logic.AND_ANY && hasSecondaryMatch) {
-                        log('activated. (AND ANY) Found match secondary keyword', secondarySubstituted);
-                        return true;
-                    }
-                    if (selectiveLogic === world_info_logic.NOT_ALL && !hasSecondaryMatch) {
-                        log('activated. (NOT ALL) Found not matching secondary keyword', secondarySubstituted);
-                        return true;
-                    }
-                }
-
-                // Handle NOT ANY logic
-                if (selectiveLogic === world_info_logic.NOT_ANY && !hasAnyMatch) {
-                    log('activated. (NOT ANY) No secondary keywords found', entry.keysecondary);
-                    return true;
-                }
-
-                // Handle AND ALL logic
-                if (selectiveLogic === world_info_logic.AND_ALL && hasAllMatch) {
-                    log('activated. (AND ALL) All secondary keywords found', entry.keysecondary);
-                    return true;
-                }
-
-                return false;
-            };
-
-            const matched = matchSecondaryKeys();
-            if (!matched) {
-                log('skipped. Secondary keywords not satisfied', entry.keysecondary);
-                continue;
-            }
-
-            // Success logging was already done inside the function, so just add the entry
             activatedNow.add(entry);
             continue;
         }
@@ -6309,101 +6220,6 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
 }
 
 /**
- * Only leaves entries with the highest key matching score in each group.
- * @param {Record<string, WIScanEntry[]>} groups The groups to filter
- * @param {WorldInfoBuffer} buffer The buffer to use for scoring
- * @param {(entry: WIScanEntry) => void} removeEntry The function to remove an entry
- * @param {number} scanState The current scan state
- * @param {Map<string, boolean>} hasStickyMap The sticky entries map
- */
-function filterGroupsByScoring(groups, buffer, removeEntry, scanState, hasStickyMap) {
-    for (const [key, group] of Object.entries(groups)) {
-        // Group scoring is disabled both globally and for the group entries
-        if (!world_info_use_group_scoring && !group.some(x => x.useGroupScoring)) {
-            console.debug(`[WI] Skipping group scoring for group '${key}'`);
-            continue;
-        }
-
-        // If the group has any sticky entries, the rest are already removed by the timed effects filter
-        const hasAnySticky = hasStickyMap.get(key);
-        if (hasAnySticky) {
-            console.debug(`[WI] Skipping group scoring check, group '${key}' has sticky entries`);
-            continue;
-        }
-
-        const scoringEntries = [...group];
-        const scores = scoringEntries.map(entry => buffer.getScore(entry, scanState));
-        const maxScore = Math.max(...scores);
-        console.debug(`[WI] Group '${key}' max score:`, maxScore);
-        //console.table(group.map((entry, i) => ({ uid: entry.uid, key: JSON.stringify(entry.key), score: scores[i] })));
-
-        for (let i = 0; i < scoringEntries.length; i++) {
-            const entry = scoringEntries[i];
-            const isScored = entry.useGroupScoring ?? world_info_use_group_scoring;
-
-            if (!isScored) {
-                continue;
-            }
-
-            if (scores[i] < maxScore) {
-                console.debug(`[WI] Entry ${entry.uid}`, `removed as score loser from inclusion group '${key}'`, entry);
-                removeEntry(entry);
-            }
-        }
-    }
-}
-
-/**
- * Removes entries on cooldown and forces sticky entries as winners.
- * @param {Record<string, WIScanEntry[]>} groups The groups to filter
- * @param {WorldInfoTimedEffects} timedEffects The timed effects to use
- * @param {(entry: WIScanEntry) => void} removeEntry The function to remove an entry
- * @returns {Map<string, boolean>} If any sticky entries were found
- */
-function filterGroupsByTimedEffects(groups, timedEffects, removeEntry) {
-    /** @type {Map<string, boolean>} */
-    const hasStickyMap = new Map();
-
-    for (const [key, group] of Object.entries(groups)) {
-        hasStickyMap.set(key, false);
-
-        // If the group has any sticky entries, leave only the sticky entries
-        const stickyEntries = group.filter(x => timedEffects.isEffectActive('sticky', x));
-        if (stickyEntries.length) {
-            for (const entry of [...group]) {
-                if (stickyEntries.includes(entry)) {
-                    continue;
-                }
-
-                console.debug(`[WI] Entry ${entry.uid}`, `removed as a non-sticky loser from inclusion group '${key}'`, entry);
-                removeEntry(entry);
-            }
-
-            hasStickyMap.set(key, true);
-        }
-
-        // It should not be possible for an entry on cooldown/delay to event get into the grouping phase but @Wolfsblvt told me to leave it here.
-        const cooldownEntries = group.filter(x => timedEffects.isEffectActive('cooldown', x));
-        if (cooldownEntries.length) {
-            console.debug(`[WI] Inclusion group '${key}' has entries on cooldown. They will be removed.`, cooldownEntries);
-            for (const entry of cooldownEntries) {
-                removeEntry(entry);
-            }
-        }
-
-        const delayEntries = group.filter(x => timedEffects.isEffectActive('delay', x));
-        if (delayEntries.length) {
-            console.debug(`[WI] Inclusion group '${key}' has entries with delay. They will be removed.`, delayEntries);
-            for (const entry of delayEntries) {
-                removeEntry(entry);
-            }
-        }
-    }
-
-    return hasStickyMap;
-}
-
-/**
  * Filters entries by inclusion groups.
  * @param {object[]} newEntries Entries activated on current recursion level
  * @param {Set<object>} allActivatedEntries Set of all activated entries
@@ -6412,103 +6228,11 @@ function filterGroupsByTimedEffects(groups, timedEffects, removeEntry) {
  * @param {WorldInfoTimedEffects} timedEffects The timed effects currently active
  */
 function filterByInclusionGroups(newEntries, allActivatedEntries, buffer, scanState, timedEffects) {
-    console.debug('[WI] --- INCLUSION GROUP CHECKS ---');
-
-    const grouped = newEntries.filter(x => x.group).reduce((acc, item) => {
-        getWorldInfoGroupNames(item.group).forEach(group => {
-            if (!acc[group]) {
-                acc[group] = [];
-            }
-            acc[group].push(item);
-        });
-        return acc;
-    }, {});
-
-    if (Object.keys(grouped).length === 0) {
-        console.debug('[WI] No inclusion groups found');
-        return;
-    }
-
-    const removeEntry = (entry) => {
-        const entryIndex = newEntries.indexOf(entry);
-        if (entryIndex !== -1) {
-            newEntries.splice(entryIndex, 1);
-        }
-        for (const group of Object.values(grouped)) {
-            const groupIndex = group.indexOf(entry);
-            if (groupIndex !== -1) {
-                group.splice(groupIndex, 1);
-            }
-        }
-    };
-    function removeAllBut(group, chosen, logging = true) {
-        for (const entry of [...group]) {
-            if (entry === chosen) {
-                continue;
-            }
-
-            if (logging) console.debug(`[WI] Entry ${entry.uid}`, `removed as loser from inclusion group '${entry.group}'`, entry);
-            removeEntry(entry);
-        }
-    }
-
-    const hasStickyMap = filterGroupsByTimedEffects(grouped, timedEffects, removeEntry);
-    filterGroupsByScoring(grouped, buffer, removeEntry, scanState, hasStickyMap);
-
-    for (const [key, group] of Object.entries(grouped)) {
-        console.debug(`[WI] Checking inclusion group '${key}' with ${group.length} entries`, group);
-
-        // If the group has any sticky entries, the rest are already removed by the timed effects filter
-        const hasAnySticky = hasStickyMap.get(key);
-        if (hasAnySticky) {
-            console.debug(`[WI] Skipping inclusion group check, group '${key}' has sticky entries`);
-            continue;
-        }
-
-        if (Array.from(allActivatedEntries.values()).some(x => getWorldInfoGroupNames(x.group).includes(key))) {
-            console.debug(`[WI] Skipping inclusion group check, group '${key}' was already activated`);
-            // We need to forcefully deactivate all other entries in the group
-            removeAllBut(group, null, false);
-            continue;
-        }
-
-        if (!Array.isArray(group) || group.length <= 1) {
-            console.debug('[WI] Skipping inclusion group check, only one entry');
-            continue;
-        }
-
-        // Check for group prio
-        const prios = group.filter(x => x.groupOverride).sort(sortFn);
-        if (prios.length) {
-            console.debug(`[WI] Entry ${prios[0].uid}`, `activated as prio winner from inclusion group '${key}'`, prios[0]);
-            removeAllBut(group, prios[0]);
-            continue;
-        }
-
-        // Do weighted random using entry's weight
-        const totalWeight = group.reduce((acc, item) => acc + (item.groupWeight ?? DEFAULT_WEIGHT), 0);
-        const rollValue = Math.random() * totalWeight;
-        let currentWeight = 0;
-        let winner = null;
-
-        for (const entry of group) {
-            currentWeight += (entry.groupWeight ?? DEFAULT_WEIGHT);
-
-            if (rollValue <= currentWeight) {
-                console.debug(`[WI] Entry ${entry.uid}`, `activated as roll winner from inclusion group '${key}'`, entry);
-                winner = entry;
-                break;
-            }
-        }
-
-        if (!winner) {
-            console.debug(`[WI] Failed to activate inclusion group '${key}', no winner found`);
-            continue;
-        }
-
-        // Remove every group item from newEntries but the winner
-        removeAllBut(group, winner);
-    }
+    filterWorldInfoInclusionGroups(newEntries, allActivatedEntries, {
+        score: (entry, state) => buffer.getScore(entry, state),
+        isEffectActive: (type, entry) => timedEffects.isEffectActive(type, entry),
+        groupScoring: world_info_use_group_scoring, scanState, defaultWeight: DEFAULT_WEIGHT,
+    });
 }
 
 function convertAgnaiMemoryBook(inputObj) {

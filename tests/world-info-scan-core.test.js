@@ -2,9 +2,12 @@ import { describe, expect, jest, test } from '@jest/globals';
 
 import {
     getTimedEffectWindow,
+    filterWorldInfoInclusionGroups,
     getWorldInfoGroupNames,
+    matchesWorldInfoEntry,
     normalizeWorldInfoKey,
     normalizeWorldInfoProbability,
+    parseWorldInfoKeyRegex,
     passesWorldInfoProbability,
 } from '../public/scripts/world-info-scan-core.js';
 
@@ -45,6 +48,37 @@ describe('World Info scan probability', () => {
     });
 });
 
+describe('World Info inclusion groups shared with the server', () => {
+    const select = (entries, options = {}) => filterWorldInfoInclusionGroups(entries, new Set(options.activated || []), {
+        score: entry => entry.score || 0,
+        isEffectActive: (type, entry) => entry.effect === type,
+        scanState: 1, random: () => options.roll ?? 0.5,
+        groupScoring: options.scoring || false,
+    });
+
+    test('weights and overrides choose the same candidate the browser will use', () => {
+        const first = { uid: 1, group: 'a', groupWeight: 1 };
+        const second = { uid: 2, group: 'a', groupWeight: 3 };
+        expect(select([first, second])).toEqual([second]);
+        expect(select([first, { ...second, groupOverride: true }], { roll: 0 })).toEqual([{ ...second, groupOverride: true }]);
+    });
+
+    test('a sticky group keeps every sticky winner and removes cooldown losers', () => {
+        const sticky = { uid: 1, group: 'a', effect: 'sticky' };
+        const otherSticky = { uid: 2, group: 'a', effect: 'sticky' };
+        expect(select([sticky, { uid: 3, group: 'a' }, otherSticky])).toEqual([sticky, otherSticky]);
+        expect(select([{ uid: 3, group: 'a', effect: 'cooldown' }, { uid: 4, group: 'a' }])).toEqual([{ uid: 4, group: 'a' }]);
+    });
+
+    test('scoring and previously activated overlapping groups remove all losers', () => {
+        const low = { uid: 1, group: 'a, b', score: 1 };
+        const high = { uid: 2, group: 'a', score: 2 };
+        const elsewhere = { uid: 3, group: 'b', score: 3 };
+        expect(select([low, high, elsewhere], { scoring: true })).toEqual([high, elsewhere]);
+        expect(select([low, high], { activated: [{ group: 'a' }] })).toEqual([]);
+    });
+});
+
 describe('World Info scan normalization', () => {
     test('rejects keys that are empty after substitution and trimming', () => {
         expect(normalizeWorldInfoKey('   ', value => value)).toBeNull();
@@ -55,6 +89,27 @@ describe('World Info scan normalization', () => {
     test('parses unique nonempty inclusion-group names', () => {
         expect(getWorldInfoGroupNames(' alpha, beta, alpha, , gamma ')).toEqual(['alpha', 'beta', 'gamma']);
         expect(getWorldInfoGroupNames(null)).toEqual([]);
+    });
+
+    test('matches primary and selective keys with the browser logic', () => {
+        const entry = { key: ['{{character}}'], keysecondary: ['sea', 'moon'], selective: true, selectiveLogic: 3 };
+        const options = { substitute: key => key === '{{character}}' ? 'Alice' : key };
+        expect(matchesWorldInfoEntry(entry, 'Alice at sea beneath the moon', options)).toBe(true);
+        expect(matchesWorldInfoEntry(entry, 'Alice at sea', options)).toBe(false);
+        expect(matchesWorldInfoEntry({ ...entry, selectiveLogic: 1 }, 'Alice at sea', options)).toBe(true);
+        expect(matchesWorldInfoEntry({ ...entry, selectiveLogic: 2 }, 'Alice at home', options)).toBe(true);
+        expect(matchesWorldInfoEntry({ ...entry, selectiveLogic: 0 }, 'Alice at sea', options)).toBe(true);
+        const once = { substitute: key => key === '{{sea}}' ? 'sea' : key === 'sea' ? 'land' : key };
+        expect(matchesWorldInfoEntry({ key: ['Alice'], keysecondary: ['{{sea}}'], selective: true }, 'Alice at sea', once)).toBe(true);
+    });
+
+    test('respects case, punctuation boundaries and regex keys', () => {
+        expect(matchesWorldInfoEntry({ key: ['cat'] }, 'concatenate', { wholeWords: true })).toBe(false);
+        expect(matchesWorldInfoEntry({ key: ['cat'] }, 'A cat!', { wholeWords: true })).toBe(true);
+        expect(matchesWorldInfoEntry({ key: ['CAT'], caseSensitive: true }, 'cat')).toBe(false);
+        expect(matchesWorldInfoEntry({ key: ['/ca.t/i'] }, 'The caat')).toBe(true);
+        expect(parseWorldInfoKeyRegex('/a\\/b/i')?.test('A/b')).toBe(true);
+        expect(parseWorldInfoKeyRegex('/a/b/')).toBeNull();
     });
 });
 
