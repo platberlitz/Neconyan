@@ -44,15 +44,17 @@ test('imports refuse damaged replacements for tracked files and keep the current
     assert.deepEqual(fs.readFileSync(f.filename), bytes);
 });
 
-test('imports write untracked chats without foreign markers and recreate retired paths through the store', async t => {
+test('imports new chats through recorded writes without foreign markers and recreates retired paths', async t => {
     const f = fixture(t, false, 'import-untracked');
     const target = path.join(f.scope.directories.chats, 'Nova', 'Other.jsonl');
     const imported = structuredClone(f.records);
     imported[0].chat_metadata[ROLEPLAY_METADATA_KEY] = { schema: 1, instanceId: crypto.randomUUID(), revision: 1, writeId: crypto.randomUUID() };
     assert.equal(importUserFile(f.scope, target, jsonl(imported)), true);
     const written = JSON.parse(fs.readFileSync(target, 'utf8').split('\n')[0]);
-    assert.equal(Object.hasOwn(written.chat_metadata, ROLEPLAY_METADATA_KEY), false);
-    assert.equal(readRoleplayChat(f.scope, { group: false, chat: 'Other', avatar: 'Nova.png' }).revision, 1);
+    const newChat = readRoleplayChat(f.scope, { group: false, chat: 'Other', avatar: 'Nova.png' });
+    assert.equal(written.chat_metadata[ROLEPLAY_METADATA_KEY].instanceId, newChat.instanceId);
+    assert.notEqual(newChat.instanceId, imported[0].chat_metadata[ROLEPLAY_METADATA_KEY].instanceId);
+    assert.equal(newChat.revision, 1);
 
     readRoleplayChat(f.scope, f.locator);
     deleteDataMaidFiles(f.scope, [f.filename]);
@@ -62,6 +64,19 @@ test('imports write untracked chats without foreign markers and recreate retired
     const recreated = slot(f, 'chat', f.locator);
     assert.equal(recreated.generation, 2);
     assert.equal(readRoleplayChat(f.scope, f.locator).instanceId, recreated.instanceId);
+});
+
+test('first-time card and group imports create protected identities before returning', t => {
+    const f = fixture(t, false, 'import-first');
+    const card = path.join(f.scope.directories.characters, 'New.png');
+    const group = path.join(f.scope.directories.groups, 'new-group.json');
+    assert.equal(importUserFile(f.scope, card, writeCard(png, JSON.stringify({ name: 'New', description: 'Imported' }))), true);
+    assert.equal(importUserFile(f.scope, group, Buffer.from(JSON.stringify({ id: 'new-group', members: ['New.png'], chats: [] }))), true);
+    const cardIdentity = readRoleplayEntity(f.scope, 'character', 'New.png');
+    const groupIdentity = readRoleplayEntity(f.scope, 'group', 'new-group');
+    assert.equal(slot(f, 'character', { avatar: 'New.png' }).instanceId, cardIdentity.instanceId);
+    assert.equal(slot(f, 'group', { groupId: 'new-group' }).instanceId, groupIdentity.instanceId);
+    assert.equal(readRoleplayAccount(f.scope).pending, null);
 });
 
 test('Data Maid deletes tracked files through a recorded lifecycle and untracked files directly', async t => {

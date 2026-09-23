@@ -1,6 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { promises as fsPromises } from 'node:fs';
 import { Buffer } from 'node:buffer';
 import os from 'node:os';
@@ -23,11 +23,11 @@ import { readWorldInfoFile } from './worldinfo.js';
 import { invalidateThumbnail, generateThumbnail } from './thumbnails.js';
 import { importRisuSprites } from './sprites.js';
 import { getUserDirectories } from '../users.js';
-import { getChatInfo } from './chats.js';
+import { getChatInfo, roleplayNativeHost } from './chats.js';
 import { removeSourceMemory } from '../mewmory/store.js';
 import { ByafParser } from '../byaf.js';
-import { assertUntrackedRoleplayFiles, roleplayAvatarOwner, roleplayError, roleplayLease, saveRoleplayAccount, validRoleplayAvatar, withRoleplayAccount, withUntrackedRoleplayFiles } from '../roleplay-store.js';
-import { commitRoleplayLifecycleLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
+import { assertUntrackedRoleplayFiles, roleplayAvatarOwner, roleplayError, roleplayLease, roleplayPathKey, saveRoleplayAccount, validRoleplayAvatar, withRoleplayAccount } from '../roleplay-store.js';
+import { commitRoleplayLifecycleLocked, commitSingleChatWriteLocked, forgetRoleplayReceiptLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
 import { readRoleplayChatLocked, readRoleplayEntityLocked, roleplayEntityContent } from '../generation/roleplay-source.js';
 import { CharXParser, persistCharXAssets } from '../charx.js';
 import { getSuspiciousEmptyCharacterDefinitionFields } from '../character-save-guard.js';
@@ -39,6 +39,7 @@ import {
     createCharacterChatTarget,
     isChatRecoverable,
     markChatDeleted,
+    parseChatJsonl,
     readChatJsonlStrict,
     runChatRecoveryBestEffort,
 } from '../chat-recovery.js';
@@ -1457,12 +1458,8 @@ async function importFromByaf(uploadPath, { request }, preservedFileName) {
         */
         const createChatAsCurrentPersona = (scenario) => {
             const chatName = sanitize(`${scenario.title || card.name} - ${humanizedDateTime()} imported.jsonl`, { replacement: sanitizeSafeCharacterReplacements });
-            const filePath = path.join(request.user.directories.chats, path.basename(fileName), chatName);
-            const dir = path.dirname(filePath);
-            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
             const chat = ByafParser.getChatFromScenario(scenario, request.body.user_name, card.name, byafData.chatBackgrounds);
-            // ponytail: new ordinary-storage chat; it enrols as protected on first load.
-            withUntrackedRoleplayFiles(characterBase(request), [filePath], () => tryWriteFileSync(filePath, chat, undefined, { expectedFileAbsent: true }));
+            publishByafChat(request, fileName, chatName, chat);
             console.log(`Created ${chatName} chat from BYAF import`);
             return chatName;
         };
@@ -1514,6 +1511,23 @@ async function importFromByaf(uploadPath, { request }, preservedFileName) {
     const result = await writeCharacterData(byafData.images[0].image, JSON.stringify(card), fileName, request);
 
     return result ? fileName : '';
+}
+
+/** BYAF scenarios enter through the same recorded chat creation used by other native imports. */
+export function publishByafChat(request, fileName, chatName, chat) {
+    const locator = { group: false, avatar: `${fileName}.png`, chat: path.parse(chatName).name };
+    const parsed = parseChatJsonl(Buffer.from(chat, 'utf8'));
+    if (parsed.status !== 'ok') throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'The BYAF chat is not valid JSONL.', 422);
+    return withRoleplayAccount(characterBase(request), null, lease => {
+        const { state } = roleplayLease(lease);
+        const vacancy = state.paths[roleplayPathKey(state, 'chat', locator)]?.generation ?? 0;
+        const operationKey = randomUUID();
+        const result = commitSingleChatWriteLocked(lease, { operationKey, sourceKind: 'storage', mode: 'create',
+            destination: locator, expectedVacancy: vacancy, records: parsed.records,
+            backup: { deferBackup: true } }, roleplayNativeHost);
+        forgetRoleplayReceiptLocked(lease, 'chat-write', operationKey);
+        return result;
+    });
 }
 
 /**

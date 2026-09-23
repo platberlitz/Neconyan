@@ -13,13 +13,13 @@ import { SETTINGS_FILE, USER_DIRECTORY_TEMPLATE } from '../constants.js';
 import { checkForNewContent, CONTENT_TYPES, getContentOfType } from './content-manager.js';
 import { restoreSettingsSnapshot } from '../settings-version.js';
 import { SECRETS_FILE } from './secrets.js';
-import { color, Cache, getConfigValue, ensureDirectory, normalizeZipEntryPath, recoverFileWritesInDirectorySync, tryWriteFileSync, FILE_WRITE_RECOVERY_SUFFIX } from '../util.js';
+import { color, Cache, getConfigValue, ensureDirectory, normalizeZipEntryPath, recoverFileWritesInDirectorySync, FILE_WRITE_RECOVERY_SUFFIX } from '../util.js';
 import { ENTITY_DATE_ADDED_FILE, importEntityDateAdded } from '../entity-date-added.js';
 import { ENTITY_LAST_CHAT_FILE, importEntityLastChat } from '../entity-last-chat.js';
 import { isNativeExtension } from '../neconyan-native-extensions.js';
 import { destroySession } from '../middleware/sessionAuth.js';
 import { importProgress } from '../import-progress.js';
-import { assertUntrackedRoleplayFiles, roleplayAccountBase, roleplayAccountStamp, roleplayError, roleplayFileLocator, roleplayLease, roleplayPathKey, resetRoleplayAccount, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
+import { roleplayAccountBase, roleplayAccountStamp, roleplayError, roleplayFileLocator, roleplayLease, roleplayPathKey, resetRoleplayAccount, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
 import { commitRoleplayLifecycleLocked, commitSingleChatWriteLocked, forgetRoleplayReceiptLocked } from '../roleplay-lifecycle.js';
 import { readRoleplayChatLocked, ROLEPLAY_METADATA_KEY } from '../generation/roleplay-source.js';
 import { parseChatJsonl } from '../chat-recovery.js';
@@ -166,21 +166,7 @@ function emitImportWarning(onWarning, message) {
     console.warn(warningMessage);
 }
 
-// Imports route protected Roleplay files (cards, groups, chats) through recorded writes so a restore never
-// overwrites a tracked file behind the store's back. Ordinary files keep the plain copy.
-function stripRoleplayMarker(bytes) {
-    const text = bytes.toString('utf8');
-    const end = text.indexOf('\n');
-    try {
-        const header = JSON.parse(end < 0 ? text : text.slice(0, end));
-        if (!header?.chat_metadata || !Object.hasOwn(header.chat_metadata, ROLEPLAY_METADATA_KEY)) return bytes;
-        delete header.chat_metadata[ROLEPLAY_METADATA_KEY];
-        return Buffer.from(JSON.stringify(header) + (end < 0 ? '' : text.slice(end)), 'utf8');
-    } catch {
-        return bytes;
-    }
-}
-
+// Imports route Roleplay files (cards, groups, chats) through recorded writes.
 function importChatRecords(bytes) {
     const parsed = parseChatJsonl(bytes);
     if (parsed.status !== 'ok') throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'The imported chat is not valid JSONL.', 422);
@@ -204,17 +190,11 @@ export function importUserFile(account, destinationPath, bytes) {
             const slot = state.paths[roleplayPathKey(state, target.kind, target.locator)];
             // One-shot keys: an interrupted import is finished by startup reconciliation, and closed receipts are dropped.
             const operationKey = crypto.randomUUID();
-            if (!slot) {
-                assertUntrackedRoleplayFiles(lease, [destinationPath]);
-                ensureDirectory(path.dirname(destinationPath));
-                tryWriteFileSync(destinationPath, target.kind === 'chat' ? stripRoleplayMarker(bytes) : bytes);
-                return;
-            }
             if (target.kind === 'chat') {
                 const records = importChatRecords(bytes);
-                if (!slot.instanceId) {
+                if (!slot?.instanceId) {
                     commitSingleChatWriteLocked(lease, { operationKey, sourceKind: 'storage', mode: 'create',
-                        destination: target.locator, expectedVacancy: slot.generation, records,
+                        destination: target.locator, expectedVacancy: slot?.generation ?? 0, records,
                         force: true, allowShrink: true, backup: { deferBackup: true } }, roleplayNativeHost);
                     forgetRoleplayReceiptLocked(lease, 'chat-write', operationKey);
                     return;
@@ -228,8 +208,8 @@ export function importUserFile(account, destinationPath, bytes) {
                 forgetRoleplayReceiptLocked(lease, 'chat-write', operationKey);
                 return;
             }
-            if (slot.instanceId && state.resources[slot.instanceId].head.rawHash === rawHash) return;
-            const op = slot.instanceId ? 'update' : 'create';
+            if (slot?.instanceId && state.resources[slot.instanceId].head.rawHash === rawHash) return;
+            const op = slot?.instanceId ? 'update' : 'create';
             commitRoleplayLifecycleLocked(lease, { action: `${target.kind}-import`,
                 intent: { locator: target.locator, rawHash },
                 steps: [{ op, kind: target.kind, locator: target.locator, bytes }] }, roleplayNativeHost);
