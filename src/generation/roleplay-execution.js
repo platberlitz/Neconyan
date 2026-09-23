@@ -157,7 +157,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         }
         if (request.serverPrompt && (request.worldInfo.postHistory?.character || request.worldInfo.postHistory?.text)) {
             const material = promptBackend(directories, request.binding);
-            messages = insertRoleplayPostHistory(messages, request.worldInfo.postHistory, material.backend ?? 'chat', effect);
+            messages = insertRoleplayPostHistory(messages, request.worldInfo.postHistory, material.backend ?? 'chat', effect, material);
         }
         return messages;
     };

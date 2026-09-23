@@ -206,16 +206,30 @@ export function insertWorldInfoAuthorNote(messages, before, after, note, history
 }
 
 /** Text completion puts saved post-history instructions after chat, except before a continued reply. */
-export function insertRoleplayPostHistory(messages, saved, backend, effect) {
+export function insertRoleplayPostHistory(messages, saved, backend, effect, material) {
     if (!saved || typeof saved.character !== 'string' || typeof saved.text !== 'string'
         || typeof saved.textEnabled !== 'boolean') {
         throw roleplayError('ROLEPLAY_INVALID', 'Saved post-history instructions are invalid.', 409);
     }
     if (backend === 'chat') {
-        if (saved.character.trim()) {
-            throw roleplayError('ROLEPLAY_INVALID', 'Character post-history instructions need the saved Chat Completion prompt order.', 409);
+        if (!saved.character.trim()) return messages;
+        const controls = material?.preset ?? material?.active;
+        const order = controls?.prompt_order?.find(value => String(value?.character_id) === '100001')?.order;
+        const prompt = controls?.prompts?.find(value => value?.identifier === 'jailbreak');
+        if (!Array.isArray(order) || !Array.isArray(controls?.prompts) || !prompt) {
+            throw roleplayError('ROLEPLAY_INVALID', 'The saved Chat Completion prompt order is unavailable.', 409);
         }
-        return messages;
+        const position = order.findIndex(value => value?.identifier === 'jailbreak');
+        if (position < 0 || order[position].enabled !== true) return messages;
+        const history = order.findIndex(value => value?.identifier === 'chatHistory');
+        if (history < 0 || history >= position || order.slice(history + 1).some(value => value?.enabled && value.identifier !== 'jailbreak')
+            || prompt.forbid_overrides === true || prompt.role !== 'system' || prompt.injection_position != null
+            || saved.character.includes('{{') || /<(?:USER|BOT|CHAR|GROUP)>/i.test(saved.character)
+            || (Array.isArray(prompt.injection_trigger) && prompt.injection_trigger.length
+                && !prompt.injection_trigger.includes(effect === 'append' ? 'normal' : effect === 'replace' ? 'regenerate' : effect))) {
+            throw roleplayError('ROLEPLAY_INVALID', 'This Chat Completion post-history instruction needs full prompt-manager ordering.', 409);
+        }
+        return [...messages, { role: 'system', content: saved.character.trim() }];
     }
     if (!['text', 'kobold', 'novel', 'horde'].includes(backend)) {
         throw roleplayError('ROLEPLAY_INVALID', 'This connection cannot place saved post-history instructions.', 409);
