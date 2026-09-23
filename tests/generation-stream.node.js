@@ -24,12 +24,27 @@ test('native streaming waits for upstream completion and assembles reasoning', a
     assert.equal(response.choices[0].message.reasoning_content, 'Why not?');
 });
 
+test('native streaming preserves a UTF-8 character split across network chunks', async () => {
+    const bytes = Buffer.from(event({ choices: [{ delta: { content: 'Café 😺' }, finish_reason: 'stop' }] }) + 'data: [DONE]\n\n');
+    const split = bytes.indexOf(Buffer.from('😺')) + 2;
+    const handler = async (request, response) => forwardFetchResponse({ ok: true, status: 200, statusText: 'OK',
+        body: Readable.from([bytes.subarray(0, split), bytes.subarray(split)]) }, response, request);
+    const response = await runBackendRequest({ headers: {}, socket: new EventEmitter() }, handler, { stream: true });
+    assert.equal(response.choices[0].message.content, 'Café 😺');
+    const invalid = async (request, capture) => forwardFetchResponse({ ok: true, status: 200, statusText: 'OK',
+        body: Readable.from([Buffer.from('data: {"choices":[{"delta":{"content":"'), Buffer.from([0xc3]),
+            Buffer.from('"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')]) }, capture, request);
+    await assert.rejects(runBackendRequest({ headers: {}, socket: new EventEmitter() }, invalid, { stream: true }), /UTF-8|encoded/);
+});
+
 test('incomplete and malformed provider streams are never completed', async () => {
     const handler = (_, response) => { response.write(event({ choices: [{ delta: { content: 'partial' } }] })); response.end(); };
     await assert.rejects(runBackendRequest({}, handler, { stream: true }), /without a complete reply/);
     assert.throws(() => assembleGenerationStream('data: {invalid}\n\ndata: [DONE]\n\n'), /invalid event/);
     assert.throws(() => assembleGenerationStream('data: {"error":"provider refused"}\n\ndata: [DONE]\n\n'), /rejected/);
     assert.throws(() => assembleGenerationStream(event({ choices: [{ delta: { content: 'A'.repeat(2 * 1024 * 1024) } }] }) + 'data: [DONE]\n\n'), /limit/);
+    assert.throws(() => assembleGenerationStream(event({ choices: [{ delta: { content: 'Partial' }, finish_reason: 'stop' }] })
+        + 'event: error\ndata: {"message":"provider failed"}\n\n'), /rejected/);
 });
 
 test('an upstream error after a completion marker does not commit a partial result', async () => {

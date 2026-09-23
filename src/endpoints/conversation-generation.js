@@ -345,6 +345,7 @@ export function createCapturingResponse({ stream = false } = {}) {
     const events = new EventEmitter();
     let streamError = null;
     let streamBytes = 0;
+    const decoder = stream ? new TextDecoder('utf-8', { fatal: true }) : null;
     const inertCaptureSocket = stream ? new EventEmitter() : undefined;
 
     return {
@@ -416,10 +417,17 @@ export function createCapturingResponse({ stream = false } = {}) {
         },
         write(chunk) {
             if (writableEnded) return false;
-            const next = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk || '');
-            streamBytes += Buffer.byteLength(next);
+            const bytes = stream ? (Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk ?? ''))) : null;
+            if (stream) streamBytes += bytes.length;
             if (stream && streamBytes > 2 * 1024 * 1024) {
                 streamError = new Error('The generated stream exceeded the saved result limit.');
+                events.emit('close');
+                this.end();
+                return false;
+            }
+            let next;
+            try { next = stream ? decoder.decode(bytes, { stream: true }) : Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk || ''); } catch (error) {
+                streamError = error;
                 events.emit('close');
                 this.end();
                 return false;
@@ -452,6 +460,9 @@ export function createCapturingResponse({ stream = false } = {}) {
                     this.write(data);
                     if (writableEnded) return this;
                 } else chunks.push(Buffer.isBuffer(data) ? data.toString('utf8') : String(data));
+            }
+            if (stream && !streamError) {
+                try { chunks.push(decoder.decode()); } catch (error) { streamError = error; }
             }
             if (payload === undefined && chunks.length) {
                 payload = chunks.join('');
