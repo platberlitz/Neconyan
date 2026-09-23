@@ -10,6 +10,7 @@ import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
 import { prepareRoleplayWorldInfo } from './world-info.js';
 import { assertWorldInfoDepthHistory, insertWorldInfoDepth } from './roleplay-prompt.js';
+import { getChatProfileContextLimit } from './profiles.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
@@ -53,7 +54,8 @@ function replyOutput(result, effect, name, material) {
 }
 
 /** A private worker for a fully admitted, paused Roleplay job; browser cutover is a later stage. */
-export async function runRoleplayReplyJob(context, { generate = runChatProfile, host = roleplayNativeHost, worldInfoHooks } = {}) {
+export async function runRoleplayReplyJob(context, { generate = runChatProfile, host = roleplayNativeHost,
+    worldInfoHooks, contextLimit = getChatProfileContextLimit } = {}) {
     const { job, directories, owner, signal } = context;
     const { roleplay, effect, source, request } = job.intent ?? {};
     const base = { owner, directories };
@@ -81,6 +83,12 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     assertSource();
     let worldInfo;
     if (request.worldInfo) {
+        const limit = contextLimit(directories, request.binding);
+        if (!Number.isSafeInteger(limit) || limit <= request.maxTokens
+            || !Number.isSafeInteger(request.worldInfo.maxContext)
+            || request.worldInfo.maxContext < 1 || request.worldInfo.maxContext > limit - request.maxTokens) {
+            throw roleplayError('ROLEPLAY_INVALID', 'World Info exceeds the bound connection prompt budget.', 409);
+        }
         if (request.worldInfo.account?.accountId !== account.accountId
             || request.worldInfo.account?.dataEpoch !== account.dataEpoch
             || roleplayHash(request.worldInfo.source) !== roleplayHash(source)

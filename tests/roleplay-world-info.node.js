@@ -13,9 +13,12 @@ const { captureRoleplaySource, readRoleplayChat } = await import('../src/generat
 const { admitRoleplayJob, applyRoleplayJobEffect } = await import('../src/roleplay-jobs.js');
 const { getJob, releaseJob } = await import('../src/jobs/store.js');
 const { readArtifact } = await import('../src/jobs/artifacts.js');
-const { runRoleplayReplyJob } = await import('../src/generation/roleplay-execution.js');
+const { runRoleplayReplyJob: runReply } = await import('../src/generation/roleplay-execution.js');
 const { resetRoleplayAccount } = await import('../src/roleplay-store.js');
 const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
+const { captureGenerationBinding } = await import('../src/generation/profiles.js');
+
+const runRoleplayReplyJob = (context, options = {}) => runReply(context, { contextLimit: () => 4096, ...options });
 
 const settings = { world_info_depth: 2, world_info_budget: 100, world_info_budget_cap: 0,
     world_info_recursive: true, world_info_min_activations: 0, world_info_case_sensitive: false,
@@ -356,6 +359,61 @@ test('a saved swipe trigger selects only swipe lore and remains bound to that ef
         owner: f.scope.owner, signal: new AbortController().signal };
     await assert.rejects(runRoleplayReplyJob(context, { generate: () => { throw Error('Provider called'); } }),
         { code: 'ROLEPLAY_INVALID' });
+    assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-world-info'), undefined);
+});
+
+test('a caller cannot enlarge the saved lore context beyond the bound provider limit', async t => {
+    const f = fixture(t);
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 40 });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'oversized-lore-context', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, messages: [{ role: 'user', content: 'Original' }],
+            maxTokens: 32, characterName: 'Nova', worldInfo } });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    let calls = 0;
+    await assert.rejects(runRoleplayReplyJob(context, { contextLimit: () => 64,
+        generate: () => { calls++; return { text: 'Unexpected reply' }; } }), { code: 'ROLEPLAY_INVALID' });
+    assert.equal(calls, 0);
+    assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-world-info'), undefined);
+});
+
+test('the response allowance is reserved before selecting any World Info', async t => {
+    const f = fixture(t);
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 60 });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'response-budget-lore', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, messages: [{ role: 'user', content: 'Original' }],
+            maxTokens: 32, characterName: 'Nova', worldInfo } });
+    releaseJob(f.scope.directories, jobId);
+    await assert.rejects(runRoleplayReplyJob({ job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal }, { contextLimit: () => 80,
+        generate: () => { throw Error('Provider called'); } }), { code: 'ROLEPLAY_INVALID' });
+    assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-world-info'), undefined);
+});
+
+test('active provider context is checked without trusting the accepted lore limit', async t => {
+    const f = fixture(t);
+    const saved = { _settingsRevision: 1, main_api: 'kobold', max_context: 64,
+        active_generation: { api: 'kobold' }, kai_settings: { api_server: 'http://127.0.0.1:6000', preset_settings: 'gui' } };
+    const filename = path.join(f.scope.directories.root, 'settings.json');
+    fs.writeFileSync(filename, JSON.stringify(saved));
+    const binding = captureGenerationBinding(f.scope.directories, { kind: 'active' }, { settingsRevision: 1 });
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'bound-provider-limit', effect: 'append', source,
+        request: { binding, messages: [{ role: 'user', content: 'Original' }], maxTokens: 32, characterName: 'Nova', worldInfo } });
+    releaseJob(f.scope.directories, jobId);
+    let calls = 0;
+    await assert.rejects(runReply({ job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal }, {
+        generate: () => { calls++; return { text: 'Unexpected reply' }; },
+    }), { code: 'ROLEPLAY_INVALID' });
+    assert.equal(calls, 0);
     assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-world-info'), undefined);
 });
 
