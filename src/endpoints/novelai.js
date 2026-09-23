@@ -130,7 +130,7 @@ function calculateSkipCfgAboveSigma(width, height, modelName) {
 
 export const router = express.Router();
 
-router.post('/status', async function (req, res) {
+export async function handleNovelStatus(req, res) {
     if (!req.body) return res.sendStatus(400);
     const api_key_novel = readSecret(req.user.directories, SECRET_KEYS.NOVEL);
 
@@ -140,8 +140,9 @@ router.post('/status', async function (req, res) {
     }
 
     try {
-        const response = await fetch(API_NOVELAI + '/user/subscription', {
+        const response = await (req.fetch ?? fetch)(API_NOVELAI + '/user/subscription', {
             method: 'GET',
+            signal: req.generationSignal,
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer ' + api_key_novel,
@@ -162,7 +163,9 @@ router.post('/status', async function (req, res) {
         console.error(error);
         return res.send({ error: true });
     }
-});
+}
+
+router.post('/status', handleNovelStatus);
 
 export async function handleNovelGenerate(req, res) {
     if (!req.body) return res.sendStatus(400);

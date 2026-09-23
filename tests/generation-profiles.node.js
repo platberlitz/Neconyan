@@ -90,6 +90,34 @@ test('acknowledged NovelAI uses its saved model, server-side token and clean rep
     fixture.settings.nai_settings.temperature = 1; fixture.save();
     await assert.rejects(runChatProfile({ ...options, stream: true }), /completion marker/);
     assert.equal(calls, 1);
+    fixture.settings.nai_settings.model_novel = 'kayra'; fixture.save();
+    const kayra = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 42 });
+    for (const [tier, expected] of [[3, 250], [1, 150]]) {
+        let statusCalls = 0;
+        let generationCalls = 0;
+        const result = await runChatProfile({ ...options, binding: kayra, maxTokens: 300, fetch: async (url, request) => {
+            assert.equal(request.headers.Authorization, 'Bearer private-token');
+            if (url.endsWith('/user/subscription')) {
+                statusCalls++;
+                assert.equal(request.method, 'GET');
+                return new Response(JSON.stringify({ tier }));
+            }
+            generationCalls++;
+            assert.equal(url, 'https://text.novelai.net/ai/generate');
+            assert.equal(JSON.parse(request.body).parameters.max_length, expected);
+            return new Response(JSON.stringify({ output: 'Ada: Done' }));
+        } });
+        assert.equal(result.text, 'Done');
+        assert.equal(statusCalls, 1);
+        assert.equal(generationCalls, 1);
+    }
+    let generationCalls = 0;
+    await assert.rejects(runChatProfile({ ...options, binding: kayra, maxTokens: 300, fetch: async url => {
+        if (url.endsWith('/user/subscription')) return new Response(JSON.stringify({ tier: null }));
+        generationCalls++;
+        return new Response(JSON.stringify({ output: 'unexpected' }));
+    } }), /account tier/);
+    assert.equal(generationCalls, 0);
     delete fixture.settings.nai_settings.top_k; fixture.save();
     assert.throws(() => captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 42 }), /complete NovelAI/);
 });

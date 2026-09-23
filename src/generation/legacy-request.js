@@ -3,7 +3,7 @@ import { providerStep, readArtifact, writeArtifact } from '../jobs/artifacts.js'
 import { setTimeout as wait } from 'node:timers/promises';
 import { runBackendRequest } from '../endpoints/conversation-generation.js';
 import { handleKoboldGenerate } from '../endpoints/backends/kobold.js';
-import { handleNovelGenerate } from '../endpoints/novelai.js';
+import { handleNovelGenerate, handleNovelStatus } from '../endpoints/novelai.js';
 import { handleHordeSubmit, handleHordeTaskStatus } from '../endpoints/horde.js';
 import { encodeGenerationText } from '../endpoints/tokenizers.js';
 import { resolveGenerationProfile } from './profiles.js';
@@ -156,12 +156,19 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
     if (material.backend === 'novel') {
         const model = settings.model_novel;
         const erato = model.includes('erato');
+        let maxLength = 150;
+        if (erato || model.includes('kayra')) {
+            const subscription = await runBackendRequest({ user: { profile: { handle: context.owner }, directories: context.directories }, headers: {} },
+                handleNovelStatus, { status: true }, { signal, fetch: fetchImpl, boundProfile: true });
+            if (![1, 2, 3].includes(subscription?.tier)) fail('NovelAI did not confirm the account tier.', 409);
+            if (subscription.tier === 3) maxLength = 250;
+        }
         const legacyStops = erato ? [...stops, ...stops.filter(stop => stop.startsWith('\n')).flatMap(stop =>
             ['.', '!', '?', '*', '"', '_', '...', '."', '?"', '!"', '.*', ')'].map(prefix => prefix + stop))] : stops;
         const tokens = await novelTokenControls(settings, model, legacyStops, signal);
         const prefix = /clio|kayra|erato/.test(model) ? (prompt.slice(-1500).includes('}') ? 'special_instruct' : settings.prefix || '') : 'vanilla';
         if (erato) prompt = '<|startoftext|><|reserved_special_token81|>' + prompt;
-        payload = { input: prompt, model, max_length: Math.min(maxTokens, 150), streaming: false, use_string: true,
+        payload = { input: prompt, model, max_length: Math.min(maxTokens, maxLength), streaming: false, use_string: true,
             ...Object.fromEntries(['temperature', 'min_length', 'repetition_penalty', 'repetition_penalty_range', 'repetition_penalty_slope',
                 'repetition_penalty_frequency', 'repetition_penalty_presence', 'top_a', 'top_p', 'top_k', 'min_p',
                 'math1_temp', 'math1_quad', 'math1_quad_entropy_scale', 'typical_p', 'tail_free_sampling'].map(name => [name, Number(settings[name])])),
