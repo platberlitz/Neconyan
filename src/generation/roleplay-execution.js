@@ -7,22 +7,30 @@ import { createMacroEnvironment } from '../macros/index.js';
 import { applyRoleplayJobEffect } from '../roleplay-jobs.js';
 import { roleplayError, withRoleplayAccount } from '../roleplay-store.js';
 import { roleplayNativeHost } from '../endpoints/chats.js';
+import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 
-function replyOutput(result, effect, name) {
+function replyOutput(result, effect, name, material) {
     const text = result?.text;
     if (typeof text !== 'string' || !text.trim() || Buffer.byteLength(text) > MAX_REPLY_BYTES) {
         throw roleplayError('ROLEPLAY_INVALID', 'The generated Roleplay reply is empty or too large.', 502);
     }
     const response = result.response;
-    const reasoning = response?.choices?.[0]?.message?.reasoning_content ?? response?.choices?.[0]?.message?.reasoning
-        ?? response?.thinking ?? response?.content?.filter?.(part => part.type === 'thinking').map(part => part.thinking).join('\n\n')
-        ?? response?.responseContent?.parts?.filter?.(part => part.thought).map(part => part.text).join('\n\n');
+    const controls = { mainApi: material?.backend === 'text' ? 'textgenerationwebui' : 'openai',
+        textGenType: material?.source, chatCompletionSource: material?.source,
+        showThoughts: material?.backend === 'text' || material?.showThoughts };
+    const reasoning = material ? extractProviderReasoning(response, controls) : response?.choices?.[0]?.message?.reasoning_content
+        ?? response?.choices?.[0]?.message?.reasoning ?? response?.thinking
+        ?? response?.content?.filter?.(part => part.type === 'thinking').map(part => part.thinking).join('\n\n');
     if (typeof reasoning === 'string' && Buffer.byteLength(reasoning) > MAX_REPLY_BYTES) {
         throw roleplayError('ROLEPLAY_INVALID', 'The generated Roleplay reasoning is too large.', 502);
     }
-    const extra = typeof reasoning === 'string' && reasoning ? { reasoning } : {};
+    const signature = material && extractProviderReasoningSignature(response, controls);
+    if (typeof signature === 'string' && Buffer.byteLength(signature) > MAX_REPLY_BYTES) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The generated Roleplay signature is too large.', 502);
+    }
+    const extra = { ...(typeof reasoning === 'string' && reasoning ? { reasoning } : {}), ...(signature ? { reasoning_signature: signature } : {}) };
     if (effect === 'append') return { message: { name, is_user: false, mes: text, extra } };
     if (effect === 'replace') return { messages: [{ name, is_user: false, mes: text, extra }] };
     return { text, extra };
@@ -56,7 +64,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         maxTokens: request.maxTokens, userName: request.userName || 'User', characterName: request.characterName,
         groupNames: request.groupNames || [], macroEnvironment: createMacroEnvironment(request.macros || {}),
         rawOptions: request.rawOptions || {}, ephemeralStops: request.ephemeralStops || [], beforeDispatch: assertSource });
-    const output = replyOutput(result, effect, request.characterName);
+    const output = replyOutput(result, effect, request.characterName, result.generation);
     writeArtifact(directories, job.id, 'roleplay-output', output);
     // The provider result is durable before recovery may revisit the chat write.
     setJobResume(directories, job.id, 'roleplay-delivery');

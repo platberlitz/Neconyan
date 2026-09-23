@@ -171,17 +171,20 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
                 trimWrongNames: rawOptions.trimNames !== false, displayIncompleteSentences: true,
             }) : cleanScopedTextResponse(result.text, payload.stopping_strings, material.instruct.enabled ? material.instruct : undefined);
             if (raw && !text) fail('No message generated.', 502);
-            return { ...result, text };
+            return { ...result, text, generation: { backend: binding.backend || 'chat', source: material.source,
+                showThoughts: Boolean(material.active.show_thoughts || material.active.auto_append_reasoning_tags) } };
         };
         return jobContext ? providerStep(jobContext, key, call) : call();
     }
     const payload = await prepareChatRequest({ context, binding, messages, maxTokens, macroEnvironment, ephemeralStops,
         userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload });
-    resolveGenerationProfile(context.directories, binding);
+    const material = resolveGenerationProfile(context.directories, binding);
     const call = () => {
         beforeDispatch?.();
         return runTextGeneration({ context, backend: 'chat', payload, signal, fetch: fetchImpl,
-            anonymousCustom: payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy });
+            anonymousCustom: payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy })
+            .then(result => ({ ...result, generation: { backend: 'chat', source: material.source,
+                showThoughts: Boolean(material.active.show_thoughts || material.active.auto_append_reasoning_tags) } }));
     };
     return jobContext ? providerStep(jobContext, hash({ binding, payload: { ...payload, proxy_password: undefined } }), call) : call();
 }

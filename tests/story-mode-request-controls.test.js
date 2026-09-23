@@ -15,7 +15,7 @@ import { event_types } from '../public/scripts/events.js';
 import { OVERSWIPE_BEHAVIOR, SWIPE_DIRECTION, SWIPE_SOURCE, SWIPE_STATE } from '../public/scripts/constants.js';
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget } from '../public/scripts/neconyan-assistant-knowledge.js';
 
-const sources = Object.fromEntries(['script.js', 'scripts/openai.js', 'scripts/reasoning.js', 'scripts/group-chats.js', 'scripts/utils.js', 'scripts/st-context.js', 'scripts/sse-stream.js', 'scripts/textgen-settings.js'].map(file => {
+const sources = Object.fromEntries(['script.js', 'scripts/openai.js', 'scripts/reasoning.js', 'scripts/generation-format.js', 'scripts/group-chats.js', 'scripts/utils.js', 'scripts/st-context.js', 'scripts/sse-stream.js', 'scripts/textgen-settings.js'].map(file => {
     const source = readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8');
     return [file, { source, ast: parse(source, { ecmaVersion: 'latest', sourceType: 'module' }) }];
 }));
@@ -185,6 +185,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
     load(context, 'scripts/sse-stream.js', ['EventSourceStream']);
     context.getEventSourceStream = vm.runInContext('() => new EventSourceStream()', context);
     context.appendAutoAppendReasoningInstruction = messages => messages;
+    load(context, 'scripts/generation-format.js', ['extractProviderReasoning', 'extractProviderReasoningSignature']);
     load(context, 'scripts/reasoning.js', ['ReasoningType', 'ReasoningState', 'PromptReasoning', 'ReasoningHandler', 'parseReasoningFromString', 'extractReasoningFromData']);
     context.getReasoningParseTemplates = () => [context.power_user.reasoning];
     vm.runInContext('ReasoningHandler.prototype.updateDom = () => {};', context);

@@ -49,10 +49,24 @@ test('a bound server reply retains its reasoning and commits a single recorded a
     assert.equal(readRoleplayChat(f.scope, f.locator).revision, saved.revision);
 });
 
+test('bound provider metadata keeps an encrypted reasoning signature on the recorded reply', async t => {
+    const { f, context } = accepted(t);
+    await runRoleplayReplyJob(context, { generate: async () => ({ text: 'With signature',
+        generation: { backend: 'chat', source: 'openrouter', showThoughts: true },
+        response: { choices: [{ message: { reasoning: 'Explanation', reasoning_details: [
+            { id: 'tool_noise', type: 'reasoning.encrypted', data: 'skip' },
+            { id: 'thought', type: 'reasoning.encrypted', data: 'saved signature' },
+        ] } }] },
+    }) });
+    const extra = readRoleplayChat(f.scope, f.locator).records.at(-1).extra;
+    assert.equal(extra.reasoning, 'Explanation');
+    assert.equal(extra.reasoning_signature, 'saved signature');
+});
+
 test('a saved active Custom request runs through the real provider transport and stores only the reply', async t => {
     const f = fixture(t);
     const settings = { _settingsRevision: 1, main_api: 'openai', active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
-        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'fixture',
+        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'fixture', show_thoughts: true,
             custom_include_headers: 'Authorization: Bearer private-header', custom_include_body: 'api_key: private-body' },
         power_user: { custom_stopping_strings: '[]' } };
     fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify(settings));
@@ -81,6 +95,17 @@ test('a saved active Custom request runs through the real provider transport and
         const filename = path.join(artifacts, entry);
         if (fs.statSync(filename).isFile()) assert.doesNotMatch(fs.readFileSync(filename, 'utf8'), /private-header|private-body/);
     }
+});
+
+test('a bound reply respects disabled reasoning while retaining the generated text', async t => {
+    const { f, context } = accepted(t);
+    await runRoleplayReplyJob(context, { generate: async () => ({ text: 'Visible',
+        generation: { backend: 'chat', source: 'custom', showThoughts: false },
+        response: { choices: [{ message: { reasoning_content: 'Hidden' } }] },
+    }) });
+    const saved = readRoleplayChat(f.scope, f.locator).records.at(-1);
+    assert.equal(saved.mes, 'Visible');
+    assert.equal(saved.extra.reasoning, undefined);
 });
 
 test('a stale source is refused before any provider work', async t => {

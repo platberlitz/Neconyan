@@ -5,7 +5,7 @@ import { chat, closeMessageEditor, event_types, eventSource, main_api, messageFo
 import { getRegexedString, regex_placement } from './extensions/regex/engine.js';
 import { getCurrentLocale, t, translate } from './i18n.js';
 import { macros, MacroCategory } from './macros/macro-system.js';
-import { chat_completion_sources, getChatCompletionModel, oai_settings } from './openai.js';
+import { getChatCompletionModel, oai_settings } from './openai.js';
 import { Popup } from './popup.js';
 import { performFuzzySearch, power_user } from './power-user.js';
 import { getPresetManager } from './preset-manager.js';
@@ -15,8 +15,9 @@ import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from '
 import { commonEnumProviders, enumIcons } from './slash-commands/SlashCommandCommonEnumsProvider.js';
 import { enumTypes, SlashCommandEnumValue } from './slash-commands/SlashCommandEnumValue.js';
 import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
-import { textgen_types, textgenerationwebui_settings } from './textgen-settings.js';
+import { textgenerationwebui_settings } from './textgen-settings.js';
 import { applyStreamDomPatch, applyStreamFadeIn } from './util/stream-fadein.js';
+import { extractProviderReasoning, extractProviderReasoningSignature } from './generation-format.js';
 import { copyText, escapeRegex, isFalseBoolean, isTrueBoolean, setDatasetProperty, stringToRange, trimSpaces } from './utils.js';
 
 /**
@@ -186,68 +187,11 @@ export function extractReasoningFromData(data, {
     textGenType = null,
     chatCompletionSource = null,
 } = {}) {
-    switch (mainApi ?? main_api) {
-        case 'textgenerationwebui':
-            switch (textGenType ?? textgenerationwebui_settings.type) {
-                case textgen_types.OPENROUTER:
-                    return data?.choices?.[0]?.reasoning ?? '';
-                case textgen_types.OLLAMA:
-                    return data?.thinking ?? '';
-            }
-            break;
-
-        case 'openai':
-            if (!ignoreShowThoughts && !oai_settings.show_thoughts && !oai_settings.auto_append_reasoning_tags) break;
-
-            switch (chatCompletionSource ?? oai_settings.chat_completion_source) {
-                case chat_completion_sources.DEEPSEEK:
-                    return data?.choices?.[0]?.message?.reasoning_content ?? '';
-                case chat_completion_sources.XAI:
-                    return data?.choices?.[0]?.message?.reasoning_content ?? '';
-                case chat_completion_sources.OPENROUTER:
-                    return data?.choices?.[0]?.message?.reasoning
-                        ?? data?.choices?.[0]?.message?.reasoning_content
-                        ?? '';
-                case chat_completion_sources.MAKERSUITE:
-                case chat_completion_sources.VERTEXAI:
-                    return data?.responseContent?.parts?.filter(part => part.thought)?.map(part => part.text)?.join('\n\n') ?? '';
-                case chat_completion_sources.CLAUDE:
-                    return data?.content?.filter(part => part.type === 'thinking')?.map(part => part.thinking)?.join('\n\n') ?? '';
-                case chat_completion_sources.MISTRALAI:
-                    return data?.choices?.[0]?.message?.content?.[0]?.thinking?.map(part => part.text)?.filter(x => x)?.join('\n\n') ?? '';
-                case chat_completion_sources.AIMLAPI:
-                case chat_completion_sources.POLLINATIONS:
-                case chat_completion_sources.MOONSHOT:
-                case chat_completion_sources.COMETAPI:
-                case chat_completion_sources.CHUTES:
-                case chat_completion_sources.ELECTRONHUB:
-                case chat_completion_sources.NANOGPT:
-                case chat_completion_sources.SILICONFLOW:
-                case chat_completion_sources.ZAI:
-                case chat_completion_sources.WORKERS_AI:
-                case chat_completion_sources.CUSTOM: {
-                    // Neconyan: smol-alibaba's Kimi K3 leaks this token into its reasoning.
-                    return String(data?.choices?.[0]?.message?.reasoning_content
-                        ?? data?.choices?.[0]?.message?.reasoning
-                        ?? '').replaceAll('<|sep|>', '');
-                }
-                case chat_completion_sources.LINKAPI: {
-                    // Response shape depends on the model's routing leg (Anthropic/Gemini/OpenAI).
-                    if (Array.isArray(data?.content)) {
-                        return data.content.filter(part => part.type === 'thinking').map(part => part.thinking).join('\n\n') ?? '';
-                    }
-                    if (Array.isArray(data?.responseContent?.parts)) {
-                        return data.responseContent.parts.filter(part => part.thought).map(part => part.text).join('\n\n') ?? '';
-                    }
-                    return data?.choices?.[0]?.message?.reasoning_content
-                        ?? data?.choices?.[0]?.message?.reasoning
-                        ?? '';
-                }
-            }
-            break;
-    }
-
-    return '';
+    return extractProviderReasoning(data, {
+        mainApi: mainApi ?? main_api, textGenType: textGenType ?? textgenerationwebui_settings.type,
+        chatCompletionSource: chatCompletionSource ?? oai_settings.chat_completion_source,
+        showThoughts: ignoreShowThoughts || oai_settings.show_thoughts || oai_settings.auto_append_reasoning_tags,
+    });
 }
 
 /**
@@ -263,40 +207,8 @@ export function extractReasoningSignatureFromData(data, {
     mainApi = null,
     chatCompletionSource = null,
 } = {}) {
-    // Only Gemini models use thought signatures (via MakerSuite/VertexAI or OpenRouter)
-    if ((mainApi ?? main_api) !== 'openai') {
-        return null;
-    }
-
-    const source = chatCompletionSource ?? oai_settings.chat_completion_source;
-    const isGemini = source === chat_completion_sources.MAKERSUITE || source === chat_completion_sources.VERTEXAI
-        || (source === chat_completion_sources.LINKAPI && Boolean(data?.responseContent || data?.candidates));
-    const isOpenRouter = source === chat_completion_sources.OPENROUTER;
-
-    if (!isGemini && !isOpenRouter) {
-        return null;
-    }
-
-    // OpenRouter format: reasoning_details array with type "reasoning.encrypted" (exclude tool calls)
-    if (isOpenRouter && Array.isArray(data?.choices?.[0]?.message?.reasoning_details)) {
-        for (const detail of data.choices[0].message.reasoning_details) {
-            if (!/^tool_/.test(detail.id) && detail.type === 'reasoning.encrypted' && detail.data) {
-                return detail.data;
-            }
-        }
-    }
-
-    // Direct Gemini format: Extract from responseContent.parts or candidates[].content.parts if available.
-    const geminiParts = data?.responseContent?.parts ?? data?.candidates?.[0]?.content?.parts;
-    if (isGemini && Array.isArray(geminiParts)) {
-        for (const part of geminiParts) {
-            if (part.thoughtSignature && typeof part.text === 'string') {
-                return part.thoughtSignature;
-            }
-        }
-    }
-
-    return null;
+    return extractProviderReasoningSignature(data, { mainApi: mainApi ?? main_api,
+        chatCompletionSource: chatCompletionSource ?? oai_settings.chat_completion_source });
 }
 
 /**

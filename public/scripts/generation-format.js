@@ -67,6 +67,53 @@ export function normalizeContentText(value, { excludeReasoning = false } = {}) {
     return '';
 }
 
+/** Provider reasoning and signatures shared by page replies and server jobs. */
+export function extractProviderReasoning(data, { mainApi, textGenType, chatCompletionSource, showThoughts = true } = {}) {
+    if (mainApi === 'textgenerationwebui') {
+        if (textGenType === 'openrouter') return data?.choices?.[0]?.reasoning ?? '';
+        if (textGenType === 'ollama') return data?.thinking ?? '';
+        return '';
+    }
+    if (mainApi !== 'openai' || !showThoughts) return '';
+    const message = data?.choices?.[0]?.message;
+    switch (chatCompletionSource) {
+        case 'deepseek':
+        case 'xai': return message?.reasoning_content ?? '';
+        case 'openrouter': return message?.reasoning ?? message?.reasoning_content ?? '';
+        case 'makersuite':
+        case 'vertexai': return data?.responseContent?.parts?.filter(part => part.thought)?.map(part => part.text)?.join('\n\n') ?? '';
+        case 'claude': return data?.content?.filter(part => part.type === 'thinking')?.map(part => part.thinking)?.join('\n\n') ?? '';
+        case 'mistralai': return message?.content?.[0]?.thinking?.map(part => part.text)?.filter(Boolean)?.join('\n\n') ?? '';
+        case 'linkapi':
+            if (Array.isArray(data?.content)) return data.content.filter(part => part.type === 'thinking').map(part => part.thinking).join('\n\n');
+            if (Array.isArray(data?.responseContent?.parts)) return data.responseContent.parts.filter(part => part.thought).map(part => part.text).join('\n\n');
+            return message?.reasoning_content ?? message?.reasoning ?? '';
+        case 'aimlapi': case 'pollinations': case 'moonshot': case 'cometapi': case 'chutes':
+        case 'electronhub': case 'nanogpt': case 'siliconflow': case 'zai': case 'workers_ai': case 'custom':
+            return String(message?.reasoning_content ?? message?.reasoning ?? '').replaceAll('<|sep|>', '');
+        default: return '';
+    }
+}
+
+export function extractProviderReasoningSignature(data, { mainApi, chatCompletionSource } = {}) {
+    if (mainApi !== 'openai') return null;
+    const isGemini = chatCompletionSource === 'makersuite' || chatCompletionSource === 'vertexai'
+        || (chatCompletionSource === 'linkapi' && Boolean(data?.responseContent || data?.candidates));
+    const details = data?.choices?.[0]?.message?.reasoning_details;
+    if (chatCompletionSource === 'openrouter' && Array.isArray(details)) {
+        for (const detail of details) {
+            if (!/^tool_/.test(detail.id) && detail.type === 'reasoning.encrypted' && detail.data) return detail.data;
+        }
+    }
+    const parts = data?.responseContent?.parts ?? data?.candidates?.[0]?.content?.parts;
+    if (isGemini && Array.isArray(parts)) {
+        for (const part of parts) {
+            if (part.thoughtSignature && typeof part.text === 'string') return part.thoughtSignature;
+        }
+    }
+    return null;
+}
+
 /** Scoped profile requests intentionally leave macros in message content untouched. */
 export function constructScopedTextPrompt(prompt, instruct, { name1 = '', name2 = '', selectedGroup = false, substitute = value => value } = {}) {
     const formatting = { customInstruct: instruct, name1, name2, selectedGroup, substitute };
