@@ -9,7 +9,7 @@ import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-st
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
 import { assertRoleplayWorldInfoCurrent, prepareRoleplayWorldInfo } from './world-info.js';
-import { assertWorldInfoDepthHistory, insertWorldInfoDepth, insertWorldInfoExamples } from './roleplay-prompt.js';
+import { assertWorldInfoDepthHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples } from './roleplay-prompt.js';
 import { getChatProfileContextLimit } from './profiles.js';
 import { getCounter } from '../mewmory/tokens.js';
 
@@ -109,7 +109,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (worldInfo.activated.some(entry => entry.automationId)) {
             throw roleplayError('ROLEPLAY_INVALID', 'This World Info entry needs a server Quick Reply action before generation.', 409);
         }
-        if (worldInfo.ANBeforeEntries.length || worldInfo.ANAfterEntries.length || Object.keys(worldInfo.outletEntries).length) {
+        if (Object.keys(worldInfo.outletEntries).length) {
             throw roleplayError('ROLEPLAY_INVALID', 'This World Info insertion position needs server prompt construction.', 409);
         }
         if (worldInfo.activated.length) {
@@ -125,6 +125,10 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         }
         if (worldInfo.WIDepthEntries.length) {
             messages = insertWorldInfoDepth(messages, worldInfo.WIDepthEntries, historyStart);
+        }
+        if (worldInfo.ANBeforeEntries.length || worldInfo.ANAfterEntries.length) {
+            messages = insertWorldInfoAuthorNote(messages, worldInfo.ANBeforeEntries, worldInfo.ANAfterEntries,
+                request.worldInfo.authorNote, historyStart);
         }
         if (worldInfo.activated.length) {
             const { count } = await getCounter(request.worldInfo.tokenizer);

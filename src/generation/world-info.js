@@ -80,6 +80,13 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         const regex = extensions.disabledExtensions?.includes('regex') ? [] : [
             ...(extensions.regex ?? []), ...scopedRegex,
         ];
+        const note = extensions.note ?? {};
+        if (!note || typeof note !== 'object' || !Array.isArray(note.chara ?? [])) {
+            throw roleplayError('ROLEPLAY_INVALID', 'Saved Author\'s Note settings are invalid.', 409);
+        }
+        const scoped = saved.locator.group ? saved.records[0].chat_metadata?.note_chara
+            : note.chara?.find(item => item?.name === `individual:${avatar}`)
+                ?? note.chara?.find(item => item?.name === path.parse(avatar).name);
         const chat = saved.records.slice(1).filter(message => !message.is_system)
             .map(message => (settings.world_info_include_names ?? DEFAULTS.world_info_include_names)
                 ? `${message.name}: ${message.mes}` : String(message.mes ?? '')).reverse();
@@ -90,7 +97,15 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             names, settings: Object.fromEntries(SETTINGS.map(key => [key, settings[key] ?? DEFAULTS[key]])),
             bookHashes: Object.fromEntries(Object.entries(selected).map(([name, value]) => [name, value.hash])),
             characterFile: path.parse(avatar).name, avatar, maxContext, tokenizer, chat, regex,
-            metadata: structuredClone(saved.records[0].chat_metadata ?? {}), global: {
+            metadata: structuredClone(saved.records[0].chat_metadata ?? {}),
+            authorNote: { prompt: saved.records[0].chat_metadata?.note_prompt ?? note.default ?? '',
+                interval: saved.records[0].chat_metadata?.note_interval ?? note.defaultInterval ?? 1,
+                position: saved.records[0].chat_metadata?.note_position ?? note.defaultPosition ?? 1,
+                depth: saved.records[0].chat_metadata?.note_depth ?? note.defaultDepth ?? 4,
+                role: saved.records[0].chat_metadata?.note_role ?? note.defaultRole ?? 0,
+                scoped: scoped ? structuredClone(scoped) : null,
+                userMessages: saved.records.slice(1).filter(message => message.is_user).length },
+            global: {
                 trigger, characterDescription: character.data?.data?.description ?? character.data?.description ?? '',
                 characterPersonality: character.data?.data?.personality ?? character.data?.personality ?? '',
                 personaDescription: settings.power_user?.persona_description ?? '',

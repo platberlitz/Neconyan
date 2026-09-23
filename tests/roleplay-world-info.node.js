@@ -5,7 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 import { scanWorldInfo } from '../src/generation/world-info-scan.js';
-import { assertWorldInfoDepthHistory, insertWorldInfoDepth, insertWorldInfoExamples } from '../src/generation/roleplay-prompt.js';
+import { assertWorldInfoDepthHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples } from '../src/generation/roleplay-prompt.js';
 import { write as writeCard } from '../src/character-card-parser.js';
 
 const { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } = await import('../src/generation/world-info.js');
@@ -28,6 +28,22 @@ const entry = (uid, key, content, more = {}) => ({ world: 'Town', uid, hash: uid
     decorators: [], ...more });
 const scan = (entries, overrides = {}) => scanWorldInfo({ entries, chat: ['A cat runs'], metadata: {}, settings,
     maxContext: 100, countTokens: async text => text.length, ...overrides });
+
+test('saved Author\'s Note surrounds selected lore only at its configured interval and position', () => {
+    const messages = [{ role: 'system', content: 'Rules' }, { role: 'user', content: 'Original' }];
+    const note = { prompt: 'Original note', interval: 2, position: 1, depth: 0, role: 0,
+        userMessages: 2, scoped: { useChara: true, prompt: 'Character note', position: 1 } };
+    assert.deepEqual(insertWorldInfoAuthorNote(messages, ['Top'], ['Bottom'], note, 1), [
+        { role: 'system', content: 'Rules' }, { role: 'user', content: 'Original' },
+        { role: 'system', content: 'Top\nCharacter note\nOriginal note\nBottom' },
+    ]);
+    assert.equal(insertWorldInfoAuthorNote(messages, ['Top'], ['Bottom'], { ...note, userMessages: 1 }, 1), messages);
+    assert.equal(insertWorldInfoAuthorNote(messages, [], [], note, 1), messages);
+    assert.throws(() => insertWorldInfoAuthorNote(messages, ['Top'], [], { ...note, role: '0' }, 1),
+        { code: 'ROLEPLAY_INVALID' });
+    assert.throws(() => insertWorldInfoAuthorNote(messages, ['Top'], [], { ...note, position: 0 }, 1),
+        { code: 'ROLEPLAY_INVALID' });
+});
 
 test('a scan without selected entries does not call the per-pass hook', async () => {
     let calls = 0;
@@ -697,6 +713,39 @@ test('a bound reply places saved card and lore examples before history without r
     await runRoleplayReplyJob(context, options);
     assert.equal(calls, 1);
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Saved answer');
+});
+
+test('an admitted reply places World Info around the saved active Author\'s Note', async t => {
+    const f = fixture(t);
+    f.records[0].chat_metadata = { note_prompt: 'Saved note', note_interval: 1, note_position: 1,
+        note_depth: 0, note_role: 0 };
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Original', 'Above', { position: 2 }),
+        2: entry(2, 'Original', 'Below', { position: 3 }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 });
+    const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, historyStart: 0,
+        messages: [{ role: 'user', content: 'Original' }, { role: 'assistant', content: 'Answer' }],
+        maxTokens: 32, characterName: 'Nova', worldInfo };
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'saved-note', effect: 'append', source, request });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    await runRoleplayReplyJob(context, { generate: async ({ beforeDispatch, messages }) => {
+        beforeDispatch();
+        assert.deepEqual(messages.map(message => message.content), ['Original', 'Answer', 'Above\nSaved note\nBelow']);
+        return { text: 'Noted' };
+    } });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Noted');
 });
 
 test('example blocks that exhaust the bound prompt limit refuse before paid work', async t => {

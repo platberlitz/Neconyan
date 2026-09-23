@@ -79,3 +79,33 @@ export function insertWorldInfoExamples(messages, entries, cardExamples, history
     const after = entries.filter(item => item.position === 1).flatMap(item => parse(item.content));
     return [...messages.slice(0, historyStart), ...before, ...parse(cardExamples), ...after, ...messages.slice(historyStart)];
 }
+
+/** Browser Author's Note timing comes from saved chat metadata and saved extension defaults. */
+export function insertWorldInfoAuthorNote(messages, before, after, note, historyStart) {
+    if (!Array.isArray(before) || !Array.isArray(after) || [...before, ...after].some(value => typeof value !== 'string')
+        || !note || typeof note.prompt !== 'string' || !Number.isSafeInteger(note.interval)
+        || !Number.isSafeInteger(note.depth) || note.depth < 0 || note.depth > 10000
+        || ![0, 1, 2].includes(note.position) || ![0, 1, 2].includes(note.role)
+        || !Number.isSafeInteger(note.userMessages) || note.userMessages < 0
+        || !Number.isSafeInteger(historyStart) || historyStart < 0 || historyStart > messages.length) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The saved Author\'s Note cannot be placed in this prompt.', 409);
+    }
+    if (!before.length && !after.length) return messages;
+    const active = note.interval === 1 || note.interval > 1 && note.userMessages > 0 && note.userMessages % note.interval === 0;
+    if (!active) return messages;
+    let prompt = note.prompt;
+    const scoped = note.scoped;
+    if (scoped?.useChara) {
+        if (typeof scoped.prompt !== 'string' || ![0, 1, 2].includes(Number(scoped.position))) {
+            throw roleplayError('ROLEPLAY_INVALID', 'The saved character Author\'s Note is invalid.', 409);
+        }
+        prompt = Number(scoped.position) === 1 ? [scoped.prompt, prompt].filter(Boolean).join('\n')
+            : Number(scoped.position) === 2 ? [prompt, scoped.prompt].filter(Boolean).join('\n') : scoped.prompt;
+    }
+    const content = [...before, prompt, ...after].join('\n').replace(/(^\n)|(\n$)/g, '');
+    if (!content) return messages;
+    if (note.position !== 1) {
+        throw roleplayError('ROLEPLAY_INVALID', 'This Author\'s Note position needs server story prompt construction.', 409);
+    }
+    return insertWorldInfoDepth(messages, [{ depth: note.depth, role: note.role, entries: [content] }], historyStart);
+}
