@@ -43,3 +43,39 @@ export function insertWorldInfoDepth(messages, entries, historyStart) {
     }
     return [...prefix, ...history.reverse()];
 }
+
+/** Keep saved card examples between lore's before/after example blocks. */
+export function insertWorldInfoExamples(messages, entries, cardExamples, historyStart, userName, characterName, groupNames = []) {
+    if (!Number.isSafeInteger(historyStart) || historyStart < 0 || historyStart > messages.length
+        || typeof cardExamples !== 'string' || typeof userName !== 'string' || !userName
+        || typeof characterName !== 'string' || !characterName || !Array.isArray(groupNames)
+        || groupNames.some(name => typeof name !== 'string')
+        || !Array.isArray(entries) || entries.some(item => !item || ![0, 1].includes(item.position)
+            || typeof item.content !== 'string')
+        || messages.slice(0, historyStart).some(item => ['example_user', 'example_assistant'].includes(item?.name))) {
+        throw roleplayError('ROLEPLAY_INVALID', 'World Info examples need a saved card and an unambiguous history boundary.', 409);
+    }
+    const blocks = text => text ? (text.startsWith('<START>') ? text : `<START>\n${text.trim()}`)
+        .split(/<START>/gi).slice(1).map(block => block.trim()) : [];
+    const parse = text => blocks(text).flatMap(block => {
+        const lines = (`<START>\n${block}`).split('\n').slice(1);
+        const result = [];
+        let current;
+        const flush = () => {
+            if (!current) return;
+            const content = current.lines.join('\n').replace(current.name + ':', '').trim();
+            result.push({ role: 'system', content: groupNames.length ? `${current.name}: ${content}` : content,
+                name: current.name === userName ? 'example_user' : 'example_assistant' });
+        };
+        for (const line of lines) {
+            const speaker = [userName, characterName, ...groupNames].find(name => line.startsWith(name + ':'));
+            if (speaker && speaker !== current?.name) { flush(); current = { name: speaker, lines: [] }; }
+            if (current) current.lines.push(line);
+        }
+        flush();
+        return result;
+    });
+    const before = entries.filter(item => item.position === 0).reverse().flatMap(item => parse(item.content));
+    const after = entries.filter(item => item.position === 1).flatMap(item => parse(item.content));
+    return [...messages.slice(0, historyStart), ...before, ...parse(cardExamples), ...after, ...messages.slice(historyStart)];
+}

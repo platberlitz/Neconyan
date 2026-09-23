@@ -85,6 +85,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                 ? `${message.name}: ${message.mes}` : String(message.mes ?? '')).reverse();
         const snapshot = { account: { accountId: account.accountId, dataEpoch: account.dataEpoch }, source,
             character: { instanceId: character.instanceId, revision: character.revision, rawHash: character.rawHash },
+            characterExamples: character.data?.data?.mes_example ?? character.data?.mes_example ?? '',
             settingsHash: roleplayHash(savedSettings),
             names, settings: Object.fromEntries(SETTINGS.map(key => [key, settings[key] ?? DEFAULTS[key]])),
             bookHashes: Object.fromEntries(Object.entries(selected).map(([name, value]) => [name, value.hash])),

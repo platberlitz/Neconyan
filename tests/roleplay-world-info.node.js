@@ -5,7 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 import { scanWorldInfo } from '../src/generation/world-info-scan.js';
-import { assertWorldInfoDepthHistory, insertWorldInfoDepth } from '../src/generation/roleplay-prompt.js';
+import { assertWorldInfoDepthHistory, insertWorldInfoDepth, insertWorldInfoExamples } from '../src/generation/roleplay-prompt.js';
 import { write as writeCard } from '../src/character-card-parser.js';
 
 const { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } = await import('../src/generation/world-info.js');
@@ -58,6 +58,21 @@ test('saved depth injections preserve the system prefix and browser history orde
     assert.throws(() => insertWorldInfoDepth(messages, [{ depth: 1, role: 5, entries: ['bad'] }], 1),
         { code: 'ROLEPLAY_INVALID' });
     assert.throws(() => insertWorldInfoDepth(messages, [{ depth: 1, role: '0', entries: ['lost'] }], 1),
+        { code: 'ROLEPLAY_INVALID' });
+});
+
+test('saved card examples sit between before/after lore examples and ahead of protected history', () => {
+    const messages = [{ role: 'system', content: 'Rules' }, { role: 'user', content: 'Original' }];
+    const inserted = insertWorldInfoExamples(messages, [
+        { position: 0, content: 'User: First\nNova: Before' },
+        { position: 1, content: 'User: Last\nNova: After' },
+    ], '<START>\nUser: Card\nNova: Sample', 1, 'User', 'Nova');
+    assert.deepEqual(inserted.map(value => value.content), ['Rules', 'First', 'Before', 'Card', 'Sample',
+        'Last', 'After', 'Original']);
+    assert.deepEqual(inserted.slice(1, -1).map(value => value.name), ['example_user', 'example_assistant',
+        'example_user', 'example_assistant', 'example_user', 'example_assistant']);
+    assert.deepEqual(messages.map(value => value.content), ['Rules', 'Original']);
+    assert.throws(() => insertWorldInfoExamples(messages, [{ position: 0, content: 'Hi' }], '', 3, 'User', 'Nova'),
         { code: 'ROLEPLAY_INVALID' });
 });
 
@@ -641,6 +656,74 @@ test('a group World Info selection cannot borrow a character outside its saved m
     })));
     assert.throws(() => captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Outside.png', maxContext: 100 }),
         { code: 'ROLEPLAY_INVALID' });
+});
+
+test('a bound reply places saved card and lore examples before history without repeating provider work', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    fs.writeFileSync(path.join(f.scope.directories.characters, 'Nova.png'), writeCard(png, JSON.stringify({
+        name: 'Nova', mes_example: '<START>\nUser: Card\nNova: Sample',
+    })));
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Original', 'User: Before\nNova: First', { world: undefined, hash: undefined, position: 5 }),
+        2: entry(2, 'Original', 'User: After\nNova: Last', { world: undefined, hash: undefined, position: 6 }),
+        3: entry(3, 'Original', 'Nearby', { world: undefined, hash: undefined, position: 4, depth: 0 }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 });
+    const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, historyStart: 1,
+        messages: [{ role: 'system', content: 'Rules' }, { role: 'user', content: 'Original' },
+            { role: 'assistant', content: 'Answer' }], maxTokens: 32, characterName: 'Nova', worldInfo };
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'saved-examples', effect: 'append', source, request });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    let calls = 0;
+    const options = { generate: async ({ beforeDispatch, messages }) => {
+        beforeDispatch();
+        calls++;
+        assert.deepEqual(messages.map(value => value.content), ['Rules', 'Before', 'First', 'Card', 'Sample',
+            'After', 'Last', 'Original', 'Answer', 'Nearby']);
+        return { text: 'Saved answer' };
+    } };
+    await runRoleplayReplyJob(context, options);
+    await runRoleplayReplyJob(context, options);
+    assert.equal(calls, 1);
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Saved answer');
+});
+
+test('example blocks that exhaust the bound prompt limit refuse before paid work', async t => {
+    const f = fixture(t);
+    fs.writeFileSync(path.join(f.scope.directories.characters, 'Nova.png'), writeCard(png, JSON.stringify({
+        name: 'Nova', mes_example: '<START>\nUser: ' + Array.from({ length: 500 }, (_, i) => `card${i}`).join(' '),
+    })));
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Original', 'User: Short', { world: undefined, hash: undefined, position: 5 }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'example-overflow', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, historyStart: 0,
+            messages: [{ role: 'user', content: 'Original' }, { role: 'assistant', content: 'Answer' }],
+            maxTokens: 32, characterName: 'Nova', worldInfo } });
+    releaseJob(f.scope.directories, jobId);
+    await assert.rejects(runRoleplayReplyJob({ job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal }, { contextLimit: () => 132,
+        generate: () => { throw Error('Provider called'); } }), { code: 'ROLEPLAY_INVALID' });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length);
 });
 
 test('unsupported insertion positions refuse before provider dispatch and before changing the chat', async t => {

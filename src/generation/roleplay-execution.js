@@ -9,8 +9,9 @@ import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-st
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
 import { assertRoleplayWorldInfoCurrent, prepareRoleplayWorldInfo } from './world-info.js';
-import { assertWorldInfoDepthHistory, insertWorldInfoDepth } from './roleplay-prompt.js';
+import { assertWorldInfoDepthHistory, insertWorldInfoDepth, insertWorldInfoExamples } from './roleplay-prompt.js';
 import { getChatProfileContextLimit } from './profiles.js';
+import { getCounter } from '../mewmory/tokens.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
@@ -108,8 +109,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (worldInfo.activated.some(entry => entry.automationId)) {
             throw roleplayError('ROLEPLAY_INVALID', 'This World Info entry needs a server Quick Reply action before generation.', 409);
         }
-        if (worldInfo.EMEntries.length || worldInfo.ANBeforeEntries.length
-            || worldInfo.ANAfterEntries.length || Object.keys(worldInfo.outletEntries).length) {
+        if (worldInfo.ANBeforeEntries.length || worldInfo.ANAfterEntries.length || Object.keys(worldInfo.outletEntries).length) {
             throw roleplayError('ROLEPLAY_INVALID', 'This World Info insertion position needs server prompt construction.', 409);
         }
         if (worldInfo.activated.length) {
@@ -117,9 +117,20 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         }
         const lore = [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
         if (lore) messages.unshift({ role: 'system', content: lore });
+        let historyStart = request.historyStart + Number(Boolean(lore));
+        if (worldInfo.EMEntries.length) {
+            messages = insertWorldInfoExamples(messages, worldInfo.EMEntries, request.worldInfo.characterExamples,
+                historyStart, request.userName || 'User', request.characterName, request.groupNames || []);
+            historyStart += messages.length - request.messages.length - Number(Boolean(lore));
+        }
         if (worldInfo.WIDepthEntries.length) {
-            messages = insertWorldInfoDepth(messages, worldInfo.WIDepthEntries,
-                request.historyStart + Number(Boolean(lore)));
+            messages = insertWorldInfoDepth(messages, worldInfo.WIDepthEntries, historyStart);
+        }
+        if (worldInfo.activated.length) {
+            const { count } = await getCounter(request.worldInfo.tokenizer);
+            if (await count(messages.map(message => message.content).join('\n')) > contextLimit(directories, request.binding) - request.maxTokens) {
+                throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay prompt exceeds the bound context budget.', 409);
+            }
         }
     }
     const result = await generate({ context: base, jobContext: context, binding: request.binding, messages,
