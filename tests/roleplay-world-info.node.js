@@ -100,6 +100,15 @@ test('group scoring ignores blank secondary keys before comparing complete match
     assert.deepEqual(result.activated.map(value => value.uid), [1]);
 });
 
+test('group scoring gives no weight to an entry with only blank primary keys', async () => {
+    const blank = entry(1, 'cat', 'Blank primary', { group: 'choice', key: ['{{blank}}'],
+        keysecondary: ['runs'], selectiveLogic: 0, constant: true });
+    const matching = entry(2, 'cat', 'Matching primary', { group: 'choice' });
+    const result = await scan([blank, matching], { settings: { ...settings, world_info_use_group_scoring: true },
+        substitute: key => key === '{{blank}}' ? '' : key });
+    assert.deepEqual(result.activated.map(value => value.uid), [2]);
+});
+
 test('the scan hook can change the next state and budget before any provider call', async () => {
     let calls = 0;
     const result = await scan([entry(1, 'cat', 'Present')], { onScan: async hook => {

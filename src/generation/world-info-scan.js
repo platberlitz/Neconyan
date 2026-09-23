@@ -55,12 +55,12 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
     };
     const score = (entry, phase) => {
         const text = scanText(entry, phase);
-        const hit = key => matchesWorldInfoEntry({ key: [key] }, text, {
-            substitute, caseSensitive: entry.caseSensitive ?? settings.world_info_case_sensitive,
+        const primaryKeys = entry.key?.map(key => normalizeWorldInfoKey(key, substitute)).filter(Boolean) ?? [];
+        if (!primaryKeys.length) return 0;
+        const primary = primaryKeys.filter(key => matchesWorldInfoEntry({ key: [key] }, text, {
+            caseSensitive: entry.caseSensitive ?? settings.world_info_case_sensitive,
             wholeWords: entry.matchWholeWords ?? settings.world_info_match_whole_words,
-        });
-        const primary = entry.key?.filter(hit).length ?? 0;
-        if (!entry.key?.length) return 0;
+        })).length;
         const secondaryKeys = entry.keysecondary?.map(key => normalizeWorldInfoKey(key, substitute)).filter(Boolean) ?? [];
         const secondary = secondaryKeys.filter(key => matchesWorldInfoEntry({ key: [key] }, text, {
             caseSensitive: entry.caseSensitive ?? settings.world_info_case_sensitive,
