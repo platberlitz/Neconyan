@@ -223,6 +223,17 @@ test('depth placement refuses unhandled saved attachments and a fabricated empty
         { code: 'ROLEPLAY_SOURCE_CHANGED' });
 });
 
+test('saved display metadata does not block a protected text history', t => {
+    const f = fixture(t);
+    f.records[1].extra = { isSmallSys: false, token_count: 12 };
+    f.records[2].extra = { token_count: 7 };
+    assert.deepEqual(buildRoleplaySavedHistory(f.records), [
+        { role: 'user', content: 'Original' }, { role: 'assistant', content: 'Answer' },
+    ]);
+    f.records[2].extra.reasoning = 'A hidden thought';
+    assert.throws(() => buildRoleplaySavedHistory(f.records), { code: 'ROLEPLAY_INVALID' });
+});
+
 test('server-owned prompts derive history from the protected chat and reject browser-prepared text', async t => {
     const f = fixture(t);
     f.records[1].extra = {};
@@ -273,7 +284,8 @@ test('server-owned prompts refuse unsupported saved media before paying a provid
 
 test('server-owned prompts use protected history when no story template is saved', async t => {
     const f = fixture(t);
-    f.records[1].extra = {};
+    f.records[1].extra = { isSmallSys: false, token_count: 12 };
+    f.records[2].extra = { token_count: 7 };
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const source = captureRoleplaySource(f.scope, { locator: f.locator });

@@ -66,7 +66,8 @@ export function assertWorldInfoDepthHistory(records, messages, historyStart) {
     const history = records.slice(1).map(record => {
         if (typeof record.mes !== 'string' || typeof record.is_user !== 'boolean'
             || Object.keys(record).some(key => !['name', 'is_user', 'mes', 'swipes', 'swipe_id', 'swipe_info', 'extra', 'send_date'].includes(key))
-            || (record.extra && Object.keys(record.extra).length)) {
+            || (record.extra && (typeof record.extra !== 'object' || Array.isArray(record.extra)
+                || Object.keys(record.extra).some(key => !['token_count', 'isSmallSys'].includes(key))))) {
             throw roleplayError('ROLEPLAY_INVALID', 'This saved chat needs server handling for its non-text content.', 409);
         }
         return { role: record.is_user ? 'user' : 'assistant', content: record.mes };
