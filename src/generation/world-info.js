@@ -172,6 +172,13 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
     const result = await scanWorldInfo({ entries, chat: snapshot.chat, metadata: snapshot.metadata,
         settings: snapshot.settings, global: { ...snapshot.global, characterFile: snapshot.characterFile },
         maxContext: snapshot.maxContext, countTokens: count, substitute, random, onScan, transform });
+    const afterScan = captureRoleplayWorldInfo(base, snapshot.account, snapshot.source, {
+        avatar: snapshot.avatar, maxContext: snapshot.maxContext, tokenizer: snapshot.tokenizer,
+        trigger: snapshot.global.trigger,
+    });
+    if (roleplayHash(afterScan) !== roleplayHash(snapshot)) {
+        throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info selection changed while scanning.');
+    }
     return { ...result, bookHashes: snapshot.bookHashes,
         timedBaseline: roleplayHash(snapshot.metadata.timedWorldInfo ?? {}) };
 }
