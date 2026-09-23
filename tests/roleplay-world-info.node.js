@@ -5,7 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 import { scanWorldInfo } from '../src/generation/world-info-scan.js';
-import { assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets } from '../src/generation/roleplay-prompt.js';
+import { assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertRoleplayPostHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets } from '../src/generation/roleplay-prompt.js';
 import { write as writeCard } from '../src/character-card-parser.js';
 
 const { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } = await import('../src/generation/world-info.js');
@@ -28,6 +28,69 @@ const entry = (uid, key, content, more = {}) => ({ world: 'Town', uid, hash: uid
     decorators: [], ...more });
 const scan = (entries, overrides = {}) => scanWorldInfo({ entries, chat: ['A cat runs'], metadata: {}, settings,
     maxContext: 100, countTokens: async text => text.length, ...overrides });
+
+test('saved post-history instructions follow the selected provider and continuation position', () => {
+    const messages = [{ role: 'system', content: 'Story' }, { role: 'user', content: 'Question' },
+        { role: 'assistant', content: 'Partial' }];
+    const saved = { character: 'Character instruction', text: 'Global instruction', textEnabled: true };
+    assert.deepEqual(insertRoleplayPostHistory(messages, saved, 'text', 'append').map(message => message.content),
+        ['Story', 'Question', 'Partial', 'Character instruction']);
+    assert.deepEqual(insertRoleplayPostHistory(messages, saved, 'text', 'continue').map(message => message.content),
+        ['Story', 'Question', 'Character instruction', 'Partial']);
+    assert.deepEqual(insertRoleplayPostHistory(messages, { ...saved, character: '' }, 'kobold', 'append').at(-1),
+        { role: 'user', content: 'Global instruction' });
+    assert.equal(insertRoleplayPostHistory(messages, { ...saved, textEnabled: false }, 'text', 'append'), messages);
+    assert.throws(() => insertRoleplayPostHistory(messages, saved, 'chat', 'append'), { code: 'ROLEPLAY_INVALID' });
+    assert.throws(() => insertRoleplayPostHistory(messages, { ...saved, character: '{{unsafe}}' }, 'text', 'append'),
+        { code: 'ROLEPLAY_INVALID' });
+    assert.throws(() => insertRoleplayPostHistory([{ role: 'assistant', content: 'Partial' },
+        { role: 'system', content: 'Depth lore' }], saved, 'text', 'continue'), { code: 'ROLEPLAY_INVALID' });
+    assert.deepEqual(messages.map(message => message.content), ['Story', 'Question', 'Partial']);
+});
+
+test('server-owned text replies use saved post-history instructions and refuse unplaced chat instructions', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    const settingsFile = path.join(f.scope.directories.root, 'settings.json');
+    const save = () => fs.writeFileSync(settingsFile, JSON.stringify({ power_user: {
+        prefer_character_jailbreak: true, sysprompt: { enabled: true, post_history: 'Global instruction' },
+        context: { story_string: 'Character: {{description}}', story_string_position: 0 },
+    } }));
+    save();
+    const cardPath = path.join(f.scope.directories.characters, 'Nova.png');
+    fs.writeFileSync(cardPath, writeCard(png, JSON.stringify({ name: 'Nova', description: 'Original',
+        data: { name: 'Nova', description: 'Original', post_history_instructions: 'Character instruction' } })));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 });
+    assert.deepEqual(snapshot.postHistory, { character: 'Character instruction', textEnabled: true, text: 'Global instruction' });
+    const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true,
+        messages: [], maxTokens: 20, characterName: 'Nova', worldInfo: snapshot };
+    const context = (key, input, acceptedSource = source) => {
+        const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: key, effect: 'append', source: acceptedSource, request: input });
+        releaseJob(f.scope.directories, jobId);
+        return { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+            owner: f.scope.owner, signal: new AbortController().signal };
+    };
+    const text = context('text-post-history', request);
+    await runRoleplayReplyJob(text, { promptBackend: () => ({ backend: 'text' }), generate: async ({ messages, beforeDispatch }) => {
+        beforeDispatch();
+        assert.deepEqual(messages.map(message => message.content), [
+            'Character: Original', 'Original', 'Answer', 'Character instruction',
+        ]);
+        return { text: 'Following instruction' };
+    } });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Following instruction');
+
+    const updatedSource = captureRoleplaySource(f.scope, { locator: f.locator });
+    const chatRequest = { ...request, worldInfo: captureRoleplayWorldInfo(f.scope, account, updatedSource,
+        { avatar: 'Nova.png', maxContext: 200 }) };
+    const chat = context('chat-post-history', chatRequest, updatedSource);
+    await assert.rejects(runRoleplayReplyJob(chat, {
+        promptBackend: () => ({ backend: 'chat' }), generate: () => { throw Error('Provider called'); },
+    }), { code: 'ROLEPLAY_INVALID' });
+});
 
 test('saved Author\'s Note surrounds selected lore only at its configured interval and position', () => {
     const messages = [{ role: 'system', content: 'Rules' }, { role: 'user', content: 'Original' }];

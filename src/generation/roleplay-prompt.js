@@ -204,3 +204,31 @@ export function insertWorldInfoAuthorNote(messages, before, after, note, history
     const injection = { role: ROLES[note.role], content };
     return note.position === 2 ? [injection, ...messages] : [messages[0], injection, ...messages.slice(1)];
 }
+
+/** Text completion puts saved post-history instructions after chat, except before a continued reply. */
+export function insertRoleplayPostHistory(messages, saved, backend, effect) {
+    if (!saved || typeof saved.character !== 'string' || typeof saved.text !== 'string'
+        || typeof saved.textEnabled !== 'boolean') {
+        throw roleplayError('ROLEPLAY_INVALID', 'Saved post-history instructions are invalid.', 409);
+    }
+    if (backend === 'chat') {
+        if (saved.character.trim()) {
+            throw roleplayError('ROLEPLAY_INVALID', 'Character post-history instructions need the saved Chat Completion prompt order.', 409);
+        }
+        return messages;
+    }
+    if (!['text', 'kobold', 'novel', 'horde'].includes(backend)) {
+        throw roleplayError('ROLEPLAY_INVALID', 'This connection cannot place saved post-history instructions.', 409);
+    }
+    if (!saved.textEnabled) return messages;
+    const instruction = saved.character.trim() || saved.text.trim();
+    if (!instruction) return messages;
+    if (instruction.includes('{{') || /<(?:USER|BOT|CHAR|GROUP)>/i.test(instruction)) {
+        throw roleplayError('ROLEPLAY_INVALID', 'Saved post-history macros need server-side prompt substitution.', 409);
+    }
+    if (effect === 'continue' && messages.at(-1)?.role !== 'assistant') {
+        throw roleplayError('ROLEPLAY_INVALID', 'Continuation instructions need the saved assistant reply at the end of the prompt.', 409);
+    }
+    const position = effect === 'continue' ? messages.length - 1 : messages.length;
+    return [...messages.slice(0, position), { role: 'user', content: instruction }, ...messages.slice(position)];
+}

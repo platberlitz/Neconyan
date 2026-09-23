@@ -9,8 +9,8 @@ import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-st
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
 import { assertRoleplayWorldInfoCurrent, prepareRoleplayWorldInfo } from './world-info.js';
-import { assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets, isWorldInfoAuthorNoteActive } from './roleplay-prompt.js';
-import { getChatProfileContextLimit } from './profiles.js';
+import { assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertRoleplayPostHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets, isWorldInfoAuthorNoteActive } from './roleplay-prompt.js';
+import { getChatProfileContextLimit, resolveGenerationProfile } from './profiles.js';
 import { getCounter } from '../mewmory/tokens.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
@@ -56,7 +56,7 @@ function replyOutput(result, effect, name, material) {
 
 /** A private worker for a fully admitted, paused Roleplay job; browser cutover is a later stage. */
 export async function runRoleplayReplyJob(context, { generate = runChatProfile, host = roleplayNativeHost,
-    worldInfoHooks, contextLimit = getChatProfileContextLimit } = {}) {
+    worldInfoHooks, contextLimit = getChatProfileContextLimit, promptBackend = resolveGenerationProfile } = {}) {
     const { job, directories, owner, signal } = context;
     const { roleplay, effect, source, request } = job.intent ?? {};
     const base = { owner, directories };
@@ -154,6 +154,10 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (worldInfo.ANBeforeEntries.length || worldInfo.ANAfterEntries.length) {
             messages = insertWorldInfoAuthorNote(messages, worldInfo.ANBeforeEntries, worldInfo.ANAfterEntries,
                 request.worldInfo.authorNote, historyStart, hasStory);
+        }
+        if (request.serverPrompt && (request.worldInfo.postHistory?.character || request.worldInfo.postHistory?.text)) {
+            const material = promptBackend(directories, request.binding);
+            messages = insertRoleplayPostHistory(messages, request.worldInfo.postHistory, material.backend ?? 'chat', effect);
         }
         return messages;
     };

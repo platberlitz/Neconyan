@@ -96,6 +96,10 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             systemPrompt: (settings.power_user?.prefer_character_prompt ?? true)
                 ? saved.records[0].chat_metadata?.system_prompt || character.data?.data?.system_prompt
                     || character.data?.system_prompt || '' : '',
+            postHistory: { character: (settings.power_user?.prefer_character_jailbreak ?? true)
+                ? character.data?.data?.post_history_instructions ?? character.data?.post_history_instructions ?? '' : '',
+            textEnabled: Boolean(settings.power_user?.sysprompt?.enabled),
+            text: settings.power_user?.sysprompt?.post_history ?? '' },
             storyTemplate: settings.power_user?.context?.story_string ?? '',
             storyPosition: settings.power_user?.context?.story_string_position ?? 0,
             reasoningInPrompt: Boolean(settings.power_user?.reasoning?.add_to_prompts),
