@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
-import { fixture } from './roleplay-transactions-fixture.js';
+import { fixture, png } from './roleplay-transactions-fixture.js';
 import { scanWorldInfo } from '../src/generation/world-info-scan.js';
+import { write as writeCard } from '../src/character-card-parser.js';
 
 const { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } = await import('../src/generation/world-info.js');
 const { captureRoleplaySource, readRoleplayChat } = await import('../src/generation/roleplay-source.js');
@@ -105,6 +106,50 @@ test('a saved scan refuses changed settings or a reset before reading new accoun
     await assert.rejects(prepareRoleplayWorldInfo(f.scope, snapshot), { code: 'ROLEPLAY_SOURCE_CHANGED' });
     resetRoleplayAccount(f.scope, account, 'reset');
     await assert.rejects(prepareRoleplayWorldInfo(f.scope, snapshot), { code: 'ROLEPLAY_ACCOUNT_CHANGED' });
+});
+
+test('saved default name inclusion activates speaker keys before provider work', async t => {
+    const f = fixture(t);
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'User:', 'The user speaks', { world: undefined, hash: undefined }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, f.source(), { avatar: 'Nova.png', maxContext: 100 });
+    assert.ok(snapshot.chat.some(line => line.startsWith('User:')));
+    const selected = await prepareRoleplayWorldInfo(f.scope, snapshot);
+    assert.equal(selected.worldInfoBefore, 'The user speaks');
+});
+
+test('saved persona, card notes and character tags decide activation without browser state', async t => {
+    const f = fixture(t);
+    fs.writeFileSync(path.join(f.scope.directories.characters, 'Nova.png'), writeCard(png, JSON.stringify({
+        name: 'Nova', creator_notes: 'The sentinel', data: { name: 'Nova', creator_notes: 'The sentinel',
+            extensions: { depth_prompt: { prompt: 'The beacon' } } },
+    })));
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'The visitor', 'Persona lore', { matchPersonaDescription: true }),
+        2: entry(2, 'The sentinel', 'Notes lore', { matchCreatorNotes: true }),
+        3: entry(3, 'The beacon', 'Depth lore', { matchCharacterDepthPrompt: true }),
+        4: entry(4, 'Original', 'Filtered lore', { characterFilter: { tags: ['absent'], isExclude: false } }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        power_user: { persona_description: 'The visitor' },
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, f.source(), { avatar: 'Nova.png', maxContext: 100 });
+    assert.equal(snapshot.global.personaDescription, 'The visitor');
+    assert.equal(snapshot.global.creatorNotes, 'The sentinel');
+    assert.equal(snapshot.global.characterDepthPrompt, 'The beacon');
+    const result = await prepareRoleplayWorldInfo(f.scope, snapshot);
+    assert.deepEqual(result.activated.map(value => value.uid), [1, 2, 3]);
 });
 
 test('the worker saves scan decisions before a provider call and closes timed effects with the reply', async t => {

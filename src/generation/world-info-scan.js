@@ -74,7 +74,7 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
                 || entry.triggers?.length && !entry.triggers.includes(global.trigger)) continue;
             if (entry.characterFilter?.names?.length && (entry.characterFilter.isExclude
                 ? entry.characterFilter.names.includes(global.characterFile) : !entry.characterFilter.names.includes(global.characterFile))) continue;
-            if (entry.characterFilter?.tags?.length && global.characterTags?.length && (entry.characterFilter.isExclude
+            if (entry.characterFilter?.tags?.length && (entry.characterFilter.isExclude
                 ? global.characterTags.some(tag => entry.characterFilter.tags.includes(tag))
                 : !global.characterTags.some(tag => entry.characterFilter.tags.includes(tag)))) continue;
             const sticky = active('sticky', entry);

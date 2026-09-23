@@ -61,7 +61,9 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         settings.power_user = savedSettings.power_user;
         const names = selectedBooks(settings, saved, character, avatar);
         const selected = books(base.directories, Object.values(names));
-        const chat = saved.records.slice(1).map(message => settings.world_info_include_names
+        const characterTags = savedSettings.tag_map?.[avatar] ?? [];
+        if (!Array.isArray(characterTags)) throw roleplayError('ROLEPLAY_INVALID', 'The saved character tags are invalid.', 400);
+        const chat = saved.records.slice(1).map(message => (settings.world_info_include_names ?? DEFAULTS.world_info_include_names)
             ? `${message.name}: ${message.mes}` : String(message.mes ?? '')).reverse();
         const snapshot = { account: { accountId: account.accountId, dataEpoch: account.dataEpoch }, source,
             character: { instanceId: character.instanceId, revision: character.revision, rawHash: character.rawHash },
@@ -72,7 +74,12 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             metadata: structuredClone(saved.records[0].chat_metadata ?? {}), global: {
                 trigger: 'normal', characterDescription: character.data?.data?.description ?? character.data?.description ?? '',
                 characterPersonality: character.data?.data?.personality ?? character.data?.personality ?? '',
+                personaDescription: settings.power_user?.persona_description ?? '',
+                characterDepthPrompt: character.data?.data?.extensions?.depth_prompt?.prompt
+                    ?? character.data?.extensions?.depth_prompt?.prompt ?? '',
+                creatorNotes: character.data?.data?.creator_notes ?? character.data?.creator_notes ?? '',
                 scenario: character.data?.data?.scenario ?? character.data?.scenario ?? '',
+                characterTags,
             } };
         if (!Number.isSafeInteger(maxContext) || maxContext < 1 || Buffer.byteLength(JSON.stringify(snapshot)) > 2 * 1024 * 1024) {
             throw roleplayError('ROLEPLAY_INVALID', 'World Info input is too large or lacks a context limit.', 400);
