@@ -4,7 +4,8 @@
  * Admission records a permanent receipt under the account lock before any job
  * exists: capacity is reserved first, so a full store refuses before effects.
  * The job is created paused (not dispatchable); execution arrives in a later
- * stage. Each job carries one typed effect bound to exact saved anchors:
+ * stage; it stays paused until a complete bound request is released.
+ * Each job carries one typed effect bound to exact saved anchors:
  * append (whole chat unchanged), continue and swipe (one message unchanged) or
  * replace (a message range with unchanged prefix and suffix). Applying the
  * effect is a recorded chat write; a completed receipt replays its outcome and
@@ -106,16 +107,21 @@ function effectRecords(records, source, effect, output) {
     if (!Number.isInteger(selected) || selected < 0 || selected >= swipes.length) throw invalid('The anchored message has an unreadable swipe selection.');
     if (effect === 'continue') {
         message.mes += output.text;
+        if (output.extra) message.extra = { ...message.extra, ...output.extra };
         if (Array.isArray(message.swipes) && message.swipes.length) message.swipes[selected] = message.mes;
+        if (output.extra && Array.isArray(message.swipe_info) && message.swipe_info[selected]) {
+            message.swipe_info[selected].extra = { ...message.swipe_info[selected].extra, ...output.extra };
+        }
         if (message.swipe_id !== undefined) message.swipe_id = selected;
         return next;
     }
     const info = Array.isArray(message.swipe_info) ? message.swipe_info.slice(0, swipes.length) : [];
     while (info.length < swipes.length) info.push({});
     message.swipes = [...swipes, output.text];
-    message.swipe_info = [...info, {}];
+    message.swipe_info = [...info, { ...(output.extra ? { extra: output.extra } : {}) }];
     message.swipe_id = message.swipes.length - 1;
     message.mes = output.text;
+    if (output.extra) message.extra = { ...message.extra, ...output.extra };
     return next;
 }
 

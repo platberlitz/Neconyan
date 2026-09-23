@@ -762,6 +762,7 @@ async function postSetupTasks(result) {
     void runDeferredStartupTasks();
     const { startMewmoryWorker } = await import('./mewmory/worker.js');
     startMewmoryWorker(getUserDirectoriesList);
+    await import('./generation/roleplay-execution.js');
     const [{ startJobsRunner }, { getUserDirectories, getAllUserHandles }] = await Promise.all([
         import('./jobs/runner.js'),
         import('./users.js'),

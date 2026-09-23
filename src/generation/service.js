@@ -38,7 +38,8 @@ export async function runTextGeneration({ context, backend, payload, signal, ano
     const response = await runBackendGeneration(request, resolvedBackend, payload, { signal, fetch: fetchImpl, anonymousCustom, boundProfile });
     const text = resolvedBackend === 'text'
         ? normalizeContentText(typeof response === 'string' ? response : response?.choices?.[0]?.text ?? response?.choices?.[0]?.message?.content ?? response?.content ?? response?.response ?? response?.[0]?.content ?? '', { excludeReasoning: true })
-        : extractGeneratedText(response);
+        : extractMessageFromData(response, 'openai', { excludeReasoning: true })
+            || normalizeContentText(response?.content ?? response?.response, { excludeReasoning: true });
     return { response, text };
 }
 
