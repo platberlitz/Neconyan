@@ -45,7 +45,7 @@ import { normalizeCharacterChatName, resolveCharacterChatNameForLoad } from './s
 import { getDebouncedChatSaveAbortReason, getQueuedChatSaveAbortReason } from './scripts/chat-save-guard.js';
 import { getChatBackupSaveOptions } from './scripts/chat-backup-sequence.js';
 import { fetchWithCsrfRetry } from './scripts/csrf-token-refresh.js';
-import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave } from './scripts/roleplay-save-chain.js';
+import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplayLifecycle, sendRoleplaySave } from './scripts/roleplay-save-chain.js';
 import { getCharacterDefinitionFormValues, getSuspiciousEmptyCharacterDefinitionSave } from './scripts/character-save-guard.js';
 // Neconyan: keep model-produced chat filenames behind a strict, independently tested parser.
 import { CHAT_LABEL_TITLE_LIMIT, extractGeneratedChatLabel, normalizeGeneratedChatLabel, truncateChatLabelText } from './scripts/chat-label.js';
@@ -2054,14 +2054,8 @@ async function resolveCharacterChatForLoad(characterId, { allowCreate = false, a
 }
 
 async function delChat(chatfile) {
-    const response = await fetch('/api/chats/delete', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({
-            chatfile: chatfile,
-            avatar_url: characters[this_chid].avatar,
-        }),
-    });
+    const response = await sendRoleplayLifecycle('/api/chats/delete', { chatfile: chatfile, avatar_url: characters[this_chid].avatar },
+        uuidv4(), body => fetch('/api/chats/delete', { method: 'POST', headers: getRequestHeaders(), body }));
     if (response.ok === true) {
         // choose another chat if current was deleted
         const name = chatfile.replace('.jsonl', '');
@@ -2092,14 +2086,8 @@ export async function deleteCharacterChatByName(characterId, fileName) {
         return false;
     }
 
-    const response = await fetch('/api/chats/delete', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({
-            chatfile: `${fileName}.jsonl`,
-            avatar_url: character.avatar,
-        }),
-    });
+    const response = await sendRoleplayLifecycle('/api/chats/delete', { chatfile: `${fileName}.jsonl`, avatar_url: character.avatar },
+        uuidv4(), body => fetch('/api/chats/delete', { method: 'POST', headers: getRequestHeaders(), body }));
 
     if (!response.ok) {
         console.error('Failed to delete chat for character.');
@@ -17533,11 +17521,8 @@ export async function renameGroupOrCharacterChat({ characterId, groupId, oldFile
         }
 
         const sendRenameRequest = async (requestBody) => {
-            const response = await fetch('/api/chats/rename', {
-                method: 'POST',
-                body: JSON.stringify(requestBody),
-                headers: getRequestHeaders(),
-            });
+            const response = await sendRoleplayLifecycle('/api/chats/rename', requestBody, uuidv4(),
+                payload => fetch('/api/chats/rename', { method: 'POST', body: payload, headers: getRequestHeaders() }));
             if (!response.ok) {
                 throw new Error('Unsuccessful chat rename request.');
             }

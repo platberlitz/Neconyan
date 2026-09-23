@@ -245,6 +245,11 @@ function validRangeAnchor(value) {
 }
 
 function validSubmissionResult(value) {
+    if (value?.kind === 'lifecycle') {
+        return object(value) && Object.keys(value).length === 9 && value.mode === 'lifecycle' && LIFECYCLE_ACTION.test(value.action)
+            && UUID.test(value.instanceId) && integer(value.revision) && value.revision >= 1 && HASH.test(value.rawHash)
+            && value.integrity === '' && UUID.test(value.writeId) && value.changed === true;
+    }
     if (value?.kind === 'import') {
         return object(value) && value.mode === 'create' && value.changed === true
             && UUID.test(value.instanceId) && value.revision === 1 && HASH.test(value.rawHash)
@@ -339,6 +344,7 @@ function validateState(state, identity) {
     if (state.pending !== null) {
         if (state.pending.kind === 'group-update') validateGroupTransaction(state.pending, state);
         else if (state.pending.kind === 'chat-import') validateImportTransaction(state.pending, state);
+        else if (state.pending.kind === 'lifecycle') validateLifecycleTransaction(state.pending, state);
         else validateChatTransaction(state.pending, state);
     }
     return state;
@@ -510,6 +516,59 @@ function validateGroupTransaction(pending, state) {
         || state.paths[roleplayPathKey(state, 'group', pending.locator)]?.instanceId !== pending.instanceId) throw damaged();
 }
 
+const LIFECYCLE_ACTION = /^[a-z][a-z-]{0,63}$/;
+const LIFECYCLE_STEP_KEYS = {
+    delete: ['op', 'kind', 'locator', 'instanceId', 'before'],
+    move: ['op', 'kind', 'locator', 'instanceId', 'before', 'destination', 'destinationVacancy'],
+};
+
+function validLifecycleTask(task) {
+    if (!object(task)) return false;
+    if (['chat-memory-remove', 'chat-recovery-clear'].includes(task.task)) return Object.keys(task).length === 2 && isStoredLocator('chat', task.locator);
+    return task.task === 'chat-memory-rename' && Object.keys(task).length === 3
+        && isStoredLocator('chat', task.from) && isStoredLocator('chat', task.to);
+}
+
+function validateLifecycleTransaction(pending, state) {
+    if (pending.schema !== 1 || !UUID.test(pending.id) || pending.accountId !== state.accountId || pending.dataEpoch !== state.dataEpoch
+        || !HASH.test(pending.operationKeyHash) || !HASH.test(pending.intentHash) || !LIFECYCLE_ACTION.test(pending.action)
+        || !['prepared', 'files-applied'].includes(pending.phase)
+        || !integer(pending.reservedBytes) || pending.reservedBytes > ROLEPLAY_RECOVERY_RESERVE_BYTES
+        || !Array.isArray(pending.steps) || pending.steps.length < 1 || pending.steps.length > 64
+        || !Array.isArray(pending.auxiliary) || pending.auxiliary.length > 256 || !pending.auxiliary.every(validLifecycleTask)
+        || encodedBytes(pending) > PENDING_MAX_BYTES) throw damaged();
+    const keys = new Set();
+    const instances = new Set();
+    for (const step of pending.steps) {
+        const expected = LIFECYCLE_STEP_KEYS[step?.op];
+        const before = step?.before;
+        if (!object(step) || !expected || Object.keys(step).length !== expected.length || !expected.every(key => Object.hasOwn(step, key))
+            || !['chat', 'character', 'group'].includes(step.kind) || !isStoredLocator(step.kind, step.locator)
+            || !UUID.test(step.instanceId) || instances.has(step.instanceId)
+            || !object(before) || Object.keys(before).length !== 5 || !integer(before.revision) || before.revision < 1
+            || !HASH.test(before.rawHash) || !HASH.test(before.contentHash) || !validPhysical(before.physical)
+            || (before.writeId !== null && !UUID.test(before.writeId))) throw damaged();
+        const resource = state.resources[step.instanceId];
+        const key = roleplayPathKey(state, step.kind, step.locator);
+        if (!resource || resource.kind !== step.kind || resource.status !== 'live'
+            || resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch
+            || !isDeepStrictEqual(resource.locator, step.locator) || resource.revision !== before.revision
+            || !isDeepStrictEqual(resource.head, { rawHash: before.rawHash, contentHash: before.contentHash,
+                physical: before.physical, writeId: before.writeId })
+            || state.paths[key]?.instanceId !== step.instanceId || keys.has(key)) throw damaged();
+        keys.add(key);
+        instances.add(step.instanceId);
+        if (step.op !== 'move') continue;
+        if (!isStoredLocator(step.kind, step.destination) || isDeepStrictEqual(step.destination, step.locator)
+            || (step.kind === 'chat' && (step.destination.group !== step.locator.group || step.destination.avatar !== step.locator.avatar))
+            || !integer(step.destinationVacancy)) throw damaged();
+        const destinationKey = roleplayPathKey(state, step.kind, step.destination);
+        if (state.paths[destinationKey]?.instanceId || (state.paths[destinationKey]?.generation ?? 0) !== step.destinationVacancy
+            || keys.has(destinationKey)) throw damaged();
+        keys.add(destinationKey);
+    }
+}
+
 export function roleplayImportPlan(pending) {
     return { target: pending.target, timestamp: pending.timestamp,
         outputs: pending.outputs.map(({ locator, instanceId, expectedVacancy, after, memory, memoryPayloads }) =>
@@ -596,7 +655,7 @@ export function assertRoleplayTransactionCapacity(lease, pending, finalState) {
             group: pending.group && { ...pending.group, appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL } }
         : pending.kind === 'group-update'
             ? { ...pending, phase: 'group-applied', appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL }
-            : { ...pending, phase: 'chat-applied', appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL,
+            : pending.kind === 'lifecycle' ? { ...pending, phase: 'files-applied' } : { ...pending, phase: 'chat-applied', appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL,
                 repair: { rawHash: pending.after.rawHash, physical: ROLEPLAY_LARGEST_PHYSICAL }, journal: largestRoleplayJournal(pending) } };
     for (const candidate of [{ ...state, pending }, progress, finalState].filter(Boolean)) {
         if (candidate.pending && encodedBytes(candidate.pending) > PENDING_MAX_BYTES) {

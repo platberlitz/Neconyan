@@ -90,7 +90,7 @@ import {
 } from '../script.js';
 import { getQueuedChatSaveAbortReason } from './chat-save-guard.js';
 import { getChatBackupSaveOptions } from './chat-backup-sequence.js';
-import { beginRoleplaySave, confirmRoleplayOverwrite, finishRoleplaySave, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave } from './roleplay-save-chain.js';
+import { beginRoleplaySave, confirmRoleplayOverwrite, finishRoleplaySave, rememberRoleplayRead, roleplayAccountStamp, sendRoleplayLifecycle, sendRoleplaySave } from './roleplay-save-chain.js';
 import { printTagList, createTagMapFromList, applyTagsOnCharacterSelect, tag_map, applyTagsOnGroupSelect, printTagFilters, tag_filter_type } from './tags.js';
 import { FILTER_TYPES, FilterHelper } from './filters.js';
 import { isExternalMediaAllowed } from './chats.js';
@@ -3317,11 +3317,8 @@ export async function deleteGroupChatByName(groupId, chatName) {
 
     group.chats.splice(group.chats.indexOf(chatName), 1);
 
-    const response = await fetch('/api/chats/group/delete', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({ id: chatName }),
-    });
+    const response = await sendRoleplayLifecycle('/api/chats/group/delete', { id: chatName }, uuidv4(),
+        body => fetch('/api/chats/group/delete', { method: 'POST', headers: getRequestHeaders(), body }));
 
     if (!response.ok) {
         toastr.error(t`Check the server connection and reload the page to prevent data loss.`, t`Group chat could not be deleted`);
@@ -3361,11 +3358,8 @@ export async function deleteGroupChat(groupId, chatId, { jumpToNewChat = true } 
         updateChatMetadata({}, true);
     }
 
-    const response = await fetch('/api/chats/group/delete', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({ id: chatId }),
-    });
+    const response = await sendRoleplayLifecycle('/api/chats/group/delete', { id: chatId }, uuidv4(),
+        body => fetch('/api/chats/group/delete', { method: 'POST', headers: getRequestHeaders(), body }));
 
     if (response.ok) {
         if (jumpToNewChat) {

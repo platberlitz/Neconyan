@@ -4,7 +4,8 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import sanitize from 'sanitize-filename';
 import { withChatFileLocks } from './chat-file-lock.js';
-import { createCharacterChatTarget, createGroupChatTarget, parseChatJsonl, restoreChatSnapshotIfMatches } from './chat-recovery.js';
+import { clearChatRecoveryState, createCharacterChatTarget, createGroupChatTarget, markChatDeleted, parseChatJsonl,
+    rekeyChatRecoveryState, restoreChatSnapshotIfMatches, runChatRecoveryBestEffort } from './chat-recovery.js';
 import { assertRoleplaySourceLocked, assertPendingRoleplayDependencies, captureRoleplayDependenciesLocked, normaliseRoleplayLocator,
     roleplayChatPath, roleplayContentHash, roleplayPathKey, roleplayGroupContentHash, normaliseRoleplayGroupId,
     assertRoleplayGroupData, readRoleplayEntityLocked } from './generation/roleplay-source.js';
@@ -14,7 +15,7 @@ import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, createRolepl
     validRoleplayAvatar, ROLEPLAY_IMPORT_MAX_OUTPUTS, roleplayImportPlan } from './roleplay-store.js';
 import { applyPreparedBranchMemoryCapture, assertPreparedBranchMemory, prepareBranchMemoryCapture } from './mewmory/prepared-branch.js';
 import { read as readCharacterCard } from './character-card-parser.js';
-import { MAX_ARCHIVE_BYTES } from './mewmory/store.js';
+import { MAX_ARCHIVE_BYTES, chatMemoryExists, removeChatMemory, renameChatMemory } from './mewmory/store.js';
 import { decodeFileWriteRecovery, fsyncDirectorySync, humanizedDateTime, tryWriteFileSync, FILE_WRITE_RECOVERY_SUFFIX } from './util.js';
 
 const CHAT_LIMIT = 64 * 1024 * 1024;
@@ -882,12 +883,203 @@ export function repairSingleChatWriteLocked(lease, { locator: inputLocator, snap
     return prepareAndApplyChatWrite(lease, input, host, intent, { source, before, beforeBytes: snapshotBytes, instanceId });
 }
 
+const LIFECYCLE_EFFECT_KEY = roleplayHash('lifecycle');
+
+export function roleplayEntityPath(scope, kind, locator) {
+    if (kind === 'chat') return roleplayChatPath(scope, locator);
+    return kind === 'character' ? path.join(scope.directories.characters, locator.avatar)
+        : path.join(scope.directories.groups, locator.groupId + '.json');
+}
+
+function lifecycleLocator(kind, locator) {
+    if (kind === 'chat') return normaliseRoleplayLocator(locator);
+    if (kind === 'group') return { groupId: normaliseRoleplayGroupId(locator?.groupId) };
+    if (kind === 'character' && validRoleplayAvatar(locator?.avatar)) return { avatar: locator.avatar };
+    throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay lifecycle target.', 400);
+}
+
+/** The live instance at a protected path, or null when the path has never been recorded as live. */
+export function roleplayTrackedInstance(lease, kind, locator) {
+    const { state } = roleplayLease(lease);
+    return state.paths[roleplayPathKey(state, kind, lifecycleLocator(kind, locator))]?.instanceId ?? null;
+}
+
+function lifecycleRecoveryTarget(scope, locator, host) {
+    return host.recoveryTarget?.(locator) ?? target(scope, locator);
+}
+
+function planLifecycleStep(lease, input) {
+    const { state, scope } = roleplayLease(lease);
+    if (!input || !['delete', 'move'].includes(input.op)) throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay lifecycle step.', 400);
+    const locator = lifecycleLocator(input.kind, input.locator);
+    const instanceId = state.paths[roleplayPathKey(state, input.kind, locator)]?.instanceId;
+    const resource = instanceId && state.resources[instanceId];
+    if (!resource || resource.status !== 'live' || resource.kind !== input.kind) {
+        throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The protected file is not live.', 404);
+    }
+    if (resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch || resource.busySubmission) {
+        throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The protected file has unsettled work.');
+    }
+    const filename = roleplayEntityPath(scope, input.kind, locator);
+    const file = readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: true });
+    const before = { revision: resource.revision, ...resource.head };
+    // A tracked file removed outside the lock may still be retired; any other difference is retained.
+    if ((file || input.op === 'move') && !sameObservation(file, before)) {
+        throw file ? conflict() : roleplayError('ROLEPLAY_SOURCE_MISSING', 'The protected file is missing.', 404);
+    }
+    rejectUndoJournal(filename);
+    const step = { op: input.op, kind: input.kind, locator, instanceId, before };
+    if (input.op === 'move') {
+        const destination = lifecycleLocator(input.kind, input.destination);
+        const slot = state.paths[roleplayPathKey(state, input.kind, destination)];
+        const destinationFile = roleplayEntityPath(scope, input.kind, destination);
+        if (slot?.instanceId || fs.existsSync(destinationFile)) {
+            throw roleplayError('ROLEPLAY_TARGET_EXISTS', 'The destination name is already in use.');
+        }
+        rejectUndoJournal(destinationFile);
+        Object.assign(step, { destination, destinationVacancy: slot?.generation ?? 0 });
+    }
+    return step;
+}
+
+function lifecycleResult(pending) {
+    const [primary] = pending.steps;
+    return { kind: 'lifecycle', mode: 'lifecycle', action: pending.action, instanceId: primary.instanceId,
+        revision: primary.before.revision, rawHash: primary.before.rawHash, integrity: '', writeId: pending.id, changed: true };
+}
+
+function finishedLifecycle(state, pending) {
+    const next = JSON.parse(JSON.stringify(state));
+    for (const step of pending.steps) {
+        const resource = next.resources[step.instanceId];
+        const key = roleplayPathKey(state, step.kind, step.locator);
+        next.paths[key] = { generation: next.paths[key].generation, instanceId: null };
+        if (step.op === 'delete') resource.status = 'deleted';
+        if (step.op !== 'move') continue;
+        resource.locator = step.destination;
+        next.paths[roleplayPathKey(state, step.kind, step.destination)] = { generation: step.destinationVacancy + 1, instanceId: step.instanceId };
+    }
+    const result = lifecycleResult(pending);
+    next.submissions[pending.operationKeyHash] = { accountId: state.accountId, dataEpoch: state.dataEpoch,
+        intentHash: pending.intentHash, jobId: null, targetInstanceId: result.instanceId, state: 'closed',
+        reservedReceiptBytes: 0, outcome: result,
+        effects: { [LIFECYCLE_EFFECT_KEY]: { effectHash: pending.intentHash, writeId: pending.id,
+            instanceId: result.instanceId, appliedRevision: result.revision, result } } };
+    next.pending = null;
+    return next;
+}
+
+function applyLifecycleStep(scope, step, host) {
+    const source = roleplayEntityPath(scope, step.kind, step.locator);
+    const read = filename => readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: true });
+    if (step.op === 'delete') {
+        withChatFileLocks([source], () => {
+            const file = read(source);
+            if (!file) return;
+            if (!sameObservation(file, step.before)) throw conflict();
+            if (step.kind === 'chat' && host.backups) {
+                runChatRecoveryBestEffort(() => markChatDeleted(lifecycleRecoveryTarget(scope, step.locator, host)),
+                    'Failed to mark chat recovery state for deletion; continuing with chat deletion.');
+            }
+            fs.unlinkSync(source);
+            fsyncDirectorySync(path.dirname(source));
+        });
+    } else {
+        const destination = roleplayEntityPath(scope, step.kind, step.destination);
+        withChatFileLocks([source, destination], () => {
+            const from = read(source);
+            const to = read(destination);
+            if (!from && sameObservation(to, step.before)) return;
+            if (to || !sameObservation(from, step.before)) throw conflict();
+            if (step.kind === 'chat' && host.backups) {
+                const sourceTarget = lifecycleRecoveryTarget(scope, step.locator, host);
+                const destinationTarget = lifecycleRecoveryTarget(scope, step.destination, host);
+                // ponytail: best-effort sidecars; a crash between rekey and rename leaves only recovery snapshots stale.
+                if (!runChatRecoveryBestEffort(() => rekeyChatRecoveryState(sourceTarget, destinationTarget),
+                    'Failed to move chat recovery state; continuing with renamed chat.').ok) {
+                    for (const item of [sourceTarget, destinationTarget]) {
+                        runChatRecoveryBestEffort(() => clearChatRecoveryState(item), 'Failed to clear chat recovery state after rename.');
+                    }
+                }
+            }
+            // Writers that honour the chat lock cannot create the destination between this check and the rename.
+            fs.renameSync(source, destination);
+            fsyncDirectorySync(path.dirname(destination));
+            if (path.dirname(source) !== path.dirname(destination)) fsyncDirectorySync(path.dirname(source));
+        });
+    }
+    if (step.kind === 'chat') host.clearDeferred?.(source);
+}
+
+function applyLifecycleTask(scope, task, host) {
+    if (task.task === 'chat-memory-remove') removeChatMemory(scope.directories, task.locator);
+    else if (task.task === 'chat-memory-rename') renameChatMemory(scope.directories, task.from, task.to, { resume: true });
+    else runChatRecoveryBestEffort(() => clearChatRecoveryState(lifecycleRecoveryTarget(scope, task.locator, host)),
+        'Failed to clear chat recovery state after deletion.');
+}
+
+function applyPendingLifecycle(lease, host = {}) {
+    const { state, scope } = roleplayLease(lease);
+    const pending = state.pending;
+    if (pending?.kind !== 'lifecycle') throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'There is no matching lifecycle operation.');
+    if (pending.phase === 'prepared') {
+        for (const step of pending.steps) applyLifecycleStep(scope, step, host);
+        pending.phase = 'files-applied';
+        saveRoleplayAccount(lease);
+    }
+    for (const task of pending.auxiliary) applyLifecycleTask(scope, task, host);
+    Object.assign(state, finishedLifecycle(state, pending));
+    saveRoleplayAccount(lease);
+    return lifecycleResult(pending);
+}
+
+/**
+ * Records a protected delete or move before touching files. `intent` is the caller's request, so a retry
+ * with the same operation key returns the original receipt instead of repeating or recreating anything.
+ */
+export function commitRoleplayLifecycleLocked(lease, { operationKey, action, intent, steps, auxiliary = [] }, host = {}) {
+    confirmRoleplayAccount(lease);
+    const { state } = roleplayLease(lease);
+    if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 256 || !/^[a-z][a-z-]{0,63}$/.test(action)
+        || !Array.isArray(steps) || steps.length < 1 || steps.length > 64) throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay lifecycle operation.', 400);
+    const operationKeyHash = roleplayHash([state.accountId, 'lifecycle', operationKey]);
+    const intentHash = roleplayHash({ accountId: state.accountId, dataEpoch: state.dataEpoch, action, intent: intent ?? null });
+    const prior = state.submissions[operationKeyHash];
+    if (prior) {
+        if (prior.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'This lifecycle identity was already used for different work.');
+        return completedResult(prior);
+    }
+    if (state.pending) {
+        if (state.pending.kind !== 'lifecycle' || state.pending.operationKeyHash !== operationKeyHash) {
+            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay operation must settle first.');
+        }
+        if (state.pending.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'The pending lifecycle operation has different contents.');
+        return applyPendingLifecycle(lease, host);
+    }
+    const planned = steps.map(step => planLifecycleStep(lease, step));
+    for (const task of auxiliary) {
+        if (task.task === 'chat-memory-rename' && chatMemoryExists(roleplayLease(lease).scope.directories, task.to)) {
+            throw roleplayError('ROLEPLAY_TARGET_EXISTS', 'A Mewmory archive already exists for that chat name.');
+        }
+    }
+    const pending = { schema: 1, kind: 'lifecycle', id: crypto.randomUUID(), operationKeyHash, intentHash,
+        accountId: state.accountId, dataEpoch: state.dataEpoch, action, phase: 'prepared', steps: planned,
+        auxiliary: JSON.parse(JSON.stringify(auxiliary)), reservedBytes: 8 * 1024 };
+    assertRoleplayTransactionCapacity(lease, pending, finishedLifecycle(state, pending));
+    state.pending = pending;
+    try {
+        saveRoleplayAccount(lease);
+        return applyPendingLifecycle(lease, host);
+    } catch (error) { throw Object.assign(error, { roleplayWritePending: true }); }
+}
+
 export function reconcilePendingChatWrite(scope, host) {
     return withRoleplayAccountLock(scope, lease => {
         confirmRoleplayAccount(lease);
         const pending = roleplayLease(lease).state.pending;
         const result = pending ? pending.kind === 'group-update' ? applyPendingGroupUpdate(lease)
-            : pending.kind === 'chat-import' ? applyPendingChatImport(lease, host) : applyPending(lease, host) : null;
+            : pending.kind === 'chat-import' ? applyPendingChatImport(lease, host)
+                : pending.kind === 'lifecycle' ? applyPendingLifecycle(lease, host) : applyPending(lease, host) : null;
         cleanupRoleplayReceiptsLocked(lease);
         return result;
     });

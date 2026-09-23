@@ -244,13 +244,24 @@ export function removeChatMemory(directories, locator) {
     }
 }
 
-export function renameChatMemory(directories, oldLocator, newLocator) {
+export function chatMemoryExists(directories, locator) {
+    return Boolean(directories.root) && (fs.existsSync(statePath(directories, locator)) || fs.existsSync(recoveryPath(directories, locator)));
+}
+
+/** `resume` finishes a recorded rename interrupted after the new archive was written. */
+export function renameChatMemory(directories, oldLocator, newLocator, { resume = false } = {}) {
     if (!directories.root) return false;
     const before = statePath(directories, oldLocator);
     const after = statePath(directories, newLocator);
     if (before === after) return;
     if (!fs.existsSync(before) && !fs.existsSync(recoveryPath(directories, oldLocator))) return;
     return withChatFileLocks([before, after], () => {
+        if (resume && fs.existsSync(before) && fs.existsSync(after)
+            && readJson(after, null)?.revision === readJson(before, null)?.revision + 1) {
+            fs.unlinkSync(before);
+            fs.rmSync(recoveryPath(directories, oldLocator), { force: true });
+            return true;
+        }
         if (fs.existsSync(after) || fs.existsSync(recoveryPath(directories, newLocator))) fail('A Mewmory archive already exists for that chat name.', 409);
         const state = readState(directories, oldLocator);
         state.locator = normalizeLocator(newLocator);

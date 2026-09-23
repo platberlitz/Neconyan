@@ -242,3 +242,24 @@ export async function finishRoleplaySave(token) {
     if (record.status !== 'unknown') record.attempt = null;
     record.resolve(record);
 }
+
+/**
+ * Deletes and renames carry one stable key, so a lost response retries the same recorded intent
+ * and a completed one replays its receipt instead of acting twice.
+ * @param {string} url
+ * @param {object} body
+ * @param {string} operationKey
+ * @param {(body: string) => Promise<Response>} send
+ */
+export async function sendRoleplayLifecycle(url, body, operationKey, send) {
+    const payload = JSON.stringify({ ...body, roleplay: { account: roleplayAccountStamp().account, operationKey } });
+    for (let attempt = 0; ; attempt++) {
+        try {
+            const response = await send(payload);
+            if (response.status < 500 || response.status === 507 || attempt === 2) return response;
+        } catch (error) {
+            if (attempt === 2) throw error;
+        }
+        await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+}

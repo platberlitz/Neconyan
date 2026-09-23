@@ -13,9 +13,9 @@ import { acquireChatFileLock, withChatFileLocks } from '../chat-file-lock.js';
 import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
 import { renameChatFile } from '../chat-rename.js';
 import { captureBranchMemory, removeChatMemory, renameChatMemory } from '../mewmory/store.js';
-import { confirmRoleplayAccount, readRoleplayFile, readRoleplayWriteJournal, roleplayAvatarOwner, roleplayError, roleplayHash, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
+import { confirmRoleplayAccount, readRoleplayFile, readRoleplayWriteJournal, roleplayAvatarOwner, roleplayError, roleplayHash, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccount, withUntrackedRoleplayFiles } from '../roleplay-store.js';
 import { normaliseRoleplayLocator, readRoleplayChatLocked, roleplayChatPath, ROLEPLAY_METADATA_KEY } from '../generation/roleplay-source.js';
-import { cleanupRoleplayReceiptsLocked, commitSingleChatImport, commitSingleChatWriteLocked, repairSingleChatWriteLocked } from '../roleplay-lifecycle.js';
+import { cleanupRoleplayReceiptsLocked, commitRoleplayLifecycleLocked, commitSingleChatImport, commitSingleChatWriteLocked, repairSingleChatWriteLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
 import {
     clearChatRecoveryState,
     createCharacterChatTarget,
@@ -1520,7 +1520,9 @@ export function prepareBrowserChatWrite(records, { beforeBytes = null, marker, f
     return prepared;
 }
 
-export const roleplayNativeHost = { prepare: prepareNativeChatWrite, publish: publishNativeChatWrite };
+// Startup reconciliation uses this host too, so lifecycle replays keep recovery sidecars and deferred backups consistent.
+export const roleplayNativeHost = { prepare: prepareNativeChatWrite, publish: publishNativeChatWrite,
+    backups: isBackupEnabled, clearDeferred: clearDeferredPreWriteBackupSequence };
 export const roleplayBrowserHost = { prepare: prepareBrowserChatWrite, publish: publishNativeChatWrite };
 
 /** Private managed publication: no automatic recovery, memory capture or generation work. */
@@ -1832,11 +1834,73 @@ export function getChatData(chatFilePath) {
 
 router.post('/get', validateAvatarUrlMiddleware, (request, response) => sendProtectedChatLoad(request, response, false));
 
+/**
+ * Protected chats are deleted or renamed only through a recorded lifecycle transaction.
+ * Returns null when the chat has never been enrolled, so the caller keeps the untracked legacy path.
+ */
+function protectedChatLifecycle(request, { group, chat, destination = null, chatIdHash = null }) {
+    const base = { owner: request.user.profile.handle, directories: request.user.directories };
+    if (request.get('X-Neconyan-Account') && request.get('X-Neconyan-Account') !== base.owner) {
+        throw roleplayError('ROLEPLAY_ACCOUNT_CHANGED', 'The selected account changed. Reload before continuing.');
+    }
+    const block = request.body?.roleplay;
+    if (block !== undefined && (!isPlainObject(block) || Object.keys(block).some(key => !['account', 'operationKey'].includes(key))
+        || (block.operationKey !== undefined && (typeof block.operationKey !== 'string' || !block.operationKey || block.operationKey.length > 200))
+        || (block.account !== undefined && (!isPlainObject(block.account) || typeof block.account.accountId !== 'string'
+            || !ROLEPLAY_UUID.test(block.account.accountId) || !Number.isSafeInteger(block.account.dataEpoch) || block.account.dataEpoch < 1)))) {
+        throw roleplayError('ROLEPLAY_INVALID', 'Invalid chat lifecycle authority.', 400);
+    }
+    const locator = normaliseRoleplayLocator(group ? { group: true, chat } : { group: false, chat, avatar: request.body.avatar_url });
+    const target = destination === null ? null : { ...locator, chat: destination };
+    // ponytail: callers without a key get a one-shot key; the browser sends a stable key so transport retries replay the receipt.
+    const operationKey = block?.operationKey ?? crypto.randomUUID();
+    return withRoleplayAccount(base, block?.account ?? null, (lease, currentAccount) => {
+        confirmRoleplayAccount(lease);
+        const { state } = roleplayLease(lease);
+        const receipt = state.submissions[roleplayHash([state.accountId, 'lifecycle', operationKey])];
+        if (!receipt && !state.paths[roleplayPathKey(state, 'chat', locator)]) return null;
+        if (!receipt && target && Number.isSafeInteger(chatIdHash) && roleplayTrackedInstance(lease, 'chat', locator)) {
+            // Legacy renames stamp a stable chat identity first; protected chats record that as its own storage write.
+            const saved = readRoleplayChatLocked(lease, locator);
+            if (saved.changed) saveRoleplayAccount(lease);
+            const metadata = saved.records[0]?.chat_metadata ?? {};
+            const mainChat = typeof metadata.main_chat === 'string' && metadata.main_chat.trim().length > 0;
+            if (!Number.isSafeInteger(metadata.chat_id_hash) && !mainChat) {
+                const records = structuredClone(saved.records);
+                records[0].chat_metadata = { ...records[0].chat_metadata, chat_id_hash: chatIdHash };
+                commitSingleChatWriteLocked(lease, {
+                    operationKey: `${operationKey}:identity`, sourceKind: 'storage', mode: 'update',
+                    source: { kind: 'storage', ...currentAccount, instanceId: saved.instanceId, revision: saved.revision,
+                        rawHash: saved.rawHash, locator, dependencies: [] },
+                    records, force: false, allowShrink: false, backup: { deferBackup: true },
+                }, roleplayNativeHost);
+            }
+        }
+        const result = commitRoleplayLifecycleLocked(lease, {
+            operationKey,
+            action: target ? 'chat-rename' : 'chat-delete',
+            intent: { locator, destination: target },
+            steps: [target ? { op: 'move', kind: 'chat', locator, destination: target } : { op: 'delete', kind: 'chat', locator }],
+            auxiliary: target
+                ? [{ task: 'chat-memory-rename', from: locator, to: target }]
+                : [{ task: 'chat-memory-remove', locator }, { task: 'chat-recovery-clear', locator }],
+        }, { ...roleplayNativeHost, recoveryTarget: value => createChatRecoveryTarget(request, value.group, value.chat + '.jsonl') });
+        return { ok: true, roleplay: { account: currentAccount, operationKey, result } };
+    });
+}
+
 router.post('/rename', validateAvatarUrlMiddleware, async function (request, response) {
     try {
         if (!request.body || !request.body.original_file || !request.body.renamed_file) {
             return response.sendStatus(400);
         }
+        try {
+            const original = path.parse(sanitize(String(request.body.original_file))).name;
+            const renamed = path.parse(sanitize(String(request.body.renamed_file))).name;
+            const handled = protectedChatLifecycle(request, { group: Boolean(request.body.is_group), chat: original,
+                destination: renamed, chatIdHash: request.body.chat_id_hash });
+            if (handled) return response.set('Cache-Control', 'no-store').send({ ...handled, sanitizedFileName: renamed });
+        } catch (error) { return sendRoleplayError(response, error); }
 
         const pathToFolder = request.body.is_group
             ? request.user.directories.groupChats
@@ -1852,7 +1916,8 @@ router.post('/rename', validateAvatarUrlMiddleware, async function (request, res
         console.debug('Old chat name', pathToOriginalFile);
         console.debug('New chat name', pathToRenamedFile);
 
-        const outcome = withChatFileLocks([pathToOriginalFile, pathToRenamedFile], () => {
+        const untracked = { owner: request.user.profile.handle, directories: request.user.directories };
+        const outcome = withUntrackedRoleplayFiles(untracked, [pathToOriginalFile, pathToRenamedFile], () => withChatFileLocks([pathToOriginalFile, pathToRenamedFile], () => {
             if (!fs.existsSync(pathToOriginalFile) || fs.existsSync(pathToRenamedFile)) {
                 console.error('Either Source or Destination files are not available');
                 return { status: 400, body: { error: true } };
@@ -1923,9 +1988,10 @@ router.post('/rename', validateAvatarUrlMiddleware, async function (request, res
             }
             console.info(`Successfully renamed chat file (${renameResult.method}).`);
             return { status: 200, body: { ok: true, sanitizedFileName } };
-        });
+        }));
         return response.status(outcome.status).send(outcome.body);
     } catch (error) {
+        if (error.code?.startsWith('ROLEPLAY_')) return sendRoleplayError(response, error);
         console.error('Error renaming chat file:', error);
         return response.status(500).send({ error: true });
     }
@@ -1944,41 +2010,48 @@ router.post('/delete', validateAvatarUrlMiddleware, function (request, response)
         if (!isPathUnderParent(request.user.directories.chats, chatFilePath)) {
             return response.sendStatus(400);
         }
-        const recoveryTarget = createChatRecoveryTarget(request, false, sanitizedChatFileName);
-        if (isBackupEnabled) {
-            runChatRecoveryBestEffort(
-                () => markChatDeleted(recoveryTarget),
-                'Failed to mark chat recovery state for deletion; continuing with chat deletion.',
-            );
-        }
-
-        //Return success if the file was deleted.
-        let chatFileDeleted = false;
         try {
-            chatFileDeleted = tryDeleteFile(chatFilePath);
-        } finally {
-            // Neconyan: a chat that survived the delete must not keep a tombstone blocking its recovery.
-            if (isBackupEnabled && !chatFileDeleted) {
+            const handled = protectedChatLifecycle(request, { group: false, chat: path.parse(sanitizedChatFileName).name });
+            if (handled) return response.set('Cache-Control', 'no-store').send(handled);
+        } catch (error) { return sendRoleplayError(response, error); }
+        return withUntrackedRoleplayFiles({ owner: request.user.profile.handle, directories: request.user.directories }, [chatFilePath], () => {
+            const recoveryTarget = createChatRecoveryTarget(request, false, sanitizedChatFileName);
+            if (isBackupEnabled) {
                 runChatRecoveryBestEffort(
-                    () => seedLatestChatSnapshot(recoveryTarget),
-                    'Failed to clear the chat recovery tombstone after a failed deletion.',
+                    () => markChatDeleted(recoveryTarget),
+                    'Failed to mark chat recovery state for deletion; continuing with chat deletion.',
                 );
             }
-        }
 
-        if (chatFileDeleted) {
-            removeChatMemory(request.user.directories, { avatar: request.body.avatar_url, chat: path.parse(sanitizedChatFileName).name, group: false });
-            clearDeferredPreWriteBackupSequence(chatFilePath);
-            runChatRecoveryBestEffort(
-                () => clearChatRecoveryState(recoveryTarget),
-                'Failed to clear chat recovery state after deletion.',
-            );
-            return response.send({ ok: true });
-        } else {
-            console.error('The chat file was not deleted.');
-            return response.sendStatus(400);
-        }
+            //Return success if the file was deleted.
+            let chatFileDeleted = false;
+            try {
+                chatFileDeleted = tryDeleteFile(chatFilePath);
+            } finally {
+            // Neconyan: a chat that survived the delete must not keep a tombstone blocking its recovery.
+                if (isBackupEnabled && !chatFileDeleted) {
+                    runChatRecoveryBestEffort(
+                        () => seedLatestChatSnapshot(recoveryTarget),
+                        'Failed to clear the chat recovery tombstone after a failed deletion.',
+                    );
+                }
+            }
+
+            if (chatFileDeleted) {
+                removeChatMemory(request.user.directories, { avatar: request.body.avatar_url, chat: path.parse(sanitizedChatFileName).name, group: false });
+                clearDeferredPreWriteBackupSequence(chatFilePath);
+                runChatRecoveryBestEffort(
+                    () => clearChatRecoveryState(recoveryTarget),
+                    'Failed to clear chat recovery state after deletion.',
+                );
+                return response.send({ ok: true });
+            } else {
+                console.error('The chat file was not deleted.');
+                return response.sendStatus(400);
+            }
+        });
     } catch (error) {
+        if (error.code?.startsWith('ROLEPLAY_')) return sendRoleplayError(response, error);
         console.error(error);
         return response.sendStatus(500);
     }
@@ -2120,42 +2193,49 @@ router.post('/group/delete', (request, response) => {
         const id = request.body.id;
         const chatFileName = sanitize(`${id}.jsonl`);
         const chatFilePath = path.join(request.user.directories.groupChats, chatFileName);
-        const recoveryTarget = createChatRecoveryTarget(request, true, chatFileName);
-
-        if (isBackupEnabled) {
-            runChatRecoveryBestEffort(
-                () => markChatDeleted(recoveryTarget),
-                'Failed to mark chat recovery state for deletion; continuing with chat deletion.',
-            );
-        }
-
-        //Return success if the file was deleted.
-        let chatFileDeleted = false;
         try {
-            chatFileDeleted = tryDeleteFile(chatFilePath);
-        } finally {
-            // Neconyan: a chat that survived the delete must not keep a tombstone blocking its recovery.
-            if (isBackupEnabled && !chatFileDeleted) {
+            const handled = protectedChatLifecycle(request, { group: true, chat: path.parse(chatFileName).name });
+            if (handled) return response.set('Cache-Control', 'no-store').send(handled);
+        } catch (error) { return sendRoleplayError(response, error); }
+        return withUntrackedRoleplayFiles({ owner: request.user.profile.handle, directories: request.user.directories }, [chatFilePath], () => {
+            const recoveryTarget = createChatRecoveryTarget(request, true, chatFileName);
+
+            if (isBackupEnabled) {
                 runChatRecoveryBestEffort(
-                    () => seedLatestChatSnapshot(recoveryTarget),
-                    'Failed to clear the chat recovery tombstone after a failed deletion.',
+                    () => markChatDeleted(recoveryTarget),
+                    'Failed to mark chat recovery state for deletion; continuing with chat deletion.',
                 );
             }
-        }
 
-        if (chatFileDeleted) {
-            removeChatMemory(request.user.directories, { chat: String(id), group: true });
-            clearDeferredPreWriteBackupSequence(chatFilePath);
-            runChatRecoveryBestEffort(
-                () => clearChatRecoveryState(recoveryTarget),
-                'Failed to clear chat recovery state after deletion.',
-            );
-            return response.send({ ok: true });
-        } else {
-            console.error('The group chat file was not deleted.');
-            return response.sendStatus(400);
-        }
+            //Return success if the file was deleted.
+            let chatFileDeleted = false;
+            try {
+                chatFileDeleted = tryDeleteFile(chatFilePath);
+            } finally {
+            // Neconyan: a chat that survived the delete must not keep a tombstone blocking its recovery.
+                if (isBackupEnabled && !chatFileDeleted) {
+                    runChatRecoveryBestEffort(
+                        () => seedLatestChatSnapshot(recoveryTarget),
+                        'Failed to clear the chat recovery tombstone after a failed deletion.',
+                    );
+                }
+            }
+
+            if (chatFileDeleted) {
+                removeChatMemory(request.user.directories, { chat: String(id), group: true });
+                clearDeferredPreWriteBackupSequence(chatFilePath);
+                runChatRecoveryBestEffort(
+                    () => clearChatRecoveryState(recoveryTarget),
+                    'Failed to clear chat recovery state after deletion.',
+                );
+                return response.send({ ok: true });
+            } else {
+                console.error('The group chat file was not deleted.');
+                return response.sendStatus(400);
+            }
+        });
     } catch (error) {
+        if (error.code?.startsWith('ROLEPLAY_')) return sendRoleplayError(response, error);
         console.error(error);
         return response.sendStatus(500);
     }
