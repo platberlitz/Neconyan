@@ -3522,7 +3522,9 @@ export async function handleChatCompletionsGenerate(request, response) {
                 if ([CHAT_COMPLETION_SOURCES.CUSTOM, CHAT_COMPLETION_SOURCES.NANOGPT, CHAT_COMPLETION_SOURCES.OPENROUTER].includes(request.body.chat_completion_source)) {
                     addAssistantPrefix(requestBody.messages, [], 'partial');
                 }
-                seedKimiK3PartialReasoning(requestBody.messages);
+                // Neconyan: smol-alibaba answers an empty reply when a plain prefill carries the stock
+                // reasoning, but continues fine without it (it echoes the prefill; the client dedupes).
+                seedKimiK3PartialReasoning(requestBody.messages, { stockReasoning: !/(?:^|[/:])smol-alibaba\//i.test(String(requestBody.model)) });
             }
         }
 

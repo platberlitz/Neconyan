@@ -129,6 +129,7 @@ import {
     getChatCompletionModel,
     getCurrentReasoningEffort,
     getEffectivePromptBias,
+    isKimiK3PrefillEcho,
     proxies,
     loadProxyPresets,
     selected_proxy,
@@ -10795,7 +10796,8 @@ export function cleanUpMessage({ getMessage, isImpersonate, isContinue, displayI
         userPromptBias &&
         !isImpersonate &&
         !isContinue &&
-        userPromptBias.length !== 0
+        userPromptBias.length !== 0 &&
+        !isKimiK3PrefillEcho(getMessage, substituteParams(userPromptBias))
     ) {
         getMessage = substituteParams(userPromptBias) + getMessage;
     }

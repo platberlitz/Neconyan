@@ -84,3 +84,20 @@ describe('effective prompt bias', () => {
         expect(scriptSource).not.toContain('promptBias === power_user.user_prompt_bias');
     });
 });
+
+describe('echoed Kimi K3 prefill', () => {
+    test('cleanUpMessage skips the prepend when the reply already carries the prefill', () => {
+        const cleanUpMessage = scriptSource.match(/export function cleanUpMessage\(\{[\s\S]*?\n\}\n/);
+        expect(cleanUpMessage[0]).toContain('!isKimiK3PrefillEcho(getMessage, substituteParams(userPromptBias))');
+    });
+
+    test('echo check matches a full echo and a mid-stream partial echo only', () => {
+        const helper = openAiSource.match(/export function isKimiK3PrefillEcho\(message, prefill\) \{([\s\S]*?)\n\}/);
+        expect(helper).not.toBeNull();
+        const echo = new Function('main_api', 'isKimiK3PartialPrefillActive', `return (message, prefill) => {${helper[1]}};`)('openai', () => true);
+        expect(echo('Mika looks up.', 'Mika')).toBe(true);
+        expect(echo('Mi', 'Mika')).toBe(true);
+        expect(echo(' looks up.', 'Mika')).toBe(false);
+        expect(echo('Mika', '')).toBe(false);
+    });
+});

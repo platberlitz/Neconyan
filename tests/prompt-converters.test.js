@@ -80,6 +80,15 @@ describe('seedKimiK3PartialReasoning', () => {
         expect(prompt[1].content).toBe('The door creaked open.');
     });
 
+    test('skips stock reasoning when the host asks for none', () => {
+        const prompt = [
+            { role: 'assistant', content: 'The door creaked open.', partial: true },
+        ];
+        mod.seedKimiK3PartialReasoning(prompt, { stockReasoning: false });
+        expect(prompt[0].reasoning_content).toBeUndefined();
+        expect(prompt[0].content).toBe('The door creaked open.');
+    });
+
     test('moves a leading think block into reasoning_content', () => {
         const prompt = [
             { role: 'assistant', content: '<think>plan the reply</think>The door creaked open.', partial: true },

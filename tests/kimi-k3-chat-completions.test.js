@@ -142,6 +142,13 @@ describe('Kimi K3 chat completion requests', () => {
         expectFixedParametersOmitted();
     });
 
+    test('sends a plain smol-alibaba K3 prefill as partial without stock reasoning', async () => {
+        const response = await makeRequest(CHAT_COMPLETION_SOURCES.CUSTOM, { model: 'smol-alibaba/kimi-k3' });
+
+        expect(response.status).toBe(200);
+        expect(capturedBody.messages.at(-1)).toEqual({ role: 'assistant', content: 'Prefill', partial: true });
+    });
+
     test('marks the final assistant message supplied by Custom YAML', async () => {
         const response = await makeRequest(CHAT_COMPLETION_SOURCES.CUSTOM, {
             custom_include_body: [

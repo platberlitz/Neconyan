@@ -226,9 +226,10 @@ export function extractReasoningFromData(data, {
                 case chat_completion_sources.ZAI:
                 case chat_completion_sources.WORKERS_AI:
                 case chat_completion_sources.CUSTOM: {
-                    return data?.choices?.[0]?.message?.reasoning_content
+                    // Neconyan: smol-alibaba's Kimi K3 leaks this token into its reasoning.
+                    return String(data?.choices?.[0]?.message?.reasoning_content
                         ?? data?.choices?.[0]?.message?.reasoning
-                        ?? '';
+                        ?? '').replaceAll('<|sep|>', '');
                 }
                 case chat_completion_sources.LINKAPI: {
                     // Response shape depends on the model's routing leg (Anthropic/Gemini/OpenAI).

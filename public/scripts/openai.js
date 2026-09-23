@@ -3822,6 +3822,19 @@ function updateKimiK3PrefillVisibility() {
 }
 
 /**
+ * Whether a Kimi K3 reply already starts with the prefill that was sent.
+ * Neconyan divergence: some hosts (smol-alibaba) echo the prefill instead of returning only the
+ * continuation; mid-stream the echo can still be a prefix of the prefill.
+ * @param {string} message Reply text so far
+ * @param {string} prefill Substituted prefill
+ * @returns {boolean} True when prepending the prefill would duplicate it
+ */
+export function isKimiK3PrefillEcho(message, prefill) {
+    return main_api === 'openai' && isKimiK3PartialPrefillActive() && Boolean(prefill)
+        && (message.startsWith(prefill) || prefill.startsWith(message));
+}
+
+/**
  * Gets the prefill that should be sent ahead of the model's reply, and prepended back onto it.
  * Neconyan divergence: Kimi K3's partial prefill is a preset-scoped field of its own rather
  * than the global Start Reply With, so it never reaches the models that reject a prefill.
@@ -5528,9 +5541,9 @@ export function getStreamingReply(data, state, { chatCompletionSource = null, ov
     } else if ([chat_completion_sources.CUSTOM, chat_completion_sources.POLLINATIONS, chat_completion_sources.AIMLAPI, chat_completion_sources.MOONSHOT, chat_completion_sources.COMETAPI, chat_completion_sources.ELECTRONHUB, chat_completion_sources.NANOGPT, chat_completion_sources.ZAI, chat_completion_sources.SILICONFLOW, chat_completion_sources.CHUTES, chat_completion_sources.MINIMAX, chat_completion_sources.WORKERS_AI].includes(chat_completion_source)) {
         if (show_thoughts) {
             state.reasoning +=
-                data.choices?.filter(x => x?.delta?.reasoning_content)?.[0]?.delta?.reasoning_content ??
+                (data.choices?.filter(x => x?.delta?.reasoning_content)?.[0]?.delta?.reasoning_content ??
                 data.choices?.filter(x => x?.delta?.reasoning)?.[0]?.delta?.reasoning ??
-                '';
+                '').replaceAll('<|sep|>', ''); // Neconyan: smol-alibaba's Kimi K3 leaks this token
         }
         return data.choices?.[0]?.delta?.content ?? data.choices?.[0]?.message?.content ?? data.choices?.[0]?.text ?? '';
     } else if (chat_completion_source === chat_completion_sources.MISTRALAI) {

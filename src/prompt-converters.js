@@ -79,10 +79,13 @@ export const KIMI_K3_STOCK_REASONING = 'I have finished thinking and now continu
  * only `content` makes the model reason live and it can then stop without any reply tokens.
  * A leading <think> block is moved into `reasoning_content` (kimi-k3-jb behavior); a plain
  * prefill gets a stock `reasoning_content` so the model continues the reply directly.
+ * Hosts that echo the prefill (smol-alibaba) return an empty reply when the stock text is
+ * paired with a plain prefill, so they pass `stockReasoning: false`.
  * @param {any[]} prompt Prompt messages array
+ * @param {{ stockReasoning?: boolean }} [options] Whether a plain prefill gets the stock reasoning
  * @returns {any[]} Transformed messages array
  */
-export function seedKimiK3PartialReasoning(prompt) {
+export function seedKimiK3PartialReasoning(prompt, { stockReasoning = true } = {}) {
     if (!Array.isArray(prompt) || !prompt.length) {
         return prompt;
     }
@@ -95,7 +98,7 @@ export function seedKimiK3PartialReasoning(prompt) {
         lastMessage.reasoning_content = thinkMatch[1].trim();
         lastMessage.content = lastMessage.content.slice(thinkMatch[0].length).trimStart();
     }
-    if (!lastMessage.reasoning_content && lastMessage.content.trim()) {
+    if (stockReasoning && !lastMessage.reasoning_content && lastMessage.content.trim()) {
         lastMessage.reasoning_content = KIMI_K3_STOCK_REASONING;
     }
     return prompt;
