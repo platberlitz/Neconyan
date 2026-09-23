@@ -114,9 +114,13 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         || (request.userName && promptSource.records[0]?.user_name !== request.userName))) {
         throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved Roleplay speaker names differ from the accepted prompt.', 409);
     }
+    const namingMaterial = source.locator.group && (request.serverPrompt || worldInfo?.activated.length)
+        ? promptBackend(directories, request.binding) : null;
     const historyOptions = request.worldInfo && { reasoningInPrompt: request.worldInfo.reasoningInPrompt,
         reasoning: request.worldInfo.reasoning, regex: request.worldInfo.regex,
-        characterName: request.characterName, group: source.locator.group };
+        characterName: request.characterName, group: source.locator.group, userName: request.userName || 'User',
+        namesBehavior: namingMaterial?.backend === 'chat'
+            ? (namingMaterial.preset?.names_behavior ?? namingMaterial.active?.names_behavior ?? 0) : undefined };
     const savedHistory = promptSource ? buildRoleplaySavedHistory(promptSource.records, historyOptions) : null;
     const place = history => {
         let messages = history;

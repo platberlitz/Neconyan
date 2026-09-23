@@ -72,9 +72,14 @@ export function assertWorldInfoDepthHistory(records, messages, historyStart, opt
     }
 }
 
-function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = null, regex = [], characterName, group = false } = {}) {
+function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = null, regex = [], characterName,
+    group = false, userName = 'User', namesBehavior } = {}) {
+    if (group && ![-1, 0, 2].includes(namesBehavior)) {
+        throw roleplayError('ROLEPLAY_INVALID', 'This group naming policy needs server-side provider formatting.', 409);
+    }
     const history = records.slice(1).map(record => {
         if (typeof record.mes !== 'string' || typeof record.is_user !== 'boolean'
+            || group && (typeof record.name !== 'string' || !record.name)
             || Object.keys(record).some(key => !['name', 'is_user', 'mes', 'swipes', 'swipe_id', 'swipe_info', 'extra', 'send_date'].includes(key))
             || (record.extra && (typeof record.extra !== 'object' || Array.isArray(record.extra)
                 || Object.keys(record.extra).some(key => !['token_count', 'isSmallSys', 'reasoning'].includes(key))
@@ -99,6 +104,12 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
             if (!thought || thought === '\u200B') continue;
             history[index].content = `${reasoning.prefix}${thought}${reasoning.suffix}${reasoning.separator}${history[index].content}`;
             added++;
+        }
+    }
+    if (group) for (let index = 0; index < history.length; index++) {
+        const name = records[index + 1].name;
+        if (namesBehavior === 2 || namesBehavior === 0 && name !== userName) {
+            history[index].content = `${name}: ${history[index].content}`;
         }
     }
     return history;

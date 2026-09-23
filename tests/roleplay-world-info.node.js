@@ -74,6 +74,46 @@ test('saved post-history instructions follow the selected provider and continuat
     assert.deepEqual(messages.map(message => message.content), ['Story', 'Question', 'Partial']);
 });
 
+test('group history keeps the selected Chat Completion speaker naming policy', () => {
+    const records = [{ user_name: 'User', character_name: 'Nova', chat_metadata: {} },
+        { name: 'User', is_user: true, mes: 'Question' },
+        { name: 'Nova', is_user: false, mes: 'Answer' }];
+    const base = { group: true, userName: 'User', characterName: 'Nova' };
+    assert.deepEqual(buildRoleplaySavedHistory(records, { ...base, namesBehavior: 0 }).map(message => message.content),
+        ['Question', 'Nova: Answer']);
+    assert.deepEqual(buildRoleplaySavedHistory(records, { ...base, namesBehavior: -1 }).map(message => message.content),
+        ['Question', 'Answer']);
+    assert.deepEqual(buildRoleplaySavedHistory(records, { ...base, namesBehavior: 2 }).map(message => message.content),
+        ['User: Question', 'Nova: Answer']);
+    assert.throws(() => buildRoleplaySavedHistory(records, { ...base, namesBehavior: 1 }), { code: 'ROLEPLAY_INVALID' });
+    assert.throws(() => buildRoleplaySavedHistory(records, base), { code: 'ROLEPLAY_INVALID' });
+});
+
+test('a server-owned group reply uses its saved Chat Completion naming controls', async t => {
+    const f = fixture(t, true);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        power_user: { context: { story_string: 'Story: {{description}}', story_string_position: 0 } },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = f.source();
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'group-speaker-policy', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true, messages: [],
+            maxTokens: 20, characterName: 'Nova', worldInfo: snapshot } });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    await runRoleplayReplyJob(context, { promptBackend: () => ({ backend: 'chat', preset: { names_behavior: 0 } }),
+        generate: async ({ messages, beforeDispatch }) => {
+            beforeDispatch();
+            assert.deepEqual(messages.map(message => message.content), ['Story: Original', 'Original', 'Nova: Answer']);
+            return { text: 'Group answer' };
+        } });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Group answer');
+});
+
 test('server-owned replies place saved post-history instructions according to the selected provider', async t => {
     const f = fixture(t);
     f.records[1].extra = {};
@@ -399,8 +439,9 @@ test('saved reasoning is added from newest to oldest only within the saved promp
     assert.deepEqual(messages.map(message => message.content), ['Original', 'Answer', '<think>Latest thought</think>\nLater']);
     assert.doesNotThrow(() => assertWorldInfoDepthHistory(f.records, messages, 0, options));
     f.records.at(-1).name = 'Another character';
-    assert.deepEqual(buildRoleplaySavedHistory(f.records, { ...options, characterName: 'Nova', group: true })
-        .map(message => message.content), ['Original', '<think>First thought</think>\nAnswer', 'Later']);
+    assert.deepEqual(buildRoleplaySavedHistory(f.records, { ...options, characterName: 'Nova', group: true,
+        userName: 'User', namesBehavior: 0 }).map(message => message.content),
+    ['Original', 'Nova: <think>First thought</think>\nAnswer', 'Another character: Later']);
     f.records.at(-1).name = 'Nova';
     assert.deepEqual(buildRoleplaySavedHistory(f.records, { ...options, reasoning: { ...options.reasoning, max_additions: 0 } })
         .map(message => message.content), ['Original', 'Answer', 'Later']);
