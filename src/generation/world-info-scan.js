@@ -173,7 +173,7 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
     }
     const activatedEntries = [...activated].sort((a, b) => b.order - a.order);
     const output = { worldInfoBefore: [], worldInfoAfter: [], EMEntries: [], WIDepthEntries: [],
-        ANBeforeEntries: [], ANAfterEntries: [], outletEntries: {} };
+        ANBeforeEntries: [], ANAfterEntries: [], outletEntries: Object.create(null) };
     for (const entry of activatedEntries) {
         const content = transform(entry.content, entry);
         if (!content) continue;

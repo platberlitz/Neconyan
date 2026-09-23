@@ -19,7 +19,7 @@ const DEFAULTS = { world_info_depth: 2, world_info_budget: 25, world_info_recurs
     world_info_min_activations_depth_max: 0, world_info_use_group_scoring: false, world_info_max_recursion_steps: 0 };
 
 function books(directories, names) {
-    const result = {};
+    const result = Object.create(null);
     for (const name of new Set(names.flat())) {
         if (typeof name !== 'string' || !name || name.length > 234) throw roleplayError('ROLEPLAY_INVALID', 'Invalid World Info book name.', 400);
         let book;

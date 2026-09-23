@@ -180,6 +180,24 @@ test('the account captures saved books and refuses a changed book before the pro
     await assert.rejects(prepareRoleplayWorldInfo(f.scope, snapshot), { code: 'ROLEPLAY_SOURCE_CHANGED' });
 });
 
+test('saved books and outlets named like object properties keep their own content', async t => {
+    const f = fixture(t);
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, '__proto__.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Original', 'Prototype lore', { world: undefined, hash: undefined }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['__proto__'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, f.source(), { avatar: 'Nova.png', maxContext: 100 });
+    assert.equal(Object.hasOwn(snapshot.bookHashes, '__proto__'), true);
+    assert.equal((await prepareRoleplayWorldInfo(f.scope, snapshot)).worldInfoBefore, 'Prototype lore');
+    const outlet = await scan([entry(2, 'cat', 'Outlet lore', { position: 7, outletName: 'constructor' })]);
+    assert.deepEqual(outlet.outletEntries.constructor, ['Outlet lore']);
+});
+
 test('an entries-loaded hook cannot add a book entry outside the saved selection', async t => {
     const f = fixture(t);
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
