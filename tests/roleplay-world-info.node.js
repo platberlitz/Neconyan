@@ -98,6 +98,20 @@ test('a scan hook cannot change an accepted entry after its token budget was che
     } }), { code: 'ROLEPLAY_INVALID' });
 });
 
+test('a scan hook cannot invent a timed effect outside a recorded activation', async () => {
+    await assert.rejects(scan([entry(1, 'cat', 'Short')], { onScan: hook => {
+        hook.timedEffects.metadata.sticky['Town.1'] = { hash: 1, start: 2, end: 200, protected: true };
+    } }), { code: 'ROLEPLAY_INVALID' });
+});
+
+test('a scan hook cannot bypass a saved cooldown during a later pass', async () => {
+    const blocked = entry(2, 'cat', 'Blocked', { cooldown: 3 });
+    await assert.rejects(scan([entry(1, 'cat', 'Selected'), blocked], {
+        metadata: { timedWorldInfo: { cooldown: { 'Town.2': { hash: 2, start: 1, end: 4, protected: true } } } },
+        onScan: hook => { hook.timedEffects.active.cooldown.clear(); },
+    }), { code: 'ROLEPLAY_INVALID' });
+});
+
 test('the account captures saved books and refuses a changed book before the provider runs', async t => {
     const f = fixture(t);
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');

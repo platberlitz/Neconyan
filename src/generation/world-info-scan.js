@@ -137,6 +137,8 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
             budget: { current: budget, overflowed }, timedEffects: effects };
         const entryHash = roleplayHash(sorted);
         const activeEntries = [...activated];
+        const timedHash = roleplayHash(effects.metadata);
+        const activeTimed = Object.fromEntries(Object.entries(effects.active).map(([type, entries]) => [type, [...entries]]));
         await onScan(hook);
         if (roleplayHash(sorted) !== entryHash || !Array.isArray(hook.sortedEntries) || hook.sortedEntries.length !== sorted.length
             || hook.sortedEntries.some((entry, index) => entry !== sorted[index])
@@ -146,6 +148,9 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
             || hook.new.all.some((entry, index) => entry !== candidates[index])
             || !Array.isArray(hook.new.successful) || hook.new.successful.length !== accepted.length
             || hook.new.successful.some((entry, index) => entry !== accepted[index])
+            || hook.timedEffects !== effects || roleplayHash(effects.metadata) !== timedHash
+            || Object.entries(activeTimed).some(([type, entries]) => !(effects.active[type] instanceof Set)
+                || effects.active[type].size !== entries.length || entries.some(value => !effects.active[type].has(value)))
             || ![INITIAL, RECURSION, MIN_ACTIVATIONS, 0].includes(hook.state.next)
             || !Number.isFinite(hook.budget.current) || hook.budget.current < 1
             || typeof hook.budget.overflowed !== 'boolean' || typeof hook.activated.text !== 'string') {
