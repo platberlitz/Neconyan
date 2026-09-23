@@ -20,7 +20,7 @@ export function defaultConfig() {
         writerTokenizer: 'auto', excludeHistory: true,
         roles: Object.fromEntries(ROLE_NAMES.map(name => [name, {
             enabled: false, profileId: '', endpoint: '', model: '', modelOverride: '', modelRevision: '', allowRemote: true,
-            contextTokens: 32768, maxOutputTokens: name === 'embedding' ? 0 : 16000,
+            contextTokens: 200000, maxOutputTokens: name === 'embedding' ? 0 : 16000,
             timeoutMs: 300000, tokenizer: 'auto', allowedData: [...SOURCE_TYPES],
             queryPrefix: '', documentPrefix: '',
         }])),
@@ -82,8 +82,8 @@ export function validateConfig(input) {
                 model: text(role.model, 'Model', 250, !enabled || Boolean(profileId)),
                 modelOverride: text(role.modelOverride, 'Model override', 250, true),
                 modelRevision: text(role.modelRevision, 'Model revision', 250, true), allowRemote,
-                contextTokens: integer(role.contextTokens, 'Role context', 1024, 2000000),
-                maxOutputTokens: integer(role.maxOutputTokens, 'Role output', name === 'embedding' ? 0 : 128, 64000),
+                contextTokens: integer(role.contextTokens, 'Context limit, tokens', 1024, 2000000),
+                maxOutputTokens: integer(role.maxOutputTokens, 'Output limit, tokens', name === 'embedding' ? 0 : 128, 64000),
                 timeoutMs: integer(role.timeoutMs, 'Timeout', 1000, 300000),
                 tokenizer: role.tokenizer,
                 allowedData: [...new Set(list(role.allowedData, 'Allowed data', SOURCE_TYPES.length))],
@@ -92,7 +92,7 @@ export function validateConfig(input) {
             };
             if (!TOKENIZERS.includes(role.tokenizer)) fail('Choose a supported tokenizer for this role.');
             if (result.roles[name].allowedData.some(type => !SOURCE_TYPES.includes(type))) fail('Unknown data scope.');
-            if (role.maxOutputTokens >= role.contextTokens) fail('Role output must leave room for its input.');
+            if (role.maxOutputTokens >= role.contextTokens) fail('Output limit, tokens must be lower than Context limit, tokens.');
         } catch (error) {
             fail(ROLE_LABELS[name] + ': ' + error.message, error.status);
         }
@@ -200,7 +200,7 @@ function authorizeRole(config, name, dataTypes) {
     } else if (config.localOnly || !role.allowRemote) {
         fail('This role is not allowed to send story data to a remote connection profile.', 403);
     }
-    if (dataTypes.some(type => !role.allowedData.includes(type))) fail('The ' + name + ' role does not allow the required data scope.', 403);
+    if (dataTypes.some(type => !role.allowedData.includes(type))) fail(ROLE_LABELS[name] + ' cannot read the information it needs. Check ‘This role may read’ in Mewmory settings.', 403);
     return { role, endpoint };
 }
 
@@ -249,7 +249,7 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
                 headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: 'Bearer ' + key } : {}) },
                 body: JSON.stringify({ model: role.model, ...payload }),
             });
-            if (!response.ok) fail('The ' + name + ' endpoint returned HTTP ' + response.status + '.', 502);
+            if (!response.ok) fail('The model for ' + ROLE_LABELS[name] + ' returned error code ' + response.status + '. Check its model connection in Mewmory settings and try again.', 502);
             data = await response.json();
         }
         return {
@@ -263,7 +263,7 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
     } catch (error) {
         if (error.status) throw error;
         if (signal?.aborted) fail('Mewmory request cancelled.', 499);
-        fail('The ' + name + ' request failed or timed out. Check that role’s endpoint and credentials.', 502);
+        fail('The model for ' + ROLE_LABELS[name] + ' could not be reached or took too long. Check its model connection and timeout in Mewmory settings.', 502);
     } finally {
         clearTimeout(timeout);
         signal?.removeEventListener('abort', abort);
@@ -279,20 +279,24 @@ export async function callJsonRole(directories, config, name, contract, input, {
     ];
     const inputTokens = counter.count(JSON.stringify(messages)) + 16;
     if (inputTokens + role.maxOutputTokens > role.contextTokens) {
-        fail('The ' + name + ' input exceeds its configured context. Reduce the batch or increase that role’s context.', 409);
+        fail(ROLE_LABELS[name] + ' needs ' + inputTokens.toLocaleString('en-GB') + ' tokens for this request and reserves '
+            + role.maxOutputTokens.toLocaleString('en-GB') + ' for the reply, but its Mewmory context limit is '
+            + role.contextTokens.toLocaleString('en-GB') + '. In Mewmory settings, set '
+            + ROLE_LABELS[name] + ' > Context limit, tokens to the limit your model service supports'
+            + (name === 'extractor' ? ', or reduce Messages per update.' : '.'), 409);
     }
     const result = await requestModel(directories, config, name, {
         messages, stream: false, max_tokens: role.maxOutputTokens, temperature: 0.2,
     }, dataTypes, signal);
     const content = result.data.choices?.[0]?.message?.content;
-    if (result.data.choices?.[0]?.finish_reason === 'length') fail('The ' + name + ' output was cut short. Increase its output allowance.', 502);
-    if (typeof content !== 'string') fail('The ' + name + ' endpoint did not return text.', 502);
+    if (result.data.choices?.[0]?.finish_reason === 'length') fail('The ' + ROLE_LABELS[name] + ' reply was cut short. Increase Output limit, tokens for this role in Mewmory settings if your model supports it.', 502);
+    if (typeof content !== 'string') fail('The model for ' + ROLE_LABELS[name] + ' returned no text. Check its model connection in Mewmory settings.', 502);
     let value;
     try {
         value = JSON.parse(content.trim().replace(/^\x60{3}(?:json)?\s*/i, '').replace(/\s*\x60{3}$/, ''));
         object(value, 'Model output');
     } catch {
-        fail('The ' + name + ' model returned invalid JSON.', 502);
+        fail('Mewmory could not read the ' + ROLE_LABELS[name] + ' reply. Try again; if it keeps happening, choose another model for this role in Mewmory settings.', 502);
     }
     return { value, usage: { ...result.usage, input: result.usage.input || inputTokens, tokenizer: counter.name } };
 }
@@ -302,7 +306,7 @@ export async function embed(directories, config, texts, { query = false, dataTyp
     const counter = await getCounter(role.tokenizer, { tokenizerKey: 'openai', tokenizerName: role.model });
     const prefix = query ? role.queryPrefix : role.documentPrefix;
     const input = texts.map(value => prefix + value);
-    if (input.some(value => counter.count(value) > role.contextTokens)) fail('An embedding passage exceeds the embedding model context.', 409);
+    if (input.some(value => counter.count(value) > role.contextTokens)) fail('A passage is too long for the Embeddings context limit. Check Embeddings > Context limit, tokens in Mewmory settings against your model service’s limit.', 409);
     const result = await requestModel(directories, config, 'embedding', { input }, dataTypes, signal);
     const rows = result.data.data;
     if (!Array.isArray(rows) || rows.length !== texts.length) fail('The embedding endpoint returned an incomplete batch.', 502);

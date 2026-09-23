@@ -510,7 +510,7 @@ function renderSettings(root) {
     budgets.append(
         field('Recent chat target, tokens', draft.historyWindow, value => { draft.historyWindow = value; }, { type: 'number', hint: 'Chat only. NPC references, selected memory and the rest of your prompt need additional room.' }),
         field('Selected memory budget, tokens', draft.memoryTokens, value => { draft.memoryTokens = value; }, { type: 'number' }),
-        field('Messages per update', draft.batchMessages, value => { draft.batchMessages = value; }, { type: 'number' }),
+        field('Messages per update', draft.batchMessages, value => { draft.batchMessages = value; }, { type: 'number', hint: 'Smaller batches use less space in the Facts and events model.' }),
         field('Recall candidates', draft.candidateLimit, value => { draft.candidateLimit = value; }, { type: 'number' }),
         field('Writer tokenizer', draft.writerTokenizer, value => { draft.writerTokenizer = value; }, { options: tokenizers, hint: 'Auto follows the app’s tokenizer selection. Choose a local tokenizer when your backend only offers estimates.' }),
     );
@@ -551,8 +551,10 @@ function renderSettings(root) {
         : modelName === savedRole.model ? savedRole.autoTokenizer : '';
     fields.append(
         field('Model revision, optional', role.modelRevision, value => { role.modelRevision = value; }, { key: 'revision-' + ui.role }),
-        field('Context limit, tokens', role.contextTokens, value => { role.contextTokens = value; }, { type: 'number', key: 'context-' + ui.role }),
-        field('Output limit, tokens', role.maxOutputTokens, value => { role.maxOutputTokens = value; }, { type: 'number', disabled: ui.role === 'embedding', key: 'output-' + ui.role }),
+        field('Context limit, tokens', role.contextTokens, value => { role.contextTokens = value; }, { type: 'number', key: 'context-' + ui.role,
+            hint: 'Tokens are pieces of text counted by the model. Each role has its own limit. Set this to what your model service supports; changing it does not increase the model’s actual limit.' }),
+        field('Output limit, tokens', role.maxOutputTokens, value => { role.maxOutputTokens = value; }, { type: 'number', disabled: ui.role === 'embedding', key: 'output-' + ui.role,
+            hint: ui.role === 'embedding' ? '' : 'Space reserved for the reply. A larger value leaves less room for the request.' }),
         field('Timeout, seconds', role.timeoutMs / 1000, value => { role.timeoutMs = value * 1000; }, { type: 'number', key: 'timeout-' + ui.role }),
         field('Tokenizer for this role', role.tokenizer, value => { role.tokenizer = value; render(); }, {
             options: tokenizers.map(value => value === 'auto' ? ['auto', 'Auto (match this model)'] : value), key: 'tokenizer-' + ui.role,
@@ -627,9 +629,12 @@ function renderHealth(root) {
         if (['failed', 'interrupted'].includes(job.state)) health.append(button('Retry ' + job.label.toLocaleLowerCase(), () => act(() => retryJob(job.id))));
         if (['failed', 'interrupted', 'completed', 'cancelled'].includes(job.state)) health.append(button('Dismiss ' + job.label.toLocaleLowerCase(), () => act(() => dismissJob(job.id))));
     }
+    if (view.health.jobs.length) health.append(node('h4', '', 'Recent attempts'));
     for (const job of view.health.jobs.slice(-5).reverse()) {
-        health.append(node('p', 'mewmory-caption', (job.checkpoint ? 'Preservation' : 'Update') + ' · messages '
-            + (job.from + 1) + '–' + (job.through + 1) + ' · ' + job.status + (job.error ? ': ' + job.error : '')));
+        health.append(node('p', 'mewmory-caption', (job.checkpoint ? 'Preservation review' : 'Memory update') + ' for messages '
+            + (job.from + 1) + ' to ' + (job.through + 1) + ': '
+            + ({ processing: 'in progress', complete: 'complete', failed: 'failed' }[job.status] || job.status)
+            + (job.error ? '. ' + job.error : '')));
     }
     const usage = node('dl', 'mewmory-tokens');
     for (const [role, total] of Object.entries(view.health.usage)) {

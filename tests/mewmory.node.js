@@ -265,6 +265,7 @@ test('connection profiles resolve server-side and retain local-only permissions'
         const config = defaultConfig();
         assert.equal(config.localOnly, false, 'remote model requests are allowed by default');
         assert.ok(ROLE_NAMES.every(name => config.roles[name].allowRemote));
+        assert.ok(ROLE_NAMES.every(name => config.roles[name].contextTokens === 200000));
         assert.ok(ROLE_NAMES.every(name => config.roles[name].maxOutputTokens === (name === 'embedding' ? 0 : 16000)));
         assert.ok(ROLE_NAMES.every(name => config.roles[name].timeoutMs === 300000));
         Object.assign(config.roles.extractor, { enabled: true, profileId: 'local' });
@@ -339,7 +340,23 @@ test('a missing profile model names the role, preserves saved settings and accep
     assert.equal(facts.usage.tokenizer, 'cl100k_base');
     const invalid = publicConfig(directories);
     invalid.roles.extractor.contextTokens = 0;
-    assert.throws(() => saveConfig(directories, invalid), /Facts and events:.*Role context/);
+    assert.throws(() => saveConfig(directories, invalid), /Facts and events:.*Context limit, tokens/);
+});
+
+test('saved context limits stay unchanged and size errors name the role, counts and setting', async t => {
+    const { directories } = disk(t);
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test', contextTokens: 1024, maxOutputTokens: 900 });
+    saveConfig(directories, config);
+    const saved = readConfig(directories);
+    assert.equal(saved.roles.extractor.contextTokens, 1024);
+    await assert.rejects(callJsonRole(directories, saved, 'extractor', 'Extract facts.', { text: 'long passage '.repeat(400) }), error => {
+        assert.equal(error.status, 409);
+        assert.match(error.message, /Facts and events needs [\d,]+ tokens.*reserves 900.*context limit is 1,024/);
+        assert.match(error.message, /Context limit, tokens.*Messages per update/);
+        assert.doesNotMatch(error.message, /extractor|configured context/);
+        return true;
+    });
 });
 
 test('Auto matches the role model independently, handles model families and retains explicit tokenizers', async () => {
