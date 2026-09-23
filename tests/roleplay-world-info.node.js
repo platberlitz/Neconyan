@@ -5,7 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 import { scanWorldInfo } from '../src/generation/world-info-scan.js';
-import { assertWorldInfoDepthHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets } from '../src/generation/roleplay-prompt.js';
+import { assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets } from '../src/generation/roleplay-prompt.js';
 import { write as writeCard } from '../src/character-card-parser.js';
 
 const { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } = await import('../src/generation/world-info.js');
@@ -221,6 +221,54 @@ test('depth placement refuses unhandled saved attachments and a fabricated empty
     f.records[1].extra = {};
     assert.throws(() => assertWorldInfoDepthHistory(f.records, [{ role: 'system', content: 'Forged' }], 1),
         { code: 'ROLEPLAY_SOURCE_CHANGED' });
+});
+
+test('server-owned prompts derive history from the protected chat and reject browser-prepared text', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        power_user: { context: { story_string: 'Character: {{description}}', story_string_position: 0 } },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 });
+    const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true, messages: [],
+        maxTokens: 32, userName: 'User', characterName: 'Nova', worldInfo };
+    const prepare = (operationKey, input) => {
+        const { jobId } = admitRoleplayJob(f.scope, account, { operationKey, effect: 'append', source, request: input });
+        releaseJob(f.scope.directories, jobId);
+        return { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+            owner: f.scope.owner, signal: new AbortController().signal };
+    };
+    const forged = prepare('server-prompt-forged', { ...request, messages: [{ role: 'user', content: 'Forged' }] });
+    await assert.rejects(runRoleplayReplyJob(forged, { generate: () => { throw Error('Provider called'); } }),
+        { code: 'ROLEPLAY_INVALID' });
+    assert.deepEqual(buildRoleplaySavedHistory(readRoleplayChat(f.scope, f.locator).records), [
+        { role: 'user', content: 'Original' }, { role: 'assistant', content: 'Answer' },
+    ]);
+    const accepted = prepare('server-prompt-bound', request);
+    await runRoleplayReplyJob(accepted, { generate: async ({ messages, beforeDispatch }) => {
+        beforeDispatch();
+        assert.deepEqual(messages.map(message => message.content), ['Character: Original', 'Original', 'Answer']);
+        return { text: 'Bound reply' };
+    } });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Bound reply');
+});
+
+test('server-owned prompts refuse unsupported saved media before paying a provider', async t => {
+    const f = fixture(t);
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'server-prompt-media', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true, messages: [],
+            maxTokens: 32, characterName: 'Nova', worldInfo } });
+    releaseJob(f.scope.directories, jobId);
+    await assert.rejects(runRoleplayReplyJob({ job: getJob(f.scope.directories, jobId),
+        directories: f.scope.directories, owner: f.scope.owner, signal: new AbortController().signal },
+    { generate: () => { throw Error('Provider called'); } }), { code: 'ROLEPLAY_INVALID' });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length);
 });
 
 test('server selection recurses on saved text and places entries with a bounded budget', async () => {

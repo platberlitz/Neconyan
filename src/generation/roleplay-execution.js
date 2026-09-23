@@ -9,7 +9,7 @@ import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-st
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
 import { assertRoleplayWorldInfoCurrent, prepareRoleplayWorldInfo } from './world-info.js';
-import { assertWorldInfoDepthHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets, isWorldInfoAuthorNoteActive } from './roleplay-prompt.js';
+import { assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets, isWorldInfoAuthorNoteActive } from './roleplay-prompt.js';
 import { getChatProfileContextLimit } from './profiles.js';
 import { getCounter } from '../mewmory/tokens.js';
 
@@ -76,6 +76,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     if (!request.binding || !Array.isArray(request.messages) || !Number.isSafeInteger(request.maxTokens)
         || request.maxTokens < 1 || request.maxTokens > 64000 || typeof request.characterName !== 'string'
         || !request.characterName || (request.stream !== undefined && typeof request.stream !== 'boolean')
+        || (request.serverPrompt !== undefined && typeof request.serverPrompt !== 'boolean')
         || (request.modelOverride !== undefined && (typeof request.modelOverride !== 'string' || request.modelOverride.length > 256))
         || Buffer.byteLength(JSON.stringify(request)) > 2 * 1024 * 1024) {
         throw roleplayError('ROLEPLAY_INVALID', 'The accepted Roleplay generation input is invalid.', 400);
@@ -104,26 +105,37 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         }
         assertRoleplayWorldInfoCurrent(base, request.worldInfo);
     }
-    let messages = structuredClone(request.messages);
+    if (request.serverPrompt && (!request.worldInfo || request.messages.length || request.historyStart !== undefined)) {
+        throw roleplayError('ROLEPLAY_INVALID', 'Server-owned prompts cannot include prepared browser messages.', 409);
+    }
+    const promptSource = request.serverPrompt ? assertSource() : null;
+    const promptHash = promptSource && roleplayHash(promptSource.records);
+    if (promptSource && (promptSource.records[0]?.character_name !== request.characterName
+        || (request.userName && promptSource.records[0]?.user_name !== request.userName))) {
+        throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved Roleplay speaker names differ from the accepted prompt.', 409);
+    }
+    let messages = promptSource ? buildRoleplaySavedHistory(promptSource.records) : structuredClone(request.messages);
+    const savedHistoryStart = request.serverPrompt ? 0 : request.historyStart;
     if (worldInfo) {
         if (worldInfo.activated.some(entry => entry.automationId)) {
             throw roleplayError('ROLEPLAY_INVALID', 'This World Info entry needs a server Quick Reply action before generation.', 409);
         }
         if (worldInfo.activated.length) {
-            assertWorldInfoDepthHistory(assertSource().records, request.messages, request.historyStart);
+            if (!promptSource) assertWorldInfoDepthHistory(assertSource().records, request.messages, request.historyStart);
         }
         const hasOutlets = Object.keys(worldInfo.outletEntries).length > 0;
         const storyLore = request.worldInfo.storyTemplate && (worldInfo.worldInfoBefore || worldInfo.worldInfoAfter);
         const storyNote = (worldInfo.ANBeforeEntries.length || worldInfo.ANAfterEntries.length)
             && request.worldInfo.authorNote?.position !== 1 && isWorldInfoAuthorNoteActive(request.worldInfo.authorNote);
-        const hasStory = Boolean(hasOutlets || storyLore || storyNote);
+        const hasStory = Boolean(hasOutlets || storyLore || storyNote || request.serverPrompt);
         if (hasStory) {
-            messages = insertWorldInfoOutlets(messages, worldInfo.outletEntries, request.worldInfo, request.historyStart,
-                request.userName || 'User', request.characterName, worldInfo.worldInfoBefore, worldInfo.worldInfoAfter, Boolean(storyNote));
+            messages = insertWorldInfoOutlets(messages, worldInfo.outletEntries, request.worldInfo, savedHistoryStart,
+                request.userName || 'User', request.characterName, worldInfo.worldInfoBefore, worldInfo.worldInfoAfter,
+                Boolean(storyNote || request.serverPrompt));
         }
         const lore = hasStory ? '' : [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
         if (lore) messages.unshift({ role: 'system', content: lore });
-        let historyStart = request.historyStart + Number(Boolean(lore)) + Number(hasStory);
+        let historyStart = savedHistoryStart + Number(Boolean(lore)) + Number(hasStory);
         if (worldInfo.EMEntries.length) {
             const beforeExamples = messages.length;
             messages = insertWorldInfoExamples(messages, worldInfo.EMEntries, request.worldInfo.characterExamples,
@@ -137,18 +149,24 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             messages = insertWorldInfoAuthorNote(messages, worldInfo.ANBeforeEntries, worldInfo.ANAfterEntries,
                 request.worldInfo.authorNote, historyStart, hasStory);
         }
-        if (worldInfo.activated.length) {
-            const { count } = await getCounter(request.worldInfo.tokenizer);
-            if (await count(messages.map(message => message.content).join('\n')) > contextLimit(directories, request.binding) - request.maxTokens) {
-                throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay prompt exceeds the bound context budget.', 409);
-            }
+    }
+    if (request.serverPrompt || worldInfo?.activated.length) {
+        const { count } = await getCounter(request.worldInfo.tokenizer);
+        if (await count(messages.map(message => message.content).join('\n')) > contextLimit(directories, request.binding) - request.maxTokens) {
+            throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay prompt exceeds the bound context budget.', 409);
         }
     }
     const result = await generate({ context: base, jobContext: context, binding: request.binding, messages,
         maxTokens: request.maxTokens, userName: request.userName || 'User', characterName: request.characterName,
         groupNames: request.groupNames || [], macroEnvironment: createMacroEnvironment(request.macros || {}),
         rawOptions: request.rawOptions || {}, ephemeralStops: request.ephemeralStops || [],
-        beforeDispatch: () => { assertSource(); if (worldInfo) assertRoleplayWorldInfoCurrent(base, request.worldInfo); },
+        beforeDispatch: () => {
+            const current = assertSource();
+            if (promptHash && roleplayHash(current.records) !== promptHash) {
+                throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved Roleplay prompt history changed before dispatch.', 409);
+            }
+            if (worldInfo) assertRoleplayWorldInfoCurrent(base, request.worldInfo);
+        },
         modelOverride: request.modelOverride || '', overridePayload, stream: request.stream === true });
     const output = replyOutput(result, effect, request.characterName, result.generation);
     if (worldInfo) {
