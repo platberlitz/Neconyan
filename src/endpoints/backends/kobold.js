@@ -8,7 +8,7 @@ import { TEXTGEN_TYPES } from '../../constants.js';
 
 export const router = express.Router();
 
-router.post('/generate', async function (request, response_generate) {
+export async function handleKoboldGenerate(request, response_generate) {
     if (!request.body) return response_generate.sendStatus(400);
 
     if (request.body.api_server.indexOf('localhost') != -1) {
@@ -17,6 +17,8 @@ router.post('/generate', async function (request, response_generate) {
 
     const request_prompt = request.body.prompt;
     const controller = new AbortController();
+    const fetchProvider = request.fetch ?? fetch;
+    const signal = request.generationSignal ?? controller.signal;
     abortOnRequestClose(request, controller, response_generate, {
         onAbort: async () => {
             if (!request.body.can_abort || response_generate.writableEnded) {
@@ -26,7 +28,7 @@ router.post('/generate', async function (request, response_generate) {
             try {
                 console.info('Aborting Kobold generation...');
                 // send abort signal to koboldcpp
-                const abortResponse = await fetch(`${request.body.api_server}/extra/abort`, {
+                const abortResponse = await fetchProvider(`${request.body.api_server}/extra/abort`, {
                     method: 'POST',
                 });
 
@@ -89,15 +91,15 @@ router.post('/generate', async function (request, response_generate) {
             { 'Content-Type': 'application/json' },
             getOverrideHeaders((new URL(request.body.api_server))?.host),
         ),
-        signal: controller.signal,
+        signal,
     };
 
-    const MAX_RETRIES = 50;
+    const MAX_RETRIES = request.boundProfile ? 1 : 50;
     const delayAmount = 2500;
     for (let i = 0; i < MAX_RETRIES; i++) {
         try {
             const url = request.body.streaming ? `${request.body.api_server}/extra/generate/stream` : `${request.body.api_server}/v1/generate`;
-            const response = await fetch(url, { method: 'POST', ...args });
+            const response = await fetchProvider(url, { method: 'POST', ...args });
 
             if (request.body.streaming) {
                 // Pipe remote SSE stream to Express response
@@ -105,7 +107,7 @@ router.post('/generate', async function (request, response_generate) {
                     if (request.body.can_abort && !response_generate.writableEnded) {
                         try {
                             console.info('Aborting Kobold generation...');
-                            const abortResponse = await fetch(`${request.body.api_server}/extra/abort`, {
+                            const abortResponse = await fetchProvider(`${request.body.api_server}/extra/abort`, {
                                 method: 'POST',
                             });
 
@@ -142,6 +144,7 @@ router.post('/generate', async function (request, response_generate) {
             switch (error?.status) {
                 case 403:
                 case 503: // retry in case of temporary service issue, possibly caused by a queue failure?
+                    if (request.boundProfile) return response_generate.send({ error: true });
                     console.warn(`KoboldAI is busy. Retry attempt ${i + 1} of ${MAX_RETRIES}...`);
                     await delay(delayAmount);
                     break;
@@ -156,7 +159,9 @@ router.post('/generate', async function (request, response_generate) {
 
     console.error('Max retries exceeded. Giving up.');
     return response_generate.send({ error: true });
-});
+}
+
+router.post('/generate', handleKoboldGenerate);
 
 router.post('/status', async function (request, response) {
     if (!request.body) return response.sendStatus(400);

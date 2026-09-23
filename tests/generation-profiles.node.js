@@ -12,11 +12,142 @@ import { providerSettings, instructSettings, promptMessages, expectedPrompts } f
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { captureChatProfile, captureGenerationBinding, buildChatProfileRequest, resolveGenerationProfile } = await import('../src/generation/profiles.js');
 const { runChatProfile, runTextGeneration, validateActiveGenerationContext } = await import('../src/generation/service.js');
-const { acceptJob, getJob } = await import('../src/jobs/store.js');
+const { acceptJob, getJob, markProviderUncertain, recoverJobs, setJobState } = await import('../src/jobs/store.js');
 const { buildTextProfileRequest, resolveTextTokenizer } = await import('../src/generation/text-request.js');
 const { createMacroEnvironment } = await import('../src/macros/index.js');
 const { readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
 const { hash } = await import('../src/mewmory/core.js');
+
+test('acknowledged Kobold uses the saved endpoint and samplers exactly once', async t => {
+    const fixture = textFixture(t);
+    fixture.settings._settingsRevision = 41;
+    fixture.settings.main_api = 'kobold';
+    fixture.settings.active_generation = { api: 'kobold' };
+    fixture.settings.kai_settings = { api_server: 'http://127.0.0.1:6000/api', preset_settings: 'gui' };
+    fixture.save();
+    const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 41 });
+    assert.equal(binding.backend, 'kobold');
+    let calls = 0;
+    const options = { context: { owner: 'tester', directories: fixture.directories }, binding,
+        messages: [{ role: 'user', content: 'Hello' }], maxTokens: 73, userName: 'Sam', characterName: 'Ada',
+        fetch: async (url, request) => {
+            calls++;
+            assert.equal(url, 'http://127.0.0.1:6000/api/v1/generate');
+            const body = JSON.parse(request.body);
+            assert.equal(body.max_length, 73);
+            assert.equal(body.max_context_length, 8192);
+            assert.match(body.prompt, /Sam: Hello/);
+            return new Response(JSON.stringify({ results: [{ text: 'Ada: Done' }] }));
+        } };
+    assert.equal((await runChatProfile(options)).text, 'Done');
+    assert.equal(calls, 1);
+    fixture.settings.kai_settings.api_server = 'http://127.0.0.1:7000/api'; fixture.save();
+    await assert.rejects(runChatProfile(options), /changed/);
+    assert.equal(calls, 1);
+    fixture.settings.kai_settings.api_server = 'http://127.0.0.1:6000/api'; fixture.save();
+    await assert.rejects(runChatProfile({ ...options, stream: true }), /completion marker/);
+    assert.equal(calls, 1);
+});
+
+test('acknowledged NovelAI uses its saved model, server-side token and clean reply', async t => {
+    const fixture = textFixture(t);
+    fixture.settings._settingsRevision = 42;
+    fixture.settings.main_api = 'novel';
+    fixture.settings.active_generation = { api: 'novel' };
+    fixture.settings.nai_settings = { model_novel: 'fixture-model', preset_settings_novel: 'gui', temperature: 1,
+        min_length: 1, tail_free_sampling: 0.975, repetition_penalty: 2.25, repetition_penalty_range: 2048,
+        repetition_penalty_slope: 0.09, repetition_penalty_frequency: 0, repetition_penalty_presence: 0.005,
+        top_a: 0.08, top_p: 0.75, top_k: 10, min_p: 0, math1_temp: 1, math1_quad: 0,
+        math1_quad_entropy_scale: 0, typical_p: 0.975, banned_tokens: '', logit_bias: [], order: [1, 5, 0, 2, 3, 4] };
+    fs.writeFileSync(path.join(fixture.root, 'secrets.json'), JSON.stringify({ api_key_novel: [{ id: 'selected', value: 'private-token', active: true }] }));
+    fixture.save();
+    const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 42 });
+    assert.equal(binding.backend, 'novel');
+    let calls = 0;
+    const options = { context: { owner: 'tester', directories: fixture.directories }, binding,
+        messages: [{ role: 'user', content: 'Hello' }], maxTokens: 73, userName: 'Sam', characterName: 'Ada',
+        fetch: async (url, request) => {
+            calls++;
+            assert.equal(url, 'https://api.novelai.net/ai/generate');
+            assert.equal(request.headers.Authorization, 'Bearer private-token');
+            const body = JSON.parse(request.body);
+            assert.equal(body.model, 'fixture-model');
+            assert.equal(body.parameters.max_length, 73);
+            assert.ok(['temperature', 'top_k', 'repetition_penalty', 'tail_free_sampling']
+                .every(name => Number.isFinite(body.parameters[name])));
+            assert.match(body.input, /Sam: Hello/);
+            return new Response(JSON.stringify({ output: 'Ada: Done' }));
+        } };
+    assert.equal((await runChatProfile(options)).text, 'Done');
+    assert.equal(calls, 1);
+    fixture.settings.nai_settings.temperature = 2; fixture.save();
+    await assert.rejects(runChatProfile(options), /changed/);
+    assert.equal(calls, 1);
+    fixture.settings.nai_settings.temperature = 1; fixture.save();
+    await assert.rejects(runChatProfile({ ...options, stream: true }), /completion marker/);
+    assert.equal(calls, 1);
+    delete fixture.settings.nai_settings.top_k; fixture.save();
+    assert.throws(() => captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 42 }), /complete NovelAI/);
+});
+
+test('acknowledged Horde saves its task ID before polling and never submits it twice', async t => {
+    const fixture = textFixture(t);
+    Object.assign(fixture.settings, { _settingsRevision: 43, main_api: 'koboldhorde',
+        active_generation: { api: 'koboldhorde' },
+        kai_settings: { preset_settings: 'gui', rep_pen: 1, rep_pen_range: 0, rep_pen_slope: 0.9, temp: 1,
+            tfs: 1, top_a: 1, top_k: 0, top_p: 1, min_p: 0, typical: 1, sampler_order: [0, 1, 2] },
+        horde_settings: { models: ['test-worker'], trusted_workers_only: true } });
+    fs.writeFileSync(path.join(fixture.root, 'secrets.json'), JSON.stringify({ api_key_horde: [{ id: 'selected', value: 'horde-private', active: true }] }));
+    fixture.save();
+    const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 43 });
+    const job = acceptJob(fixture.directories, { owner: 'tester', type: 'roleplay.reply', submissionKey: 'horde-bound', intent: {} }).job;
+    setJobState(fixture.directories, job.id, 'running');
+    let submits = 0;
+    let polls = 0;
+    const options = { context: { owner: 'tester', directories: fixture.directories }, binding, jobContext: {
+        job, directories: fixture.directories, signal: new AbortController().signal },
+    messages: [{ role: 'user', content: 'Hello' }], maxTokens: 73, userName: 'Sam', characterName: 'Ada',
+    fetch: async (url, request) => {
+        if (String(url).endsWith('/async')) {
+            submits++;
+            assert.equal(request.headers.apikey, 'horde-private');
+            const body = JSON.parse(request.body);
+            assert.deepEqual(body.models, ['test-worker']);
+            assert.equal(body.params.max_length, 73);
+            assert.equal(body.params.prompt, undefined);
+            return new Response(JSON.stringify({ id: 'known-task' }));
+        }
+        polls++;
+        assert.ok(String(url).endsWith('/known-task'));
+        if (polls === 1) throw new Error('Polling connection dropped');
+        return new Response(JSON.stringify({ done: true, generations: [{ text: 'Ada: Done' }] }));
+    } };
+    await assert.rejects(runChatProfile(options), /conversation generation failed/);
+    assert.equal(submits, 1);
+    assert.equal(getJob(fixture.directories, job.id).recoverability, 'resumable');
+    markProviderUncertain(fixture.directories, job.id, { step: getJob(fixture.directories, job.id).resume });
+    assert.equal(getJob(fixture.directories, job.id).recoverability, 'unknown-outcome');
+    assert.ok(recoverJobs(fixture.directories).recoverable.some(item => item.id === job.id));
+    fixture.settings.horde_settings.models = ['another-worker']; fixture.save();
+    assert.equal((await runChatProfile(options)).text, 'Done');
+    assert.equal(submits, 1);
+    assert.equal(polls, 2);
+    assert.equal((await runChatProfile(options)).text, 'Done');
+    assert.equal(submits, 1);
+    const artifacts = path.join(fixture.root, 'jobs', 'artifacts');
+    for (const entry of fs.readdirSync(artifacts, { recursive: true })) {
+        const filename = path.join(artifacts, entry);
+        if (fs.statSync(filename).isFile()) assert.doesNotMatch(fs.readFileSync(filename, 'utf8'), /horde-private/);
+    }
+    fixture.settings.horde_settings.models = ['test-worker']; fixture.save();
+    const unknown = acceptJob(fixture.directories, { owner: 'tester', type: 'roleplay.reply', submissionKey: 'horde-unknown', intent: {} }).job;
+    setJobState(fixture.directories, unknown.id, 'running');
+    await assert.rejects(runChatProfile({ ...options, jobContext: { ...options.jobContext, job: unknown },
+        fetch: async () => { submits++; throw new Error('Task acceptance is unknown'); } }), /conversation generation failed/);
+    assert.equal(getJob(fixture.directories, unknown.id).recoverability, 'unknown-outcome');
+    assert.ok(!recoverJobs(fixture.directories).recoverable.some(item => item.id === unknown.id));
+    assert.equal(getJob(fixture.directories, unknown.id).state, 'interrupted');
+});
 
 function textFixture(t) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-text-controls-'));

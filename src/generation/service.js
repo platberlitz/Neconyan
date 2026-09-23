@@ -19,6 +19,7 @@ import { REVERSE_PROXY_SUPPORTED_SOURCES, resolveChatReasoningEffort, resolveCus
 import { buildChatCompletionSamplerMetadata } from '../../public/scripts/openai-model-capabilities.js';
 import { getNanoGptServiceTiers, isNanoGptPayg } from '../../public/scripts/service-tiers.js';
 import { createMacroEnvironment } from '../macros/index.js';
+import { runLegacyProfile } from './legacy-request.js';
 
 /**
  * Run one provider request on behalf of a job. This is the same
@@ -94,6 +95,9 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     signal ||= jobContext?.signal;
     signal?.throwIfAborted();
     const raw = binding?.kind === 'active';
+    if (['kobold', 'novel', 'horde'].includes(binding?.backend)) return runLegacyProfile({ context, binding, messages, maxTokens, macroEnvironment,
+        ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, jobContext,
+        modelOverride, overridePayload, rawOptions, beforeDispatch, stream });
     if (!raw && Object.keys(rawOptions).some(option => !['jsonSchema', 'cacheScope'].includes(option))) {
         fail('This request option requires the acknowledged active connection.', 409);
     }

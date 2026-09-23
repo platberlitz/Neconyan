@@ -14,6 +14,10 @@ import { mergeTextPresetSettings, TEXT_PROVIDER_URLS } from '../../public/script
 const sources = new Set(Object.values(CHAT_COMPLETION_SOURCES));
 const aliases = { oai: 'openai', google: 'makersuite' };
 const textSources = new Set(Object.values(textgen_types));
+const novelNumericControls = ['temperature', 'min_length', 'tail_free_sampling', 'repetition_penalty',
+    'repetition_penalty_range', 'repetition_penalty_slope', 'repetition_penalty_frequency',
+    'repetition_penalty_presence', 'top_a', 'top_p', 'top_k', 'min_p', 'math1_temp',
+    'math1_quad', 'math1_quad_entropy_scale', 'typical_p'];
 
 function readPreset(directory, name, label) {
     if (!name) return undefined;
@@ -153,6 +157,38 @@ function readActiveConnection(directories) {
     const settings = readJson(path.join(directories.root, 'settings.json'), {});
     const selection = settings.active_generation;
     if (!selection || selection.api !== settings.main_api) fail('Save the active connection settings before generating a reply.', 409);
+    if (['kobold', 'novel', 'koboldhorde'].includes(settings.main_api)) {
+        const api = settings.main_api;
+        const controls = api === 'novel' ? settings.nai_settings : settings.kai_settings;
+        if (!controls || typeof controls !== 'object' || Array.isArray(controls)) fail('The saved provider controls are missing.', 409);
+        const contextLimit = Number(settings.max_context);
+        if (!Number.isSafeInteger(contextLimit) || contextLimit < 1) fail('Save a valid context limit before generating a reply.', 409);
+        if (api === 'kobold') {
+            let url;
+            try { url = new URL(controls.api_server); } catch { fail('Save the Kobold server URL before generating a reply.', 409); }
+            if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) fail('Use an HTTP Kobold URL without embedded credentials.', 409);
+        }
+        if (api === 'novel' && (!controls.model_novel || !readSecret(directories, SECRET_KEYS.NOVEL))) fail('Save a NovelAI model and access token before generating a reply.', 409);
+        if (api === 'novel' && (novelNumericControls.some(name => !Number.isFinite(Number(controls[name])) || controls[name] == null)
+            || !Array.isArray(controls.order) || !controls.order.every(Number.isInteger)
+            || (controls.logit_bias !== undefined && !Array.isArray(controls.logit_bias)))) {
+            fail('Save complete NovelAI generation controls before generating a reply.', 409);
+        }
+        const horde = api === 'koboldhorde' ? settings.horde_settings : undefined;
+        if (api === 'koboldhorde' && (!Array.isArray(horde?.models) || !horde.models.length || !horde.models.every(model => typeof model === 'string' && model))) {
+            fail('Select a Horde model before generating a reply.', 409);
+        }
+        const presetName = api === 'novel' ? controls.preset_settings_novel : controls.preset_settings;
+        const preset = readPreset(api === 'novel' ? directories.novelAI_Settings : directories.koboldAI_Settings,
+            presetName === 'gui' ? undefined : presetName, 'generation preset');
+        const power = structuredClone(settings.power_user || {});
+        const backend = api === 'koboldhorde' ? 'horde' : api;
+        const secretType = api === 'novel' ? SECRET_KEYS.NOVEL : api === 'koboldhorde' ? SECRET_KEYS.HORDE : null;
+        const secretId = secretType ? new SecretManager(directories).getSecretState()[secretType]?.find(item => item.active)?.id ?? null : null;
+        const fingerprint = hash({ backend, selection, controls, horde, contextLimit, preset, power, secretId });
+        return { kind: 'active', backend, source: api, active: controls, horde, preset, power, contextLimit,
+            fingerprint, settingsRevision: getSettingsRevision(settings) };
+    }
     const text = settings.main_api === 'textgenerationwebui';
     if (!text && settings.main_api !== 'openai') fail('This active connection cannot run on the server. Choose a saved Chat or Text Completion connection.', 409);
     const controls = text ? settings.textgenerationwebui_settings : settings.oai_settings;

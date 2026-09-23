@@ -161,16 +161,18 @@ router.post('/cancel-task', async (request, response) => {
     }
 });
 
-router.post('/task-status', async (request, response) => {
+export async function handleHordeTaskStatus(request, response) {
     try {
         const taskId = request.body.taskId;
         const agent = await getClientAgent();
-        const fetchResult = await fetch(`https://aihorde.net/api/v2/generate/text/status/${taskId}`, {
+        const fetchResult = await (request.fetch ?? fetch)(`https://aihorde.net/api/v2/generate/text/status/${taskId}`, {
+            signal: request.generationSignal,
             headers: {
                 'Client-Agent': agent,
             },
         });
 
+        if (request.boundProfile && !fetchResult.ok) return response.status(502).send({ error: true });
         const data = await fetchResult.json();
         console.info(`Horde task ${taskId} status:`, data);
         return response.send(data);
@@ -178,17 +180,19 @@ router.post('/task-status', async (request, response) => {
         console.error(error);
         response.sendStatus(500);
     }
-});
+}
+router.post('/task-status', handleHordeTaskStatus);
 
-router.post('/generate-text', async (request, response) => {
+export async function handleHordeSubmit(request, response) {
     const apiKey = readSecret(request.user.directories, SECRET_KEYS.HORDE) || ANONYMOUS_KEY;
     const url = 'https://aihorde.net/api/v2/generate/text/async';
     const agent = await getClientAgent();
 
     console.debug(request.body);
     try {
-        const result = await fetch(url, {
+        const result = await (request.fetch ?? fetch)(url, {
             method: 'POST',
+            signal: request.generationSignal,
             body: JSON.stringify(request.body),
             headers: {
                 'Content-Type': 'application/json',
@@ -209,7 +213,8 @@ router.post('/generate-text', async (request, response) => {
         console.error(error);
         return response.send({ error: true });
     }
-});
+}
+router.post('/generate-text', handleHordeSubmit);
 
 router.post('/sd-samplers', async (_, response) => {
     try {

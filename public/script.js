@@ -12894,6 +12894,7 @@ export function getActiveGenerationAcknowledgement() {
     const saved = acknowledgedGenerationSettings;
     const current = generationSettingsSnapshot({
         main_api, active_generation: captureActiveGenerationSelection(), max_context, oai_settings, textgenerationwebui_settings: textgen_settings,
+        kai_settings, nai_settings, horde_settings,
         power_user, proxies, selected_proxy, custom_endpoint_presets,
         selected_custom_endpoint_preset, extension_settings,
     });

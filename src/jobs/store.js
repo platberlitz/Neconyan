@@ -636,6 +636,18 @@ export function setJobResume(directories, id, step) {
     return updateJob(directories, id, { resume: typeof step === 'string' && step ? step : null, recoverability: 'resumable' });
 }
 
+function hasSavedProviderResult(directories, job) {
+    const step = job.recoveryStep;
+    if (typeof step !== 'string' || !step.startsWith('provider:') || !step.slice(9)) return false;
+    const filename = path.join(stateDir(directories), 'artifacts', jobKey(job.id), jobKey(step) + '.json');
+    try {
+        if (fs.statSync(filename).size > 16 * 1024 * 1024) return false;
+        return JSON.parse(fs.readFileSync(filename, 'utf8')) !== undefined;
+    } catch {
+        return false;
+    }
+}
+
 /**
  * Start-up reconciliation. Work that was queued but never started is recovered
  * and returned for dispatch. Work that was running when the process stopped is
@@ -660,10 +672,13 @@ export function recoverJobs(directories) {
             // A saved review stays waiting for its decision, not another execution.
             if (job.state === 'running') {
                 changed = true;
-                const resumable = job.recoverability === 'resumable' && typeof job.resume === 'string' && job.resume;
+                // The result can be saved immediately before the status write; its artifact proves a retry will not repeat the provider call.
+                const savedResult = job.recoverability === 'unknown-outcome' && hasSavedProviderResult(directories, job);
+                const resumable = (job.recoverability === 'resumable' || savedResult) && typeof job.resume === 'string' && job.resume;
                 if (resumable) {
                     job.state = 'queued';
                     job.stage = null;
+                    if (savedResult) job.recoverability = 'resumable';
                     job.recoveredAt = now();
                     recoverable.push(job);
                     continue;

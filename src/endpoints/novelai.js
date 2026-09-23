@@ -164,7 +164,7 @@ router.post('/status', async function (req, res) {
     }
 });
 
-router.post('/generate', async function (req, res) {
+export async function handleNovelGenerate(req, res) {
     if (!req.body) return res.sendStatus(400);
 
     const api_key_novel = readSecret(req.user.directories, SECRET_KEYS.NOVEL);
@@ -257,13 +257,13 @@ router.post('/generate', async function (req, res) {
     const args = {
         body: JSON.stringify(data),
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + api_key_novel },
-        signal: controller.signal,
+        signal: req.generationSignal ?? controller.signal,
     };
 
     try {
         const baseURL = (req.body.model.includes('kayra') || req.body.model.includes('erato')) ? TEXT_NOVELAI : API_NOVELAI;
         const url = req.body.streaming ? `${baseURL}/ai/generate-stream` : `${baseURL}/ai/generate`;
-        const response = await fetch(url, { method: 'POST', ...args });
+        const response = await (req.fetch ?? fetch)(url, { method: 'POST', ...args });
 
         if (req.body.streaming) {
             // Pipe remote SSE stream to Express response
@@ -292,7 +292,9 @@ router.post('/generate', async function (req, res) {
     } catch (error) {
         return res.send({ error: true });
     }
-});
+}
+
+router.post('/generate', handleNovelGenerate);
 
 router.post('/generate-image', async (request, response) => {
     if (!request.body) {
