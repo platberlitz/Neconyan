@@ -11,6 +11,7 @@ function assertRenderBatchOptions({
     insertFragment,
     waitForNextFrame,
     afterBatch,
+    shouldContinue,
 }) {
     if (!Array.isArray(messages)) {
         throw new TypeError('renderMessagesInBatches requires messages to be an array.');
@@ -42,6 +43,9 @@ function assertRenderBatchOptions({
 
     if (afterBatch !== undefined && typeof afterBatch !== 'function') {
         throw new TypeError('renderMessagesInBatches afterBatch must be a function when provided.');
+    }
+    if (shouldContinue !== undefined && typeof shouldContinue !== 'function') {
+        throw new TypeError('renderMessagesInBatches shouldContinue must be a function when provided.');
     }
 }
 
@@ -94,6 +98,7 @@ function createBatchMeta({
  * @param {() => Promise<void>|void} options.waitForNextFrame Injected frame yield.
  * @param {boolean} [options.markLastMessage=false] Add `.last_mes` to the final rendered element.
  * @param {(batchMeta: object) => Promise<void>|void} [options.afterBatch] Optional post-insert callback.
+ * @param {() => boolean} [options.shouldContinue] Stops stale renders before another insertion.
  * @returns {Promise<{renderedMessageIds: number[], renderedMessageElements: Element[]}>}
  */
 export async function renderMessagesInBatches({
@@ -106,6 +111,7 @@ export async function renderMessagesInBatches({
     waitForNextFrame,
     markLastMessage = false,
     afterBatch,
+    shouldContinue,
 } = {}) {
     assertRenderBatchOptions({
         messages,
@@ -116,6 +122,7 @@ export async function renderMessagesInBatches({
         insertFragment,
         waitForNextFrame,
         afterBatch,
+        shouldContinue,
     });
 
     const renderedMessageIds = [];
@@ -124,6 +131,7 @@ export async function renderMessagesInBatches({
     let batchIndex = 0;
 
     for (let startOffset = 0; startOffset < messages.length; startOffset += batchSize) {
+        if (shouldContinue && !shouldContinue()) break;
         const endOffset = Math.min(startOffset + batchSize, messages.length);
         const fragment = documentRef.createDocumentFragment();
         const batchRenderedMessageIds = [];
@@ -138,8 +146,6 @@ export async function renderMessagesInBatches({
 
             batchRenderedMessageIds.push(messageId);
             batchRenderedMessageElements.push(renderedMessageElement);
-            renderedMessageIds.push(messageId);
-            renderedMessageElements.push(renderedMessageElement);
         }
 
         if (markLastMessage && isFinalBatch) {
@@ -161,11 +167,17 @@ export async function renderMessagesInBatches({
             isFinalBatch,
         });
 
+        if (shouldContinue && !shouldContinue()) break;
         insertFragment(fragment, batchMeta);
+        renderedMessageIds.push(...batchRenderedMessageIds);
+        renderedMessageElements.push(...batchRenderedMessageElements);
+        if (shouldContinue && !shouldContinue()) break;
         await afterBatch?.(batchMeta);
+        if (shouldContinue && !shouldContinue()) break;
 
         if (shouldYieldBetweenBatches && !isFinalBatch) {
             await waitForNextFrame();
+            if (shouldContinue && !shouldContinue()) break;
         }
 
         batchIndex++;

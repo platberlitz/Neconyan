@@ -182,6 +182,14 @@ describe('TavernCardValidator', () => {
     });
 
     describe('validateV3', () => {
+        test('rejects absent, non-numeric and coerced object versions', () => {
+            for (const spec_version of [undefined, 'not-a-version', NaN, Infinity, null, ['3.0'], {}]) {
+                const validator = new TavernCardValidator({ ...makeV3Card(), spec_version });
+                expect(validator.validateV3()).toBe(false);
+                expect(validator.lastValidationError).toBe('spec_version');
+            }
+        });
+
         test('accepts valid V3 card', () => {
             const v = new TavernCardValidator(makeV3Card());
             expect(v.validateV3()).toBe(true);

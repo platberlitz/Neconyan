@@ -2137,7 +2137,29 @@ export function flattenSchema(schema, api) {
     return flattenedSchema;
 }
 
-const FILE_WRITE_RECOVERY_SUFFIX = '.sillybunny-write-recovery';
+export const FILE_WRITE_RECOVERY_SUFFIX = '.sillybunny-write-recovery';
+export const FILE_WRITE_RECOVERY_MAX_BYTES = Math.ceil(64 * 1024 * 1024 / 3) * 4 + 4096;
+
+/** Inspect bounded legacy evidence without exposing its old bytes for restoration. */
+export function decodeFileWriteRecovery(bytes, maxOriginalBytes) {
+    if (!Buffer.isBuffer(bytes) || bytes.length > FILE_WRITE_RECOVERY_MAX_BYTES
+        || !Number.isSafeInteger(maxOriginalBytes) || maxOriginalBytes < 0 || maxOriginalBytes > 64 * 1024 * 1024) return null;
+    try {
+        const record = JSON.parse(new util.TextDecoder('utf-8', { fatal: true }).decode(bytes));
+        if (!record || Object.getPrototypeOf(record) !== Object.prototype || record.version !== 1
+            || Object.keys(record).some(key => !['version', 'dev', 'ino', 'birthtime', 'originalHash', 'nextHash', 'originalData'].includes(key))
+            || !['dev', 'ino'].every(key => typeof record[key] === 'string' && /^\d{1,30}$/.test(record[key]))
+            || (record.birthtime !== undefined && (typeof record.birthtime !== 'string' || !/^\d{1,30}$/.test(record.birthtime)))
+            || !['originalHash', 'nextHash'].every(key => typeof record[key] === 'string' && /^[a-f0-9]{64}$/.test(record[key]))
+            || typeof record.originalData !== 'string' || record.originalData.length > Math.ceil(maxOriginalBytes / 3) * 4
+            || record.originalData.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(record.originalData)) return null;
+        const original = Buffer.from(record.originalData, 'base64');
+        if (original.length > maxOriginalBytes || original.toString('base64') !== record.originalData
+            || hashFileWriteData(original) !== record.originalHash) return null;
+        return { originalHash: record.originalHash, nextHash: record.nextHash, dev: record.dev, ino: record.ino,
+            birthtime: record.birthtime ?? null };
+    } catch { return null; }
+}
 
 function getFileWriteRecoveryPath(filePath) {
     return `${filePath}${FILE_WRITE_RECOVERY_SUFFIX}`;
@@ -2248,7 +2270,7 @@ function recoverFileWriteOnceSync(filePath) {
     }
 
     if (!fs.existsSync(filePath)) {
-        const restoreTempPath = `${filePath}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.restore`;
+        const restoreTempPath = path.join(path.dirname(filePath), `.sillybunny-write-${process.pid}.${crypto.randomBytes(8).toString('hex')}.restore`);
         let restoreTempCreated = false;
         try {
             const restoreDescriptor = fs.openSync(restoreTempPath, 'wx');
@@ -2334,22 +2356,33 @@ function recoverFileWriteOnceSync(filePath) {
  * @param {string} filePath
  * @returns {boolean} Whether the original bytes were restored.
  */
+let fileWriteRecoveryGuard;
+
+export function setFileWriteRecoveryGuard(guard) {
+    if (fileWriteRecoveryGuard || typeof guard !== 'function') throw new TypeError('The file recovery guard can only be installed once.');
+    fileWriteRecoveryGuard = guard;
+}
+
 export function recoverFileWriteSync(filePath) {
-    const retryDelaysMs = process.platform === 'win32' ? [0, 50, 125, 250] : [0];
-    for (const delayMs of retryDelaysMs) {
-        if (delayMs) {
-            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
-        }
-        try {
-            return recoverFileWriteOnceSync(filePath);
-        } catch (error) {
-            const isRetryable = ['EACCES', 'EBUSY', 'EPERM'].includes(error?.code);
-            if (!isRetryable || delayMs === retryDelaysMs.at(-1)) {
-                throw error;
+    if (!fs.existsSync(getFileWriteRecoveryPath(filePath))) return false;
+    const recover = () => {
+        const retryDelaysMs = process.platform === 'win32' ? [0, 50, 125, 250] : [0];
+        for (const delayMs of retryDelaysMs) {
+            if (delayMs) {
+                Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+            }
+            try {
+                return recoverFileWriteOnceSync(filePath);
+            } catch (error) {
+                const isRetryable = ['EACCES', 'EBUSY', 'EPERM'].includes(error?.code);
+                if (!isRetryable || delayMs === retryDelaysMs.at(-1)) {
+                    throw error;
+                }
             }
         }
-    }
-    return false;
+        return false;
+    };
+    return fileWriteRecoveryGuard ? fileWriteRecoveryGuard(filePath, recover) : recover();
 }
 
 /**
@@ -2378,9 +2411,18 @@ export function recoverFileWritesInDirectorySync(directory) {
  * @param {string} filePath
  * @param {string|Buffer} data
  * @param {import('node:fs').WriteFileOptions} [options]
- * @param {{preserveFileIdentity?: boolean, expectedFileIdentity?: {dev: bigint, ino: bigint}, expectedFileHash?: string, expectedFileAbsent?: boolean, invalidateBeforeWrite?: boolean, replaceFileOnly?: boolean, durable?: boolean}} [writeOptions]
+ * @param {{preserveFileIdentity?: boolean, expectedFileIdentity?: {dev: bigint, ino: bigint}, expectedFileHash?: string, expectedFileAbsent?: boolean, invalidateBeforeWrite?: boolean, replaceFileOnly?: boolean, durable?: boolean, validateBeforeReplace?: () => void, preserveOnCreateError?: boolean, preserveOnWriteError?: boolean, maxFileBytes?: number}} [writeOptions]
  */
-export function tryWriteFileSync(filePath, data, options = typeof data === 'string' ? 'utf8' : undefined, { preserveFileIdentity = false, expectedFileIdentity = undefined, expectedFileHash = undefined, expectedFileAbsent = false, invalidateBeforeWrite = false, replaceFileOnly = false, durable = false } = {}) {
+export function tryWriteFileSync(filePath, data, options = typeof data === 'string' ? 'utf8' : undefined, { preserveFileIdentity = false, expectedFileIdentity = undefined, expectedFileHash = undefined, expectedFileAbsent = false, invalidateBeforeWrite = false, replaceFileOnly = false, durable = false, validateBeforeReplace = undefined, preserveOnCreateError = false, preserveOnWriteError = false, maxFileBytes = Number.MAX_SAFE_INTEGER } = {}) {
+    if (!Number.isSafeInteger(maxFileBytes) || maxFileBytes < 0) throw new TypeError('Invalid existing-file byte limit.');
+    if (validateBeforeReplace !== undefined && (typeof validateBeforeReplace !== 'function' || util.types.isAsyncFunction(validateBeforeReplace)
+        || !replaceFileOnly || preserveFileIdentity || expectedFileAbsent)) {
+        throw new TypeError('Replacement validation requires a synchronous replacement-only writer.');
+    }
+    if (preserveOnCreateError && !expectedFileAbsent) throw new TypeError('Preserving failed creation requires create-only publication.');
+    if (preserveOnWriteError && (!preserveFileIdentity || !invalidateBeforeWrite || replaceFileOnly || expectedFileAbsent)) {
+        throw new TypeError('Preserving interrupted output requires an invalidating identity-preserving write.');
+    }
     const isRetryableWindowsWriteError = (error) => process.platform === 'win32' && ['EACCES', 'EBUSY', 'EPERM'].includes(error?.code);
     const sleepSync = (delayMs) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
     const retryDelaysMs = [50, 125, 250];
@@ -2438,7 +2480,7 @@ export function tryWriteFileSync(filePath, data, options = typeof data === 'stri
                 fileDescriptor = undefined;
                 try {
                     const pathStats = fs.lstatSync(filePath, { bigint: true });
-                    if (createdIdentity && pathStats.dev === createdIdentity.dev && pathStats.ino === createdIdentity.ino) {
+                    if (!preserveOnCreateError && createdIdentity && pathStats.dev === createdIdentity.dev && pathStats.ino === createdIdentity.ino) {
                         fs.unlinkSync(filePath);
                     }
                 } catch {
@@ -2489,6 +2531,7 @@ export function tryWriteFileSync(filePath, data, options = typeof data === 'stri
                     throw Object.assign(new Error(`Refused to overwrite a hard-linked file: ${filePath}`), { code: 'EMLINK' });
                 }
 
+                if (descriptorStats.size > BigInt(maxFileBytes)) throw Object.assign(new Error('Existing file exceeds the permitted write-source size.'), { code: 'EFBIG' });
                 originalData = Buffer.alloc(Number(descriptorStats.size));
                 let offset = 0;
                 while (offset < originalData.byteLength) {
@@ -2564,7 +2607,7 @@ export function tryWriteFileSync(filePath, data, options = typeof data === 'stri
                 }
             } catch (error) {
                 operationFailed = true;
-                const shouldRestoreOriginal = targetMutated && (recoveryPath || ['EMLINK', 'ESTALE'].includes(error?.code));
+                const shouldRestoreOriginal = !preserveOnWriteError && targetMutated && (recoveryPath || ['EMLINK', 'ESTALE'].includes(error?.code));
                 if (shouldRestoreOriginal && originalData) {
                     try {
                         writeAllSync(fileDescriptor, originalData);
@@ -2600,6 +2643,11 @@ export function tryWriteFileSync(filePath, data, options = typeof data === 'stri
     }
 
     const assertExpectedPathState = () => {
+        const validated = validateBeforeReplace?.();
+        if (validated && typeof validated.then === 'function') {
+            Promise.resolve(validated).catch(() => {});
+            throw new TypeError('Replacement validation must not return a promise.');
+        }
         if (!expectedFileIdentity && !expectedFileHash) {
             return;
         }
@@ -2623,7 +2671,7 @@ export function tryWriteFileSync(filePath, data, options = typeof data === 'stri
         try {
             assertExpectedPathState();
             if (!runWithWindowsRetries(() => {
-                const candidatePath = `${filePath}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`;
+                const candidatePath = path.join(directory, `.sillybunny-write-${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`);
                 const targetStats = fs.lstatSync(filePath, { bigint: true });
                 const tempDescriptor = fs.openSync(candidatePath, 'wx', Number(targetStats.mode & 0o777n));
                 tempFilePaths.add(candidatePath);

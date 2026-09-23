@@ -91,6 +91,8 @@ import { ServerStartup, setupPrivateEndpoints } from './server-startup.js';
 import { diskCache } from './endpoints/characters.js';
 import { migrateFlatSecrets } from './endpoints/secrets.js';
 import { migrateGroupChatsMetadataFormat } from './endpoints/groups.js';
+import { roleplayNativeHost } from './endpoints/chats.js';
+import { bootstrapRoleplayAccount } from './roleplay-lifecycle.js';
 
 // Unrestrict console logs display limit
 util.inspect.defaultOptions.maxArrayLength = null;
@@ -836,10 +838,17 @@ async function migrateConversationOwnership() {
     await migrateConversationAutomaticOwnership({ directoriesFor: getUserDirectories, owners: getAllUserHandles });
 }
 
+async function initialiseRoleplayStorage() {
+    for (const directories of await getUserDirectoriesList()) {
+        bootstrapRoleplayAccount({ owner: path.basename(directories.root), directories }, roleplayNativeHost);
+    }
+}
+
 // User storage module needs to be initialized before starting the server
 initUserStorage(globalThis.DATA_ROOT)
     .then(setDnsResolutionOrder)
     .then(ensurePublicDirectoriesExist)
+    .then(initialiseRoleplayStorage)
     .then(migrateUserData)
     .then(migrateSystemPrompts)
     .then(verifySecuritySettings)

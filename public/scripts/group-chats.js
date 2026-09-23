@@ -71,6 +71,8 @@ import {
     system_avatar,
     getRequestHeaders,
     refreshCsrfToken,
+    loadRoleplayChat,
+    saveRoleplayChatRequest,
     setExternalAbortController,
     baseChatReplace,
     createLazyFields,
@@ -88,13 +90,13 @@ import {
 } from '../script.js';
 import { getQueuedChatSaveAbortReason } from './chat-save-guard.js';
 import { getChatBackupSaveOptions } from './chat-backup-sequence.js';
+import { beginRoleplaySave, confirmRoleplayOverwrite, finishRoleplaySave, rememberRoleplayRead, roleplayAccountStamp } from './roleplay-save-chain.js';
 import { printTagList, createTagMapFromList, applyTagsOnCharacterSelect, tag_map, applyTagsOnGroupSelect, printTagFilters, tag_filter_type } from './tags.js';
 import { FILTER_TYPES, FilterHelper } from './filters.js';
 import { isExternalMediaAllowed } from './chats.js';
 import { POPUP_TYPE, Popup, callGenericPopup } from './popup.js';
 import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
-import { compressRequest } from './request-compression.js';
 import { fetchWithCsrfRetry } from './csrf-token-refresh.js';
 import { chat_completion_sources, oai_settings } from './openai.js';
 import { getRegexedString, regex_placement } from './extensions/regex/engine.js';
@@ -379,8 +381,25 @@ function getGroupGreetingMember(group, preferredAvatar = '') {
     return null;
 }
 
-async function emitGroupGreetingMessageEvents(messageId) {
+function captureGroupGreetingValidity(group, messageId) {
+    const generation = getChatGeneration();
+    const chatId = group.chat_id;
+    const account = roleplayAccountStamp();
+    const message = chat[messageId];
+    return () => {
+        try {
+            return generation === getChatGeneration() && selected_group === group.id
+                && groups.find(x => x.id === group.id) === group && group.chat_id === chatId
+                && account === roleplayAccountStamp() && account.owner === getCurrentUserHandle()
+                && chat[messageId] === message;
+        } catch { return false; }
+    };
+}
+
+async function emitGroupGreetingMessageEvents(messageId, isCurrent) {
+    if (!isCurrent()) return;
     await eventSource.emit(event_types.MESSAGE_RECEIVED, messageId, 'first_message');
+    if (!isCurrent()) return;
     await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, messageId, 'first_message');
 }
 
@@ -417,9 +436,11 @@ async function addSelectedGroupGreeting() {
 
     const messageId = chat.length;
     chat.push(message);
+    const isCurrent = captureGroupGreetingValidity(group, messageId);
     await saveGroupChat(selected_group, false);
+    if (!isCurrent()) return;
     await printMessages();
-    await emitGroupGreetingMessageEvents(messageId);
+    await emitGroupGreetingMessageEvents(messageId, isCurrent);
 }
 
 function buildContextAwareGroupPrompt(speakerName, options = {}) {
@@ -684,25 +705,10 @@ async function regenerateGroup() {
  * Loads group chat messages from the server.
  * @param {string} chatId Chat ID
  * @param {boolean} allowCreate Whether a missing file is an explicitly new chat
- * @returns {Promise<ChatFile>} Array of chat messages
+ * @returns {Promise<{records: ChatFile, evidence: object}>} Chat messages and their captured save authority
  */
 async function loadGroupChat(chatId, allowCreate = false) {
-    const response = await fetchWithCsrfRetry('/api/chats/group/get', () => ({
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({ id: chatId, allow_create: allowCreate }),
-    }), { refreshCsrfToken });
-
-    // Neconyan: fail closed instead of replacing missing or corrupt persisted chat data with a greeting.
-    if (!response.ok) {
-        throw new Error(`Could not load group chat ${chatId}.`);
-    }
-
-    const data = await response.json();
-    if (!Array.isArray(data)) {
-        throw new Error(`Invalid group chat data for ${chatId}.`);
-    }
-    return data;
+    return loadRoleplayChat({ group: true, chat: String(chatId) }, { allowCreate });
 }
 
 /**
@@ -825,16 +831,26 @@ async function validateGroup(group, { trustActiveChat = false } = {}) {
  */
 export async function getGroupChat(groupId, reload = false, { switchMenu = true, newlyCreated = false } = {}) {
     incrementChatGeneration();
+    const generation = getChatGeneration();
+    const account = roleplayAccountStamp();
 
     const group = groups.find((x) => x.id === groupId);
     if (!group) {
         console.warn('Group not found', groupId);
         return;
     }
+    const stillCurrent = (chatId = group.chat_id) => {
+        try {
+            return generation === getChatGeneration() && selected_group === groupId && groups.find(x => x.id === groupId) === group
+                && group.chat_id === chatId && getCurrentUserHandle() === account.owner && roleplayAccountStamp() === account;
+        } catch { return false; }
+    };
 
     // Run validation before any loading
     await validateGroup(group, { trustActiveChat: newlyCreated });
+    if (!stillCurrent()) return;
     await unshallowGroupMembers(groupId);
+    if (!stillCurrent()) return;
 
     let createdChat = false;
     if (!group.chat_id) {
@@ -843,13 +859,17 @@ export async function getGroupChat(groupId, reload = false, { switchMenu = true,
         group.chats = Array.isArray(group.chats) ? group.chats : [];
         group.chats.push(freshChatId);
         await editGroup(group.id, true, false);
+        if (!stillCurrent(freshChatId)) return;
         createdChat = true;
     }
 
     const chat_id = group.chat_id;
     let data;
+    let loaded;
     try {
-        data = await loadGroupChat(chat_id, newlyCreated || createdChat);
+        loaded = await loadGroupChat(chat_id, newlyCreated || createdChat);
+        if (!stillCurrent(chat_id)) return;
+        data = loaded.records;
     } catch (error) {
         console.error(error);
         toastr.error(t`Could not load chat data. Try reloading the page.`);
@@ -867,26 +887,36 @@ export async function getGroupChat(groupId, reload = false, { switchMenu = true,
 
     // Neconyan: no integrity slug means the server treats the file as intact and mints one on the
     // first real save. Stamping one in on load only dirtied legacy chats into a needless rewrite.
-    await loadItemizedPrompts(getCurrentChatId());
+    await loadItemizedPrompts(chat_id);
+    if (!stillCurrent(chat_id)) return;
+    if (!rememberRoleplayRead({ group: true, chat: String(chat_id) }, loaded.evidence)) {
+        toastr.error(t`A chat save is still unsettled. Keep the current edits.`);
+        return;
+    }
 
     let freshGroupGreetingMessageId = -1;
+    let greetingStillCurrent;
 
     if (group && Array.isArray(group.members) && freshChat) {
         chat.splice(0, chat.length);
         chatElement.find('.mes').remove();
         freshGroupGreetingMessageId = addFreshGroupGreeting(group);
+        if (freshGroupGreetingMessageId !== -1) greetingStillCurrent = captureGroupGreetingValidity(group, freshGroupGreetingMessageId);
         metadata.tainted = true;
         updateChatMetadata(metadata, true);
         const savedFreshGroupChat = await saveGroupChat(groupId, false);
+        if (!stillCurrent(chat_id)) return;
         if (savedFreshGroupChat && chat_metadata.integrity) {
             metadata.integrity = chat_metadata.integrity;
         }
         await printMessages();
+        if (!stillCurrent(chat_id)) return;
     } else if (Array.isArray(data) && data.length) {
         chat.splice(0, chat.length, ...data);
         chat.forEach(ensureMessageMediaIsArray);
         chatElement.find('.mes').remove();
         await printMessages();
+        if (!stillCurrent(chat_id)) return;
     }
 
     updateChatMetadata(metadata, true);
@@ -896,8 +926,10 @@ export async function getGroupChat(groupId, reload = false, { switchMenu = true,
     }
 
     await eventSource.emit(event_types.CHAT_CHANGED, getCurrentChatId());
+    if (!stillCurrent(chat_id)) return;
     if (freshChat) await eventSource.emit(event_types.GROUP_CHAT_CREATED);
-    if (freshGroupGreetingMessageId !== -1) await emitGroupGreetingMessageEvents(freshGroupGreetingMessageId);
+    if (!stillCurrent(chat_id)) return;
+    if (freshGroupGreetingMessageId !== -1) await emitGroupGreetingMessageEvents(freshGroupGreetingMessageId, greetingStillCurrent);
 }
 
 /**
@@ -1201,7 +1233,15 @@ function saveGroupChat(groupId, shouldSaveGroup, force = false, throwOnError = f
     const chatIdSnapshot = group.chat_id;
     const currentGeneration = getChatGeneration();
     options = getChatBackupSaveOptions(options, JSON.stringify([groupId, chatIdSnapshot, currentGeneration]), uuidv4);
-    const account = options.account;
+    const account = options.account ?? getCurrentUserHandle();
+    let roleplaySave;
+    try {
+        roleplaySave = beginRoleplaySave({ group: true, chat: String(chatIdSnapshot) }, { operationKey: uuidv4(), owner: account });
+    } catch (error) {
+        console.error(error);
+        toastr.error(t`Check the server connection and reload the page to prevent data loss.`, t`Group Chat could not be saved`);
+        return throwOnError ? Promise.reject(error) : Promise.resolve(false);
+    }
     const saveTask = groupChatSaveQueue
         .catch(error => console.warn('Previous group chat save failed before queued save.', error))
         .then(() => saveGroupChatImmediately({
@@ -1217,7 +1257,9 @@ function saveGroupChat(groupId, shouldSaveGroup, force = false, throwOnError = f
             allowShrink: Boolean(options.allowShrink),
             scheduledGeneration: currentGeneration,
             account,
-        }));
+            roleplaySave,
+        }))
+        .finally(() => finishRoleplaySave(roleplaySave));
 
     groupChatSaveQueue = saveTask.catch(() => {});
     return saveTask;
@@ -1238,7 +1280,7 @@ export async function waitForQueuedGroupChatSaves() {
     }
 }
 
-async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = false, throwOnError = false, chatId, chatData, metadata, deferBackup = false, deferSequenceId, allowShrink = false, scheduledGeneration, account }) {
+async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = false, throwOnError = false, chatId, chatData, metadata, deferBackup = false, deferSequenceId, allowShrink = false, scheduledGeneration, account, roleplaySave }) {
     if (account !== undefined && account !== getCurrentUserHandle()) return false;
     const group = groups.find(x => x.id == groupId);
     if (!group) {
@@ -1276,18 +1318,15 @@ async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = fals
         character_name: 'unused',
     };
     const chatMessages = Array.isArray(chatData) ? chatData : cloneGroupChatSavePayload(chat);
-    const savePayload = JSON.stringify({ id: chatId, chat: [chatHeader, ...chatMessages], force: force, deferBackup: Boolean(deferBackup), deferSequenceId, allowShrink: Boolean(allowShrink) });
-    const buildSaveGroupChatRequest = () => compressRequest({
-        method: 'POST',
-        headers: { ...getRequestHeaders(), ...(account === undefined ? {} : { 'X-Neconyan-Account': account }) },
-        body: savePayload,
+    const response = await saveRoleplayChatRequest(roleplaySave, {
+        id: chatId, chat: [chatHeader, ...chatMessages], force: force,
+        deferBackup: Boolean(deferBackup), deferSequenceId, allowShrink: Boolean(allowShrink),
     });
-    // Neconyan: rebuild compressed save requests after refreshing a stale CSRF token.
-    const response = await fetchWithCsrfRetry('/api/chats/group/save', buildSaveGroupChatRequest, { refreshCsrfToken });
 
     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const isIntegrityError = errorData?.error === 'integrity' && !force;
+        const errorData = response.data;
+        const isIntegrityError = errorData?.error === 'integrity' && !force
+            && (errorData.roleplay?.source || Number.isSafeInteger(errorData.roleplay?.vacancy));
         if (!isIntegrityError) {
             toastr.error(t`Check the server connection and reload the page to prevent data loss.`, t`Group Chat could not be saved`);
             console.error('Group chat could not be saved', response);
@@ -1313,10 +1352,11 @@ async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = fals
             return false;
         }
 
-        return await saveGroupChatImmediately({ groupId, shouldSaveGroup, force: true, throwOnError, chatId, chatData: chatMessages, metadata: metadataForSave, deferBackup, deferSequenceId, allowShrink, scheduledGeneration, account });
+        confirmRoleplayOverwrite(roleplaySave, uuidv4());
+        return await saveGroupChatImmediately({ groupId, shouldSaveGroup, force: true, throwOnError, chatId, chatData: chatMessages, metadata: metadataForSave, deferBackup, deferSequenceId, allowShrink, scheduledGeneration, account, roleplaySave });
     }
 
-    const responseData = await response.json().catch(() => ({}));
+    const responseData = response.data;
     if (account !== undefined && account !== getCurrentUserHandle()) return false;
     rememberQueuedGroupChatIntegrity(chatId, responseData?.integrity);
     if (isActiveGroupChatSave && typeof responseData?.integrity === 'string' && responseData.integrity) {
@@ -1359,7 +1399,7 @@ export async function renameGroupMember(oldAvatar, newAvatar, newName) {
 
             // Load all chats from this group
             for (const chatId of group.chats) {
-                const messages = await loadGroupChat(chatId);
+                const { records: messages, evidence } = await loadGroupChat(chatId);
 
                 // Only save the chat if there were any changes to the chat content
                 let hadChanges = false;
@@ -1390,15 +1430,12 @@ export async function renameGroupMember(oldAvatar, newAvatar, newName) {
                     if (hadChanges) {
                         await eventSource.emit(event_types.CHARACTER_RENAMED_IN_PAST_CHAT, messages, oldAvatar, newAvatar);
 
-                        const saveChatRequest = await compressRequest({
-                            method: 'POST',
-                            headers: getRequestHeaders(),
-                            body: JSON.stringify({ id: chatId, chat: [...messages] }),
-                        });
-                        const saveChatResponse = await fetch('/api/chats/group/save', saveChatRequest);
-
-                        if (!saveChatResponse.ok) {
-                            throw new Error('Group member could not be renamed');
+                        const token = beginRoleplaySave({ group: true, chat: String(chatId) }, { operationKey: uuidv4(), evidence });
+                        try {
+                            const saved = await saveRoleplayChatRequest(token, { id: chatId, chat: [...messages] });
+                            if (!saved.ok) throw new Error('Group member could not be renamed');
+                        } finally {
+                            await finishRoleplaySave(token);
                         }
 
                         console.log(`Renamed character ${newName} in group chat: ${chatId}`);
@@ -3285,8 +3322,6 @@ export async function saveGroupBookmarkChat(groupId, name, metadata, mesId, chat
         return false;
     }
 
-    group.chats.push(name);
-
     /** @type {ChatHeader} */
     const chatHeader = {
         chat_metadata: { ...chat_metadata, ...(metadata || {}) },
@@ -3303,20 +3338,21 @@ export async function saveGroupBookmarkChat(groupId, name, metadata, mesId, chat
 
     ensureMewmoryMessageIds(trimmedChat, uuidv4);
 
+    let token;
     try {
-        await editGroup(groupId, true, false);
-
-        const saveChatRequest = await compressRequest({
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({ id: name, chat: [chatHeader, ...trimmedChat] }),
-        });
-        const response = await fetch('/api/chats/group/save', saveChatRequest);
-
-        if (!response.ok) {
-            throw new Error(response.statusText || 'Group chat could not be saved');
+        token = beginRoleplaySave({ group: true, chat: name }, { operationKey: uuidv4(), create: true });
+        const payload = { id: name, chat: [chatHeader, ...trimmedChat] };
+        let response = await saveRoleplayChatRequest(token, payload);
+        if (!response.ok && response.data?.error === 'integrity' && response.data.roleplay?.source) {
+            const confirmation = await Popup.show.input(t`A chat with this name already exists.`, t`Enter OVERWRITE to replace it.`, '');
+            if (confirmation === 'OVERWRITE') {
+                confirmRoleplayOverwrite(token, uuidv4());
+                response = await saveRoleplayChatRequest(token, payload);
+            }
         }
-
+        if (!response.ok) throw new Error('Group chat could not be saved');
+        if (!group.chats.includes(name)) group.chats.push(name);
+        await editGroup(groupId, true, false, token.owner);
         return true;
     } catch (error) {
         toastr.error(t`Check the server connection and reload the page to prevent data loss.`, t`Group chat could not be saved`);
@@ -3325,6 +3361,8 @@ export async function saveGroupBookmarkChat(groupId, name, metadata, mesId, chat
             throw error;
         }
         return false;
+    } finally {
+        await finishRoleplaySave(token);
     }
 }
 

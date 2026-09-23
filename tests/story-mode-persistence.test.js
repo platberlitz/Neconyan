@@ -3,9 +3,10 @@ import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { parse } from 'acorn';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { getChatBackupSaveOptions } from '../public/scripts/chat-backup-sequence.js';
 import { getQueuedChatSaveAbortReason } from '../public/scripts/chat-save-guard.js';
+import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave } from '../public/scripts/roleplay-save-chain.js';
 
 const sources = Object.fromEntries(['script.js', 'scripts/extensions.js', 'scripts/group-chats.js', 'scripts/utils.js'].map(file => {
     const source = readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8');
@@ -38,6 +39,30 @@ function saveContext(group = false) {
     });
     load(context, 'script.js', ['saveChatConditional', 'saveMetadata']);
     return context;
+}
+
+function loadQueuedSaveRuntime(context, group = false) {
+    const account = { accountId: randomUUID(), dataEpoch: 1 };
+    const source = { instanceId: randomUUID(), revision: 1, rawHash: 'a'.repeat(64) };
+    bindRoleplayAccount(randomUUID(), account);
+    bindRoleplayAccount('story-test', account);
+    rememberRoleplayRead(group ? { group: true, chat: 'story' } : { group: false, avatar: 'story.png', chat: 'story' }, { account, source });
+    Object.assign(context, {
+        beginRoleplaySave, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, roleplayAccountStamp, sendRoleplaySave,
+        getCurrentUserHandle: () => 'story-test', refreshCsrfToken: jest.fn(),
+        getRequestHeaders: () => ({}), compressRequest: async request => request,
+        fetchWithCsrfRetry: async (url, build) => context.fetch(url, await build()),
+    });
+    load(context, 'script.js', ['roleplayRequestHeaders', 'requestRoleplayChat', 'saveRoleplayChatRequest']);
+    load(context, group ? 'scripts/group-chats.js' : 'script.js', group ? ['saveGroupChat', 'saveGroupChatImmediately'] : ['saveChat', 'saveChatImmediately']);
+    return { account, source, acknowledge(init) {
+        const request = JSON.parse(init.body);
+        return { ok: true, status: 200, json: async () => ({ ok: true, integrity: 'saved', roleplay: {
+            account, operationKey: request.roleplay.operationKey, changed: true,
+            source: { ...request.roleplay.source, revision: request.roleplay.source.revision + 1,
+                rawHash: createHash('sha256').update(init.body).digest('hex') },
+        } }) };
+    } };
 }
 
 describe('strict host chat saves', () => {
@@ -100,16 +125,19 @@ describe('strict host chat saves', () => {
             rememberQueuedChatIntegrity: jest.fn(),
             compressRequest: async value => value,
             getRequestHeaders: () => ({}),
-            fetch: jest.fn(async () => ({ ok: false, statusText: 'failure', json: async () => ({ error: failure }) })),
+            fetch: jest.fn(),
             Popup: { show: { input: async () => '' } },
             window: { location: { reload: jest.fn() } },
             toastr: { error: jest.fn() },
             t: strings => strings.join(''),
         });
-        load(context, 'script.js', ['saveChat', 'saveChatImmediately']);
+        const { account, source } = loadQueuedSaveRuntime(context);
+        context.fetch.mockResolvedValue({ ok: false, status: 400, statusText: 'failure', json: async () => ({ error: failure,
+            roleplay: { account, source: { ...source, revision: 2, rawHash: 'b'.repeat(64) } } }) });
         await expect(context.saveMetadata({ throwOnError: true })).rejects.toThrow();
         await expect(context.saveMetadata()).resolves.toBe(false);
         expect(context.saveTokenCache).not.toHaveBeenCalled();
+        expect(context.fetch).toHaveBeenCalledTimes(failure === 'missing' ? 0 : 2);
     });
 
     test.each(['group', 123])('waits for group metadata and rejects its HTTP failure instead of scheduling success: %s', async id => {
@@ -130,16 +158,14 @@ describe('strict host chat saves', () => {
             rememberQueuedGroupChatIntegrity: jest.fn(),
             compressRequest: async value => value,
             getRequestHeaders: () => ({}),
-            refreshCsrfToken: jest.fn(),
-            fetchWithCsrfRetry: jest.fn(async (url, build) => {
-                await build();
-                return { ok: true, json: async () => ({ integrity: 'saved' }) };
-            }),
-            fetch: jest.fn(async () => ({ ok: false })),
+            fetch: jest.fn(),
             saveGroupDebounced: jest.fn(),
         });
-        load(context, 'scripts/group-chats.js', ['saveGroupChat', 'saveGroupChatImmediately', 'editGroup', '_save']);
+        const { acknowledge } = loadQueuedSaveRuntime(context, true);
+        context.fetch.mockImplementation(async (url, init) => url === '/api/groups/edit' ? { ok: false } : acknowledge(init));
+        load(context, 'scripts/group-chats.js', ['editGroup', '_save']);
         await expect(context.saveMetadata({ throwOnError: true })).rejects.toThrow('Could not save group');
+        expect(context.fetch).toHaveBeenCalledWith('/api/chats/group/save', expect.any(Object));
         expect(context.fetch).toHaveBeenCalledWith('/api/groups/edit', expect.any(Object));
         expect(context.saveGroupDebounced).not.toHaveBeenCalled();
         await expect(context.saveMetadata()).resolves.toBe(true);
@@ -154,15 +180,17 @@ describe('strict host chat saves', () => {
             chat: [{ mes: 'original', extra: {} }], chat_metadata: {},
             cloneGroupChatSavePayload: structuredClone,
             applyQueuedGroupChatIntegrity: jest.fn(),
-            refreshCsrfToken: jest.fn(),
-            fetchWithCsrfRetry: jest.fn(async () => ({ ok: false, json: async () => ({ error: 'integrity' }) })),
+            fetch: jest.fn(),
             Popup: { show: { input: async () => '' } },
             window: { location: { reload: jest.fn() } },
             t: strings => strings.join(''), editGroup: jest.fn(),
         });
-        load(context, 'scripts/group-chats.js', ['saveGroupChat', 'saveGroupChatImmediately']);
+        const { account, source } = loadQueuedSaveRuntime(context, true);
+        context.fetch.mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: 'integrity',
+            roleplay: { account, source: { ...source, revision: 2, rawHash: 'b'.repeat(64) } } }) });
         await expect(context.saveMetadata({ throwOnError: true })).rejects.toThrow('Chat was not saved');
         await expect(context.saveMetadata()).resolves.toBe(false);
+        expect(context.fetch).toHaveBeenCalledTimes(2);
         expect(context.editGroup).not.toHaveBeenCalled();
         expect(context.saveTokenCache).not.toHaveBeenCalled();
         expect(context.saveItemizedPrompts).not.toHaveBeenCalled();

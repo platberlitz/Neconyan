@@ -1359,12 +1359,13 @@ describe('chat integrity rotation', () => {
         expect(scriptSource).toContain('wasGroupChat: Boolean(selected_group)');
         expect(scriptSource).toContain('setChatSaveActive(true);');
         expect(scriptSource).toContain('.then(() => saveChatImmediately(...queuedSaveArguments))');
-        expect(scriptSource).toContain('.finally(() => setChatSaveActive(false));');
+        expect(scriptSource).toContain('.finally(async () => {\n            await finishRoleplaySave(queuedSaveArguments[0]?.roleplaySave);\n            setChatSaveActive(false);');
         expect(scriptSource).toContain('async function saveChatImmediately');
         expect(scriptSource).toContain('applyQueuedChatIntegrity(metadata, integrityKey, isActiveChatSave);');
         expect(scriptSource).toContain('rememberQueuedChatIntegrity(integrityKey, responseData?.integrity);');
         expect(scriptSource).toContain('deferBackup: Boolean(deferBackup)');
-        expect(scriptSource).toContain('return await saveChatImmediately({ chatName, withMetadata, metadataSnapshot: metadata, mesId, force: true, chatData, throwOnError, deferBackup, deferSequenceId, allowShrink, activeChatName, characterName, avatarUrl, wasGroupChat, scheduledGeneration, scheduledCharacterId, scheduledGroupId, scheduledChatId, account });');
+        expect(scriptSource).toContain('confirmRoleplayOverwrite(roleplaySave, uuidv4());');
+        expect(scriptSource).toContain('return await saveChatImmediately({ chatName, withMetadata, metadataSnapshot: metadata, mesId, force: true, chatData, throwOnError, deferBackup, deferSequenceId, allowShrink, activeChatName, characterName, avatarUrl, wasGroupChat, scheduledGeneration, scheduledCharacterId, scheduledGroupId, scheduledChatId, account, roleplaySave });');
     });
 
     test('queued chat saves abort when generation or character changes while queued', async () => {
@@ -1426,7 +1427,9 @@ describe('chat integrity rotation', () => {
         expect(groupChatSource).toContain('applyQueuedGroupChatIntegrity(metadataForSave, chatId, isActiveGroupChatSave);');
         expect(groupChatSource).toContain('rememberQueuedGroupChatIntegrity(chatId, responseData?.integrity);');
         expect(groupChatSource).toContain('deferBackup: Boolean(options.deferBackup)');
-        expect(groupChatSource).toContain('return await saveGroupChatImmediately({ groupId, shouldSaveGroup, force: true, throwOnError, chatId, chatData: chatMessages, metadata: metadataForSave, deferBackup, deferSequenceId, allowShrink, scheduledGeneration, account });');
+        expect(groupChatSource).toContain('confirmRoleplayOverwrite(roleplaySave, uuidv4());');
+        expect(groupChatSource).toContain('.finally(() => finishRoleplaySave(roleplaySave));');
+        expect(groupChatSource).toContain('return await saveGroupChatImmediately({ groupId, shouldSaveGroup, force: true, throwOnError, chatId, chatData: chatMessages, metadata: metadataForSave, deferBackup, deferSequenceId, allowShrink, scheduledGeneration, account, roleplaySave });');
         expect(groupChatSource).toContain('const isActiveGroupChatSave = selected_group === groupId && group.chat_id === chatId;');
         expect(groupChatSource).toContain('if (isActiveGroupChatSave && typeof responseData?.integrity === \'string\' && responseData.integrity)');
     });
@@ -1465,6 +1468,8 @@ describe('chat integrity rotation', () => {
 
     test('retries group chat load requests after stale CSRF before integrity metadata is initialized', async () => {
         const groupChatSource = await fs.readFile(fileURLToPath(new URL('../public/scripts/group-chats.js', import.meta.url)), 'utf8');
+        const scriptSource = await fs.readFile(fileURLToPath(new URL('../public/script.js', import.meta.url)), 'utf8');
+        const requestBody = scriptSource.slice(scriptSource.indexOf('function requestRoleplayChat('), scriptSource.indexOf('export async function loadRoleplayChat('));
         const loadGroupChatBody = groupChatSource.slice(
             groupChatSource.indexOf('async function loadGroupChat(chatId, allowCreate = false)'),
             groupChatSource.indexOf('/**\n * Checks whether a group chat file currently exists on the server.'),
@@ -1474,8 +1479,10 @@ describe('chat integrity rotation', () => {
             groupChatSource.indexOf('/**\n * Validates a group by checking if all members exist'),
         );
 
-        expect(loadGroupChatBody).toContain('fetchWithCsrfRetry(\'/api/chats/group/get\'');
-        expect(loadGroupChatBody).toContain('{ refreshCsrfToken }');
+        expect(loadGroupChatBody).toContain('loadRoleplayChat({ group: true, chat: String(chatId) }, { allowCreate })');
+        expect(requestBody).toContain('fetchWithCsrfRetry(');
+        expect(requestBody).toContain('\'/api/chats/group/get\'');
+        expect(requestBody).toContain('{ refreshCsrfToken }');
         expect(groupChatExistsBody).toContain('fetchWithCsrfRetry(\'/api/chats/group/info\'');
         expect(groupChatExistsBody).toContain('{ refreshCsrfToken }');
     });

@@ -1,11 +1,12 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { TextDecoder } from 'node:util';
+import { isDeepStrictEqual, TextDecoder } from 'node:util';
 
 import sanitize from 'sanitize-filename';
 import { acquireChatFileLock } from './chat-file-lock.js';
 import { fsyncDirectorySync, recoverFileWriteSync, tryWriteFileSync } from './util.js';
+import { readRoleplayFile, readRoleplayWriteJournal } from './roleplay-store.js';
 
 export const CHAT_RECOVERY_DIRECTORY = '_chat_recovery';
 export const CHAT_RECOVERY_QUARANTINE_LIMIT = 3;
@@ -173,8 +174,8 @@ export function parseChatJsonl(data) {
     };
 }
 
-export function readChatJsonlStrict(filePath) {
-    recoverFileWriteSync(filePath);
+export function readChatJsonlStrict(filePath, { recover = true } = {}) {
+    if (recover) recoverFileWriteSync(filePath);
     const rawResult = readRegularFile(filePath);
     if (rawResult.status !== 'ok') {
         return {
@@ -541,10 +542,47 @@ function ensureActiveDirectory(target) {
     assertSafeDirectory(target.activeDirectory, { create: true });
 }
 
-function atomicRestoreActive(target, data) {
+function atomicRestoreActive(target, data, writeOptions = {}) {
     ensureActiveDirectory(target);
     assertWritableRegularPath(target.activePath);
-    tryWriteFileSync(target.activePath, data, undefined, { durable: true });
+    tryWriteFileSync(target.activePath, data, undefined, { durable: true, ...writeOptions });
+}
+
+/** A pending native transaction selects the exact snapshot; this function never selects a backup or runs undo recovery. */
+export function restoreChatSnapshotIfMatches(target, { bytes, expectedSnapshotHash, expectedActive, expectedJournal = null }) {
+    const normalized = normalizeChatRecoveryTarget(target);
+    if (!Buffer.isBuffer(bytes) || bytes.length > 64 * 1024 * 1024 || parseChatJsonl(bytes).status !== 'ok'
+        || crypto.createHash('sha256').update(bytes).digest('hex') !== expectedSnapshotHash) throw new TypeError('Invalid exact native chat snapshot.');
+    const inspect = () => {
+        const current = readRoleplayFile(normalized.activePath, 64 * 1024 * 1024);
+        if (expectedActive === null ? current !== null : !current || current.rawHash !== expectedActive.rawHash
+            || !isDeepStrictEqual(current.physical, expectedActive.physical)) {
+            throw Object.assign(new Error('The native recovery target changed after inspection.'), { code: 'ESTALE' });
+        }
+        const journal = readRoleplayWriteJournal(normalized.activePath);
+        if (expectedJournal === null ? journal !== null : !journal || journal.rawHash !== expectedJournal.rawHash
+            || !isDeepStrictEqual(journal.physical, expectedJournal.physical)) {
+            throw Object.assign(new Error('The native recovery journal changed after inspection.'), { code: 'ESTALE' });
+        }
+    };
+    inspect();
+    const release = acquireChatFileLock(normalized.activePath);
+    let result;
+    try {
+        inspect();
+        atomicRestoreActive(normalized, bytes, expectedActive === null
+            ? { expectedFileAbsent: true, preserveOnCreateError: true }
+            : { replaceFileOnly: true, expectedFileIdentity: { dev: BigInt(expectedActive.physical.dev), ino: BigInt(expectedActive.physical.ino) }, validateBeforeReplace: inspect });
+        result = readRoleplayFile(normalized.activePath, 64 * 1024 * 1024, { flush: true });
+        if (!result || result.rawHash !== expectedSnapshotHash) throw new Error('Native chat restoration did not match its saved snapshot.');
+    } catch (failure) {
+        try { release(); } catch (cause) { console.warn('Native restoration lock cleanup also failed:', cause?.code || cause?.name); }
+        throw Object.assign(failure, { chatWriteUncertain: true });
+    }
+    try { release(); } catch (cause) {
+        throw Object.assign(new Error('Chat was restored, but its lock could not be released.', { cause }), { chatCommitted: true });
+    }
+    return result;
 }
 
 export function loadActiveChatWithRecovery(target) {

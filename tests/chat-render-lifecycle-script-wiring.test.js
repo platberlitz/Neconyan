@@ -83,10 +83,10 @@ describe('chat render lifecycle script wiring', () => {
         expect(source).toContain('const startIndex = getChatRenderWindowStartIndex(chat.length, count);');
         expect(source).toContain('removeRenderedChatMessages();');
         expect(source).toContain('beginChatLoadBottomLock();');
-        expect(source).toContain('await redisplayChat({ startIndex, fade: false, pinBottomDuringRender: true });');
+        expect(source).toContain('await redisplayChat({ startIndex, fade: false, pinBottomDuringRender: true, isCurrent });');
         expect(source).toContain('syncChatHistoryWindowControls();');
-        expect(source).toContain('scrollLoadedChatToBottomThroughLifecycle();');
-        expect(source).toContain('delay(debounce_timeout.short).then(() => scrollOnMediaLoad({ force: true }));');
+        expect(source).toContain('scrollLoadedChatToBottomThroughLifecycle(isCurrent);');
+        expect(source).toContain('delay(debounce_timeout.short).then(() => { if (isCurrent()) scrollOnMediaLoad({ force: true, isCurrent }); });');
 
         const lifecycleGate = findFunctionDeclaration('scrollLoadedChatToBottomThroughLifecycle');
         expect(lifecycleGate).toBeTruthy();
@@ -96,7 +96,7 @@ describe('chat render lifecycle script wiring', () => {
         expect(lifecycleGateSource).toContain('resolveChatScrollAction({');
         expect(lifecycleGateSource).toContain('intent: CHAT_SCROLL_INTENT.INITIAL_LOAD');
         expect(lifecycleGateSource).toContain('shouldApplyChatBottomScrollAction(action)');
-        expect(lifecycleGateSource).toContain('scrollLoadedChatToBottom();');
+        expect(lifecycleGateSource).toContain('scrollLoadedChatToBottom(isCurrent);');
     });
 
     test('redisplayChat delegates selected messages to the guarded redisplay renderer', () => {
@@ -107,7 +107,8 @@ describe('chat render lifecycle script wiring', () => {
         expect(source).toContain('const windowSize = getChatRenderWindowSize();');
         expect(source).toContain('const endIndex = Math.min(targetChat.length, startIndex + windowSize);');
         expect(source).toContain('const messages = targetChat.slice(startIndex, endIndex);');
-        expect(source).toContain('const renderedMessageIds = await renderRedisplayChatMessages({ messages, startIndex, pinBottomDuringRender });');
+        expect(source).toContain('const renderedMessageIds = await renderRedisplayChatMessages({ messages, startIndex, pinBottomDuringRender, isCurrent });');
+        expect(source).toContain('if (!isCurrent()) return;');
         expect(source).toContain('applyCharacterTagsToMessageDivs({ mesIds: renderedMessageIds });');
         expect(source).toContain('syncChatHistoryWindowControls();');
         expect(source).toContain('refreshSwipeButtons(false, fade);');
@@ -121,8 +122,8 @@ describe('chat render lifecycle script wiring', () => {
 
         expect(source).toContain('const batchSize = getMobileChatRenderBatchSize(messages.length);');
         expect(source).toContain('if (isChatRenderLifecycleRolloutEnabled(CHAT_RENDER_LIFECYCLE_ROUTE.REDISPLAY_BATCH))');
-        expect(source).toContain('return renderRedisplayChatMessagesThroughLifecycle({ messages, startIndex, batchSize, pinBottomDuringRender });');
-        expect(source).toContain('return renderRedisplayChatMessagesLegacy({ messages, startIndex, batchSize, pinBottomDuringRender });');
+        expect(source).toContain('return renderRedisplayChatMessagesThroughLifecycle({ messages, startIndex, batchSize, pinBottomDuringRender, isCurrent });');
+        expect(source).toContain('return renderRedisplayChatMessagesLegacy({ messages, startIndex, batchSize, pinBottomDuringRender, isCurrent });');
     });
 
     test('guard-on redisplayChat delegates batch mechanics to the lifecycle render batch helper', () => {
@@ -138,6 +139,7 @@ describe('chat render lifecycle script wiring', () => {
         expect(source).toContain('waitForNextFrame,');
         expect(source).toContain('markLastMessage: true');
         expect(source).toContain('afterBatch: pinBottomDuringRender ? () => beginChatLoadBottomLock() : undefined');
+        expect(source).toContain('shouldContinue: isCurrent');
     });
 
     test('guard-off redisplayChat keeps legacy inline batching', () => {
@@ -173,7 +175,7 @@ describe('chat render lifecycle script wiring', () => {
         expect(source).toContain('showMoreButton.remove();');
         expect(source).toContain('applyStylePins();');
         expect(source).toContain('updateEditArrowClasses();');
-        expect(source).toContain('await settleVisibleChatMessageAnchor(anchor);');
+        expect(source).toContain('await settleVisibleChatMessageAnchor(anchor, 8, isCurrent);');
         expect(source).toContain('await eventSource.emit(event_types.MORE_MESSAGES_LOADED);');
     });
 
@@ -187,7 +189,7 @@ describe('chat render lifecycle script wiring', () => {
         expect(source).toContain('preserveAnchor: messagesToLoad === null');
         expect(source).toContain('const firstId = Number.isInteger(lastMessageId) ? lastMessageId + 1 : 0;');
         expect(source).toContain('const messages = chat.slice(firstId, lastId);');
-        expect(source).toContain('const renderedMessageIds = await renderRedisplayChatMessages({ messages, startIndex: firstId });');
+        expect(source).toContain('const renderedMessageIds = await renderRedisplayChatMessages({ messages, startIndex: firstId, isCurrent });');
         expect(source).toContain('pruneRenderedChatMessagesToWindow({ windowSize, pruneFrom: \'start\' });');
         expect(source).toContain('syncRenderedChatLastMessageClass();');
         expect(source).toContain('syncChatHistoryWindowControls();');
@@ -675,7 +677,7 @@ describe('chat render lifecycle script wiring', () => {
 
         const pinChatLoadToBottom = findFunctionDeclaration('pinChatLoadToBottom');
         const pinSource = getSource(pinChatLoadToBottom);
-        expect(pinSource).toContain('if (!isChatLoadBottomLockActive())');
+        expect(pinSource).toContain('if (!isCurrent() || !isChatLoadBottomLockActive())');
         expect(pinSource).toContain('scrollChatElementToBottom();');
 
         const scrollLoadedChatToBottom = findFunctionDeclaration('scrollLoadedChatToBottom');
@@ -686,7 +688,7 @@ describe('chat render lifecycle script wiring', () => {
         expect(source).toContain('scrollLockImmunityUntil = Math.max(scrollLockImmunityUntil, chatLoadBottomLockUntil);');
         expect(source).toContain('requestMobileChatBottomPin({ requireNearBottom: false, durationMs: bottomLockDurationMs + MOBILE_SEND_SCROLL_SETTLE_MS });');
         expect(source).toContain('for (const delayMs of CHAT_LOAD_SCROLL_SETTLE_DELAYS_MS)');
-        expect(source).toContain('setTimeout(() => pinChatLoadToBottom({ waitForFrame: true }), delayMs);');
+        expect(source).toContain('setTimeout(() => { if (isCurrent()) pinChatLoadToBottom({ waitForFrame: true, isCurrent }); }, delayMs);');
         expect(source).not.toContain('force: true');
 
         const initSource = scriptSource.slice(scriptSource.indexOf('const chatElementScroll = document.getElementById(\'chat\');'));

@@ -14,6 +14,7 @@ import {
     saveItemizedPrompts,
     setActiveGroup,
     getCurrentChatDetails,
+    saveRoleplayChatRequest,
 } from '../script.js';
 import { humanizedDateTime } from './RossAscends-mods.js';
 import {
@@ -34,12 +35,13 @@ import { commonEnumProviders } from './slash-commands/SlashCommandCommonEnumsPro
 import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
 import { createTagMapFromList } from './tags.js';
 import { renderTemplateAsync } from './templates.js';
-import { compressRequest } from './request-compression.js';
+import { beginRoleplaySave, finishRoleplaySave } from './roleplay-save-chain.js';
 import { t } from './i18n.js';
 
 import {
     getUniqueName,
     isTrueBoolean,
+    uuidv4,
 } from './utils.js';
 
 const bookmarkNameToken = 'Checkpoint #';
@@ -431,17 +433,17 @@ export async function convertSoloToGroupChat() {
     }
 
     // Save group chat
-    const createChatRequest = await compressRequest({
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({ id: chatName, chat: [chatHeader, ...groupChat] }),
-    });
-    const createChatResponse = await fetch('/api/chats/group/save', createChatRequest);
-
-    if (!createChatResponse.ok) {
-        console.error('Group chat creation unsuccessful');
-        toastr.error('Group chat creation unsuccessful');
+    let token;
+    try {
+        token = beginRoleplaySave({ group: true, chat: chatName }, { operationKey: uuidv4(), create: true });
+        const saved = await saveRoleplayChatRequest(token, { id: chatName, chat: [chatHeader, ...groupChat] });
+        if (!saved.ok) throw new Error('Group chat creation unsuccessful');
+    } catch (error) {
+        console.error(error);
+        toastr.error(t`Group chat creation unsuccessful`);
         return;
+    } finally {
+        await finishRoleplaySave(token);
     }
 
     // Click on the freshly selected group to open it

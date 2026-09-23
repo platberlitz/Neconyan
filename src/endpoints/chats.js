@@ -10,17 +10,22 @@ import sanitize from 'sanitize-filename';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import _ from 'lodash';
 
-import { acquireChatFileLock, acquireChatFileLocks } from '../chat-file-lock.js';
+import { acquireChatFileLock, withChatFileLocks } from '../chat-file-lock.js';
 import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
 import { renameChatFile } from '../chat-rename.js';
 import { captureBranchMemory, removeChatMemory, renameChatMemory } from '../mewmory/store.js';
+import { confirmRoleplayAccount, readRoleplayFile, readRoleplayWriteJournal, roleplayAvatarOwner, roleplayError, roleplayHash, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
+import { normaliseRoleplayLocator, readRoleplayChatLocked, roleplayChatPath, ROLEPLAY_METADATA_KEY } from '../generation/roleplay-source.js';
+import { cleanupRoleplayReceiptsLocked, commitSingleChatWriteLocked, repairSingleChatWriteLocked } from '../roleplay-lifecycle.js';
 import {
     clearChatRecoveryState,
     createCharacterChatTarget,
     createGroupChatTarget,
+    getChatRecoveryPaths,
     isRecognizedChatHeader,
     loadActiveChatWithRecovery,
     markChatDeleted,
+    normalizeChatRecoveryTarget,
     parseChatJsonl,
     readChatJsonlStrict,
     removeLatestChatSnapshotIfMatches,
@@ -43,6 +48,7 @@ import {
     tryDeleteFile,
     isPathUnderParent,
     uuidv4,
+    decodeFileWriteRecovery,
 } from '../util.js';
 
 const isBackupEnabled = !!getConfigValue('backups.chat.enabled', true, 'boolean');
@@ -253,8 +259,10 @@ function normalizeChatMessageForComparison(message, chatMetadata, messageCount) 
     return normalized;
 }
 
-function getChatSaveComparisonRecords(data, { ignoreDerivedMetadata = true } = {}) {
-    const parsedChat = parseChatJsonl(String(data ?? ''));
+function getChatSaveComparisonRecords(data, { ignoreDerivedMetadata = true, ignoreRoleplayMarker = false } = {}) {
+    const parsedChat = Array.isArray(data)
+        ? { status: isValidChatSavePayload(data) ? 'ok' : 'invalid', records: data }
+        : parseChatJsonl(String(data ?? ''));
     if (parsedChat.status !== 'ok') {
         return null;
     }
@@ -262,6 +270,7 @@ function getChatSaveComparisonRecords(data, { ignoreDerivedMetadata = true } = {
     const [header, ...messages] = parsedChat.records;
     const chatMetadata = { ...header.chat_metadata };
     delete chatMetadata.integrity;
+    if (ignoreRoleplayMarker) delete chatMetadata.neconyan_roleplay;
     if (ignoreDerivedMetadata) {
         delete chatMetadata.chat_id_hash;
         if (isPlainObject(chatMetadata.variables) && Object.keys(chatMetadata.variables).length === 0) {
@@ -336,6 +345,12 @@ function isDuplicatePreWriteBackup(directory, backupPrefix, data) {
         && normalizeSerializedChatForBackupComparison(latestBackupData) === normalizeSerializedChatForBackupComparison(data);
 }
 
+function getChatBackupName(name) {
+    const normalized = sanitize(name).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    // ponytail: 160 ASCII bytes leave room for the longest prefix, timestamp, UUID and the writer's 11-byte temporary suffix.
+    return normalized.length <= 160 ? normalized : `${normalized.slice(0, 95)}_${crypto.createHash('sha256').update(normalized).digest('hex')}`;
+}
+
 /**
  * Saves a chat to the backups directory.
  * @param {string} directory The user's backup directory.
@@ -358,8 +373,7 @@ function backupChat(directory, name, data, backupPrefix = CHAT_BACKUPS_PREFIX, h
             logBackupEvent('chat-backup-skipped', { type: backupType, handle, chat: originalName, reason: 'missing-directory' });
             return;
         }
-        // replace non-alphanumeric characters with underscores
-        name = sanitize(name).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        name = getChatBackupName(name);
         const prefix = `${backupPrefix}${name}_`;
         const sizeDetails = getSerializedBackupSizeDetails(data);
 
@@ -375,7 +389,7 @@ function backupChat(directory, name, data, backupPrefix = CHAT_BACKUPS_PREFIX, h
             return;
         }
 
-        const backupFile = path.join(directory, `${backupPrefix}${name}_${generateTimestamp()}.jsonl`);
+        const backupFile = path.join(directory, `${prefix}${generateTimestamp()}_${uuidv4()}.jsonl`);
 
         tryWriteFileSync(backupFile, data);
         logBackupEvent('chat-backup-written', {
@@ -411,7 +425,7 @@ function backupChatPreWrite(directory, name, data, handle = '') {
             console.error(`The chat couldn't be backed up because no directory exists at ${directory}!`);
             logBackupEvent('chat-backup-skipped', { type: 'pre-write', handle, chat: originalName, reason: 'missing-directory' });
         }
-        name = sanitize(name).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        name = getChatBackupName(name);
         const sizeDetails = getSerializedBackupSizeDetails(data);
 
         if (isDuplicatePreWriteBackup(directory, `${CHAT_PRE_WRITE_BACKUPS_PREFIX}${name}_`, data)) {
@@ -836,7 +850,7 @@ function assertNativeChatPath(filePath) {
     }
 }
 
-function readChatFileSnapshot(filePath, { strict = false } = {}) {
+function readChatFileSnapshot(filePath, { strict = false, maxBytes = Number.MAX_SAFE_INTEGER } = {}) {
     let initialPathStats;
     try {
         initialPathStats = fs.lstatSync(filePath, { bigint: true });
@@ -856,7 +870,7 @@ function readChatFileSnapshot(filePath, { strict = false } = {}) {
         : 'r');
     try {
         const initialDescriptorStats = fs.fstatSync(fileDescriptor, { bigint: true });
-        if (!initialDescriptorStats.isFile() || initialDescriptorStats.size > BigInt(Number.MAX_SAFE_INTEGER)) {
+        if (!initialDescriptorStats.isFile() || initialDescriptorStats.size > BigInt(maxBytes)) {
             throw Object.assign(new Error(`Chat file cannot be read safely: ${filePath}`), { code: 'EINVAL' });
         }
         const data = Buffer.alloc(Number(initialDescriptorStats.size));
@@ -893,8 +907,8 @@ function readChatFileSnapshot(filePath, { strict = false } = {}) {
     }
 }
 
-function assertChatFileSnapshotCurrent(filePath, expectedSnapshot) {
-    const currentSnapshot = readChatFileSnapshot(filePath);
+function assertChatFileSnapshotCurrent(filePath, expectedSnapshot, options) {
+    const currentSnapshot = readChatFileSnapshot(filePath, options);
     if (!currentSnapshot
         || currentSnapshot.pathStats.dev !== expectedSnapshot.pathStats.dev
         || currentSnapshot.pathStats.ino !== expectedSnapshot.pathStats.ino
@@ -1126,31 +1140,198 @@ function createChatRecoveryTarget(request, isGroup, fileName) {
     return createCharacterChatTarget({
         chatsDirectory: request.user.directories.chats,
         backupDirectory: request.user.directories.backups,
-        owner: String(request.body.avatar_url).replace('.png', ''),
+        owner: roleplayAvatarOwner(String(request.body.avatar_url)),
         filename: fileName,
         maxRecoveryStates: maxTotalChatBackups,
     });
 }
 
-function sendChatLoadResponse(response, target, { allowCreate = false } = {}) {
-    // Neconyan: never let malformed JSONL fall through to the fresh-chat save path.
-    const result = isBackupEnabled
-        ? loadActiveChatWithRecovery(target)
-        : readChatJsonlStrict(target.activePath);
+const ROLEPLAY_CHAT_MAX_BYTES = 64 * 1024 * 1024;
+const ROLEPLAY_UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 
-    if (result.status === 'ok') {
-        if (result.recovered) {
-            console.warn(`Recovered chat file from its latest valid snapshot: ${target.activePath}`);
+function roleplayRequest(request, group, saving = false) {
+    const base = { owner: request.user.profile.handle, directories: request.user.directories };
+    if (request.get('X-Neconyan-Account') && request.get('X-Neconyan-Account') !== base.owner) {
+        throw roleplayError('ROLEPLAY_ACCOUNT_CHANGED', 'The selected account changed. Reload before continuing.');
+    }
+    const body = request.body;
+    const name = group && Number.isSafeInteger(body?.id) ? String(body.id) : group ? body?.id : body?.file_name;
+    const locator = normaliseRoleplayLocator(group ? { group: true, chat: name } : { group: false, chat: name, avatar: body?.avatar_url });
+    if (locator.chat + '.jsonl' !== sanitize(locator.chat + '.jsonl')) throw roleplayError('ROLEPLAY_INVALID', 'The chat filename is too long.', 400);
+    const block = body?.roleplay;
+    const invalid = () => roleplayError('ROLEPLAY_REQUIRED', 'Reload the chat before saving; its account and source versions are required.', 400);
+    if (saving || block !== undefined) {
+        if (!isPlainObject(block) || Object.keys(block).some(key => !['account', 'operationKey', 'source', 'vacancy'].includes(key))
+            || !isPlainObject(block.account) || Object.keys(block.account).some(key => !['accountId', 'dataEpoch'].includes(key))
+            || typeof block.account.accountId !== 'string' || !ROLEPLAY_UUID.test(block.account.accountId)
+            || !Number.isSafeInteger(block.account.dataEpoch) || block.account.dataEpoch < 1) throw invalid();
+    }
+    if (saving) {
+        if (typeof block.operationKey !== 'string' || !block.operationKey || block.operationKey.length > 256
+            || Object.hasOwn(block, 'source') === Object.hasOwn(block, 'vacancy')) throw invalid();
+        if (Object.hasOwn(block, 'source')) {
+            if (!isPlainObject(block.source) || Object.keys(block.source).some(key => !['instanceId', 'revision', 'rawHash'].includes(key))
+                || typeof block.source.instanceId !== 'string' || !ROLEPLAY_UUID.test(block.source.instanceId)
+                || !Number.isSafeInteger(block.source.revision) || block.source.revision < 1
+                || typeof block.source.rawHash !== 'string' || !/^[a-f0-9]{64}$/.test(block.source.rawHash)) throw invalid();
+        } else if (!Number.isSafeInteger(block.vacancy) || block.vacancy < 0) throw invalid();
+        if (['force', 'allowShrink', 'deferBackup'].some(key => body[key] !== undefined && typeof body[key] !== 'boolean')
+            || (body.deferSequenceId !== undefined && (typeof body.deferSequenceId !== 'string' || body.deferSequenceId.length > 256))) throw invalid();
+    }
+    return { base, locator, block, account: block?.account ?? null };
+}
+
+function wireChatSource({ instanceId, revision, rawHash }) {
+    return { instanceId, revision, rawHash };
+}
+
+function setRoleplayResponseEvidence(response, evidence) {
+    // HTTP headers are ASCII; JSON escapes preserve the exact Unicode locator without a second encoding.
+    const header = JSON.stringify(evidence).replace(/[^\x20-\x7E]/g, value => '\\u' + value.charCodeAt(0).toString(16).padStart(4, '0'));
+    response.set('X-Neconyan-Roleplay', header);
+}
+
+function assertUnmarkedLegacyChat(bytes) {
+    // A broken later message must not hide ownership in the first non-empty header.
+    const parsed = parseChatJsonl(bytes.toString('utf8').trimStart().split('\n', 1)[0]);
+    if (parsed.records?.[0]?.chat_metadata?.[ROLEPLAY_METADATA_KEY]) {
+        throw roleplayError('ROLEPLAY_FOREIGN_SOURCE', 'Import this native chat as a new copy; its marker cannot establish ownership.');
+    }
+}
+
+function assertLegacyPhysicalIdentity(state, physical) {
+    if (Object.values(state.resources).some(({ head }) => head.physical.dev === physical.dev && head.physical.ino === physical.ino
+        && (physical.birthtimeNs === null || head.physical.birthtimeNs === physical.birthtimeNs))) {
+        throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'This file already has a protected identity at another location.');
+    }
+}
+
+function assertUntrackedLegacyEvidence(state, file, journal) {
+    if (file) {
+        assertUnmarkedLegacyChat(file.bytes);
+        assertLegacyPhysicalIdentity(state, file.physical);
+    }
+    if (journal) {
+        assertLegacyPhysicalIdentity(state, journal.physical);
+        const record = decodeFileWriteRecovery(journal.bytes, ROLEPLAY_CHAT_MAX_BYTES);
+        if (!record) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The earlier chat write needs explicit recovery.');
+        assertLegacyPhysicalIdentity(state, { dev: record.dev, ino: record.ino, birthtimeNs: record.birthtime });
+        assertUnmarkedLegacyChat(Buffer.from(JSON.parse(journal.bytes.toString('utf8')).originalData, 'base64'));
+    }
+}
+
+function loadLegacyChatForEnrolment(lease, target) {
+    const { state } = roleplayLease(lease);
+    const active = readRoleplayFile(target.activePath, ROLEPLAY_CHAT_MAX_BYTES, { allowMissingParent: true });
+    const journal = readRoleplayWriteJournal(target.activePath, { allowMissingParent: true });
+    assertUntrackedLegacyEvidence(state, active, journal);
+    if (isBackupEnabled) {
+        const inspection = runChatRecoveryBestEffort(
+            () => {
+                const { latestPath } = getChatRecoveryPaths(target);
+                return { file: readRoleplayFile(latestPath, ROLEPLAY_CHAT_MAX_BYTES, { allowMissingParent: true }),
+                    journal: readRoleplayWriteJournal(latestPath, { allowMissingParent: true }) };
+            },
+            'Failed to inspect chat recovery state; continuing without sidecar recovery.',
+        );
+        if (!inspection.ok) return readChatJsonlStrict(target.activePath);
+        assertUntrackedLegacyEvidence(state, inspection.value.file, inspection.value.journal);
+    }
+    // Only untracked legacy content may use legacy recovery. Protected content never reaches it.
+    return isBackupEnabled ? loadActiveChatWithRecovery(target) : readChatJsonlStrict(target.activePath);
+}
+
+function loadProtectedChat(request, group) {
+    const { base, locator, account } = roleplayRequest(request, group);
+    return withRoleplayAccount(base, account, (lease, currentAccount) => {
+        confirmRoleplayAccount(lease);
+        const { state } = roleplayLease(lease);
+        if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier chat write must settle first.');
+        cleanupRoleplayReceiptsLocked(lease);
+        const target = createChatRecoveryTarget(request, group, locator.chat + '.jsonl');
+        const slot = state.paths[roleplayPathKey(state, 'chat', locator)];
+        if (!slot) {
+            const legacy = loadLegacyChatForEnrolment(lease, target);
+            if (legacy.status !== 'ok' && legacy.status !== 'missing') throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'The chat needs recovery.', 422);
         }
-        return response.send(result.records);
-    }
+        const file = readRoleplayFile(target.activePath, ROLEPLAY_CHAT_MAX_BYTES, { allowMissingParent: true });
+        if (!file && !slot?.instanceId && request.body.allow_create === true) {
+            return { records: [], evidence: { account: currentAccount, locator, vacancy: slot?.generation ?? 0 } };
+        }
+        if (!file) throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The saved chat does not exist.', 404);
+        let saved;
+        try { saved = readRoleplayChatLocked(lease, locator); } catch (error) {
+            if (error.code !== 'ROLEPLAY_SOURCE_DAMAGED' || !slot?.instanceId || !isBackupEnabled) throw error;
+            const inspection = runChatRecoveryBestEffort(
+                () => readRoleplayFile(getChatRecoveryPaths(target).latestPath, ROLEPLAY_CHAT_MAX_BYTES, { allowMissingParent: true }),
+                'Failed to inspect the exact recorded chat snapshot; retaining the damaged chat.',
+            );
+            const snapshot = inspection.ok ? inspection.value : null;
+            if (!snapshot || snapshot.rawHash !== state.resources[slot.instanceId].head.rawHash) throw error;
+            repairSingleChatWriteLocked(lease, { locator, snapshotBytes: snapshot.bytes }, roleplayNativeHost);
+            saved = readRoleplayChatLocked(lease, locator);
+        }
+        if (saved.changed) saveRoleplayAccount(lease);
+        return { records: saved.records, evidence: { account: currentAccount, locator, source: wireChatSource(saved) } };
+    });
+}
 
-    if (result.status === 'missing' && allowCreate) {
-        return response.send([]);
-    }
+function saveProtectedChat(request, group) {
+    const { base, locator, block, account } = roleplayRequest(request, group, true);
+    return withRoleplayAccount(base, account, (lease, currentAccount) => {
+        const { state } = roleplayLease(lease);
+        try {
+            const result = commitSingleChatWriteLocked(lease, {
+                operationKey: block.operationKey, sourceKind: 'storage', mode: block.source ? 'update' : 'create',
+                ...(block.source ? { source: { kind: 'storage', ...currentAccount, ...block.source, locator, dependencies: [] } }
+                    : { destination: locator, expectedVacancy: block.vacancy }),
+                records: request.body.chat, force: request.body.force === true, allowShrink: request.body.allowShrink === true,
+                backup: { deferBackup: request.body.deferBackup === true,
+                    ...(request.body.deferSequenceId !== undefined ? { deferSequenceId: request.body.deferSequenceId } : {}) },
+            }, roleplayBrowserHost);
+            return { ok: true, integrity: result.integrity,
+                roleplay: { account: currentAccount, operationKey: block.operationKey, changed: result.changed, source: wireChatSource(result) } };
+        } catch (error) {
+            // A failed lease is never reused. This reference only classifies the response to an admitted write.
+            if (state.pending?.operationKeyHash === roleplayHash([state.accountId, 'chat-write', block.operationKey])
+                && error.code !== 'ROLEPLAY_INTENT_CONFLICT') error.roleplayWritePending = true;
+            if (Object.hasOwn(error, 'current')) error.roleplay = { account: currentAccount,
+                ...(error.current?.instanceId ? { source: error.current } : error.current ?? { source: null }) };
+            throw error;
+        }
+    });
+}
 
-    const status = result.status === 'missing' ? 404 : 422;
-    return response.status(status).send({ error: result.status });
+function sendRoleplayError(response, error) {
+    const code = error.code;
+    const uncertain = error.roleplayWritePending || error.chatCommitted || error.chatWriteUncertain;
+    if (!uncertain && (code === 'ROLEPLAY_STORE_FULL' || code === 'ROLEPLAY_MEMORY_FULL')) return response.status(507).send({ error: 'roleplay_store_full', code });
+    if (uncertain || code === 'ELOCKED'
+        || code === 'ROLEPLAY_RECOVERY_REQUIRED' || code?.startsWith('ROLEPLAY_STORE_') || code === 'ROLEPLAY_ACCOUNT_UNAVAILABLE') {
+        return response.status(503).send({ error: 'roleplay_recovery_required', code: code || 'ROLEPLAY_WRITE_UNCERTAIN' });
+    }
+    if (code === 'ROLEPLAY_ACCOUNT_CHANGED') return response.status(409).send({ error: 'account_changed', code });
+    if (code === 'ROLEPLAY_SOURCE_MISSING') return response.status(404).send({ error: 'missing', code });
+    if (code === 'ROLEPLAY_SOURCE_DAMAGED') return response.status(422).send({ error: 'corrupt', code });
+    if (code === 'ROLEPLAY_SOURCE_CHANGED' && error.roleplay) return response.status(400).send({ error: 'integrity', code, roleplay: error.roleplay });
+    if (code === 'ROLEPLAY_INVALID' || code === 'ROLEPLAY_REQUIRED') return response.status(400).send({ error: code.toLowerCase(), code });
+    if (error instanceof DestructiveChatSaveError) return response.status(409).send({ error: 'destructive', reason: error.reason });
+    if (error instanceof InvalidChatDataError) return response.status(400).send({ error: error.message });
+    if (code?.startsWith('ROLEPLAY_')) return response.status(409).send({ error: code.slice(9).toLowerCase(), code });
+    console.error('Protected chat request failed:', error);
+    return response.status(503).send({ error: 'roleplay_recovery_required', code: 'ROLEPLAY_IO_ERROR' });
+}
+
+function sendProtectedChatLoad(request, response, group) {
+    try {
+        const result = loadProtectedChat(request, group);
+        setRoleplayResponseEvidence(response, result.evidence);
+        return response.set('Cache-Control', 'no-store').send(result.records);
+    } catch (error) { return sendRoleplayError(response, error); }
+}
+
+function sendProtectedChatSave(request, response, group) {
+    try { return response.set('Cache-Control', 'no-store').send(saveProtectedChat(request, group)); } catch (error) { return sendRoleplayError(response, error); }
 }
 
 /**
@@ -1172,15 +1353,12 @@ export async function trySaveChat(chatData, filePath, skipIntegrityCheck = false
         throw new InvalidChatDataError('Invalid chat save payload. Expected a non-empty chat array with a metadata header.');
     }
 
-    const release = acquireChatFileLock(filePath);
-    try {
+    return withChatFileLocks([filePath], () => {
         const result = trySaveChatLocked(chatData, filePath, skipIntegrityCheck, handle, cardName, backupDirectory, options);
         if (options.mewmory) captureBranchMemory(options.mewmory.directories, options.mewmory.locator,
             { metadata: chatData[0].chat_metadata || {}, messages: chatData.slice(1) });
         return result;
-    } finally {
-        release();
-    }
+    });
 }
 
 /**
@@ -1264,18 +1442,134 @@ export function mutateChat({ filePath, expectedHash, handle, cardName, backupDir
     return result;
 }
 
-function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handle, cardName, backupDirectory, { deferBackup = false, deferSequenceId = undefined, recoveryTarget = null, allowShrink = false, persistDerivedMetadata = false, expectedSnapshot = null } = {}) {
+function prepareChatSave(chatData, integrity = uuidv4()) {
+    const records = chatData.map((message, index) => index === 0
+        ? { ...message, chat_metadata: { ...message.chat_metadata, integrity } }
+        : message);
+    return { records, serialized: records.map(message => JSON.stringify(message)).join('\n'), integrity };
+}
+
+/** Prepare once; the private lifecycle coordinator durably stages these exact bytes before publication. */
+export function prepareNativeChatWrite(records, { beforeBytes = null, marker } = {}) {
+    if (!isValidChatSavePayload(records)) throw new InvalidChatDataError('Invalid prepared chat records.');
+    const detached = parseChatJsonl(records.map(record => JSON.stringify(record)).join('\n'));
+    if (detached.status !== 'ok' || !isDeepStrictEqual(detached.records, records)) throw new InvalidChatDataError('Prepared chat records must contain only JSON values.');
+    const inputRecords = detached.records;
+    const before = beforeBytes === null ? null : parseChatJsonl(beforeBytes);
+    if (before && before.status !== 'ok') throw new InvalidChatDataError('Invalid prepared chat source.');
+    // Incoming metadata never grants native authority, including on imported copies.
+    delete inputRecords[0].chat_metadata.neconyan_roleplay;
+    delete inputRecords[0].chat_metadata.integrity;
+    for (const key of ['neconyan_roleplay', 'integrity']) {
+        if (before && Object.hasOwn(before.records[0].chat_metadata, key)) {
+            inputRecords[0].chat_metadata[key] = structuredClone(before.records[0].chat_metadata[key]);
+        }
+    }
+    if (before && isDeepStrictEqual(inputRecords, before.records)) {
+        return { changed: false, inputRecords, records: before.records,
+            serialized: Buffer.isBuffer(beforeBytes) ? beforeBytes.toString('utf8') : beforeBytes,
+            integrity: before.records[0].chat_metadata.integrity ?? '' };
+    }
+    if (!marker || marker.schema !== 1 || !Number.isSafeInteger(marker.revision) || marker.revision < 1
+        || ![marker.instanceId, marker.writeId].every(value => typeof value === 'string' && /^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value))) {
+        throw new TypeError('A prepared native write needs its server-assigned commit marker.');
+    }
+    const output = structuredClone(inputRecords);
+    output[0].chat_metadata.neconyan_roleplay = structuredClone(marker);
+    return { changed: true, inputRecords, ...prepareChatSave(output) };
+}
+
+/** Preserve the browser's existing display-equivalent no-op and reject policy errors before admission. */
+export function prepareBrowserChatWrite(records, { beforeBytes = null, marker, force = false, allowShrink = false } = {}) {
+    if (!isValidChatSavePayload(records)) throw new InvalidChatDataError('Invalid prepared chat records.');
+    const detached = parseChatJsonl(records.map(record => JSON.stringify(record)).join('\n'));
+    if (detached.status !== 'ok' || !isDeepStrictEqual(detached.records, records)) throw new InvalidChatDataError('Prepared chat records must contain only JSON values.');
+    const before = beforeBytes === null ? null : parseChatJsonl(beforeBytes);
+    if (before && before.status !== 'ok') throw new InvalidChatDataError('Invalid prepared chat source.');
+    if (before && isSameChatSaveContent(detached.records, before.records, { ignoreRoleplayMarker: true })) {
+        return { changed: false, inputRecords: structuredClone(before.records), records: before.records,
+            serialized: beforeBytes.toString('utf8'), integrity: before.records[0].chat_metadata.integrity ?? '' };
+    }
+    const prepared = prepareNativeChatWrite(detached.records, { beforeBytes, marker });
+    const reason = before && getDestructiveChatSaveReason(prepared.records, beforeBytes.toString('utf8'));
+    if (reason && !force && !allowShrink) throw new DestructiveChatSaveError(reason, 'The save would remove existing chat messages.');
+    return prepared;
+}
+
+export const roleplayNativeHost = { prepare: prepareNativeChatWrite, publish: publishNativeChatWrite };
+export const roleplayBrowserHost = { prepare: prepareBrowserChatWrite, publish: publishNativeChatWrite };
+
+/** Private managed publication: no automatic recovery, memory capture or generation work. */
+export function publishNativeChatWrite({ filePath, before, payloadPath, payloadHash, prepared,
+    handle, cardName, backupDirectory, recoveryTarget = null, force = false, allowShrink = false, deferBackup = false, deferSequenceId, expectedJournal = null }) {
+    if (typeof filePath !== 'string' || !path.isAbsolute(filePath)
+        || (payloadPath === null ? !before || prepared?.changed !== false
+            : typeof payloadPath !== 'string' || !path.isAbsolute(payloadPath) || filePath === payloadPath)
+        || typeof backupDirectory !== 'string' || !path.isAbsolute(backupDirectory)
+        || typeof handle !== 'string' || typeof cardName !== 'string' || typeof prepared?.changed !== 'boolean'
+        || !isValidChatSavePayload(prepared.inputRecords) || !isValidChatSavePayload(prepared.records)
+        || (recoveryTarget && path.resolve(recoveryTarget.activePath) !== path.resolve(filePath))) throw new TypeError('Invalid managed chat publication.');
+    if (recoveryTarget) {
+        recoveryTarget = normalizeChatRecoveryTarget({ ...recoveryTarget, maxRecoveryStates: maxTotalChatBackups });
+        if (path.resolve(recoveryTarget.activePath) !== path.resolve(filePath)) throw new TypeError('Invalid managed recovery target.');
+    }
+    // Proven output can finish the existing no-op backup path without its temporary after-image.
+    const payload = readRoleplayFile(payloadPath ?? filePath, 64 * 1024 * 1024, { flush: true });
+    if (!payload || payload.rawHash !== payloadHash || payload.bytes.toString('utf8') !== prepared.serialized
+        || !isDeepStrictEqual(parseChatJsonl(payload.bytes).records, prepared.records)) throw new InvalidChatDataError('Prepared chat payload changed.');
+    const inspect = () => {
+        const file = readRoleplayFile(filePath, 64 * 1024 * 1024);
+        if (before === null ? file !== null : !file || file.rawHash !== before.rawHash || !isDeepStrictEqual(file.physical, before.physical)) {
+            throw Object.assign(new IntegrityMismatchError('Managed chat source changed.'), { code: 'ESTALE' });
+        }
+        // Never let legacy undo recovery precede the protected transaction's own classification.
+        try {
+            const journal = readRoleplayWriteJournal(filePath);
+            if (expectedJournal === null ? journal !== null : !journal || journal.rawHash !== expectedJournal.rawHash
+                || !isDeepStrictEqual(journal.physical, expectedJournal.physical)) throw new Error('Recovery journal changed.');
+        } catch (cause) { throw new InvalidChatDataError('An earlier chat write needs explicit reconciliation.', { cause }); }
+        return file;
+    };
+    inspect(); // Includes safe, existing parent validation before the lock helper can create directories.
+    const release = acquireChatFileLock(filePath);
+    let result;
+    try {
+        inspect();
+        const snapshot = before === null ? null : readChatFileSnapshot(filePath, { strict: true, maxBytes: 64 * 1024 * 1024 });
+        if (before && (!snapshot || snapshot.hash !== before.rawHash
+            || String(snapshot.pathStats.dev) !== before.physical.dev || String(snapshot.pathStats.ino) !== before.physical.ino
+            || String(snapshot.pathStats.birthtimeNs) !== before.physical.birthtimeNs)) {
+            throw Object.assign(new IntegrityMismatchError('Managed chat source changed before publication.'), { code: 'ESTALE' });
+        }
+        if (prepared.changed === false && (before === null || payload.rawHash !== before.rawHash)) throw new InvalidChatDataError('Invalid managed no-op.');
+        result = trySaveChatLocked(prepared.inputRecords, filePath, force, handle, cardName, backupDirectory,
+            { recoveryTarget, allowShrink, deferBackup, deferSequenceId, expectedSnapshot: snapshot, nativePrepared: prepared,
+                createOnly: before === null, validateNativeSource: inspect });
+        const saved = readRoleplayFile(filePath, 64 * 1024 * 1024, { flush: true });
+        if (!saved || saved.rawHash !== payloadHash || (before && !isDeepStrictEqual(saved.physical, before.physical))) {
+            throw new IntegrityMismatchError('Managed chat output changed during publication.');
+        }
+        result = { ...result, file: saved };
+    } catch (failure) {
+        try { release(); } catch (cause) { console.warn('Managed chat lock cleanup also failed:', cause?.code || cause?.name); }
+        throw Object.assign(failure, { chatWriteUncertain: true, integrity: prepared.integrity });
+    }
+    try { release(); } catch (cause) {
+        throw Object.assign(new Error('Managed chat was saved, but its lock could not be released.', { cause }),
+            { chatCommitted: true, integrity: prepared.integrity });
+    }
+    return result;
+}
+
+function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handle, cardName, backupDirectory, { deferBackup = false, deferSequenceId = undefined, recoveryTarget = null, allowShrink = false, persistDerivedMetadata = false, expectedSnapshot = null, nativePrepared = null, createOnly = false, validateNativeSource = null } = {}) {
     const doIntegrityCheck = (checkIntegrity && !skipIntegrityCheck);
     const incomingIntegrity = chatData?.[0]?.chat_metadata?.integrity;
     const chatIntegritySlug = doIntegrityCheck && typeof incomingIntegrity === 'string' ? incomingIntegrity : '';
 
-    const nextIntegrity = uuidv4();
-    const savedChatData = Array.isArray(chatData)
-        ? chatData.map((message, index) => index === 0
-            ? { ...message, chat_metadata: { ...(message?.chat_metadata || {}), integrity: nextIntegrity } }
-            : message)
-        : chatData;
-    const jsonlData = savedChatData?.map(m => JSON.stringify(m)).join('\n');
+    const prepared = nativePrepared || prepareChatSave(chatData);
+    const nextIntegrity = prepared.integrity;
+    const savedChatData = prepared.records;
+    const jsonlData = prepared.serialized;
     const savedChatSizeDetails = getSerializedBackupSizeDetails(jsonlData);
     logBackupEvent('chat-save', {
         handle,
@@ -1301,10 +1595,11 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
 
     if (expectedSnapshot) assertNativeChatPath(filePath);
     try {
-        recoverFileWriteSync(filePath);
+        if (!nativePrepared) recoverFileWriteSync(filePath);
         existingFile = fs.existsSync(filePath);
+        if (createOnly && existingFile) throw Object.assign(new Error('The managed create destination already exists.'), { code: 'ESTALE' });
         if (existingFile) {
-            currentSnapshot = readChatFileSnapshot(filePath, { strict: Boolean(expectedSnapshot) });
+            currentSnapshot = readChatFileSnapshot(filePath, { strict: Boolean(expectedSnapshot), maxBytes: nativePrepared ? 64 * 1024 * 1024 : Number.MAX_SAFE_INTEGER });
         }
     } catch (error) {
         if (error?.code === 'ESTALE') {
@@ -1320,9 +1615,11 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
     // Check before backups or recovery snapshots can replace evidence of that source.
     if (expectedSnapshot && (!currentSnapshot || currentSnapshot.hash !== expectedSnapshot.hash
         || currentSnapshot.pathStats.dev !== expectedSnapshot.pathStats.dev
-        || currentSnapshot.pathStats.ino !== expectedSnapshot.pathStats.ino)) {
+        || currentSnapshot.pathStats.ino !== expectedSnapshot.pathStats.ino
+        || currentSnapshot.pathStats.birthtimeNs !== expectedSnapshot.pathStats.birthtimeNs)) {
         throw Object.assign(new IntegrityMismatchError('Native chat source changed during mutation.'), { code: 'ESTALE' });
     }
+    validateNativeSource?.();
 
     if (existingFile) {
         if (currentSnapshot) {
@@ -1380,7 +1677,7 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
                 deferSequenceId,
             });
 
-            const unchanged = expectedSnapshot
+            const unchanged = nativePrepared ? !nativePrepared.changed : expectedSnapshot
                 ? isDeepStrictEqual(chatData, parseChatJsonl(currentChatData).records)
                 : isSameChatSaveContent(jsonlData, currentChatData, { ignoreDerivedMetadata: !persistDerivedMetadata });
             if (unchanged) {
@@ -1428,14 +1725,16 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
     }
     if (unchangedChatData !== null && currentSnapshot) {
         try {
-            assertChatFileSnapshotCurrent(filePath, currentSnapshot);
+            assertChatFileSnapshotCurrent(filePath, currentSnapshot, nativePrepared ? { strict: true, maxBytes: 64 * 1024 * 1024 } : undefined);
         } catch (error) {
-            if (hasRecoverySnapshot && recoveryTarget) {
+            if (!nativePrepared && hasRecoverySnapshot && recoveryTarget) {
                 repairRejectedChatRecoverySnapshot(recoveryTarget, persistedChatData);
             }
             throw new IntegrityMismatchError(`Chat changed after it was checked: "${filePath}".`, { cause: error });
         }
     }
+    // Backup I/O must not silently invalidate the recorded source or journal handoff.
+    validateNativeSource?.();
     if (unchangedChatData === null) {
         try {
             tryWriteFileSync(filePath, jsonlData, 'utf8', {
@@ -1443,14 +1742,17 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
                 expectedFileIdentity,
                 expectedFileHash,
                 expectedFileAbsent: !existingFile,
-                invalidateBeforeWrite: preserveFileIdentity && hasRecoverySnapshot,
+                invalidateBeforeWrite: preserveFileIdentity && (hasRecoverySnapshot || Boolean(nativePrepared)),
                 replaceFileOnly,
                 durable: !existingFile,
+                preserveOnCreateError: Boolean(nativePrepared) && !existingFile,
+                preserveOnWriteError: Boolean(nativePrepared) && preserveFileIdentity,
+                maxFileBytes: nativePrepared ? 64 * 1024 * 1024 : Number.MAX_SAFE_INTEGER,
             });
         } catch (error) {
             let failure = error;
             if (['EMLINK', 'ESTALE'].includes(error?.code)) {
-                if (hasRecoverySnapshot && recoveryTarget) {
+                if (!nativePrepared && hasRecoverySnapshot && recoveryTarget) {
                     repairRejectedChatRecoverySnapshot(recoveryTarget, persistedChatData);
                 }
                 failure = new IntegrityMismatchError(`Chat changed after it was checked: "${filePath}".`, { cause: error });
@@ -1472,57 +1774,17 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
         commitDeferredPreWriteBackupDecision(backupDecision, deferSequenceId);
     }
     if (!deferBackup) {
-        getBackupFunction(handle)(backupDirectory, cardName, persistedChatData, CHAT_BACKUPS_PREFIX, handle);
+        // Protected completion cannot leave its requested backup on a process-local timer.
+        const saveBackup = nativePrepared ? backupChat : getBackupFunction(handle);
+        saveBackup(backupDirectory, cardName, persistedChatData, CHAT_BACKUPS_PREFIX, handle);
     } else {
         logBackupEvent('chat-backup-skipped', { type: 'regular', handle, chat: cardName, reason: 'deferred', ...savedChatSizeDetails });
     }
     return { integrity: unchangedIntegrity ?? nextIntegrity,
-        ...(expectedSnapshot ? { records: parseChatJsonl(persistedChatData).records } : {}) };
+        ...(expectedSnapshot || nativePrepared ? { records: parseChatJsonl(persistedChatData).records } : {}) };
 }
 
-router.post('/save', validateAvatarUrlMiddleware, async function (request, response) {
-    if (request.get('X-Neconyan-Account') && request.get('X-Neconyan-Account') !== request.user.profile.handle) return response.status(409).send({ error: 'account_changed' });
-    try {
-        const handle = request.user.profile.handle;
-        const cardName = String(request.body.avatar_url).replace('.png', '');
-        const chatData = request.body.chat;
-        const chatFileName = `${String(request.body.file_name)}.jsonl`;
-        const sanitizedChatFileName = sanitize(chatFileName);
-        const chatFilePath = path.join(request.user.directories.chats, cardName, sanitizedChatFileName);
-        if (!isPathUnderParent(request.user.directories.chats, chatFilePath)) {
-            return response.sendStatus(400);
-        }
-
-        if (Array.isArray(chatData)) {
-            const recoveryTarget = createChatRecoveryTarget(request, false, sanitizedChatFileName);
-            const saveResult = await trySaveChat(chatData, chatFilePath, request.body.force, handle, cardName, request.user.directories.backups, {
-                mewmory: { directories: request.user.directories, locator: { avatar: request.body.avatar_url, chat: sanitizedChatFileName } },
-                deferBackup: request.body.deferBackup === true,
-                deferSequenceId: typeof request.body.deferSequenceId === 'string' ? request.body.deferSequenceId : undefined,
-                allowShrink: request.body.allowShrink === true,
-                recoveryTarget,
-            });
-            return response.send({ ok: true, integrity: saveResult.integrity });
-        } else {
-            return response.status(400).send({ error: 'The request\'s body.chat is not an array.' });
-        }
-    } catch (error) {
-        if (error instanceof IntegrityMismatchError) {
-            console.error(error.message);
-            return response.status(400).send({ error: 'integrity' });
-        }
-        if (error instanceof DestructiveChatSaveError) {
-            console.error(error.message);
-            return response.status(409).send({ error: 'destructive', reason: error.reason });
-        }
-        if (error instanceof InvalidChatDataError) {
-            console.error(error.message);
-            return response.status(400).send({ error: error.message });
-        }
-        console.error(error);
-        return response.status(500).send({ error: 'An error has occurred, see the console logs for more information.' });
-    }
-});
+router.post('/save', validateAvatarUrlMiddleware, (request, response) => sendProtectedChatSave(request, response, false));
 
 /**
  * Gets the chat as an object.
@@ -1544,25 +1806,7 @@ export function getChatData(chatFilePath) {
     return chatData;
 }
 
-router.post('/get', validateAvatarUrlMiddleware, function (request, response) {
-    try {
-        const dirName = String(request.body.avatar_url).replace('.png', '');
-        const directoryPath = path.join(request.user.directories.chats, dirName);
-        if (!isPathUnderParent(request.user.directories.chats, directoryPath)) {
-            return response.sendStatus(400);
-        }
-        if (!request.body.file_name) {
-            return response.send([]);
-        }
-
-        const chatFileName = `${String(request.body.file_name)}.jsonl`;
-        const recoveryTarget = createChatRecoveryTarget(request, false, sanitize(chatFileName));
-        return sendChatLoadResponse(response, recoveryTarget, { allowCreate: request.body.allow_create === true });
-    } catch (error) {
-        console.error(error);
-        return response.sendStatus(500);
-    }
-});
+router.post('/get', validateAvatarUrlMiddleware, (request, response) => sendProtectedChatLoad(request, response, false));
 
 router.post('/rename', validateAvatarUrlMiddleware, async function (request, response) {
     try {
@@ -1584,11 +1828,10 @@ router.post('/rename', validateAvatarUrlMiddleware, async function (request, res
         console.debug('Old chat name', pathToOriginalFile);
         console.debug('New chat name', pathToRenamedFile);
 
-        const releaseRenameLocks = acquireChatFileLocks([pathToOriginalFile, pathToRenamedFile]);
-        try {
+        const outcome = withChatFileLocks([pathToOriginalFile, pathToRenamedFile], () => {
             if (!fs.existsSync(pathToOriginalFile) || fs.existsSync(pathToRenamedFile)) {
                 console.error('Either Source or Destination files are not available');
-                return response.status(400).send({ error: true });
+                return { status: 400, body: { error: true } };
             }
 
             const sourceRecoveryTarget = createChatRecoveryTarget(request, request.body.is_group, originalFileName);
@@ -1655,10 +1898,9 @@ router.post('/rename', validateAvatarUrlMiddleware, async function (request, res
                 }
             }
             console.info(`Successfully renamed chat file (${renameResult.method}).`);
-            return response.send({ ok: true, sanitizedFileName });
-        } finally {
-            releaseRenameLocks();
-        }
+            return { status: 200, body: { ok: true, sanitizedFileName } };
+        });
+        return response.status(outcome.status).send(outcome.body);
     } catch (error) {
         console.error('Error renaming chat file:', error);
         return response.status(500).send({ error: true });
@@ -1911,46 +2153,23 @@ router.post('/import', validateAvatarUrlMiddleware, function (request, response)
     }
 });
 
-router.post('/group/get', (request, response) => {
-    if (!request.body || !request.body.id) {
-        return response.sendStatus(400);
-    }
-
-    try {
-        const id = request.body.id;
-        const recoveryTarget = createChatRecoveryTarget(request, true, sanitize(`${id}.jsonl`));
-        return sendChatLoadResponse(response, recoveryTarget, { allowCreate: request.body.allow_create === true });
-    } catch (error) {
-        console.error(error);
-        return response.sendStatus(500);
-    }
-});
+router.post('/group/get', (request, response) => sendProtectedChatLoad(request, response, true));
 
 router.post('/group/info', async (request, response) => {
     try {
-        if (!request.body || !request.body.id) {
-            return response.sendStatus(400);
+        const { base, locator } = roleplayRequest(request, true);
+        try {
+            const loaded = loadProtectedChat(request, true);
+            setRoleplayResponseEvidence(response, loaded.evidence);
+        } catch (error) {
+            // Keep damaged chats listable, but never offer source authority for their contents.
+            if (error.code !== 'ROLEPLAY_SOURCE_DAMAGED') throw error;
         }
-
-        const id = request.body.id;
-        const chatFilePath = path.join(request.user.directories.groupChats, sanitize(`${id}.jsonl`));
-        const recoveryTarget = createChatRecoveryTarget(request, true, sanitize(`${id}.jsonl`));
-        const loadResult = isBackupEnabled
-            ? loadActiveChatWithRecovery(recoveryTarget)
-            : readChatJsonlStrict(chatFilePath);
-
-        if (loadResult.status === 'missing') {
-            return response.status(404).send({ error: 'not_found' });
-        }
-        if (loadResult.status === 'corrupt' && loadResult.data === null) {
-            return response.status(422).send({ error: 'unsafe_chat_file' });
-        }
-
-        const chatInfo = await getListableGroupChatInfo(chatFilePath, id);
+        const chatInfo = await getListableGroupChatInfo(roleplayChatPath(base, locator), locator.chat);
+        response.set('Cache-Control', 'no-store');
         return response.send(chatInfo);
     } catch (error) {
-        console.error(error);
-        return response.sendStatus(500);
+        return sendRoleplayError(response, error);
     }
 });
 
@@ -2004,49 +2223,7 @@ router.post('/group/delete', (request, response) => {
     }
 });
 
-router.post('/group/save', async function (request, response) {
-    if (request.get('X-Neconyan-Account') && request.get('X-Neconyan-Account') !== request.user.profile.handle) return response.status(409).send({ error: 'account_changed' });
-    try {
-        if (!request.body || !request.body.id) {
-            return response.sendStatus(400);
-        }
-
-        const id = request.body.id;
-        const handle = request.user.profile.handle;
-        const chatFileName = sanitize(`${id}.jsonl`);
-        const chatFilePath = path.join(request.user.directories.groupChats, chatFileName);
-        const chatData = request.body.chat;
-
-        if (Array.isArray(chatData)) {
-            const recoveryTarget = createChatRecoveryTarget(request, true, chatFileName);
-            const saveResult = await trySaveChat(chatData, chatFilePath, request.body.force, handle, String(id), request.user.directories.backups, {
-                mewmory: { directories: request.user.directories, locator: { group: true, chat: chatFileName } },
-                deferBackup: request.body.deferBackup === true,
-                deferSequenceId: typeof request.body.deferSequenceId === 'string' ? request.body.deferSequenceId : undefined,
-                allowShrink: request.body.allowShrink === true,
-                recoveryTarget,
-            });
-            return response.send({ ok: true, integrity: saveResult.integrity });
-        } else {
-            return response.status(400).send({ error: 'The request\'s body.chat is not an array.' });
-        }
-    } catch (error) {
-        if (error instanceof IntegrityMismatchError) {
-            console.error(error.message);
-            return response.status(400).send({ error: 'integrity' });
-        }
-        if (error instanceof DestructiveChatSaveError) {
-            console.error(error.message);
-            return response.status(409).send({ error: 'destructive', reason: error.reason });
-        }
-        if (error instanceof InvalidChatDataError) {
-            console.error(error.message);
-            return response.status(400).send({ error: error.message });
-        }
-        console.error(error);
-        return response.status(500).send({ error: 'An error has occurred, see the console logs for more information.' });
-    }
-});
+router.post('/group/save', (request, response) => sendProtectedChatSave(request, response, true));
 
 router.post('/search', validateAvatarUrlMiddleware, async function (request, response) {
     try {

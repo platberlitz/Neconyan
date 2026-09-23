@@ -56,6 +56,23 @@ afterEach(() => {
 });
 
 describe('tryWriteFileSync atomic fallback', () => {
+    test('runs the trusted replacement validator again on each Windows rename retry', () => {
+        const filePath = createTargetPath();
+        fs.writeFileSync(filePath, 'before');
+        mockWritableTarget();
+        const rename = fs.renameSync.bind(fs);
+        let attempts = 0;
+        const validation = jest.fn();
+        jest.spyOn(fs, 'renameSync').mockImplementation((source, target) => {
+            if (target === filePath && attempts++ < 2) throw createWindowsFileLockError('EBUSY');
+            return rename(source, target);
+        });
+        tryWriteFileSync(filePath, 'after', 'utf8', { replaceFileOnly: true, validateBeforeReplace: validation });
+        expect(attempts).toBe(3);
+        expect(validation).toHaveBeenCalledTimes(5);
+        expect(fs.readFileSync(filePath, 'utf8')).toBe('after');
+    });
+
     test('writes directly when the target must keep its filesystem identity', () => {
         const filePath = createTargetPath();
         fs.writeFileSync(filePath, 'before', 'utf8');
@@ -254,6 +271,48 @@ describe('tryWriteFileSync atomic fallback', () => {
         expect(() => JSON.parse(fs.readFileSync(filePath, 'utf8').split('\n')[0])).toThrow();
     });
 
+    for (const code of ['ESTALE', 'EMLINK']) {
+        for (const preserveOnWriteError of [true, false]) {
+            test(`${code} ${preserveOnWriteError ? 'preserves protected partial output' : 'retains legacy rollback'}`, () => {
+                const filePath = createTargetPath();
+                const original = Buffer.from('{"old":true}\n');
+                const next = Buffer.from('{"new":true}\n');
+                fs.writeFileSync(filePath, original);
+                const checked = fs.statSync(filePath, { bigint: true });
+                const write = fs.writeSync;
+                let writes = 0;
+                jest.spyOn(fs, 'writeSync').mockImplementation((fd, ...args) => {
+                    if (++writes === 2) throw Object.assign(new Error('Interrupted write'), { code });
+                    return write(fd, ...args);
+                });
+                expect(() => tryWriteFileSync(filePath, next, undefined, {
+                    preserveFileIdentity: true, invalidateBeforeWrite: true, preserveOnWriteError,
+                    expectedFileIdentity: { dev: checked.dev, ino: checked.ino },
+                    expectedFileHash: crypto.createHash('sha256').update(original).digest('hex'),
+                })).toThrow(expect.objectContaining({ code }));
+                const partial = Buffer.concat([Buffer.from([next[0] ^ 0xFF]), original.subarray(1)]);
+                expect(writes).toBe(preserveOnWriteError ? 2 : 3);
+                expect(fs.readFileSync(filePath)).toEqual(preserveOnWriteError ? partial : original);
+                expect(fs.statSync(filePath, { bigint: true }).ino).toBe(checked.ino);
+                expect(fs.existsSync(filePath + RECOVERY_SUFFIX)).toBe(false);
+            });
+        }
+    }
+
+    test('preserving interrupted output rejects incompatible write modes before touching files', () => {
+        const filePath = createTargetPath();
+        fs.writeFileSync(filePath, 'original');
+        const before = fs.statSync(filePath, { bigint: true });
+        for (const options of [{}, { preserveFileIdentity: true }, { replaceFileOnly: true }, { expectedFileAbsent: true },
+            { preserveFileIdentity: true, invalidateBeforeWrite: true, replaceFileOnly: true },
+            { preserveFileIdentity: true, invalidateBeforeWrite: true, expectedFileAbsent: true }]) {
+            expect(() => tryWriteFileSync(filePath, 'new', 'utf8', { ...options, preserveOnWriteError: true })).toThrow(TypeError);
+        }
+        expect(fs.readFileSync(filePath, 'utf8')).toBe('original');
+        expect(fs.statSync(filePath, { bigint: true }).mtimeNs).toBe(before.mtimeNs);
+        expect(fs.readdirSync(tempRoot)).toEqual([path.basename(filePath)]);
+    });
+
     test('re-invalidates a guarded write when its final flush fails', () => {
         const filePath = createTargetPath();
         fs.writeFileSync(filePath, '{"old":true}\n', 'utf8');
@@ -302,7 +361,7 @@ describe('tryWriteFileSync atomic fallback', () => {
         fs.writeFileSync(filePath, 'before', 'utf8');
         const checked = fs.statSync(filePath, { bigint: true });
         jest.spyOn(crypto, 'randomBytes').mockReturnValue(Buffer.alloc(8, 1));
-        const tempPath = `${filePath}.${process.pid}.${Buffer.alloc(8, 1).toString('hex')}.tmp`;
+        const tempPath = path.join(path.dirname(filePath), `.sillybunny-write-${process.pid}.${Buffer.alloc(8, 1).toString('hex')}.tmp`);
         fs.linkSync(filePath, tempPath);
 
         expect(() => tryWriteFileSync(filePath, 'after', 'utf8', {

@@ -44,6 +44,8 @@ import { shouldRestoreTextGenStatusOnStartup } from './scripts/textgen-startup-s
 import { normalizeCharacterChatName, resolveCharacterChatNameForLoad } from './scripts/character-chat-resolver.js';
 import { getDebouncedChatSaveAbortReason, getQueuedChatSaveAbortReason } from './scripts/chat-save-guard.js';
 import { getChatBackupSaveOptions } from './scripts/chat-backup-sequence.js';
+import { fetchWithCsrfRetry } from './scripts/csrf-token-refresh.js';
+import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave } from './scripts/roleplay-save-chain.js';
 import { getCharacterDefinitionFormValues, getSuspiciousEmptyCharacterDefinitionSave } from './scripts/character-save-guard.js';
 // Neconyan: keep model-produced chat filenames behind a strict, independently tested parser.
 import { CHAT_LABEL_TITLE_LIMIT, extractGeneratedChatLabel, normalizeGeneratedChatLabel, truncateChatLabelText } from './scripts/chat-label.js';
@@ -662,7 +664,7 @@ const CHAT_LOAD_SCROLL_SETTLE_DELAYS_MS = Object.freeze([80, 250, MOBILE_CHAT_LO
 const SHOW_MORE_DUPLICATE_EVENT_GUARD_MS = 750;
 const SHOW_MORE_TOUCH_MOVE_CANCEL_PX = 12;
 const ENTITY_SELECTION_PULSE_CLEANUP_MS = 900;
-let isLoadingMoreMessages = false;
+let loadingMoreMessagesOwner = null;
 let lastShowMoreTouchEventAt = 0;
 let showMoreTouchStart = null;
 let entitySelectionPulseId = 0;
@@ -1075,6 +1077,39 @@ export function getRequestHeaders({ omitContentType = false } = {}) {
     }
 
     return headers;
+}
+
+function roleplayRequestHeaders(stamp) {
+    if (stamp.owner !== getCurrentUserHandle()) throw Object.assign(new Error('The account changed. Reload before saving.'), { code: 'ROLEPLAY_ACCOUNT_CHANGED' });
+    return { ...getRequestHeaders(), 'X-Neconyan-Account': stamp.owner };
+}
+
+function requestRoleplayChat(locator, stamp, allowCreate) {
+    return fetchWithCsrfRetry(locator.group ? '/api/chats/group/get' : '/api/chats/get', () => ({
+        method: 'POST', cache: 'no-cache', headers: roleplayRequestHeaders(stamp),
+        body: JSON.stringify({ ...(locator.group ? { id: locator.chat } : { file_name: locator.chat, avatar_url: locator.avatar }),
+            allow_create: allowCreate, roleplay: { account: stamp.account } }),
+    }), { refreshCsrfToken });
+}
+
+/** Read one exact chat and its save authority together, without changing the active chat. */
+export async function loadRoleplayChat(locator, { allowCreate = false } = {}) {
+    const stamp = roleplayAccountStamp();
+    const response = await requestRoleplayChat(locator, stamp, allowCreate);
+    if (!response.ok) throw new Error('Chat could not be loaded');
+    const records = await response.json();
+    if (!Array.isArray(records)) throw new Error('Invalid chat data');
+    roleplayRequestHeaders(stamp);
+    return { records, evidence: parseRoleplayRead(response, locator, stamp) };
+}
+
+/** The shared transport keeps retries byte-identical while refreshing only CSRF and compression. */
+export function saveRoleplayChatRequest(token, payload) {
+    return sendRoleplaySave(token, payload,
+        (body, stamp) => fetchWithCsrfRetry(token.locator.group ? '/api/chats/group/save' : '/api/chats/save', () => compressRequest({
+            method: 'POST', cache: 'no-cache', headers: roleplayRequestHeaders(stamp), body,
+        }), { refreshCsrfToken }),
+        (locator, stamp) => requestRoleplayChat(locator, stamp, true));
 }
 
 /**
@@ -2153,13 +2188,13 @@ function clearChatLoadBottomLock() {
     }
 }
 
-function pinChatLoadToBottom({ waitForFrame = false } = {}) {
-    if (!isChatLoadBottomLockActive()) {
+function pinChatLoadToBottom({ waitForFrame = false, isCurrent = () => true } = {}) {
+    if (!isCurrent() || !isChatLoadBottomLockActive()) {
         return false;
     }
 
     const pin = () => {
-        if (!isChatLoadBottomLockActive()) {
+        if (!isCurrent() || !isChatLoadBottomLockActive()) {
             return;
         }
 
@@ -2579,12 +2614,12 @@ function restoreVisibleChatMessageAnchor(anchor) {
     restoreVisibleMessageAnchor(chatElement[0], anchor);
 }
 
-async function settleVisibleChatMessageAnchor(anchor, frames = 8) {
+async function settleVisibleChatMessageAnchor(anchor, frames = 8, isCurrent = () => true) {
     const scrollVersion = chatScrollVersion;
     await settleVisibleMessageAnchor(chatElement[0], anchor, {
         frames,
         requestAnimationFrameRef: requestAnimationFrame,
-        isCurrent: () => scrollVersion === chatScrollVersion && !isChatLoadBottomLockActive(),
+        isCurrent: () => isCurrent() && scrollVersion === chatScrollVersion && !isChatLoadBottomLockActive(),
     });
 }
 
@@ -3116,10 +3151,12 @@ async function renderShowMoreMessagesLegacy({
     insertionReference,
     anchor,
     shouldPreserveScroll,
+    isCurrent,
 }) {
     const shouldYieldBetweenBatches = batchSize < messages.length;
 
     for (let offset = 0; offset < messages.length; offset += batchSize) {
+        if (!isCurrent()) break;
         const fragment = document.createDocumentFragment();
         const batch = messages.slice(offset, offset + batchSize);
 
@@ -3131,6 +3168,7 @@ async function renderShowMoreMessagesLegacy({
         });
 
         // Fallback to chatElement if the button isn't where it's expected to be.
+        if (!isCurrent()) break;
         insertShowMoreFragment(insertionReference, fragment);
 
         if (shouldPreserveScroll) {
@@ -3139,6 +3177,7 @@ async function renderShowMoreMessagesLegacy({
 
         if (shouldYieldBetweenBatches && offset + batchSize < messages.length) {
             await waitForNextFrame();
+            if (!isCurrent()) break;
             if (shouldPreserveScroll) {
                 restoreVisibleChatMessageAnchor(anchor);
             }
@@ -3153,9 +3192,10 @@ async function renderShowMoreMessagesThroughLifecycle({
     insertionReference,
     anchor,
     shouldPreserveScroll,
+    isCurrent,
 }) {
     const restoreAnchorIfNeeded = () => {
-        if (shouldPreserveScroll) {
+        if (isCurrent() && shouldPreserveScroll) {
             restoreVisibleChatMessageAnchor(anchor);
         }
     };
@@ -3168,9 +3208,10 @@ async function renderShowMoreMessagesThroughLifecycle({
         insertFragment: fragment => insertShowMoreFragment(insertionReference, fragment),
         waitForNextFrame: async () => {
             await waitForNextFrame();
-            restoreAnchorIfNeeded();
+            if (isCurrent()) restoreAnchorIfNeeded();
         },
         afterBatch: restoreAnchorIfNeeded,
+        shouldContinue: isCurrent,
     });
 }
 
@@ -3180,6 +3221,7 @@ async function renderShowMoreMessages({
     insertionReference,
     anchor,
     shouldPreserveScroll,
+    isCurrent = captureChatRenderValidity(),
 }) {
     const batchSize = getMobileChatRenderBatchSize(messages.length);
     const renderOptions = {
@@ -3189,6 +3231,7 @@ async function renderShowMoreMessages({
         insertionReference,
         anchor,
         shouldPreserveScroll,
+        isCurrent,
     };
 
     if (isChatRenderLifecycleRolloutEnabled(CHAT_RENDER_LIFECYCLE_ROUTE.SHOW_MORE_BATCH)) {
@@ -3200,11 +3243,10 @@ async function renderShowMoreMessages({
 }
 
 export async function showMoreMessages(messagesToLoad = null) {
-    if (isLoadingMoreMessages) {
-        return;
-    }
-
-    isLoadingMoreMessages = true;
+    const isCurrent = captureChatRenderValidity();
+    if (loadingMoreMessagesOwner?.isCurrent()) return;
+    const owner = { isCurrent };
+    loadingMoreMessagesOwner = owner;
 
     const firstDisplayedMesId = chatElement.children('.mes').first().attr('mesid');
     const renderedMessageCount = getRenderedChatMessageElements().length;
@@ -3246,7 +3288,9 @@ export async function showMoreMessages(messagesToLoad = null) {
             insertionReference,
             anchor,
             shouldPreserveScroll,
+            isCurrent,
         });
+        if (!isCurrent()) return;
 
         pruneRenderedChatMessagesToWindow({ windowSize, pruneFrom: 'end' });
         syncChatHistoryWindowControls();
@@ -3262,24 +3306,24 @@ export async function showMoreMessages(messagesToLoad = null) {
         updateEditArrowClasses();
 
         if (shouldPreserveScroll) {
-            await settleVisibleChatMessageAnchor(anchor);
+            await settleVisibleChatMessageAnchor(anchor, 8, isCurrent);
         }
+        if (!isCurrent()) return;
 
         await eventSource.emit(event_types.MORE_MESSAGES_LOADED);
     } finally {
         if (showMoreButtonElement instanceof HTMLElement) {
             showMoreButtonElement.removeAttribute('aria-busy');
         }
-        isLoadingMoreMessages = false;
+        if (loadingMoreMessagesOwner === owner) loadingMoreMessagesOwner = null;
     }
 }
 
 export async function showNewerMessages(messagesToLoad = null) {
-    if (isLoadingMoreMessages) {
-        return;
-    }
-
-    isLoadingMoreMessages = true;
+    const isCurrent = captureChatRenderValidity();
+    if (loadingMoreMessagesOwner?.isCurrent()) return;
+    const owner = { isCurrent };
+    loadingMoreMessagesOwner = owner;
 
     const { renderedMessageCount, lastMessageId } = getRenderedChatMessageWindow();
     const requestedWindowSize = messagesToLoad ?? power_user.chat_truncation;
@@ -3296,8 +3340,8 @@ export async function showNewerMessages(messagesToLoad = null) {
     const messages = chat.slice(firstId, lastId);
 
     if (messages.length === 0) {
-        syncChatHistoryWindowControls();
-        isLoadingMoreMessages = false;
+        if (isCurrent()) syncChatHistoryWindowControls();
+        if (loadingMoreMessagesOwner === owner) loadingMoreMessagesOwner = null;
         return;
     }
 
@@ -3308,7 +3352,8 @@ export async function showNewerMessages(messagesToLoad = null) {
 
         showNewerButton.remove();
 
-        const renderedMessageIds = await renderRedisplayChatMessages({ messages, startIndex: firstId });
+        const renderedMessageIds = await renderRedisplayChatMessages({ messages, startIndex: firstId, isCurrent });
+        if (!isCurrent()) return;
 
         pruneRenderedChatMessagesToWindow({ windowSize, pruneFrom: 'start' });
         syncRenderedChatLastMessageClass();
@@ -3323,23 +3368,43 @@ export async function showNewerMessages(messagesToLoad = null) {
         if (showNewerButtonElement instanceof HTMLElement) {
             showNewerButtonElement.removeAttribute('aria-busy');
         }
-        isLoadingMoreMessages = false;
+        if (loadingMoreMessagesOwner === owner) loadingMoreMessagesOwner = null;
     }
 }
 
+function captureChatRenderValidity() {
+    const generation = getChatGeneration();
+    const chatId = getCurrentChatId();
+    const groupId = selected_group;
+    const characterId = this_chid;
+    const owner = getCurrentUserHandle();
+    let account;
+    try { account = roleplayAccountStamp(); } catch { /* The account may still be loading. */ }
+    return () => {
+        let currentAccount;
+        try { currentAccount = roleplayAccountStamp(); } catch { /* A changed account invalidates an earlier stamp. */ }
+        return generation === getChatGeneration() && chatId === getCurrentChatId()
+            && groupId === selected_group && (groupId || characterId === this_chid)
+            && owner === getCurrentUserHandle() && account === currentAccount;
+    };
+}
+
 export async function printMessages() {
+    const isCurrent = captureChatRenderValidity();
     const count = getChatRenderWindowSize(power_user.chat_truncation);
     const startIndex = getChatRenderWindowStartIndex(chat.length, count);
 
     removeRenderedChatMessages();
     beginChatLoadBottomLock();
-    await redisplayChat({ startIndex, fade: false, pinBottomDuringRender: true });
+    await redisplayChat({ startIndex, fade: false, pinBottomDuringRender: true, isCurrent });
+    if (!isCurrent()) return;
     syncChatHistoryWindowControls();
 
     // Wait for next frame to ensure batch rendering completes
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    scrollLoadedChatToBottomThroughLifecycle();
-    delay(debounce_timeout.short).then(() => scrollOnMediaLoad({ force: true }));
+    if (!isCurrent()) return;
+    scrollLoadedChatToBottomThroughLifecycle(isCurrent);
+    delay(debounce_timeout.short).then(() => { if (isCurrent()) scrollOnMediaLoad({ force: true, isCurrent }); });
 }
 
 export async function scrollReopenedChatToBottom() {
@@ -3358,9 +3423,10 @@ export async function scrollReopenedChatToBottom() {
     scrollLoadedChatToBottomThroughLifecycle();
 }
 
-function scrollLoadedChatToBottomThroughLifecycle() {
+function scrollLoadedChatToBottomThroughLifecycle(isCurrent = captureChatRenderValidity()) {
+    if (!isCurrent()) return;
     if (!isChatRenderLifecycleRolloutEnabled(CHAT_RENDER_LIFECYCLE_ROUTE.INITIAL_LOAD)) {
-        scrollLoadedChatToBottom();
+        scrollLoadedChatToBottom(isCurrent);
         return;
     }
 
@@ -3369,11 +3435,12 @@ function scrollLoadedChatToBottomThroughLifecycle() {
     });
 
     if (shouldApplyChatBottomScrollAction(action)) {
-        scrollLoadedChatToBottom();
+        scrollLoadedChatToBottom(isCurrent);
     }
 }
 
-function scrollLoadedChatToBottom() {
+function scrollLoadedChatToBottom(isCurrent) {
+    if (!isCurrent()) return;
     // Neconyan: previous-chat taps can leave the mobile manual-scroll guard active.
     const latestSettleDelay = Math.max(...CHAT_LOAD_SCROLL_SETTLE_DELAYS_MS);
     const bottomLockDurationMs = latestSettleDelay + CHAT_LOAD_BOTTOM_LOCK_EXTRA_MS;
@@ -3386,18 +3453,19 @@ function scrollLoadedChatToBottom() {
         requestMobileChatBottomPin({ requireNearBottom: false, durationMs: bottomLockDurationMs + MOBILE_SEND_SCROLL_SETTLE_MS });
     }
 
-    pinChatLoadToBottom({ waitForFrame: true });
+    pinChatLoadToBottom({ waitForFrame: true, isCurrent });
 
     for (const delayMs of CHAT_LOAD_SCROLL_SETTLE_DELAYS_MS) {
-        setTimeout(() => pinChatLoadToBottom({ waitForFrame: true }), delayMs);
+        setTimeout(() => { if (isCurrent()) pinChatLoadToBottom({ waitForFrame: true, isCurrent }); }, delayMs);
     }
 }
 
-async function renderRedisplayChatMessagesLegacy({ messages, startIndex, batchSize, pinBottomDuringRender }) {
+async function renderRedisplayChatMessagesLegacy({ messages, startIndex, batchSize, pinBottomDuringRender, isCurrent }) {
     const renderedMessageIds = lodash.range(startIndex, startIndex + messages.length, 1);
     const shouldYieldBetweenBatches = batchSize < messages.length;
 
     for (let offset = 0; offset < messages.length; offset += batchSize) {
+        if (!isCurrent()) break;
         const batchMessages = messages.slice(offset, offset + batchSize);
         const fragment = document.createDocumentFragment();
         const newMessageElements = batchMessages.map((message, batchOffset) => {
@@ -3416,6 +3484,7 @@ async function renderRedisplayChatMessagesLegacy({ messages, startIndex, batchSi
         for (const messageElement of newMessageElements) {
             fragment.appendChild(messageElement);
         }
+        if (!isCurrent()) break;
         chatElement[0].appendChild(fragment);
 
         if (pinBottomDuringRender) {
@@ -3430,7 +3499,7 @@ async function renderRedisplayChatMessagesLegacy({ messages, startIndex, batchSi
     return renderedMessageIds;
 }
 
-async function renderRedisplayChatMessagesThroughLifecycle({ messages, startIndex, batchSize, pinBottomDuringRender }) {
+async function renderRedisplayChatMessagesThroughLifecycle({ messages, startIndex, batchSize, pinBottomDuringRender, isCurrent }) {
     const { renderedMessageIds } = await renderMessagesInBatches({
         messages,
         firstMessageId: startIndex,
@@ -3440,19 +3509,21 @@ async function renderRedisplayChatMessagesThroughLifecycle({ messages, startInde
         waitForNextFrame,
         markLastMessage: true,
         afterBatch: pinBottomDuringRender ? () => beginChatLoadBottomLock() : undefined,
+        shouldContinue: isCurrent,
     });
 
     return renderedMessageIds;
 }
 
-async function renderRedisplayChatMessages({ messages, startIndex, pinBottomDuringRender = false }) {
+async function renderRedisplayChatMessages({ messages, startIndex, pinBottomDuringRender = false,
+    isCurrent = captureChatRenderValidity() }) {
     const batchSize = getMobileChatRenderBatchSize(messages.length);
 
     if (isChatRenderLifecycleRolloutEnabled(CHAT_RENDER_LIFECYCLE_ROUTE.REDISPLAY_BATCH)) {
-        return renderRedisplayChatMessagesThroughLifecycle({ messages, startIndex, batchSize, pinBottomDuringRender });
+        return renderRedisplayChatMessagesThroughLifecycle({ messages, startIndex, batchSize, pinBottomDuringRender, isCurrent });
     }
 
-    return renderRedisplayChatMessagesLegacy({ messages, startIndex, batchSize, pinBottomDuringRender });
+    return renderRedisplayChatMessagesLegacy({ messages, startIndex, batchSize, pinBottomDuringRender, isCurrent });
 }
 
 /**
@@ -3463,7 +3534,9 @@ async function renderRedisplayChatMessages({ messages, startIndex, pinBottomDuri
  * @param {Boolean} [options.fade=true] When false, the swipe chevrons will not fade in.
  * @param {Boolean} [options.pinBottomDuringRender=false] Keep initial chat loads at the newest rendered message while batches append.
  */
-export async function redisplayChat({ targetChat = chat, startIndex = 0, fade = true, pinBottomDuringRender = false } = {}) {
+export async function redisplayChat({ targetChat = chat, startIndex = 0, fade = true, pinBottomDuringRender = false,
+    isCurrent = captureChatRenderValidity() } = {}) {
+    if (!isCurrent()) return;
     const messageElements = chatElement.find('.mes');
     messageElements.removeClass('last_mes');
     const { renderedMessageCount, firstMessageId, lastMessageId } = getRenderedChatMessageWindow();
@@ -3486,7 +3559,8 @@ export async function redisplayChat({ targetChat = chat, startIndex = 0, fade = 
     const messages = targetChat.slice(startIndex, endIndex);
 
     if (messages.length > 0) {
-        const renderedMessageIds = await renderRedisplayChatMessages({ messages, startIndex, pinBottomDuringRender });
+        const renderedMessageIds = await renderRedisplayChatMessages({ messages, startIndex, pinBottomDuringRender, isCurrent });
+        if (!isCurrent()) return;
 
         applyCharacterTagsToMessageDivs({ mesIds: renderedMessageIds });
     }
@@ -3499,7 +3573,8 @@ export async function redisplayChat({ targetChat = chat, startIndex = 0, fade = 
     console.info(`Rendered ${messages.length} of ${targetChat.length - startIndex} messages in ${((performance.now() - t1) / 1000).toFixed(3)} seconds.`);
 }
 
-export function scrollOnMediaLoad({ force = false } = {}) {
+export function scrollOnMediaLoad({ force = false, isCurrent = captureChatRenderValidity() } = {}) {
+    if (!isCurrent()) return;
     const started = Date.now();
     const media = chatElement.find('.last_mes .mes_block img, .last_mes .mes_block video, .last_mes .mes_block audio').toArray()
         .filter(element => element instanceof HTMLElement && (isElementInViewport(element) || isElementInViewport(element.closest('.last_mes'))));
@@ -3529,13 +3604,13 @@ export function scrollOnMediaLoad({ force = false } = {}) {
     }
 
     function incrementAndCheck() {
-        if ((Date.now() - started) > MOBILE_MEDIA_SCROLL_MAX_DELAY_MS) {
+        if (!isCurrent() || (Date.now() - started) > MOBILE_MEDIA_SCROLL_MAX_DELAY_MS) {
             return;
         }
         mediaLoaded++;
         if (mediaLoaded === media.length) {
             if (force) {
-                pinChatLoadToBottom({ waitForFrame: true });
+                pinChatLoadToBottom({ waitForFrame: true, isCurrent });
             } else {
                 scrollChatToBottom({ waitForFrame: true });
             }
@@ -11514,49 +11589,30 @@ async function renamePastChats(oldAvatar, newAvatar, newName) {
 
     for (const { file_name } of pastChats) {
         try {
-            const fileNameWithoutExtension = file_name.replace('.jsonl', '');
-            const getChatResponse = await fetch('/api/chats/get', {
-                method: 'POST',
-                headers: getRequestHeaders(),
-                body: JSON.stringify({
-                    ch_name: newName,
-                    file_name: fileNameWithoutExtension,
-                    avatar_url: newAvatar,
-                }),
-                cache: 'no-cache',
-            });
+            const fileNameWithoutExtension = file_name.endsWith('.jsonl') ? file_name.slice(0, -6) : file_name;
+            const locator = { group: false, avatar: newAvatar, chat: fileNameWithoutExtension };
+            const { records: currentChat, evidence } = await loadRoleplayChat(locator);
 
-            if (getChatResponse.ok) {
-                const currentChat = await getChatResponse.json();
-
-                for (const message of currentChat) {
-                    if (message.is_user || message.is_system || message.extra?.type == system_message_types.NARRATOR) {
-                        continue;
-                    }
-
-                    if (message.name !== undefined) {
-                        message.name = newName;
-                    }
+            for (const message of currentChat) {
+                if (message.is_user || message.is_system || message.extra?.type == system_message_types.NARRATOR) {
+                    continue;
                 }
 
-                await eventSource.emit(event_types.CHARACTER_RENAMED_IN_PAST_CHAT, currentChat, oldAvatar, newAvatar);
+                if (message.name !== undefined) {
+                    message.name = newName;
+                }
+            }
 
-                const saveChatRequest = await compressRequest({
-                    method: 'POST',
-                    headers: getRequestHeaders(),
-                    body: JSON.stringify({
-                        ch_name: newName,
-                        file_name: fileNameWithoutExtension,
-                        chat: currentChat,
-                        avatar_url: newAvatar,
-                    }),
-                    cache: 'no-cache',
+            await eventSource.emit(event_types.CHARACTER_RENAMED_IN_PAST_CHAT, currentChat, oldAvatar, newAvatar);
+
+            const token = beginRoleplaySave(locator, { operationKey: uuidv4(), evidence });
+            try {
+                const saved = await saveRoleplayChatRequest(token, {
+                    ch_name: newName, file_name: fileNameWithoutExtension, chat: currentChat, avatar_url: newAvatar,
                 });
-                const saveChatResponse = await fetch('/api/chats/save', saveChatRequest);
-
-                if (!saveChatResponse.ok) {
-                    throw new Error('Could not save chat');
-                }
+                if (!saved.ok) throw new Error('Could not save chat');
+            } finally {
+                await finishRoleplaySave(token);
             }
         } catch (error) {
             toastr.error(t`Past chat could not be updated: ${file_name}`);
@@ -11731,8 +11787,24 @@ export function saveChat(...saveChatArguments) {
         const metadataSnapshot = structuredClone({ ...chat_metadata, ...(options.withMetadata || {}) });
         const activeCharacter = characters[this_chid];
         const currentGeneration = chatGeneration;
+        const account = options.account ?? getCurrentUserHandle();
+        const fileName = options.chatName ?? activeCharacter?.chat;
+        let roleplaySave;
+        if (fileName && activeCharacter?.avatar && !selected_group) {
+            try {
+                roleplaySave = beginRoleplaySave({ group: false, avatar: activeCharacter.avatar, chat: fileName }, {
+                    operationKey: uuidv4(), owner: account, create: fileName !== activeCharacter.chat,
+                });
+            } catch (error) {
+                console.error(error);
+                toastr.error(t`Check the server connection and reload the page to prevent data loss.`, t`Chat could not be saved`);
+                return options.throwOnError ? Promise.reject(error) : Promise.resolve(false);
+            }
+        }
         queuedSaveArguments = [{
             ...options,
+            account,
+            roleplaySave,
             chatData,
             metadataSnapshot,
             activeChatName: activeCharacter?.chat,
@@ -11750,7 +11822,10 @@ export function saveChat(...saveChatArguments) {
     const saveTask = chatSaveQueue
         .catch(error => console.warn('Previous chat save failed before queued save.', error))
         .then(() => saveChatImmediately(...queuedSaveArguments))
-        .finally(() => setChatSaveActive(false));
+        .finally(async () => {
+            await finishRoleplaySave(queuedSaveArguments[0]?.roleplaySave);
+            setChatSaveActive(false);
+        });
 
     chatSaveQueue = saveTask.catch(() => {});
     return saveTask;
@@ -11786,6 +11861,7 @@ async function saveChatImmediately(...args) {
         scheduledGroupId,
         scheduledChatId,
         account,
+        roleplaySave,
     } = options;
 
     if (account !== undefined && account !== getCurrentUserHandle()) return false;
@@ -11851,25 +11927,19 @@ async function saveChatImmediately(...args) {
     };
 
     try {
-        const saveChatRequest = await compressRequest({
-            method: 'POST',
-            cache: 'no-cache',
-            headers: { ...getRequestHeaders(), ...(account === undefined ? {} : { 'X-Neconyan-Account': account }) },
-            body: JSON.stringify({
-                ch_name: resolvedCharacterName,
-                file_name: fileName,
-                chat: [chatHeader, ...trimmedChat],
-                avatar_url: resolvedAvatarUrl,
-                force: force,
-                deferBackup: Boolean(deferBackup),
-                deferSequenceId,
-                allowShrink: Boolean(allowShrink),
-            }),
+        const result = await saveRoleplayChatRequest(roleplaySave, {
+            ch_name: resolvedCharacterName,
+            file_name: fileName,
+            chat: [chatHeader, ...trimmedChat],
+            avatar_url: resolvedAvatarUrl,
+            force: force,
+            deferBackup: Boolean(deferBackup),
+            deferSequenceId,
+            allowShrink: Boolean(allowShrink),
         });
-        const result = await fetch('/api/chats/save', saveChatRequest);
 
         if (result.ok) {
-            const responseData = await result.json().catch(() => ({}));
+            const responseData = result.data;
             if (account !== undefined && account !== getCurrentUserHandle()) return false;
             rememberQueuedChatIntegrity(integrityKey, responseData?.integrity);
             if (isActiveChatSave && typeof responseData?.integrity === 'string' && responseData.integrity) {
@@ -11878,7 +11948,7 @@ async function saveChatImmediately(...args) {
             return true;
         }
 
-        const errorData = await result.json();
+        const errorData = result.data;
 
         if (errorData?.error === 'destructive') {
             console.error(`Chat save refused as destructive (${errorData?.reason}). The file on disk was left unchanged.`);
@@ -11889,7 +11959,8 @@ async function saveChatImmediately(...args) {
             return false;
         }
 
-        const isIntegrityError = errorData?.error === 'integrity' && !force;
+        const isIntegrityError = errorData?.error === 'integrity' && !force
+            && (errorData.roleplay?.source || Number.isSafeInteger(errorData.roleplay?.vacancy));
         if (!isIntegrityError) {
             const errorMessage = typeof errorData?.error === 'string' ? errorData.error : result.statusText;
             throw new Error(errorMessage || 'Chat save failed');
@@ -11911,7 +11982,8 @@ async function saveChatImmediately(...args) {
             return false;
         }
 
-        return await saveChatImmediately({ chatName, withMetadata, metadataSnapshot: metadata, mesId, force: true, chatData, throwOnError, deferBackup, deferSequenceId, allowShrink, activeChatName, characterName, avatarUrl, wasGroupChat, scheduledGeneration, scheduledCharacterId, scheduledGroupId, scheduledChatId, account });
+        confirmRoleplayOverwrite(roleplaySave, uuidv4());
+        return await saveChatImmediately({ chatName, withMetadata, metadataSnapshot: metadata, mesId, force: true, chatData, throwOnError, deferBackup, deferSequenceId, allowShrink, activeChatName, characterName, avatarUrl, wasGroupChat, scheduledGeneration, scheduledCharacterId, scheduledGroupId, scheduledChatId, account, roleplaySave });
     } catch (error) {
         console.error(error);
         toastr.error(t`Check the server connection and reload the page to prevent data loss.`, t`Chat could not be saved`);
@@ -12323,26 +12395,15 @@ export async function unshallowCharacter(characterId) {
 export async function getChat({ allowMissingPersisted = false, switchMenu = true } = {}) {
     try {
         incrementChatGeneration();
-        await unshallowCharacter(this_chid);
-        const resolvedChat = await resolveCharacterChatForLoad(this_chid, { allowCreate: true, allowMissingPersisted });
-
-        const response = await fetch('/api/chats/get', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            cache: 'no-cache',
-            body: JSON.stringify({
-                ch_name: characters[this_chid].name,
-                file_name: resolvedChat.chatName,
-                avatar_url: characters[this_chid].avatar,
-                allow_create: resolvedChat.created,
-            }),
-        });
-
-        if (!response.ok) {
-            throw new Error('Chat could not be loaded');
-        }
-
-        const data = await response.json();
+        const generation = chatGeneration;
+        const characterId = this_chid;
+        await unshallowCharacter(characterId);
+        const resolvedChat = await resolveCharacterChatForLoad(characterId, { allowCreate: true, allowMissingPersisted });
+        if (this_chid !== characterId || chatGeneration !== generation || selected_group) return false;
+        const locator = { group: false, avatar: characters[characterId].avatar, chat: resolvedChat.chatName };
+        const { records: data, evidence } = await loadRoleplayChat(locator, { allowCreate: resolvedChat.created });
+        if (this_chid !== characterId || chatGeneration !== generation || selected_group) return false;
+        if (!rememberRoleplayRead(locator, evidence)) throw new Error('A chat save is still unsettled. Keep the current edits.');
         if (Array.isArray(data) && data.length > 0) {
             /** @type {ChatHeader} */
             const chatHeader = data.shift();
@@ -12669,6 +12730,7 @@ export async function getSettings(initLoaderHandle = null) {
     if (data.result != 'file not find' && data.settings) {
         const conversationSync = await import('./scripts/neconyan-conversation/store-sync.js');
         conversationSync.bindConversationAccount(data.inChatAgentAccount);
+        bindRoleplayAccount(data.inChatAgentAccount, data.roleplayAccount);
         settings = JSON.parse(data.settings);
         lastServerSettingsVersion = normalizeSettingsVersion(settings._version);
         const conversationBaseline = structuredClone(settings.extension_settings?.sillybunny_conversation ?? {});

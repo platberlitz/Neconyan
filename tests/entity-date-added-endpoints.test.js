@@ -17,6 +17,7 @@ setConfigFilePath(path.join(repoRoot, 'default', 'config.yaml'));
 
 const { router: charactersRouter } = await import('../src/endpoints/characters.js');
 const { migrateGroupChatsMetadataFormat, router: groupsRouter } = await import('../src/endpoints/groups.js');
+const { initialiseRoleplayAccount } = await import('../src/roleplay-store.js');
 
 describe('entity date added endpoints', () => {
     let baseUrl;
@@ -274,6 +275,7 @@ describe('entity date added endpoints', () => {
         });
 
         await delay();
+        initialiseRoleplayAccount({ owner: path.basename(directories.root), directories });
         await migrateGroupChatsMetadataFormat([directories]);
 
         const migratedGroup = (await getGroups()).find(group => group.id === 'legacy-group');

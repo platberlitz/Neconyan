@@ -58,7 +58,7 @@ function byteSize(value) {
  * Canonical JSON: object keys are sorted so two intents that differ only in key
  * order produce the same hash and therefore deduplicate as the same submission.
  */
-function canonical(value) {
+export function canonical(value) {
     if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
     if (value && typeof value === 'object') {
         return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;

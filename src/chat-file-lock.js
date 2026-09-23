@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import process from 'node:process';
+import { types } from 'node:util';
 
 const require = createRequire(import.meta.url);
 const lockfile = require('proper-lockfile');
@@ -58,20 +59,41 @@ export function acquireChatFileLocks(filePaths) {
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([, filePath]) => filePath);
     const releases = [];
+    const drain = () => {
+        const errors = [];
+        while (releases.length) {
+            try { releases.pop()(); } catch (error) { errors.push(error); }
+        }
+        if (errors.length === 1) throw errors[0];
+        if (errors.length) throw new AggregateError(errors, 'Chat lock cleanup failed.');
+    };
     try {
         for (const filePath of uniquePaths) {
             releases.push(acquireChatFileLock(filePath));
         }
     } catch (error) {
-        for (const release of releases.reverse()) {
-            release();
-        }
+        try { drain(); } catch (cleanup) { console.warn('Chat lock cleanup also failed:', cleanup); }
         throw error;
     }
 
-    return () => {
-        for (const release of releases.reverse()) {
-            release();
+    return drain;
+}
+
+/** Synchronous file work; preserve its original failure even when cleanup also fails. */
+export function withChatFileLocks(filePaths, operation) {
+    if (typeof operation !== 'function' || types.isAsyncFunction(operation)) throw new TypeError('Chat lock operations must be synchronous.');
+    const release = acquireChatFileLocks(filePaths);
+    let result;
+    try {
+        result = operation();
+        if (result && typeof result.then === 'function') {
+            Promise.resolve(result).catch(() => {});
+            throw new TypeError('Chat lock operations must not return a promise.');
         }
-    };
+    } catch (error) {
+        try { release(); } catch (cleanup) { console.warn('Chat lock cleanup also failed:', cleanup); }
+        throw error;
+    }
+    release();
+    return result;
 }

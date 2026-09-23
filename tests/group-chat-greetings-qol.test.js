@@ -21,7 +21,7 @@ describe('group chat greetings QoL', () => {
         expect(getGroupChatBody).toContain('metadata.integrity = chat_metadata.integrity;');
         expect(getGroupChatBody.indexOf('metadata.integrity = chat_metadata.integrity;'))
             .toBeLessThan(getGroupChatBody.lastIndexOf('updateChatMetadata(metadata, true);'));
-        expect(getGroupChatBody).toContain('if (freshGroupGreetingMessageId !== -1) await emitGroupGreetingMessageEvents(freshGroupGreetingMessageId);');
+        expect(getGroupChatBody).toContain('if (freshGroupGreetingMessageId !== -1) await emitGroupGreetingMessageEvents(freshGroupGreetingMessageId, greetingStillCurrent);');
     });
 
     test('starts new group branches with fresh integrity metadata', async () => {

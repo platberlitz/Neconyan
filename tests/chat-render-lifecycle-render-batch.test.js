@@ -134,6 +134,27 @@ describe('chat render lifecycle render batch helper', () => {
         expect(waits).toEqual([]);
     });
 
+    test('stops before inserting another batch when a paused render becomes stale', async () => {
+        const inserted = [];
+        let resume;
+        let stale = false;
+        const gate = new Promise(resolve => { resume = resolve; });
+        const render = renderMessagesInBatches({
+            messages: ['first', 'second', 'third'], firstMessageId: 0, batchSize: 1,
+            documentRef: new FakeDocument(),
+            renderMessageElement: (_message, id) => new FakeElement(id),
+            insertFragment: fragment => inserted.push(fragment.children.map(element => element.messageId)),
+            waitForNextFrame: () => gate,
+            shouldContinue: () => !stale,
+        });
+        await Promise.resolve();
+        stale = true;
+        resume();
+        const result = await render;
+        expect(inserted).toEqual([[0]]);
+        expect(result.renderedMessageIds).toEqual([0]);
+    });
+
     test('returns an empty result without inserting or yielding when there are no messages', async () => {
         const inserted = [];
         const waits = [];

@@ -1263,7 +1263,8 @@ for (const boundary of ['solo chat', 'group chat', 'group metadata']) {
         }, { avatar: first.avatar, group });
         const rejected = await response;
         expect(rejected.status()).toBe(409);
-        expect(await rejected.json()).toEqual({ error: 'account_changed' });
+        expect(await rejected.json()).toEqual(boundary === 'group metadata'
+            ? { error: 'account_changed' } : { error: 'account_changed', code: 'ROLEPLAY_ACCOUNT_CHANGED' });
         expect(await triggered).toBe(false);
         expect((await fs.readdir(destination, { recursive: true })).sort()).toEqual(before);
         expect(await second.effects()).toEqual(effects);

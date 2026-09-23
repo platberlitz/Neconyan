@@ -165,7 +165,8 @@ export class TavernCardValidator {
     }
 
     #validateSpecVersionV3() {
-        if (Number(this.card.spec_version) < 3.0 || Number(this.card.spec_version) >= 4.0) {
+        const version = this.card.spec_version;
+        if (!['string', 'number'].includes(typeof version) || !Number.isFinite(Number(version)) || Number(version) < 3.0 || Number(version) >= 4.0) {
             this.#lastValidationError = 'spec_version';
             return false;
         }

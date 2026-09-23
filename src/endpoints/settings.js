@@ -18,6 +18,7 @@ import {
 } from '../util.js';
 import { getAllUserHandles, getUserDirectories } from '../users.js';
 import { getFileNameValidationFunction } from '../middleware/validateFileName.js';
+import { withRoleplayAccount } from '../roleplay-store.js';
 
 const ENABLE_EXTENSIONS = !!getConfigValue('extensions.enabled', true, 'boolean');
 const ENABLE_EXTENSIONS_AUTO_UPDATE = !!getConfigValue('extensions.autoUpdate', true, 'boolean');
@@ -352,6 +353,12 @@ router.post('/get', (request, response) => {
     const reasoning = readAndParseFromDirectory(request.user.directories.reasoning);
     const agentLibrary = readAgentCollection(request.user.directories.inChatAgents);
     const inChatAgents = agentLibrary.records;
+    let roleplayAccount = null;
+    try {
+        roleplayAccount = withRoleplayAccount({ owner: request.user.profile.handle, directories: request.user.directories }, null, (_lease, current) => current);
+    } catch (error) {
+        console.warn('Protected chat storage is unavailable for this account:', error.code);
+    }
 
     response.send({
         settings,
@@ -375,6 +382,7 @@ router.post('/get', (request, response) => {
         inChatAgentLoadErrors: agentLibrary.errors,
         inChatAgentRevisions: agentLibrary.revisions,
         inChatAgentAccount: request.user.profile.handle,
+        roleplayAccount,
         enable_extensions: ENABLE_EXTENSIONS,
         enable_extensions_auto_update: ENABLE_EXTENSIONS_AUTO_UPDATE,
         enable_accounts: ENABLE_ACCOUNTS,

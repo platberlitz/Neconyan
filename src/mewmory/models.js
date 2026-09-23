@@ -5,7 +5,7 @@ import ipaddr from 'ipaddr.js';
 import fetch from 'node-fetch';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { readSecret, writeSecret, SecretManager, SECRETS_FILE } from '../endpoints/secrets.js';
-import { acquireChatFileLocks } from '../chat-file-lock.js';
+import { withChatFileLocks } from '../chat-file-lock.js';
 import { fail, hash, list, object, ROLE_NAMES, SOURCE_TYPES, text } from './core.js';
 import { readJson, writeJson } from './store.js';
 import { getCounter, getTokenizerModel, TOKENIZERS } from './tokens.js';
@@ -160,8 +160,7 @@ export function saveConfig(directories, input) {
     }
     const filename = path.join(directories.root, 'mewmory', 'config.json');
     const secretsFile = path.join(directories.root, SECRETS_FILE);
-    const release = acquireChatFileLocks([filename, secretsFile]);
-    try {
+    withChatFileLocks([filename, secretsFile], () => {
         const current = readJson(filename, null) || defaultConfig();
         if (input.revision !== current.revision) fail('Model settings changed in another tab. Reload before saving.', 409);
         const previousSecrets = credentials.length && fs.existsSync(secretsFile) ? fs.readFileSync(secretsFile) : null;
@@ -179,9 +178,7 @@ export function saveConfig(directories, input) {
             }
             throw error;
         }
-    } finally {
-        release();
-    }
+    });
     return publicConfig(directories);
 }
 

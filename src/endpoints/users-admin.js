@@ -1,4 +1,4 @@
-import { promises as fsPromises } from 'node:fs';
+import fs, { promises as fsPromises } from 'node:fs';
 
 import storage from 'node-persist';
 import express from 'express';
@@ -16,6 +16,9 @@ import {
     ensurePublicDirectoriesExist,
 } from '../users.js';
 import { DEFAULT_USER } from '../constants.js';
+import { roleplayStoreDirectory } from '../roleplay-store.js';
+import { bootstrapRoleplayAccount } from '../roleplay-lifecycle.js';
+import { roleplayNativeHost } from './chats.js';
 
 export const router = express.Router();
 
@@ -189,6 +192,13 @@ router.post('/create', requireAdminMiddleware, async (request, response) => {
             return response.status(409).json({ error: 'User already exists' });
         }
 
+        const directories = getUserDirectories(handle);
+        const scope = { owner: handle, directories };
+        if (fs.lstatSync(roleplayStoreDirectory(scope), { throwIfNoEntry: false })) {
+            return response.status(409).json({ error: 'This account name has retained storage and cannot be reused until account recovery is completed.' });
+        }
+        bootstrapRoleplayAccount(scope, roleplayNativeHost);
+
         const salt = getPasswordSalt();
         const password = request.body.password ? getPasswordHash(request.body.password, salt) : '';
 
@@ -207,7 +217,6 @@ router.post('/create', requireAdminMiddleware, async (request, response) => {
         // Create user directories
         console.info('Creating data directories for', newUser.handle);
         await ensurePublicDirectoriesExist();
-        const directories = getUserDirectories(newUser.handle);
         await checkForNewContent([directories], [CONTENT_TYPES.SETTINGS]);
         return response.json({ handle: newUser.handle });
     } catch (error) {

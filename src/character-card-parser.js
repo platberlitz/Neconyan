@@ -2,8 +2,20 @@ import fs from 'node:fs';
 import { Buffer } from 'node:buffer';
 
 import encode from './png/encode.js';
-import extract from 'png-chunks-extract';
+import extractChunks from 'png-chunks-extract';
 import PNGtext from 'png-chunk-text';
+
+function extract(image) {
+    // The dependency allocates each declared chunk before checking for truncated input.
+    for (let offset = 8; offset < image.length;) {
+        if (image.length - offset < 12) throw new Error('Truncated PNG chunk.');
+        const length = image[offset] * 0x1000000 + image[offset + 1] * 0x10000 + image[offset + 2] * 0x100 + image[offset + 3];
+        if (length > image.length - offset - 12) throw new Error('Truncated PNG chunk.');
+        if (image[offset + 4] === 73 && image[offset + 5] === 69 && image[offset + 6] === 78 && image[offset + 7] === 68) break;
+        offset += length + 12;
+    }
+    return extractChunks(image);
+}
 
 const MIRRORED_FIELD_MAPPINGS = {
     name: 'name',

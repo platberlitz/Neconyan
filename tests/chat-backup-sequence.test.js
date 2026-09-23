@@ -4,12 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { getQueuedChatSaveAbortReason } from '../public/scripts/chat-save-guard.js';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'acorn';
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { getChatBackupSaveOptions, resetChatBackupSequence } from '../public/scripts/chat-backup-sequence.js';
 import { setConfigFilePath } from '../src/util.js';
+import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave } from '../public/scripts/roleplay-save-chain.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { trySaveChat, clearActiveDeferredChatPreWrites } = await import('../src/endpoints/chats.js');
@@ -50,14 +51,28 @@ function preWriteFiles() {
 
 function createClient(group) {
     const sent = [];
+    const account = { accountId: randomUUID(), dataEpoch: 1 };
+    const hash = () => createHash('sha256').update(fs.readFileSync(chatFile)).digest('hex');
+    let head = { instanceId: randomUUID(), revision: 1, rawHash: hash() };
+    bindRoleplayAccount(handle, account);
+    rememberRoleplayRead(group ? { group: true, chat: 'chat' } : { group: false, avatar: 'bunny.png', chat: 'chat' }, { account, source: head });
     async function send(_url, request) {
         const payload = JSON.parse(request.body);
         sent.push(payload);
+        expect(payload.roleplay.account).toEqual(account);
+        expect(payload.roleplay.source).toEqual(head);
         const result = await trySaveChat(payload.chat, chatFile, payload.force, handle, 'Bunny', backups, payload);
-        return { ok: true, json: async () => result };
+        const rawHash = hash();
+        const changed = rawHash !== head.rawHash;
+        head = { ...head, revision: head.revision + Number(changed), rawHash };
+        return { ok: true, status: 200, json: async () => ({ ...result, ok: true, roleplay: {
+            account, operationKey: payload.roleplay.operationKey, changed, source: head,
+        } }) };
     }
     const runtime = vm.createContext({
         console, structuredClone, getChatBackupSaveOptions, uuidv4: randomUUID, getQueuedChatSaveAbortReason,
+        beginRoleplaySave, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, roleplayAccountStamp, sendRoleplaySave,
+        getCurrentUserHandle: () => handle,
         chatSaveQueue: Promise.resolve(), groupChatSaveQueue: Promise.resolve(),
         chat: records('original', 'first pass').slice(1), chat_metadata: { integrity: 'original' },
         chatGeneration: 1, getChatGeneration: () => 1,
@@ -75,6 +90,11 @@ function createClient(group) {
         refreshCsrfToken: jest.fn(), editGroup: jest.fn(),
         toastr: { error: jest.fn() }, t: strings => strings.join(''),
     });
+    for (const name of ['roleplayRequestHeaders', 'requestRoleplayChat', 'saveRoleplayChatRequest']) {
+        const { source, ast } = sources['script.js'];
+        const node = ast.body.map(node => node.declaration ?? node).find(node => node.id?.name === name);
+        vm.runInContext(source.slice(node.start, node.end), runtime);
+    }
     const { source, ast } = sources[group ? 'scripts/group-chats.js' : 'script.js'];
     for (const name of group ? ['saveGroupChat', 'saveGroupChatImmediately'] : ['saveChat', 'saveChatImmediately']) {
         const node = ast.body.map(node => node.declaration ?? node).find(node => node.id?.name === name);

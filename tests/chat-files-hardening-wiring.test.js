@@ -35,7 +35,9 @@ describe('chat file hardening wiring', () => {
             'async function getChatResult',
         );
 
-        expect(getChatBody).toContain('allow_create: resolvedChat.created');
+        expect(getChatBody).toContain('loadRoleplayChat(locator, { allowCreate: resolvedChat.created })');
+        expect(source).toContain('allow_create: allowCreate');
+        expect(getChatBody).toContain('!rememberRoleplayRead(locator, evidence)');
         expect(getChatBody).toContain('return false;');
         expect(getChatBody.match(/getChatResult/g)).toHaveLength(1);
     });

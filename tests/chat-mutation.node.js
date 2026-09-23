@@ -12,8 +12,9 @@ import { setConfigFilePath, recoverFileWriteSync } from '../src/util.js';
 
 const configPath = fileURLToPath(new URL('../default/config.yaml', import.meta.url));
 setConfigFilePath(configPath);
-const { mutateChat } = await import('../src/endpoints/chats.js');
-const { createCharacterChatTarget, createGroupChatTarget, getChatRecoveryPaths, readChatJsonlStrict, loadActiveChatWithRecovery } = await import('../src/chat-recovery.js');
+const { mutateChat, prepareNativeChatWrite, publishNativeChatWrite } = await import('../src/endpoints/chats.js');
+const { readRoleplayFile } = await import('../src/roleplay-store.js');
+const { createCharacterChatTarget, createGroupChatTarget, getChatRecoveryPaths, readChatJsonlStrict, loadActiveChatWithRecovery, restoreChatSnapshotIfMatches } = await import('../src/chat-recovery.js');
 const { readState, statePath, synchronize } = await import('../src/mewmory/store.js');
 const { getChatFileLockPath } = await import('../src/chat-file-lock.js');
 const gracefulFs = createRequire(new URL('../src/chat-file-lock.js', import.meta.url))('graceful-fs');
@@ -327,4 +328,252 @@ test('native source check stays mandatory with legacy integrity checks disabled'
     `;
     const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8' });
     assert.equal(child.status, 0, child.stderr);
+});
+
+function managed(f, records, create = false) {
+    const before = create ? null : readRoleplayFile(f.options.filePath);
+    const marker = { schema: 1, instanceId: crypto.randomUUID(), revision: 2, writeId: crypto.randomUUID() };
+    const prepared = prepareNativeChatWrite(records, { beforeBytes: before?.bytes ?? null, marker });
+    const payloadPath = path.join(f.directories.root, 'chat.after.jsonl');
+    fs.writeFileSync(payloadPath, prepared.serialized);
+    return { ...f.options, before, prepared, payloadPath, payloadHash: hash(prepared.serialized) };
+}
+
+test('managed publication uses frozen bytes and integrity through the existing backup writer', t => {
+    const f = fixture(t);
+    const changed = structuredClone(f.records);
+    changed[1].mes = 'Frozen replacement';
+    const input = managed(f, changed);
+    const result = publishNativeChatWrite(input);
+    assert.equal(result.integrity, input.prepared.integrity);
+    assert.equal(result.file.bytes.toString('utf8'), input.prepared.serialized);
+    assert.deepEqual(result.file.physical, input.before.physical);
+    assert.deepEqual(result.records, input.prepared.records);
+    assert.equal(result.records[2].swipes[1], 'Alternative.');
+    assert.equal(fs.existsSync(f.options.filePath + '.sillybunny-write-recovery'), false);
+    const backup = fs.readdirSync(f.directories.backups).find(name => name.startsWith('chat_pre_write_'));
+    assert.equal(fs.readFileSync(path.join(f.directories.backups, backup), 'utf8'), serialize(f.records));
+    assert.throws(() => publishNativeChatWrite(input), { code: 'ESTALE' });
+});
+
+test('managed no-op preserves BOM, whitespace, missing integrity and physical identity', t => {
+    const f = fixture(t);
+    const raw = '\uFEFF\n{ "name": "Legacy" }\r\n{"mes":"Original"}\n';
+    fs.writeFileSync(f.options.filePath, raw);
+    const input = managed(f, f.current());
+    const before = fs.statSync(f.options.filePath, { bigint: true });
+    const result = publishNativeChatWrite(input);
+    assert.equal(input.prepared.changed, false);
+    assert.equal(result.integrity, '');
+    assert.equal(fs.readFileSync(f.options.filePath, 'utf8'), raw);
+    assert.equal(fs.statSync(f.options.filePath, { bigint: true }).mtimeNs, before.mtimeNs);
+    assert.equal(Object.hasOwn(result.records[0].chat_metadata, 'neconyan_roleplay'), false);
+});
+
+test('managed finalisation uses the proven file without a staged payload or any chat write', t => {
+    const f = fixture(t);
+    const input = { ...managed(f, f.records), payloadPath: null, deferBackup: false };
+    const before = readRoleplayFile(f.options.filePath);
+    const stat = fs.statSync(f.options.filePath, { bigint: true });
+    const write = fs.writeSync, rename = fs.renameSync;
+    t.mock.method(fs, 'writeSync', (fd, ...args) => {
+        const current = fs.fstatSync(fd, { bigint: true });
+        assert.equal(current.dev === stat.dev && current.ino === stat.ino, false, 'Finalisation must not rewrite the chat');
+        return write(fd, ...args);
+    });
+    t.mock.method(fs, 'renameSync', (from, to) => {
+        assert.notEqual(to, f.options.filePath, 'Finalisation must not replace the chat');
+        return rename(from, to);
+    });
+    const result = publishNativeChatWrite(input);
+    assert.deepEqual(result.file, before);
+    assert.equal(fs.statSync(f.options.filePath, { bigint: true }).mtimeNs, stat.mtimeNs);
+    const backups = fs.readdirSync(f.directories.backups).filter(name => name.startsWith('chat_nova_'));
+    assert.equal(backups.length, 1);
+    assert.deepEqual(fs.readFileSync(path.join(f.directories.backups, backups[0])), before.bytes);
+    assert.deepEqual(fs.readFileSync(getChatRecoveryPaths(f.options.recoveryTarget).latestPath), before.bytes);
+});
+
+test('managed finalisation cannot introduce changed bytes, a new file or a different source', t => {
+    const f = fixture(t);
+    const changed = managed(f, [...f.records, { mes: 'Must not land' }]);
+    assert.throws(() => publishNativeChatWrite({ ...changed, payloadPath: null }), TypeError);
+    assert.throws(() => publishNativeChatWrite({ ...changed, payloadPath: null, prepared: { ...changed.prepared, changed: false } }));
+    const unchanged = { ...managed(f, f.records), payloadPath: null };
+    assert.throws(() => publishNativeChatWrite({ ...unchanged, before: null }), TypeError);
+    assert.throws(() => publishNativeChatWrite({ ...unchanged, before: { ...unchanged.before, rawHash: '0'.repeat(64) } }), { code: 'ESTALE' });
+    assert.deepEqual(readRoleplayFile(f.options.filePath), unchanged.before);
+    assert.deepEqual(fs.readdirSync(f.directories.backups), []);
+});
+
+test('managed writes never invoke generic recovery before inspecting an unrelated journal', t => {
+    const f = fixture(t);
+    const input = managed(f, [...f.records, { mes: 'Must not land' }]);
+    const journal = f.options.filePath + '.sillybunny-write-recovery';
+    const raw = JSON.stringify({ version: 1, dev: input.before.physical.dev, ino: input.before.physical.ino,
+        originalHash: input.before.rawHash, nextHash: hash('other'), originalData: input.before.bytes.toString('base64') });
+    fs.writeFileSync(journal, raw);
+    assert.throws(() => publishNativeChatWrite(input), /explicit reconciliation/);
+    assert.equal(fs.readFileSync(journal, 'utf8'), raw);
+    assert.deepEqual(fs.readFileSync(f.options.filePath), input.before.bytes);
+    assert.deepEqual(fs.readdirSync(f.directories.backups), []);
+});
+
+for (const mode of ['changed', 'unchanged', 'finalisation']) {
+    test(`managed ${mode} publication requires an exact journal handoff and retains the journal`, t => {
+        const f = fixture(t);
+        const input = managed(f, mode === 'changed' ? [...f.records, { mes: 'New result' }] : f.records);
+        if (mode === 'finalisation') input.payloadPath = null;
+        const journal = f.options.filePath + '.sillybunny-write-recovery';
+        fs.writeFileSync(journal, 'Previously classified evidence');
+        const observed = readRoleplayFile(journal);
+        input.expectedJournal = { rawHash: observed.rawHash, physical: observed.physical };
+        assert.throws(() => publishNativeChatWrite({ ...input, expectedJournal: { ...input.expectedJournal, rawHash: '0'.repeat(64) } }));
+        assert.equal(publishNativeChatWrite(input).file.rawHash, input.payloadHash);
+        assert.deepEqual(readRoleplayFile(journal), observed);
+    });
+}
+
+test('managed journal handoff rejects an identical-byte journal replaced during lock acquisition', t => {
+    const f = fixture(t);
+    const input = managed(f, [...f.records, { mes: 'Must not land' }]);
+    const journal = f.options.filePath + '.sillybunny-write-recovery';
+    fs.writeFileSync(journal, 'Original evidence');
+    input.expectedJournal = readRoleplayFile(journal);
+    let replaced = false;
+    const mkdir = fs.mkdirSync;
+    t.mock.method(fs, 'mkdirSync', (filename, ...args) => {
+        if (!replaced && filename === path.dirname(f.options.filePath)) {
+            replaced = true;
+            fs.copyFileSync(journal, journal + '.new');
+            fs.renameSync(journal + '.new', journal);
+        }
+        return mkdir(filename, ...args);
+    });
+    assert.throws(() => publishNativeChatWrite(input), /explicit reconciliation/);
+    assert.equal(replaced, true);
+    assert.deepEqual(readRoleplayFile(f.options.filePath), input.before);
+    assert.notDeepEqual(readRoleplayFile(journal).physical, input.expectedJournal.physical);
+});
+
+test('guarded restoration requires the exact journal and never removes it', t => {
+    const f = fixture(t);
+    const before = readRoleplayFile(f.options.filePath);
+    const journal = f.options.filePath + '.sillybunny-write-recovery';
+    fs.writeFileSync(journal, 'Classified restoration evidence');
+    const observed = readRoleplayFile(journal);
+    const bytes = Buffer.from(serialize([...f.records, { mes: 'Frozen restored output' }]));
+    const options = { bytes, expectedSnapshotHash: hash(bytes), expectedActive: before };
+    assert.throws(() => restoreChatSnapshotIfMatches(f.options.recoveryTarget, options), { code: 'ESTALE' });
+    const restored = restoreChatSnapshotIfMatches(f.options.recoveryTarget, { ...options, expectedJournal: observed });
+    assert.equal(restored.rawHash, options.expectedSnapshotHash);
+    assert.deepEqual(readRoleplayFile(journal), observed);
+});
+
+test('guarded restoration rechecks the journal immediately before replacement', t => {
+    const f = fixture(t);
+    const before = readRoleplayFile(f.options.filePath);
+    const journal = f.options.filePath + '.sillybunny-write-recovery';
+    fs.writeFileSync(journal, 'Original recovery evidence');
+    const observed = readRoleplayFile(journal);
+    const bytes = Buffer.from(serialize([...f.records, { mes: 'Must not land' }]));
+    const open = fs.openSync;
+    let replaced = false;
+    t.mock.method(fs, 'openSync', (filename, flags, ...args) => {
+        if (!replaced && flags === 'wx' && path.dirname(String(filename)) === path.dirname(f.options.filePath)
+            && path.basename(String(filename)).startsWith('.sillybunny-write-')) {
+            replaced = true;
+            fs.copyFileSync(journal, journal + '.new');
+            fs.renameSync(journal + '.new', journal);
+        }
+        return open(filename, flags, ...args);
+    });
+    assert.throws(() => restoreChatSnapshotIfMatches(f.options.recoveryTarget, {
+        bytes, expectedSnapshotHash: hash(bytes), expectedActive: before, expectedJournal: observed,
+    }), error => error.chatWriteUncertain === true);
+    assert.equal(replaced, true);
+    assert.deepEqual(readRoleplayFile(f.options.filePath), before);
+    assert.notDeepEqual(readRoleplayFile(journal).physical, observed.physical);
+});
+
+test('managed interrupted write retains its staged after-image without optional snapshots', t => {
+    const f = fixture(t);
+    const input = { ...managed(f, [...f.records, { mes: 'Frozen result' }]), recoveryTarget: null };
+    const write = fs.writeSync;
+    let writes = 0;
+    t.mock.method(fs, 'writeSync', (fd, ...args) => {
+        if (String(fs.fstatSync(fd).ino) === input.before.physical.ino && ++writes === 2) throw new Error('Fixture managed interruption');
+        return write(fd, ...args);
+    });
+    assert.throws(() => publishNativeChatWrite(input), error => error.chatWriteUncertain === true && error.integrity === input.prepared.integrity);
+    t.mock.restoreAll();
+    assert.equal(fs.readFileSync(input.payloadPath, 'utf8'), input.prepared.serialized);
+    assert.equal(fs.existsSync(f.options.filePath + '.sillybunny-write-recovery'), false);
+    assert.equal(readChatJsonlStrict(f.options.filePath).status, 'corrupt');
+});
+
+for (const code of ['ESTALE', 'EMLINK']) {
+    for (const protectedWrite of [true, false]) {
+        test(`${code} preserves ${protectedWrite ? 'managed interrupted output' : 'legacy mutation rollback'}`, t => {
+            const f = fixture(t);
+            const input = managed(f, [...f.records, { mes: 'Frozen result' }]);
+            const before = readRoleplayFile(f.options.filePath);
+            const write = fs.writeSync;
+            let writes = 0;
+            const mock = t.mock.method(fs, 'writeSync', (fd, ...args) => {
+                const stat = fs.fstatSync(fd, { bigint: true });
+                if (String(stat.dev) === before.physical.dev && String(stat.ino) === before.physical.ino && ++writes === 2) {
+                    throw Object.assign(new Error('Interrupted active-file write'), { code });
+                }
+                return write(fd, ...args);
+            });
+            const run = protectedWrite ? () => publishNativeChatWrite(input)
+                : () => mutateChat(f.options, records => [...records, { mes: 'Legacy result' }]);
+            assert.throws(run, error => error.chatWriteUncertain === true);
+            mock.mock.restore();
+            const partial = Buffer.concat([Buffer.from([before.bytes[0] ^ 0xFF]), before.bytes.subarray(1)]);
+            assert.equal(writes, protectedWrite ? 2 : 3);
+            assert.deepEqual(readRoleplayFile(f.options.filePath).physical, before.physical);
+            assert.deepEqual(fs.readFileSync(f.options.filePath), protectedWrite ? partial : before.bytes);
+            const backups = fs.readdirSync(f.directories.backups).filter(name => name.startsWith('chat_pre_write_'));
+            assert.equal(backups.length, 1);
+            assert.deepEqual(fs.readFileSync(path.join(f.directories.backups, backups[0])), before.bytes);
+            assert.equal(fs.existsSync(f.options.filePath + '.sillybunny-write-recovery'), false);
+        });
+    }
+}
+
+test('managed creation refuses collisions and preserves uncertain partial creations', t => {
+    const f = fixture(t);
+    const input = managed(f, f.records, true);
+    assert.throws(() => publishNativeChatWrite(input), { code: 'ESTALE' });
+    assert.deepEqual(fs.readdirSync(f.directories.backups), []);
+    fs.unlinkSync(f.options.filePath);
+    const write = fs.writeSync;
+    let writes = 0;
+    t.mock.method(fs, 'writeSync', (fd, ...args) => {
+        if (fs.existsSync(f.options.filePath) && fs.fstatSync(fd).ino === fs.statSync(f.options.filePath).ino) {
+            if (++writes === 1) return write(fd, args[0], args[1], 1, args[3]);
+            throw new Error('Fixture interrupted creation');
+        }
+        return write(fd, ...args);
+    });
+    assert.throws(() => publishNativeChatWrite(input), error => error.chatWriteUncertain === true);
+    t.mock.restoreAll();
+    assert.equal(fs.readFileSync(f.options.filePath).length, 1);
+    assert.throws(() => publishNativeChatWrite(input), { code: 'ESTALE' });
+});
+
+test('managed creation uses the prepared marker, strips foreign authority and skips ordinary memory capture', t => {
+    const f = fixture(t);
+    const records = structuredClone(f.records);
+    records[0].chat_metadata.neconyan_roleplay = { foreign: true };
+    records[0].chat_metadata.main_chat = 'Damaged parent';
+    const input = managed(f, records, true);
+    fs.unlinkSync(f.options.filePath);
+    const result = publishNativeChatWrite(input);
+    assert.equal(result.records[0].chat_metadata.neconyan_roleplay.schema, 1);
+    assert.equal(result.records[0].chat_metadata.neconyan_roleplay.foreign, undefined);
+    assert.equal(result.file.rawHash, input.payloadHash);
+    assert.equal(result.records[0].chat_metadata.main_chat, 'Damaged parent');
 });

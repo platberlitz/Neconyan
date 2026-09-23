@@ -3,7 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import sanitize from 'sanitize-filename';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
-import { acquireChatFileLock, acquireChatFileLocks } from '../chat-file-lock.js';
+import { acquireChatFileLock, withChatFileLocks } from '../chat-file-lock.js';
 import { readChatJsonlStrict } from '../chat-recovery.js';
 import { fail, forkState, hash, newState, object, purgeSources, sourceAt, syncSources, text } from './core.js';
 
@@ -32,9 +32,7 @@ function recoveryPath(directories, locator) {
     return path.join(directories.root, 'mewmory', 'recovery', hash(normalizeLocator(locator)) + '.json');
 }
 
-function writeState(directories, state) {
-    state.locator = normalizeLocator(state.locator);
-    if (Buffer.byteLength(JSON.stringify(state)) > MAX_ARCHIVE_BYTES) fail('This Mewmory archive reached 256 MiB.', 413);
+export function buildMemoryRecoveryGuard(state) {
     const guard = {};
     for (const key of ['format', 'revision', 'storyId', 'branchId', 'sourceNamespace', 'locator', 'parent', 'enabled',
         'activeNpcIds', 'sceneNpcIds', 'castHistory', 'characterAliases', 'worldAliases', 'excludedSources',
@@ -44,6 +42,13 @@ function writeState(directories, state) {
         identity: source.identity, messageId: source.messageId,
         hash: sourceAt(state, { id: source.id, revision: source.current })?.hash,
     }]));
+    return guard;
+}
+
+function writeState(directories, state) {
+    state.locator = normalizeLocator(state.locator);
+    if (Buffer.byteLength(JSON.stringify(state)) > MAX_ARCHIVE_BYTES) fail('This Mewmory archive reached 256 MiB.', 413);
+    const guard = buildMemoryRecoveryGuard(state);
     // Persist rejection counters before prose. A failed archive write can only make recovery stricter.
     const filename = recoveryPath(directories, state.locator);
     const previous = fs.existsSync(filename) ? fs.readFileSync(filename) : null;
@@ -172,14 +177,11 @@ export function mutateState(directories, locator, mutate, expectedRevision, { ex
 export function synchronize(directories, locator, context = []) {
     locator = normalizeLocator(locator);
     // Native saves take this lock first too; never reconcile a chat snapshot read before it.
-    const release = acquireChatFileLock(chatPath(directories, locator));
-    try {
+    return withChatFileLocks([chatPath(directories, locator)], () => {
         const source = readChat(directories, locator);
         captureBranchMemory(directories, locator, source);
         return mutateState(directories, locator, state => syncSources(state, source.messages, context));
-    } finally {
-        release();
-    }
+    });
 }
 
 /** Called by native saves before reporting branch creation as successful. */
@@ -191,24 +193,27 @@ export function captureBranchMemory(directories, locator, { metadata, messages }
     const parentLocator = normalizeLocator({ ...locator, chat: metadata.main_chat });
     const parentFile = statePath(directories, parentLocator);
     if (!fs.existsSync(parentFile)) return;
-    const release = acquireChatFileLocks([parentFile, statePath(directories, locator)]);
-    try {
+    return withChatFileLocks([parentFile, statePath(directories, locator)], () => {
         if (fs.existsSync(statePath(directories, locator))) return;
         const parent = readState(directories, parentLocator);
-        const offset = parent.inheritedTimeline?.length || 0;
-        let through = offset - 1;
-        for (let index = 0; index < messages.length; index++) {
-            const previous = sourceAt(parent, parent.timeline[index + offset]);
-            if (!previous || previous.text !== String(messages[index].mes ?? '')
-                || previous.speaker !== String(messages[index].name ?? '')) break;
-            through = index + offset;
-        }
-        const child = forkState(parent, normalizeLocator(locator), through, messages);
-        child.revision = 1;
+        const child = buildBranchMemoryState(parent, normalizeLocator(locator), messages);
         writeState(directories, child);
-    } finally {
-        release();
+    });
+}
+
+/** The caller supplies an already canonical locator; recovery reuses the resulting bytes. */
+export function buildBranchMemoryState(parent, locator, messages) {
+    const offset = parent.inheritedTimeline?.length || 0;
+    let through = offset - 1;
+    for (let index = 0; index < messages.length; index++) {
+        const previous = sourceAt(parent, parent.timeline[index + offset]);
+        if (!previous || previous.text !== String(messages[index].mes ?? '')
+            || previous.speaker !== String(messages[index].name ?? '')) break;
+        through = index + offset;
     }
+    const child = forkState(parent, locator, through, messages);
+    child.revision = 1;
+    return child;
 }
 
 export function listStories(directories) {
@@ -245,8 +250,7 @@ export function renameChatMemory(directories, oldLocator, newLocator) {
     const after = statePath(directories, newLocator);
     if (before === after) return;
     if (!fs.existsSync(before) && !fs.existsSync(recoveryPath(directories, oldLocator))) return;
-    const release = acquireChatFileLocks([before, after]);
-    try {
+    return withChatFileLocks([before, after], () => {
         if (fs.existsSync(after) || fs.existsSync(recoveryPath(directories, newLocator))) fail('A Mewmory archive already exists for that chat name.', 409);
         const state = readState(directories, oldLocator);
         state.locator = normalizeLocator(newLocator);
@@ -264,9 +268,7 @@ export function renameChatMemory(directories, oldLocator, newLocator) {
         }
         fs.rmSync(recoveryPath(directories, oldLocator), { force: true });
         return true;
-    } finally {
-        release();
-    }
+    });
 }
 
 /** Explicit card/book deletion also reaches stores whose chats are not currently open. */

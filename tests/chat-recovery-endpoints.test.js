@@ -18,7 +18,8 @@ const {
     markChatDeleted,
     writeLatestChatSnapshot,
 } = await import('../src/chat-recovery.js');
-const { router: chatsRouter, trySaveChat, mutateChat } = await import('../src/endpoints/chats.js');
+const { router: chatsRouter, trySaveChat, mutateChat, roleplayNativeHost } = await import('../src/endpoints/chats.js');
+const { bootstrapRoleplayAccount } = await import('../src/roleplay-lifecycle.js');
 const { router: charactersRouter } = await import('../src/endpoints/characters.js');
 const { router: groupsRouter } = await import('../src/endpoints/groups.js');
 
@@ -49,19 +50,25 @@ describe('chat recovery endpoint fallbacks', () => {
     });
 
     beforeEach(() => {
+        // Jest inherits Node's outer-realm clone. These JSON-only fixtures need clones in the test realm
+        // so strict persisted-evidence comparisons check their values rather than VM prototypes.
+        jest.spyOn(global, 'structuredClone').mockImplementation(value => JSON.parse(JSON.stringify(value)));
         tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-chat-recovery-endpoints-'));
+        const root = path.join(tempRoot, 'recovery-test-user');
         directories = {
-            backups: path.join(tempRoot, 'backups'),
-            chats: path.join(tempRoot, 'chats'),
-            characters: path.join(tempRoot, 'characters'),
-            groupChats: path.join(tempRoot, 'group chats'),
-            groups: path.join(tempRoot, 'groups'),
-            thumbnailsAvatar: path.join(tempRoot, 'thumbnails', 'avatar'),
-            thumbnailsAvatarMobile: path.join(tempRoot, 'thumbnails', 'avatar-mobile'),
+            root,
+            backups: path.join(root, 'backups'),
+            chats: path.join(root, 'chats'),
+            characters: path.join(root, 'characters'),
+            groupChats: path.join(root, 'group chats'),
+            groups: path.join(root, 'groups'),
+            thumbnailsAvatar: path.join(root, 'thumbnails', 'avatar'),
+            thumbnailsAvatarMobile: path.join(root, 'thumbnails', 'avatar-mobile'),
         };
         for (const directory of Object.values(directories)) {
             fs.mkdirSync(directory, { recursive: true });
         }
+        bootstrapRoleplayAccount({ owner: 'recovery-test-user', directories }, roleplayNativeHost);
     });
 
     afterEach(() => {
@@ -109,7 +116,7 @@ describe('chat recovery endpoint fallbacks', () => {
         const body = await response.json();
 
         expect(response.status).toBe(200);
-        expect(body).toEqual({ ok: true, integrity: expect.any(String) });
+        expect(body).toMatchObject({ ok: true, integrity: expect.any(String), roleplay: expect.any(Object) });
         expect(fs.readFileSync(chatPath, 'utf8')).toContain('"mes":"new chat"');
     });
 
@@ -135,7 +142,7 @@ describe('chat recovery endpoint fallbacks', () => {
             headers: { 'Content-Type': 'application/json', 'X-Neconyan-Account': 'another-account' },
             body: JSON.stringify({ ...locator, chat: saved.records, force: true }) });
         expect(wrongAccount.status).toBe(409);
-        await expect(wrongAccount.json()).resolves.toEqual({ error: 'account_changed' });
+        await expect(wrongAccount.json()).resolves.toEqual({ error: 'account_changed', code: 'ROLEPLAY_ACCOUNT_CHANGED' });
         fs.writeFileSync(recoveryTarget.activePath, '{corrupt');
         const recovered = await postJson(base + '/get', locator);
         expect(recovered.status).toBe(200);
@@ -163,7 +170,7 @@ describe('chat recovery endpoint fallbacks', () => {
         const after = fs.statSync(chatPath);
 
         expect(response.status).toBe(200);
-        await expect(response.json()).resolves.toEqual({ ok: true, integrity: 'character-integrity' });
+        await expect(response.json()).resolves.toMatchObject({ ok: true, integrity: 'character-integrity', roleplay: expect.any(Object) });
         expect(fs.readFileSync(chatPath, 'utf8')).toBe(onDisk);
         expect(after.ino).toBe(before.ino);
         expect(after.mtimeMs).toBe(before.mtimeMs);
@@ -194,7 +201,7 @@ describe('chat recovery endpoint fallbacks', () => {
         const saved = fs.readFileSync(chatPath, 'utf8');
 
         expect(response.status).toBe(200);
-        expect(body).toEqual({ ok: true, integrity: expect.any(String) });
+        expect(body).toMatchObject({ ok: true, integrity: expect.any(String), roleplay: expect.any(Object) });
         expect(body.integrity).not.toBe(oldIntegrity);
         expect(after.ino).toBe(before.ino);
         expect(after.birthtimeMs).toBe(before.birthtimeMs);
@@ -218,7 +225,7 @@ describe('chat recovery endpoint fallbacks', () => {
         const after = fs.statSync(chatPath);
 
         expect(response.status).toBe(200);
-        await expect(response.json()).resolves.toEqual({ ok: true, integrity: '' });
+        await expect(response.json()).resolves.toMatchObject({ ok: true, integrity: '', roleplay: expect.any(Object) });
         expect(fs.readFileSync(chatPath, 'utf8')).toBe(onDisk);
         expect(after.ino).toBe(before.ino);
         expect(after.mtimeMs).toBe(before.mtimeMs);
@@ -245,7 +252,7 @@ describe('chat recovery endpoint fallbacks', () => {
         const saved = fs.readFileSync(chatPath, 'utf8');
 
         expect(response.status).toBe(200);
-        expect(body).toEqual({ ok: true, integrity: expect.any(String) });
+        expect(body).toMatchObject({ ok: true, integrity: expect.any(String), roleplay: expect.any(Object) });
         expect(body.integrity).not.toBe(oldIntegrity);
         expect(after.ino).toBe(before.ino);
         expect(after.birthtimeMs).toBe(before.birthtimeMs);
@@ -597,7 +604,14 @@ describe('chat recovery endpoint fallbacks', () => {
         expect(recoveryPaths.quarantinePaths.every(filePath => !fs.existsSync(filePath))).toBe(true);
     });
 
-    function postJson(resource, body) {
+    async function postJson(resource, body) {
+        if (resource === '/api/chats/save' || resource === '/api/chats/group/save') {
+            const loaded = await postJson(resource.replace('/save', '/get'), { ...body, allow_create: true });
+            if (!loaded.ok) throw new Error(`Could not read the test save source: ${await loaded.text()}`);
+            const evidence = JSON.parse(loaded.headers.get('X-Neconyan-Roleplay'));
+            body = { ...body, roleplay: { account: evidence.account, operationKey: crypto.randomUUID(),
+                ...(evidence.source ? { source: evidence.source } : { vacancy: evidence.vacancy }) } };
+        }
         return fetch(`${baseUrl}${resource}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

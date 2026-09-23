@@ -1,0 +1,737 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { isDeepStrictEqual, TextDecoder, types } from 'node:util';
+import sanitize from 'sanitize-filename';
+import { acquireChatFileLock } from './chat-file-lock.js';
+import { canonical, validateOwner } from './jobs/store.js';
+import { decodeFileWriteRecovery, fsyncDirectorySync, setFileWriteRecoveryGuard, tryWriteFileSync, FILE_WRITE_RECOVERY_SUFFIX, FILE_WRITE_RECOVERY_MAX_BYTES } from './util.js';
+
+export const ROLEPLAY_STORE_MAX_BYTES = 16 * 1024 * 1024;
+export const ROLEPLAY_RECOVERY_RESERVE_BYTES = 256 * 1024;
+export const ROLEPLAY_LARGEST_PHYSICAL = Object.freeze(Object.fromEntries(['dev', 'ino', 'birthtimeNs'].map(key => [key, '9'.repeat(30)])));
+const HASH = /^[a-f0-9]{64}$/;
+const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
+const PENDING_MAX_BYTES = 64 * 1024;
+const SUBMISSION_RESULT_MAX_BYTES = 2 * 1024;
+const DEFER_SEQUENCE_MAX_LENGTH = 256;
+const RESERVED_IDENTIFIERS = new Set(['.', '..', '__proto__', 'constructor', 'prototype']);
+const leases = new WeakMap();
+const observedAccounts = new Map();
+const activeAccountLeases = new Map();
+
+export function roleplayError(code, message, status = 409) {
+    return Object.assign(new Error(message), { code, status });
+}
+
+export function roleplayHash(value) {
+    const json = JSON.stringify(value);
+    if (json === undefined || !isDeepStrictEqual(JSON.parse(json), value)) {
+        throw roleplayError('ROLEPLAY_INVALID', 'Roleplay identity requires JSON-only values.', 400);
+    }
+    return crypto.createHash('sha256').update(canonical(value)).digest('hex');
+}
+
+export function roleplayPathKey(stamp, kind, locator) {
+    return roleplayHash([stamp.accountId, stamp.dataEpoch, kind, locator]);
+}
+
+export function roleplayAvatarOwner(avatar) {
+    // Existing character storage removes the first occurrence, including embedded '.png'.
+    return avatar.replace('.png', '');
+}
+
+export function validRoleplayAvatar(value) {
+    return typeof value === 'string' && value.endsWith('.png') && Buffer.byteLength(value) <= 255
+        && !/[\\/\0]/.test(value) && (process.platform !== 'win32' || value === sanitize(value))
+        && roleplayAvatarOwner(value).length > 0 && !RESERVED_IDENTIFIERS.has(roleplayAvatarOwner(value));
+}
+
+const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const integer = value => Number.isSafeInteger(value) && value >= 0;
+const damaged = () => roleplayError('ROLEPLAY_STORE_DAMAGED', 'Protected Roleplay evidence needs recovery and was left untouched.');
+
+/** This directory is a sibling of user data, never an imported or reset user file. */
+export function roleplayStoreDirectory({ owner, directories }) {
+    validateOwner(owner);
+    if (typeof directories?.root !== 'string' || !path.isAbsolute(directories.root)
+        || path.basename(directories.root) !== owner || owner.startsWith('_')) {
+        throw roleplayError('ROLEPLAY_INVALID', 'Roleplay storage requires server-resolved account directories.', 400);
+    }
+    return path.join(path.dirname(directories.root), '_roleplay', crypto.createHash('sha256').update(owner).digest('hex'));
+}
+
+function directory(filePath, create = false, allowMissing = false) {
+    const parent = path.dirname(filePath);
+    if (parent !== filePath && directory(parent, false, allowMissing) === false) return false;
+    try {
+        const stat = fs.lstatSync(filePath);
+        if (!stat.isDirectory() || stat.isSymbolicLink()) throw damaged();
+    } catch (error) {
+        if (error.code === 'ENOENT' && allowMissing && !create) return false;
+        if (error.code !== 'ENOENT' || !create) throw error;
+        fs.mkdirSync(filePath, { mode: 0o700 });
+        fsyncDirectorySync(parent);
+    }
+    return true;
+}
+
+/** Only a recorded lifecycle operation may call this for its server-resolved destination. */
+export function createRoleplayDirectory(filename, ownedRoot) {
+    if (!path.isAbsolute(filename) || !path.isAbsolute(ownedRoot)) throw damaged();
+    filename = path.resolve(filename);
+    ownedRoot = path.resolve(ownedRoot);
+    if (filename !== ownedRoot && !filename.startsWith(ownedRoot + path.sep)) throw damaged();
+    if (filename === ownedRoot) {
+        directory(ownedRoot);
+        return;
+    }
+    const parent = path.dirname(filename);
+    createRoleplayDirectory(parent, ownedRoot);
+    directory(filename, true);
+    // An existing entry may be left by a mkdir whose parent flush failed.
+    fsyncDirectorySync(parent);
+}
+
+function prepareDirectory(scope) {
+    const root = roleplayStoreDirectory(scope);
+    directory(path.dirname(root), true);
+    directory(root, true);
+    return root;
+}
+
+export function readRoleplayFile(filename, limit = ROLEPLAY_STORE_MAX_BYTES, { flush = false, allowMissingParent = false } = {}) {
+    if (directory(path.dirname(filename), false, allowMissingParent) === false) return null;
+    let stat;
+    try { stat = fs.lstatSync(filename, { bigint: true }); } catch (error) {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+    }
+    if (!stat.isFile() || stat.nlink !== 1n || stat.size > BigInt(limit)) throw damaged();
+    const fd = fs.openSync(filename, (flush ? fs.constants.O_RDWR : fs.constants.O_RDONLY)
+        | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
+    try {
+        const current = fs.fstatSync(fd, { bigint: true });
+        if (!current.isFile() || current.dev !== stat.dev || current.ino !== stat.ino || current.size !== stat.size) throw damaged();
+        const bytes = Buffer.alloc(Number(stat.size));
+        let offset = 0;
+        while (offset < bytes.length) {
+            const read = fs.readSync(fd, bytes, offset, bytes.length - offset, offset);
+            if (!read) break;
+            offset += read;
+        }
+        if (flush) {
+            fs.fsyncSync(fd);
+            fsyncDirectorySync(path.dirname(filename));
+        }
+        const after = fs.fstatSync(fd, { bigint: true });
+        if (after.size !== stat.size || after.mtimeNs !== stat.mtimeNs || after.ctimeNs !== stat.ctimeNs
+            || after.nlink !== 1n || offset !== Number(stat.size)) throw damaged();
+        const finalPath = fs.lstatSync(filename, { bigint: true });
+        if (!finalPath.isFile() || finalPath.nlink !== 1n || finalPath.dev !== after.dev || finalPath.ino !== after.ino
+            || finalPath.size !== after.size || finalPath.mtimeNs !== after.mtimeNs || finalPath.ctimeNs !== after.ctimeNs) throw damaged();
+        return { bytes, rawHash: crypto.createHash('sha256').update(bytes).digest('hex'),
+            physical: { dev: String(after.dev), ino: String(after.ino), birthtimeNs: String(after.birthtimeNs) } };
+    } finally { fs.closeSync(fd); }
+}
+
+/** An oversized sidecar component cannot exist; errors on the active path or its parents still propagate. */
+export function readRoleplayWriteJournal(filename, options = {}) {
+    const journalPath = filename + FILE_WRITE_RECOVERY_SUFFIX;
+    try { return readRoleplayFile(journalPath, FILE_WRITE_RECOVERY_MAX_BYTES, options); } catch (error) {
+        if (error.code === 'ENAMETOOLONG' && error.path === journalPath && Buffer.byteLength(path.basename(journalPath)) > 255) return null;
+        throw error;
+    }
+}
+
+function decodeJson(file) {
+    if (!file) return undefined;
+    try { return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(file.bytes)); } catch { throw damaged(); }
+}
+
+function assertSameFile(current, expected) {
+    if ((!current !== !expected) || (current && (current.rawHash !== expected.rawHash || !isDeepStrictEqual(current.physical, expected.physical)))) {
+        throw roleplayError('ROLEPLAY_STORE_CHANGED', 'Protected Roleplay evidence changed after it was read and was left untouched.');
+    }
+}
+
+function writeJson(filename, value, expected = null) {
+    const text = JSON.stringify(value);
+    const limit = path.basename(filename) === 'identity.json' ? 4096 : ROLEPLAY_STORE_MAX_BYTES;
+    if (Buffer.byteLength(text) > limit) throw roleplayError('ROLEPLAY_STORE_FULL', 'Protected Roleplay evidence is full.', 413);
+    const intendedHash = crypto.createHash('sha256').update(text).digest('hex');
+    const validateBeforeReplace = () => assertSameFile(readRoleplayFile(filename, limit), expected);
+    validateBeforeReplace();
+    try {
+        tryWriteFileSync(filename, text, { encoding: 'utf8', mode: 0o600 }, expected
+            ? { replaceFileOnly: true, expectedFileIdentity: { dev: BigInt(expected.physical.dev), ino: BigInt(expected.physical.ino) }, validateBeforeReplace }
+            : { expectedFileAbsent: true, durable: true, preserveOnCreateError: true });
+        const written = readRoleplayFile(filename, limit);
+        if (!written || written.bytes.toString('utf8') !== text) throw damaged();
+        return written;
+    } catch (cause) {
+        throw Object.assign(roleplayError('ROLEPLAY_STORE_UNCERTAIN', 'Reconcile protected Roleplay evidence before retrying this operation.'),
+            { cause, roleplayWriteUncertain: true, publication: path.basename(filename), intendedHash });
+    }
+}
+
+/** Pure path-safety rule mirrored from generation/roleplay-source.js for stored records. */
+function safeIdentifier(value) {
+    return typeof value === 'string' && value.length > 0 && value.length <= 256
+        && value === sanitize(value) && !RESERVED_IDENTIFIERS.has(value);
+}
+
+/** The exact locator a resource of this kind may persist, or null when malformed. */
+function storedLocator(kind, value) {
+    if (kind === 'chat') {
+        if (!object(value) || typeof value.group !== 'boolean'
+            || Object.keys(value).some(key => !['group', 'chat', 'avatar'].includes(key)) || !safeIdentifier(value.chat)) return null;
+        if (value.group) return value.avatar ? null : { group: true, chat: value.chat };
+        return validRoleplayAvatar(value.avatar) ? { group: false, chat: value.chat, avatar: value.avatar } : null;
+    }
+    if (kind === 'character') {
+        return object(value) && Object.keys(value).length === 1 && validRoleplayAvatar(value.avatar) ? { avatar: value.avatar } : null;
+    }
+    if (kind === 'group') {
+        return object(value) && Object.keys(value).length === 1 && safeIdentifier(value.groupId) ? { groupId: value.groupId } : null;
+    }
+    return null;
+}
+
+function isStoredLocator(kind, value) {
+    const normalised = storedLocator(kind, value);
+    return normalised !== null && isDeepStrictEqual(normalised, value);
+}
+
+function encodedBytes(value) {
+    try { return Buffer.byteLength(canonical(value)); } catch { return Infinity; }
+}
+
+function validIntegrity(value) {
+    return typeof value === 'string';
+}
+
+function validBackup(value) {
+    return object(value) && typeof value.deferBackup === 'boolean'
+        && Object.keys(value).every(key => ['deferBackup', 'deferSequenceId'].includes(key))
+        && (value.deferSequenceId === undefined
+            || (typeof value.deferSequenceId === 'string' && value.deferSequenceId.length <= DEFER_SEQUENCE_MAX_LENGTH));
+}
+
+function validAfter(after) {
+    return object(after) && integer(after.revision) && after.revision >= 1
+        && HASH.test(after.rawHash) && HASH.test(after.contentHash) && validIntegrity(after.integrity)
+        && integer(after.byteLength) && after.byteLength <= 64 * 1024 * 1024
+        && (after.writeId === null || UUID.test(after.writeId)) && after.payload === 'chat.after.jsonl';
+}
+
+const MESSAGE_ANCHOR_KEYS = ['index', 'recordHash', 'selectedSwipeId', 'selectedSwipeHash', 'selectedSwipeInfoHash'];
+const RANGE_ANCHOR_KEYS = ['start', 'count', 'recordsHash', 'prefixHash', 'suffixHash'];
+
+function validMessageAnchor(value) {
+    return object(value) && Object.keys(value).length === MESSAGE_ANCHOR_KEYS.length
+        && MESSAGE_ANCHOR_KEYS.every(key => Object.hasOwn(value, key))
+        && integer(value.index) && HASH.test(value.recordHash) && HASH.test(value.selectedSwipeHash) && HASH.test(value.selectedSwipeInfoHash)
+        && (value.selectedSwipeId === null || typeof value.selectedSwipeId === 'string' || Number.isFinite(value.selectedSwipeId));
+}
+
+function validRangeAnchor(value) {
+    return object(value) && Object.keys(value).length === RANGE_ANCHOR_KEYS.length
+        && RANGE_ANCHOR_KEYS.every(key => Object.hasOwn(value, key))
+        && integer(value.start) && integer(value.count) && value.count >= 1
+        && HASH.test(value.recordsHash) && HASH.test(value.prefixHash) && HASH.test(value.suffixHash);
+}
+
+function validSubmissionResult(value) {
+    return object(value) && UUID.test(value.instanceId) && integer(value.revision) && value.revision >= 1
+        && HASH.test(value.rawHash) && validIntegrity(value.integrity) && UUID.test(value.writeId)
+        && typeof value.changed === 'boolean' && ['update', 'create'].includes(value.mode)
+        && (value.mode !== 'create' || (value.revision === 1 && value.changed))
+        && encodedBytes(value) <= SUBMISSION_RESULT_MAX_BYTES;
+}
+
+function validCleanup(value) {
+    if (!object(value) || Object.keys(value).length !== 2 || !object(value.payloads)
+        || !HASH.test(value.payloads['chat.after.jsonl'])
+        || Object.hasOwn(value.payloads, 'memory.archive.json') !== Object.hasOwn(value.payloads, 'memory.guard.json')
+        || Object.entries(value.payloads).some(([name, hash]) => !['chat.after.jsonl', 'memory.archive.json', 'memory.guard.json'].includes(name) || !HASH.test(hash))) return false;
+    return value.journal === null || (object(value.journal) && Object.keys(value.journal).length === 3
+        && isStoredLocator('chat', value.journal.locator) && HASH.test(value.journal.rawHash) && validPhysical(value.journal.physical));
+}
+
+function validateState(state, identity) {
+    if (!object(state) || state.schema !== 1 || state.storageId !== identity.storageId || state.owner !== identity.owner
+        || !UUID.test(state.accountId) || !integer(state.dataEpoch) || state.dataEpoch < 1 || !integer(state.revision)
+        || !['ready', 'maintenance', 'deleted', 'recovery-required'].includes(state.status)
+        || !object(state.paths) || !object(state.resources) || !object(state.submissions)
+        || (state.pending !== null && !object(state.pending))) throw damaged();
+    for (const [key, value] of Object.entries(state.resources)) {
+        if (!UUID.test(key) || !object(value) || !UUID.test(value.accountId) || !integer(value.dataEpoch)
+            || !['chat', 'character', 'group'].includes(value.kind) || !isStoredLocator(value.kind, value.locator)
+            || !['live', 'deleted', 'replaced'].includes(value.status) || !integer(value.revision) || value.revision < 1
+            || !object(value.head) || !HASH.test(value.head.rawHash) || !HASH.test(value.head.contentHash)
+            || !validPhysical(value.head.physical)
+            || (value.head.writeId !== null && !UUID.test(value.head.writeId))
+             || (value.busySubmission !== null && !Object.hasOwn(state.submissions, value.busySubmission))) throw damaged();
+    }
+    for (const [key, value] of Object.entries(state.paths)) {
+        if (!HASH.test(key) || !object(value) || !integer(value.generation)
+            || (value.instanceId !== null && !Object.hasOwn(state.resources, value.instanceId))) throw damaged();
+        const resource = state.resources[value.instanceId];
+        // Retired paths keep their original account and epoch, not the current account's stamp.
+        if (resource && key !== roleplayPathKey(resource, resource.kind, resource.locator)) throw damaged();
+    }
+    for (const [key, value] of Object.entries(state.submissions)) {
+        if (!HASH.test(key) || !object(value) || !UUID.test(value.accountId) || !integer(value.dataEpoch)
+            || !HASH.test(value.intentHash) || (value.jobId !== null && !UUID.test(value.jobId))
+            || !Object.hasOwn(state.resources, value.targetInstanceId)
+            || !['preparing', 'accepted', 'closed', 'void'].includes(value.state)
+            || !integer(value.reservedReceiptBytes) || !object(value.effects)
+            || (value.state === 'closed' && Object.keys(value.effects).length === 0)
+             || (value.state === 'closed' && !validSubmissionResult(value.outcome))
+             || (value.outcome !== undefined && value.outcome !== null && !validSubmissionResult(value.outcome))) throw damaged();
+        const target = state.resources[value.targetInstanceId];
+        if (target.accountId !== value.accountId || target.dataEpoch !== value.dataEpoch) throw damaged();
+        for (const [effectKey, effect] of Object.entries(value.effects)) {
+            if (!HASH.test(effectKey) || !object(effect) || !HASH.test(effect.effectHash) || !UUID.test(effect.writeId)
+                || !Object.hasOwn(state.resources, effect.instanceId) || !integer(effect.appliedRevision)
+                 || (value.state === 'closed' && !validSubmissionResult(effect.result))
+                 || (effect.result !== undefined && effect.result !== null && !validSubmissionResult(effect.result))) throw damaged();
+            if (effect.instanceId !== value.targetInstanceId || effect.effectHash !== value.intentHash) throw damaged();
+            if (effect.result && (effect.result.instanceId !== effect.instanceId || effect.result.revision !== effect.appliedRevision
+                || effect.result.writeId !== effect.writeId || (value.outcome && !isDeepStrictEqual(effect.result, value.outcome)))) throw damaged();
+            if (effect.cleanup !== undefined && (!validCleanup(effect.cleanup)
+                || effect.cleanup.payloads['chat.after.jsonl'] !== effect.result?.rawHash
+                || (effect.result.mode === 'create' && effect.cleanup.journal !== null))) throw damaged();
+        }
+    }
+    if (state.pending !== null) validateChatTransaction(state.pending, state);
+    return state;
+}
+
+function load(scope, allowUninitialised = false) {
+    const root = roleplayStoreDirectory(scope);
+    const identityFile = readRoleplayFile(path.join(root, 'identity.json'), 4096);
+    if (!identityFile && allowUninitialised && !readRoleplayFile(path.join(root, 'state.json'))) {
+        throw roleplayError('ROLEPLAY_ACCOUNT_UNAVAILABLE', 'Protected storage has not been prepared for this account.', 503);
+    }
+    const identity = decodeJson(identityFile);
+    if (!identity || identity.schema !== 1 || identity.owner !== scope.owner || !UUID.test(identity.storageId)
+        || identity.phase !== 'ready') throw damaged();
+    const stateFile = readRoleplayFile(path.join(root, 'state.json'));
+    const saved = decodeJson(stateFile);
+    if (!object(saved) || !HASH.test(saved.hash) || roleplayHash(saved.state) !== saved.hash) throw damaged();
+    return { root, identity, identityFile, stateFile, state: validateState(saved.state, identity) };
+}
+
+function stamp(scope, state) {
+    return { owner: scope.owner, directories: scope.directories, accountId: state.accountId, dataEpoch: state.dataEpoch };
+}
+
+function save(root, identity, state, expected = null) {
+    validateState(state, identity);
+    const saved = { hash: roleplayHash(state), state };
+    const reserved = Object.values(state.submissions).reduce((sum, item) => sum + item.reservedReceiptBytes, state.pending?.reservedBytes ?? 0);
+    if (!Number.isSafeInteger(reserved) || Buffer.byteLength(JSON.stringify(saved)) + reserved > ROLEPLAY_STORE_MAX_BYTES) {
+        throw roleplayError('ROLEPLAY_STORE_FULL', 'Protected Roleplay evidence has no room for this change; existing records were retained.', 413);
+    }
+    return writeJson(path.join(root, 'state.json'), saved, expected);
+}
+
+function isCurrentResource(state, instanceId) {
+    const resource = state.resources[instanceId];
+    return resource?.accountId === state.accountId && resource?.dataEpoch === state.dataEpoch
+        && state.paths[roleplayPathKey(state, resource.kind, resource.locator)]?.instanceId === instanceId;
+}
+
+function validateDependency(dependency, state) {
+    if (!object(dependency) || !['character', 'group'].includes(dependency.kind)
+        || !UUID.test(dependency.instanceId) || !integer(dependency.revision) || dependency.revision < 1
+        || !HASH.test(dependency.contentHash)) throw damaged();
+    const resource = state.resources[dependency.instanceId];
+    if (!object(resource) || resource.kind !== dependency.kind || resource.status !== 'live'
+        || !isCurrentResource(state, dependency.instanceId)
+        || !integer(resource.revision) || resource.revision !== dependency.revision
+        || !object(resource.head) || resource.head.contentHash !== dependency.contentHash
+        || !isStoredLocator(dependency.kind, dependency.locator)
+        || !isDeepStrictEqual(resource.locator, dependency.locator)) throw damaged();
+}
+
+function validateChatSource(pending, state) {
+    const source = pending.source;
+    if (!object(source) || source.accountId !== pending.accountId || source.dataEpoch !== pending.dataEpoch
+        || !isStoredLocator('chat', source.locator) || !isDeepStrictEqual(source.locator, pending.locator)
+        || !Array.isArray(source.dependencies)) throw damaged();
+    for (const dependency of source.dependencies) validateDependency(dependency, state);
+    if (new Set(source.dependencies.map(item => item.instanceId)).size !== source.dependencies.length
+        || new Set(source.dependencies.map(item => roleplayHash([item.kind, item.locator]))).size !== source.dependencies.length) throw damaged();
+    if (source.kind !== undefined) {
+        if (source.kind !== 'storage' || source.dependencies.length !== 0 || source.groupId !== undefined
+            || source.message !== undefined || source.range !== undefined) throw damaged();
+    } else if (pending.locator.group) {
+        if (!safeIdentifier(source.groupId)) throw damaged();
+        const groups = source.dependencies.filter(item => item.kind === 'group');
+        if (groups.length !== 1 || groups[0].locator.groupId !== source.groupId) throw damaged();
+    } else if (source.groupId !== undefined || source.dependencies.length !== 1
+        || source.dependencies[0].kind !== 'character' || source.dependencies[0].locator.avatar !== pending.locator.avatar) throw damaged();
+    if (source.message !== undefined && !validMessageAnchor(source.message)) throw damaged();
+    if (source.range !== undefined && !validRangeAnchor(source.range)) throw damaged();
+    if (pending.mode === 'update') {
+        if (!UUID.test(source.instanceId) || source.instanceId !== pending.instanceId
+            || !integer(source.revision) || source.revision < 1 || !HASH.test(source.rawHash)) throw damaged();
+        const resource = state.resources[source.instanceId];
+        if (!object(resource) || resource.kind !== 'chat' || resource.status !== 'live'
+            || !isCurrentResource(state, source.instanceId)
+            || !object(resource.head) || !isDeepStrictEqual(resource.locator, source.locator)
+            || resource.revision !== source.revision || resource.head.rawHash !== source.rawHash) throw damaged();
+        const before = pending.before;
+        if (!object(before) || before.revision !== resource.revision
+            || before.rawHash !== resource.head.rawHash || before.contentHash !== resource.head.contentHash
+            || !isDeepStrictEqual(before.physical, resource.head.physical)
+            || before.writeId !== resource.head.writeId
+            || !validIntegrity(before.integrity)) throw damaged();
+        if (pending.changed ? pending.after.revision !== before.revision + 1 : pending.after.revision !== before.revision) throw damaged();
+        if (pending.changed ? pending.after.writeId !== pending.id : pending.after.writeId !== before.writeId) throw damaged();
+        if (pending.changed ? (pending.after.rawHash === before.rawHash || pending.after.contentHash === before.contentHash)
+            : (pending.after.rawHash !== before.rawHash || pending.after.contentHash !== before.contentHash
+                || pending.after.integrity !== before.integrity)) throw damaged();
+    } else {
+        if (source.instanceId !== undefined || source.revision !== undefined || source.rawHash !== undefined) throw damaged();
+        if (pending.before !== null || !integer(pending.expectedVacancy)) throw damaged();
+        if (pending.after.revision !== 1 || pending.changed !== true || pending.after.writeId !== pending.id) throw damaged();
+        const vacancy = state.paths[roleplayPathKey(state, 'chat', pending.locator)];
+        if (Object.hasOwn(state.resources, pending.instanceId) || vacancy?.instanceId
+            || pending.expectedVacancy !== (vacancy?.generation ?? 0)) throw damaged();
+    }
+}
+
+function validateChatTransaction(pending, state) {
+    if (pending.schema !== 1 || pending.kind !== 'chat-write' || !UUID.test(pending.id)
+        || pending.accountId !== state.accountId || pending.dataEpoch !== state.dataEpoch
+        || !HASH.test(pending.operationKeyHash) || !HASH.test(pending.intentHash) || !UUID.test(pending.instanceId)
+        || !['update', 'create'].includes(pending.mode) || !isStoredLocator('chat', pending.locator)
+        || !['prepared', 'chat-applied', 'auxiliary'].includes(pending.phase) || typeof pending.changed !== 'boolean'
+        || !integer(pending.reservedBytes) || pending.reservedBytes > ROLEPLAY_RECOVERY_RESERVE_BYTES
+        || typeof pending.allowShrink !== 'boolean' || !validBackup(pending.backup) || !validAfter(pending.after)
+        || (pending.force !== undefined && typeof pending.force !== 'boolean')
+        || !object(pending.source)
+        || (pending.appliedPhysical !== null && !validPhysical(pending.appliedPhysical))) throw damaged();
+    validateChatSource(pending, state);
+    if (pending.repair !== null && (!object(pending.repair) || !HASH.test(pending.repair.rawHash) || !validPhysical(pending.repair.physical))) throw damaged();
+    if (pending.journal != null && (!object(pending.journal) || Object.keys(pending.journal).length !== 4
+        || !HASH.test(pending.journal.rawHash) || !validPhysical(pending.journal.physical) || !HASH.test(pending.journal.nextHash)
+        || pending.mode !== 'update' || pending.journal.originalHash !== pending.before.rawHash)) throw damaged();
+    if (encodedBytes(pending) > PENDING_MAX_BYTES) throw damaged();
+    if (pending.memory !== null) {
+        const memory = pending.memory;
+        const validFile = value => object(value) && HASH.test(value.rawHash) && validPhysical(value.physical);
+        const validPair = value => object(value) && validFile(value.archive) && (value.guard === null || validFile(value.guard));
+        if (!object(memory) || !['absent', 'existing', 'create'].includes(memory.kind)) throw damaged();
+        if (memory.kind === 'existing') {
+            if (pending.mode === 'create' || !validPair(memory.child)) throw damaged();
+        } else {
+            if (!isStoredLocator('chat', memory.parentLocator) || memory.parentLocator.group !== pending.locator.group
+                || memory.parentLocator.avatar !== pending.locator.avatar || memory.parentLocator.chat === pending.locator.chat) throw damaged();
+            if (memory.kind === 'absent') {
+                if (memory.parent !== null) throw damaged();
+            } else if (!validPair(memory.parent) || !UUID.test(memory.branchId) || !HASH.test(memory.archiveHash)
+                || !HASH.test(memory.guardHash) || !integer(memory.archiveBytes) || !integer(memory.guardBytes)
+                || memory.archiveBytes > 256 * 1024 * 1024 || memory.guardBytes > 256 * 1024 * 1024) throw damaged();
+        }
+    }
+}
+
+function validPhysical(value) {
+    return object(value) && Object.keys(value).length === 3
+        && ['dev', 'ino', 'birthtimeNs'].every(key => typeof value[key] === 'string' && /^\d{1,30}$/.test(value[key]));
+}
+
+export function largestRoleplayJournal(pending) {
+    return pending?.mode === 'update' ? { rawHash: 'f'.repeat(64), physical: ROLEPLAY_LARGEST_PHYSICAL,
+        originalHash: pending.before.rawHash, nextHash: 'f'.repeat(64) } : null;
+}
+
+/** Leave emergency capacity for bounded reconciliation rather than evicting older evidence. */
+export function assertRoleplayTransactionCapacity(lease, pending, finalState) {
+    const { state, identity } = roleplayLease(lease);
+    // Reserve the largest recovery progress record before staging or publishing any content.
+    const progress = pending && { ...state, pending: { ...pending, phase: 'chat-applied', appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL,
+        repair: { rawHash: pending.after.rawHash, physical: ROLEPLAY_LARGEST_PHYSICAL }, journal: largestRoleplayJournal(pending) } };
+    for (const candidate of [{ ...state, pending }, progress, finalState].filter(Boolean)) {
+        if (candidate.pending && encodedBytes(candidate.pending) > PENDING_MAX_BYTES) {
+            throw roleplayError('ROLEPLAY_STORE_FULL', 'Protected Roleplay evidence has no room for the complete transaction.', 413);
+        }
+        validateState(candidate, identity);
+        const reserved = Object.values(candidate.submissions).reduce((sum, item) => sum + item.reservedReceiptBytes, candidate.pending?.reservedBytes ?? 0);
+        const size = Buffer.byteLength(JSON.stringify({ hash: roleplayHash(candidate), state: candidate }));
+        if (size + reserved > ROLEPLAY_STORE_MAX_BYTES - ROLEPLAY_RECOVERY_RESERVE_BYTES) {
+            throw roleplayError('ROLEPLAY_STORE_FULL', 'Protected Roleplay evidence has no room for another transaction.', 413);
+        }
+    }
+}
+
+export function roleplayPayloadDirectory(lease, transactionId) {
+    const { root } = roleplayLease(lease);
+    if (!UUID.test(transactionId)) throw damaged();
+    const filename = path.join(root, 'pending', transactionId);
+    directory(filename, false, true);
+    return filename;
+}
+
+function payloadPath(lease, transactionId, name) {
+    if (!['chat.after.jsonl', 'chat.corrupt.jsonl', 'memory.archive.json', 'memory.guard.json'].includes(name)) throw damaged();
+    return path.join(roleplayPayloadDirectory(lease, transactionId), name);
+}
+
+export function readRoleplayPayload(lease, transactionId, name, expectedHash, limit = 64 * 1024 * 1024) {
+    const filename = payloadPath(lease, transactionId, name);
+    const file = readRoleplayFile(filename, limit, { flush: true });
+    if (!file || file.rawHash !== expectedHash) throw damaged();
+    return { ...file, filename };
+}
+
+export function stageRoleplayPayload(lease, transactionId, name, bytes, limit = 64 * 1024 * 1024) {
+    const filename = payloadPath(lease, transactionId, name);
+    if (!Buffer.isBuffer(bytes) || bytes.length > limit) throw roleplayError('ROLEPLAY_INVALID', 'Invalid prepared Roleplay payload.', 413);
+    createRoleplayDirectory(path.dirname(filename), roleplayLease(lease).root);
+    const existing = readRoleplayFile(filename, limit);
+    const hash = crypto.createHash('sha256').update(bytes).digest('hex');
+    if (existing && existing.rawHash !== hash) throw damaged();
+    if (!existing) tryWriteFileSync(filename, bytes, { mode: 0o600 }, { expectedFileAbsent: true, durable: true, preserveOnCreateError: true });
+    return readRoleplayPayload(lease, transactionId, name, hash, limit);
+}
+
+function locked(scope, operation, initialise = false) {
+    const root = initialise ? prepareDirectory(scope) : roleplayStoreDirectory(scope);
+    if (!initialise && !directory(root, false, true)) {
+        throw roleplayError('ROLEPLAY_ACCOUNT_UNAVAILABLE', 'Protected storage has not been prepared for this account.', 503);
+    }
+    const release = acquireChatFileLock(path.join(root, 'state.json'));
+    let result;
+    try { result = operation(root); } catch (failure) {
+        try { release(); } catch (cause) { console.warn('Roleplay account lock cleanup also failed:', cause?.code || cause?.name); }
+        throw failure;
+    }
+    try { release(); } catch (cause) {
+        throw Object.assign(roleplayError('ROLEPLAY_STORE_UNCERTAIN', 'Reconcile the Roleplay operation after account lock cleanup failed.'),
+            { cause, roleplayWriteUncertain: true });
+    }
+    return result;
+}
+
+/** Explicit startup bootstrap only; receipt reads never create an empty ledger. */
+export function initialiseRoleplayAccount(scope) {
+    const result = locked(scope, root => {
+        const markerPath = path.join(root, 'identity.json');
+        let markerFile = readRoleplayFile(markerPath, 4096);
+        let marker = decodeJson(markerFile);
+        if (marker?.phase === 'ready') {
+            const loaded = load(scope);
+            assertSameFile(readRoleplayFile(markerPath, 4096, { flush: true }), loaded.identityFile);
+            assertSameFile(readRoleplayFile(path.join(root, 'state.json'), ROLEPLAY_STORE_MAX_BYTES, { flush: true }), loaded.stateFile);
+            return stamp(scope, loaded.state);
+        }
+        if (marker === undefined) {
+            if (fs.readdirSync(root).some(name => name !== path.basename(path.join(root, 'state.json')) && !name.endsWith('.lock'))
+                || fs.existsSync(path.join(root, 'state.json'))) throw damaged();
+            marker = { schema: 1, owner: scope.owner, storageId: crypto.randomUUID(), initialAccountId: crypto.randomUUID(), phase: 'initialising' };
+            markerFile = writeJson(markerPath, marker);
+        }
+        if (!object(marker) || marker.schema !== 1 || marker.owner !== scope.owner || !UUID.test(marker.storageId)
+            || !UUID.test(marker.initialAccountId) || marker.phase !== 'initialising') throw damaged();
+        assertSameFile(readRoleplayFile(markerPath, 4096, { flush: true }), markerFile);
+        const existing = decodeJson(readRoleplayFile(path.join(root, 'state.json')));
+        if (existing !== undefined) {
+            if (!object(existing) || existing.hash !== roleplayHash(existing.state) || existing.state.accountId !== marker.initialAccountId
+                || existing.state.revision !== 0) throw damaged();
+            validateState(existing.state, marker);
+            const confirmed = decodeJson(readRoleplayFile(path.join(root, 'state.json'), ROLEPLAY_STORE_MAX_BYTES, { flush: true }));
+            if (!isDeepStrictEqual(confirmed, existing)) throw damaged();
+        } else {
+            save(root, marker, { schema: 1, owner: scope.owner, storageId: marker.storageId, accountId: marker.initialAccountId,
+                dataEpoch: 1, revision: 0, status: 'ready', paths: {}, resources: {}, submissions: {}, pending: null });
+        }
+        writeJson(markerPath, { ...marker, phase: 'ready' }, markerFile);
+        return stamp(scope, load(scope).state);
+    }, true);
+    observedAccounts.set(path.resolve(scope.directories.root), { ...scope, accountId: result.accountId, dataEpoch: result.dataEpoch });
+    return result;
+}
+
+function assertAccountIdentity(scope, state) {
+    if (scope.accountId !== state.accountId || scope.dataEpoch !== state.dataEpoch) {
+        throw roleplayError('ROLEPLAY_ACCOUNT_CHANGED', 'The account or its saved data was replaced. Reload before continuing.');
+    }
+}
+
+export function assertRoleplayAccountCurrent(scope, state = load(scope).state) {
+    assertAccountIdentity(scope, state);
+    if (state.status !== 'ready') throw roleplayError('ROLEPLAY_ACCOUNT_UNAVAILABLE', 'The account has unfinished maintenance or recovery.');
+    return state;
+}
+
+export function readRoleplayAccount(scope) {
+    return assertRoleplayAccountCurrent(scope);
+}
+
+/** Confirm an exact uncertain publication under a fresh lock without rewriting it. */
+export function reconcileRoleplayAccount(scope, expectedHash) {
+    if (typeof expectedHash !== 'string' || !HASH.test(expectedHash)) throw new TypeError('An exact intended ledger hash is required.');
+    return locked(scope, root => {
+        const loaded = load(scope);
+        assertAccountIdentity(scope, loaded.state);
+        if (loaded.stateFile.rawHash !== expectedHash) throw roleplayError('ROLEPLAY_PUBLICATION_DIFFERENT', 'The current protected ledger is not the intended publication.');
+        assertSameFile(readRoleplayFile(path.join(root, 'identity.json'), 4096, { flush: true }), loaded.identityFile);
+        assertSameFile(readRoleplayFile(path.join(root, 'state.json'), ROLEPLAY_STORE_MAX_BYTES, { flush: true }), loaded.stateFile);
+        return loaded.state;
+    });
+}
+
+/** The opaque lease permits synchronous nested storage work, not a lock bypass. */
+export function withRoleplayAccountLock(scope, operation) {
+    return withRoleplayAccount(scope, { accountId: scope.accountId, dataEpoch: scope.dataEpoch }, operation);
+}
+
+/** Explicit discovery uses null; mutating request handlers must supply their captured account stamp. */
+export function withRoleplayAccount(base, expected, operation) {
+    if (typeof operation !== 'function' || types.isAsyncFunction(operation)) throw new TypeError('Roleplay storage operations must be synchronous.');
+    if (expected !== null && (!object(expected) || !UUID.test(expected.accountId) || !integer(expected.dataEpoch) || expected.dataEpoch < 1)) {
+        throw roleplayError('ROLEPLAY_ACCOUNT_CHANGED', 'A saved account identity is required. Reload before continuing.');
+    }
+    return locked(base, () => {
+        const loaded = load(base, expected === null);
+        if (expected !== null) assertAccountIdentity(expected, loaded.state);
+        const scope = stamp(base, loaded.state);
+        assertRoleplayAccountCurrent(scope, loaded.state);
+        const lease = Object.freeze({});
+        const held = { ...loaded, scope, persistedRevision: loaded.state.revision, failure: null };
+        leases.set(lease, held);
+        activeAccountLeases.set(path.resolve(scope.directories.root), lease);
+        try {
+            const result = operation(lease, { accountId: scope.accountId, dataEpoch: scope.dataEpoch });
+            if (result && typeof result.then === 'function') {
+                Promise.resolve(result).catch(() => {});
+                throw new TypeError('Roleplay storage operations must not return promises.');
+            }
+            if (held.failure) throw held.failure;
+            return result;
+        } finally { activeAccountLeases.delete(path.resolve(scope.directories.root)); leases.delete(lease); }
+    });
+}
+
+export function roleplayLease(lease) {
+    const held = leases.get(lease);
+    if (!held) throw new TypeError('An active Roleplay account lock is required.');
+    if (held.failure) throw held.failure;
+    return held;
+}
+
+/** Keep the account lock through a legacy recovery or migration publication. */
+export function withUntrackedRoleplayFiles(base, filenames, operation) {
+    return withRoleplayAccount(base, null, lease => {
+        assertUntrackedRoleplayFiles(lease, filenames);
+        return operation();
+    });
+}
+
+function assertUntrackedRoleplayFiles(lease, filenames) {
+    const { state, scope } = roleplayLease(lease);
+    if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'Pending protected Roleplay work must finish first.');
+    for (const filename of filenames) {
+        const relative = key => path.relative(scope.directories[key], filename);
+        const child = key => {
+            const value = relative(key);
+            return value && value !== '..' && !value.startsWith('..' + path.sep) ? value : null;
+        };
+        let kind;
+        let locator;
+        const character = child('characters');
+        const group = child('groups');
+        const groupChat = child('groupChats');
+        const soloChat = child('chats');
+        if (character && !character.includes(path.sep) && character.endsWith('.png')) {
+            kind = 'character'; locator = { avatar: character };
+        } else if (group && !group.includes(path.sep) && group.endsWith('.json')) {
+            kind = 'group'; locator = { groupId: group.slice(0, -5) };
+        } else if (groupChat && !groupChat.includes(path.sep) && groupChat.endsWith('.jsonl')) {
+            kind = 'chat'; locator = { group: true, chat: groupChat.slice(0, -6) };
+        } else if (soloChat && soloChat.endsWith('.jsonl') && soloChat.split(path.sep).length === 2) {
+            const [avatar, chatFile] = soloChat.split(path.sep);
+            kind = 'chat'; locator = { group: false, avatar: avatar + '.png', chat: chatFile.slice(0, -6) };
+        } else {
+            throw roleplayError('ROLEPLAY_INVALID', 'Legacy target is outside recognised account data.', 400);
+        }
+        const sameProtectedPath = value => {
+            const saved = value.locator;
+            const expected = value.kind === 'character' ? path.join(scope.directories.characters, saved.avatar)
+                : value.kind === 'group' ? path.join(scope.directories.groups, saved.groupId + '.json')
+                    : saved.group ? path.join(scope.directories.groupChats, saved.chat + '.jsonl')
+                        : path.join(scope.directories.chats, roleplayAvatarOwner(saved.avatar), saved.chat + '.jsonl');
+            return path.resolve(filename) === path.resolve(expected);
+        };
+        if (Object.values(state.resources).some(value => sameProtectedPath(value) || (value.kind === kind && isDeepStrictEqual(value.locator, locator)))
+                || state.paths[roleplayPathKey(state, kind, locator)]
+                || (state.pending?.kind === 'chat-write' && kind === 'chat' && isDeepStrictEqual(state.pending.locator, locator))) {
+            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'Legacy work cannot change an observed Roleplay file.');
+        }
+        const journal = readRoleplayWriteJournal(filename);
+        const journalTarget = journal && decodeFileWriteRecovery(journal.bytes, 64 * 1024 * 1024);
+        if (journal && !journalTarget) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'Legacy recovery evidence could not be proved untracked.');
+        const physicals = [readRoleplayFile(filename, 64 * 1024 * 1024)?.physical, journal?.physical].filter(Boolean);
+        const protectedPhysicals = Object.values(state.resources).map(value => value.head.physical);
+        if (state.pending) protectedPhysicals.push(state.pending.before?.physical, state.pending.appliedPhysical, state.pending.journal?.physical);
+        if (physicals.some(physical => protectedPhysicals.some(saved => saved && isDeepStrictEqual(physical, saved)))
+            || (journalTarget && protectedPhysicals.some(saved => saved && saved.dev === journalTarget.dev && saved.ino === journalTarget.ino
+                && (!journalTarget.birthtime || saved.birthtimeNs === journalTarget.birthtime)))) {
+            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'Legacy work cannot change an observed Roleplay file.');
+        }
+    }
+}
+
+setFileWriteRecoveryGuard((filename, recover) => {
+    const target = path.resolve(filename);
+    const base = [...observedAccounts.values()].find(({ directories }) =>
+        ['characters', 'groups', 'groupChats', 'chats'].some(key => {
+            const relative = path.relative(directories[key], target);
+            return relative && relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
+        }));
+    if (!base) return recover();
+    try {
+        const active = activeAccountLeases.get(path.resolve(base.directories.root));
+        if (active) {
+            assertUntrackedRoleplayFiles(active, [target]);
+            return recover();
+        }
+        return withUntrackedRoleplayFiles(base, [target], recover);
+    } catch (error) {
+        if (error?.code?.startsWith('ROLEPLAY_')) return false;
+        throw error;
+    }
+});
+
+/** Confirm loaded write-ahead evidence before publishing content or acknowledging a saved receipt. */
+export function confirmRoleplayAccount(lease) {
+    const held = roleplayLease(lease);
+    try {
+        assertSameFile(readRoleplayFile(path.join(held.root, 'identity.json'), 4096, { flush: true }), held.identityFile);
+        assertSameFile(readRoleplayFile(path.join(held.root, 'state.json'), ROLEPLAY_STORE_MAX_BYTES, { flush: true }), held.stateFile);
+    } catch (failure) {
+        held.failure = failure;
+        throw failure;
+    }
+}
+
+export function saveRoleplayAccount(lease) {
+    const held = roleplayLease(lease);
+    try {
+        assertSameFile(readRoleplayFile(path.join(held.root, 'identity.json'), 4096), held.identityFile);
+        const candidate = { ...held.state, revision: held.persistedRevision + 1 };
+        held.stateFile = save(held.root, held.identity, candidate, held.stateFile);
+        held.persistedRevision = candidate.revision;
+        held.state.revision = candidate.revision;
+        return candidate.revision;
+    } catch (failure) {
+        held.failure = failure;
+        throw failure;
+    }
+}
