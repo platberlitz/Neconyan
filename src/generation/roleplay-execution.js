@@ -102,10 +102,12 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             || worldInfo.ANAfterEntries.length || Object.keys(worldInfo.outletEntries).length) {
             throw roleplayError('ROLEPLAY_INVALID', 'This World Info insertion position needs server prompt construction.', 409);
         }
+        if (worldInfo.activated.length) {
+            assertWorldInfoDepthHistory(assertSource().records, request.messages, request.historyStart);
+        }
         const lore = [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
         if (lore) messages.unshift({ role: 'system', content: lore });
         if (worldInfo.WIDepthEntries.length) {
-            assertWorldInfoDepthHistory(assertSource().records, request.messages, request.historyStart);
             messages = insertWorldInfoDepth(messages, worldInfo.WIDepthEntries,
                 request.historyStart + Number(Boolean(lore)));
         }

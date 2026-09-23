@@ -328,6 +328,8 @@ test('saved persona, card notes and character tags decide activation without bro
 
 test('the worker saves scan decisions before a provider call and closes timed effects with the reply', async t => {
     const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
     fs.mkdirSync(f.scope.directories.worlds);
     fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
@@ -339,25 +341,33 @@ test('the worker saves scan decisions before a provider call and closes timed ef
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const source = captureRoleplaySource(f.scope, { locator: f.locator });
     const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 });
-    const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, messages: [{ role: 'user', content: 'Original' }],
-        maxTokens: 32, characterName: 'Nova', worldInfo };
+    const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, messages: [{ role: 'user', content: 'Forged' }],
+        historyStart: 0, maxTokens: 32, characterName: 'Nova', worldInfo };
     const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'lore', effect: 'append', source, request });
     releaseJob(f.scope.directories, jobId);
     const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
         owner: f.scope.owner, signal: new AbortController().signal };
     let hooks = 0;
     let calls = 0;
+    await assert.rejects(runRoleplayReplyJob(context, { generate: () => { throw Error('Provider called'); } }),
+        { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    assert.ok(readArtifact(f.scope.directories, jobId, 'roleplay-world-info'));
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length);
+    const valid = { ...request, messages: [{ role: 'user', content: 'Original' }, { role: 'assistant', content: 'Answer' }] };
+    const admitted = admitRoleplayJob(f.scope, account, { operationKey: 'lore-bound', effect: 'append', source, request: valid });
+    releaseJob(f.scope.directories, admitted.jobId);
+    const boundContext = { ...context, job: getJob(f.scope.directories, admitted.jobId) };
     const options = { worldInfoHooks: { onScan: async () => { hooks++; } },
         generate: async ({ beforeDispatch, messages }) => {
             beforeDispatch();
-            assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-world-info').activated[0].uid, 7);
+            assert.equal(readArtifact(f.scope.directories, admitted.jobId, 'roleplay-world-info').activated[0].uid, 7);
             assert.deepEqual(messages[0], { role: 'system', content: 'The harbour is safe' });
-            assert.equal(request.messages[0].content, 'Original');
+            assert.equal(valid.messages[0].content, 'Original');
             if (++calls === 1) throw new Error('Provider never reached');
             return { text: 'The answer' };
         } };
-    await assert.rejects(runRoleplayReplyJob(context, options), /Provider never reached/);
-    await runRoleplayReplyJob(context, options);
+    await assert.rejects(runRoleplayReplyJob(boundContext, options), /Provider never reached/);
+    await runRoleplayReplyJob(boundContext, options);
     assert.equal(hooks, 2);
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'The answer');
     assert.equal(readRoleplayChat(f.scope, f.locator).records[0].chat_metadata.timedWorldInfo.sticky['Town.7'].end, 4);
@@ -460,6 +470,8 @@ test('unsupported insertion positions refuse before provider dispatch and before
 
 test('a saved timed window refuses delivery after the chat grows while the provider was away', async t => {
     const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
     fs.mkdirSync(f.scope.directories.worlds);
     fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
@@ -471,7 +483,8 @@ test('a saved timed window refuses delivery after the chat grows while the provi
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const source = captureRoleplaySource(f.scope, { locator: f.locator, message: 0 });
     const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 });
-    const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, messages: [{ role: 'user', content: 'Original' }],
+    const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, historyStart: 0,
+        messages: [{ role: 'user', content: 'Original' }, { role: 'assistant', content: 'Answer' }],
         maxTokens: 32, characterName: 'Nova', worldInfo };
     const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'timed-swipe', effect: 'swipe', source, request });
     releaseJob(f.scope.directories, jobId);
