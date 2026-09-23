@@ -80,8 +80,9 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         const regex = extensions.disabledExtensions?.includes('regex') ? [] : [
             ...(extensions.regex ?? []), ...scopedRegex,
         ];
-        const chat = saved.records.slice(1).map(message => (settings.world_info_include_names ?? DEFAULTS.world_info_include_names)
-            ? `${message.name}: ${message.mes}` : String(message.mes ?? '')).reverse();
+        const chat = saved.records.slice(1).filter(message => !message.is_system)
+            .map(message => (settings.world_info_include_names ?? DEFAULTS.world_info_include_names)
+                ? `${message.name}: ${message.mes}` : String(message.mes ?? '')).reverse();
         const snapshot = { account: { accountId: account.accountId, dataEpoch: account.dataEpoch }, source,
             character: { instanceId: character.instanceId, revision: character.revision, rawHash: character.rawHash },
             settingsHash: roleplayHash(savedSettings),

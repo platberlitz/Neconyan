@@ -311,6 +311,24 @@ test('saved default name inclusion activates speaker keys before provider work',
     assert.equal(selected.worldInfoBefore, 'The user speaks');
 });
 
+test('ordinary hidden system messages do not trigger saved World Info', async t => {
+    const f = fixture(t);
+    f.records.push({ name: 'System', is_user: false, is_system: true, mes: 'Hidden keyword' });
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Hidden keyword', 'Unexpected lore', { world: undefined, hash: undefined }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, f.source(), { avatar: 'Nova.png', maxContext: 100 });
+    assert.ok(snapshot.chat.every(text => !text.includes('Hidden keyword')));
+    assert.equal((await prepareRoleplayWorldInfo(f.scope, snapshot)).activated.length, 0);
+});
+
 test('a saved swipe trigger selects only swipe lore and remains bound to that effect', async t => {
     const f = fixture(t);
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
