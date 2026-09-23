@@ -50,6 +50,7 @@ export function insertWorldInfoOutlets(messages, outlets, snapshot, historyStart
         rendered = Handlebars.compile(snapshot.storyTemplate, { noEscape: true })({ ...fields,
             description: global.characterDescription, personality: global.characterPersonality,
             scenario: global.scenario, persona: global.personaDescription, user: userName, char: characterName,
+            system: snapshot.systemPrompt ?? '',
             wiBefore: before, wiAfter: after, loreBefore: before, loreAfter: after });
     } catch {
         throw roleplayError('ROLEPLAY_INVALID', 'The saved story template needs unsupported prompt macros.', 409);

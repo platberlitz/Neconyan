@@ -82,6 +82,50 @@ test('named lore outlets render at their saved story template positions', () => 
     ]);
 });
 
+test('server story system instructions come from the saved chat and card, not accepted text', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    const settingsFile = path.join(f.scope.directories.root, 'settings.json');
+    fs.writeFileSync(settingsFile, JSON.stringify({ power_user: { prefer_character_prompt: true,
+        context: { story_string: '{{system}}\n{{description}}', story_string_position: 0 } } }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const cardPath = path.join(f.scope.directories.characters, 'Nova.png');
+    fs.writeFileSync(cardPath, writeCard(png, JSON.stringify({ name: 'Nova', description: 'Original',
+        data: { name: 'Nova', description: 'Original', system_prompt: 'Saved card rule' } })));
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const fromCard = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 });
+    assert.equal(fromCard.systemPrompt, 'Saved card rule');
+    assert.equal(insertWorldInfoOutlets([], {}, fromCard, 0, 'User', 'Nova', '', '', true)[0].content,
+        'Saved card rule\nOriginal');
+    assert.throws(() => insertWorldInfoOutlets([], {}, { ...fromCard, storyTemplate: '{{system}} {{unsafe}}' },
+        0, 'User', 'Nova', '', '', true), { code: 'ROLEPLAY_INVALID' });
+    fs.writeFileSync(settingsFile, JSON.stringify({ power_user: { prefer_character_prompt: false,
+        context: { story_string: '{{system}}\n{{description}}', story_string_position: 0 } } }));
+    assert.equal(captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 }).systemPrompt, '');
+    fs.writeFileSync(settingsFile, JSON.stringify({ power_user: { prefer_character_prompt: true,
+        context: { story_string: '{{system}}\n{{description}}', story_string_position: 0 } } }));
+    const request = { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true,
+        messages: [], maxTokens: 20, characterName: 'Nova', worldInfo: fromCard };
+    const { jobId } = admitRoleplayJob(f.scope, account,
+        { operationKey: 'bound-card-system', effect: 'append', source, request });
+    releaseJob(f.scope.directories, jobId);
+    await runRoleplayReplyJob({ job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal }, { generate: async ({ messages, beforeDispatch }) => {
+        beforeDispatch();
+        assert.deepEqual(messages.map(message => message.content), ['Saved card rule\nOriginal', 'Original', 'Answer']);
+        return { text: 'Following the card' };
+    } });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Following the card');
+    const another = fixture(t);
+    another.records[0].chat_metadata.system_prompt = 'Saved chat rule';
+    fs.writeFileSync(another.filename, another.records.map(record => JSON.stringify(record)).join('\n'));
+    const chatAccount = { accountId: another.scope.accountId, dataEpoch: another.scope.dataEpoch };
+    const chatSource = captureRoleplaySource(another.scope, { locator: another.locator });
+    assert.equal(captureRoleplayWorldInfo(another.scope, chatAccount, chatSource,
+        { avatar: 'Nova.png', maxContext: 100 }).systemPrompt, 'Saved chat rule');
+});
+
 test('a bound reply uses the saved story outlet and retains its decision on replay', async t => {
     const f = fixture(t);
     f.records[1].extra = {};

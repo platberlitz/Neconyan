@@ -93,6 +93,9 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         const snapshot = { account: { accountId: account.accountId, dataEpoch: account.dataEpoch }, source,
             character: { instanceId: character.instanceId, revision: character.revision, rawHash: character.rawHash },
             characterExamples: character.data?.data?.mes_example ?? character.data?.mes_example ?? '',
+            systemPrompt: (settings.power_user?.prefer_character_prompt ?? true)
+                ? saved.records[0].chat_metadata?.system_prompt || character.data?.data?.system_prompt
+                    || character.data?.system_prompt || '' : '',
             storyTemplate: settings.power_user?.context?.story_string ?? '',
             storyPosition: settings.power_user?.context?.story_string_position ?? 0,
             reasoningInPrompt: Boolean(settings.power_user?.reasoning?.add_to_prompts),
