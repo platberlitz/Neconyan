@@ -130,13 +130,6 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
     });
     if (material.backend === 'horde') {
         if (!jobContext) fail('Horde needs a durable server job before submitting work.', 409);
-        if (payload.gui_settings) {
-            Object.assign(payload, { gui_settings: false, rep_pen: Number(settings.rep_pen), rep_pen_range: Number(settings.rep_pen_range),
-                rep_pen_slope: Number(settings.rep_pen_slope), temperature: Number(settings.temp), tfs: Number(settings.tfs),
-                top_a: Number(settings.top_a), top_k: Number(settings.top_k), top_p: Number(settings.top_p), min_p: Number(settings.min_p),
-                typical: Number(settings.typical), sampler_order: settings.sampler_order,
-                ...(stops.length ? { stop_sequence: stops } : {}) });
-        }
         const { prompt: ignoredPrompt, api_server: ignoredServer, gui_settings: ignoredGui, streaming: ignoredStreaming, ...params } = payload;
         void ignoredPrompt; void ignoredServer; void ignoredGui; void ignoredStreaming;
         if (Object.values(params).some(value => typeof value === 'number' && !Number.isFinite(value))) fail('Save complete Horde sampler controls before generating.', 409);
@@ -155,6 +148,9 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
         });
         return pollHorde({ context, jobContext, key, taskId: submitted.id, cleanup, signal, fetch: fetchImpl,
             userName, characterName, groupNames, trimNames: rawOptions.trimNames !== false });
+    }
+    if (material.backend === 'kobold' && Object.values(payload).some(value => typeof value === 'number' && !Number.isFinite(value))) {
+        fail('Save complete Kobold sampler controls before generating.', 409);
     }
     let handler = handleKoboldGenerate;
     if (material.backend === 'novel') {

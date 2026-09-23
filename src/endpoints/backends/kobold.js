@@ -89,7 +89,7 @@ export async function handleKoboldGenerate(request, response_generate) {
         body: JSON.stringify(this_settings),
         headers: Object.assign(
             { 'Content-Type': 'application/json' },
-            getOverrideHeaders((new URL(request.body.api_server))?.host),
+            request.boundProfile ? {} : getOverrideHeaders((new URL(request.body.api_server))?.host),
         ),
         signal,
     };

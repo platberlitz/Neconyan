@@ -18,7 +18,7 @@ export function assembleGenerationStream(raw) {
         if (!data) continue;
         if (data === '[DONE]') {
             complete = true;
-            break;
+            continue;
         }
         let chunk;
         try { chunk = JSON.parse(data); } catch { throw new Error('The generated stream contains an invalid event.'); }

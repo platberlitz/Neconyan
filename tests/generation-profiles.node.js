@@ -20,6 +20,9 @@ const { hash } = await import('../src/mewmory/core.js');
 
 test('acknowledged Kobold uses the saved endpoint and samplers exactly once', async t => {
     const fixture = textFixture(t);
+    const previous = process.env.SILLYTAVERN_REQUESTOVERRIDES;
+    process.env.SILLYTAVERN_REQUESTOVERRIDES = JSON.stringify([{ hosts: ['127.0.0.1:6000'], headers: { Authorization: 'Bearer unbound-key' } }]);
+    t.after(() => { if (previous === undefined) delete process.env.SILLYTAVERN_REQUESTOVERRIDES; else process.env.SILLYTAVERN_REQUESTOVERRIDES = previous; });
     fixture.settings._settingsRevision = 41;
     fixture.settings.main_api = 'kobold';
     fixture.settings.active_generation = { api: 'kobold' };
@@ -33,6 +36,7 @@ test('acknowledged Kobold uses the saved endpoint and samplers exactly once', as
         fetch: async (url, request) => {
             calls++;
             assert.equal(url, 'http://127.0.0.1:6000/api/v1/generate');
+            assert.equal(request.headers.Authorization, undefined);
             const body = JSON.parse(request.body);
             assert.equal(body.max_length, 73);
             assert.equal(body.max_context_length, 8192);
@@ -147,6 +151,41 @@ test('acknowledged Horde saves its task ID before polling and never submits it t
     assert.equal(getJob(fixture.directories, unknown.id).recoverability, 'unknown-outcome');
     assert.ok(!recoverJobs(fixture.directories).recoverable.some(item => item.id === unknown.id));
     assert.equal(getJob(fixture.directories, unknown.id).state, 'interrupted');
+});
+
+test('Horde GUI mode uses worker defaults and malformed Kobold samplers refuse before dispatch', async t => {
+    const fixture = textFixture(t);
+    fixture.settings._settingsRevision = 44;
+    fixture.settings.main_api = 'koboldhorde';
+    fixture.settings.active_generation = { api: 'koboldhorde' };
+    fixture.settings.kai_settings = { preset_settings: 'gui' };
+    fixture.settings.horde_settings = { models: ['test-worker'] };
+    fixture.save();
+    const horde = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 44 });
+    const job = acceptJob(fixture.directories, { owner: 'tester', type: 'roleplay.reply', submissionKey: 'horde-gui', intent: {} }).job;
+    const base = { context: { owner: 'tester', directories: fixture.directories }, messages: [{ role: 'user', content: 'Hello' }], maxTokens: 73 };
+    let calls = 0;
+    const result = await runChatProfile({ ...base, binding: horde, jobContext: { job, directories: fixture.directories, signal: new AbortController().signal },
+        fetch: async (url, request) => {
+            calls++;
+            if (String(url).endsWith('/async')) {
+                const body = JSON.parse(request.body);
+                assert.deepEqual(body.params, { max_length: 73, max_context_length: 8192, n: 1,
+                    frmtadsnsp: false, frmtrmblln: false, frmtrmspch: false, frmttriminc: false });
+                return new Response(JSON.stringify({ id: 'gui-task' }));
+            }
+            return new Response(JSON.stringify({ done: true, generations: [{ text: 'Worker reply' }] }));
+        } });
+    assert.equal(result.text, 'Worker reply');
+    assert.equal(calls, 2);
+
+    fixture.settings.main_api = 'kobold';
+    fixture.settings.active_generation = { api: 'kobold' };
+    fixture.settings.kai_settings = { api_server: 'http://127.0.0.1:6000', preset_settings: '', temp: 'invalid' };
+    fixture.save();
+    const kobold = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 44 });
+    await assert.rejects(runChatProfile({ ...base, binding: kobold, fetch: () => assert.fail('Malformed samplers must not reach a provider') }),
+        /complete Kobold sampler controls/);
 });
 
 function textFixture(t) {

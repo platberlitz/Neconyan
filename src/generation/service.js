@@ -196,7 +196,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     const call = () => {
         beforeDispatch?.();
         return runTextGeneration({ context, backend: 'chat', payload, signal, fetch: fetchImpl,
-            anonymousCustom: payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy })
+            anonymousCustom: payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy, boundProfile: true })
             .then(result => ({ ...result, text: cleanGeneratedText(removePartialStops(result.text,
                 Array.isArray(payload.stop) ? payload.stop : []), { power: material.power,
                 mainApi: 'openai', name1: userName, name2: characterName, groupNames, displayIncompleteSentences: true }),

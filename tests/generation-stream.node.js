@@ -45,6 +45,8 @@ test('incomplete and malformed provider streams are never completed', async () =
     assert.throws(() => assembleGenerationStream(event({ choices: [{ delta: { content: 'A'.repeat(2 * 1024 * 1024) } }] }) + 'data: [DONE]\n\n'), /limit/);
     assert.throws(() => assembleGenerationStream(event({ choices: [{ delta: { content: 'Partial' }, finish_reason: 'stop' }] })
         + 'event: error\ndata: {"message":"provider failed"}\n\n'), /rejected/);
+    assert.throws(() => assembleGenerationStream(event({ choices: [{ delta: { content: 'Partial' }, finish_reason: 'stop' }] })
+        + 'data: [DONE]\n\nevent: error\ndata: {"message":"provider failed"}\n\n'), /rejected/);
 });
 
 test('an upstream error after a completion marker does not commit a partial result', async () => {
