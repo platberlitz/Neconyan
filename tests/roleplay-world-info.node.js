@@ -109,6 +109,18 @@ test('group scoring gives no weight to an entry with only blank primary keys', a
     assert.deepEqual(result.activated.map(value => value.uid), [2]);
 });
 
+test('group scoring treats a malformed primary key list as no keys', async () => {
+    const malformed = entry(1, 'cat', 'Malformed', { group: 'choice', key: 'cat', constant: true });
+    const matching = entry(2, 'cat', 'Matching', { group: 'choice' });
+    const result = await scan([malformed, matching], { settings: { ...settings, world_info_use_group_scoring: true } });
+    assert.deepEqual(result.activated.map(value => value.uid), [2]);
+});
+
+test('a malformed trigger field does not act as a browser generation trigger filter', async () => {
+    const result = await scan([entry(1, 'cat', 'Kept', { triggers: 'swipe' })], { global: { trigger: 'normal' } });
+    assert.deepEqual(result.activated.map(value => value.uid), [1]);
+});
+
 test('the scan hook can change the next state and budget before any provider call', async () => {
     let calls = 0;
     const result = await scan([entry(1, 'cat', 'Present')], { onScan: async hook => {

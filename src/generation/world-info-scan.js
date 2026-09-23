@@ -55,13 +55,14 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
     };
     const score = (entry, phase) => {
         const text = scanText(entry, phase);
-        const primaryKeys = entry.key?.map(key => normalizeWorldInfoKey(key, substitute)).filter(Boolean) ?? [];
+        const primaryKeys = Array.isArray(entry.key) ? entry.key.map(key => normalizeWorldInfoKey(key, substitute)).filter(Boolean) : [];
         if (!primaryKeys.length) return 0;
         const primary = primaryKeys.filter(key => matchesWorldInfoEntry({ key: [key] }, text, {
             caseSensitive: entry.caseSensitive ?? settings.world_info_case_sensitive,
             wholeWords: entry.matchWholeWords ?? settings.world_info_match_whole_words,
         })).length;
-        const secondaryKeys = entry.keysecondary?.map(key => normalizeWorldInfoKey(key, substitute)).filter(Boolean) ?? [];
+        const secondaryKeys = Array.isArray(entry.keysecondary)
+            ? entry.keysecondary.map(key => normalizeWorldInfoKey(key, substitute)).filter(Boolean) : [];
         const secondary = secondaryKeys.filter(key => matchesWorldInfoEntry({ key: [key] }, text, {
             caseSensitive: entry.caseSensitive ?? settings.world_info_case_sensitive,
             wholeWords: entry.matchWholeWords ?? settings.world_info_match_whole_words,
@@ -79,7 +80,7 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
         const candidates = [];
         for (const entry of sorted) {
             if (failed.has(entry) || activated.has(entry) || entry.disable == true
-                || entry.triggers?.length && !entry.triggers.includes(global.trigger)) continue;
+                || Array.isArray(entry.triggers) && entry.triggers.length > 0 && !entry.triggers.includes(global.trigger)) continue;
             if (entry.characterFilter?.names?.length && (entry.characterFilter.isExclude
                 ? entry.characterFilter.names.includes(global.characterFile) : !entry.characterFilter.names.includes(global.characterFile))) continue;
             if (entry.characterFilter?.tags?.length && (entry.characterFilter.isExclude
