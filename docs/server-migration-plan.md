@@ -7,7 +7,19 @@ document; this file only records what is actually finished and what is not.
 Status values: `done` (implemented and verified), `partial` (implemented but an
 acceptance case is unproven), `pending` (not started).
 
-## Current checkpoint: Roleplay storage preparation
+## Current checkpoint: protected storage and editor authority
+
+- Last reviewed checkpoint commit: `54d97f8f82851ca7632ecdf0556cfcd8edbe0b76`. This Stage 2 checkpoint is committed; Stage 2 remains incomplete.
+- Completed: protected storage publication/recovery and exact browser save permissions; late group-load/render/history/greeting guards; legacy maintenance limited to proved-untracked targets. The three original P1 findings and subsequent concrete review findings are resolved. Temporary lifecycle refusals are not lifecycle completion.
+- Exact gates: 338 Jest suites, 4,499 passed/two skipped/one snapshot; 609 Node tests; root lint, budgets and whitespace; all 30 changed test files linted with zero errors/88 warnings; all six disposable desktop/touch Chromium storage cases in one serial run. Zero generation calls; Safari/WebKit unverified.
+- Review: accepted independent re-review on the requested, verified model lineup, including an independently passing 78-case affected-flow matrix. No known checkpoint-local finding remains.
+- Current next checkpoint and acceptance: recorded updates of existing group metadata must use exact saved authority, permanent keys and restart-safe publication. Real group edits must remain readable; stale edits and altered intents must be refused; exact retries must preserve later edits/deletions. This enables later imports to publish and link their output without the page.
+- Unfinished: imports, complete recorded chat/entity/account lifecycles, auxiliary writers, startup reconciliation, private typed-effect admission and stable Conversation aside guards. The complete combined serial Conversation/storage browser suite and whole-stage audit remain required before Stage 2 is done.
+- Next action: implement and verify protected group metadata updates, commit that coherent checkpoint locally, then complete protected chat imports and the remaining Stage 2 scope.
+
+Small, coherent, independently reviewed local checkpoints are authorised within stages. They do not imply stage completion. No push or deployment is authorised. The current verification record and full Stage 2 remainder are in `server-migration-handover.md`; historical counts below are not current approval.
+
+## Historical committed Stage 1: Roleplay storage preparation
 
 - `done` Trusted native chat mutation shares the existing lock, writer, backups,
   exact recovery and Mewmory branch capture. A mandatory raw-byte source hash
@@ -41,13 +53,15 @@ acceptance case is unproven), `pending` (not started).
 ### Ordered full-ownership continuation
 
 These stages implement the accepted full migration, not a reduced single-provider
-request design. Each requires planning, main-agent implementation, a verified
-independent review, fixes, checks, canonical updates and one local commit.
+request design. Use the current verified planner (Astra max), implementer (Sol high)
+and independent reviewer (Astra max), with the announced verified-primary fallback
+in the current orchestration policy. Complete coherent checkpoints with fixes,
+required checks, canonical status updates and authorised local commits, then continue.
 
 | Stage | Status | Required boundary |
 | --- | --- | --- |
 | 1. Strict native chat mutation | done | Preparatory storage operation described above. |
-| 2. Protected Roleplay identity and effects | pending | Server-assigned instance identity, exact message/swipe/range anchors, full-intent acceptance and completion records surviving job pruning, saves and all lifecycle operations. |
+| 2. Protected Roleplay identity and effects | partial | Server-assigned instance identity, exact message/swipe/range anchors, full-intent acceptance and completion records surviving job pruning, saves and all lifecycle operations. Storage foundations are in progress; complete import/lifecycle/reset/recovery coverage, private admission, typed effects and aside guards, then run full combined browser verification and the whole-stage audit. |
 | 3. Bound execution and output processing | pending | Real Roleplay request semantics, all configured native backends, streaming/results, reasoning, cleanup and custom request semantics without embedding credentials in artifacts. |
 | 4. Shared World Info activation | pending | Extract actual recursive selection, budgets, timed effects and hooks with saved random choices. |
 | 5. Complete prompt assembly | pending | Shared DOM-free character/persona/history, instruct/context and PromptManager budgets, tools, attachments, Mewmory and extension ordering. |

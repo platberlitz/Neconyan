@@ -2,6 +2,17 @@
 
 The application is not fully server-owned. Provider requests reaching a server endpoint do not make the surrounding browser workflow independent of an open page.
 
+## Current migration checkpoint
+
+- Last reviewed checkpoint commit: `54d97f8f82851ca7632ecdf0556cfcd8edbe0b76`. It commits the protected storage foundation and editor-authority fixes; Stage 2 remains incomplete.
+- Completed: late group loads and render/history/greeting continuations retain chat/account identity; background saves cannot renew stale editor permission; shared legacy recovery and metadata migration leave protected files and evidence intact. No known finding remains in the bounded independent re-review.
+- Exact gates: 338 Jest suites (4,499 passed/two skipped/one snapshot), 609 Node tests, root lint/budgets/whitespace, 30-file test lint (zero errors/88 warnings), and six desktop/touch Chromium storage cases with zero generation calls. Runtime/test files were frozen for the final browser run; Safari/WebKit is unverified.
+- Current next checkpoint: recorded, repeat-safe updates of existing group metadata, including exact browser authority and restart/replay behaviour. This is needed before imports can durably link a published chat to its target group without the page.
+- Unfinished: import/entity/account lifecycles, all recovering readers and auxiliary writers, private typed-effect admission and stable aside guards. Complete combined browser verification and a whole-stage audit remain required before Stage 2 completion.
+- Next action: complete protected group updates, then protected chat imports and the remaining Stage 2 scope. A local checkpoint is not stage completion. Do not push or deploy.
+
+Legacy refusal preserves evidence; it does not implement manual edit/deletion, reset or account reincarnation. The complete current record is in `server-migration-handover.md`.
+
 ## Fixed in this audit
 
 - Mewmory automatic extraction and full backfill now run as server jobs. Intent and progress are saved in the existing per-user story archive. Closing the page or changing chats does not cancel them. Startup scans resume interrupted work; explicit cancellation remains available.
@@ -17,7 +28,7 @@ The application is not fully server-owned. Provider requests reaching a server e
 | Mewmory extraction, interviews and backfill | Server scheduling, model calls, credentials, accepted-source checks, saved progress and restart recovery | An interrupted provider request can run again. Four extraction jobs can run at once; scanning is periodic. |
 | Mewmory recall, indexing and prompt preparation | Manual controls submit saved jobs; server retrieval, token counting, memory assembly and full index batching; fresh automatic recall runs independently of the page | Final Roleplay prompt construction remains in the browser. Legacy non-background endpoints remain available during migration. |
 | Roleplay replies | Server provider calls and resumable response buffering | Buffers live in process memory. Browser recovery applies the reply to the chat; server restart can lose an unfinished reply. |
-| Native Roleplay storage preparation | Trusted lock-scoped mutation through existing chat save, backup, recovery and branch-memory paths; exact source checks and committed/uncertain outcome reporting | Preparatory only. Protected instance identity, repeat-safe effects, accepted Roleplay workflows and browser cutover are still pending. |
+| Protected Roleplay storage | Account/file identities, bounded keyed receipts, exact publication/recovery and branch memory; protected HTTP save/load and browser authority; bounded legacy-maintenance protection | Recorded group/entity/account and import lifecycles, complete recovering-reader/auxiliary-writer coverage, private typed effects, accepted Roleplay workflows and browser generation cutover remain unfinished. |
 | Conversation send API | Server prompt assembly, provider call and thread persistence | The main composer instead submits accepted sends and replies, which save the user message durably before generation; this older resumable endpoint remains available. |
 | Accepted Conversation reply API | Named chat/text profiles and acknowledged saved-active bindings, validation before uploads/acceptance, captured prompt context, source checks, durable user messages, provider-result recovery and repeat-safe native bubbles, reminders, status effects and supported image delivery | Send-triggered chimes, presentation/narration and automatic ownership are implemented. Other manual completion writes remain unfinished. |
 | Native Conversation presentation and narration | Incoming unread/pending records saved with completion receipts; atomic owner-scoped claims and observed read boundaries; migrated legacy unread state; server speech synthesis and saved audio for OpenAI, OpenAI Compatible, ElevenLabs and Pollinations | The browser presents claimed results and plays audio only while eligible. Kokoro needs the page open. |
@@ -35,7 +46,7 @@ WebLLM and bundled browser Kokoro are explicit owner-approved exceptions. Their 
 
 ## Verification
 
-The Roleplay storage preparation checkpoint passed all 335 Jest suites (4,413 passed,
+The historical committed Stage 1 storage preparation checkpoint passed all 335 Jest suites (4,413 passed,
 two skipped; 4,415 total), one snapshot, all 294 Node tests, root lint, budgets and
 whitespace checks. Changed-test lint covered four files: zero errors, 14 warnings.
 All 149 disposable Chromium cases passed in a complete serial run (1.3 hours):
