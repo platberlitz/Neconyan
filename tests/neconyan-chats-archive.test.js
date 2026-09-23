@@ -49,7 +49,12 @@ import {
 } from '../public/scripts/extensions/neconyan-chats-archive/src/core.js';
 import { navigateAndConfirm } from '../public/scripts/extensions/neconyan-chats-archive/src/ui.js';
 
-jest.unstable_mockModule('../src/endpoints/chats.js', () => ({ CHAT_BACKUPS_PREFIX: 'chat_' }));
+jest.unstable_mockModule('../src/endpoints/chats.js', () => ({ CHAT_BACKUPS_PREFIX: 'chat_', roleplayNativeHost: {} }));
+jest.unstable_mockModule('../src/roleplay-store.js', () => ({
+    assertUntrackedRoleplayFiles: jest.fn(), roleplayFileLocator: jest.fn(() => null), roleplayLease: jest.fn(),
+    withRoleplayAccount: jest.fn((_base, _account, operation) => operation({})),
+}));
+jest.unstable_mockModule('../src/roleplay-lifecycle.js', () => ({ commitRoleplayLifecycleLocked: jest.fn(), roleplayTrackedInstance: jest.fn(() => null) }));
 jest.unstable_mockModule('../src/endpoints/settings.js', () => ({ getSettingsBackupFilePrefix: () => 'settings_' }));
 jest.unstable_mockModule('../src/util.js', () => ({
     isPathUnderParent: () => true,

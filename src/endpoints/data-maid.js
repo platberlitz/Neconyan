@@ -4,7 +4,9 @@ import path from 'node:path';
 import express from 'express';
 import mime from 'mime-types';
 import { getSettingsBackupFilePrefix } from './settings.js';
-import { CHAT_BACKUPS_PREFIX } from './chats.js';
+import { CHAT_BACKUPS_PREFIX, roleplayNativeHost } from './chats.js';
+import { assertUntrackedRoleplayFiles, roleplayFileLocator, roleplayLease, withRoleplayAccount } from '../roleplay-store.js';
+import { commitRoleplayLifecycleLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
 import { isPathUnderParent, recoverFileWriteSync, tryParse } from '../util.js';
 import { SETTINGS_FILE } from '../constants.js';
 
@@ -674,6 +676,41 @@ export class DataMaidService {
     }
 }
 
+/**
+ * Deletes reported files. Protected Roleplay chats, cards and groups retire through one recorded lifecycle;
+ * untracked account files are proved untracked under the same account lock; other loose files are ordinary storage.
+ * @param {{ owner: string, directories: import('../users.js').UserDirectoryList }} base Account scope
+ * @param {string[]} files Absolute paths from the report
+ */
+export function deleteDataMaidFiles(base, files) {
+    withRoleplayAccount(base, null, lease => {
+        const { scope } = roleplayLease(lease);
+        const steps = [];
+        const auxiliary = [];
+        const ordinary = [];
+        for (const file of new Set(files)) {
+            const found = roleplayFileLocator(scope, file);
+            if (found && roleplayTrackedInstance(lease, found.kind, found.locator)) {
+                steps.push({ op: 'delete', kind: found.kind, locator: found.locator });
+                if (found.kind === 'chat') {
+                    auxiliary.push({ task: 'chat-memory-remove', locator: found.locator }, { task: 'chat-recovery-clear', locator: found.locator });
+                }
+            } else if (fs.existsSync(file)) {
+                if (found) assertUntrackedRoleplayFiles(lease, [file]);
+                ordinary.push(file);
+            }
+        }
+        if (steps.length) {
+            // ponytail: Data Maid tokens are single-use in memory, so a fresh key per request is enough.
+            commitRoleplayLifecycleLocked(lease, {
+                operationKey: crypto.randomUUID(), action: 'data-maid-delete',
+                intent: { locators: steps.map(step => [step.kind, step.locator]) }, steps, auxiliary,
+            }, roleplayNativeHost);
+        }
+        for (const file of ordinary) fs.rmSync(file, { force: true });
+    });
+}
+
 export const router = express.Router();
 
 router.post('/report', async (req, res) => {
@@ -798,6 +835,7 @@ router.post('/delete', async (req, res) => {
             return res.sendStatus(403);
         }
 
+        const files = [];
         for (const hash of hashes) {
             const fileEntry = tokenEntry.paths.find(entry => entry.hash === hash);
             if (!fileEntry) {
@@ -808,20 +846,16 @@ router.post('/delete', async (req, res) => {
                 console.warn('[Data Maid] Attempted deletion of a file outside of the user directory:', fileEntry.path);
                 continue;
             }
-
-            const pathToFile = fileEntry.path;
-            const fileExists = fs.existsSync(pathToFile);
-
-            if (!fileExists) {
-                continue;
-            }
-
-            await fs.promises.unlink(pathToFile);
+            files.push(fileEntry.path);
         }
 
+        deleteDataMaidFiles({ owner: req.user.profile.handle, directories: req.user.directories }, files);
         return res.sendStatus(204);
     } catch (error) {
         console.error('[Data Maid] Error deleting files:', error);
+        if (error?.roleplayWritePending || String(error?.code ?? '').startsWith('ROLEPLAY_')) {
+            return res.status(error.roleplayWritePending ? 503 : error.status || 409).json({ error: String(error.code ?? 'ROLEPLAY_IO_ERROR').slice(9).toLowerCase(), code: error.code });
+        }
         return res.sendStatus(500);
     }
 });

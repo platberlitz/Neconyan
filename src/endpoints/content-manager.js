@@ -16,6 +16,8 @@ import { serverDirectory } from '../server-directory.js';
 import { Jimp, JimpMime } from '../jimp.js';
 import { DEFAULT_AVATAR_PATH, USER_DIRECTORY_TEMPLATE } from '../constants.js';
 import { invalidateThumbnail } from './thumbnails.js';
+import { assertUntrackedRoleplayFiles, roleplayAccountBase, roleplayLease, validRoleplayAvatar, withRoleplayAccount } from '../roleplay-store.js';
+import { commitRoleplayLifecycleLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
 
 const contentDirectory = path.join(serverDirectory, 'default/content');
 const scaffoldDirectory = path.join(serverDirectory, 'default/scaffold');
@@ -443,7 +445,7 @@ export function getDefaultPresetFile(filename) {
  * @param {string[]} [forceCategories] List of categories to force check (even if content check is skipped)
  * @returns {boolean} Whether any content was added
  */
-function seedContent(contentIndex, contentLogPath, resolveTarget, forceCategories) {
+function seedContent(contentIndex, contentLogPath, resolveTarget, forceCategories, directories = null) {
     let anyContentAdded = false;
     const contentLog = getContentLog(contentLogPath);
 
@@ -489,7 +491,18 @@ function seedContent(contentIndex, contentLogPath, resolveTarget, forceCategorie
         }
 
         fs.mkdirSync(contentTarget, { recursive: true });
-        fs.cpSync(contentPath, targetPath, { recursive: true, force: false });
+        const account = directories && contentItem.type === CONTENT_TYPES.CHARACTER ? roleplayAccountBase(directories) : null;
+        if (account) {
+            try {
+                publishProtectedCard(account, fs.readFileSync(contentPath), targetPath, 'character-seed',
+                    () => fs.cpSync(contentPath, targetPath, { force: false, errorOnExist: true }));
+            } catch (error) {
+                console.warn(`Content file ${contentItem.filename} could not be added safely`, error);
+                continue;
+            }
+        } else {
+            fs.cpSync(contentPath, targetPath, { recursive: true, force: false });
+        }
         setPermissionsSync(targetPath);
         console.info(`Content file ${contentItem.filename} copied to ${contentTarget}`);
         anyContentAdded = true;
@@ -497,6 +510,51 @@ function seedContent(contentIndex, contentLogPath, resolveTarget, forceCategorie
 
     writeFileAtomicSync(contentLogPath, contentLog.join('\n'));
     return anyContentAdded;
+}
+
+/**
+ * Creates a character card in a bootstrapped account through a recorded lifecycle, so vacant protected slots keep their generation.
+ * Cards the protected reader cannot hold (invalid names or data) are proved untracked and written as ordinary files.
+ */
+function publishProtectedCard(account, bytes, targetPath, action, legacyWrite) {
+    withRoleplayAccount(account, null, lease => {
+        const avatar = path.basename(targetPath);
+        const create = () => commitRoleplayLifecycleLocked(lease, {
+            operationKey: crypto.randomUUID(), action, intent: { avatar, rawHash: getSha256(bytes) },
+            steps: [{ op: 'create', kind: 'character', locator: { avatar }, bytes }],
+        });
+        if (!validRoleplayAvatar(avatar)) {
+            assertUntrackedRoleplayFiles(lease, [targetPath]);
+            return legacyWrite();
+        }
+        try {
+            return create();
+        } catch (error) {
+            if (error?.code !== 'ROLEPLAY_SOURCE_DAMAGED') throw error;
+            assertUntrackedRoleplayFiles(lease, [targetPath]);
+            return legacyWrite();
+        }
+    });
+}
+
+/** Removes an unedited card after its archive copy verified; tracked cards retire through a recorded delete. */
+function retireProtectedCard(account, source, expectedHash) {
+    withRoleplayAccount(account, null, lease => {
+        const locator = { avatar: path.basename(source) };
+        const instanceId = roleplayTrackedInstance(lease, 'character', locator);
+        if (getRetiredContentHash(source) !== expectedHash
+            || (instanceId && roleplayLease(lease).state.resources[instanceId].head.rawHash !== expectedHash)) {
+            throw makeRetiredError('The file changed before archiving.', 409);
+        }
+        if (!instanceId) {
+            assertUntrackedRoleplayFiles(lease, [source]);
+            return fs.unlinkSync(source);
+        }
+        commitRoleplayLifecycleLocked(lease, {
+            operationKey: crypto.randomUUID(), action: 'character-retire', intent: { ...locator, rawHash: expectedHash },
+            steps: [{ op: 'delete', kind: 'character', locator }],
+        });
+    });
 }
 
 function getSha256(buffer) {
@@ -1197,7 +1255,14 @@ export function archiveRetiredContent(directories, ids, catalog = RETIRED_CONTEN
             const finalReasons = getRetiredReferenceMap(directories, [finalCandidate]).references.get(id);
             if (item.action !== 'replace' && finalReasons.size) throw makeRetiredError([...finalReasons][0], 409);
             moveAttempted = true;
-            fs.renameSync(source, payload);
+            const account = item.type === CONTENT_TYPES.CHARACTER && candidate.kind === 'file' ? roleplayAccountBase(directories) : null;
+            if (account) {
+                // Copy first: a crash leaves both copies, which reconciliation records as restored.
+                publishRetiredFile(source, payload, pending.hash);
+                retireProtectedCard(account, source, pending.hash);
+            } else {
+                fs.renameSync(source, payload);
+            }
             const moved = inspectRetiredPath(payload);
             if (!moved.ok || moved.hash !== pending.hash || moved.kind !== pending.kind) throw makeRetiredError('The archived bytes did not verify. The recovery record was kept.', 409);
             if (bundle) {
@@ -1279,7 +1344,15 @@ export function restoreRetiredContent(directories, id, catalog = RETIRED_CONTENT
     writeRetiredArchiveIndex(index.paths, staged);
     try {
         if (!hasSafePhysicalAncestors(index.paths.root, destination)) throw makeRetiredError('The restore destination is unsafe.', 409);
-        publishRetiredPayload(payload.payload, destination, record.kind, record.hash);
+        const account = item.type === CONTENT_TYPES.CHARACTER && record.kind === 'file' ? roleplayAccountBase(directories) : null;
+        if (account) {
+            const bytes = readRetiredFile(payload.payload);
+            if (getSha256(bytes) !== record.hash) throw makeRetiredError('The archived bytes could not be verified.', 409);
+            publishProtectedCard(account, bytes, destination, 'character-restore',
+                () => publishRetiredPayload(payload.payload, destination, record.kind, record.hash));
+        } else {
+            publishRetiredPayload(payload.payload, destination, record.kind, record.hash);
+        }
     } catch (error) {
         throw makeRetiredError(error.publicMessage || 'The file could not be restored safely. Existing files were kept; retry to use another name.', 409);
     }
@@ -1423,7 +1496,7 @@ async function seedContentForUser(contentIndex, directories, forceCategories) {
         return !isDefaultPresetDeleted(directories, contentItem);
     });
 
-    return seedContent(filteredContentIndex, contentLogPath, (type) => getUserTargetByType(type, directories), forceCategories);
+    return seedContent(filteredContentIndex, contentLogPath, (type) => getUserTargetByType(type, directories), forceCategories, directories);
 }
 
 /**

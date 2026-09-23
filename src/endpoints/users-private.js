@@ -13,12 +13,17 @@ import { SETTINGS_FILE, USER_DIRECTORY_TEMPLATE } from '../constants.js';
 import { checkForNewContent, CONTENT_TYPES, getContentOfType } from './content-manager.js';
 import { restoreSettingsSnapshot } from '../settings-version.js';
 import { SECRETS_FILE } from './secrets.js';
-import { color, Cache, getConfigValue, ensureDirectory, normalizeZipEntryPath, recoverFileWritesInDirectorySync } from '../util.js';
+import { color, Cache, getConfigValue, ensureDirectory, normalizeZipEntryPath, recoverFileWritesInDirectorySync, tryWriteFileSync } from '../util.js';
 import { ENTITY_DATE_ADDED_FILE, importEntityDateAdded } from '../entity-date-added.js';
 import { ENTITY_LAST_CHAT_FILE, importEntityLastChat } from '../entity-last-chat.js';
 import { isNativeExtension } from '../neconyan-native-extensions.js';
 import { destroySession } from '../middleware/sessionAuth.js';
 import { importProgress } from '../import-progress.js';
+import { assertUntrackedRoleplayFiles, roleplayAccountBase, roleplayError, roleplayFileLocator, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
+import { commitRoleplayLifecycleLocked, commitSingleChatWriteLocked } from '../roleplay-lifecycle.js';
+import { readRoleplayChatLocked, ROLEPLAY_METADATA_KEY } from '../generation/roleplay-source.js';
+import { parseChatJsonl } from '../chat-recovery.js';
+import { roleplayNativeHost } from './chats.js';
 
 // Neconyan divergence: private user export/import keeps fork-owned account data and metadata compatible across releases.
 const RESET_CACHE = new Cache(5 * 60 * 1000);
@@ -161,12 +166,80 @@ function emitImportWarning(onWarning, message) {
     console.warn(warningMessage);
 }
 
+// Imports route protected Roleplay files (cards, groups, chats) through recorded writes so a restore never
+// overwrites a tracked file behind the store's back. Ordinary files keep the plain copy.
+function stripRoleplayMarker(bytes) {
+    const text = bytes.toString('utf8');
+    const end = text.indexOf('\n');
+    try {
+        const header = JSON.parse(end < 0 ? text : text.slice(0, end));
+        if (!header?.chat_metadata || !Object.hasOwn(header.chat_metadata, ROLEPLAY_METADATA_KEY)) return bytes;
+        delete header.chat_metadata[ROLEPLAY_METADATA_KEY];
+        return Buffer.from(JSON.stringify(header) + (end < 0 ? '' : text.slice(end)), 'utf8');
+    } catch {
+        return bytes;
+    }
+}
+
+function importChatRecords(bytes) {
+    const parsed = parseChatJsonl(bytes);
+    if (parsed.status !== 'ok') throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'The imported chat is not valid JSONL.', 422);
+    delete parsed.records[0].chat_metadata[ROLEPLAY_METADATA_KEY];
+    return parsed.records;
+}
+
+export function importUserFile(account, destinationPath, bytes) {
+    const target = roleplayFileLocator(account, destinationPath);
+    const rawHash = crypto.createHash('sha256').update(bytes).digest('hex');
+    try {
+        withRoleplayAccount(account, null, (lease, current) => {
+            const { state } = roleplayLease(lease);
+            const slot = state.paths[roleplayPathKey(state, target.kind, target.locator)];
+            // ponytail: one-shot keys; an interrupted import is finished by startup reconciliation, not by a browser retry.
+            const operationKey = crypto.randomUUID();
+            if (!slot) {
+                assertUntrackedRoleplayFiles(lease, [destinationPath]);
+                ensureDirectory(path.dirname(destinationPath));
+                tryWriteFileSync(destinationPath, target.kind === 'chat' ? stripRoleplayMarker(bytes) : bytes);
+                return;
+            }
+            if (target.kind === 'chat') {
+                const records = importChatRecords(bytes);
+                if (!slot.instanceId) {
+                    commitSingleChatWriteLocked(lease, { operationKey, sourceKind: 'storage', mode: 'create',
+                        destination: target.locator, expectedVacancy: slot.generation, records,
+                        force: true, allowShrink: true, backup: { deferBackup: true } }, roleplayNativeHost);
+                    return;
+                }
+                const saved = readRoleplayChatLocked(lease, target.locator);
+                if (saved.changed) saveRoleplayAccount(lease);
+                commitSingleChatWriteLocked(lease, { operationKey, sourceKind: 'storage', mode: 'update',
+                    source: { kind: 'storage', ...current, instanceId: saved.instanceId, revision: saved.revision,
+                        rawHash: saved.rawHash, locator: target.locator, dependencies: [] },
+                    records, force: true, allowShrink: true, backup: { deferBackup: true } }, roleplayNativeHost);
+                return;
+            }
+            if (slot.instanceId && state.resources[slot.instanceId].head.rawHash === rawHash) return;
+            const op = slot.instanceId ? 'update' : 'create';
+            commitRoleplayLifecycleLocked(lease, { operationKey, action: `${target.kind}-import`,
+                intent: { locator: target.locator, rawHash },
+                steps: [{ op, kind: target.kind, locator: target.locator, bytes }] }, roleplayNativeHost);
+        });
+        return true;
+    } catch (error) {
+        if (error.roleplayWritePending) throw error;
+        console.warn(`Kept the current protected file instead of importing ${destinationPath}: ${error.code || error.message}`);
+        return false;
+    }
+}
+
 async function copyDirectoryTree(sourceDirectory, destinationDirectory, {
     overwrite = false,
     protectedRoots = new Set(),
     visitedDirectories = new Set(),
     skipDirectoryNames = new Set(),
     onWarning = null,
+    account = null,
 } = {}) {
     const stableSourcePath = await getStableRealPath(sourceDirectory);
 
@@ -209,6 +282,7 @@ async function copyDirectoryTree(sourceDirectory, destinationDirectory, {
                 visitedDirectories,
                 skipDirectoryNames,
                 onWarning,
+                account,
             });
             continue;
         }
@@ -222,6 +296,11 @@ async function copyDirectoryTree(sourceDirectory, destinationDirectory, {
             continue;
         }
 
+        if (account && roleplayFileLocator(account, destinationPath)) {
+            if (importUserFile(account, destinationPath, await fsPromises.readFile(sourcePath))) copiedFiles++;
+            continue;
+        }
+
         ensureDirectory(path.dirname(destinationPath));
         await fsPromises.copyFile(sourcePath, destinationPath);
         copiedFiles++;
@@ -230,7 +309,7 @@ async function copyDirectoryTree(sourceDirectory, destinationDirectory, {
     return copiedFiles;
 }
 
-async function copyAllowedFolderContents(sourceRoot, targetRoot, progress = () => {}) {
+async function copyAllowedFolderContents(sourceRoot, targetRoot, progress = () => {}, account = null) {
     let copiedEntries = 0;
     let importedEntityDateAdded;
     let importedEntityLastChat;
@@ -267,6 +346,7 @@ async function copyAllowedFolderContents(sourceRoot, targetRoot, progress = () =
                     ? SKIPPABLE_IMPORT_DIRECTORY_NAMES
                     : new Set(),
                 onWarning: warning => console.warn(warning),
+                account,
             });
             if (copiedFiles > 0 || await pathExists(destinationPath)) {
                 copiedEntries++;
@@ -582,7 +662,7 @@ async function detectZipImportBase(zipFilePath) {
     });
 }
 
-async function importZipContents(zipFilePath, targetRoot, progress = () => {}) {
+async function importZipContents(zipFilePath, targetRoot, progress = () => {}, account = null) {
     progress(0, 0, 'Checking archive');
     const basePath = await detectZipImportBase(zipFilePath);
 
@@ -669,13 +749,16 @@ async function importZipContents(zipFilePath, targetRoot, progress = () => {}) {
                     const destinationPath = path.join(targetRoot, relativePath);
                     ensureDirectory(path.dirname(destinationPath));
 
-                    if ([SETTINGS_FILE, ENTITY_DATE_ADDED_FILE, ENTITY_LAST_CHAT_FILE].includes(relativePath)) {
+                    const protectedFile = account && roleplayFileLocator(account, destinationPath);
+                    if (protectedFile || [SETTINGS_FILE, ENTITY_DATE_ADDED_FILE, ENTITY_LAST_CHAT_FILE].includes(relativePath)) {
                         const chunks = [];
                         readStream.on('data', chunk => chunks.push(chunk));
                         readStream.once('error', finalize);
                         readStream.once('end', () => {
                             try {
-                                if (relativePath === SETTINGS_FILE) {
+                                if (protectedFile) {
+                                    if (!importUserFile(account, destinationPath, Buffer.concat(chunks))) importedFiles--;
+                                } else if (relativePath === SETTINGS_FILE) {
                                     restoreSettingsSnapshot(destinationPath, JSON.parse(Buffer.concat(chunks).toString('utf8')));
                                 } else if (relativePath === ENTITY_DATE_ADDED_FILE) {
                                     importedEntityDateAdded = Buffer.concat(chunks);
@@ -876,7 +959,7 @@ router.post('/import-sillytavern/folder', async (request, response) => {
         }
 
         recoverFileWritesInDirectorySync(request.user.directories.characters);
-        const copiedEntries = await copyAllowedFolderContents(sourceRoot, targetRoot, progress.report);
+        const copiedEntries = await copyAllowedFolderContents(sourceRoot, targetRoot, progress.report, roleplayAccountBase(request.user.directories));
         progress.report(99, 100, 'Finishing import');
         await checkForNewContent([request.user.directories]);
 
@@ -922,7 +1005,7 @@ router.post('/import-sillytavern/zip', async (request, response) => {
         }
 
         recoverFileWritesInDirectorySync(request.user.directories.characters);
-        const importedFiles = await importZipContents(uploadedZipPath, request.user.directories.root, progress.report);
+        const importedFiles = await importZipContents(uploadedZipPath, request.user.directories.root, progress.report, roleplayAccountBase(request.user.directories));
         progress.report(99, 100, 'Finishing import');
         await checkForNewContent([request.user.directories]);
 

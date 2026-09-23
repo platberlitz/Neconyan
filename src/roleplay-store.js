@@ -893,33 +893,43 @@ export function withUntrackedRoleplayFiles(base, filenames, operation) {
     });
 }
 
+/** Returns the account scope when its protected store was bootstrapped, or null for ordinary storage that cannot hold tracked files. */
+export function roleplayAccountBase(directories) {
+    try {
+        const base = { owner: path.basename(directories.root), directories };
+        return fs.existsSync(path.join(roleplayStoreDirectory(base), 'identity.json')) ? base : null;
+    } catch {
+        return null;
+    }
+}
+
+/** Classifies an account file as a protected Roleplay path, or null when it is ordinary storage. */
+export function roleplayFileLocator(scope, filename) {
+    const child = key => {
+        const value = path.relative(scope.directories[key], filename);
+        return value && value !== '..' && !value.startsWith('..' + path.sep) && !path.isAbsolute(value) ? value : null;
+    };
+    const character = child('characters');
+    const group = child('groups');
+    const groupChat = child('groupChats');
+    const soloChat = child('chats');
+    if (character && !character.includes(path.sep) && character.toLowerCase().endsWith('.png')) return { kind: 'character', locator: { avatar: character } };
+    if (group && !group.includes(path.sep) && group.endsWith('.json')) return { kind: 'group', locator: { groupId: group.slice(0, -5) } };
+    if (groupChat && !groupChat.includes(path.sep) && groupChat.endsWith('.jsonl')) return { kind: 'chat', locator: { group: true, chat: groupChat.slice(0, -6) } };
+    if (soloChat && soloChat.endsWith('.jsonl') && soloChat.split(path.sep).length === 2) {
+        const [avatar, chatFile] = soloChat.split(path.sep);
+        return { kind: 'chat', locator: { group: false, avatar: avatar + '.png', chat: chatFile.slice(0, -6) } };
+    }
+    return null;
+}
+
 export function assertUntrackedRoleplayFiles(lease, filenames) {
     const { state, scope } = roleplayLease(lease);
     if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'Pending protected Roleplay work must finish first.');
     for (const filename of filenames) {
-        const relative = key => path.relative(scope.directories[key], filename);
-        const child = key => {
-            const value = relative(key);
-            return value && value !== '..' && !value.startsWith('..' + path.sep) ? value : null;
-        };
-        let kind;
-        let locator;
-        const character = child('characters');
-        const group = child('groups');
-        const groupChat = child('groupChats');
-        const soloChat = child('chats');
-        if (character && !character.includes(path.sep) && character.toLowerCase().endsWith('.png')) {
-            kind = 'character'; locator = { avatar: character };
-        } else if (group && !group.includes(path.sep) && group.endsWith('.json')) {
-            kind = 'group'; locator = { groupId: group.slice(0, -5) };
-        } else if (groupChat && !groupChat.includes(path.sep) && groupChat.endsWith('.jsonl')) {
-            kind = 'chat'; locator = { group: true, chat: groupChat.slice(0, -6) };
-        } else if (soloChat && soloChat.endsWith('.jsonl') && soloChat.split(path.sep).length === 2) {
-            const [avatar, chatFile] = soloChat.split(path.sep);
-            kind = 'chat'; locator = { group: false, avatar: avatar + '.png', chat: chatFile.slice(0, -6) };
-        } else {
-            throw roleplayError('ROLEPLAY_INVALID', 'Legacy target is outside recognised account data.', 400);
-        }
+        const found = roleplayFileLocator(scope, filename);
+        if (!found) throw roleplayError('ROLEPLAY_INVALID', 'Legacy target is outside recognised account data.', 400);
+        const { kind, locator } = found;
         const sameProtectedPath = value => {
             const saved = value.locator;
             const expected = value.kind === 'character' ? path.join(scope.directories.characters, saved.avatar)
