@@ -95,6 +95,9 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     }
     let messages = structuredClone(request.messages);
     if (worldInfo) {
+        if (worldInfo.activated.some(entry => entry.automationId)) {
+            throw roleplayError('ROLEPLAY_INVALID', 'This World Info entry needs a server Quick Reply action before generation.', 409);
+        }
         if (worldInfo.EMEntries.length || worldInfo.ANBeforeEntries.length
             || worldInfo.ANAfterEntries.length || Object.keys(worldInfo.outletEntries).length) {
             throw roleplayError('ROLEPLAY_INVALID', 'This World Info insertion position needs server prompt construction.', 409);

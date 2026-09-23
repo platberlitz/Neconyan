@@ -66,6 +66,11 @@ test('server selection recurses on saved text and places entries with a bounded 
     assert.equal(result.iterations, 3);
 });
 
+test('an activated automation is identified before a bound provider can run', async () => {
+    const result = await scan([entry(1, 'cat', 'Execute this', { automationId: 'quick-reply-1' })]);
+    assert.equal(result.activated[0].automationId, 'quick-reply-1');
+});
+
 test('probability, group choices and timed cooldowns use repeatable draws', async () => {
     const entries = [entry(1, 'cat', 'First', { group: 'one', groupWeight: 1, probability: 50 }),
         entry(2, 'cat', 'Second', { group: 'one', groupWeight: 3, cooldown: 3 })];
@@ -356,6 +361,30 @@ test('the worker saves scan decisions before a provider call and closes timed ef
     assert.equal(hooks, 2);
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'The answer');
     assert.equal(readRoleplayChat(f.scope, f.locator).records[0].chat_metadata.timedWorldInfo.sticky['Town.7'].end, 4);
+});
+
+test('a selected Quick Reply automation refuses before paid provider work', async t => {
+    const f = fixture(t);
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Original', 'Automated lore', { world: undefined, hash: undefined, automationId: 'quick-reply-1' }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 });
+    const request = { binding: { profileId: 'saved', fingerprint: 'bound' },
+        messages: [{ role: 'user', content: 'Original' }], maxTokens: 32, characterName: 'Nova', worldInfo };
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'automation-lore', effect: 'append', source, request });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    await assert.rejects(runRoleplayReplyJob(context, { generate: () => { throw Error('Provider called'); } }),
+        { code: 'ROLEPLAY_INVALID' });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length);
 });
 
 test('a saved World Info selection cannot name another chat in a paid Roleplay job', async t => {

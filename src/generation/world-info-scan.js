@@ -197,6 +197,9 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
     }
     output.worldInfoBefore = output.worldInfoBefore.join('\n');
     output.worldInfoAfter = output.worldInfoAfter.join('\n');
-    return { ...output, activated: activatedEntries.map(entry => ({ world: entry.world, uid: entry.uid, hash: entry.hash })),
-        chatLength: chat.length, timedWorldInfo: applyWorldInfoTimedEffects(effects.metadata, activatedEntries, chat.length), draws, iterations };
+    return { ...output, activated: activatedEntries.map(entry => ({
+        world: entry.world, uid: entry.uid, hash: entry.hash,
+        ...(entry.automationId ? { automationId: entry.automationId } : {}),
+    })),
+    chatLength: chat.length, timedWorldInfo: applyWorldInfoTimedEffects(effects.metadata, activatedEntries, chat.length), draws, iterations };
 }
