@@ -103,4 +103,20 @@ test('the native Ollama text backend waits for its converted stream completion',
         return { ok: true, status: 200, body: Readable.from(['{"response":"Ollama ","done":false}', '{"response":"reply","done":true}']) };
     } });
     assert.equal(result.text, 'Ollama reply');
+    await assert.rejects(runTextGeneration({ context, backend: 'text', payload: {
+        api_type: 'ollama', api_server: 'http://127.0.0.1:11434', prompt: 'Hi', model: 'fixture', stream: true,
+    }, fetch: async () => ({ ok: true, status: 200, body: Readable.from(['{"response":"Partial","done":false}']) }) }),
+    /before completion/);
+    await assert.rejects(runTextGeneration({ context, backend: 'text', payload: {
+        api_type: 'ollama', api_server: 'http://127.0.0.1:11434', prompt: 'Hi', model: 'fixture', stream: true,
+    }, fetch: async () => ({ ok: true, status: 200, body: Readable.from(['{"response":"Partial","done":true}{incomplete']) }) }),
+    /before completion/);
+    const lines = ['{"response":"Ollama ","done":false}\n\n{"response":"reply","done":true}\n'];
+    assert.equal((await runTextGeneration({ context, backend: 'text', payload: {
+        api_type: 'ollama', api_server: 'http://127.0.0.1:11434', prompt: 'Hi', model: 'fixture', stream: true,
+    }, fetch: async () => ({ ok: true, status: 200, body: Readable.from(lines) }) })).text, 'Ollama reply');
+    await assert.rejects(runTextGeneration({ context, backend: 'text', payload: {
+        api_type: 'ollama', api_server: 'http://127.0.0.1:11434', prompt: 'Hi', model: 'fixture', stream: true,
+    }, fetch: async () => ({ ok: true, status: 200, body: Readable.from(['{"response":"Partial","done":false}\n{bad}\n']) }) }),
+    /invalid event/);
 });

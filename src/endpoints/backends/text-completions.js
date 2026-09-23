@@ -57,6 +57,7 @@ async function parseOllamaStream(jsonStream, request, response, onDisconnect = n
         }
         const stopPolling = pollStreamingRequestConnection(request, response, closeStream);
         let partialData = '';
+        let completed = false;
         jsonStream.body.on('data', (data) => {
             if (done) {
                 return;
@@ -64,18 +65,36 @@ async function parseOllamaStream(jsonStream, request, response, onDisconnect = n
 
             const chunk = data.toString();
             partialData += chunk;
-            while (true) {
+            if (response.reportStreamError && Buffer.byteLength(partialData) > 2 * 1024 * 1024) {
+                response.reportStreamError(new Error('The Ollama stream exceeded the saved result limit.'));
+                return closeStream();
+            }
+            while (partialData && !completed) {
+                const newline = partialData.indexOf('\n');
+                const line = newline < 0 ? partialData : partialData.slice(0, newline);
+                if (newline >= 0 && !line.trim()) {
+                    partialData = partialData.slice(newline + 1);
+                    continue;
+                }
                 let json;
                 try {
-                    json = JSON.parse(partialData);
+                    json = JSON.parse(line);
                 } catch (e) {
+                    if (newline >= 0 && line.trim()) {
+                        if (response.reportStreamError) {
+                            response.reportStreamError(new Error('The Ollama stream contains an invalid event.', { cause: e }));
+                            return closeStream();
+                        }
+                    }
                     break;
                 }
                 const text = json.response || '';
                 const thinking = json.thinking || '';
                 const chunk = { choices: [{ text, thinking }] };
                 response.write(`data: ${JSON.stringify(chunk)}\n\n`);
-                partialData = '';
+                completed ||= json.done === true;
+                partialData = newline < 0 ? '' : partialData.slice(newline + 1);
+                if (completed) break;
             }
         });
 
@@ -94,6 +113,10 @@ async function parseOllamaStream(jsonStream, request, response, onDisconnect = n
 
             done = true;
             stopPolling();
+            if (!completed || partialData.trim()) {
+                response.reportStreamError?.(new Error('The Ollama stream ended before completion.'));
+                return response.end();
+            }
             console.info('Streaming request finished');
             response.write('data: [DONE]\n\n');
             response.end();
@@ -107,6 +130,7 @@ async function parseOllamaStream(jsonStream, request, response, onDisconnect = n
             done = true;
             stopPolling();
             console.error('Ollama streaming request failed:', error);
+            response.reportStreamError?.(error);
             try {
                 jsonStream.body?.destroy?.();
             } catch {
