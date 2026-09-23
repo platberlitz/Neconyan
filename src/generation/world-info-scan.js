@@ -9,7 +9,7 @@ const MAX_SCAN_DEPTH = 1000;
 
 /** Scan saved entries without browser globals. The caller must save the result before provider dispatch. */
 export async function scanWorldInfo({ entries, chat, metadata = {}, settings, global = {}, maxContext,
-    countTokens, substitute = value => value, random = Math.random, onScan = async () => {} }) {
+    countTokens, substitute = value => value, transform = value => value, random = Math.random, onScan = async () => {} }) {
     const sorted = structuredClone(entries);
     const effects = resolveWorldInfoTimedEffects(sorted, chat.length, metadata.timedWorldInfo);
     const active = (type, entry) => effects.active[type].has(entry.hash);
@@ -171,7 +171,7 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
     const output = { worldInfoBefore: [], worldInfoAfter: [], EMEntries: [], WIDepthEntries: [],
         ANBeforeEntries: [], ANAfterEntries: [], outletEntries: {} };
     for (const entry of activatedEntries) {
-        const content = entry.content;
+        const content = transform(entry.content, entry);
         if (!content) continue;
         switch (entry.position) {
             case 0: output.worldInfoBefore.unshift(content); break;

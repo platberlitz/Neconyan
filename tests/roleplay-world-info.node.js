@@ -206,6 +206,41 @@ test('saved default name inclusion activates speaker keys before provider work',
     assert.equal(selected.worldInfoBefore, 'The user speaks');
 });
 
+test('saved World Info prompt transformations apply before the scan is saved', async t => {
+    const f = fixture(t);
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Original', 'The old harbour', { world: undefined, hash: undefined }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+        extension_settings: { regex: [{ findRegex: '/old/g', replaceString: 'new', placement: [5],
+            promptOnly: true, markdownOnly: false }] },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, f.source(), { avatar: 'Nova.png', maxContext: 100 });
+    const selected = await prepareRoleplayWorldInfo(f.scope, snapshot);
+    assert.equal(selected.worldInfoBefore, 'The new harbour');
+});
+
+test('a macro-dependent World Info transformation refuses before dispatch', async t => {
+    const f = fixture(t);
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Original', 'The old harbour', { world: undefined, hash: undefined }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+        extension_settings: { regex: [{ findRegex: '/old/g', replaceString: '{{user}}', placement: [5],
+            promptOnly: true, markdownOnly: false }] },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, f.source(), { avatar: 'Nova.png', maxContext: 100 });
+    await assert.rejects(prepareRoleplayWorldInfo(f.scope, snapshot), { code: 'ROLEPLAY_INVALID' });
+});
+
 test('saved persona, card notes and character tags decide activation without browser state', async t => {
     const f = fixture(t);
     fs.writeFileSync(path.join(f.scope.directories.characters, 'Nova.png'), writeCard(png, JSON.stringify({

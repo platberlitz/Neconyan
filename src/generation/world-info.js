@@ -6,6 +6,7 @@ import { roleplayError, roleplayHash, saveRoleplayAccount, withRoleplayAccount }
 import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay-source.js';
 import { prepareWorldInfoEntries } from '../../public/scripts/world-info-scan-core.js';
 import { createMacroEnvironment } from '../macros/index.js';
+import { applyRegexScriptList, AGENT_REGEX_PLACEMENT } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { scanWorldInfo } from './world-info-scan.js';
 
 const SETTINGS = ['world_info_depth', 'world_info_min_activations', 'world_info_min_activations_depth_max',
@@ -66,6 +67,16 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         const selected = books(base.directories, Object.values(names));
         const characterTags = savedSettings.tag_map?.[avatar] ?? [];
         if (!Array.isArray(characterTags)) throw roleplayError('ROLEPLAY_INVALID', 'The saved character tags are invalid.', 400);
+        const extensions = savedSettings.extension_settings ?? {};
+        if (!Array.isArray(extensions.regex ?? []) || !Array.isArray(extensions.character_allowed_regex ?? [])) {
+            throw roleplayError('ROLEPLAY_INVALID', 'Saved World Info transformations are invalid.', 409);
+        }
+        const scopedRegex = extensions.character_allowed_regex?.includes(avatar)
+            ? character.data?.data?.extensions?.regex_scripts ?? character.data?.extensions?.regex_scripts ?? [] : [];
+        if (!Array.isArray(scopedRegex)) throw roleplayError('ROLEPLAY_INVALID', 'Saved World Info transformations are invalid.', 409);
+        const regex = extensions.disabledExtensions?.includes('regex') ? [] : [
+            ...(extensions.regex ?? []), ...scopedRegex,
+        ];
         const chat = saved.records.slice(1).map(message => (settings.world_info_include_names ?? DEFAULTS.world_info_include_names)
             ? `${message.name}: ${message.mes}` : String(message.mes ?? '')).reverse();
         const snapshot = { account: { accountId: account.accountId, dataEpoch: account.dataEpoch }, source,
@@ -73,7 +84,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             settingsHash: roleplayHash(savedSettings),
             names, settings: Object.fromEntries(SETTINGS.map(key => [key, settings[key] ?? DEFAULTS[key]])),
             bookHashes: Object.fromEntries(Object.entries(selected).map(([name, value]) => [name, value.hash])),
-            characterFile: path.parse(avatar).name, avatar, maxContext, tokenizer, chat,
+            characterFile: path.parse(avatar).name, avatar, maxContext, tokenizer, chat, regex,
             metadata: structuredClone(saved.records[0].chat_metadata ?? {}), global: {
                 trigger: 'normal', characterDescription: character.data?.data?.description ?? character.data?.description ?? '',
                 characterPersonality: character.data?.data?.personality ?? character.data?.personality ?? '',
@@ -137,9 +148,26 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
     const { count } = await getCounter(snapshot.tokenizer);
     const environment = createMacroEnvironment(macros || {}, {}, { readOnly: true });
     const substitute = value => environment.evaluate(value, { strictCapabilities: true });
+    if (!Array.isArray(snapshot.regex)) throw roleplayError('ROLEPLAY_INVALID', 'Saved World Info transformations are invalid.', 409);
+    for (const script of snapshot.regex) {
+        if (!script || !Array.isArray(script.placement)) {
+            throw roleplayError('ROLEPLAY_INVALID', 'Saved World Info transformations are invalid.', 409);
+        }
+        if (!script.placement.includes(AGENT_REGEX_PLACEMENT.WORLD_INFO) || script.disabled
+            || script.markdownOnly || !script.promptOnly) continue;
+        if (script.trimStrings !== undefined && !Array.isArray(script.trimStrings)) {
+            throw roleplayError('ROLEPLAY_INVALID', 'Saved World Info transformations are invalid.', 409);
+        }
+        if (Number(script.substituteRegex) || [script.findRegex, script.replaceString, ...(script.trimStrings ?? [])]
+            .some(value => typeof value !== 'string' || value.includes('{{') || /<(?:USER|BOT|CHAR|GROUP)>/i.test(value))) {
+            throw roleplayError('ROLEPLAY_INVALID', 'This World Info transformation needs browser-only macros.', 409);
+        }
+    }
+    const transform = (content, entry) => applyRegexScriptList(content, snapshot.regex, AGENT_REGEX_PLACEMENT.WORLD_INFO,
+        { isPrompt: true, depth: entry.position === 4 ? entry.depth ?? 4 : undefined });
     const result = await scanWorldInfo({ entries, chat: snapshot.chat, metadata: snapshot.metadata,
         settings: snapshot.settings, global: { ...snapshot.global, characterFile: snapshot.characterFile },
-        maxContext: snapshot.maxContext, countTokens: count, substitute, random, onScan });
+        maxContext: snapshot.maxContext, countTokens: count, substitute, random, onScan, transform });
     return { ...result, bookHashes: snapshot.bookHashes,
         timedBaseline: roleplayHash(snapshot.metadata.timedWorldInfo ?? {}) };
 }
