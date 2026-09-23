@@ -128,7 +128,11 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
             const { uid = Number.isNaN(Number(key)) ? key : Number(key), ...rest } = entry;
             return { uid, world: name, ...rest };
         }))]));
+    const loadedHash = roleplayHash(lore);
     await onEntriesLoaded?.(lore);
+    if (roleplayHash(lore) !== loadedHash) {
+        throw roleplayError('ROLEPLAY_INVALID', 'A World Info loading hook changed the saved book selection.', 409);
+    }
     const entries = prepareWorldInfoEntries(lore, Number(snapshot.settings.world_info_character_strategy ?? 1));
     const { count } = await getCounter(snapshot.tokenizer);
     const environment = createMacroEnvironment(macros || {}, {}, { readOnly: true });

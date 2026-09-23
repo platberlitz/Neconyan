@@ -145,6 +145,23 @@ test('the account captures saved books and refuses a changed book before the pro
     await assert.rejects(prepareRoleplayWorldInfo(f.scope, snapshot), { code: 'ROLEPLAY_SOURCE_CHANGED' });
 });
 
+test('an entries-loaded hook cannot add a book entry outside the saved selection', async t => {
+    const f = fixture(t);
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'cat', 'Allowed', { world: undefined, hash: undefined }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['Town'] } },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, f.source(), { avatar: 'Nova.png', maxContext: 100 });
+    await assert.rejects(prepareRoleplayWorldInfo(f.scope, snapshot, { onEntriesLoaded: lore => {
+        lore.globalLore.push(entry(2, 'cat', 'Not in the saved book'));
+    } }), { code: 'ROLEPLAY_INVALID' });
+});
+
 test('a saved scan refuses changed settings or a reset before reading new account books', async t => {
     const f = fixture(t);
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
