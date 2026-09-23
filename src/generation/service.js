@@ -21,7 +21,7 @@ import { getNanoGptServiceTiers, isNanoGptPayg } from '../../public/scripts/serv
 import { createMacroEnvironment } from '../macros/index.js';
 
 /**
- * Run one non-streaming provider request on behalf of a job. This is the same
+ * Run one provider request on behalf of a job. This is the same
  * server transport the Conversation API uses. Callers supply an already-built
  * request; saved chat profiles use runChatProfile below.
  */
@@ -94,6 +94,12 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     signal ||= jobContext?.signal;
     signal?.throwIfAborted();
     const raw = binding?.kind === 'active';
+    if (!raw && Object.keys(rawOptions).some(option => !['jsonSchema', 'cacheScope'].includes(option))) {
+        fail('This request option requires the acknowledged active connection.', 409);
+    }
+    if (!raw && binding?.backend === 'text' && Object.keys(rawOptions).length) {
+        fail('Structured request controls require a Chat Completion connection.', 409);
+    }
     if (binding?.backend === 'text' || raw) {
         const options = { context, binding, macroEnvironment, ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions, maxTokens };
         const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames, modelOverride, overridePayload,
@@ -180,7 +186,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         return jobContext ? providerStep(jobContext, key, call) : call();
     }
     const payload = await prepareChatRequest({ context, binding, messages, maxTokens, macroEnvironment, ephemeralStops,
-        userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload });
+        userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions });
     payload.stream = stream === true;
     const material = resolveGenerationProfile(context.directories, binding);
     const call = () => {

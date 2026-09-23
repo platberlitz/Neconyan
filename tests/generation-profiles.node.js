@@ -158,6 +158,34 @@ test('active Custom keeps saved authentication out of artefacts and enforces fin
     assert.throws(() => captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 }), /without embedded credentials/);
 });
 
+test('a saved Chat Completion request retains its bound structured-output controls', async t => {
+    const fixture = textFixture(t);
+    fixture.profile.mode = 'cc';
+    fixture.profile.api = 'custom';
+    fixture.profile.model = 'fixture';
+    fixture.profile['api-url'] = 'http://127.0.0.1:6000';
+    fixture.settings.oai_settings = { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000' };
+    fixture.save();
+    const binding = captureChatProfile(fixture.directories, fixture.profile.id);
+    let calls = 0;
+    const result = await runChatProfile({ context: { owner: 'alice', directories: fixture.directories }, binding,
+        messages: [{ role: 'user', content: 'Reply as JSON' }], maxTokens: 73,
+        rawOptions: { jsonSchema: { name: 'Reply', value: { type: 'object', properties: { text: { type: 'string' } } } } },
+        fetch: async (_url, request) => {
+            calls++;
+            const body = JSON.parse(request.body);
+            assert.ok(body.json_schema || body.response_format, 'the saved schema must reach the provider');
+            return new Response(JSON.stringify({ choices: [{ message: { content: '{"text":"saved"}' } }] }));
+        } });
+    assert.equal(result.text, '{"text":"saved"}');
+    assert.equal(calls, 1);
+    await assert.rejects(runChatProfile({ context: { owner: 'alice', directories: fixture.directories }, binding,
+        messages: [{ role: 'user', content: 'Hi' }], maxTokens: 73, rawOptions: { prefill: 'ignored' },
+        fetch: async () => { calls++; throw new Error('Should not reach the provider.'); } }),
+    /requires the acknowledged active connection/);
+    assert.equal(calls, 1);
+});
+
 test('active provider extraction preserves native text blocks and schema responses', async t => {
     const fixture = textFixture(t);
     const cases = [

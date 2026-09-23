@@ -98,6 +98,51 @@ test('a saved active Custom request runs through the real provider transport and
     }
 });
 
+test('a bound custom request applies safe controls and refuses connection or authentication changes before dispatch', async t => {
+    const f = fixture(t);
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ _settingsRevision: 1,
+        main_api: 'openai', active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
+        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'fixture' },
+        power_user: { custom_stopping_strings: '[]' } }));
+    const binding = captureGenerationBinding(f.scope.directories, { kind: 'active' }, { settingsRevision: 1 });
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const request = { binding, messages: [{ role: 'user', content: 'Hi' }], maxTokens: 32, characterName: 'Nova',
+        modelOverride: 'second-model', overridePayload: { top_p: 0.63 } };
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'safe-controls', effect: 'append', source, request });
+    releaseJob(f.scope.directories, jobId);
+    let calls = 0;
+    const run = (context, fetchImpl) => runRoleplayReplyJob(context, {
+        generate: options => runChatProfile({ ...options, fetch: fetchImpl }),
+    });
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories, owner: f.scope.owner,
+        signal: new AbortController().signal };
+    await run(context, async (url, init) => {
+        calls++;
+        assert.equal(url, 'http://127.0.0.1:6000/chat/completions');
+        const body = JSON.parse(init.body);
+        assert.equal(body.model, 'second-model');
+        assert.equal(body.top_p, 0.63);
+        assert.equal(body.max_tokens, 32);
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'Bound answer' } }] }));
+    });
+    assert.equal(calls, 1);
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Bound answer');
+
+    for (const overridePayload of [{ custom_include_headers: 'Authorization: Bearer private' },
+        { chat_completion_source: 'openai' }, { api_server: 'https://other.invalid' }, { max_tokens: 9999 }]) {
+        const { jobId: refusedId } = admitRoleplayJob(f.scope, account, {
+            operationKey: `refuse-${Object.keys(overridePayload)[0]}`, effect: 'append',
+            source: captureRoleplaySource(f.scope, { locator: f.locator }), request: { ...request, overridePayload },
+        });
+        releaseJob(f.scope.directories, refusedId);
+        await assert.rejects(run({ ...context, job: getJob(f.scope.directories, refusedId) }, async () => {
+            calls++; throw new Error('The provider must not be reached.');
+        }), { code: 'ROLEPLAY_INVALID' });
+    }
+    assert.equal(calls, 1);
+});
+
 test('a bound Custom stream completes before a Roleplay effect and refuses a truncated paid result', async t => {
     const f = fixture(t);
     fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ _settingsRevision: 1,

@@ -10,6 +10,20 @@ import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
+const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
+    'presence_penalty', 'repetition_penalty', 'stop', 'stopping_strings']);
+
+function requestOverrides(request) {
+    const overrides = request.overridePayload ?? {};
+    if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)
+        || Object.entries(overrides).some(([key, value]) => !REQUEST_OVERRIDES.has(key)
+            || (['stop', 'stopping_strings'].includes(key) ? !Array.isArray(value) || value.length > 32
+                || value.some(item => typeof item !== 'string' || item.length > 256)
+                : typeof value !== 'number' || !Number.isFinite(value)))) {
+        throw roleplayError('ROLEPLAY_INVALID', 'Use saved connection settings for unsupported request controls or authentication.', 400);
+    }
+    return overrides;
+}
 
 function replyOutput(result, effect, name, material) {
     const text = result?.text;
@@ -57,15 +71,17 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     if (!request.binding || !Array.isArray(request.messages) || !Number.isSafeInteger(request.maxTokens)
         || request.maxTokens < 1 || request.maxTokens > 64000 || typeof request.characterName !== 'string'
         || !request.characterName || (request.stream !== undefined && typeof request.stream !== 'boolean')
+        || (request.modelOverride !== undefined && (typeof request.modelOverride !== 'string' || request.modelOverride.length > 256))
         || Buffer.byteLength(JSON.stringify(request)) > 2 * 1024 * 1024) {
         throw roleplayError('ROLEPLAY_INVALID', 'The accepted Roleplay generation input is invalid.', 400);
     }
+    const overridePayload = requestOverrides(request);
     assertSource();
     const result = await generate({ context: base, jobContext: context, binding: request.binding, messages: request.messages,
         maxTokens: request.maxTokens, userName: request.userName || 'User', characterName: request.characterName,
         groupNames: request.groupNames || [], macroEnvironment: createMacroEnvironment(request.macros || {}),
         rawOptions: request.rawOptions || {}, ephemeralStops: request.ephemeralStops || [], beforeDispatch: assertSource,
-        stream: request.stream === true });
+        modelOverride: request.modelOverride || '', overridePayload, stream: request.stream === true });
     const output = replyOutput(result, effect, request.characterName, result.generation);
     writeArtifact(directories, job.id, 'roleplay-output', output);
     // The provider result is durable before recovery may revisit the chat write.

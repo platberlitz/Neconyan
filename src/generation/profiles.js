@@ -254,6 +254,8 @@ export async function buildChatProfileRequest(directories, binding, messages, ma
         stream: false, messages, max_tokens: maxTokens, model: modelOverride.trim() || profile.model,
         chat_completion_source: source, secret_id: profile['secret-id'], ...proxy,
         custom_prompt_post_processing: profile['prompt-post-processing'],
+        ...(rawOptions.jsonSchema ? { json_schema: rawOptions.jsonSchema } : {}),
+        ...(rawOptions.cacheScope ? { cacheScope: rawOptions.cacheScope } : {}),
         service_tier: resolveProfileServiceTier(profile, source, preset), ...overrides, ...overridePayload,
         __connectionProfileRequestFields: profileFieldNames,
     };
