@@ -6,7 +6,7 @@ import test from 'node:test';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 import { readRoleplayChat, readRoleplayEntity, ROLEPLAY_METADATA_KEY } from '../src/generation/roleplay-source.js';
 import { write as writeCard } from '../src/character-card-parser.js';
-import { readRoleplayAccount, roleplayPathKey } from '../src/roleplay-store.js';
+import { readRoleplayAccount, resetRoleplayAccount, roleplayAccountStamp, roleplayPathKey } from '../src/roleplay-store.js';
 import { importUserFile } from '../src/endpoints/users-private.js';
 import { deleteDataMaidFiles } from '../src/endpoints/data-maid.js';
 
@@ -109,4 +109,19 @@ test('retiring and restoring a bundled card goes through recorded lifecycles', a
     assert.equal(again.generation, 2);
     assert.notEqual(again.instanceId, card.instanceId);
     assert.equal(readRoleplayEntity(f.scope, 'character', 'Nova.png').instanceId, again.instanceId);
+});
+
+test('Data Maid deletes names the store cannot track as ordinary files and refuses a report from an earlier epoch', async t => {
+    const f = fixture(t, false, 'maid-untrackable');
+    const odd = path.join(f.scope.directories.chats, 'Nova', 'odd?name.jsonl');
+    fs.writeFileSync(odd, fs.readFileSync(f.filename));
+    deleteDataMaidFiles(f.scope, [odd]);
+    assert.equal(fs.existsSync(odd), false);
+
+    const stamp = roleplayAccountStamp(f.scope);
+    resetRoleplayAccount(f.scope, null, 'reset');
+    const loose = path.join(f.scope.directories.root, 'loose.txt');
+    fs.writeFileSync(loose, 'kept');
+    assert.throws(() => deleteDataMaidFiles(f.scope, [loose], stamp), error => error.code === 'ROLEPLAY_ACCOUNT_CHANGED');
+    assert.equal(fs.existsSync(loose), true);
 });

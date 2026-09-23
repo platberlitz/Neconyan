@@ -1,6 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { promises as fsPromises } from 'node:fs';
 import { Buffer } from 'node:buffer';
 import os from 'node:os';
@@ -668,7 +668,6 @@ function publishCharacterCard(request, avatar, bytes, legacyWrite) {
         const op = tracked ? 'update' : 'create';
         // ponytail: server-generated keys; browser card writes are not retried with a stable key yet.
         return commitRoleplayLifecycleLocked(lease, {
-            operationKey: randomUUID(),
             action: `character-${op}`,
             intent: { avatar, rawHash: createHash('sha256').update(bytes).digest('hex') },
             steps: [{ op, kind: 'character', locator: { avatar }, bytes }],
@@ -1782,6 +1781,8 @@ function characterChats(lease, request, avatar) {
     const directory = path.join(request.user.directories.chats, roleplayAvatarOwner(avatar));
     const tracked = [];
     const untracked = [];
+    const vanished = [];
+    const loose = [];
     let changed = false;
     for (const entry of fs.existsSync(directory) ? fs.readdirSync(directory, { withFileTypes: true }) : []) {
         if (!entry.isFile() || path.extname(entry.name) !== '.jsonl') continue;
@@ -1790,45 +1791,64 @@ function characterChats(lease, request, avatar) {
             changed = readRoleplayChatLocked(lease, locator).changed || changed;
             tracked.push(locator);
         } catch (error) {
-            if (!['ROLEPLAY_SOURCE_DAMAGED', 'ROLEPLAY_FOREIGN_SOURCE', 'ROLEPLAY_INVALID'].includes(error?.code)) throw error;
-            untracked.push(locator);
+            if (isLooseFile(lease, 'chat', locator, error)) loose.push(path.join(directory, entry.name));
+            else if (['ROLEPLAY_SOURCE_DAMAGED', 'ROLEPLAY_FOREIGN_SOURCE', 'ROLEPLAY_INVALID'].includes(error?.code)) untracked.push(locator);
+            else throw error;
         }
     }
     if (changed) saveRoleplayAccount(lease);
-    // Recorded chats whose files vanished out of band are still this character's; their steps decide.
+    // Recorded chats whose files vanished out of band are still this character's; they retire rather than move.
     for (const resource of Object.values(roleplayLease(lease).state.resources)) {
         const { locator } = resource;
         if (resource.kind === 'chat' && resource.status === 'live' && !locator.group && locator.avatar === avatar
-            && !tracked.some(item => item.chat === locator.chat)) tracked.push({ ...locator });
+            && !tracked.some(item => item.chat === locator.chat)) vanished.push({ ...locator });
     }
-    return { tracked, untracked };
+    return { tracked, untracked, vanished, loose };
 }
 
-/** Enrols a readable card; returns false when the card cannot be parsed. */
+/**
+ * A hard-linked or oversized file the store never recorded cannot be enrolled or observed as one file;
+ * it stays an ordinary leftover and is removed as one after the recorded work.
+ */
+function isLooseFile(lease, kind, locator, error) {
+    return error?.code === 'ROLEPLAY_STORE_DAMAGED' && !roleplayTrackedInstance(lease, kind, locator);
+}
+
+/** Enrols a readable card: 'tracked', 'damaged' when it cannot be parsed, or 'loose' (see isLooseFile). */
 function enrolCharacterCard(lease, avatar) {
-    if (roleplayTrackedInstance(lease, 'character', { avatar })) return true;
+    if (roleplayTrackedInstance(lease, 'character', { avatar })) return 'tracked';
     try {
         if (readRoleplayEntityLocked(lease, 'character', avatar, { storage: true }).changed) saveRoleplayAccount(lease);
-        return true;
+        return 'tracked';
     } catch (error) {
+        if (isLooseFile(lease, 'character', { avatar }, error)) return 'loose';
         if (!isDamagedCard(error)) throw error;
-        return false;
+        return 'damaged';
     }
+}
+
+/** Removes ordinary leftovers after proving, under the same account lock, that none became protected. */
+function removeLooseFiles(lease, files) {
+    const present = files.filter(file => fs.existsSync(file));
+    if (!present.length) return;
+    assertUntrackedRoleplayFiles(lease, present);
+    for (const file of present) fs.rmSync(file, { force: true });
 }
 
 // ponytail: server-generated keys; the browser does not retry renames with a stable key yet.
 function renameCharacterCard(request, oldAvatar, newAvatar, bytes) {
     return withRoleplayAccount(characterBase(request), null, lease => {
-        if (!enrolCharacterCard(lease, oldAvatar)) throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'The character card cannot be read.', 422);
-        const { tracked } = characterChats(lease, request, oldAvatar);
-        return commitRoleplayLifecycleLocked(lease, {
-            operationKey: randomUUID(),
+        const card = enrolCharacterCard(lease, oldAvatar);
+        if (card === 'damaged') throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'The character card cannot be read.', 422);
+        const { tracked, vanished } = characterChats(lease, request, oldAvatar);
+        const result = commitRoleplayLifecycleLocked(lease, {
             action: 'character-rename',
             intent: { from: oldAvatar, to: newAvatar },
             steps: [
                 { op: 'create', kind: 'character', locator: { avatar: newAvatar }, bytes },
                 ...tracked.map(locator => ({ op: 'move', kind: 'chat', locator, destination: { ...locator, avatar: newAvatar } })),
-                { op: 'delete', kind: 'character', locator: { avatar: oldAvatar } },
+                ...vanished.map(locator => ({ op: 'delete', kind: 'chat', locator })),
+                ...card === 'tracked' ? [{ op: 'delete', kind: 'character', locator: { avatar: oldAvatar } }] : [],
             ],
             auxiliary: [
                 { task: 'character-memory-rename', from: oldAvatar, to: newAvatar },
@@ -1836,6 +1856,8 @@ function renameCharacterCard(request, oldAvatar, newAvatar, bytes) {
                 { task: 'date-added-remove', entity: 'characters', id: oldAvatar },
             ],
         }, characterLifecycleHost(request));
+        if (card === 'loose') removeLooseFiles(lease, [path.join(request.user.directories.characters, oldAvatar)]);
+        return result;
     });
 }
 
@@ -2168,12 +2190,15 @@ router.post('/last-chat', getFileNameValidationFunction('avatar'), async functio
 // ponytail: server-generated keys; the browser does not retry deletions with a stable key yet.
 function deleteCharacterCard(request, avatar, avatarPath, chatsDirectory, deleteChats) {
     return withRoleplayAccount(characterBase(request), null, lease => {
-        const cardTracked = enrolCharacterCard(lease, avatar);
-        const chats = deleteChats ? characterChats(lease, request, avatar) : { tracked: [], untracked: [] };
+        const card = enrolCharacterCard(lease, avatar);
+        const cardTracked = card === 'tracked';
+        const chats = deleteChats ? characterChats(lease, request, avatar) : { tracked: [], untracked: [], vanished: [], loose: [] };
+        chats.tracked.push(...chats.vanished);
+        const loose = [...chats.loose, ...card === 'loose' ? [avatarPath] : []];
         const all = [...chats.tracked, ...chats.untracked];
         if (!cardTracked && !chats.tracked.length) {
             const chatFiles = all.map(locator => path.join(chatsDirectory, locator.chat + '.jsonl'));
-            assertUntrackedRoleplayFiles(lease, [avatarPath, ...chatFiles]);
+            assertUntrackedRoleplayFiles(lease, [avatarPath, ...chatFiles, ...chats.loose]);
             const targets = all.map(locator => characterChatTarget(request, roleplayAvatarOwner(avatar), locator.chat + '.jsonl'));
             if (deleteChats) {
                 for (const target of isChatBackupEnabled ? targets : []) {
@@ -2188,12 +2213,11 @@ function deleteCharacterCard(request, avatar, avatarPath, chatsDirectory, delete
             removeSourceMemory(request.user.directories, { avatar, deleteChats });
             return null;
         }
-        return commitRoleplayLifecycleLocked(lease, {
-            operationKey: randomUUID(),
+        const result = commitRoleplayLifecycleLocked(lease, {
             action: 'character-delete',
             intent: { avatar, deleteChats },
             steps: [
-                { op: cardTracked ? 'delete' : 'discard', kind: 'character', locator: { avatar } },
+                ...card === 'loose' ? [] : [{ op: cardTracked ? 'delete' : 'discard', kind: 'character', locator: { avatar } }],
                 ...chats.tracked.map(locator => ({ op: 'delete', kind: 'chat', locator })),
                 ...chats.untracked.map(locator => ({ op: 'discard', kind: 'chat', locator })),
             ],
@@ -2203,6 +2227,8 @@ function deleteCharacterCard(request, avatar, avatarPath, chatsDirectory, delete
                 ...deleteChats ? [{ task: 'chat-folder-remove', avatar }] : [],
             ],
         }, characterLifecycleHost(request));
+        removeLooseFiles(lease, loose);
+        return result;
     });
 }
 

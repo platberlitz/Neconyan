@@ -16,7 +16,7 @@ import {
     ensurePublicDirectoriesExist,
 } from '../users.js';
 import { DEFAULT_USER } from '../constants.js';
-import { recreateRoleplayAccount, resetRoleplayAccount, roleplayAccountBase, roleplayStoreDirectory } from '../roleplay-store.js';
+import { recreateRoleplayAccount, resetRoleplayAccount, settleRoleplayAccountReset, roleplayAccountBase, roleplayStoreDirectory } from '../roleplay-store.js';
 import { bootstrapRoleplayAccount } from '../roleplay-lifecycle.js';
 import { roleplayNativeHost } from './chats.js';
 
@@ -194,8 +194,12 @@ router.post('/create', requireAdminMiddleware, async (request, response) => {
 
         const directories = getUserDirectories(handle);
         const scope = { owner: handle, directories };
-        // A purged name gets a fresh incarnation; data kept by a non-purging delete is adopted as before.
-        if (fs.lstatSync(roleplayStoreDirectory(scope), { throwIfNoEntry: false })) recreateRoleplayAccount(scope);
+        // A deleted name gets a fresh incarnation (new account id and data epoch); an interrupted delete is finished first.
+        if (fs.lstatSync(roleplayStoreDirectory(scope), { throwIfNoEntry: false })) {
+            // A store still serving a name with no user record (deleted before retirement existed) is retired too.
+            if (settleRoleplayAccountReset(scope)) resetRoleplayAccount(scope, null, 'retire');
+            recreateRoleplayAccount(scope);
+        }
         if (!bootstrapRoleplayAccount(scope, roleplayNativeHost)) throw new Error('The account could not be prepared.');
 
         const salt = getPasswordSalt();
@@ -241,14 +245,15 @@ router.post('/delete', requireAdminMiddleware, async (request, response) => {
             return response.status(400).json({ error: 'Sorry, but the default user cannot be deleted. It is required as a fallback.' });
         }
 
+        const directories = getUserDirectories(request.body.handle);
+        // Retire protected records (receipts and old jobs kept) before the user record goes, so a failure keeps the user.
+        const account = roleplayAccountBase(directories);
+        if (account) resetRoleplayAccount(account, null, request.body.purge ? 'purge' : 'retire');
+
         await storage.removeItem(toKey(request.body.handle));
 
         if (request.body.purge) {
-            const directories = getUserDirectories(request.body.handle);
             console.info('Deleting data directories for', request.body.handle);
-            // Retire protected records (receipts and old jobs kept) before removing the data folder.
-            const account = roleplayAccountBase(directories);
-            if (account) resetRoleplayAccount(account, null, 'purge');
             await fsPromises.rm(directories.root, { recursive: true, force: true });
         }
 

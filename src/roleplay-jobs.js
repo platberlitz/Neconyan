@@ -14,11 +14,14 @@
 import { acceptJob, getJob } from './jobs/store.js';
 import { assertRoleplaySourceLocked, captureRoleplayMessage, captureRoleplayRange, captureRoleplayStorageSourceLocked } from './generation/roleplay-source.js';
 import { commitSingleChatWriteLocked } from './roleplay-lifecycle.js';
-import { confirmRoleplayAccount, roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, withRoleplayAccount } from './roleplay-store.js';
+import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, withRoleplayAccount } from './roleplay-store.js';
 
 export const ROLEPLAY_JOB_EFFECTS = Object.freeze(['append', 'continue', 'swipe', 'replace']);
 // A closed receipt holds one chat-write result twice (outcome and effect) plus its keys.
 const RECEIPT_RESERVE_BYTES = 8 * 1024;
+// Admission also holds room for the completion's pending chat-write record, so
+// provider work never runs for a reply the store could not accept afterwards.
+const ADMISSION_RESERVE_BYTES = 64 * 1024 + RECEIPT_RESERVE_BYTES;
 const JOB_EFFECT_KEY = roleplayHash('roleplay-job');
 
 const invalid = message => roleplayError('ROLEPLAY_INVALID', message, 400);
@@ -61,8 +64,9 @@ export function admitRoleplayJob(base, account, { operationKey, effect, source, 
             if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay operation must settle first.');
             assertRoleplaySourceLocked(lease, source);
             state.submissions[keyHash] = { accountId: state.accountId, dataEpoch: state.dataEpoch, intentHash, jobId: null,
-                targetInstanceId: source.instanceId, state: 'preparing', reservedReceiptBytes: RECEIPT_RESERVE_BYTES, effects: {} };
+                targetInstanceId: source.instanceId, state: 'preparing', reservedReceiptBytes: ADMISSION_RESERVE_BYTES, effects: {} };
             try {
+                assertRoleplayTransactionCapacity(lease, null, state);
                 saveRoleplayAccount(lease);
             } catch (error) {
                 if (!error.roleplayWriteUncertain) delete state.submissions[keyHash];
@@ -98,14 +102,18 @@ function effectRecords(records, source, effect, output) {
     if (typeof output?.text !== 'string') throw invalid('A Roleplay job output needs text.');
     const message = next[source.message.index + 1];
     const swipes = Array.isArray(message.swipes) && message.swipes.length ? message.swipes : [message.mes];
-    const selected = Number.isInteger(message.swipe_id) ? message.swipe_id : 0;
+    const selected = Number(message.swipe_id ?? 0);
+    if (!Number.isInteger(selected) || selected < 0 || selected >= swipes.length) throw invalid('The anchored message has an unreadable swipe selection.');
     if (effect === 'continue') {
         message.mes += output.text;
-        if (Array.isArray(message.swipes) && selected < message.swipes.length) message.swipes[selected] = message.mes;
+        if (Array.isArray(message.swipes) && message.swipes.length) message.swipes[selected] = message.mes;
+        if (message.swipe_id !== undefined) message.swipe_id = selected;
         return next;
     }
+    const info = Array.isArray(message.swipe_info) ? message.swipe_info.slice(0, swipes.length) : [];
+    while (info.length < swipes.length) info.push({});
     message.swipes = [...swipes, output.text];
-    message.swipe_info = [...(Array.isArray(message.swipe_info) ? message.swipe_info : swipes.map(() => ({}))), {}];
+    message.swipe_info = [...info, {}];
     message.swipe_id = message.swipes.length - 1;
     message.mes = output.text;
     return next;
@@ -152,24 +160,34 @@ export function applyRoleplayJobEffect(base, account, { operationKey, jobId, out
         const { state, scope } = roleplayLease(lease);
         const keyHash = jobKey(state, operationKey);
         const receipt = state.submissions[keyHash];
-        if (!receipt || receipt.jobId !== jobId) throw roleplayError('ROLEPLAY_JOB_REJECTED', 'This job does not own that Roleplay receipt.', 409);
+        const rejected = message => roleplayError('ROLEPLAY_JOB_REJECTED', message, 409);
+        if (!receipt || receipt.jobId !== jobId) throw rejected('This job does not own that Roleplay receipt.');
         if (receipt.state === 'closed') return structuredClone(receipt.outcome);
-        if (receipt.state !== 'accepted') throw roleplayError('ROLEPLAY_JOB_REJECTED', 'This Roleplay job was withdrawn.', 409);
+        if (receipt.state !== 'accepted') throw rejected('This Roleplay job was withdrawn.');
         const job = getJob(scope.directories, jobId);
-        if (!job || job.cancellation?.requested || job.intent?.roleplay?.operationKey !== operationKey) {
-            throw roleplayError('ROLEPLAY_JOB_REJECTED', 'This Roleplay job is no longer active.', 409);
+        if (!job || job.cancellation?.requested || job.intent?.roleplay?.operationKey !== operationKey) throw rejected('This Roleplay job is no longer active.');
+        const { effect, source, request } = job.intent;
+        // The jobs ledger is ordinary storage: its intent must be the one the receipt admitted.
+        if (roleplayHash({ accountId: state.accountId, dataEpoch: state.dataEpoch, intent: { effect, source, request } }) !== receipt.intentHash) {
+            throw rejected('This Roleplay job no longer carries the intent it was admitted with.');
         }
         // A crash after the chat write but before closing the job receipt: the
         // write's own receipt holds the outcome, so nothing is written twice.
         const written = state.submissions[writeKey(state, operationKey)];
         if (written?.state === 'closed') return closeReceipt(lease, keyHash, written.outcome);
         if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay operation must settle first.');
-        const { effect, source } = job.intent;
-        const captured = captureRoleplayStorageSourceLocked(lease, source.locator);
+        // Follow the chat's identity, so a rename after admission does not strand the job.
+        const resource = state.resources[source.instanceId];
+        if (resource?.status !== 'live' || resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch) {
+            throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The chat this job answers no longer exists.', 404);
+        }
+        const captured = captureRoleplayStorageSourceLocked(lease, resource.locator);
         assertAnchor(captured.saved, source, effect);
         const records = effectRecords(captured.saved.records, source, effect, output);
+        // The admission reservation covers this write's pending record; hand it over.
+        receipt.reservedReceiptBytes = RECEIPT_RESERVE_BYTES;
         const result = commitSingleChatWriteLocked(lease, { operationKey: `job:${operationKey}`, mode: 'update', sourceKind: 'storage',
-            source: captured.source, records, backup: { deferBackup: true } }, host);
+            source: captured.source, records, allowShrink: effect === 'replace', backup: { deferBackup: true } }, host);
         return closeReceipt(lease, keyHash, result);
     });
 }

@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { promises as fsPromises } from 'node:fs';
 import path from 'node:path';
@@ -233,8 +232,8 @@ function lifecycleBlock(request) {
             || !Number.isSafeInteger(block.account.dataEpoch))))) {
         throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay lifecycle request.', 400);
     }
-    // ponytail: unkeyed extension callers get single-attempt semantics; the bundled browser sends a key.
-    return { account: block?.account ?? null, operationKey: block?.operationKey ?? crypto.randomUUID() };
+    // Unkeyed extension callers get single-attempt semantics (no key, so the receipt is dropped once closed); the bundled browser sends a key.
+    return { account: block?.account ?? null, operationKey: block?.operationKey };
 }
 
 function sendLifecycleError(response, error) {
@@ -337,17 +336,22 @@ router.post('/delete', getFileNameValidationFunction('id'), async (request, resp
         const { account, operationKey } = lifecycleBlock(request);
         const handled = withRoleplayAccount(groupBase(request), account, lease => {
             const { state } = roleplayLease(lease);
-            if (!state.submissions[roleplayHash([state.accountId, 'lifecycle', operationKey])]
-                && !roleplayTrackedInstance(lease, 'group', { groupId: id })) return null;
-            let chats = [];
-            if (roleplayTrackedInstance(lease, 'group', { groupId: id })) {
+            const receipt = operationKey !== undefined && state.submissions[roleplayHash([state.accountId, 'lifecycle', operationKey])];
+            const groupTracked = Boolean(roleplayTrackedInstance(lease, 'group', { groupId: id }));
+            let listed = [];
+            if (groupTracked) {
                 const group = readRoleplayEntityLocked(lease, 'group', id, { storage: true });
                 if (group.changed) saveRoleplayAccount(lease);
-                chats = [...new Set((group.data.chats ?? []).map(chat => path.parse(sanitize(`${chat}.jsonl`)).name).filter(Boolean))];
+                listed = group.data.chats ?? [];
+            } else {
+                // An untracked group may still list recorded chats; an unreadable one lists nothing.
+                try { listed = JSON.parse(fs.readFileSync(pathToGroup, 'utf8'))?.chats ?? []; } catch { listed = []; }
             }
+            const chats = [...new Set((Array.isArray(listed) ? listed : []).map(chat => path.parse(sanitize(`${chat}.jsonl`)).name).filter(Boolean))];
             const locators = chats.map(chat => ({ group: true, chat }));
+            if (!receipt && !groupTracked && !locators.some(locator => roleplayTrackedInstance(lease, 'chat', locator))) return null;
             return commitRoleplayLifecycleLocked(lease, { operationKey, action: 'group-delete', intent: { groupId: id },
-                steps: [{ op: 'delete', kind: 'group', locator: { groupId: id } }, ...locators.map(locator => ({
+                steps: [{ op: groupTracked ? 'delete' : 'discard', kind: 'group', locator: { groupId: id } }, ...locators.map(locator => ({
                     op: roleplayTrackedInstance(lease, 'chat', locator) ? 'delete' : 'discard', kind: 'chat', locator }))],
                 auxiliary: [...locators.flatMap(locator => [{ task: 'chat-memory-remove', locator }, { task: 'chat-recovery-clear', locator }]),
                     { task: 'date-added-remove', entity: 'groups', id: groupFileName }] },
@@ -362,7 +366,9 @@ router.post('/delete', getFileNameValidationFunction('id'), async (request, resp
 
     try {
         // Delete group chats
-        const group = JSON.parse(fs.readFileSync(pathToGroup, 'utf8'));
+        // An unreadable group file lists no chats; the file itself still goes.
+        let group = null;
+        try { group = JSON.parse(fs.readFileSync(pathToGroup, 'utf8')); } catch (error) { if (error.code === 'ENOENT') throw error; }
         /** @type {ReturnType<typeof createGroupChatTarget>[]} */
         let recoveryTargets = [];
         const chatFiles = group && Array.isArray(group.chats) ? group.chats.map(chat => sanitize(`${chat}.jsonl`)) : [];

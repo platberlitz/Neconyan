@@ -84,3 +84,30 @@ test('reset waits for an unsettled Roleplay operation', async t => {
     assert.throws(() => resetRoleplayAccount(f.scope, null, 'reset'), { code: 'ROLEPLAY_RECOVERY_REQUIRED' });
     assert.equal(readRoleplayAccount(f.scope).status, 'ready');
 });
+
+test('retiring a deleted user keeps files, and recreation re-identifies them under a new account', async t => {
+    const f = fixture(t, false, 'fixture');
+    const before = readRoleplayChat(f.scope, f.locator);
+    const { prepareNativeChatWrite, publishNativeChatWrite } = await import('../src/endpoints/chats.js');
+    commitSingleChatWrite(f.scope, f.input(), { prepare: prepareNativeChatWrite, publish: publishNativeChatWrite });
+    assert.match(fs.readFileSync(f.filename, 'utf8'), /neconyan_roleplay/);
+    resetRoleplayAccount(f.scope, null, 'retire');
+    assert.ok(fs.existsSync(f.filename));
+    assert.throws(() => stateOf(f), { code: 'ROLEPLAY_ACCOUNT_UNAVAILABLE' });
+    assert.equal(bootstrapRoleplayAccount({ owner: 'fixture', directories: f.scope.directories }, host), null);
+    const next = recreateRoleplayAccount(f.scope);
+    assert.notEqual(next.accountId, f.scope.accountId);
+    // The file still carries the old marker; it now starts a new identity instead of being refused as foreign.
+    const after = readRoleplayChat(next, f.locator);
+    assert.notEqual(after.instanceId, before.instanceId);
+});
+
+test('imports after a reset write files whose paths the old epoch tracked', async t => {
+    const { importUserFile } = await import('../src/endpoints/users-private.js');
+    const f = fixture(t, false, 'fixture');
+    const bytes = fs.readFileSync(f.filename);
+    readRoleplayChat(f.scope, f.locator);
+    const next = resetRoleplayAccount(f.scope, null, 'reset');
+    assert.equal(importUserFile(next, f.filename, bytes), true);
+    assert.ok(readRoleplayChat(next, f.locator).instanceId);
+});

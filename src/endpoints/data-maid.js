@@ -5,7 +5,7 @@ import express from 'express';
 import mime from 'mime-types';
 import { getSettingsBackupFilePrefix } from './settings.js';
 import { CHAT_BACKUPS_PREFIX, roleplayNativeHost } from './chats.js';
-import { assertUntrackedRoleplayFiles, roleplayFileLocator, roleplayLease, withRoleplayAccount } from '../roleplay-store.js';
+import { assertUntrackedRoleplayFiles, roleplayAccountBase, roleplayAccountStamp, roleplayFileLocator, roleplayLease, withRoleplayAccount } from '../roleplay-store.js';
 import { commitRoleplayLifecycleLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
 import { isPathUnderParent, recoverFileWriteSync, tryParse } from '../util.js';
 import { SETTINGS_FILE } from '../constants.js';
@@ -83,6 +83,7 @@ const sha256 = str => crypto.createHash('sha256').update(str).digest('hex');
  * @typedef {object} DataMaidTokenEntry
  * @property {string} handle - The user's handle or identifier.
  * @property {{path: string, hash: string}[]} paths - The list of file paths and their hashes that can be cleaned up.
+ * @property {{ accountId: string, dataEpoch: number } | null} stamp - Protected account stamp at report time.
  */
 
 /**
@@ -658,7 +659,7 @@ export class DataMaidService {
      * @param {DataMaidRawReport} report - The report containing loose user data.
      * @returns {string} A unique token.
      */
-    static generateToken(handle, report) {
+    static generateToken(handle, report, stamp = null) {
         // Remove any existing token for this user
         for (const [token, entry] of this.TOKENS.entries()) {
             if (entry.handle === handle) {
@@ -669,6 +670,7 @@ export class DataMaidService {
         const token = crypto.randomBytes(32).toString('hex');
         const tokenEntry = {
             handle,
+            stamp,
             paths: Object.values(report).filter(v => Array.isArray(v)).flat().map(x => ({ path: x, hash: sha256(x) })),
         };
         this.TOKENS.set(token, tokenEntry);
@@ -681,9 +683,10 @@ export class DataMaidService {
  * untracked account files are proved untracked under the same account lock; other loose files are ordinary storage.
  * @param {{ owner: string, directories: import('../users.js').UserDirectoryList }} base Account scope
  * @param {string[]} files Absolute paths from the report
+ * @param {{ accountId: string, dataEpoch: number } | null} [stamp] Account stamp captured with the report
  */
-export function deleteDataMaidFiles(base, files) {
-    withRoleplayAccount(base, null, lease => {
+export function deleteDataMaidFiles(base, files, stamp = null) {
+    withRoleplayAccount(base, stamp, lease => {
         const { scope } = roleplayLease(lease);
         const steps = [];
         const auxiliary = [];
@@ -703,7 +706,7 @@ export function deleteDataMaidFiles(base, files) {
         if (steps.length) {
             // ponytail: Data Maid tokens are single-use in memory, so a fresh key per request is enough.
             commitRoleplayLifecycleLocked(lease, {
-                operationKey: crypto.randomUUID(), action: 'data-maid-delete',
+                action: 'data-maid-delete',
                 intent: { locators: steps.map(step => [step.kind, step.locator]) }, steps, auxiliary,
             }, roleplayNativeHost);
         }
@@ -723,7 +726,8 @@ router.post('/report', async (req, res) => {
         const rawReport = await dataMaid.generateReport();
 
         const report = await dataMaid.sanitizeReport(rawReport);
-        const token = DataMaidService.generateToken(req.user.profile.handle, rawReport);
+        const account = roleplayAccountBase(req.user.directories);
+        const token = DataMaidService.generateToken(req.user.profile.handle, rawReport, account ? roleplayAccountStamp(account) : null);
 
         return res.json({ report, token });
     } catch (error) {
@@ -849,7 +853,7 @@ router.post('/delete', async (req, res) => {
             files.push(fileEntry.path);
         }
 
-        deleteDataMaidFiles({ owner: req.user.profile.handle, directories: req.user.directories }, files);
+        deleteDataMaidFiles({ owner: req.user.profile.handle, directories: req.user.directories }, files, tokenEntry.stamp ?? null);
         return res.sendStatus(204);
     } catch (error) {
         console.error('[Data Maid] Error deleting files:', error);

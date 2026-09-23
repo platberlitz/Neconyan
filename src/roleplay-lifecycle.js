@@ -321,22 +321,9 @@ function applyPendingGroupUpdate(lease) {
     if (!file || !isDeepStrictEqual(file.physical, pending.before.physical)
         || (pending.phase === 'group-applied' && file.rawHash !== pending.after.rawHash)
         || (pending.appliedPhysical && !isDeepStrictEqual(file.physical, pending.appliedPhysical))) throw conflict();
-    if (file.rawHash === pending.before.rawHash && pending.rawChanged) {
-        const payload = groupUpdatePayload(lease, pending);
-        file = withChatFileLocks([filename], () => {
-            const current = readRoleplayFile(filename, CHAT_LIMIT);
-            if (!sameObservation(current, pending.before)) throw conflict();
-            tryWriteFileSync(filename, payload.bytes, { mode: 0o600 }, {
-                preserveFileIdentity: true, invalidateBeforeWrite: true, preserveOnWriteError: true,
-                expectedFileIdentity: { dev: BigInt(current.physical.dev), ino: BigInt(current.physical.ino),
-                    birthtimeNs: BigInt(current.physical.birthtimeNs) },
-                expectedFileHash: current.rawHash, maxFileBytes: CHAT_LIMIT,
-            });
-            const written = readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
-            if (!written || written.rawHash !== pending.after.rawHash
-                || !isDeepStrictEqual(written.physical, pending.before.physical)) throw conflict();
-            return written;
-        });
+    const staged = pending.rawChanged && file.rawHash !== pending.after.rawHash ? groupUpdatePayload(lease, pending) : null;
+    if (staged && (file.rawHash === pending.before.rawHash || isOwnTornWrite(file, pending.before, staged.bytes))) {
+        file = withChatFileLocks([filename], () => rewriteInPlace(filename, staged.bytes, pending.before));
     } else if (file.rawHash !== pending.after.rawHash) {
         // A deleted, replaced, corrupt, or third-state file is retained with its pending evidence.
         throw conflict();
@@ -695,18 +682,10 @@ function applyPendingChatImport(lease, host) {
         const group = pending.group;
         const filename = groupUpdatePath(scope, group.locator);
         let file = readRoleplayFile(filename, CHAT_LIMIT);
-        if (!group.appliedPhysical && sameObservation(file, group.before)) {
-            const payload = readRoleplayPayload(lease, pending.id, group.after.payload, group.after.rawHash, CHAT_LIMIT);
-            file = withChatFileLocks([filename], () => {
-                const current = readRoleplayFile(filename, CHAT_LIMIT);
-                if (!sameObservation(current, group.before)) throw conflict();
-                tryWriteFileSync(filename, payload.bytes, { mode: 0o600 }, {
-                    preserveFileIdentity: true, invalidateBeforeWrite: true, preserveOnWriteError: true,
-                    expectedFileIdentity: { dev: BigInt(current.physical.dev), ino: BigInt(current.physical.ino),
-                        birthtimeNs: BigInt(current.physical.birthtimeNs) }, expectedFileHash: current.rawHash, maxFileBytes: CHAT_LIMIT,
-                });
-                return readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
-            });
+        const payload = !group.appliedPhysical && file?.rawHash !== group.after.rawHash
+            ? readRoleplayPayload(lease, pending.id, group.after.payload, group.after.rawHash, CHAT_LIMIT) : null;
+        if (payload && (sameObservation(file, group.before) || isOwnTornWrite(file, group.before, payload.bytes))) {
+            file = withChatFileLocks([filename], () => rewriteInPlace(filename, payload.bytes, group.before));
         } else file = readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
         if (!file || file.rawHash !== group.after.rawHash || !isDeepStrictEqual(file.physical, group.before.physical)
             || (group.appliedPhysical && !isDeepStrictEqual(file.physical, group.appliedPhysical))) throw conflict();
@@ -1015,6 +994,48 @@ function finishedLifecycle(state, pending) {
     return next;
 }
 
+/**
+ * Publishes staged bytes through a sibling temporary file and a rename, so a failed or interrupted write never
+ * leaves a torn protected file. `accept(current)` runs under the chat lock just before the rename.
+ */
+function publishThroughTemporary(filename, bytes, tag, accept) {
+    const temporary = path.join(path.dirname(filename), `.neconyan-roleplay-${tag}.tmp`);
+    fs.rmSync(temporary, { force: true });
+    if (tryWriteFileSync(temporary, bytes, { mode: 0o600 }, { expectedFileAbsent: true, durable: true }) === false) {
+        throw roleplayError('ROLEPLAY_WRITE_UNCERTAIN', 'The protected file could not be written.', 503);
+    }
+    try {
+        accept(readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: true }));
+        fs.renameSync(temporary, filename);
+    } catch (error) {
+        fs.rmSync(temporary, { force: true });
+        throw error;
+    }
+    fsyncDirectorySync(path.dirname(filename));
+    return readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
+}
+
+/** The identity-preserving writer's own interrupted state: same file, first byte still inverted. */
+function isOwnTornWrite(file, before, bytes) {
+    return Boolean(file && before && bytes.length && file.bytes.length && isDeepStrictEqual(file.physical, before.physical)
+        && file.bytes[0] === (bytes[0] ^ 0xFF));
+}
+
+/**
+ * Rewrites a protected file in place, keeping its identity. A write that failed or was interrupted part-way
+ * leaves the inverted first byte, which this recognises and finishes from the staged copy instead of refusing.
+ */
+function rewriteInPlace(filename, bytes, before) {
+    const current = readRoleplayFile(filename, CHAT_LIMIT);
+    if (!sameObservation(current, before) && !isOwnTornWrite(current, before, bytes)) throw conflict();
+    tryWriteFileSync(filename, bytes, { mode: 0o600 }, {
+        preserveFileIdentity: true, invalidateBeforeWrite: true, preserveOnWriteError: true,
+        expectedFileIdentity: Object.fromEntries(Object.entries(before.physical).map(([name, value]) => [name, BigInt(value)])),
+        expectedFileHash: current.rawHash, maxFileBytes: CHAT_LIMIT,
+    });
+    return readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
+}
+
 function writeLifecycleContents(lease, pending, step) {
     const { scope } = roleplayLease(lease);
     const filename = roleplayEntityPath(scope, step.kind, step.locator);
@@ -1029,16 +1050,16 @@ function writeLifecycleContents(lease, pending, step) {
             step.physical = file.physical;
             return true;
         }
-        if (step.op === 'create' ? file : !sameObservation(file, step.before)) throw conflict();
         const { bytes } = readRoleplayPayload(lease, pending.id, step.after.payload, step.after.rawHash, CHAT_LIMIT);
-        createRoleplayDirectory(path.dirname(filename), scope.directories.root);
-        const written = step.op === 'create'
-            ? tryWriteFileSync(filename, bytes, {}, { expectedFileAbsent: true, durable: true, preserveOnCreateError: true })
-            : tryWriteFileSync(filename, bytes, {}, { preserveFileIdentity: true, invalidateBeforeWrite: true, preserveOnWriteError: true,
-                expectedFileIdentity: Object.fromEntries(Object.entries(step.before.physical).map(([name, value]) => [name, BigInt(value)])),
-                expectedFileHash: step.before.rawHash, maxFileBytes: CHAT_LIMIT });
-        if (written === false) throw roleplayError('ROLEPLAY_WRITE_UNCERTAIN', 'The protected file could not be written.', 503);
-        const saved = readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
+        let saved;
+        if (step.op === 'update') saved = rewriteInPlace(filename, bytes, step.before);
+        else {
+            if (file) throw conflict();
+            createRoleplayDirectory(path.dirname(filename), scope.directories.root);
+            saved = publishThroughTemporary(filename, bytes, `${pending.id}-${step.after.payload}`, current => {
+                if (current) throw conflict();
+            });
+        }
         if (saved?.rawHash !== step.after.rawHash) throw conflict();
         step.physical = saved.physical;
         return true;
@@ -1116,7 +1137,7 @@ function applyLifecycleTask(scope, task, host) {
             else removeEntityDateAdded(dateRoot, task.entity, task.id);
         } catch (error) { console.warn('Could not update date-added metadata.', error); }
     } else if (task.task === 'chat-memory-rename') renameChatMemory(scope.directories, task.from, task.to, { resume: true });
-    else if (task.task === 'character-memory-rename') renameCharacterMemory(scope.directories, task.from, task.to);
+    else if (task.task === 'character-memory-rename') renameCharacterMemory(scope.directories, task.from, task.to, { resume: true });
     else if (task.task === 'chat-folder-move' || task.task === 'chat-folder-remove') moveChatFolder(scope, task);
     else runChatRecoveryBestEffort(() => clearChatRecoveryState(lifecycleRecoveryTarget(scope, task.locator, host)),
         'Failed to clear chat recovery state after deletion.');
@@ -1137,7 +1158,22 @@ function applyPendingLifecycle(lease, host = {}) {
     for (const task of pending.auxiliary) applyLifecycleTask(scope, task, host);
     Object.assign(state, finishedLifecycle(state, pending));
     saveRoleplayAccount(lease);
+    cleanupRoleplayReceiptsLocked(lease, pending.operationKeyHash);
     return lifecycleResult(pending);
+}
+
+/**
+ * Drop the closed receipt of a server-generated key that no client holds, after its staged files are gone.
+ * Nobody can replay such a key, so keeping it would only grow the ledger every later save rehashes.
+ */
+export function forgetRoleplayReceiptLocked(lease, kind, operationKey) {
+    const { state } = roleplayLease(lease);
+    const keyHash = roleplayHash([state.accountId, kind, operationKey]);
+    cleanupRoleplayReceiptsLocked(lease, keyHash);
+    const persisted = JSON.parse(roleplayLease(lease).stateFile.bytes.toString('utf8')).state;
+    if (persisted.pending !== null || persisted.submissions[keyHash]?.state !== 'closed' || state.submissions[keyHash]?.state !== 'closed') return;
+    delete state.submissions[keyHash];
+    saveRoleplayAccount(lease);
 }
 
 /**
@@ -1145,6 +1181,13 @@ function applyPendingLifecycle(lease, host = {}) {
  * with the same operation key returns the original receipt instead of repeating or recreating anything.
  */
 export function commitRoleplayLifecycleLocked(lease, { operationKey, action, intent, steps, auxiliary = [] }, host = {}) {
+    // No key: a one-shot server operation whose receipt is dropped once it closes (an interrupted one is finished at startup).
+    if (operationKey === undefined) {
+        const key = crypto.randomUUID();
+        const result = commitRoleplayLifecycleLocked(lease, { operationKey: key, action, intent, steps, auxiliary }, host);
+        forgetRoleplayReceiptLocked(lease, 'lifecycle', key);
+        return result;
+    }
     confirmRoleplayAccount(lease);
     const { state } = roleplayLease(lease);
     if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 256 || !/^[a-z][a-z-]{0,63}$/.test(action)
@@ -1165,8 +1208,8 @@ export function commitRoleplayLifecycleLocked(lease, { operationKey, action, int
     }
     const planned = steps.map((step, index) => planLifecycleStep(lease, step, index)).filter(Boolean);
     if (!planned.some(step => step.op !== 'discard')) throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'There is no protected file to change.', 404);
-    for (const task of auxiliary) {
-        if (task.task === 'chat-memory-rename' && chatMemoryExists(roleplayLease(lease).scope.directories, task.to)) {
+    for (const step of planned) {
+        if (step.op === 'move' && step.kind === 'chat' && chatMemoryExists(roleplayLease(lease).scope.directories, step.destination)) {
             throw roleplayError('ROLEPLAY_TARGET_EXISTS', 'A Mewmory archive already exists for that chat name.');
         }
     }

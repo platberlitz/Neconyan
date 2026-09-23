@@ -840,7 +840,12 @@ async function migrateConversationOwnership() {
 
 async function initialiseRoleplayStorage() {
     for (const directories of await getUserDirectoriesList()) {
-        bootstrapRoleplayAccount({ owner: path.basename(directories.root), directories }, roleplayNativeHost);
+        try {
+            bootstrapRoleplayAccount({ owner: path.basename(directories.root), directories }, roleplayNativeHost);
+        } catch (error) {
+            // The unfinished record stays on disk, so this account keeps refusing protected writes; other accounts start.
+            console.error(`Roleplay storage for ${path.basename(directories.root)} needs recovery; its protected writes stay refused.`, error);
+        }
     }
 }
 

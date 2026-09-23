@@ -898,7 +898,6 @@ export async function getGroupChat(groupId, reload = false, { switchMenu = true,
     await unshallowGroupMembers(groupId);
     if (!stillCurrent()) return;
 
-    let createdChat = false;
     if (!group.chat_id) {
         const freshChatId = humanizedDateTime();
         group.chat_id = freshChatId;
@@ -906,14 +905,15 @@ export async function getGroupChat(groupId, reload = false, { switchMenu = true,
         group.chats.push(freshChatId);
         await editGroup(group.id, true, false);
         if (!stillCurrent(freshChatId)) return;
-        createdChat = true;
     }
 
     const chat_id = group.chat_id;
     let data;
     let loaded;
     try {
-        loaded = await loadGroupChat(chat_id, newlyCreated || createdChat);
+        // A listed chat with no file yet (API-created group, or never saved) opens as an empty vacancy;
+        // the server only offers one when no live record owns that name.
+        loaded = await loadGroupChat(chat_id, true);
         if (!stillCurrent(chat_id)) return;
         data = loaded.records;
     } catch (error) {

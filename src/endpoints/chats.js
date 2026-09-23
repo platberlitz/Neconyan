@@ -12,10 +12,10 @@ import _ from 'lodash';
 import { acquireChatFileLock, withChatFileLocks } from '../chat-file-lock.js';
 import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
 import { renameChatFile } from '../chat-rename.js';
-import { captureBranchMemory, removeChatMemory, renameChatMemory } from '../mewmory/store.js';
+import { captureBranchMemory, chatMemoryExists, removeChatMemory, renameChatMemory } from '../mewmory/store.js';
 import { confirmRoleplayAccount, readRoleplayFile, readRoleplayWriteJournal, roleplayAvatarOwner, roleplayError, roleplayHash, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccount, withUntrackedRoleplayFiles } from '../roleplay-store.js';
 import { normaliseRoleplayLocator, readRoleplayChatLocked, roleplayChatPath, ROLEPLAY_METADATA_KEY } from '../generation/roleplay-source.js';
-import { cleanupRoleplayReceiptsLocked, commitRoleplayLifecycleLocked, commitSingleChatImport, commitSingleChatWriteLocked, repairSingleChatWriteLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
+import { cleanupRoleplayReceiptsLocked, commitRoleplayLifecycleLocked, commitSingleChatImport, forgetRoleplayReceiptLocked, commitSingleChatWriteLocked, repairSingleChatWriteLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
 import {
     clearChatRecoveryState,
     createCharacterChatTarget,
@@ -1191,7 +1191,8 @@ function roleplayRequest(request, group, saving = false) {
             || !Number.isSafeInteger(block.account.dataEpoch) || block.account.dataEpoch < 1) throw invalid();
     }
     if (saving) {
-        if (typeof block.operationKey !== 'string' || !block.operationKey || block.operationKey.length > 256
+        // 'job:' keys belong to server job completions; a client save must not satisfy one.
+        if (typeof block.operationKey !== 'string' || !block.operationKey || block.operationKey.length > 256 || block.operationKey.startsWith('job:')
             || Object.hasOwn(block, 'source') === Object.hasOwn(block, 'vacancy')) throw invalid();
         if (Object.hasOwn(block, 'source')) {
             if (!isPlainObject(block.source) || Object.keys(block.source).some(key => !['instanceId', 'revision', 'rawHash'].includes(key))
@@ -1474,7 +1475,7 @@ function prepareChatSave(chatData, integrity = uuidv4()) {
 }
 
 /** Prepare once; the private lifecycle coordinator durably stages these exact bytes before publication. */
-export function prepareNativeChatWrite(records, { beforeBytes = null, marker } = {}) {
+export function prepareNativeChatWrite(records, { beforeBytes = null, marker, force = false, allowShrink = false } = {}) {
     if (!isValidChatSavePayload(records)) throw new InvalidChatDataError('Invalid prepared chat records.');
     const detached = parseChatJsonl(records.map(record => JSON.stringify(record)).join('\n'));
     if (detached.status !== 'ok' || !isDeepStrictEqual(detached.records, records)) throw new InvalidChatDataError('Prepared chat records must contain only JSON values.');
@@ -1500,7 +1501,11 @@ export function prepareNativeChatWrite(records, { beforeBytes = null, marker } =
     }
     const output = structuredClone(inputRecords);
     output[0].chat_metadata.neconyan_roleplay = structuredClone(marker);
-    return { changed: true, inputRecords, ...prepareChatSave(output) };
+    const prepared = { changed: true, inputRecords, ...prepareChatSave(output) };
+    // Publication enforces the same rule; refusing here keeps a destructive write from ever becoming pending.
+    const reason = before && getDestructiveChatSaveReason(prepared.records, beforeBytes.toString('utf8'));
+    if (reason && !force && !allowShrink) throw new DestructiveChatSaveError(reason, 'The save would remove existing chat messages.');
+    return prepared;
 }
 
 /** Preserve the browser's existing display-equivalent no-op and reject policy errors before admission. */
@@ -1514,10 +1519,7 @@ export function prepareBrowserChatWrite(records, { beforeBytes = null, marker, f
         return { changed: false, inputRecords: structuredClone(before.records), records: before.records,
             serialized: beforeBytes.toString('utf8'), integrity: before.records[0].chat_metadata.integrity ?? '' };
     }
-    const prepared = prepareNativeChatWrite(detached.records, { beforeBytes, marker });
-    const reason = before && getDestructiveChatSaveReason(prepared.records, beforeBytes.toString('utf8'));
-    if (reason && !force && !allowShrink) throw new DestructiveChatSaveError(reason, 'The save would remove existing chat messages.');
-    return prepared;
+    return prepareNativeChatWrite(detached.records, { beforeBytes, marker, force, allowShrink });
 }
 
 // Startup reconciliation uses this host too, so lifecycle replays keep recovery sidecars and deferred backups consistent.
@@ -1845,20 +1847,27 @@ function protectedChatLifecycle(request, { group, chat, destination = null, chat
     }
     const block = request.body?.roleplay;
     if (block !== undefined && (!isPlainObject(block) || Object.keys(block).some(key => !['account', 'operationKey'].includes(key))
-        || (block.operationKey !== undefined && (typeof block.operationKey !== 'string' || !block.operationKey || block.operationKey.length > 200))
+        || (block.operationKey !== undefined && (typeof block.operationKey !== 'string' || !block.operationKey || block.operationKey.length > 200
+            || block.operationKey.startsWith('job:')))
         || (block.account !== undefined && (!isPlainObject(block.account) || typeof block.account.accountId !== 'string'
             || !ROLEPLAY_UUID.test(block.account.accountId) || !Number.isSafeInteger(block.account.dataEpoch) || block.account.dataEpoch < 1)))) {
         throw roleplayError('ROLEPLAY_INVALID', 'Invalid chat lifecycle authority.', 400);
     }
     const locator = normaliseRoleplayLocator(group ? { group: true, chat } : { group: false, chat, avatar: request.body.avatar_url });
     const target = destination === null ? null : { ...locator, chat: destination };
-    // ponytail: callers without a key get a one-shot key; the browser sends a stable key so transport retries replay the receipt.
+    // Callers without a key get a one-shot key whose receipts are dropped once closed; the browser sends a stable key so retries replay.
+    const oneShot = block?.operationKey === undefined;
     const operationKey = block?.operationKey ?? crypto.randomUUID();
     return withRoleplayAccount(base, block?.account ?? null, (lease, currentAccount) => {
         confirmRoleplayAccount(lease);
         const { state } = roleplayLease(lease);
         const receipt = state.submissions[roleplayHash([state.accountId, 'lifecycle', operationKey])];
         if (!receipt && !state.paths[roleplayPathKey(state, 'chat', locator)]) return null;
+        if (!receipt && target && (state.paths[roleplayPathKey(state, 'chat', target)]?.instanceId
+            || fs.existsSync(roleplayChatPath(base, target)) || chatMemoryExists(base.directories, target))) {
+            // Refuse a taken name before the identity stamp below changes the source chat.
+            throw roleplayError('ROLEPLAY_TARGET_EXISTS', 'A chat with that name already exists.');
+        }
         if (!receipt && target && Number.isSafeInteger(chatIdHash) && roleplayTrackedInstance(lease, 'chat', locator)) {
             // Legacy renames stamp a stable chat identity first; protected chats record that as its own storage write.
             const saved = readRoleplayChatLocked(lease, locator);
@@ -1874,6 +1883,7 @@ function protectedChatLifecycle(request, { group, chat, destination = null, chat
                         rawHash: saved.rawHash, locator, dependencies: [] },
                     records, force: false, allowShrink: false, backup: { deferBackup: true },
                 }, roleplayNativeHost);
+                if (oneShot) forgetRoleplayReceiptLocked(lease, 'chat-write', `${operationKey}:identity`);
             }
         }
         const result = commitRoleplayLifecycleLocked(lease, {
@@ -1885,6 +1895,7 @@ function protectedChatLifecycle(request, { group, chat, destination = null, chat
                 ? [{ task: 'chat-memory-rename', from: locator, to: target }]
                 : [{ task: 'chat-memory-remove', locator }, { task: 'chat-recovery-clear', locator }],
         }, { ...roleplayNativeHost, recoveryTarget: value => createChatRecoveryTarget(request, value.group, value.chat + '.jsonl') });
+        if (oneShot) forgetRoleplayReceiptLocked(lease, 'lifecycle', operationKey);
         return { ok: true, roleplay: { account: currentAccount, operationKey, result } };
     });
 }

@@ -22,7 +22,8 @@ const { createConversationImageGenerator } = await import('../src/generation/con
 after(() => cancelAutoSaves());
 
 function makeDirectories() {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'conversation-roleplay-source-'));
+    // The protected store lives beside the account root, so give each account its own parent folder.
+    const root = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'conversation-roleplay-source-')), 'account');
     for (const name of ['characters', 'chats', 'groupChats', 'groups', 'userImages']) fs.mkdirSync(path.join(root, name), { recursive: true });
     return { root, characters: path.join(root, 'characters'), chats: path.join(root, 'chats'), groupChats: path.join(root, 'groupChats'), groups: path.join(root, 'groups'), userImages: path.join(root, 'userImages') };
 }

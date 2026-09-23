@@ -105,3 +105,35 @@ test('a completed job replays after its chat is deleted without recreating it', 
     const receipts = Object.values(readRoleplayAccount(f.scope).submissions).filter(item => item.state === 'closed');
     assert.ok(receipts.length >= 2);
 });
+
+test('jobs follow a renamed chat, may shrink explicit ranges, normalise swipes and refuse a tampered ledger intent', async t => {
+    const f = fixture(t);
+    for (let index = 0; index < 8; index++) {
+        const next = admit(f, `grow-${index}`, 'append');
+        applyRoleplayJobEffect(f.scope, stamp(f.scope), { operationKey: `grow-${index}`, jobId: next.jobId, output: { message: { name: 'Nova', mes: `Line ${index}` } } }, host);
+    }
+    const count = messages(f).length;
+    const replace = admit(f, 'shrink', 'replace', { range: { start: 0, count: count - 1 } });
+    applyRoleplayJobEffect(f.scope, stamp(f.scope), { operationKey: 'shrink', jobId: replace.jobId, output: { messages: [{ name: 'Nova', mes: 'Summary' }] } }, host);
+    assert.deepEqual(messages(f).map(message => message.mes), ['Summary', 'Line 7']);
+    assert.equal(readRoleplayAccount(f.scope).pending, null);
+
+    const swipe = admit(f, 'swipe', 'swipe', { message: 1 });
+    const { commitRoleplayLifecycleLocked } = await import('../src/roleplay-lifecycle.js');
+    const { withRoleplayAccount } = await import('../src/roleplay-store.js');
+    const destination = { ...f.locator, chat: 'Renamed' };
+    withRoleplayAccount(f.scope, stamp(f.scope), lease => commitRoleplayLifecycleLocked(lease, { operationKey: 'rename', action: 'chat-rename',
+        intent: { destination }, steps: [{ op: 'move', kind: 'chat', locator: f.locator, destination }] }));
+    applyRoleplayJobEffect(f.scope, stamp(f.scope), { operationKey: 'swipe', jobId: swipe.jobId, output: { text: 'After rename' } }, host);
+    const renamed = readRoleplayChat(f.scope, destination).records.slice(1);
+    assert.equal(renamed[1].mes, 'After rename');
+    assert.equal(renamed[1].swipe_info.length, renamed[1].swipes.length);
+
+    const tampered = admit({ ...f, locator: destination }, 'tampered', 'append');
+    const ledger = `${f.scope.directories.root}/jobs/index.json`;
+    const store = JSON.parse(fs.readFileSync(ledger, 'utf8'));
+    Object.values(store.jobs).find(job => job.id === tampered.jobId).intent.request = { prompt: 'swapped' };
+    fs.writeFileSync(ledger, JSON.stringify(store));
+    assert.throws(() => applyRoleplayJobEffect(f.scope, stamp(f.scope), { operationKey: 'tampered', jobId: tampered.jobId, output: { message: { mes: 'x' } } }, host),
+        { code: 'ROLEPLAY_JOB_REJECTED', message: /intent it was admitted with/ });
+});

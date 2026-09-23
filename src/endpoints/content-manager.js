@@ -520,7 +520,7 @@ function publishProtectedCard(account, bytes, targetPath, action, legacyWrite) {
     withRoleplayAccount(account, null, lease => {
         const avatar = path.basename(targetPath);
         const create = () => commitRoleplayLifecycleLocked(lease, {
-            operationKey: crypto.randomUUID(), action, intent: { avatar, rawHash: getSha256(bytes) },
+            action, intent: { avatar, rawHash: getSha256(bytes) },
             steps: [{ op: 'create', kind: 'character', locator: { avatar }, bytes }],
         });
         if (!validRoleplayAvatar(avatar)) {
@@ -551,7 +551,7 @@ function retireProtectedCard(account, source, expectedHash) {
             return fs.unlinkSync(source);
         }
         commitRoleplayLifecycleLocked(lease, {
-            operationKey: crypto.randomUUID(), action: 'character-retire', intent: { ...locator, rawHash: expectedHash },
+            action: 'character-retire', intent: { ...locator, rawHash: expectedHash },
             steps: [{ op: 'delete', kind: 'character', locator }],
         });
     });

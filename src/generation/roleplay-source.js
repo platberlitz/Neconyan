@@ -66,8 +66,12 @@ function enrol(lease, kind, locator, file, contentHash, marker = null) {
         }
         return { instanceId: current.instanceId, resource, changed: false };
     }
-    if (marker) throw roleplayError('ROLEPLAY_FOREIGN_SOURCE', 'Imported native metadata cannot establish a chat identity. Import this chat as a new copy.');
-    if (Object.values(state.resources).some(resource => isDeepStrictEqual(resource.head.physical, file.physical))) {
+    const retired = value => value && (value.accountId !== state.accountId || value.dataEpoch !== state.dataEpoch);
+    // A marker written by this store before a reset names a retired resource; the file starts a new identity in this epoch.
+    if (marker && !retired(state.resources[marker.instanceId])) {
+        throw roleplayError('ROLEPLAY_FOREIGN_SOURCE', 'Imported native metadata cannot establish a chat identity. Import this chat as a new copy.');
+    }
+    if (Object.values(state.resources).some(resource => !retired(resource) && isDeepStrictEqual(resource.head.physical, file.physical))) {
         throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'This file already has a protected identity at another location.');
     }
     const instanceId = crypto.randomUUID();

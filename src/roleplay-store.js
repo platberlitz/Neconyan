@@ -822,7 +822,7 @@ const RESET_KEYS = ['schema', 'kind', 'id', 'mode', 'dataEpoch', 'phase'];
 
 function validateResetTransaction(pending, state) {
     if (Object.keys(pending).length !== RESET_KEYS.length || RESET_KEYS.some(name => !Object.hasOwn(pending, name))
-        || pending.schema !== 1 || !UUID.test(pending.id) || !['reset', 'purge'].includes(pending.mode)
+        || pending.schema !== 1 || !UUID.test(pending.id) || !['reset', 'purge', 'retire'].includes(pending.mode)
         || pending.dataEpoch !== state.dataEpoch + 1 || pending.phase !== 'prepared' || state.status !== 'maintenance') throw damaged();
 }
 
@@ -831,14 +831,18 @@ function finishAccountReset(scope, root, identity, state, stateFile) {
     // Old jobs and artefacts stay beside the ledger; late callbacks then find neither their job nor their epoch.
     retireJobStore(scope.directories, path.join(root, 'retired', `${state.dataEpoch}-${pending.id}`, 'jobs'));
     const userRoot = scope.directories.root;
-    for (const name of fs.existsSync(userRoot) ? fs.readdirSync(userRoot) : []) {
+    // 'retire' (user deleted without purge) keeps the files; they start new identities if the name is created again.
+    for (const name of pending.mode !== 'retire' && fs.existsSync(userRoot) ? fs.readdirSync(userRoot) : []) {
         if (name !== 'jobs') fs.rmSync(path.join(userRoot, name), { recursive: true, force: true });
     }
     // ponytail: a purge leaves the empty jobs lock folder; account recreation reuses it.
     const resources = Object.fromEntries(Object.entries(state.resources)
         .map(([id, resource]) => [id, resource.status === 'live' ? { ...resource, status: 'deleted' } : resource]));
+    // Reservations held by admitted work of the old epoch are released; that work can no longer complete.
+    const submissions = Object.fromEntries(Object.entries(state.submissions).map(([id, receipt]) =>
+        [id, ['preparing', 'accepted'].includes(receipt.state) ? { ...receipt, state: 'void', reservedReceiptBytes: 0 } : receipt]));
     const next = { ...state, revision: state.revision + 1, dataEpoch: pending.dataEpoch,
-        status: pending.mode === 'purge' ? 'deleted' : 'ready', paths: {}, resources, pending: null };
+        status: pending.mode === 'reset' ? 'ready' : 'deleted', paths: {}, resources, submissions, pending: null };
     save(root, identity, next, stateFile);
     const key = path.resolve(userRoot);
     if (next.status === 'ready') observedAccounts.set(key, stamp(scope, next));
@@ -847,11 +851,11 @@ function finishAccountReset(scope, root, identity, state, stateFile) {
 }
 
 /**
- * Replace the account's saved data with a new data epoch ('reset') or retire it ('purge').
+ * Replace the account's saved data with a new data epoch ('reset'), or retire the account with ('purge') or without ('retire') its files.
  * The maintenance record is durable before any file is touched; receipts are kept.
  */
 export function resetRoleplayAccount(base, expected, mode) {
-    if (!['reset', 'purge'].includes(mode)) throw new TypeError('Unknown account reset mode.');
+    if (!['reset', 'purge', 'retire'].includes(mode)) throw new TypeError('Unknown account reset mode.');
     return locked(base, root => {
         const loaded = load(base);
         let { state, stateFile } = loaded;
@@ -859,7 +863,7 @@ export function resetRoleplayAccount(base, expected, mode) {
         if (state.pending?.kind === 'account-reset') {
             if (state.pending.mode !== mode) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'A different account reset is already in progress.');
         } else {
-            if (mode === 'purge' && state.status === 'deleted') return stamp(base, state);
+            if (mode !== 'reset' && state.status === 'deleted') return stamp(base, state);
             assertRoleplayAccountCurrent(stamp(base, state), state);
             if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay operation must settle first.');
             state = { ...state, revision: state.revision + 1, status: 'maintenance',
@@ -876,13 +880,13 @@ export function settleRoleplayAccountReset(base) {
         const loaded = load(base);
         const current = loaded.state.pending?.kind === 'account-reset'
             ? finishAccountReset(base, root, loaded.identity, loaded.state, loaded.stateFile) : stamp(base, loaded.state);
-        const retired = loaded.state.pending?.kind === 'account-reset' ? loaded.state.pending.mode === 'purge' : loaded.state.status === 'deleted';
+        const retired = loaded.state.pending?.kind === 'account-reset' ? loaded.state.pending.mode !== 'reset' : loaded.state.status === 'deleted';
         if (retired) observedAccounts.delete(path.resolve(base.directories.root));
         return retired ? null : current;
     });
 }
 
-/** A retired (purged) account name gets a fresh incarnation with a new account id and data epoch. */
+/** A retired (purged or deleted) account name gets a fresh incarnation with a new account id and data epoch. */
 export function recreateRoleplayAccount(base) {
     return locked(base, root => {
         const loaded = load(base);
@@ -981,6 +985,14 @@ export function roleplayAccountBase(directories) {
     }
 }
 
+/**
+ * The current account stamp, captured when long-running or deferred work starts so its later writes
+ * are refused if the account is reset or re-created in between.
+ */
+export function roleplayAccountStamp(base) {
+    return withRoleplayAccount(base, null, (_lease, current) => ({ accountId: current.accountId, dataEpoch: current.dataEpoch }));
+}
+
 /** Classifies an account file as a protected Roleplay path, or null when it is ordinary storage. */
 export function roleplayFileLocator(scope, filename) {
     const child = key => {
@@ -991,12 +1003,20 @@ export function roleplayFileLocator(scope, filename) {
     const group = child('groups');
     const groupChat = child('groupChats');
     const soloChat = child('chats');
-    if (character && !character.includes(path.sep) && character.toLowerCase().endsWith('.png')) return { kind: 'character', locator: { avatar: character } };
-    if (group && !group.includes(path.sep) && group.endsWith('.json')) return { kind: 'group', locator: { groupId: group.slice(0, -5) } };
-    if (groupChat && !groupChat.includes(path.sep) && groupChat.endsWith('.jsonl')) return { kind: 'chat', locator: { group: true, chat: groupChat.slice(0, -6) } };
+    // Names the store could never track (for example ':' or '?') are ordinary files, never protected ones.
+    if (character && !character.includes(path.sep) && character.toLowerCase().endsWith('.png')) {
+        return safeIdentifier(roleplayAvatarOwner(character)) ? { kind: 'character', locator: { avatar: character } } : null;
+    }
+    if (group && !group.includes(path.sep) && group.endsWith('.json')) {
+        return safeIdentifier(group.slice(0, -5)) ? { kind: 'group', locator: { groupId: group.slice(0, -5) } } : null;
+    }
+    if (groupChat && !groupChat.includes(path.sep) && groupChat.endsWith('.jsonl')) {
+        return safeIdentifier(groupChat.slice(0, -6)) ? { kind: 'chat', locator: { group: true, chat: groupChat.slice(0, -6) } } : null;
+    }
     if (soloChat && soloChat.endsWith('.jsonl') && soloChat.split(path.sep).length === 2) {
         const [avatar, chatFile] = soloChat.split(path.sep);
-        return { kind: 'chat', locator: { group: false, avatar: avatar + '.png', chat: chatFile.slice(0, -6) } };
+        return safeIdentifier(avatar) && safeIdentifier(chatFile.slice(0, -6))
+            ? { kind: 'chat', locator: { group: false, avatar: avatar + '.png', chat: chatFile.slice(0, -6) } } : null;
     }
     return null;
 }
@@ -1006,6 +1026,8 @@ export function assertUntrackedRoleplayFiles(lease, filenames) {
     if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'Pending protected Roleplay work must finish first.');
     for (const filename of filenames) {
         const found = roleplayFileLocator(scope, filename);
+        const relative = path.relative(scope.directories.root, filename);
+        if (!found && relative && !relative.startsWith('..') && !path.isAbsolute(relative)) continue;
         if (!found) throw roleplayError('ROLEPLAY_INVALID', 'Legacy target is outside recognised account data.', 400);
         const { kind, locator } = found;
         const sameProtectedPath = value => {
@@ -1016,18 +1038,20 @@ export function assertUntrackedRoleplayFiles(lease, filenames) {
                         : path.join(scope.directories.chats, roleplayAvatarOwner(saved.avatar), saved.chat + '.jsonl');
             return path.resolve(filename) === path.resolve(expected);
         };
-        if (Object.values(state.resources).some(value => sameProtectedPath(value) || (value.kind === kind && isDeepStrictEqual(value.locator, locator)))
+        // Resources from an earlier account id or data epoch were retired by a reset; they no longer own any path.
+        const current = Object.values(state.resources).filter(value => value.accountId === state.accountId && value.dataEpoch === state.dataEpoch);
+        if (current.some(value => sameProtectedPath(value) || (value.kind === kind && isDeepStrictEqual(value.locator, locator)))
                 || state.paths[roleplayPathKey(state, kind, locator)]
                 || (state.pending?.kind === 'chat-write' && kind === 'chat' && isDeepStrictEqual(state.pending.locator, locator))) {
             throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'Legacy work cannot change an observed Roleplay file.');
         }
-        const journal = readRoleplayWriteJournal(filename);
+        const journal = readRoleplayWriteJournal(filename, { allowMissingParent: true });
         const journalTarget = journal && decodeFileWriteRecovery(journal.bytes, 64 * 1024 * 1024);
         if (journal && !journalTarget) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'Legacy recovery evidence could not be proved untracked.');
         // Aliases (hard links, symlinks) are untrackable; their lstat identity still must not match a protected file.
         const alias = fs.lstatSync(filename, { bigint: true, throwIfNoEntry: false });
         const physicals = [alias && { dev: String(alias.dev), ino: String(alias.ino), birthtimeNs: String(alias.birthtimeNs) }, journal?.physical].filter(Boolean);
-        const protectedPhysicals = Object.values(state.resources).map(value => value.head.physical);
+        const protectedPhysicals = current.map(value => value.head.physical);
         if (state.pending) protectedPhysicals.push(state.pending.before?.physical, state.pending.appliedPhysical, state.pending.journal?.physical);
         if (physicals.some(physical => protectedPhysicals.some(saved => saved && isDeepStrictEqual(physical, saved)))
             || (journalTarget && protectedPhysicals.some(saved => saved && saved.dev === journalTarget.dev && saved.ino === journalTarget.ino

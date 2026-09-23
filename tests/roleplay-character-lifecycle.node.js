@@ -100,3 +100,22 @@ test('a character delete retires the card and chats, and refuses out-of-band cha
     assert.equal(fs.existsSync(path.join(f.scope.directories.characters, 'Nova.png')), false);
     assert.equal(fs.existsSync(path.join(f.scope.directories.chats, 'Nova')), false);
 });
+
+test('a rename retires a vanished protected chat, and a delete removes hard-linked loose chats', async t => {
+    const f = fixture(t, false, 'character-loose');
+    const post = await characterServer(t, f);
+    const chat = readRoleplayChat(f.scope, f.locator);
+    fs.rmSync(f.filename);
+    const renamed = await post('/rename', { avatar_url: 'Nova.png', new_name: 'Star' });
+    assert.equal(renamed.status, 200, JSON.stringify(renamed.body));
+    assert.equal(readRoleplayAccount(f.scope).resources[chat.instanceId].status, 'deleted');
+    const loose = path.join(f.scope.directories.chats, 'Star', 'Loose.jsonl');
+    fs.mkdirSync(path.dirname(loose), { recursive: true });
+    fs.writeFileSync(loose, f.records.map(row => JSON.stringify(row)).join('\n'));
+    fs.linkSync(loose, path.join(f.root, 'alias.jsonl'));
+    const deleted = await post('/delete', { avatar_url: 'Star.png', delete_chats: true });
+    assert.equal(deleted.status, 200, JSON.stringify(deleted.body));
+    assert.equal(fs.existsSync(loose), false);
+    assert.equal(fs.existsSync(path.join(f.scope.directories.characters, 'Star.png')), false);
+    assert.equal(readRoleplayAccount(f.scope).pending, null);
+});

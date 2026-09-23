@@ -13,14 +13,14 @@ import { SETTINGS_FILE, USER_DIRECTORY_TEMPLATE } from '../constants.js';
 import { checkForNewContent, CONTENT_TYPES, getContentOfType } from './content-manager.js';
 import { restoreSettingsSnapshot } from '../settings-version.js';
 import { SECRETS_FILE } from './secrets.js';
-import { color, Cache, getConfigValue, ensureDirectory, normalizeZipEntryPath, recoverFileWritesInDirectorySync, tryWriteFileSync } from '../util.js';
+import { color, Cache, getConfigValue, ensureDirectory, normalizeZipEntryPath, recoverFileWritesInDirectorySync, tryWriteFileSync, FILE_WRITE_RECOVERY_SUFFIX } from '../util.js';
 import { ENTITY_DATE_ADDED_FILE, importEntityDateAdded } from '../entity-date-added.js';
 import { ENTITY_LAST_CHAT_FILE, importEntityLastChat } from '../entity-last-chat.js';
 import { isNativeExtension } from '../neconyan-native-extensions.js';
 import { destroySession } from '../middleware/sessionAuth.js';
 import { importProgress } from '../import-progress.js';
-import { assertUntrackedRoleplayFiles, roleplayAccountBase, roleplayError, roleplayFileLocator, roleplayLease, roleplayPathKey, resetRoleplayAccount, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
-import { commitRoleplayLifecycleLocked, commitSingleChatWriteLocked } from '../roleplay-lifecycle.js';
+import { assertUntrackedRoleplayFiles, roleplayAccountBase, roleplayAccountStamp, roleplayError, roleplayFileLocator, roleplayLease, roleplayPathKey, resetRoleplayAccount, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
+import { commitRoleplayLifecycleLocked, commitSingleChatWriteLocked, forgetRoleplayReceiptLocked } from '../roleplay-lifecycle.js';
 import { readRoleplayChatLocked, ROLEPLAY_METADATA_KEY } from '../generation/roleplay-source.js';
 import { parseChatJsonl } from '../chat-recovery.js';
 import { roleplayNativeHost } from './chats.js';
@@ -188,14 +188,21 @@ function importChatRecords(bytes) {
     return parsed.records;
 }
 
+/** The protected account of these directories with its stamp at the start of an import, or null. */
+function stampedAccount(directories) {
+    const account = roleplayAccountBase(directories);
+    return account && { ...account, stamp: roleplayAccountStamp(account) };
+}
+
 export function importUserFile(account, destinationPath, bytes) {
     const target = roleplayFileLocator(account, destinationPath);
     const rawHash = crypto.createHash('sha256').update(bytes).digest('hex');
     try {
-        withRoleplayAccount(account, null, (lease, current) => {
+        // account.stamp (captured when the import started) refuses writes into a reset or re-created account.
+        withRoleplayAccount({ owner: account.owner, directories: account.directories }, account.stamp ?? null, (lease, current) => {
             const { state } = roleplayLease(lease);
             const slot = state.paths[roleplayPathKey(state, target.kind, target.locator)];
-            // ponytail: one-shot keys; an interrupted import is finished by startup reconciliation, not by a browser retry.
+            // One-shot keys: an interrupted import is finished by startup reconciliation, and closed receipts are dropped.
             const operationKey = crypto.randomUUID();
             if (!slot) {
                 assertUntrackedRoleplayFiles(lease, [destinationPath]);
@@ -209,6 +216,7 @@ export function importUserFile(account, destinationPath, bytes) {
                     commitSingleChatWriteLocked(lease, { operationKey, sourceKind: 'storage', mode: 'create',
                         destination: target.locator, expectedVacancy: slot.generation, records,
                         force: true, allowShrink: true, backup: { deferBackup: true } }, roleplayNativeHost);
+                    forgetRoleplayReceiptLocked(lease, 'chat-write', operationKey);
                     return;
                 }
                 const saved = readRoleplayChatLocked(lease, target.locator);
@@ -217,17 +225,18 @@ export function importUserFile(account, destinationPath, bytes) {
                     source: { kind: 'storage', ...current, instanceId: saved.instanceId, revision: saved.revision,
                         rawHash: saved.rawHash, locator: target.locator, dependencies: [] },
                     records, force: true, allowShrink: true, backup: { deferBackup: true } }, roleplayNativeHost);
+                forgetRoleplayReceiptLocked(lease, 'chat-write', operationKey);
                 return;
             }
             if (slot.instanceId && state.resources[slot.instanceId].head.rawHash === rawHash) return;
             const op = slot.instanceId ? 'update' : 'create';
-            commitRoleplayLifecycleLocked(lease, { operationKey, action: `${target.kind}-import`,
+            commitRoleplayLifecycleLocked(lease, { action: `${target.kind}-import`,
                 intent: { locator: target.locator, rawHash },
                 steps: [{ op, kind: target.kind, locator: target.locator, bytes }] }, roleplayNativeHost);
         });
         return true;
     } catch (error) {
-        if (error.roleplayWritePending) throw error;
+        if (error.roleplayWritePending || error.code === 'ROLEPLAY_ACCOUNT_CHANGED') throw error;
         console.warn(`Kept the current protected file instead of importing ${destinationPath}: ${error.code || error.message}`);
         return false;
     }
@@ -291,6 +300,9 @@ async function copyDirectoryTree(sourceDirectory, destinationDirectory, {
             emitImportWarning(onWarning, `Skipping unsupported import entry: ${sourcePath}`);
             continue;
         }
+
+        // Leftover write-recovery sidecars belong to the source install; copied, they would block writes here.
+        if (dirent.name.endsWith(FILE_WRITE_RECOVERY_SUFFIX)) continue;
 
         if (!overwrite && await pathExists(destinationPath)) {
             continue;
@@ -729,7 +741,7 @@ async function importZipContents(zipFilePath, targetRoot, progress = () => {}, a
                         : ''
                     : normalizedEntry;
 
-                if (!relativePath || !isImportableRelativePath(relativePath)) {
+                if (!relativePath || !isImportableRelativePath(relativePath) || relativePath.endsWith(FILE_WRITE_RECOVERY_SUFFIX)) {
                     zipfile.readEntry();
                     return;
                 }
@@ -959,7 +971,7 @@ router.post('/import-sillytavern/folder', async (request, response) => {
         }
 
         recoverFileWritesInDirectorySync(request.user.directories.characters);
-        const copiedEntries = await copyAllowedFolderContents(sourceRoot, targetRoot, progress.report, roleplayAccountBase(request.user.directories));
+        const copiedEntries = await copyAllowedFolderContents(sourceRoot, targetRoot, progress.report, stampedAccount(request.user.directories));
         progress.report(99, 100, 'Finishing import');
         await checkForNewContent([request.user.directories]);
 
@@ -1005,7 +1017,7 @@ router.post('/import-sillytavern/zip', async (request, response) => {
         }
 
         recoverFileWritesInDirectorySync(request.user.directories.characters);
-        const importedFiles = await importZipContents(uploadedZipPath, request.user.directories.root, progress.report, roleplayAccountBase(request.user.directories));
+        const importedFiles = await importZipContents(uploadedZipPath, request.user.directories.root, progress.report, stampedAccount(request.user.directories));
         progress.report(99, 100, 'Finishing import');
         await checkForNewContent([request.user.directories]);
 

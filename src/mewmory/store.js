@@ -248,7 +248,10 @@ export function chatMemoryExists(directories, locator) {
     return Boolean(directories.root) && (fs.existsSync(statePath(directories, locator)) || fs.existsSync(recoveryPath(directories, locator)));
 }
 
-/** `resume` finishes a recorded rename interrupted after the new archive was written. */
+/**
+ * `resume` finishes a recorded rename from any point a crash could leave it: a stale guard written before
+ * the new archive, a new archive beside the old one, or a finished move whose old guard remained.
+ */
 export function renameChatMemory(directories, oldLocator, newLocator, { resume = false } = {}) {
     if (!directories.root) return false;
     const before = statePath(directories, oldLocator);
@@ -256,12 +259,15 @@ export function renameChatMemory(directories, oldLocator, newLocator, { resume =
     if (before === after) return;
     if (!fs.existsSync(before) && !fs.existsSync(recoveryPath(directories, oldLocator))) return;
     return withChatFileLocks([before, after], () => {
-        if (resume && fs.existsSync(before) && fs.existsSync(after)
-            && readJson(after, null)?.revision === readJson(before, null)?.revision + 1) {
-            fs.unlinkSync(before);
-            fs.rmSync(recoveryPath(directories, oldLocator), { force: true });
-            return true;
+        if (resume && fs.existsSync(after)) {
+            const previous = fs.existsSync(before) ? readJson(before, null) : null;
+            if (!previous || readJson(after, null)?.revision > previous.revision) {
+                fs.rmSync(before, { force: true });
+                fs.rmSync(recoveryPath(directories, oldLocator), { force: true });
+                return true;
+            }
         }
+        if (resume && !fs.existsSync(after) && fs.existsSync(before)) fs.rmSync(recoveryPath(directories, newLocator), { force: true });
         if (fs.existsSync(after) || fs.existsSync(recoveryPath(directories, newLocator))) fail('A Mewmory archive already exists for that chat name.', 409);
         const state = readState(directories, oldLocator);
         state.locator = normalizeLocator(newLocator);
@@ -305,15 +311,15 @@ export function removeSourceMemory(directories, { avatar = '', world = '', delet
     }
 }
 
-export function renameCharacterMemory(directories, oldAvatar, newAvatar) {
-    return renameLibraryMemory(directories, 'character', oldAvatar, newAvatar);
+export function renameCharacterMemory(directories, oldAvatar, newAvatar, { resume = false } = {}) {
+    return renameLibraryMemory(directories, 'character', oldAvatar, newAvatar, { resume });
 }
 
 export function renameWorldMemory(directories, oldName, newName) {
     return renameLibraryMemory(directories, 'lore', oldName, newName);
 }
 
-function renameLibraryMemory(directories, type, oldName, newName) {
+function renameLibraryMemory(directories, type, oldName, newName, { resume = false } = {}) {
     const aliasKey = type === 'character' ? 'characterAliases' : 'worldAliases';
     const metaKey = type === 'character' ? 'avatar' : 'world';
     const changes = [];
@@ -349,7 +355,7 @@ function renameLibraryMemory(directories, type, oldName, newName) {
             const change = { before: state.locator, after: ownsChat ? { ...state.locator, avatar: newName } : state.locator,
                 aliases: structuredClone(state[aliasKey] || {}), ids, moved: false, aliased: false };
             changes.push(change);
-            if (ownsChat) change.moved = renameChatMemory(directories, change.before, change.after);
+            if (ownsChat) change.moved = renameChatMemory(directories, change.before, change.after, { resume });
             mutateState(directories, change.after, current => {
                 current[aliasKey] ??= {};
                 current[aliasKey][newName] = canonical;
