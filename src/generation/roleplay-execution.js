@@ -61,7 +61,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     }
     const assertSource = () => {
         signal.throwIfAborted();
-        withRoleplayAccount(base, account, lease => assertRoleplaySourceLocked(lease, source));
+        withRoleplayAccount(base, account, lease => assertRoleplaySourceLocked(lease, source, { effect }));
     };
     const saved = readArtifact(directories, job.id, 'roleplay-output');
     if (saved) {

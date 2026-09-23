@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import { fixture } from './roleplay-transactions-fixture.js';
 
 const { captureRoleplaySource, readRoleplayChat } = await import('../src/generation/roleplay-source.js');
-const { admitRoleplayJob } = await import('../src/roleplay-jobs.js');
+const { admitRoleplayJob, applyRoleplayJobEffect } = await import('../src/roleplay-jobs.js');
 const { runRoleplayReplyJob } = await import('../src/generation/roleplay-execution.js');
 const { readArtifact } = await import('../src/jobs/artifacts.js');
 const { getJob, releaseJob, recoverJobs, updateJob } = await import('../src/jobs/store.js');
@@ -15,6 +15,7 @@ const { testExports: runner } = await import('../src/jobs/runner.js');
 const { readRoleplayAccount } = await import('../src/roleplay-store.js');
 const { captureGenerationBinding } = await import('../src/generation/profiles.js');
 const { runChatProfile } = await import('../src/generation/service.js');
+const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
 
 function accepted(t, effect = 'append', anchor = {}) {
     const f = fixture(t);
@@ -227,6 +228,44 @@ test('a stale source is refused before any provider work', async t => {
     await assert.rejects(runRoleplayReplyJob(context, { generate: async () => { calls++; return { text: 'bad' }; } }), { code: 'ROLEPLAY_SOURCE_CHANGED' });
     assert.equal(calls, 0);
     assert.equal(readArtifact(f.scope.directories, context.job.id, 'roleplay-output'), undefined);
+});
+
+test('a bound swipe follows a renamed chat and tolerates an unrelated later append', async t => {
+    const { f, context } = accepted(t, 'swipe', { message: 1 });
+    const { commitRoleplayLifecycleLocked } = await import('../src/roleplay-lifecycle.js');
+    const { withRoleplayAccount } = await import('../src/roleplay-store.js');
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const destination = { ...f.locator, chat: 'Renamed' };
+    withRoleplayAccount(f.scope, account, lease => commitRoleplayLifecycleLocked(lease, {
+        operationKey: 'rename', action: 'chat-rename', intent: { destination },
+        steps: [{ op: 'move', kind: 'chat', locator: f.locator, destination }],
+    }));
+    const later = admitRoleplayJob(f.scope, account, { operationKey: 'later', effect: 'append',
+        source: captureRoleplaySource(f.scope, { locator: destination }), request: { prompt: 'later' } });
+    applyRoleplayJobEffect(f.scope, account, { operationKey: 'later', jobId: later.jobId,
+        output: { message: { name: 'Nova', mes: 'Unrelated' } } }, roleplayNativeHost);
+    let calls = 0;
+    await runRoleplayReplyJob(context, { generate: async ({ beforeDispatch }) => {
+        beforeDispatch();
+        calls++;
+        return { text: 'Bound swipe', response: {} };
+    } });
+    const saved = readRoleplayChat(f.scope, destination);
+    assert.equal(saved.records[2].mes, 'Bound swipe');
+    assert.equal(saved.records.at(-1).mes, 'Unrelated');
+    assert.equal(calls, 1);
+});
+
+test('a changed selected swipe is refused before provider work', async t => {
+    const { f, context } = accepted(t, 'swipe', { message: 1 });
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const changed = admitRoleplayJob(f.scope, account, { operationKey: 'changed', effect: 'swipe',
+        source: captureRoleplaySource(f.scope, { locator: f.locator, message: 1 }), request: { prompt: 'changed' } });
+    applyRoleplayJobEffect(f.scope, account, { operationKey: 'changed', jobId: changed.jobId, output: { text: 'Different' } }, roleplayNativeHost);
+    let calls = 0;
+    await assert.rejects(runRoleplayReplyJob(context, { generate: async () => { calls++; return { text: 'Wrong', response: {} }; } }),
+        { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    assert.equal(calls, 0);
 });
 
 test('a saved answer does not repeat provider work when the chat changes before delivery', async t => {

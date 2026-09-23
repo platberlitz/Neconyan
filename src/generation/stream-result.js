@@ -9,6 +9,7 @@ export function assembleGenerationStream(raw) {
     let reasoning = '';
     let signature = '';
     let complete = false;
+    let terminated = false;
     let textBytes = 0;
     let reasoningBytes = 0;
     const events = String(raw).replace(/\r\n/g, '\n').split('\n\n');
@@ -18,11 +19,13 @@ export function assembleGenerationStream(raw) {
         if (!data) continue;
         if (data === '[DONE]') {
             complete = true;
+            terminated = true;
             continue;
         }
         let chunk;
         try { chunk = JSON.parse(data); } catch { throw new Error('The generated stream contains an invalid event.'); }
         if (chunk.error || chunk.type === 'error') throw new Error('The provider rejected the generated stream.');
+        if (terminated) throw new Error('The provider stream contained output after completion.');
         const choice = chunk.choices?.[0];
         const delta = choice?.delta ?? choice?.message;
         const candidate = chunk.candidates?.[0];

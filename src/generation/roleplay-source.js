@@ -312,12 +312,24 @@ export function captureRoleplayStorageSource(scope, locator) {
     });
 }
 
-export function assertRoleplaySourceLocked(lease, source) {
+export function assertRoleplaySourceLocked(lease, source, { effect } = {}) {
     if (source?.kind !== undefined && source.kind !== 'storage') throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay source kind.', 400);
-    const captured = source.kind === 'storage' ? captureRoleplayStorageSourceLocked(lease, source.locator)
-        : captureRoleplaySourceLocked(lease, { locator: source.locator, groupId: source.groupId,
+    let locator = source.locator;
+    if (effect) {
+        const { state } = roleplayLease(lease);
+        const resource = state.resources[source.instanceId];
+        if (source.kind === 'storage' || resource?.kind !== 'chat' || resource.status !== 'live'
+            || resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch) {
+            throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The chat this job answers no longer exists.', 404);
+        }
+        locator = resource.locator;
+    }
+    const captured = source.kind === 'storage' ? captureRoleplayStorageSourceLocked(lease, locator)
+        : captureRoleplaySourceLocked(lease, { locator, groupId: source.groupId,
             message: source.message?.index, range: source.range });
-    if (!isDeepStrictEqual(captured.source, source)) {
+    const expected = effect ? { ...source, locator, ...(effect === 'append' ? {}
+        : { revision: captured.source.revision, rawHash: captured.source.rawHash }) } : source;
+    if (!isDeepStrictEqual(captured.source, expected)) {
         const error = roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The Roleplay source changed after this work was prepared.');
         if (source.kind === 'storage' && !captured.changed) {
             const { instanceId, revision, rawHash } = captured.saved;
