@@ -923,6 +923,10 @@ test('production lore activation macros read only this job’s saved selection, 
         assert.equal(macroEnvironment.evaluate('{{loreactive::;}}'), 'Harbour');
         assert.equal(macroEnvironment.evaluate('{{lorecount}}'), '1');
         assert.equal(macroEnvironment.evaluate('{{lorecount::bound}}'), '2');
+        assert.equal(macroEnvironment.evaluate('{{lorebooks}}'), 'Town');
+        assert.equal(macroEnvironment.evaluate('{{loreentries}}'), 'Harbour, Other');
+        assert.equal(macroEnvironment.evaluate('{{loreentries::Town::;}}'), 'Harbour;Other');
+        assert.equal(macroEnvironment.evaluate('{{loreentries::Missing}}'), '');
         assert.equal(macroEnvironment.evaluate('{{loretokens}}'), String(Math.ceil('The harbour is safe'.length / 4)));
         assert.equal(macroEnvironment.evaluate('{{loretokens::bound}}'),
             String(Math.ceil('The harbour is safe\nInactive lore'.length / 4)));

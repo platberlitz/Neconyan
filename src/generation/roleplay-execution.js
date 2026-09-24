@@ -103,7 +103,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             worldInfo = await prepareRoleplayWorldInfo(base, request.worldInfo, { ...worldInfoHooks, macros: request.macros });
             writeArtifact(directories, job.id, 'roleplay-world-info', worldInfo);
         }
-        if (!Array.isArray(worldInfo.activeLore) || !Array.isArray(worldInfo.boundLore)) {
+        if (!Array.isArray(worldInfo.activeLore) || !Array.isArray(worldInfo.boundLore)
+            || request.worldInfo.enhancedLoreMacros && worldInfo.boundLore.some(entry => typeof entry.book !== 'string')) {
             throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'This saved World Info scan predates its server macro result.', 503);
         }
         assertRoleplayWorldInfoCurrent(base, request.worldInfo);
@@ -205,6 +206,12 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             dynamicMacros: worldInfo && request.worldInfo.enhancedLoreMacros ? {
                 loreactive: { unnamedArgs: [{ name: 'separator', optional: true }], handler: ({ unnamedArgs: [separator] }) =>
                     worldInfo.activeLore.map(entry => entry.title).join(separator || ', ') },
+                lorebooks: { unnamedArgs: [{ name: 'separator', optional: true }], handler: ({ unnamedArgs: [separator] }) =>
+                    [...new Set([...request.worldInfo.names.chat, ...request.worldInfo.names.character,
+                        ...request.worldInfo.names.global])].join(separator || ', ') },
+                loreentries: { unnamedArgs: [{ name: 'book', optional: true }, { name: 'separator', optional: true }],
+                    handler: ({ unnamedArgs: [book, separator] }) => worldInfo.boundLore
+                        .filter(entry => !book || entry.book === book).map(entry => entry.title).join(separator || ', ') },
                 lorecount: { unnamedArgs: [{ name: 'scope', optional: true }], handler: ({ unnamedArgs: [scope] }) =>
                     loreScope(scope) ? String(loreScope(scope).length) : '' },
                 loretokens: { unnamedArgs: [{ name: 'scope', optional: true }], handler: ({ unnamedArgs: [scope] }) =>

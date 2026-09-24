@@ -222,6 +222,7 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
     return { ...result, bookHashes: snapshot.bookHashes,
         boundLore: [...new Set([...snapshot.names.chat, ...snapshot.names.character, ...snapshot.names.global])]
             .flatMap(name => Object.values(selected[name].data.entries).filter(entry => !entry.disable).map(entry => ({
+                book: name,
                 title: String(entry.comment ?? '').trim() || String(Array.isArray(entry.key) && entry.key[0] || entry.uid),
                 content: String(entry.content ?? ''),
             }))),
