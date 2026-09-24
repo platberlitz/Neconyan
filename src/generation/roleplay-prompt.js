@@ -74,7 +74,7 @@ export function assertWorldInfoDepthHistory(records, messages, historyStart, opt
 
 function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = null, regex = [], characterName,
     group = false, userName = records[0]?.user_name, namesBehavior } = {}) {
-    if (group && ![-1, 0, 1, 2].includes(namesBehavior)) {
+    if (group && ![-1, 0, 1, 2, 'provider'].includes(namesBehavior)) {
         throw roleplayError('ROLEPLAY_INVALID', 'This group naming policy needs server-side provider formatting.', 409);
     }
     const history = records.slice(1).map(record => {
@@ -108,7 +108,9 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
     }
     if (group) for (let index = 0; index < history.length; index++) {
         const name = records[index + 1].name;
-        if (namesBehavior === 1) {
+        if (namesBehavior === 'provider') {
+            history[index].name = name;
+        } else if (namesBehavior === 1) {
             const wireName = name.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 64);
             if (!wireName) throw roleplayError('ROLEPLAY_INVALID', 'The saved group speaker cannot be named by this provider.', 409);
             history[index].name = wireName;

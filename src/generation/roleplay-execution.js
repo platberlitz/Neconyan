@@ -121,7 +121,9 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         reasoning: request.worldInfo.reasoning, regex: request.worldInfo.regex,
         characterName: request.characterName, group: source.locator.group, userName,
         namesBehavior: namingMaterial?.backend === 'chat'
-            ? (namingMaterial.preset?.names_behavior ?? namingMaterial.active?.names_behavior ?? 0) : undefined };
+            ? (namingMaterial.preset?.names_behavior ?? namingMaterial.active?.names_behavior ?? 0)
+            : namingMaterial && (namingMaterial.backend !== 'text' || namingMaterial.instruct?.enabled || namingMaterial.kind === 'active')
+                ? 'provider' : undefined };
     const savedHistory = promptSource ? buildRoleplaySavedHistory(promptSource.records, historyOptions) : null;
     const place = history => {
         let messages = history;

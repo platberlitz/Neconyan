@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fixture, png } from './roleplay-transactions-fixture.js';
+import { constructScopedTextPrompt, createRawPrompt } from '../public/scripts/generation-format.js';
 import { scanWorldInfo } from '../src/generation/world-info-scan.js';
 import { assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertRoleplayPostHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets } from '../src/generation/roleplay-prompt.js';
 import { write as writeCard } from '../src/character-card-parser.js';
@@ -95,8 +96,26 @@ test('group history keeps the selected Chat Completion speaker naming policy', (
     ]);
     records[1].name = 'Visitor, guest';
     assert.equal(buildRoleplaySavedHistory(records, { ...base, namesBehavior: 1 })[0].name, 'Visitor__guest');
+    assert.deepEqual(buildRoleplaySavedHistory(records, { ...base, namesBehavior: 'provider' }), [
+        { role: 'user', content: 'Question', name: 'Visitor, guest' },
+        { role: 'assistant', content: 'Answer', name: 'Nova' },
+    ]);
     records[1].name = 'User';
     assert.throws(() => buildRoleplaySavedHistory(records, base), { code: 'ROLEPLAY_INVALID' });
+});
+
+test('saved group names reach the native text and legacy prompt formatters exactly once', () => {
+    const records = [{ user_name: 'Visitor', chat_metadata: {} },
+        { name: 'Visitor', is_user: true, mes: 'Question' },
+        { name: 'Nova', is_user: false, mes: 'Answer' }];
+    const messages = buildRoleplaySavedHistory(records, { group: true, namesBehavior: 'provider' });
+    const options = { name1: 'Visitor', name2: 'Nova', selectedGroup: true };
+    assert.equal(createRawPrompt(structuredClone(messages), 'kobold', false, false, '', '', options),
+        'Visitor: Question\nNova: Answer\n');
+    const instruct = { enabled: true, names_behavior: 'always', input_sequence: '<user>', output_sequence: '<assistant>',
+        input_suffix: '\n', output_suffix: '\n' };
+    assert.match(constructScopedTextPrompt([...structuredClone(messages), { role: 'user', content: 'Next', name: 'Visitor' }],
+        instruct, options), /Nova: Answer/);
 });
 
 test('a server-owned group reply uses its saved Chat Completion naming controls', async t => {
@@ -151,6 +170,35 @@ test('a server-owned group reply sends saved speaker names as provider fields', 
             assert.deepEqual(messages, [
                 { role: 'system', content: 'Story: Original' },
                 { role: 'user', content: 'Original', name: 'Visitor' },
+                { role: 'assistant', content: 'Answer', name: 'Nova' },
+            ]);
+            return { text: 'Group answer' };
+        } });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Group answer');
+});
+
+test('a server-owned legacy group reply leaves speaker formatting to the bound provider', async t => {
+    const f = fixture(t, true);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ power_user: {
+        context: { story_string: 'Story: {{description}}', story_string_position: 0 },
+    } }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = f.source();
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'group-provider-format', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true, messages: [],
+            maxTokens: 20, characterName: 'Nova', worldInfo: snapshot } });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    await runRoleplayReplyJob(context, { promptBackend: () => ({ backend: 'kobold' }),
+        generate: async ({ messages, beforeDispatch }) => {
+            beforeDispatch();
+            assert.deepEqual(messages, [
+                { role: 'system', content: 'Story: Original' },
+                { role: 'user', content: 'Original', name: 'User' },
                 { role: 'assistant', content: 'Answer', name: 'Nova' },
             ]);
             return { text: 'Group answer' };
