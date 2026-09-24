@@ -121,11 +121,21 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved Roleplay speaker names differ from the accepted prompt.', 409);
     }
     const userName = request.userName ?? promptSource?.records[0]?.user_name ?? 'User';
-    const namingMaterial = source.locator.group && (request.serverPrompt || worldInfo?.activated.length)
+    const namingMaterial = (source.locator.group && (request.serverPrompt || worldInfo?.activated.length)
+        || request.worldInfo?.images?.length)
         ? promptBackend(directories, request.binding) : null;
+    const media = request.worldInfo?.images ?? [];
+    const imageDetail = namingMaterial?.preset?.inline_image_quality
+        ?? namingMaterial?.active?.inline_image_quality ?? 'auto';
+    if (media.length && (!request.serverPrompt || namingMaterial?.backend && namingMaterial.backend !== 'chat'
+        || namingMaterial?.source !== 'custom' || (namingMaterial.preset?.media_inlining
+            ?? namingMaterial.active?.media_inlining) !== true
+        || !['low', 'auto', 'high'].includes(imageDetail))) {
+        throw roleplayError('ROLEPLAY_INVALID', 'These saved Roleplay images need a bound vision connection.', 409);
+    }
     const historyOptions = request.worldInfo && { reasoningInPrompt: request.worldInfo.reasoningInPrompt,
         reasoning: request.worldInfo.reasoning, regex: request.worldInfo.regex,
-        attachments: request.worldInfo.attachments,
+        attachments: request.worldInfo.attachments, images: media, imageDetail, mediaDisplay: request.worldInfo.mediaDisplay,
         characterName: request.characterName, group: source.locator.group, userName,
         namesBehavior: namingMaterial?.backend === 'chat'
             ? (namingMaterial.preset?.names_behavior ?? namingMaterial.active?.names_behavior ?? 0)
@@ -182,7 +192,22 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     if (request.serverPrompt || worldInfo?.activated.length) {
         const { count } = await getCounter(request.worldInfo.tokenizer);
         const budget = contextLimit(directories, request.binding) - request.maxTokens;
-        const tokens = prompt => count(prompt.map(message => [message.name, message.content].filter(Boolean).join('\n')).join('\n'));
+        const imageCost = image => {
+            if (imageDetail === 'low' || imageDetail === 'auto' && image.width <= 512 && image.height <= 512) return 85;
+            const scale = 2048 / Math.min(image.width, image.height);
+            const finalScale = 768 / Math.min(Math.round(image.width * scale), Math.round(image.height * scale));
+            return 85 + 170 * Math.ceil(Math.round(Math.round(image.width * scale) * finalScale) / 512)
+                * Math.ceil(Math.round(Math.round(image.height * scale) * finalScale) / 512);
+        };
+        const tokens = async prompt => await count(prompt.map(message => [message.name,
+            Array.isArray(message.content) ? message.content.filter(part => part.type === 'text').map(part => part.text).join('\n')
+                : message.content].filter(Boolean).join('\n')).join('\n'))
+            + prompt.reduce((sum, message) => sum + (Array.isArray(message.content)
+                ? message.content.filter(part => part.type === 'image_url').reduce((cost, part) => {
+                    const image = media.find(item => item.url === part.image_url.url);
+                    if (!image) throw roleplayError('ROLEPLAY_INVALID', 'A saved Roleplay image is not bound to this prompt.', 409);
+                    return cost + imageCost(image);
+                }, 0) : 0), 0);
         let size = await tokens(messages);
         if (size > budget && savedHistory && savedHistory.length > 1) {
             // ponytail: search saved suffixes instead of rebuilding once per old message; the latest stays intact.

@@ -18,6 +18,7 @@ const { runRoleplayReplyJob: runReply } = await import('../src/generation/rolepl
 const { resetRoleplayAccount } = await import('../src/roleplay-store.js');
 const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
 const { captureGenerationBinding } = await import('../src/generation/profiles.js');
+const { runChatProfile } = await import('../src/generation/service.js');
 
 const runRoleplayReplyJob = (context, options = {}) => runReply(context, { contextLimit: () => 4096, ...options });
 
@@ -562,6 +563,135 @@ test('a bound text attachment refuses escaped and aliased account files', t => {
     assert.throws(() => captureRoleplayWorldInfo(f.scope, account,
         captureRoleplaySource(f.scope, { locator: f.locator }), { avatar: 'Nova.png', maxContext: 200 }),
     { code: 'ROLEPLAY_STORE_DAMAGED' });
+});
+
+test('a saved account image reaches only a bound vision prompt and changed bytes refuse dispatch', async t => {
+    const f = fixture(t);
+    f.records[1].extra = { media: [{ url: '/user/images/Nova/one.png', type: 'image' }], inline_image: true };
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    f.scope.directories.userImages = path.join(f.scope.directories.root, 'user', 'images');
+    const imagePath = path.join(f.scope.directories.userImages, 'Nova', 'one.png');
+    fs.mkdirSync(path.dirname(imagePath), { recursive: true });
+    fs.writeFileSync(imagePath, png);
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 300 });
+    const expected = { role: 'user', content: [{ type: 'text', text: 'Original' }, { type: 'image_url',
+        image_url: { url: `data:image/png;base64,${png.toString('base64')}`, detail: 'auto' } }] };
+    assert.deepEqual(buildRoleplaySavedHistory(f.records, { images: worldInfo.images })[0], expected);
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'bound-image', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true, messages: [],
+            maxTokens: 20, characterName: 'Nova', worldInfo } });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    const vision = { source: 'custom', active: { media_inlining: true, inline_image_quality: 'auto' } };
+    fs.writeFileSync(imagePath, Buffer.concat([png, Buffer.from('changed')]));
+    await assert.rejects(runRoleplayReplyJob(context, { promptBackend: () => vision,
+        generate: () => { throw Error('Provider called'); } }), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    fs.writeFileSync(imagePath, png);
+    await assert.rejects(runRoleplayReplyJob(context, { promptBackend: () => ({ ...vision,
+        active: { media_inlining: false } }), generate: () => { throw Error('Provider called'); } }),
+    { code: 'ROLEPLAY_INVALID' });
+    await assert.rejects(runRoleplayReplyJob(context, { promptBackend: () => vision,
+        generate: async ({ beforeDispatch }) => { fs.writeFileSync(imagePath, Buffer.concat([png, Buffer.from('changed')])); beforeDispatch(); } }),
+    { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    fs.writeFileSync(imagePath, png);
+    await runRoleplayReplyJob(context, { promptBackend: () => vision, generate: async ({ messages, beforeDispatch }) => {
+        beforeDispatch();
+        assert.deepEqual(messages, [expected, { role: 'assistant', content: 'Answer' }]);
+        return { text: 'Image reply' };
+    } });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Image reply');
+});
+
+test('a bound image refuses unsafe paths and links before a provider call', t => {
+    for (const url of ['/user/images/%2e%2e/one.png', 'https://other.example/one.png',
+        '/user/images/Nova/%2e%2e%2fone.png']) {
+        const f = fixture(t);
+        f.scope.directories.userImages = path.join(f.scope.directories.root, 'user', 'images');
+        f.records[1].extra = { media: [{ url, type: 'image' }] };
+        fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+        assert.throws(() => captureRoleplayWorldInfo(f.scope,
+            { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch }, f.source(),
+            { avatar: 'Nova.png', maxContext: 300 }), { code: 'ROLEPLAY_INVALID' });
+    }
+    const f = fixture(t);
+    f.scope.directories.userImages = path.join(f.scope.directories.root, 'user', 'images');
+    const imagePath = path.join(f.scope.directories.userImages, 'Nova', 'one.png');
+    fs.mkdirSync(path.dirname(imagePath), { recursive: true });
+    fs.symlinkSync(f.filename, imagePath);
+    f.records[1].extra = { media: [{ url: '/user/images/Nova/one.png', type: 'image' }] };
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    assert.throws(() => captureRoleplayWorldInfo(f.scope,
+        { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch }, f.source(),
+        { avatar: 'Nova.png', maxContext: 300 }), { code: 'ROLEPLAY_STORE_DAMAGED' });
+});
+
+test('a bound account image reaches the native Custom request with image budget reserved', async t => {
+    const f = fixture(t);
+    f.records[1].extra = { media: [{ url: '/user/images/Nova/one.png', type: 'image' }] };
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    f.scope.directories.userImages = path.join(f.scope.directories.root, 'user', 'images');
+    const imagePath = path.join(f.scope.directories.userImages, 'Nova', 'one.png');
+    fs.mkdirSync(path.dirname(imagePath), { recursive: true });
+    fs.writeFileSync(imagePath, png);
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ _settingsRevision: 1,
+        main_api: 'openai', active_generation: { api: 'openai', source: 'custom', model: 'vision-fixture' },
+        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000',
+            custom_model: 'vision-fixture', media_inlining: true, inline_image_quality: 'low', openai_max_context: 256 },
+        power_user: { custom_stopping_strings: '[]' },
+    }));
+    const binding = captureGenerationBinding(f.scope.directories, { kind: 'active' }, { settingsRevision: 1 });
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 220 });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'native-bound-image', effect: 'append', source,
+        request: { binding, serverPrompt: true, messages: [], maxTokens: 24, characterName: 'Nova', worldInfo } });
+    releaseJob(f.scope.directories, jobId);
+    let calls = 0;
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    await runReply(context, { contextLimit: undefined,
+        generate: options => runChatProfile({ ...options, fetch: async (_url, request) => {
+            calls++;
+            const body = JSON.parse(request.body);
+            assert.deepEqual(body.messages[0].content, [{ type: 'text', text: 'Original' }, { type: 'image_url',
+                image_url: { url: `data:image/png;base64,${png.toString('base64')}`, detail: 'low' } }]);
+            return new Response(JSON.stringify({ choices: [{ message: { content: 'Saw the image' } }] }));
+        } }),
+    });
+    assert.equal(calls, 1);
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Saw the image');
+});
+
+test('gallery selection skips unselected images and reserves image tokens before provider work', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    f.records[2].extra = { media_display: 'gallery', media_index: 1, media: [
+        { url: '/user/images/Nova/missing.png', type: 'image' },
+        { url: '/user/images/Nova/one.png', type: 'image' },
+    ] };
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    f.scope.directories.userImages = path.join(f.scope.directories.root, 'user', 'images');
+    const imagePath = path.join(f.scope.directories.userImages, 'Nova', 'one.png');
+    fs.mkdirSync(path.dirname(imagePath), { recursive: true });
+    fs.writeFileSync(imagePath, png);
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 70 });
+    assert.equal(worldInfo.images.length, 1);
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'gallery-budget', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true,
+            messages: [], maxTokens: 20, characterName: 'Nova', worldInfo } });
+    releaseJob(f.scope.directories, jobId);
+    await assert.rejects(runRoleplayReplyJob({ job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal }, {
+        contextLimit: () => 100,
+        promptBackend: () => ({ source: 'custom', active: { media_inlining: true, inline_image_quality: 'low' } }),
+        generate: () => { throw Error('Provider called'); },
+    }), { code: 'ROLEPLAY_INVALID' });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length);
 });
 
 test('saved display metadata does not block a protected text history', t => {

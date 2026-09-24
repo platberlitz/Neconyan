@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { imageSize } from 'image-size';
 import { readWorldInfoFile, isValidWorldInfoData } from '../endpoints/worldinfo.js';
 import { readJson } from '../mewmory/store.js';
 import { getCounter } from '../mewmory/tokens.js';
@@ -52,6 +53,47 @@ function savedAttachments(directories, records) {
         }).filter(item => item?.text);
         return texts.length ? { index, text: `${texts.map(item => item.text).join('\n\n')}\n\n`, files: texts } : null;
     }).filter(Boolean);
+}
+
+function savedImages(directories, records, display) {
+    return records.slice(1).flatMap((message, index) => {
+        const media = message.extra?.media;
+        if (media === undefined) return [];
+        if (!Array.isArray(media) || !media.length || media.length > 4) {
+            throw roleplayError('ROLEPLAY_INVALID', 'This saved media needs a supported Roleplay prompt.', 409);
+        }
+        const mode = message.extra?.media_display ?? display;
+        if (!['list', 'gallery'].includes(mode)) throw roleplayError('ROLEPLAY_INVALID', 'The saved media display is unsupported.', 409);
+        const selected = mode === 'gallery' ? [media[message.extra?.media_index ?? 0]] : media;
+        if (selected.some(item => !item || (item.type !== undefined && item.type !== 'image')
+            || typeof item.url !== 'string' || !item.url.startsWith('/user/images/'))) {
+            throw roleplayError('ROLEPLAY_INVALID', 'Only saved account images can enter a bound Roleplay prompt.', 409);
+        }
+        return selected.map(item => {
+            let components;
+            try { components = item.url.slice('/user/images/'.length).split('/').map(decodeURIComponent); } catch {
+                throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay image path is invalid.', 409);
+            }
+            if (components.length < 1 || components.length > 2 || components.some(part => !part || part === '.'
+                || part === '..' || part.includes('\\') || part.includes('/') || part.includes('\0'))) {
+                throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay image path is invalid.', 409);
+            }
+            const saved = readRoleplayFile(path.join(directories.userImages, ...components), 1024 * 1024);
+            if (!saved) throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'A saved Roleplay image is missing.', 404);
+            let dimensions;
+            try { dimensions = imageSize(saved.bytes); } catch {
+                throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'A saved Roleplay image is unreadable.', 409);
+            }
+            const mime = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' }[dimensions.type];
+            if (!mime || !Number.isSafeInteger(dimensions.width) || !Number.isSafeInteger(dimensions.height)
+                || dimensions.width < 1 || dimensions.height < 1
+                || dimensions.width > 2048 || dimensions.height > 2048) {
+                throw roleplayError('ROLEPLAY_INVALID', 'This saved image format is not supported in a bound prompt.', 409);
+            }
+            return { index, url: `data:${mime};base64,${saved.bytes.toString('base64')}`,
+                width: dimensions.width, height: dimensions.height, rawHash: saved.rawHash, physical: saved.physical };
+        });
+    });
 }
 
 function books(directories, names) {
@@ -124,6 +166,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             : note.chara?.find(item => item?.name === `individual:${avatar}`)
                 ?? note.chara?.find(item => item?.name === path.parse(avatar).name);
         const attachments = savedAttachments(base.directories, saved.records);
+        const images = savedImages(base.directories, saved.records, settings.power_user?.media_display ?? 'list');
         const chat = saved.records.slice(1).flatMap((message, index) => {
             if (message.is_system) return [];
             const text = (attachments.find(item => item.index === index)?.text ?? '') + String(message.mes ?? '');
@@ -134,6 +177,8 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             character: { instanceId: character.instanceId, revision: character.revision, rawHash: character.rawHash },
             characterExamples: character.data?.data?.mes_example ?? character.data?.mes_example ?? '',
             attachments,
+            images,
+            mediaDisplay: settings.power_user?.media_display ?? 'list',
             systemPrompt: (settings.power_user?.prefer_character_prompt ?? true)
                 ? saved.records[0].chat_metadata?.system_prompt || character.data?.data?.system_prompt
                     || character.data?.system_prompt || '' : '',

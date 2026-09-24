@@ -73,7 +73,7 @@ export function assertWorldInfoDepthHistory(records, messages, historyStart, opt
 }
 
 function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = null, regex = [], characterName,
-    group = false, userName = records[0]?.user_name, namesBehavior, attachments = [] } = {}) {
+    group = false, userName = records[0]?.user_name, namesBehavior, attachments = [], images = [], imageDetail = 'auto', mediaDisplay = 'list' } = {}) {
     if (group && ![-1, 0, 1, 2, 'provider'].includes(namesBehavior)) {
         throw roleplayError('ROLEPLAY_INVALID', 'This group naming policy needs server-side provider formatting.', 409);
     }
@@ -81,16 +81,29 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
         || item.index < 0 || item.index >= records.length - 1 || typeof item.text !== 'string')) {
         throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay file attachments are invalid.', 409);
     }
+    if (!Array.isArray(images) || images.some(item => !item || !Number.isSafeInteger(item.index)
+        || item.index < 0 || item.index >= records.length - 1 || typeof item.url !== 'string'
+        || !/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(item.url))
+        || !['low', 'auto', 'high'].includes(imageDetail)) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay images are invalid.', 409);
+    }
     const history = records.slice(1).map((record, index) => {
         const attachment = attachments.find(item => item.index === index);
+        const selectedImages = images.filter(item => item.index === index);
+        const media = record.extra?.media;
         if (typeof record.mes !== 'string' || typeof record.is_user !== 'boolean'
             || group && (typeof record.name !== 'string' || !record.name)
             || Object.keys(record).some(key => !['name', 'is_user', 'mes', 'swipes', 'swipe_id', 'swipe_info', 'extra', 'send_date'].includes(key))
             || (record.extra && (typeof record.extra !== 'object' || Array.isArray(record.extra)
-                || Object.keys(record.extra).some(key => !['token_count', 'isSmallSys', 'reasoning', 'files', 'fileLength'].includes(key))
-                || record.extra.files !== undefined && (!Array.isArray(record.extra.files) || !attachment)
-                || attachment && !Array.isArray(record.extra.files)
-                || record.extra.fileLength !== undefined && (!Number.isSafeInteger(record.extra.fileLength)
+                 || Object.keys(record.extra).some(key => !['token_count', 'isSmallSys', 'reasoning', 'files', 'fileLength',
+                     'media', 'media_index', 'media_display', 'inline_image'].includes(key))
+                 || record.extra.files !== undefined && (!Array.isArray(record.extra.files) || !attachment)
+                 || attachment && !Array.isArray(record.extra.files)
+                 || media !== undefined && (!Array.isArray(media) || !media.length
+                     || selectedImages.length !== ((record.extra.media_display ?? mediaDisplay) === 'gallery' ? 1 : media.length))
+                 || selectedImages.length && !Array.isArray(media)
+                 || ['media_index', 'media_display', 'inline_image'].some(key => record.extra[key] !== undefined && !Array.isArray(media))
+                 || record.extra.fileLength !== undefined && (!Number.isSafeInteger(record.extra.fileLength)
                     || record.extra.fileLength < 0 || record.extra.fileLength > record.mes.length)
                 || record.extra.reasoning !== undefined && typeof record.extra.reasoning !== 'string'))) {
             throw roleplayError('ROLEPLAY_INVALID', 'This saved chat needs server handling for its non-text content.', 409);
@@ -126,6 +139,12 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
         } else if (namesBehavior === 2 || namesBehavior === 0 && name !== userName) {
             history[index].content = `${name}: ${history[index].content}`;
         }
+    }
+    for (const [index, message] of history.entries()) {
+        const selectedImages = images.filter(item => item.index === index);
+        if (selectedImages.length) message.content = [{ type: 'text', text: message.content }, ...selectedImages.map(item => ({
+            type: 'image_url', image_url: { url: item.url, detail: imageDetail },
+        }))];
     }
     return history;
 }
