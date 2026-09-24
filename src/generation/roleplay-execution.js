@@ -125,6 +125,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         ? promptBackend(directories, request.binding) : null;
     const historyOptions = request.worldInfo && { reasoningInPrompt: request.worldInfo.reasoningInPrompt,
         reasoning: request.worldInfo.reasoning, regex: request.worldInfo.regex,
+        attachments: request.worldInfo.attachments,
         characterName: request.characterName, group: source.locator.group, userName,
         namesBehavior: namingMaterial?.backend === 'chat'
             ? (namingMaterial.preset?.names_behavior ?? namingMaterial.active?.names_behavior ?? 0)

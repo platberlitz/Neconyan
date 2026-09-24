@@ -503,6 +503,67 @@ test('depth placement refuses unhandled saved attachments and a fabricated empty
         { code: 'ROLEPLAY_SOURCE_CHANGED' });
 });
 
+test('saved text files enter a bound prompt and changed files refuse before provider dispatch', async t => {
+    const f = fixture(t);
+    f.records[1].extra = { files: [{ url: '/user/files/note.txt', name: 'note.txt' }] };
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    f.scope.directories.files = path.join(f.scope.directories.root, 'files');
+    fs.mkdirSync(f.scope.directories.files);
+    const attachment = path.join(f.scope.directories.files, 'note.txt');
+    fs.writeFileSync(attachment, 'The saved note');
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 });
+    assert.equal(worldInfo.chat[1], 'User: The saved note\n\nOriginal');
+    assert.deepEqual(buildRoleplaySavedHistory(f.records, { attachments: worldInfo.attachments }).map(message => message.content),
+        ['The saved note\n\nOriginal', 'Answer']);
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'saved-text-file', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true, messages: [],
+            maxTokens: 20, characterName: 'Nova', worldInfo } });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    fs.writeFileSync(attachment, 'Replaced note');
+    await assert.rejects(runRoleplayReplyJob(context, { generate: () => { throw Error('Provider called'); } }),
+        { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    fs.writeFileSync(attachment, 'The saved note');
+    await assert.rejects(runRoleplayReplyJob(context, { generate: async ({ beforeDispatch }) => {
+        fs.writeFileSync(attachment, 'Changed after prompt preparation');
+        beforeDispatch();
+    } }), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    fs.writeFileSync(attachment, 'The saved note');
+    await runRoleplayReplyJob(context, { generate: async ({ messages, beforeDispatch }) => {
+        beforeDispatch();
+        assert.deepEqual(messages.map(message => message.content), ['The saved note\n\nOriginal', 'Answer']);
+        return { text: 'Reply with note' };
+    } });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Reply with note');
+});
+
+test('a bound text attachment refuses escaped and aliased account files', t => {
+    for (const url of ['/user/files/%2e%2e%2fsource.txt', '/user/files/other%2fnote.txt',
+        'https://outside.example/file.txt']) {
+        const f = fixture(t);
+        f.scope.directories.files = path.join(f.scope.directories.root, 'files');
+        fs.mkdirSync(f.scope.directories.files);
+        const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+        f.records[1].extra = { files: [{ url }] };
+        fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+        assert.throws(() => captureRoleplayWorldInfo(f.scope, account, f.source(),
+            { avatar: 'Nova.png', maxContext: 200 }), { code: 'ROLEPLAY_INVALID' });
+    }
+    const f = fixture(t);
+    f.scope.directories.files = path.join(f.scope.directories.root, 'files');
+    fs.mkdirSync(f.scope.directories.files);
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    f.records[1].extra = { files: [{ url: '/user/files/alias.txt' }] };
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    fs.symlinkSync(f.filename, path.join(f.scope.directories.files, 'alias.txt'));
+    assert.throws(() => captureRoleplayWorldInfo(f.scope, account,
+        captureRoleplaySource(f.scope, { locator: f.locator }), { avatar: 'Nova.png', maxContext: 200 }),
+    { code: 'ROLEPLAY_STORE_DAMAGED' });
+});
+
 test('saved display metadata does not block a protected text history', t => {
     const f = fixture(t);
     f.records[1].extra = { isSmallSys: false, token_count: 12 };

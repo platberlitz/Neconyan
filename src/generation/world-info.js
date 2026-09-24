@@ -2,7 +2,7 @@ import path from 'node:path';
 import { readWorldInfoFile, isValidWorldInfoData } from '../endpoints/worldinfo.js';
 import { readJson } from '../mewmory/store.js';
 import { getCounter } from '../mewmory/tokens.js';
-import { roleplayError, roleplayHash, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
+import { readRoleplayFile, roleplayError, roleplayHash, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
 import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay-source.js';
 import { prepareWorldInfoEntries } from '../../public/scripts/world-info-scan-core.js';
 import { createMacroEnvironment } from '../macros/index.js';
@@ -18,6 +18,41 @@ const DEFAULTS = { world_info_depth: 2, world_info_budget: 25, world_info_recurs
     world_info_case_sensitive: false, world_info_match_whole_words: false, world_info_include_names: true,
     world_info_character_strategy: 1, world_info_budget_cap: 0, world_info_min_activations: 0,
     world_info_min_activations_depth_max: 0, world_info_use_group_scoring: false, world_info_max_recursion_steps: 0 };
+
+function savedAttachments(directories, records) {
+    return records.slice(1).map((message, index) => {
+        const files = message.extra?.files;
+        if (files === undefined) return null;
+        if (!Array.isArray(files) || files.length > 16 || !files.length) {
+            throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay file attachments need a supported prompt.', 409);
+        }
+        const texts = files.map(file => {
+            if (!file || typeof file !== 'object' || Array.isArray(file)) {
+                throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay file attachment is invalid.', 409);
+            }
+            if (typeof file.text === 'string' && file.text) return { text: file.text };
+            if (typeof file.url !== 'string' || !file.url.startsWith('/user/files/')) {
+                throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay file is not in this account.', 409);
+            }
+            let name;
+            try { name = decodeURIComponent(file.url.slice('/user/files/'.length)); } catch {
+                throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay file name is invalid.', 409);
+            }
+            if (!name || name === '.' || name === '..' || path.basename(name) !== name || name.includes('\\')) {
+                throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay file name is invalid.', 409);
+            }
+            const saved = readRoleplayFile(path.join(directories.files, name), 1024 * 1024);
+            if (!saved) throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'A saved Roleplay file attachment is missing.', 404);
+            try {
+                return { text: new TextDecoder('utf-8', { fatal: true }).decode(saved.bytes),
+                    rawHash: saved.rawHash, physical: saved.physical };
+            } catch {
+                throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'A saved Roleplay file attachment is unreadable.', 409);
+            }
+        }).filter(item => item?.text);
+        return texts.length ? { index, text: `${texts.map(item => item.text).join('\n\n')}\n\n`, files: texts } : null;
+    }).filter(Boolean);
+}
 
 function books(directories, names) {
     const result = Object.create(null);
@@ -88,12 +123,17 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         const scoped = saved.locator.group ? saved.records[0].chat_metadata?.note_chara
             : note.chara?.find(item => item?.name === `individual:${avatar}`)
                 ?? note.chara?.find(item => item?.name === path.parse(avatar).name);
-        const chat = saved.records.slice(1).filter(message => !message.is_system)
-            .map(message => (settings.world_info_include_names ?? DEFAULTS.world_info_include_names)
-                ? `${message.name}: ${message.mes}` : String(message.mes ?? '')).reverse();
+        const attachments = savedAttachments(base.directories, saved.records);
+        const chat = saved.records.slice(1).flatMap((message, index) => {
+            if (message.is_system) return [];
+            const text = (attachments.find(item => item.index === index)?.text ?? '') + String(message.mes ?? '');
+            return [(settings.world_info_include_names ?? DEFAULTS.world_info_include_names)
+                ? `${message.name}: ${text}` : text];
+        }).reverse();
         const snapshot = { account: { accountId: account.accountId, dataEpoch: account.dataEpoch }, source,
             character: { instanceId: character.instanceId, revision: character.revision, rawHash: character.rawHash },
             characterExamples: character.data?.data?.mes_example ?? character.data?.mes_example ?? '',
+            attachments,
             systemPrompt: (settings.power_user?.prefer_character_prompt ?? true)
                 ? saved.records[0].chat_metadata?.system_prompt || character.data?.data?.system_prompt
                     || character.data?.system_prompt || '' : '',
