@@ -59,6 +59,30 @@ export function insertWorldInfoOutlets(messages, outlets, snapshot, historyStart
     return [{ role: 'system', content: rendered }, ...messages];
 }
 
+/** Place a saved Chat Completion main prompt only when its order is unambiguous. */
+export function insertRoleplayChatSystem(messages, snapshot, material, userName, characterName) {
+    const controls = material?.preset ?? material?.active;
+    const order = controls?.prompt_order?.find(value => String(value?.character_id) === '100001')?.order;
+    const prompts = controls?.prompts;
+    if (material?.backend && material.backend !== 'chat' || !Array.isArray(order) || !Array.isArray(prompts)
+        || order.filter(value => value?.enabled).map(value => value.identifier).join(',') !== 'main,chatHistory') {
+        throw roleplayError('ROLEPLAY_INVALID', 'This Chat Completion prompt needs server-side prompt-manager ordering.', 409);
+    }
+    const main = prompts.find(value => value?.identifier === 'main');
+    if (!main || main.role !== 'system' || main.system_prompt !== true || main.injection_position != null
+        || (Array.isArray(main.injection_trigger) && main.injection_trigger.length
+            && !main.injection_trigger.includes('normal'))) {
+        throw roleplayError('ROLEPLAY_INVALID', 'This Chat Completion main prompt cannot be placed by the server.', 409);
+    }
+    const text = snapshot.systemPrompt && main.forbid_overrides !== true ? snapshot.systemPrompt : main.content;
+    if (typeof text !== 'string' || typeof userName !== 'string' || typeof characterName !== 'string'
+        || text.replaceAll('{{char}}', '').replaceAll('{{user}}', '').includes('{{')) {
+        throw roleplayError('ROLEPLAY_INVALID', 'This saved main prompt needs unsupported prompt macros.', 409);
+    }
+    const content = text.replaceAll('{{char}}', characterName).replaceAll('{{user}}', userName);
+    return content ? [{ role: 'system', content }, ...messages] : messages;
+}
+
 /** Depth positions may use only an exact plain-text suffix of the protected chat. */
 export function assertWorldInfoDepthHistory(records, messages, historyStart, options = {}) {
     if (!Array.isArray(records) || !Array.isArray(messages) || !Number.isSafeInteger(historyStart)

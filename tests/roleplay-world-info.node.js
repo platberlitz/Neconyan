@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 import { constructScopedTextPrompt, createRawPrompt } from '../public/scripts/generation-format.js';
 import { scanWorldInfo } from '../src/generation/world-info-scan.js';
-import { assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertRoleplayPostHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets } from '../src/generation/roleplay-prompt.js';
+import { assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertRoleplayChatSystem, insertRoleplayPostHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets } from '../src/generation/roleplay-prompt.js';
 import { write as writeCard } from '../src/character-card-parser.js';
 
 const { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } = await import('../src/generation/world-info.js');
@@ -20,7 +20,12 @@ const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
 const { captureGenerationBinding } = await import('../src/generation/profiles.js');
 const { runChatProfile } = await import('../src/generation/service.js');
 
-const runRoleplayReplyJob = (context, options = {}) => runReply(context, { contextLimit: () => 4096, ...options });
+const blankChatControls = { prompts: [{ identifier: 'main', role: 'system', system_prompt: true, content: '' },
+    { identifier: 'chatHistory', marker: true, system_prompt: true }], prompt_order: [{ character_id: 100001,
+    order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }] };
+const runRoleplayReplyJob = (context, options = {}) => runReply(context, {
+    contextLimit: () => 4096, promptBackend: () => ({ backend: 'chat', active: blankChatControls }), ...options,
+});
 
 const settings = { world_info_depth: 2, world_info_budget: 100, world_info_budget_cap: 0,
     world_info_recursive: true, world_info_min_activations: 0, world_info_case_sensitive: false,
@@ -30,6 +35,52 @@ const entry = (uid, key, content, more = {}) => ({ world: 'Town', uid, hash: uid
     decorators: [], ...more });
 const scan = (entries, overrides = {}) => scanWorldInfo({ entries, chat: ['A cat runs'], metadata: {}, settings,
     maxContext: 100, countTokens: async text => text.length, ...overrides });
+
+test('bound Chat Completion keeps its saved main prompt before protected history', () => {
+    const history = [{ role: 'user', content: 'Question' }];
+    const snapshot = { systemPrompt: '', global: { characterDescription: 'A harbour', characterPersonality: '',
+        scenario: '', personaDescription: '' } };
+    const controls = { prompts: [
+        { identifier: 'main', role: 'system', system_prompt: true, content: 'Write {{char}} to {{user}}.' },
+        { identifier: 'chatHistory', marker: true, system_prompt: true },
+    ], prompt_order: [{ character_id: 100001, order: [
+        { identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true },
+    ] }] };
+    assert.deepEqual(insertRoleplayChatSystem(history, snapshot, { backend: 'chat', active: controls }, 'User', 'Nova'), [
+        { role: 'system', content: 'Write Nova to User.' }, ...history,
+    ]);
+    assert.deepEqual(insertRoleplayChatSystem(history, { ...snapshot, systemPrompt: 'Saved rule' },
+        { backend: 'chat', active: controls }, 'User', 'Nova')[0], { role: 'system', content: 'Saved rule' });
+    assert.throws(() => insertRoleplayChatSystem(history, snapshot, { backend: 'chat', active: {
+        ...controls, prompt_order: [{ character_id: 100001, order: [
+            { identifier: 'main', enabled: true }, { identifier: 'unknown', enabled: true },
+            { identifier: 'chatHistory', enabled: true },
+        ] }],
+    } }, 'User', 'Nova'), { code: 'ROLEPLAY_INVALID' });
+});
+
+test('a server-owned reply sends the saved main prompt before protected history', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'bound-main', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true, messages: [],
+            maxTokens: 20, characterName: 'Nova', worldInfo } });
+    releaseJob(f.scope.directories, jobId);
+    const controls = { ...blankChatControls, prompts: [{ ...blankChatControls.prompts[0],
+        content: 'Write {{char}} to {{user}}.' }, blankChatControls.prompts[1]] };
+    await runRoleplayReplyJob({ job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal }, { promptBackend: () => ({ backend: 'chat', active: controls }),
+        generate: async ({ messages, beforeDispatch }) => {
+            beforeDispatch();
+            assert.deepEqual(messages.map(message => message.content), ['Write Nova to User.', 'Original', 'Answer']);
+            return { text: 'Bound answer' };
+        } });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Bound answer');
+});
 
 test('saved post-history instructions follow the selected provider and continuation position', () => {
     const messages = [{ role: 'system', content: 'Story' }, { role: 'user', content: 'Question' },
@@ -585,7 +636,7 @@ test('a saved account image reaches only a bound vision prompt and changed bytes
     releaseJob(f.scope.directories, jobId);
     const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
         owner: f.scope.owner, signal: new AbortController().signal };
-    const vision = { source: 'custom', active: { media_inlining: true, inline_image_quality: 'auto' } };
+    const vision = { source: 'custom', active: { ...blankChatControls, media_inlining: true, inline_image_quality: 'auto' } };
     fs.writeFileSync(imagePath, Buffer.concat([png, Buffer.from('changed')]));
     await assert.rejects(runRoleplayReplyJob(context, { promptBackend: () => vision,
         generate: () => { throw Error('Provider called'); } }), { code: 'ROLEPLAY_SOURCE_CHANGED' });
@@ -638,7 +689,7 @@ test('a bound account image reaches the native Custom request with image budget 
     fs.writeFileSync(imagePath, png);
     fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ _settingsRevision: 1,
         main_api: 'openai', active_generation: { api: 'openai', source: 'custom', model: 'vision-fixture' },
-        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000',
+        oai_settings: { ...blankChatControls, chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000',
             custom_model: 'vision-fixture', media_inlining: true, inline_image_quality: 'low', openai_max_context: 256 },
         power_user: { custom_stopping_strings: '[]' },
     }));
@@ -806,7 +857,7 @@ test('completed saved tool calls preserve their calls and results in bound Custo
     const source = captureRoleplaySource(f.scope, { locator: f.locator });
     const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 300 });
     const material = { backend: 'chat', source: 'custom', profile: { model: 'tool-model' },
-        active: { function_calling: true, custom_prompt_post_processing: '' } };
+        active: { ...blankChatControls, function_calling: true, custom_prompt_post_processing: '' } };
     assert.deepEqual(buildRoleplaySavedHistory(f.records, { toolHistory: true, toolSource: 'custom', toolModel: 'tool-model' }), [
         { role: 'user', content: 'Original' },
         { role: 'assistant', tool_calls: [
@@ -878,7 +929,7 @@ test('context trimming keeps a saved tool call together with every result', asyn
         owner: f.scope.owner, signal: new AbortController().signal };
     await runRoleplayReplyJob(context, { contextLimit: () => 140,
         promptBackend: () => ({ backend: 'chat', source: 'custom', profile: { model: 'tool-model' },
-            active: { function_calling: true, custom_prompt_post_processing: '' } }),
+            active: { ...blankChatControls, function_calling: true, custom_prompt_post_processing: '' } }),
         generate: async ({ messages, beforeDispatch }) => {
             beforeDispatch();
             assert.deepEqual(messages.map(item => item.role), ['assistant', 'tool', 'assistant']);
@@ -898,7 +949,7 @@ test('the native Custom request receives saved tool calls and their linked resul
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ _settingsRevision: 1,
         main_api: 'openai', active_generation: { api: 'openai', source: 'custom', model: 'tool-model' },
-        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000',
+        oai_settings: { ...blankChatControls, chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000',
             custom_model: 'tool-model', function_calling: true, openai_max_context: 512 },
         power_user: { custom_stopping_strings: '[]' },
     }));

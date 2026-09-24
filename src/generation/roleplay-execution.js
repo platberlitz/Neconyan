@@ -9,7 +9,7 @@ import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-st
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
 import { assertRoleplayWorldInfoCurrent, prepareRoleplayWorldInfo } from './world-info.js';
-import { assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertRoleplayPostHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets, isWorldInfoAuthorNoteActive } from './roleplay-prompt.js';
+import { assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertRoleplayChatSystem, insertRoleplayPostHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets, isWorldInfoAuthorNoteActive } from './roleplay-prompt.js';
 import { getChatProfileContextLimit, resolveGenerationProfile } from './profiles.js';
 import { getCounter } from '../mewmory/tokens.js';
 import { fnv1a } from '../../public/scripts/extensions/third-party/MacroEnhanced/src/state-impl.js';
@@ -170,10 +170,15 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             messages = insertWorldInfoOutlets(messages, worldInfo.outletEntries, request.worldInfo, savedHistoryStart,
                 userName, request.characterName, worldInfo.worldInfoBefore, worldInfo.worldInfoAfter,
                 Boolean(storyNote || request.serverPrompt));
+        } else if (request.serverPrompt) {
+            const material = namingMaterial ?? promptBackend(directories, request.binding);
+            if (!material.backend || material.backend === 'chat') {
+                messages = insertRoleplayChatSystem(messages, request.worldInfo, material, userName, request.characterName);
+            }
         }
         const lore = hasStory ? '' : [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
         if (lore) messages.unshift({ role: 'system', content: lore });
-        let historyStart = savedHistoryStart + Number(Boolean(lore)) + Number(hasStory);
+        let historyStart = savedHistoryStart + messages.length - history.length;
         if (worldInfo.EMEntries.length) {
             const beforeExamples = messages.length;
             messages = insertWorldInfoExamples(messages, worldInfo.EMEntries, request.worldInfo.characterExamples,
