@@ -71,7 +71,10 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         return withRoleplayAccount(base, account, lease => assertRoleplaySourceLocked(lease, source, { effect }));
     };
     const saved = readArtifact(directories, job.id, 'roleplay-output');
-    if (saved) {
+    if (saved !== undefined) {
+        if (!saved || typeof saved !== 'object' || Array.isArray(saved)) {
+            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved Roleplay result needs recovery.', 503);
+        }
         const result = applyRoleplayJobEffect(base, account, { operationKey: roleplay.operationKey, jobId: job.id, output: saved }, host);
         return { result };
     }
@@ -106,12 +109,16 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             throw roleplayError('ROLEPLAY_INVALID', 'Enabled Pathfinder retrieval needs server-owned pre-scan execution.', 409);
         }
         worldInfo = readArtifact(directories, job.id, 'roleplay-world-info');
-        if (!worldInfo) {
+        if (worldInfo === undefined) {
             worldInfo = await prepareRoleplayWorldInfo(base, request.worldInfo, { ...worldInfoHooks, macros: request.macros });
             writeArtifact(directories, job.id, 'roleplay-world-info', worldInfo);
         }
+        if (!worldInfo || typeof worldInfo !== 'object' || Array.isArray(worldInfo)) {
+            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved World Info scan needs recovery.', 503);
+        }
         const passes = worldInfo.hookEvents?.scanPasses;
-        if (!Array.isArray(passes) || passes.length !== worldInfo.iterations
+        if (worldInfo.snapshotHash !== roleplayHash(request.worldInfo)
+            || !Array.isArray(passes) || passes.length !== worldInfo.iterations
             || !Array.isArray(worldInfo.draws)
             || passes.some((pass, index) => pass?.state?.loopCount !== index + 1
                 || pass.state.current !== (index ? passes[index - 1]?.state?.next : 1)

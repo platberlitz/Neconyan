@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { imageSize } from 'image-size';
-import { readWorldInfoFile, isValidWorldInfoData } from '../endpoints/worldinfo.js';
+import { getExistingWorldInfoFilename, isValidWorldInfoData } from '../endpoints/worldinfo.js';
 import { readJson } from '../mewmory/store.js';
 import { getCounter } from '../mewmory/tokens.js';
 import { readRoleplayFile, roleplayError, roleplayHash, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
@@ -99,14 +99,21 @@ function savedImages(directories, records, display) {
 
 function books(directories, names) {
     const result = Object.create(null);
+    let totalBytes = 0;
     for (const name of new Set(names.flat())) {
         if (typeof name !== 'string' || !name || name.length > 234) throw roleplayError('ROLEPLAY_INVALID', 'Invalid World Info book name.', 400);
-        let book;
-        try { book = readWorldInfoFile(directories, name, false); } catch {
+        let book, file;
+        try {
+            const filename = getExistingWorldInfoFilename(directories, name);
+            file = filename && readRoleplayFile(path.join(directories.worlds, filename), 8 * 1024 * 1024);
+            if (file && (totalBytes += file.bytes.length) <= 16 * 1024 * 1024) {
+                book = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(file.bytes));
+            }
+        } catch {
             throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', `A saved World Info book is unreadable: ${name}.`, 409);
         }
         if (!isValidWorldInfoData(book)) throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'A saved World Info book is missing or damaged.', 409);
-        result[name] = { data: book, hash: roleplayHash(book) };
+        result[name] = { data: book, hash: roleplayHash(book), rawHash: file.rawHash, physical: file.physical };
     }
     return result;
 }
@@ -204,6 +211,8 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                 saved.records[0].chat_metadata, avatar, saved.locator.group),
             names, settings: Object.fromEntries(SETTINGS.map(key => [key, settings[key] ?? DEFAULTS[key]])),
             bookHashes: Object.fromEntries(Object.entries(selected).map(([name, value]) => [name, value.hash])),
+            bookEvidence: Object.fromEntries(Object.entries(selected).map(([name, value]) =>
+                [name, { rawHash: value.rawHash, physical: value.physical }])),
             characterFile: path.parse(avatar).name, avatar, maxContext, tokenizer, chat, regex,
             savedChatLength: saved.records.length - 1,
             metadata: structuredClone(saved.records[0].chat_metadata ?? {}),
@@ -261,7 +270,11 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
         }
         const current = books(base.directories, Object.values(snapshot.names));
         for (const [name, hash] of Object.entries(snapshot.bookHashes)) {
-            if (current[name]?.hash !== hash) throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'A World Info book changed after admission.');
+            if (current[name]?.hash !== hash
+                || roleplayHash({ rawHash: current[name].rawHash, physical: current[name].physical })
+                    !== roleplayHash(snapshot.bookEvidence?.[name])) {
+                throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'A World Info book changed after admission.');
+            }
         }
         if (Object.keys(current).length !== Object.keys(snapshot.bookHashes).length) {
             throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The World Info selection changed after admission.');
@@ -314,7 +327,7 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
     assertRoleplayWorldInfoCurrent(base, snapshot);
     const hookEvents = { ...result.hookEvents, entriesLoaded,
         actions: worldInfoActivationActions(snapshot.hookPolicy, result.activated) };
-    return { ...result, hookEvents, bookHashes: snapshot.bookHashes,
+    return { ...result, hookEvents, bookHashes: snapshot.bookHashes, snapshotHash: roleplayHash(snapshot),
         boundLore: [...new Set([...snapshot.names.chat, ...snapshot.names.character, ...snapshot.names.global])]
             .flatMap(name => Object.values(selected[name].data.entries).filter(entry => !entry.disable).map(entry => ({
                 book: name,

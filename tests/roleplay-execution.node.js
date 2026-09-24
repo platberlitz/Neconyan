@@ -9,7 +9,7 @@ import { fixture } from './roleplay-transactions-fixture.js';
 const { captureRoleplaySource, readRoleplayChat } = await import('../src/generation/roleplay-source.js');
 const { admitRoleplayJob, applyRoleplayJobEffect } = await import('../src/roleplay-jobs.js');
 const { runRoleplayReplyJob } = await import('../src/generation/roleplay-execution.js');
-const { readArtifact } = await import('../src/jobs/artifacts.js');
+const { readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
 const { getJob, releaseJob, recoverJobs, updateJob } = await import('../src/jobs/store.js');
 const { testExports: runner } = await import('../src/jobs/runner.js');
 const { readRoleplayAccount } = await import('../src/roleplay-store.js');
@@ -49,6 +49,18 @@ test('a bound server reply retains its reasoning and commits a single recorded a
     assert.deepEqual(await runRoleplayReplyJob(context, { generate }), first);
     assert.equal(calls, 1);
     assert.equal(readRoleplayChat(f.scope, f.locator).revision, saved.revision);
+});
+
+test('a saved null output cannot be mistaken for an absent result and repeat paid work', async t => {
+    const { f, context } = accepted(t);
+    writeArtifact(f.scope.directories, context.job.id, 'roleplay-output', null);
+    let calls = 0;
+    await assert.rejects(runRoleplayReplyJob(context, { generate: async () => {
+        calls++;
+        return { text: 'Second provider call' };
+    } }), { code: 'ROLEPLAY_RECOVERY_REQUIRED' });
+    assert.equal(calls, 0);
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length);
 });
 
 test('bound provider metadata keeps an encrypted reasoning signature on the recorded reply', async t => {

@@ -54,7 +54,7 @@ function getLegacyWorldInfoFilename(name) {
     return sanitize(`${String(name ?? '')}${WORLD_INFO_EXTENSION}`);
 }
 
-function getExistingWorldInfoFilename(directories, name) {
+export function getExistingWorldInfoFilename(directories, name) {
     const legacyFilename = getLegacyWorldInfoFilename(name);
     if (legacyFilename && fs.existsSync(path.join(directories.worlds, legacyFilename))) {
         return legacyFilename;

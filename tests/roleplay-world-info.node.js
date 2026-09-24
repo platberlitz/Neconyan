@@ -9,7 +9,7 @@ import { scanWorldInfo } from '../src/generation/world-info-scan.js';
 import { assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertRoleplayChatSystem, insertRoleplayPostHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets } from '../src/generation/roleplay-prompt.js';
 import { write as writeCard } from '../src/character-card-parser.js';
 
-const { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } = await import('../src/generation/world-info.js');
+const { assertRoleplayWorldInfoCurrent, captureRoleplayWorldInfo, prepareRoleplayWorldInfo } = await import('../src/generation/world-info.js');
 const { captureRoleplaySource, readRoleplayChat } = await import('../src/generation/roleplay-source.js');
 const { admitRoleplayJob, applyRoleplayJobEffect } = await import('../src/roleplay-jobs.js');
 const { getJob, releaseJob } = await import('../src/jobs/store.js');
@@ -1345,6 +1345,12 @@ test('a saved scan without a complete hook record cannot dispatch paid work', as
         owner: f.scope.owner, signal: new AbortController().signal };
     let called = false;
     const saved = await prepareRoleplayWorldInfo(f.scope, context.job.intent.request.worldInfo);
+    let rescanned = 0;
+    writeArtifact(f.scope.directories, jobId, 'roleplay-world-info', null);
+    await assert.rejects(runRoleplayReplyJob(context, { worldInfoHooks: { onScan: () => { rescanned++; } },
+        generate: () => { called = true; } }), { code: 'ROLEPLAY_RECOVERY_REQUIRED' });
+    assert.equal(rescanned, 0);
+    assert.equal(called, false);
     writeArtifact(f.scope.directories, jobId, 'roleplay-world-info', { ...saved, hookEvents: null });
     await assert.rejects(runRoleplayReplyJob(context, { generate: () => { called = true; } }),
         { code: 'ROLEPLAY_RECOVERY_REQUIRED' });
@@ -1501,6 +1507,28 @@ test('the account captures saved books and refuses a changed book before the pro
     book.entries[7].content = 'Other harbour';
     fs.writeFileSync(filename, JSON.stringify(book));
     await assert.rejects(prepareRoleplayWorldInfo(f.scope, snapshot), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+});
+
+test('a saved lore book cannot follow an alias or exchange its physical identity after admission', t => {
+    const f = fixture(t);
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    const filename = path.join(f.scope.directories.worlds, 'Town.json');
+    const contents = JSON.stringify({ entries: { 1: entry(1, 'Original', 'Bound lore') } });
+    fs.writeFileSync(filename, contents);
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['Town'] } },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = f.source();
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 });
+    fs.renameSync(filename, `${filename}.old`);
+    fs.writeFileSync(filename, contents);
+    assert.throws(() => assertRoleplayWorldInfoCurrent(f.scope, snapshot), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    fs.unlinkSync(filename);
+    fs.symlinkSync(`${filename}.old`, filename);
+    assert.throws(() => captureRoleplayWorldInfo(f.scope, account, source,
+        { avatar: 'Nova.png', maxContext: 100 }), { code: 'ROLEPLAY_SOURCE_DAMAGED' });
 });
 
 test('production lore activation macros read only this job’s saved selection, including on replay', async t => {
@@ -1729,6 +1757,40 @@ test('a saved swipe trigger selects only swipe lore and remains bound to that ef
     await assert.rejects(runRoleplayReplyJob(context, { generate: () => { throw Error('Provider called'); } }),
         { code: 'ROLEPLAY_INVALID' });
     assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-world-info'), undefined);
+});
+
+test('a saved scan from another admitted trigger cannot replace this job’s lore', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Original', 'Normal lore', { triggers: ['normal'] }),
+        2: entry(2, 'Original', 'Swipe lore', { triggers: ['swipe'] }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = f.source();
+    const normal = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 });
+    const swipe = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100, trigger: 'swipe' });
+    const wrong = await prepareRoleplayWorldInfo(f.scope, swipe);
+    assert.equal(wrong.worldInfoBefore, 'Swipe lore');
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'wrong-scan-artifact', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, maxTokens: 32, characterName: 'Nova',
+            worldInfo: normal, historyStart: 0, messages: [{ role: 'user', content: 'Original' },
+                { role: 'assistant', content: 'Answer' }] } });
+    releaseJob(f.scope.directories, jobId);
+    writeArtifact(f.scope.directories, jobId, 'roleplay-world-info', wrong);
+    let calls = 0;
+    await assert.rejects(runRoleplayReplyJob({ job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal }, {
+        generate: async () => { calls++; return { text: 'Wrong lore' }; },
+    }), { code: 'ROLEPLAY_RECOVERY_REQUIRED' });
+    assert.equal(calls, 0);
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length);
 });
 
 test('a caller cannot enlarge the saved lore context beyond the bound provider limit', async t => {
