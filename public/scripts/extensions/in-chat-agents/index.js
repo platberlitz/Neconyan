@@ -119,7 +119,7 @@ import { stripStateChangingMacros } from './companion/companion-macros.js';
 import { withReadOnlyVariables } from '../../variable-read-only.js';
 import { initCompanionCardUi, sanitizeCompanionHtml, updateCompanionButtonVisibility } from './companion/companion-ui.js';
 import { configureCompanionDashboard, initCompanionWandMenuItem, openCompanionDashboard } from './companion/companion-dashboard.js';
-import { configureCompanionPanel, initCompanionPanel, refreshCompanionPanel, updateCompanionPanelHandleVisibility } from './companion/companion-panel.js';
+import { configureCompanionPanel, getCompanionPanelLauncher, initCompanionPanel, refreshCompanionPanel, setCompanionPanelLauncher, updateCompanionPanelHandleVisibility } from './companion/companion-panel.js';
 import { attachTextareaFullscreen } from './textarea-fullscreen.js';
 
 const MODULE_NAME = 'in-chat-agents';
@@ -5915,6 +5915,7 @@ function populateGlobalExecutionModeDropdown() {
     $('#ica--appendAgentsExecutionMode').val(getGlobalSettings().appendAgentsExecutionMode || 'parallel');
     $('#ica--companionExecutionMode').val(getGlobalSettings().companionExecutionMode || 'parallel');
     $('#ica--companionConcurrent').prop('checked', Boolean(getGlobalSettings().companionConcurrentWithPostGen));
+    $('#ica--companionPanelLauncher').val(getCompanionPanelLauncher());
 }
 
 function populateGlobalHelperPrefillField() {
@@ -6570,6 +6571,9 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     $('#ica--companionConcurrent').on('change', function () {
         setGlobalSettings({ companionConcurrentWithPostGen: $(this).prop('checked') });
         persistExtensionState();
+    });
+    $('#ica--companionPanelLauncher').on('change', function () {
+        $(this).val(setCompanionPanelLauncher(String($(this).val())));
     });
     $('#ica--helperPrefillMessages').on('input', function () {
         setGlobalSettings({ helperPrefillMessages: this.value });

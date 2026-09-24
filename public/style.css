@@ -4220,7 +4220,8 @@ grammarly-extension {
     border: 1px solid var(--SmartThemeBorderColor);
     border-radius: var(--sb-radius-button, 14px);
     padding: 6px 16px;
-    width: min-content;
+    width: max-content;
+    max-width: 100%;
     cursor: pointer;
     margin: 4px 0;
     transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease, box-shadow 200ms ease, opacity 200ms ease;

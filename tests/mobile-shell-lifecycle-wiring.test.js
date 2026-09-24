@@ -865,7 +865,7 @@ describe('mobile shell lifecycle wiring', () => {
         expect(applyExclusivitySource).toContain('[surface.NAV]: () => closeMobileNav(),');
         expect(applyExclusivitySource).toContain('[surface.LEFT_SHELL]: () => closeShell(\'left\'),');
         expect(applyExclusivitySource).toContain('[surface.RIGHT_SHELL]: () => closeShell(\'right\'),');
-        expect(applyExclusivitySource).toContain('[surface.CHARACTER_PANEL]: () => closeCharacterPanel(),');
+        expect(applyExclusivitySource).toContain('[surface.CHARACTER_PANEL]: () => closeCharacterPanelUnlessPinned(),');
         expect(applyExclusivitySource).toContain('[surface.CHAT_TOOLS]: () => closeMobileChatTools(),');
         expect(applyExclusivitySource).toContain('[surface.CONNECTION_STRIP]: () => setConnectionStripOpenState(false),');
         expect(applyExclusivitySource).toContain('throw new Error(`Unknown mobile shell surface: ${closeSurfaceKey}`);');

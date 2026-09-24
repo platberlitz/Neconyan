@@ -61,6 +61,10 @@ const PANEL_HISTORY_LIMIT = 5;
 const HANDLE_POSITION_STORAGE_KEY = 'ica--tracker-panel-handle-top-v2';
 const PANEL_LOCK_STORAGE_KEY = 'ica--tracker-panel-locked';
 const PANEL_HANDLE_HIDDEN_STORAGE_KEY = 'ica--tracker-panel-handle-hidden';
+// Which control opens the panel: the floating side button or a top bar button, never both.
+const PANEL_LAUNCHER_STORAGE_KEY = 'ica--tracker-panel-launcher';
+const PANEL_LAUNCHERS = ['handle', 'topbar'];
+const TOPBAR_LAUNCHER_ID = 'ica--tracker-panel-topbar';
 const HANDLE_DRAG_THRESHOLD_PX = 6;
 const HANDLE_EDGES = ['right', 'left', 'top', 'bottom'];
 const PANEL_ANCHOR_OPTIONS = {
@@ -72,6 +76,7 @@ let panelInitialized = false;
 let panelOpen = false;
 let panelLocked = getStoredPanelLocked();
 let handleHidden = getStoredHandleHidden();
+let panelLauncher = getStoredPanelLauncher();
 let panelOpenedAt = 0;
 let suppressHandleClickUntil = 0;
 let handleNode = null;
@@ -217,6 +222,47 @@ function setCompanionPanelHandleHidden(hidden) {
     storeHandleHidden(handleHidden);
     updateCompanionPanelHandleVisibility();
     return handleHidden;
+}
+
+export function normalizeCompanionPanelLauncher(launcher) {
+    return PANEL_LAUNCHERS.includes(launcher) ? launcher : 'handle';
+}
+
+function getStoredPanelLauncher() {
+    try {
+        return normalizeCompanionPanelLauncher(accountStorage.getItem(PANEL_LAUNCHER_STORAGE_KEY));
+    } catch {
+        return 'handle';
+    }
+}
+
+function storePanelLauncher(launcher) {
+    try {
+        accountStorage.setItem(PANEL_LAUNCHER_STORAGE_KEY, launcher);
+    } catch {
+        // Persistence failure leaves the in-memory launcher unchanged.
+    }
+}
+
+export function getCompanionPanelLauncher() {
+    return panelLauncher;
+}
+
+export function setCompanionPanelLauncher(launcher) {
+    panelLauncher = normalizeCompanionPanelLauncher(launcher);
+    storePanelLauncher(panelLauncher);
+    if (panelOpen) {
+        renderPanel();
+        $('#ica--tracker-panel').attr('data-edge', getPanelEdge()).attr('data-launcher', panelLauncher);
+    }
+    updateCompanionPanelHandleVisibility();
+    return panelLauncher;
+}
+
+// The top bar button sits at the right end of the bar, so the panel slides in beside it.
+function getPanelEdge() {
+    const { edge } = (panelLauncher === 'handle' ? getStoredHandlePosition() : null) ?? { edge: 'right' };
+    return edge;
 }
 
 function getViewportWidth() {
@@ -523,12 +569,24 @@ export function collectPanelAgentStates() {
         .sort((a, b) => orderOf(a) - orderOf(b));
 }
 
-export function shouldShowCompanionPanelHandle() {
-    if (isConversationModeActive() || handleHidden || !areAgentsGloballyEnabled()) {
+function hasCompanionPanelLauncherContent() {
+    if (isConversationModeActive() || !areAgentsGloballyEnabled()) {
         return false;
     }
 
     return collectPanelAgentStates().some(state => state.latest || state.agent);
+}
+
+export function shouldShowCompanionPanelHandle() {
+    if (panelLauncher !== 'handle' || handleHidden) {
+        return false;
+    }
+
+    return hasCompanionPanelLauncherContent();
+}
+
+export function shouldShowCompanionPanelTopbarButton() {
+    return panelLauncher === 'topbar' && hasCompanionPanelLauncherContent();
 }
 
 function getStateDisplayName(state) {
@@ -766,7 +824,7 @@ export function buildPanelHtml() {
             <span class="ica--tpanel-agent-actions">
                 <button type="button" class="ica--cdash-action${panelLocked ? ' is-active' : ''}" data-action="panel-lock" title="${panelLocked ? 'Unlock panel auto-close' : 'Keep panel open until unlocked'}" aria-label="${panelLocked ? 'Unlock panel' : 'Lock panel'}" aria-pressed="${panelLocked}"><i class="fa-solid ${panelLocked ? 'fa-lock' : 'fa-lock-open'}"></i></button>
                 <button type="button" class="ica--cdash-action" data-action="panel-regenerate-all" title="Regenerate every companion on the last reply" aria-label="Regenerate all companions"${areAgentsGloballyEnabled() ? '' : ' disabled'}><i class="fa-solid fa-rotate-right"></i></button>
-                <button type="button" class="ica--cdash-action" data-action="panel-hide-handle" title="Hide the floating button" aria-label="Hide the floating button"><i class="fa-solid fa-eye-slash"></i></button>
+                ${panelLauncher === 'handle' ? '<button type="button" class="ica--cdash-action" data-action="panel-hide-handle" title="Hide the floating button" aria-label="Hide the floating button"><i class="fa-solid fa-eye-slash"></i></button>' : ''}
                 <button type="button" class="ica--cdash-action" data-action="panel-close" title="Close panel" aria-label="Close panel"><i class="fa-solid fa-xmark"></i></button>
             </span>
         </div>
@@ -848,10 +906,48 @@ export function refreshCompanionPanel() {
     }
 }
 
+// The top bar button is removed rather than hidden, so the bar's extension slot really empties
+// and gives its gap back. Appending into the slot directly places it on the first pass; before the
+// shell builds the bar, #top-settings-holder plus the opt-in attribute gets it adopted later.
+function syncCompanionPanelTopbarButton() {
+    const doc = globalThis.document;
+    const existing = doc?.getElementById?.(TOPBAR_LAUNCHER_ID);
+
+    if (!shouldShowCompanionPanelTopbarButton()) {
+        existing?.remove();
+        return;
+    }
+
+    if (existing) {
+        existing.setAttribute('aria-expanded', String(panelOpen));
+        return;
+    }
+
+    const host = doc?.getElementById?.('sb-topbar-extension-slot') ?? doc?.getElementById?.('top-settings-holder');
+    if (!host || typeof doc.createElement !== 'function') {
+        return;
+    }
+
+    const button = doc.createElement('button');
+    button.type = 'button';
+    button.id = TOPBAR_LAUNCHER_ID;
+    button.className = 'sb-proxy-button sb-proxy-button-icon-only ica--tpanel-topbar-button';
+    button.title = 'Open the companion panel';
+    button.setAttribute('aria-label', 'Open the companion panel');
+    button.setAttribute('aria-controls', 'ica--tracker-panel');
+    button.setAttribute('aria-expanded', String(panelOpen));
+    button.setAttribute('data-sb-topbar-adopt', 'true');
+    // fa-paw, not the panel's fa-cat: the Agents quick-access button already shows a cat in this bar.
+    button.innerHTML = '<i class="fa-solid fa-paw" aria-hidden="true"></i><span>Companions</span>';
+    button.addEventListener('click', () => toggleCompanionPanel());
+    host.append(button);
+}
+
 export function updateCompanionPanelHandleVisibility() {
     const conversationModeActive = isConversationModeActive();
     const shouldShow = shouldShowCompanionPanelHandle();
     $('#ica--tracker-panel-handle').toggle(shouldShow);
+    syncCompanionPanelTopbarButton();
     // Conversation Mode hides both companion wand entries (panel + dashboard).
     $('#ica_tracker_panel_wand_item').toggle?.(!conversationModeActive);
     $('#ica_companions_wand_item').toggle?.(!conversationModeActive);
@@ -869,15 +965,15 @@ export function openCompanionPanel() {
     }
 
     if (!panelOpen) returnFocus = document.activeElement;
-    if (handleHidden) {
+    if (handleHidden && panelLauncher === 'handle') {
         setCompanionPanelHandleHidden(false);
     }
     panelOpen = true;
     panelOpenedAt = Date.now();
     renderPanel();
-    const { edge } = getStoredHandlePosition() ?? { edge: 'right' };
-    $('#ica--tracker-panel').attr('data-edge', edge).addClass('is-open').attr('aria-hidden', 'false');
+    $('#ica--tracker-panel').attr('data-edge', getPanelEdge()).attr('data-launcher', panelLauncher).addClass('is-open').attr('aria-hidden', 'false');
     $('#ica--tracker-panel-handle').attr('aria-expanded', 'true');
+    globalThis.document?.getElementById?.(TOPBAR_LAUNCHER_ID)?.setAttribute('aria-expanded', 'true');
     document.querySelector('#ica--tracker-panel [data-action="panel-close"]')?.focus({ preventScroll: true });
 }
 
@@ -886,6 +982,7 @@ export function closeCompanionPanel() {
     panelOpen = false;
     $('#ica--tracker-panel').removeClass('is-open').attr('aria-hidden', 'true');
     $('#ica--tracker-panel-handle').attr('aria-expanded', 'false');
+    globalThis.document?.getElementById?.(TOPBAR_LAUNCHER_ID)?.setAttribute('aria-expanded', 'false');
     if (restoreFocus && returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
 }
 
@@ -1317,7 +1414,7 @@ export function initCompanionPanel() {
         if (!panelOpen || panelLocked || Date.now() - panelOpenedAt < 250) {
             return;
         }
-        if (event.target?.closest?.('#ica--tracker-panel, #ica--tracker-panel-handle')) {
+        if (event.target?.closest?.(`#ica--tracker-panel, #ica--tracker-panel-handle, #${TOPBAR_LAUNCHER_ID}`)) {
             return;
         }
         closeCompanionPanel();

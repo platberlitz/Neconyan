@@ -2251,3 +2251,15 @@ body.neconyan #WorldInfo.sb-shell-embedded-content #world_popup_entries_list .wo
         overflow: visible;
     }
 }
+#world_info_entry_folders { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+#world_info_entry_folders[hidden] { display: none; }
+#world_info_entry_folders > select { width: auto; min-width: 120px; flex: 1 1 160px; }
+#world_info_entry_folders > button { flex: 0 0 auto; }
+#world_popup_entries_list > .neco-entry-folder-heading { display: flex; align-items: center; gap: 4px; padding: 4px; border-bottom: 1px solid var(--neco-border); background: var(--neco-raised); border-radius: 6px; }
+#world_popup_entries_list > .neco-entry-folder-heading > button { margin: 0; min-height: 44px; min-width: 44px; }
+#world_popup_entries_list > .neco-entry-folder-heading > button:first-child { flex: 1; min-width: 0; justify-content: flex-start; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+#world_popup_entries_list > .neco-entry-folder-hidden { display: none !important; }
+.neco-entry-folder-picker { display: flex; flex-direction: column; gap: 8px; text-align: left; min-width: 0; }
+.neco-entry-folder-picks { max-height: 45dvh; overflow-y: auto; }
+.neco-entry-folder-picks > label { min-height: 44px; overflow-wrap: anywhere; }
+.neco-entry-folder-picks > label[hidden] { display: none; }

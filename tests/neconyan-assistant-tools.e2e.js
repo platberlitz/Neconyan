@@ -110,7 +110,7 @@ test('an active assistant reviews and persists real lorebook, agent, preset and 
         }, presetName);
         expect(presetState).toMatchObject({ selected: baselineName, target: { temperature: 0.73, foreign: 'preset metadata' } });
         await page.evaluate(() => window.NeconyanShell.openTab('characters', 'editor'));
-        await page.getByRole('combobox', { name: 'Editor section', exact: true }).selectOption('char-info');
+        await page.locator('#sb_character_editor_tab_char_info').click();
         await expect(page.locator('#description_textarea')).toHaveValue('Old card');
         expect(await edit(page, 'EditCharacter', { avatar, field: 'description', value: 'New character instructions' }, 'Old card', 'New character instructions')).toMatchObject({ status: 'success', committed: true, refreshFailed: false });
         await expect(page.locator('#description_textarea')).toHaveValue('New character instructions');

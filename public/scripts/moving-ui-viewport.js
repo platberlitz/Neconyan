@@ -1,6 +1,15 @@
 const MOVING_UI_VIEWPORT_TOLERANCE_PX = 1;
 const MOVING_UI_BOUND_PROPERTIES = ['width', 'height', 'left', 'top', 'right', 'bottom'];
 
+/** A layout belongs to the browser and viewport where the user deliberately arranged it. */
+export function matchesMovingUIViewport(saved, current) {
+    if (!saved || !current || !saved.device || saved.device !== current.device || current.width <= 768) {
+        return false;
+    }
+    return ['width', 'height', 'screenWidth', 'screenHeight', 'pixelRatio'].every(key =>
+        Number.isFinite(saved[key]) && saved[key] > 0 && saved[key] === current[key]);
+}
+
 function parsePixelValue(value) {
     if (typeof value === 'number' && Number.isFinite(value)) {
         return value;

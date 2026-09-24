@@ -379,7 +379,8 @@ describe('Neconyan character and group workflows', () => {
         expect(tabs).toContain('sb-character-library-primary-actions');
         expect(tabs).toContain('sb-character-library-secondary-actions');
         expect(styles).toContain('min-height: 44px;');
-        expect(styles).toContain('.sb-group-members-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));');
-        expect(styles).toContain('.sb-group-members-grid { grid-template-columns: minmax(0, 1fr); }');
+        // Two columns only when both member lists fit, so a pinned panel and a phone stack them.
+        expect(styles).toContain('.sb-group-members-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));');
+        expect(styles).not.toContain('.sb-group-members-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }');
     });
 });

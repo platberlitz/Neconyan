@@ -5213,8 +5213,7 @@ input[type='range']::-moz-range-thumb {
 
 #user-settings-block .title_restorable .menu_button,
 #user-settings-block .inline-drawer-content .menu_button {
-    min-width: 0;
-    white-space: normal;
+    white-space: nowrap;
     text-align: center;
 }
 

@@ -72,7 +72,7 @@ describe('topbar label tap cycle', () => {
         const returnSource = getFunctionSource('returnToChatSurface');
         expect(returnSource).toContain('closeShell(\'left\');');
         expect(returnSource).toContain('closeShell(\'right\');');
-        expect(returnSource).toContain('closeCharacterPanel();');
+        expect(returnSource).toContain('closeCharacterPanelUnlessPinned();');
         expect(returnSource).not.toContain('closeCurrentChat');
 
         const setterSource = getFunctionSource('setTopbarLabelClickCycle');

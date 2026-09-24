@@ -5576,6 +5576,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     flex-direction: column;
     gap: var(--sb-shell-space-md);
     min-width: 0;
+    container-type: inline-size;
     margin: 4px 0 2px;
     padding: var(--sb-shell-space-md);
     border: 1px solid color-mix(in srgb, var(--sb-shell-border) 82%, transparent);
@@ -5746,7 +5747,8 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     gap: 4px;
 }
 
-@media screen and (min-width: 1100px) {
+/* Sized by the editor, not the window: a pinned or MovingUI-resized panel is narrow on a wide screen. */
+@container (min-width: 780px) {
     #right-nav-panel .sb-character-editor-controls-row {
         grid-template-columns: var(--sb-character-editor-avatar-size) minmax(0, 1fr) minmax(240px, 28rem);
         grid-template-areas:
@@ -5866,34 +5868,17 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     display: none !important;
 }
 
-#right-nav-panel.openDrawer.sb-character-editor-fullscreen:is([data-menu-type="character_edit"], [data-menu-type="create"]) #rm_ch_create_block {
-    flex: 1 1 auto;
-    min-height: 0;
-    height: 100%;
+/* The sheet scrolls, not these: they fill it so a short section keeps the commit bar on the floor, and never shrink below their content, or the fields spill under the bar. */
+#right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) #rm_ch_create_block {
+    flex: 1 0 auto;
     display: flex !important;
     flex-direction: column;
-    overflow: hidden;
-    padding-inline-end: 0;
 }
 
-#right-nav-panel.openDrawer.sb-character-editor-fullscreen:is([data-menu-type="character_edit"], [data-menu-type="create"]) #form_create {
+#right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) #form_create {
     display: flex;
     flex-direction: column;
-    flex: 1 1 auto;
-    min-height: 0;
-    height: 100%;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding-inline-end: var(--sb-character-scroll-gutter, 8px);
-    overscroll-behavior: contain;
-}
-
-#right-nav-panel.openDrawer.sb-character-editor-fullscreen:is([data-menu-type="character_edit"], [data-menu-type="create"]) .sb-character-editor-subtab-panels {
-    flex: 1 1 auto;
-    min-height: 0;
-    max-height: 100%;
-    overflow: visible;
-    padding-inline-end: 0;
+    flex: 1 0 auto;
 }
 
 #right-nav-panel.openDrawer.sb-character-editor-fullscreen:is([data-menu-type="character_edit"], [data-menu-type="create"]) .sb-character-editor-panel {
@@ -6384,6 +6369,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 }
 
 #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #group-metadata-controls {
+    container-type: inline-size;
     width: 100%;
     margin-inline: 0;
     box-sizing: border-box;
@@ -6492,26 +6478,6 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 
 #right-nav-panel[data-menu-type="group_edit"] #rm_group_chat_name {
     display: none;
-}
-
-#right-nav-panel[data-menu-type="group_edit"] .sb-group-editor-name-row {
-    grid-template-columns: auto minmax(0, 1fr) minmax(150px, 220px) minmax(150px, 220px);
-}
-
-#right-nav-panel[data-menu-type="group_edit"] .sb-group-editor-action-cluster {
-    grid-column: 1;
-}
-
-#right-nav-panel[data-menu-type="group_edit"] .sb-group-editor-name-row::after {
-    grid-column: 2;
-}
-
-#right-nav-panel[data-menu-type="group_edit"] .sb-group-editor-name-row label {
-    grid-column: 3;
-}
-
-#right-nav-panel[data-menu-type="group_edit"] #group_tags_div {
-    grid-column: 4;
 }
 
 #right-nav-panel[data-menu-type="group_edit"] #rm_button_selected_ch h2 {
@@ -6670,11 +6636,51 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     min-width: 0;
 }
 
-@media screen and (max-width: 900px) {
-    #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #group_tags_div {
-        grid-column: 1 / -1;
-        width: min(448px, 100%);
-        justify-self: end;
+/* After the shared placement rules on purpose: same specificity, so these must come later to win. */
+#right-nav-panel[data-menu-type="group_edit"] .sb-group-editor-name-row {
+    grid-template-columns: auto minmax(0, 1fr) minmax(150px, 220px) minmax(150px, 220px);
+}
+
+#right-nav-panel[data-menu-type="group_edit"] .sb-group-editor-action-cluster {
+    grid-column: 1;
+}
+
+#right-nav-panel[data-menu-type="group_edit"] .sb-group-editor-name-row::after {
+    grid-column: 2;
+}
+
+#right-nav-panel[data-menu-type="group_edit"] .sb-group-editor-name-row label {
+    grid-column: 3;
+}
+
+#right-nav-panel[data-menu-type="group_edit"] #group_tags_div {
+    grid-column: 4;
+}
+
+/* Sized by the editor, not the window: a pinned or narrow panel puts the actions beside the
+   avatar and gives More... and the tags full rows under both. */
+@media (min-width: 769px) and (pointer: fine) {
+    @container (max-width: 700px) {
+        #right-nav-panel[data-menu-type] :is(.sb-group-editor-primary, .sb-group-editor-name-row) {
+            display: contents;
+        }
+
+        #right-nav-panel .sb-group-editor-name-row::after {
+            display: none;
+        }
+
+        #right-nav-panel[data-menu-type] .sb-group-editor-name-row > :is(input, label, div),
+        #right-nav-panel[data-menu-type] :is(#group_tags_div, #groupTagList) {
+            grid-column: 1 / -1;
+            grid-row: auto;
+        }
+
+        #right-nav-panel[data-menu-type] .sb-group-editor-name-row > .sb-group-editor-action-cluster {
+            grid-column: 2;
+            grid-row: 1;
+            flex-wrap: wrap;
+            width: auto;
+        }
     }
 }
 

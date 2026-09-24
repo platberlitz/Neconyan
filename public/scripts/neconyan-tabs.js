@@ -151,7 +151,7 @@ const NN_SHORTCUT_LABELS = Object.freeze({
 });
 const NN_PANEL_STYLESHEETS = Object.freeze({
     'characters:world-info': [
-        { href: 'css/world-info.css?v=20260915a', id: 'deferred-world-info-css' },
+        { href: 'css/world-info.css?v=20260924a', id: 'deferred-world-info-css' },
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20260912h', id: 'deferred-personas-css' },
@@ -1400,6 +1400,8 @@ const nnState = {
         stateObserver: null,
         observedOpen: null,
         lastTab: 'characters',
+        displacedWhilePinned: false,
+        restoreFrame: 0,
     },
     mobileModal: {
         syncFrame: 0,
@@ -5604,7 +5606,7 @@ function returnToChatSurface() {
     window.dispatchEvent(new CustomEvent('sb:close-conversation-workspace'));
     closeShell('left');
     closeShell('right');
-    closeCharacterPanel();
+    closeCharacterPanelUnlessPinned();
     closeMobileNav();
     closeMobileChatTools();
     setConnectionStripOpenState(false);
@@ -7487,7 +7489,7 @@ function applyMobileSurfaceExclusivity(decision) {
         [surface.NAV]: () => closeMobileNav(),
         [surface.LEFT_SHELL]: () => closeShell('left'),
         [surface.RIGHT_SHELL]: () => closeShell('right'),
-        [surface.CHARACTER_PANEL]: () => closeCharacterPanel(),
+        [surface.CHARACTER_PANEL]: () => closeCharacterPanelUnlessPinned(),
         [surface.CHAT_TOOLS]: () => closeMobileChatTools(),
         [surface.CONNECTION_STRIP]: () => setConnectionStripOpenState(false),
     };
@@ -8834,7 +8836,7 @@ function forceDrawerState(drawerRootOrId, shouldOpen, drawerIconOrSelector = nul
         && ['left-nav-panel', 'user-settings-block', 'right-nav-panel'].includes(el.id)) {
         if (el.id !== 'left-nav-panel') closeShell('left');
         if (el.id !== 'user-settings-block') closeShell('right');
-        if (el.id !== 'right-nav-panel') closeCharacterPanel();
+        if (el.id !== 'right-nav-panel') displaceCharacterPanel();
     }
     el.classList.toggle('openDrawer', Boolean(shouldOpen));
     el.classList.toggle('closedDrawer', !shouldOpen);
@@ -9997,7 +9999,9 @@ function syncCharacterDrawerStateFromDom({ force = false } = {}) {
         return;
     }
 
+    const wasOpen = nnState.characterDrawer.observedOpen;
     nnState.characterDrawer.observedOpen = isOpen;
+    rememberCharacterPanelOpenState(wasOpen, isOpen);
     setCharacterDrawerHostOverflow(isOpen);
     syncDrawerIconState('#rightNavDrawerIcon', isOpen);
     syncDrawerIconState('#WIDrawerIcon', isOpen && panel.dataset.menuType === 'world-info');
@@ -10063,6 +10067,73 @@ function closeCharacterPanel() {
     if (shouldResetViewport) {
         requestMobileViewportReset();
     }
+}
+
+function isCharacterPanelPinned() {
+    // Pinning docks the panel beside chat, a layout that only exists at desktop widths.
+    return !isMobileViewport() && document.getElementById('rm_button_panel_pin')?.checked === true;
+}
+
+// Opening a chat, going Home and popovers tidy the workspace away. A pinned panel is part of the
+// layout rather than an overlay, so it stays; the user still closes it with its own buttons.
+function closeCharacterPanelUnlessPinned() {
+    if (!isCharacterPanelPinned()) {
+        closeCharacterPanel();
+    }
+}
+
+// Settings and the left shell share the panel's inspector slot, so they replace a pinned panel
+// while open and hand the slot back when they close.
+function displaceCharacterPanel() {
+    if (isCharacterPanelPinned() && isCharacterPanelOpen()) {
+        nnState.characterDrawer.displacedWhilePinned = true;
+    }
+    closeCharacterPanel();
+}
+
+// The shell intercepts the native toggle, so the native NavOpened flag is written here instead;
+// OpenNavPanels() calls restorePinnedCharacterPanel() on the next load, which reads it.
+function rememberCharacterPanelOpenState(wasOpen, isOpen) {
+    if (wasOpen === null || isMobileViewport()) {
+        return;
+    }
+
+    // A displaced pinned panel comes back when Settings closes, so it still counts as open.
+    if (!isOpen && nnState.characterDrawer.displacedWhilePinned) {
+        return;
+    }
+
+    getShellAccountStorage()?.setItem('NavOpened', String(isOpen));
+}
+
+function restorePinnedCharacterPanel() {
+    if (!isCharacterPanelPinned() || isCharacterPanelOpen()) {
+        return;
+    }
+
+    if (getShellAccountStorage()?.getItem('NavOpened') === 'true') {
+        toggleCharacterPanel();
+    }
+}
+
+function queuePinnedCharacterPanelRestore() {
+    if (!nnState.characterDrawer.displacedWhilePinned || nnState.characterDrawer.restoreFrame) {
+        return;
+    }
+
+    // Deferred so a shell that closes only to make room for another one keeps the slot.
+    nnState.characterDrawer.restoreFrame = window.requestAnimationFrame(() => {
+        nnState.characterDrawer.restoreFrame = 0;
+        if (isShellOpen('left') || isShellOpen('right')) {
+            return;
+        }
+
+        const shouldRestore = isCharacterPanelPinned() && !isCharacterPanelOpen();
+        nnState.characterDrawer.displacedWhilePinned = false;
+        if (shouldRestore) {
+            toggleCharacterPanel();
+        }
+    });
 }
 
 function ensureCharacterResizeHandle() {
@@ -10360,7 +10431,7 @@ async function returnToLandingPage() {
     setUniversalSearchOpenState(false);
     closeShell('left');
     closeShell('right');
-    closeCharacterPanel();
+    closeCharacterPanelUnlessPinned();
     closeMobileNav();
     closeMobileChatTools();
     setConnectionStripOpenState(false);
@@ -10992,8 +11063,9 @@ function bindTopbarExtensionAdoption() {
     observer.disconnect();
 
     // childList only: extensions inject direct children, and subtree on #top-bar would fire on
-    // every chatbar and search re-render inside #sb-topbar-stack.
-    for (const target of [getCanonicalTopSettingsHolder(), document.getElementById('top-bar'), getNativeCharacterDrawerIcon()]) {
+    // every chatbar and search re-render inside #sb-topbar-stack. The slot itself is watched so a
+    // control that removes itself flips the empty flag back and the slot stops holding a gap.
+    for (const target of [getCanonicalTopSettingsHolder(), document.getElementById('top-bar'), getNativeCharacterDrawerIcon(), getTopbarExtensionSlot()]) {
         if (target instanceof HTMLElement) {
             observer.observe(target, { childList: true });
         }
@@ -16184,6 +16256,7 @@ function closeShell(shellKey) {
         return;
     }
 
+    queuePinnedCharacterPanelRestore();
     shellState?.tabs.get(shellState.activeTabId)?.onDeactivate?.();
 
     if (!isDrawerActuallyOpen(shellRoot)) {
@@ -16214,7 +16287,7 @@ function closeShell(shellKey) {
 function closeWorkspace() {
     closeShell('left');
     closeShell('right');
-    closeCharacterPanel();
+    closeCharacterPanelUnlessPinned();
 }
 
 function buildShell(shellKey) {
@@ -19166,6 +19239,7 @@ function initAll() {
         closeCharacters() {
             closeCharacterPanel();
         },
+        restorePinnedCharacterPanel,
         closeAgents() {
             if (isShellTabOpen('left', 'agents')) closeShell('left');
         },

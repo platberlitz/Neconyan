@@ -25,6 +25,8 @@ import {
 import {
     power_user,
     send_on_enter_options,
+    canUseMovingUI,
+    rememberMovingUIEdit,
 } from './power-user.js';
 
 import { selected_group, is_group_generating, openGroupById } from './group-chats.js';
@@ -489,7 +491,11 @@ function RA_autoconnect(PrevApi) {
 function OpenNavPanels() {
     if (!isMobile()) {
         //auto-open R nav if locked and previously open
-        if (accountStorage.getItem('NavLockOn') == 'true' && accountStorage.getItem('NavOpened') == 'true') {
+        // Neconyan: the shell intercepts the hidden toggle, so clicking it never leaves the panel
+        // open; the shell restores the pinned panel itself.
+        if (globalThis.NeconyanShell?.restorePinnedCharacterPanel) {
+            globalThis.NeconyanShell.restorePinnedCharacterPanel();
+        } else if (accountStorage.getItem('NavLockOn') == 'true' && accountStorage.getItem('NavOpened') == 'true') {
             //console.log("RA -- clicking right nav to open");
             $('#rightNavDrawerIcon').trigger('click');
         }
@@ -541,6 +547,7 @@ const saveUserInputDebounced = debounce(saveUserInput);
 export function dragElement($elmnt) {
     let actionType = null; // "drag" or "resize"
     let isMouseDown = false;
+    let didMove = false;
 
     let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
     let height, width, top, left, right, bottom,
@@ -555,6 +562,15 @@ export function dragElement($elmnt) {
 
     // Helper: Save position/size to state and emit events
     function savePositionAndSize() {
+        if (!didMove || !canUseMovingUI()) return;
+        rememberMovingUIEdit();
+        const rect = $elmnt[0].getBoundingClientRect();
+        top = rect.top;
+        left = rect.left;
+        right = window.innerWidth - rect.right;
+        bottom = window.innerHeight - rect.bottom;
+        width = rect.width;
+        height = rect.height;
         if (!power_user.movingUIState[stateKey]) power_user.movingUIState[stateKey] = {};
         power_user.movingUIState[stateKey].top = top;
         power_user.movingUIState[stateKey].left = left;
@@ -598,8 +614,7 @@ export function dragElement($elmnt) {
             $target.hasClass('resizing') ||
             $target.height() < 50 ||
             $target.width() < 50 ||
-            power_user.movingUI === false ||
-            isMobile() ||
+            !canUseMovingUI() ||
             !isMouseDown
         ) {
             observer.disconnect();
@@ -622,10 +637,8 @@ export function dragElement($elmnt) {
         winWidth = window.innerWidth;
         winHeight = window.innerHeight;
 
-        // Prepare state object if missing
-        if (!power_user.movingUIState[stateKey]) power_user.movingUIState[stateKey] = {};
-
         if (actionType === 'resize') {
+            didMove = true;
             let containerAspectRatio = height / width;
             if ($elmnt.attr('id').startsWith('zoomFor_')) {
                 const zoomedAvatarImage = $elmnt.find('.zoomed_avatar_img');
@@ -675,7 +688,9 @@ export function dragElement($elmnt) {
     }
 
     function elementDrag(e) {
-        if (!power_user.movingUIState[stateKey]) power_user.movingUIState[stateKey] = {};
+        if (!canUseMovingUI()) return;
+        if (!didMove && Math.hypot(pos3 - e.clientX, pos4 - e.clientY) < 3) return;
+        didMove = true;
         e.preventDefault();
         pos1 = pos3 - e.clientX;
         pos2 = pos4 - e.clientY;
@@ -692,28 +707,32 @@ export function dragElement($elmnt) {
     }
 
     function closeDragElement() {
+        savePositionAndSize();
+        didMove = false;
         isMouseDown = false;
         actionType = null;
         $(document).off('mouseup', closeDragElement);
         $(document).off('mousemove', elementDrag);
         $elmnt.attr('data-dragged', 'false');
         observer.disconnect();
-        savePositionAndSize();
     }
 
     // Setup event listeners using event delegation to support dynamic header elements like #sb_conversation_header
     $(document).off('mousedown', headerSelector).on('mousedown', headerSelector, (e) => {
+        if (!canUseMovingUI() || $elmnt.is('#right-nav-panel.pinnedOpen, #right-nav-panel.sb-character-editor-fullscreen')) return;
         const isHeader = $(e.target).closest('#sb_conversation_header').length > 0;
         const isInteractive = $(e.target).closest('button, input, select, textarea, [role="button"], a, i').length > 0;
         if ($(e.target).hasClass('drag-grabber') || (isHeader && !isInteractive)) {
             actionType = 'drag';
             isMouseDown = true;
+            didMove = false;
             observer.observe($elmnt[0], { attributes: true, attributeFilter: ['style'] });
             dragMouseDown(e);
         }
     });
 
     $elmnt.off('mousedown').on('mousedown', (e) => {
+        if (!canUseMovingUI() || $elmnt.is('#right-nav-panel.pinnedOpen, #right-nav-panel.sb-character-editor-fullscreen')) return;
         const rect = $elmnt[0].getBoundingClientRect();
         const resizeMargin = 16;
         const isNearRight = e.clientX > rect.right - resizeMargin;
@@ -721,6 +740,7 @@ export function dragElement($elmnt) {
         if (isNearRight && isNearBottom) {
             actionType = 'resize';
             isMouseDown = true;
+            didMove = false;
             observer.observe($elmnt[0], { attributes: true, attributeFilter: ['style'] });
         }
     });
@@ -728,8 +748,8 @@ export function dragElement($elmnt) {
     $(document).on('mouseup', () => {
         if (isMouseDown && actionType === 'resize') {
             if (
-                power_user.movingUIState[stateKey].width !== $elmnt.width() ||
-                power_user.movingUIState[stateKey].height !== $elmnt.height()
+                power_user.movingUIState[stateKey]?.width !== $elmnt.width() ||
+                power_user.movingUIState[stateKey]?.height !== $elmnt.height()
             ) {
                 savePositionAndSize();
             }

@@ -1,6 +1,24 @@
 import { describe, expect, test } from '@jest/globals';
 
-import { resolveMovingUIViewportState, scaleMovingUIViewportState } from '../public/scripts/moving-ui-viewport.js';
+import { resolveMovingUIViewportState, scaleMovingUIViewportState, matchesMovingUIViewport } from '../public/scripts/moving-ui-viewport.js';
+
+describe('deliberate MovingUI layout ownership', () => {
+    const viewport = { device: 'browser-a', width: 1280, height: 900, screenWidth: 1920, screenHeight: 1080, pixelRatio: 1 };
+
+    test('restores only in the browser and viewport that saved the arrangement', () => {
+        expect(matchesMovingUIViewport({ ...viewport }, viewport)).toBe(true);
+        expect(matchesMovingUIViewport(undefined, viewport)).toBe(false);
+        for (const change of [{ device: 'browser-b' }, { width: 1024 }, { height: 768 }, { screenWidth: 2560 }, { pixelRatio: 1.25 }]) {
+            expect(matchesMovingUIViewport(viewport, { ...viewport, ...change })).toBe(false);
+        }
+    });
+
+    test('rejects phone widths and malformed metadata', () => {
+        const phone = { ...viewport, width: 393 };
+        expect(matchesMovingUIViewport(phone, phone)).toBe(false);
+        expect(matchesMovingUIViewport({ ...viewport, height: null }, viewport)).toBe(false);
+    });
+});
 
 describe('MovingUI viewport containment', () => {
     test('pulls a persisted panel back inside the viewport without changing its size', () => {

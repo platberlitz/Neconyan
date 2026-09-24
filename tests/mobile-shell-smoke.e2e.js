@@ -909,6 +909,7 @@ test.describe('desktop MovingUI containment at 1264x800', () => {
             const snapshot = {
                 movingUI: powerUserModule.power_user.movingUI,
                 movingUIState: powerUserModule.power_user.movingUIState,
+                movingUIViewport: powerUserModule.power_user.movingUIViewport,
                 leftStyle: leftPanel.style.cssText,
                 rightStyle: rightPanel.style.cssText,
                 hadMovingUIClass: document.body.classList.contains('movingUI'),
@@ -971,6 +972,7 @@ test.describe('desktop MovingUI containment at 1264x800', () => {
                 const rightPanel = document.getElementById('right-nav-panel');
                 module.power_user.movingUI = snapshot.movingUI;
                 module.power_user.movingUIState = snapshot.movingUIState;
+                module.power_user.movingUIViewport = snapshot.movingUIViewport;
                 document.body.classList.toggle('movingUI', snapshot.hadMovingUIClass);
                 leftPanel.style.cssText = snapshot.leftStyle;
                 rightPanel.style.cssText = snapshot.rightStyle;
@@ -979,7 +981,7 @@ test.describe('desktop MovingUI containment at 1264x800', () => {
         }
     });
 
-    test('contains corrupt persisted panel geometry before it can enlarge the document', async ({ page }) => {
+    test('ignores unowned persisted geometry without altering the saved layout', async ({ page }) => {
         await openQuietChatForSmoke(page, { selectCharacter: false });
         await page.evaluate(() => window.SillyBunnyShell.openTab('left', 'presets'));
         await waitForAnimationFrames(page, 2);
@@ -992,6 +994,7 @@ test.describe('desktop MovingUI containment at 1264x800', () => {
             const original = {
                 movingUI: module.power_user.movingUI,
                 movingUIState: module.power_user.movingUIState,
+                movingUIViewport: module.power_user.movingUIViewport,
                 leftStyle: leftPanel.style.cssText,
                 rightStyle: rightPanel.style.cssText,
                 warningClass: warning?.className ?? '',
@@ -999,6 +1002,7 @@ test.describe('desktop MovingUI containment at 1264x800', () => {
 
             try {
                 module.power_user.movingUI = true;
+                module.power_user.movingUIViewport = null;
                 module.power_user.movingUIState = {
                     'nav-panel-shared-size': {
                         position: 'fixed',
@@ -1029,6 +1033,7 @@ test.describe('desktop MovingUI containment at 1264x800', () => {
             } finally {
                 module.power_user.movingUI = original.movingUI;
                 module.power_user.movingUIState = original.movingUIState;
+                module.power_user.movingUIViewport = original.movingUIViewport;
                 leftPanel.style.cssText = original.leftStyle;
                 rightPanel.style.cssText = original.rightStyle;
                 if (warning) {
@@ -1041,9 +1046,9 @@ test.describe('desktop MovingUI containment at 1264x800', () => {
         expect(snapshot.rootScrollWidth).toBe(snapshot.viewportWidth);
         expect(snapshot.rect.left).toBeGreaterThanOrEqual(-1);
         expect(snapshot.rect.right).toBeLessThanOrEqual(snapshot.viewportWidth + 1);
-        expect(snapshot.state.left).toBeGreaterThanOrEqual(0);
-        expect(snapshot.state.left + snapshot.state.width).toBe(snapshot.viewportWidth);
-        expect(snapshot.state.right).toBe(0);
+        expect(snapshot.state.left).toBe(1800);
+        expect(snapshot.state.width).toBe(600);
+        expect(snapshot.state.right).toBe(-1136);
         expect(snapshot.warningVisible).toBe(false);
         await expectNoDocumentOverflow(page);
     });

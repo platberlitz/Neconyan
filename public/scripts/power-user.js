@@ -83,7 +83,7 @@ import { setSlashCommandParserSettingsGetter } from './slash-commands/SlashComma
 import { persona_description_positions as _persona_description_positions } from './personas.js';
 import { generateCustomCssWithAI, resolveCustomCssAIProfile } from './neconyan-custom-css-ai.js';
 import { populateConnectionProfileSelect } from './extensions/in-chat-agents/profile-utils.js';
-import { resolveMovingUIViewportState, scaleMovingUIViewportState } from './moving-ui-viewport.js';
+import { resolveMovingUIViewportState, matchesMovingUIViewport } from './moving-ui-viewport.js';
 import { ANDROID_STREAMING_SETTING_DEFAULTS, ANDROID_STREAMING_SETTINGS_INITIALIZED_KEY, initializeAndroidStreamingSettings } from './mobile-streaming.js';
 
 export const toastPositionClasses = [
@@ -2438,9 +2438,8 @@ async function applyMovingUIPreset(name) {
         return;
     }
 
-    power_user.movingUIState = movingUIPreset.movingUIState;
-
-
+    power_user.movingUIState = structuredClone(movingUIPreset.movingUIState);
+    power_user.movingUIViewport = getMovingUIViewport();
     console.log('MovingUI Preset applied: ' + name);
     loadMovingUIState();
     saveSettingsDebounced();
@@ -2884,6 +2883,41 @@ function loadCharListState() {
 
 const movingUIPixelStyles = new Set(['width', 'height', 'top', 'right', 'bottom', 'left']);
 const movingUIBoundsTolerance = 1;
+let movingUIDevice;
+const appliedMovingUIElements = new Set();
+
+function getMovingUIViewport() {
+    if (!movingUIDevice) {
+        // This identity is browser-local, unlike account settings shared across devices.
+        try {
+            movingUIDevice = localStorage.getItem('neconyan-moving-ui-device') || crypto.randomUUID();
+            localStorage.setItem('neconyan-moving-ui-device', movingUIDevice);
+        } catch {
+            movingUIDevice = crypto.randomUUID();
+        }
+    }
+    return {
+        device: movingUIDevice,
+        width: window.innerWidth,
+        height: window.innerHeight,
+        screenWidth: window.screen.width,
+        screenHeight: window.screen.height,
+        pixelRatio: window.devicePixelRatio,
+    };
+}
+
+export function canUseMovingUI() {
+    return power_user.movingUI === true && !isMobile() && window.innerWidth > 768;
+}
+
+/** Called only after a real drag/resize, never by layout or viewport observers. */
+export function rememberMovingUIEdit() {
+    const viewport = getMovingUIViewport();
+    if (!matchesMovingUIViewport(power_user.movingUIViewport, viewport)) {
+        power_user.movingUIState = {};
+    }
+    power_user.movingUIViewport = viewport;
+}
 
 function normalizeMovingUIStateStyle(property, value) {
     if (value === null || value === undefined || value === '') {
@@ -2912,7 +2946,9 @@ function applyMovingUIStateStyle(element, property, value) {
 
 function applyMovingUIStateStyles(element, state) {
     for (const [property, value] of Object.entries(state)) {
-        applyMovingUIStateStyle(element, property, value);
+        if (movingUIPixelStyles.has(property) || property === 'margin') {
+            applyMovingUIStateStyle(element, property, value);
+        }
     }
 }
 
@@ -2989,14 +3025,17 @@ function syncMovingUIOffscreenWarning(showWarning) {
 }
 
 export function loadMovingUIState() {
-    if (!isMobile()
-        && power_user.movingUIState
-        && power_user.movingUI === true) {
+    const states = power_user.movingUIState ?? {};
+    const targetIds = name => name === 'nav-panel-shared-size' ? ['left-nav-panel', 'right-nav-panel'] : [name];
+    const targets = new Set([...appliedMovingUIElements, ...Object.keys(states).flatMap(targetIds)]);
+    targets.forEach(id => resetMovableStyles(id));
+    appliedMovingUIElements.clear();
+    if (canUseMovingUI() && matchesMovingUIViewport(power_user.movingUIViewport, getMovingUIViewport())) {
         console.debug('loading movingUI state');
         let hasOffscreenPanel = false;
-        let didContainPanel = false;
         for (var elmntName of Object.keys(power_user.movingUIState)) {
-            var elmntState = power_user.movingUIState[elmntName];
+            // Automatic containment is temporary, never written into the saved layout.
+            var elmntState = { ...power_user.movingUIState[elmntName] };
             try {
                 const targetNames = elmntName === 'nav-panel-shared-size' ? ['left-nav-panel', 'right-nav-panel'] : [elmntName];
                 const targetElements = [];
@@ -3005,12 +3044,13 @@ export function loadMovingUIState() {
                 for (const targetName of targetNames) {
                     var elmnt = $('#' + $.escapeSelector(targetName));
                     if (elmnt.length) {
+                        if (elmnt[0].matches('#right-nav-panel.pinnedOpen, #right-nav-panel.sb-character-editor-fullscreen')) continue;
                         console.debug(`loading state for ${targetName} from ${elmntName}`);
+                        appliedMovingUIElements.add(targetName);
                         applyMovingUIStateStyles(elmnt[0], elmntState);
                         // Persisted geometry must never enlarge the document or
                         // leave a panel unreachable after a viewport/monitor change.
                         const didContainTarget = containMovingUIElement(elmnt[0], elmntState);
-                        didContainPanel = didContainTarget || didContainPanel;
                         sharedStateChanged = didContainTarget || sharedStateChanged;
                         targetElements.push(elmnt[0]);
                         applied = true;
@@ -3030,9 +3070,6 @@ export function loadMovingUIState() {
             }
         }
         syncMovingUIOffscreenWarning(hasOffscreenPanel);
-        if (didContainPanel) {
-            saveSettingsDebounced();
-        }
     } else {
         console.debug('skipping movingUI state load');
         syncMovingUIOffscreenWarning(false);
@@ -3840,6 +3877,7 @@ async function resetMovablePanels(type) {
     await delay(50);
 
     power_user.movingUIState = {};
+    power_user.movingUIViewport = null;
     syncMovingUIOffscreenWarning(false);
 
     //if user manually resets panels, deselect the current preset
@@ -4231,82 +4269,12 @@ jQuery(async () => {
         });
     });
 
-    const reportZoomLevelDebounced = debounce(() => {
-        const zoomLevel = parseFloat(Number(window.devicePixelRatio).toFixed(2)) || 1;
-        const winWidth = window.innerWidth;
-        const winHeight = window.innerHeight;
-        const originalWidth = winWidth * zoomLevel;
-        const originalHeight = winHeight * zoomLevel;
-        console.debug(`Window resize: ${coreTruthWinWidth}x${coreTruthWinHeight} -> ${window.innerWidth}x${window.innerHeight}`);
-        console.debug(`Zoom: ${zoomLevel}, X:${winWidth}, Y:${winHeight}, original: ${originalWidth}x${originalHeight} `);
-        return zoomLevel;
-    });
-
-    var coreTruthWinWidth = window.innerWidth;
-    var coreTruthWinHeight = window.innerHeight;
-
-    $(window).on('resize', async () => {
+    const refreshMovingUIViewport = debounce(loadMovingUIState, 100);
+    $(window).on('resize', () => {
         adjustAutocompleteDebounced();
         setHotswapsDebounced();
-
-        if (isMobile()) {
-            return;
-        }
-
-        reportZoomLevelDebounced();
-
-        //attempt to scale movingUI elements naturally across window resizing/zooms
-        //this will still break if the zoom level causes mobile styles to come into play.
-        const scaleY = parseFloat(Number(window.innerHeight / coreTruthWinHeight).toFixed(4));
-        const scaleX = parseFloat(Number(window.innerWidth / coreTruthWinWidth).toFixed(4));
-
-        if (Object.keys(power_user.movingUIState).length > 0) {
-            let hasOffscreenPanel = false;
-            for (var elmntName of Object.keys(power_user.movingUIState)) {
-                var elmntState = power_user.movingUIState[elmntName];
-                try {
-                    const targetNames = elmntName === 'nav-panel-shared-size' ? ['left-nav-panel', 'right-nav-panel'] : [elmntName];
-                    const targetElements = [];
-                    let sharedStateChanged = false;
-                    let applied = false;
-                    Object.assign(elmntState, scaleMovingUIViewportState(elmntState, { scaleX, scaleY }));
-
-                    for (const targetName of targetNames) {
-                        const elmnt = $('#' + $.escapeSelector(targetName));
-                        if (!elmnt.length) {
-                            continue;
-                        }
-
-                        console.log(`scaling ${targetName} by ${scaleX}x${scaleY} to ${elmntState.width}x${elmntState.height}`);
-                        const element = elmnt[0];
-                        applyMovingUIStateStyles(element, elmntState);
-                        const didContainTarget = containMovingUIElement(element, elmntState);
-                        sharedStateChanged = didContainTarget || sharedStateChanged;
-                        targetElements.push(element);
-                        applied = true;
-                    }
-
-                    if (sharedStateChanged && targetElements.length > 1) {
-                        targetElements.forEach(element => applyMovingUIStateStyles(element, elmntState));
-                    }
-                    targetElements.forEach(element => {
-                        hasOffscreenPanel = isMovingUIStateOutOfViewport(element, elmntState) || hasOffscreenPanel;
-                    });
-
-                    if (!applied) {
-                        console.log(`skipping ${elmntName} because it doesn't exist in the DOM`);
-                    }
-                } catch (err) {
-                    console.log(`error occurred while processing ${elmntName}: ${err}`);
-                }
-            }
-            syncMovingUIOffscreenWarning(hasOffscreenPanel);
-        } else {
-            console.debug('aborting MUI reset', Object.keys(power_user.movingUIState).length);
-        }
-        saveSettingsDebounced();
-        coreTruthWinWidth = window.innerWidth;
-        coreTruthWinHeight = window.innerHeight;
+        // Defaults adapt to a new viewport; repeated resizing must not rewrite the user's layout.
+        refreshMovingUIViewport();
     });
 
     // Settings that go to settings.json

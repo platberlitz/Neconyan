@@ -126,6 +126,11 @@ describe('companion tracker panel', () => {
                 ['PHONE_NONE', 'phone-none', 'TRACKER_NONE', 'tracker-none'].includes(String(result?.content ?? '').trim())),
         }));
 
+        await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-runner.js', () => ({
+            captureMessageTargetState: jest.fn(() => ({})),
+            isMessageTargetCurrent: jest.fn(() => true),
+        }));
+
         return await import('../public/scripts/extensions/in-chat-agents/companion/companion-panel.js');
     }
 
@@ -591,6 +596,112 @@ describe('companion tracker panel', () => {
 
         globallyEnabled = false;
         expect(panel.shouldShowCompanionPanelHandle()).toBe(false);
+    });
+
+    test('defaults the launcher to the floating button and normalises unknown values', async () => {
+        const panel = await importPanel();
+
+        expect(panel.getCompanionPanelLauncher()).toBe('handle');
+        expect(panel.normalizeCompanionPanelLauncher('topbar')).toBe('topbar');
+        expect(panel.normalizeCompanionPanelLauncher('sidebar')).toBe('handle');
+        expect(panel.normalizeCompanionPanelLauncher(null)).toBe('handle');
+    });
+
+    test('shows either the floating button or the top bar button, never both', async () => {
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true }];
+        const panel = await importPanel();
+
+        expect(panel.shouldShowCompanionPanelHandle()).toBe(true);
+        expect(panel.shouldShowCompanionPanelTopbarButton()).toBe(false);
+
+        expect(panel.setCompanionPanelLauncher('topbar')).toBe('topbar');
+        expect(accountStorage.setItem).toHaveBeenCalledWith('ica--tracker-panel-launcher', 'topbar');
+        expect(panel.shouldShowCompanionPanelHandle()).toBe(false);
+        expect(panel.shouldShowCompanionPanelTopbarButton()).toBe(true);
+        // Hiding the floating button means nothing once the top bar owns the launcher.
+        expect(panel.buildPanelHtml()).not.toContain('panel-hide-handle');
+
+        globallyEnabled = false;
+        expect(panel.shouldShowCompanionPanelTopbarButton()).toBe(false);
+        globallyEnabled = true;
+
+        expect(panel.setCompanionPanelLauncher('handle')).toBe('handle');
+        expect(panel.shouldShowCompanionPanelHandle()).toBe(true);
+        expect(panel.shouldShowCompanionPanelTopbarButton()).toBe(false);
+        expect(panel.buildPanelHtml()).toContain('panel-hide-handle');
+    });
+
+    test('restores the top bar choice, puts its button in the bar slot, and removes it when switched back', async () => {
+        accountStorageValues.set('ica--tracker-panel-launcher', 'topbar');
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true }];
+        const nodes = new Map();
+        const slot = { append: jest.fn(node => nodes.set(node.id, node)) };
+        globalThis.document.getElementById = jest.fn(id => (id === 'sb-topbar-extension-slot' ? slot : nodes.get(id) ?? null));
+        globalThis.document.createElement = jest.fn(() => {
+            const node = {
+                attributes: {},
+                setAttribute: jest.fn((name, value) => {
+                    node.attributes[name] = String(value);
+                }),
+                addEventListener: jest.fn((name, handler) => {
+                    node[`on${name}`] = handler;
+                }),
+                remove: jest.fn(() => nodes.delete(node.id)),
+            };
+            return node;
+        });
+        const elementStub = () => {
+            const element = {
+                length: 0,
+                on: jest.fn(() => element),
+                append: jest.fn(() => element),
+                html: jest.fn(() => element),
+                toggle: jest.fn(() => element),
+                attr: jest.fn(() => element),
+                addClass: jest.fn(() => element),
+                removeClass: jest.fn(() => element),
+            };
+            return element;
+        };
+        const panelElement = elementStub();
+        const handleElement = elementStub();
+        globalThis.$ = jest.fn(arg => {
+            if (arg === '#ica--tracker-panel') return panelElement;
+            if (arg === '#ica--tracker-panel-handle') return handleElement;
+            return elementStub();
+        });
+        const panel = await importPanel();
+
+        expect(panel.getCompanionPanelLauncher()).toBe('topbar');
+        panel.updateCompanionPanelHandleVisibility();
+
+        expect(handleElement.toggle).toHaveBeenLastCalledWith(false);
+        expect(slot.append).toHaveBeenCalledTimes(1);
+        const button = nodes.get('ica--tracker-panel-topbar');
+        expect(button.attributes).toEqual(expect.objectContaining({
+            'aria-controls': 'ica--tracker-panel',
+            'aria-expanded': 'false',
+            'data-sb-topbar-adopt': 'true',
+        }));
+
+        button.onclick();
+        expect(panelElement.attr).toHaveBeenCalledWith('data-edge', 'right');
+        expect(panelElement.attr).toHaveBeenCalledWith('data-launcher', 'topbar');
+        expect(panelElement.addClass).toHaveBeenCalledWith('is-open');
+        expect(button.attributes['aria-expanded']).toBe('true');
+
+        button.onclick();
+        expect(panelElement.removeClass).toHaveBeenCalledWith('is-open');
+        expect(button.attributes['aria-expanded']).toBe('false');
+
+        // A second sync reuses the button instead of stacking another one.
+        panel.updateCompanionPanelHandleVisibility();
+        expect(slot.append).toHaveBeenCalledTimes(1);
+
+        panel.setCompanionPanelLauncher('handle');
+        expect(button.remove).toHaveBeenCalled();
+        expect(nodes.has('ica--tracker-panel-topbar')).toBe(false);
+        expect(handleElement.toggle).toHaveBeenLastCalledWith(true);
     });
 
     test('hides the panel, handle, and both wand items only while Conversation Mode is active', async () => {

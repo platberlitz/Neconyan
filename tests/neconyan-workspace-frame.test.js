@@ -63,7 +63,7 @@ describe('Neconyan workspace frame', () => {
         expect(tabsSource).toContain('function closeWorkspace() {');
         expect(getFunctionSource('closeWorkspace')).toContain('closeShell(\'left\');');
         expect(getFunctionSource('closeWorkspace')).toContain('closeShell(\'right\');');
-        expect(getFunctionSource('closeWorkspace')).toContain('closeCharacterPanel();');
+        expect(getFunctionSource('closeWorkspace')).toContain('closeCharacterPanelUnlessPinned();');
         expect(tabsSource).toContain('closeWorkspace,');
     });
 

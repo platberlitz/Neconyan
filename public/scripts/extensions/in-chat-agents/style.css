@@ -1388,6 +1388,12 @@ button.ica--card-pill--version-update {
     clip-path: inset(0 100% 0 0);
 }
 
+/* Opened from the top bar, the sheet starts under the bar so the button that toggles it stays in reach. */
+.ica--tpanel[data-launcher="topbar"][data-edge="right"] {
+    top: calc(var(--ica--tpanel-viewport-top) + var(--sb-topbar-layout-offset, 0px));
+    height: calc(var(--ica--tpanel-viewport-height) - var(--sb-topbar-layout-offset, 0px));
+}
+
 .ica--tpanel[data-edge="top"],
 .ica--tpanel[data-edge="bottom"] {
     left: 0;

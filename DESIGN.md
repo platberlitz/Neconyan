@@ -40,6 +40,7 @@ Rules:
 
 - Radii: 6px inputs and small buttons, 8px cards, 10px pills and menus, 12px bottom bar and composer row buttons, 14px phone buttons (paper theme), 18px for the composer box and the phone bottom bar's top corners, 999px for round icon buttons.
 - Touch targets: 44px minimum on phones for anything tappable. Composer action squares are 44px; the extension rows use 36px buttons with a 5px gap.
+- Buttons are horizontal and perfectly aligned by default. A label stays on one line, buttons in a group sit side by side and wrap to the next row as whole buttons, and every button in a row shares one height and one alignment. Never let a button get narrower than its label: `.menu_button` sizes to `max-content` capped at `max-width: 100%`, never `min-content`, because the settings drawers inherit `overflow-wrap: anywhere` and min-content there is one letter wide. Cut wasted space, uneven gaps and padding that isn't buying a touch target.
 - Spacing scale: 4, 6, 8, 12, 16, 18, 24. Panel padding 18px on desktop, 12px on phones. Message gap 24px desktop, 10px phones.
 - Cat ears (`.neconyan-cat-panel::before/::after`) sit on the top edge of one box per screen: the composer on desktop, the whole bottom bar and the sheet tab row on phones.
 
@@ -48,7 +49,8 @@ Rules:
 - Breakpoint: 768px. Phone stylesheets are gated at the link level; JS uses `isMobileViewport()`.
 - Phones: the top bar is 42px and shows the character name (plus context size or custom text when chosen); the hamburger opens the workspace rail as an opaque drawer under the top bar; sheets (`#right-nav-panel`, settings shells) are opaque and their header collapses to a close button beside a labelled, horizontally scrolling tab row; no dropdown section pickers anywhere; the bottom bar (persona, chat pill, extension rows, composer) is one solid box; Create/Import/Filter/Grid/Bulk edit live in one scrolling tool row.
 - Any horizontally scrolling rail needs both `touch-action: pan-x` and an entry in `MOBILE_DOCUMENT_PAN_HORIZONTAL_SCROLL_SELECTOR` in `public/scripts/mobile-shell-lifecycle/index.js`, or the capture-phase touch guard cancels the swipe.
-- Desktop keeps wrapping tab rows, the labelled Send and Chat tools pills, the editor section select, and the sidebar always visible.
+- Desktop keeps wrapping tab rows, the labelled Send and Chat tools pills, and the sidebar always visible. The character editor's sections (Basics, Definition, Greetings, Advanced) are a labelled tab row at every width, fullscreen and pinned included, never a dropdown; in a pinned panel the tab icons step aside so all four fit on one row.
+- Size layouts inside panels by the panel, not the window: a pinned or MovingUI-resized panel is narrow on a wide screen, so use container queries (`container-type: inline-size` on the box, `@container`) rather than viewport media queries for anything that lives in `#right-nav-panel`.
 
 ## Motion and accessibility
 

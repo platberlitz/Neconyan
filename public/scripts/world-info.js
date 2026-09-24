@@ -27,6 +27,7 @@ import { escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharact
 import { detectEmbeddedLorebookCandidates, findMatchingLorebookName, getLinkedAuxBooks, isEmbeddedBookLinked } from './world-info-batch-helpers.js';
 import { applyWorldInfoTimedEffects, filterWorldInfoInclusionGroups, getTimedEffectWindow, matchesWorldInfoEntry, normalizeWorldInfoKey, parseWorldInfoKeyRegex, passesWorldInfoProbability, prepareWorldInfoEntries, resolveWorldInfoTimedEffects } from './world-info-scan-core.js';
 import { parseLorebookImport } from './neconyan-lorebook-tools-core.js';
+import { createEntryFolderUI } from './world-info-entry-folders-ui.js';
 import {
     NECONYAN_LOREBOOK_FOLDERS_KEY,
     normalizeNeconyanLorebookFolders,
@@ -117,6 +118,7 @@ let desktopSelectedWorldInfoUid = null;
 let isWorldInfoEditorPopoutRequested = false;
 let isWorldInfoEditorPopoutShellSyncBound = false;
 let worldInfoEditorLoadId = 0;
+let entryFolderUI = null;
 
 // Do not optimize. updateEditor is a function that is updated by the displayWorldEntries with new data.
 export const worldInfoFilter = new FilterHelper(() => updateEditor());
@@ -2755,6 +2757,13 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
     updateWorldInfoWorkspaceState({ name, data });
     const selectionTools = $('#world_popup_new, #world_popup_name_button, #world_popup_export, #world_popup_delete, #world_duplicate, #world_backfill_memos, #world_apply_current_sorting, #OpenAllWIEntries, #CloseAllWIEntries');
     selectionTools.prop('disabled', !data || !('entries' in data));
+    entryFolderUI = createEntryFolderUI({
+        name, data, requestedUid,
+        save: () => saveWorldInfo(name, data, true),
+        refresh: () => updateEditor(),
+        syncOriginal: (uid, path, value) => setWIOriginalDataValue(data, uid, path, value),
+    });
+    const folderUI = entryFolderUI;
 
     if (!data || !('entries' in data)) {
         setWorldInfoDesktopEditorPopout(false);
@@ -2814,6 +2823,7 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
         entriesArray = worldInfoFilter.applyFilters(entriesArray);
         entriesArray = filterWorldInfoEntriesByView(entriesArray);
         entriesArray = sortWorldInfoEntries(entriesArray);
+        entriesArray = folderUI?.filter(entriesArray) ?? entriesArray;
 
         // Cache keys
         const keys = entriesArray.flatMap(entry => [...entry.key, ...entry.keysecondary]);
@@ -2887,7 +2897,11 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
                     });
                 }
 
-                worldEntriesList.append(blocks);
+                if (folderUI) {
+                    folderUI.render(worldEntriesList[0], blocks, Boolean(String($('#world_info_search').val()).trim()));
+                } else {
+                    worldEntriesList.append(blocks);
+                }
 
                 if (isDesktopSplit) {
                     const hasDesktopSelection = desktopSelectedWorldInfoUid !== null && desktopEditorHost.children().length > 0;
@@ -2947,6 +2961,7 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
     $('#world_popup_new').off('click').on('click', async () => {
         const entry = createWorldInfoEntry(name, data);
         if (entry) {
+            folderUI?.fileNewEntry(entry);
             await saveWorldInfo(name, data, true);
             updateEditor(entry.uid);
         }
@@ -3857,6 +3872,7 @@ export async function getWorldEntry(name, data, entry, options = {}) {
     headerTemplate.data('uid', entry.uid);
     headerTemplate.attr('uid', entry.uid);
     updateEntryHeaderBadges(headerTemplate, entry);
+    if (entryFolderUI) headerTemplate.find('.WIEntryHeaderActions').prepend(entryFolderUI.entryButton(entry));
 
     if (typeof power_user.wi_key_input_plaintext === 'undefined') power_user.wi_key_input_plaintext = true;
 

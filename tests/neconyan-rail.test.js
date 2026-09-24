@@ -442,7 +442,7 @@ describe('Neconyan workspace rail behavior', () => {
             HTMLElement: Element,
             document: { body: { classList: { contains: () => true } } },
             closeShell: key => closed.push(key),
-            closeCharacterPanel: () => closed.push('characters'),
+            displaceCharacterPanel: () => closed.push('characters'),
             syncDrawerIconState() {},
             queueMobileModalStateSync() {},
             queueTopbarPageStateSync() {},

@@ -165,10 +165,7 @@ test.describe('Editor surfaces and composer density', () => {
             await expect(page.locator('#rm_print_characters_block .character_select').filter({ hasText: 'Miso (Male)' })).toHaveCount(1, { timeout: 15000 });
             await openCharacterEditor(page);
             await expect(page.locator('#right-nav-panel')).toHaveAttribute('data-menu-type', /character_edit|create/, { timeout: 15000 });
-            const sections = page.getByRole('combobox', { name: 'Editor section', exact: true });
-            await expect.poll(async () => await sections.isVisible() || await page.locator('#sb_character_editor_tab_definitions').isVisible()).toBe(true);
-            if (await sections.isVisible()) await sections.selectOption('definitions');
-            else await page.locator('#sb_character_editor_tab_definitions').click();
+            await page.locator('#sb_character_editor_tab_definitions').click();
             for (const selector of ['#right-nav-panel', '#form_create', '#spoiler_free_desc']) {
                 const alpha = await page.locator(selector).evaluate(element => {
                     const context = document.createElement('canvas').getContext('2d');
@@ -194,7 +191,7 @@ test.describe('Editor surfaces and composer density', () => {
         }
     });
 
-    test('character editor commit bar stays on the panel floor above the scrolling body', async ({ page }, info) => {
+    test('character editor commit bar stays on the sheet floor while the sheet scrolls', async ({ page }, info) => {
         page.setDefaultTimeout(15000);
         await mockNativeSettings(page);
         await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
@@ -206,30 +203,31 @@ test.describe('Editor surfaces and composer density', () => {
             await expect(page.locator('#rm_print_characters_block .character_select').filter({ hasText: 'Miso (Male)' })).toHaveCount(1, { timeout: 15000 });
             await openCharacterEditor(page);
             await expect(page.locator('#right-nav-panel')).toHaveAttribute('data-menu-type', /character_edit|create/, { timeout: 15000 });
-            const sections = page.getByRole('combobox', { name: 'Editor section', exact: true });
-            if (await sections.isVisible()) await sections.selectOption('greetings');
-            else await page.locator('#sb_character_editor_tab_greetings').click();
+            await page.locator('#sb_character_editor_tab_greetings').click();
             await expect(page.locator('#sb_character_editor_panel_greetings')).toBeVisible();
-            const geometry = await page.evaluate(() => {
-                const form = document.getElementById('form_create');
+            // The sheet is the one scroller: desktop pins the bar to its floor, phones let it scroll with the fields.
+            const floor = await page.evaluate(() => {
+                const sheet = document.querySelector('#right-nav-panel > .scrollableInner');
                 const bar = document.getElementById('sb_character_commit_bar');
-                const panels = document.querySelector('.sb-character-editor-subtab-panels');
-                const f = form.getBoundingClientRect();
-                const b = bar.getBoundingClientRect();
-                const p = panels.getBoundingClientRect();
-                return { formBottom: f.bottom, barTop: b.top, barBottom: b.bottom, panelsBottom: p.bottom };
+                sheet.scrollTop = 0;
+                return {
+                    sheetBottom: sheet.getBoundingClientRect().bottom,
+                    barBottom: bar.getBoundingClientRect().bottom,
+                    position: getComputedStyle(bar).position,
+                };
             });
-            expect(Math.abs(geometry.barBottom - geometry.formBottom), `footer at ${width}px`).toBeLessThanOrEqual(2);
-            expect(geometry.panelsBottom, `body above footer at ${width}px`).toBeLessThanOrEqual(geometry.barTop + 2);
+            if (width > 768) {
+                expect(floor.position, `sticky footer at ${width}px`).toBe('sticky');
+                expect(Math.abs(floor.barBottom - floor.sheetBottom), `footer at ${width}px`).toBeLessThanOrEqual(2);
+            }
             const clearance = await page.evaluate(() => {
+                const sheet = document.querySelector('#right-nav-panel > .scrollableInner');
                 const bar = document.getElementById('sb_character_commit_bar');
-                const panels = document.querySelector('.sb-character-editor-subtab-panels');
-                panels.scrollTop = panels.scrollHeight;
-                const last = panels.querySelector('[data-sb-character-editor-panel]:not([hidden]) > *:last-child');
+                sheet.scrollTop = sheet.scrollHeight;
+                const last = document.querySelector('.sb-character-editor-subtab-panels [data-sb-character-editor-panel]:not([hidden]) > *:last-child');
                 return {
                     lastBottom: last.getBoundingClientRect().bottom,
                     barTop: bar.getBoundingClientRect().top,
-                    panelBottom: panels.getBoundingClientRect().bottom,
                 };
             });
             expect(clearance.lastBottom, `last field clears footer at ${width}px`).toBeLessThanOrEqual(clearance.barTop + 2);

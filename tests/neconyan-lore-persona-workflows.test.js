@@ -42,6 +42,7 @@ describe('Lorebook control actions', () => {
             isWorldInfoDesktopSplitLayout: () => false, syncWorldInfoDesktopEditorPopout() {},
             clearEntryList() {}, clearWorldInfoDesktopEditor() {}, updateWorldInfoWorkspaceState() {}, setWorldInfoDesktopEditorPopout() {},
             updateWorldInfoResultsSummary: () => { summaryCleared = true; },
+            createEntryFolderUI: () => null,
         });
         vm.runInContext(extractFunction(worldInfoSource, 'displayWorldEntries'), context);
         await context.displayWorldEntries(null, null);

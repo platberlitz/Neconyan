@@ -117,7 +117,7 @@ body.neconyan :is(#top-bar, #sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inn
 body.neconyan #top-bar { border-bottom: 1px solid var(--neco-border); border-radius: 0; }
 body.neconyan :is(#top-bar, #sb-topbar-inner, #sb-bottom-chat-bar)::before,
 body.neconyan :is(#top-bar, #sb-topbar-inner, #sb-bottom-chat-bar)::after { display: none; }
-body.neconyan #sb-topbar-inner { grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; padding-inline: 12px; }
+body.neconyan #sb-topbar-inner { grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; padding-inline: 8px; }
 body.neconyan .sb-topbar-brand { justify-content: flex-start; justify-self: stretch; text-align: left; }
 body.neconyan #sb-topbar-title {
     justify-self: start; text-align: left; font-size: 13px; font-weight: 500;
@@ -126,7 +126,6 @@ body.neconyan #sb-topbar-title {
 body.neconyan #sb-topbar-clock {
     display: inline-flex;
     align-items: center;
-    padding-inline: 8px;
     color: var(--neco-muted);
     font-size: 12px;
     font-variant-numeric: tabular-nums;
@@ -271,8 +270,8 @@ body.neconyan .sb-shell-header .sb-shell-subtitle { color: var(--neco-muted); fo
 body.neconyan #right-nav-panel :is(.sb-character-editor-identity, .sb-character-editor-field-box, .sb-character-creator-notes-preview, .sb-character-editor-subtabs) {
     background: transparent; box-shadow: none; border-color: var(--neco-border); border-radius: 6px;
 }
-body.neconyan #right-nav-panel .sb-character-editor-subtabs-wrapper { padding: 0; border: 0; background: transparent; }
-body.neconyan #right-nav-panel .sb-character-editor-subtabs { padding: 6px 10px; border: 0; border-bottom: 1px solid var(--neco-border); }
+body.neconyan #right-nav-panel .sb-character-editor-subtabs-wrapper { container-type: inline-size; padding: 0; border: 0; background: transparent; }
+body.neconyan #right-nav-panel .sb-character-editor-subtabs { padding: 6px 0; border: 0; border-bottom: 1px solid var(--neco-border); }
 body.neconyan #right-nav-panel .sb-character-editor-subtab { border-radius: 5px; box-shadow: none; background: transparent; }
 body.neconyan #right-nav-panel .sb-character-editor-subtab.is-active { background: var(--neco-raised); }
 body.neconyan #right-nav-panel .character_select { border-radius: 6px; box-shadow: none; background: transparent; }
@@ -411,25 +410,13 @@ body.neconyan .welcomePanel {
     width: 100%; max-width: 900px; margin: 0 auto; padding: 72px 32px 40px; gap: 36px;
     border: 0; border-radius: 0; background: transparent; box-shadow: none; text-shadow: none;
 }
-body.neconyan :is(.welcomePanel, .welcomeActionCard, .welcomeRecentShell)::before,
+body.neconyan :is(.welcomePanel, .welcomeRecentShell)::before,
 body.neconyan .welcomePanel::after { display: none; }
 body.neconyan :is(.welcomeHero, .welcomeHeroCopy, .welcomeHeroTitleGroup) { display: flex; flex-direction: column; align-items: stretch; gap: 16px; text-align: left; }
 body.neconyan .welcomeHeroTitleGroup { min-width: 0; gap: 8px; }
-body.neconyan .welcomeHero > .welcomeHeroCopy > .welcomeHeroEyebrow { display: none; }
 body.neconyan .welcomeHeaderTitle { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; justify-content: flex-start; gap: 16px; }
 body.neconyan .welcomeHeaderLogo { width: 44px; height: 44px; flex: 0 0 44px; border: 0; border-radius: 10px; box-shadow: none; }
 body.neconyan .welcomeHeaderVersionDisplay { margin: 0; color: var(--neco-ink); font-size: 26px; line-height: 1.2; font-weight: 600; letter-spacing: -0.025em; }
-body.neconyan .welcomeHeroBlurb { max-width: 60ch; margin: 0; color: var(--neco-muted); font-size: 14px; line-height: 1.6; text-align: left; }
-body.neconyan .welcomeActionGrid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-body.neconyan .welcomeActionCard { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; min-height: 36px; width: auto; padding: 8px 12px; border: 1px solid var(--neco-border); border-radius: 6px !important; background: transparent !important; color: var(--neco-ink); box-shadow: none !important; text-align: left; }
-body.neconyan .welcomeActionCard > i { color: var(--neco-muted); font-size: 13px; }
-body.neconyan .welcomeActionMeta { align-items: flex-start; min-width: 0; white-space: normal; text-align: left; }
-body.neconyan .welcomeActionMeta strong { font-size: 13px; font-weight: 500; }
-body.neconyan .welcomeActionMeta > span { display: none; }
-body.neconyan .welcomeActionCard.openTemporaryChat { color: var(--neco-on-accent); border-color: var(--neco-ginger); background: var(--neco-ginger) !important; }
-body.neconyan .welcomeActionCard.openTemporaryChat > i { color: inherit; }
-body.neconyan .welcomeActionCard:hover { background: var(--neco-raised) !important; transform: none; }
-body.neconyan .welcomeActionCard.openTemporaryChat:hover { background: var(--neco-ginger-hover) !important; }
 body.neconyan :is(.welcomeRecentShell, .welcomeGuidePanel, .welcomeDeckFrame) { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 /* Recent chats: solid themed box for its cat ears. */
 body.neconyan .welcomeRecentShell { padding: 18px 20px; border: 1px solid var(--neco-border); border-radius: 16px; background: var(--neco-surface); box-shadow: none; }
@@ -477,7 +464,8 @@ body.neconyan #neconyan-tour-coachmark button:focus-visible { outline: 2px solid
     :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail :is(.neconyan-rail-brand > img, .neconyan-rail-brand > span, button > span, button > small, kbd, .neconyan-rail-section-label, .neconyan-rail-section-heading, .neconyan-rail-empty) { display: none; }
     :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail .neconyan-rail-brand { justify-content: center; }
     :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail #neconyan-sidebar-toggle { margin: auto; }
-    body.neconyan #top-bar { left: var(--neco-sidebar-offset) !important; right: 0 !important; width: calc(100% - var(--neco-sidebar-offset)) !important; max-width: none !important; }
+    body.neconyan #top-bar { left: var(--neco-sidebar-offset) !important; right: 0 !important; width: calc(100% - var(--neco-sidebar-offset)) !important; max-width: none !important; padding-inline: 0; }
+    body.neconyan #sb-topbar-stack { width: 100%; }
     body.neconyan #sheld {
         position: fixed; inset: var(--sb-topbar-layout-offset) 0 0 var(--neco-sidebar-offset);
         width: auto !important; max-width: none !important; height: auto !important; max-height: none !important;
@@ -541,8 +529,7 @@ body.neconyan #neconyan-tour-coachmark button:focus-visible { outline: 2px solid
     body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer { width: 100% !important; max-width: 100% !important; border: 0 !important; }
     body.neconyan #sheld { width: 100% !important; margin: 0 !important; }
     body.neconyan .welcomePanel { padding: 32px 20px; gap: 28px; }
-    body.neconyan .welcomeActionCard { min-height: 44px !important; justify-content: flex-start; }
-    body.neconyan #sb-topbar-inner :is(#sb-hamburger, #sb-shortcut-right, #sb-home-toggle, #sb-character-toggle) {
+    body.neconyan #sb-topbar-inner :is(#sb-hamburger, #sb-shortcut-left, #sb-shortcut-right, #sb-topbar-edit-card, #ica--tracker-panel-topbar) {
         min-width: 44px !important; min-height: 44px !important; height: 44px !important;
     }
     body.neconyan #chat, body.neconyan .sb-conversation-timeline { padding: 16px 12px; }
@@ -879,19 +866,16 @@ body.neconyan .neconyan-chat-row-actions .neconyan-current-chat-export[aria-hidd
 body.neconyan :is(.sb-topbar-pages, .sb-topbar-cluster-divider) {
     display: none !important;
 }
-body.neconyan #sb-topbar-inner :is(#sb-shortcut-left, #sb-shortcut-right, #sb-topbar-extension-slot, #sb-topbar-quick-actions) {
+/* Empty slots stay out of the row; each displayed one costs a gap at the right edge. */
+body.neconyan #sb-topbar-inner :is(#sb-shortcut-left, #sb-shortcut-right, #sb-topbar-extension-slot:where(:not([data-sb-topbar-slot-empty='true'])), #sb-topbar-quick-actions:where(:not([hidden]))) {
     display: inline-flex !important;
     visibility: visible !important;
 }
 body.neconyan #sb-topbar-inner :is(#sb-home-toggle, #sb-character-toggle) {
-    visibility: hidden !important;
-    pointer-events: none !important;
+    display: none !important;
 }
 
 @media (max-width: 768px) {
-    body.neconyan #sb-topbar-inner :is(#sb-home-toggle, #sb-character-toggle) {
-        display: none !important;
-    }
     /* Phones give the bar's centre to the character name; the clock is the status bar's job. */
     body.neconyan #sb-topbar-clock { display: none; }
     body.neconyan #sb-topbar-inner .sb-topbar-group-right {
@@ -1021,12 +1005,12 @@ body.neconyan #sb-topbar-inner :is(#sb-home-toggle, #sb-character-toggle) {
         flex: 0 0 auto;
         white-space: normal;
     }
-    body.neconyan #right-nav-panel.openDrawer .sb-character-editor-subtabs {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 4px;
-        overflow-y: auto;
-        overflow-x: hidden;
+    body.neconyan #right-nav-panel.openDrawer .sb-character-editor-subtabs { flex-flow: row wrap; gap: 4px; }
+    body.neconyan #right-nav-panel.openDrawer .sb-character-editor-subtab { width: auto; flex: 1 1 0; white-space: nowrap; }
+    /* A pinned panel keeps all four sections on one row once the icons step aside. */
+    @container (max-width: 480px) {
+        body.neconyan #right-nav-panel.openDrawer .sb-character-editor-subtab { padding-inline: 8px; }
+        body.neconyan #right-nav-panel.openDrawer .sb-character-editor-subtab > i { display: none; }
     }
 }
 
@@ -1178,20 +1162,12 @@ body.neconyan #sb-topbar-inner :is(#sb-home-toggle, #sb-character-toggle) {
     }
 }
 
+/* Editor sections are labelled tabs at every width, fullscreen included; the mirrored dropdown stays hidden. */
 .neconyan-mobile-section-select { display: none; }
-body.neconyan #right-nav-panel > .sb-character-editor-subtabs-wrapper { padding: 10px 16px; }
-body.neconyan #right-nav-panel .sb-character-editor-subtabs { display: none !important; }
-body.neconyan #right-nav-panel select[data-neconyan-section='data-sb-character-editor-tab'] {
-    display: block;
-    width: 100%;
-    min-height: 44px;
-    margin: 0;
-}
 @media (max-width: 768px) {
     body.neconyan #right-nav-panel > .sb-character-editor-subtabs-wrapper { flex: 0 0 auto; max-height: none; padding: 0 0 4px; }
     /* Phones: one tap per section, so the editor and persona sections are labelled
        tabs in a horizontally scrolling row and their dropdown pickers stay hidden. */
-    body.neconyan #right-nav-panel select[data-neconyan-section='data-sb-character-editor-tab'],
     body.neconyan #PersonaManagement select[data-neconyan-section='data-persona-editor-tab'] { display: none !important; }
     body.neconyan #right-nav-panel .sb-character-editor-subtabs-wrapper .sb-character-editor-subtabs,
     body.neconyan #PersonaManagement .persona-editor-workspace .persona-editor-tabs {
@@ -1230,19 +1206,7 @@ body.neconyan #right-nav-panel select[data-neconyan-section='data-sb-character-e
         width: max-content; max-width: none; min-width: 0; flex: 0 0 auto;
         overflow: visible; text-overflow: clip; white-space: nowrap;
     }
-    /* Phones: the sheet's .scrollableInner is the one scroller for the editor. The nested
-       #rm_ch_create_block / #form_create / subtab-panels scrollers left ~200px of editing room
-       and the document pan guard cancelled swipes that started outside that box. The commit bar
-       scrolls with the content here so the whole sheet height goes to editing. */
-    body.neconyan #right-nav-panel.openDrawer #rm_ch_create_block,
-    body.neconyan #right-nav-panel.openDrawer #form_create {
-        height: auto !important;
-        overflow: visible !important;
-    }
-    body.neconyan #right-nav-panel.openDrawer .sb-character-editor-subtab-panels {
-        flex: 0 0 auto !important;
-        overflow: visible !important;
-    }
+    /* Phones: the commit bar scrolls with the content so the whole sheet height goes to editing. */
     body.neconyan #right-nav-panel.openDrawer #sb_character_commit_bar { position: static; }
     /* The name/token titlebar is moved into the scroller on phones (syncCharacterTitlebarVisibility). */
     body.neconyan #right-nav-panel.openDrawer > .scrollableInner > #rm_PinAndTabs { flex: 0 0 auto; padding: 2px 0 4px; }
@@ -1653,7 +1617,7 @@ body.neconyan #right-nav-panel .sb-character-library-primary-actions > #characte
     body.neconyan #right-nav-panel .sb-character-library-primary-actions > #character_import_button { display: none; }
     body.neconyan #right-nav-panel #sb_character_tab_import,
     body.neconyan #right-nav-panel .sb-entity-empty-actions > [data-empty-action='import-character'] { display: none; }
-    body.neconyan #right-nav-panel.openDrawer.pinnedOpen {
+    body.neconyan #right-nav-panel.openDrawer.pinnedOpen:not(.sb-character-editor-fullscreen) {
         left: auto !important;
         width: min(400px, 38vw) !important;
         border-left: 1px solid var(--neco-border) !important;
@@ -1666,6 +1630,19 @@ body.neconyan #right-nav-panel .sb-character-library-primary-actions > #characte
     body.neconyan:has(#right-nav-panel.openDrawer.pinnedOpen) #neconyan-home-host {
         visibility: visible !important;
         pointer-events: auto !important;
+    }
+    body.neconyan #right-nav-panel.openDrawer.pinnedOpen:is([data-menu-type$='edit'], [data-menu-type$='create']) > .sb-character-shell-header .sb-shell-subtitle { display: none; }
+    /* One 18px inset for the editor bodies, matching the tabs and favourites above; the sheet's
+       padding and scrollbar gutter already make the right-hand 18px. */
+    body.neconyan #right-nav-panel.openDrawer #rm_ch_create_block,
+    body.neconyan #right-nav-panel.openDrawer #rm_group_chats_block { padding-inline: 18px 0; }
+    body.neconyan #right-nav-panel.openDrawer #rm_ch_create_block > #form_create { padding-inline: 0; }
+    body.neconyan #right-nav-panel.openDrawer > #rm_PinAndTabs { container-type: inline-size; }
+    /* Too narrow for the name, token count and tools on one row: the tools take a second row. */
+    @container (max-width: 560px) {
+        body.neconyan #right-nav-panel-tabs { flex-wrap: wrap; }
+        body.neconyan #right-nav-panel #result_info { order: 1; flex: 1 1 100%; }
+        body.neconyan #right-nav-panel #result_info_text { margin-inline-end: auto; }
     }
 }
 body.neconyan #right-nav-panel .sb-character-library-secondary-actions #rm_button_bar {
@@ -1839,7 +1816,9 @@ body.neconyan #right-nav-panel .sb-character-editor-advanced-tools #tags_div { m
 body.neconyan #right-nav-panel .sb-editor-field-label { display: block; margin-bottom: 4px; color: var(--neco-muted); font-size: 12px; }
 body.neconyan #right-nav-panel .sb-character-commit-bar,
 body.neconyan #right-nav-panel .sb-group-commit-bar {
+    container-type: inline-size;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
@@ -1849,14 +1828,18 @@ body.neconyan #right-nav-panel .sb-group-commit-bar {
     border-top: 1px solid var(--neco-border);
     background: var(--neco-rail);
 }
-/* Keep the commit bar on the panel floor while the editor body scrolls above it. */
-body.neconyan #right-nav-panel #form_create { overflow: hidden; }
-body.neconyan #right-nav-panel .sb-character-editor-subtab-panels {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+/* The sheet's .scrollableInner is the one scroller for the editor at every width. Nested
+   #rm_ch_create_block / #form_create / subtab-panels scrollers left ~200px of editing room (less
+   with the panel pinned), stacked two scrollbar gutters, and on phones the document pan guard
+   cancelled swipes that started outside that box. */
+body.neconyan #right-nav-panel.openDrawer #rm_ch_create_block,
+body.neconyan #right-nav-panel.openDrawer #form_create {
+    height: auto !important;
+    overflow: visible !important;
+}
+body.neconyan #right-nav-panel.openDrawer .sb-character-editor-subtab-panels {
+    flex: 1 0 auto !important;
+    overflow: visible !important;
 }
 body.neconyan #right-nav-panel .sb-character-editor-panel { flex: 0 0 auto; }
 body.neconyan #right-nav-panel #sb_character_commit_bar {
@@ -1865,12 +1848,6 @@ body.neconyan #right-nav-panel #sb_character_commit_bar {
     position: sticky;
     bottom: 0;
     z-index: 2;
-}
-body.neconyan #right-nav-panel.openDrawer.sb-character-editor-fullscreen:is([data-menu-type="character_edit"], [data-menu-type="create"]) #form_create { overflow: hidden; }
-body.neconyan #right-nav-panel.openDrawer.sb-character-editor-fullscreen:is([data-menu-type="character_edit"], [data-menu-type="create"]) .sb-character-editor-subtab-panels {
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
 }
 body.neconyan #right-nav-panel .sb-character-commit-copy,
 body.neconyan #right-nav-panel .sb-group-commit-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
@@ -1881,7 +1858,8 @@ body.neconyan #right-nav-panel :is(.sb-character-commit-actions, .sb-group-commi
 body.neconyan #right-nav-panel :is(.sb-character-commit-actions, .sb-group-commit-actions) > :is(.menu_button, label) { min-height: 44px; padding: 8px 12px; }
 body.neconyan #right-nav-panel .sb-character-commit-actions label > span,
 body.neconyan #right-nav-panel .sb-character-commit-actions button > span { font-family: var(--mainFontFamily); font-size: 12px; font-weight: 500; }
-body.neconyan #right-nav-panel .sb-group-members-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; }
+/* Side by side only when each list gets 280px; a pinned panel or a phone stacks them. */
+body.neconyan #right-nav-panel .sb-group-members-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 12px; min-width: 0; }
 body.neconyan #right-nav-panel .sb-group-members-grid > .inline-drawer { min-width: 0; }
 body.neconyan #right-nav-panel .sb-group-members-grid .inline-drawer-content { min-width: 0; }
 body.neconyan #right-nav-panel .sb-group-empty { padding: 14px 4px; color: var(--neco-muted); }
@@ -1908,13 +1886,14 @@ body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar i
     body.neconyan #right-nav-panel .sb-character-library-primary-actions > :is(#rm_button_create, #character_import_button, #rm_button_group_chats) { flex: 1 1 auto; justify-content: center; }
     body.neconyan #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) { padding: 8px; }
     body.neconyan #right-nav-panel .sb-entity-action { flex: 1 1 10rem; justify-content: center; }
-    body.neconyan #right-nav-panel .sb-character-commit-bar,
-    body.neconyan #right-nav-panel .sb-group-commit-bar { align-items: stretch; flex-direction: column; }
-    body.neconyan #right-nav-panel :is(.sb-character-commit-actions, .sb-group-commit-actions) { justify-content: stretch; }
+}
+/* Sized by the bar, not the window, so a pinned panel gets the phone treatment: the cats' 94px of
+   padding goes, the buttons share one row, and the status wraps above them only when it must. */
+@container (max-width: 560px) {
+    body.neconyan #right-nav-panel :is(.sb-character-commit-actions, .sb-group-commit-actions) { flex: 1 1 auto; flex-wrap: nowrap; }
     body.neconyan #right-nav-panel :is(.sb-character-commit-actions, .sb-group-commit-actions) > :is(.menu_button, label) { flex: 1 1 0; justify-content: center; text-align: center; }
     body.neconyan #right-nav-panel .sb-character-commit-actions .neconyan-whiskers { display: none; }
     body.neconyan #right-nav-panel .sb-character-commit-actions .neconyan-cat-control { padding: 8px 12px !important; }
-    body.neconyan #right-nav-panel .sb-group-members-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Keep the fork's side navigators aligned with the shell's readable workspace column. */
@@ -2125,10 +2104,8 @@ body.neconyan .sbtw-empty-art {
     body.neconyan .sbtw-shell .sbtw-btn { min-height: 44px; }
     body.neconyan .sbtw-shell .sbtw-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
     body.neconyan .sbtw-shell .sbtw-tab { padding-inline: 4px; font-size: 13px; }
-    body.neconyan .sbtw-shell .sbtw-tab-search { grid-column: 1 / -1; justify-self: end; padding-inline: 12px; }
 }
 
-body.neconyan .sbtw-shell .sbtw-tab-search { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 @media (max-width: 620px) {
     body.neconyan #rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p {
         grid-template-areas: "notify" "manage" "install";

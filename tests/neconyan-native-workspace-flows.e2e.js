@@ -38,7 +38,7 @@ test('native character library preserves a failed edit and saves the card withou
         const row = page.locator('#rm_print_characters_block .character_select').filter({ hasText: name });
         await expect(row).toHaveCount(1);
         await row.locator('[data-entity-action="edit-card"]').click();
-        await page.getByRole('combobox', { name: 'Editor section', exact: true }).selectOption('char-info');
+        await page.locator('#sb_character_editor_tab_char_info').click();
         await page.route('**/api/characters/edit', route => rejectEdits
             ? route.fulfill({ status: 503, body: 'Temporary save failure' }) : route.continue());
         await page.locator('#description_textarea').fill('Edited in the native workspace.');
