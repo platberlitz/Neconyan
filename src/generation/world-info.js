@@ -8,6 +8,7 @@ import { prepareWorldInfoEntries } from '../../public/scripts/world-info-scan-co
 import { createMacroEnvironment } from '../macros/index.js';
 import { applyRegexScriptList, AGENT_REGEX_PLACEMENT } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { scanWorldInfo } from './world-info-scan.js';
+import { normalizeExtensionBootId } from '../../public/scripts/extension-boot-lifecycle/index.js';
 
 const SETTINGS = ['world_info_depth', 'world_info_min_activations', 'world_info_min_activations_depth_max',
     'world_info_budget', 'world_info_budget_cap', 'world_info_recursive', 'world_info_case_sensitive',
@@ -103,7 +104,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             storyTemplate: settings.power_user?.context?.story_string ?? '',
             storyPosition: settings.power_user?.context?.story_string_position ?? 0,
             enhancedLoreMacros: Boolean(settings.power_user?.experimental_macro_engine)
-                && !extensions.disabledExtensions?.includes('third-party/MacroEnhanced'),
+                && !extensions.disabledExtensions?.some(name => normalizeExtensionBootId(name) === 'macroenhanced'),
             reasoningInPrompt: Boolean(settings.power_user?.reasoning?.add_to_prompts),
             reasoning: settings.power_user?.reasoning?.add_to_prompts ? {
                 prefix: settings.power_user.reasoning.prefix ?? '<think>',

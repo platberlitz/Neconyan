@@ -952,6 +952,17 @@ test('production lore activation macros read only this job’s saved selection, 
     assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-world-info').activeLore[0].title, 'Harbour');
 });
 
+test('disabled MacroEnhanced aliases cannot activate server lore macros', t => {
+    const f = fixture(t);
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        power_user: { experimental_macro_engine: true },
+        extension_settings: { disabledExtensions: ['MacroEnhanced'] },
+    }));
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, f.source(), { avatar: 'Nova.png', maxContext: 100 });
+    assert.equal(snapshot.enhancedLoreMacros, false);
+});
+
 test('saved books and outlets named like object properties keep their own content', async t => {
     const f = fixture(t);
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
