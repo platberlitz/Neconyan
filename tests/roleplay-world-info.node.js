@@ -1925,6 +1925,97 @@ test('saved persona, card notes and character tags decide activation without bro
     assert.equal(snapshot.global.characterDepthPrompt, 'The beacon');
     const result = await prepareRoleplayWorldInfo(f.scope, snapshot);
     assert.deepEqual(result.activated.map(value => value.uid), [1, 2, 3]);
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        power_user: { persona_description: 'The visitor', persona_description_position: 9 },
+        extension_settings: { note: { allowWIScan: false, default: 'The tidekeeper', defaultInterval: 1 } },
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    await assert.rejects(prepareRoleplayWorldInfo(f.scope, snapshot), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    const disabled = captureRoleplayWorldInfo(f.scope,
+        { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch }, f.source(),
+        { avatar: 'Nova.png', maxContext: 100 });
+    assert.deepEqual(disabled.global.inject, []);
+    assert.deepEqual((await prepareRoleplayWorldInfo(f.scope, disabled)).activated.map(value => value.uid), [1, 2, 3]);
+});
+
+test('saved scan-eligible persona, character depth and Author\'s Note prompts activate lore without match flags', async t => {
+    const f = fixture(t);
+    fs.writeFileSync(path.join(f.scope.directories.characters, 'Nova.png'), writeCard(png, JSON.stringify({
+        name: 'Nova', data: { name: 'Nova', extensions: { depth_prompt: { prompt: 'The beacon' } } },
+    })));
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'The visitor', 'Persona lore'),
+        2: entry(2, 'The beacon', 'Depth lore'),
+        3: entry(3, 'The tidekeeper', 'Note lore'),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        power_user: { persona_description: 'The visitor', persona_description_position: 4 },
+        extension_settings: { note: { allowWIScan: 1, default: 'The tidekeeper', defaultInterval: 1 } },
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const snapshot = captureRoleplayWorldInfo(f.scope,
+        { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch }, f.source(),
+        { avatar: 'Nova.png', maxContext: 100 });
+    const result = await prepareRoleplayWorldInfo(f.scope, snapshot);
+    assert.deepEqual(result.activated.map(value => value.uid), [1, 2, 3]);
+});
+
+test('a group scan includes the selected member depth prompt but excludes disabled companions', async t => {
+    const f = fixture(t, true);
+    fs.writeFileSync(path.join(f.scope.directories.characters, 'Nova.png'), writeCard(png, JSON.stringify({
+        name: 'Nova', data: { name: 'Nova', extensions: { depth_prompt: { prompt: 'The beacon' } } },
+    })));
+    fs.writeFileSync(path.join(f.scope.directories.characters, 'Other.png'), writeCard(png, JSON.stringify({
+        name: 'Other', data: { name: 'Other', extensions: { depth_prompt: { prompt: 'The locked gate' } } },
+    })));
+    fs.writeFileSync(path.join(f.scope.directories.groups, 'group.json'), JSON.stringify({
+        id: 'group', members: ['Nova.png', 'Other.png'], disabled_members: ['Nova.png', 'Other.png'],
+        chats: ['Source', 'New'], generation_mode: 1,
+    }));
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'The beacon', 'Speaker lore'),
+        2: entry(2, 'The locked gate', 'Disabled companion lore'),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        extension_settings: { note: { allowWIScan: true } },
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const snapshot = captureRoleplayWorldInfo(f.scope,
+        { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch }, f.source(),
+        { avatar: 'Nova.png', maxContext: 100 });
+    assert.deepEqual(snapshot.global.inject, ['The beacon']);
+    assert.deepEqual((await prepareRoleplayWorldInfo(f.scope, snapshot)).activated.map(value => value.uid), [1]);
+});
+
+test('group swap mode uses the selected character depth prompt instead of companion prompts', async t => {
+    const f = fixture(t, true);
+    fs.writeFileSync(path.join(f.scope.directories.characters, 'Nova.png'), writeCard(png, JSON.stringify({
+        name: 'Nova', data: { name: 'Nova', extensions: { depth_prompt: { prompt: 'The beacon' } } },
+    })));
+    fs.writeFileSync(path.join(f.scope.directories.characters, 'Other.png'), writeCard(png, JSON.stringify({
+        name: 'Other', data: { name: 'Other', extensions: { depth_prompt: { prompt: 'The locked gate' } } },
+    })));
+    fs.writeFileSync(path.join(f.scope.directories.groups, 'group.json'), JSON.stringify({
+        id: 'group', members: ['Nova.png', 'Other.png'], disabled_members: [], chats: ['Source', 'New'], generation_mode: 0,
+    }));
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'The beacon', 'Speaker lore'), 2: entry(2, 'The locked gate', 'Companion lore'),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        extension_settings: { note: { allowWIScan: true } },
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const snapshot = captureRoleplayWorldInfo(f.scope,
+        { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch }, f.source(),
+        { avatar: 'Nova.png', maxContext: 100 });
+    assert.deepEqual(snapshot.global.inject, ['The beacon']);
+    assert.deepEqual((await prepareRoleplayWorldInfo(f.scope, snapshot)).activated.map(value => value.uid), [1]);
 });
 
 test('the worker saves scan decisions before a provider call and closes timed effects with the reply', async t => {

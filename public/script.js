@@ -8569,6 +8569,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
 
         // Set non-WI AN
         setFloatingPrompt();
+        addPersonaDescriptionExtensionPrompt();
 
         // Add WI to prompt (and also inject WI to AN value via hijack)
         // Make quiet prompt available for WIAN
@@ -8633,9 +8634,6 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         } else {
             console.log('skipping WIAN');
         }
-
-        // Add persona description to prompt
-        addPersonaDescriptionExtensionPrompt();
 
         // Prepare the system prompt for Text Completion APIs
         if (main_api !== 'openai') {

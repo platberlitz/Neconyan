@@ -8,6 +8,21 @@ const ROLES = ['system', 'user', 'assistant'];
 export const isWorldInfoAuthorNoteActive = note => note?.interval === 1
     || note?.interval > 1 && note.userMessages > 0 && note.userMessages % note.interval === 0;
 
+/** Resolve the saved note once for both World Info scanning and prompt placement. */
+export function activeRoleplayAuthorNote(note) {
+    if (!isWorldInfoAuthorNoteActive(note)) return '';
+    let prompt = note.prompt;
+    const scoped = note.scoped;
+    if (scoped?.useChara) {
+        if (typeof scoped.prompt !== 'string' || ![0, 1, 2].includes(Number(scoped.position))) {
+            throw roleplayError('ROLEPLAY_INVALID', 'The saved character Author\'s Note is invalid.', 409);
+        }
+        prompt = Number(scoped.position) === 1 ? [scoped.prompt, prompt].filter(Boolean).join('\n')
+            : Number(scoped.position) === 2 ? [prompt, scoped.prompt].filter(Boolean).join('\n') : scoped.prompt;
+    }
+    return prompt;
+}
+
 /** Render named lore only where the saved story template explicitly requests it. */
 export function insertWorldInfoOutlets(messages, outlets, snapshot, historyStart, userName, characterName, before = '', after = '', forceStory = false) {
     if (!outlets || typeof outlets !== 'object' || Array.isArray(outlets)
@@ -325,15 +340,7 @@ export function insertWorldInfoAuthorNote(messages, before, after, note, history
     }
     if (!before.length && !after.length) return messages;
     if (!isWorldInfoAuthorNoteActive(note)) return messages;
-    let prompt = note.prompt;
-    const scoped = note.scoped;
-    if (scoped?.useChara) {
-        if (typeof scoped.prompt !== 'string' || ![0, 1, 2].includes(Number(scoped.position))) {
-            throw roleplayError('ROLEPLAY_INVALID', 'The saved character Author\'s Note is invalid.', 409);
-        }
-        prompt = Number(scoped.position) === 1 ? [scoped.prompt, prompt].filter(Boolean).join('\n')
-            : Number(scoped.position) === 2 ? [prompt, scoped.prompt].filter(Boolean).join('\n') : scoped.prompt;
-    }
+    const prompt = activeRoleplayAuthorNote(note);
     const content = [...before, prompt, ...after].join('\n').replace(/(^\n)|(\n$)/g, '');
     if (!content) return messages;
     if (note.position === 1) {

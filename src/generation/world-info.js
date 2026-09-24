@@ -11,6 +11,7 @@ import { applyRegexScriptList, AGENT_REGEX_PLACEMENT } from '../../public/script
 import { scanWorldInfo } from './world-info-scan.js';
 import { normalizeExtensionBootId } from '../../public/scripts/extension-boot-lifecycle/index.js';
 import { captureWorldInfoHookPolicy, worldInfoActivationActions } from './world-info-hook-policy.js';
+import { activeRoleplayAuthorNote, isWorldInfoAuthorNoteActive } from './roleplay-prompt.js';
 
 const SETTINGS = ['world_info_depth', 'world_info_min_activations', 'world_info_min_activations_depth_max',
     'world_info_budget', 'world_info_budget_cap', 'world_info_recursive', 'world_info_case_sensitive',
@@ -181,6 +182,56 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             return [(settings.world_info_include_names ?? DEFAULTS.world_info_include_names)
                 ? `${message.name}: ${text}` : text];
         }).reverse();
+        const authorNote = { prompt: saved.records[0].chat_metadata?.note_prompt ?? note.default ?? '',
+            interval: saved.records[0].chat_metadata?.note_interval ?? note.defaultInterval ?? 1,
+            position: saved.records[0].chat_metadata?.note_position ?? note.defaultPosition ?? 1,
+            depth: saved.records[0].chat_metadata?.note_depth ?? note.defaultDepth ?? 4,
+            role: saved.records[0].chat_metadata?.note_role ?? note.defaultRole ?? 0,
+            scoped: scoped ? structuredClone(scoped) : null,
+            userMessages: saved.records.slice(1).filter(message => message.is_user).length };
+        const depthPrompt = character.data?.data?.extensions?.depth_prompt?.prompt
+            ?? character.data?.extensions?.depth_prompt?.prompt ?? '';
+        const inject = [];
+        if (note.allowWIScan) {
+            let depthPrompts = [depthPrompt];
+            if (saved.locator.group) {
+                const group = readRoleplayEntityLocked(lease, 'group', source.groupId).data;
+                if (group.generation_mode !== 0) {
+                    depthPrompts = group.members.filter(member => member === avatar || !group.disabled_members?.includes(member))
+                        .map(member => {
+                            const card = member === avatar ? character : readRoleplayEntityLocked(lease, 'character', member);
+                            return card.data?.data?.extensions?.depth_prompt?.prompt
+                                ?? card.data?.extensions?.depth_prompt?.prompt ?? '';
+                        }).filter(prompt => typeof prompt === 'string' && prompt.trim());
+                    if (!depthPrompts.length) depthPrompts = [depthPrompt];
+                }
+            }
+            for (const prompt of depthPrompts) {
+                if (typeof prompt !== 'string' || prompt.includes('{{') || /<(?:USER|BOT|CHAR|GROUP)>/i.test(prompt)) {
+                    throw roleplayError('ROLEPLAY_INVALID', 'The saved depth prompt needs browser-only macro substitution.', 409);
+                }
+                if (prompt.trim()) inject.push(prompt.trim());
+            }
+        }
+        if (note.allowWIScan && isWorldInfoAuthorNoteActive(authorNote)) {
+            let prompt = activeRoleplayAuthorNote(authorNote);
+            const persona = settings.power_user?.persona_description ?? '';
+            const position = settings.power_user?.persona_description_position ?? 0;
+            if (persona && position === 2) prompt = `${persona}\n${prompt}`;
+            if (persona && position === 3) prompt = `${prompt}\n${persona}`;
+            if (prompt && (prompt.includes('{{') || /<(?:USER|BOT|CHAR|GROUP)>/i.test(prompt))) {
+                throw roleplayError('ROLEPLAY_INVALID', 'The saved Author\'s Note scan needs browser-only macro substitution.', 409);
+            }
+            if (prompt) inject.push(prompt);
+        }
+        // The browser sets the persona depth prompt before World Info scans.
+        if (settings.power_user?.persona_description_position === 4 && settings.power_user.persona_description) {
+            const persona = settings.power_user.persona_description;
+            if (typeof persona !== 'string' || persona.includes('{{') || /<(?:USER|BOT|CHAR|GROUP)>/i.test(persona)) {
+                throw roleplayError('ROLEPLAY_INVALID', 'The saved persona scan needs browser-only macro substitution.', 409);
+            }
+            inject.push(persona);
+        }
         const snapshot = { account: { accountId: account.accountId, dataEpoch: account.dataEpoch }, source,
             character: { instanceId: character.instanceId, revision: character.revision, rawHash: character.rawHash },
             characterExamples: character.data?.data?.mes_example ?? character.data?.mes_example ?? '',
@@ -216,22 +267,15 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             characterFile: path.parse(avatar).name, avatar, maxContext, tokenizer, chat, regex,
             savedChatLength: saved.records.length - 1,
             metadata: structuredClone(saved.records[0].chat_metadata ?? {}),
-            authorNote: { prompt: saved.records[0].chat_metadata?.note_prompt ?? note.default ?? '',
-                interval: saved.records[0].chat_metadata?.note_interval ?? note.defaultInterval ?? 1,
-                position: saved.records[0].chat_metadata?.note_position ?? note.defaultPosition ?? 1,
-                depth: saved.records[0].chat_metadata?.note_depth ?? note.defaultDepth ?? 4,
-                role: saved.records[0].chat_metadata?.note_role ?? note.defaultRole ?? 0,
-                scoped: scoped ? structuredClone(scoped) : null,
-                userMessages: saved.records.slice(1).filter(message => message.is_user).length },
+            authorNote,
             global: {
                 trigger, characterDescription: character.data?.data?.description ?? character.data?.description ?? '',
                 characterPersonality: character.data?.data?.personality ?? character.data?.personality ?? '',
                 personaDescription: settings.power_user?.persona_description ?? '',
-                characterDepthPrompt: character.data?.data?.extensions?.depth_prompt?.prompt
-                    ?? character.data?.extensions?.depth_prompt?.prompt ?? '',
+                characterDepthPrompt: depthPrompt,
                 creatorNotes: character.data?.data?.creator_notes ?? character.data?.creator_notes ?? '',
                 scenario: character.data?.data?.scenario ?? character.data?.scenario ?? '',
-                characterTags,
+                characterTags, inject,
             } };
         if (!Number.isSafeInteger(maxContext) || maxContext < 1 || Buffer.byteLength(JSON.stringify(snapshot)) > 2 * 1024 * 1024) {
             throw roleplayError('ROLEPLAY_INVALID', 'World Info input is too large or lacks a context limit.', 400);
