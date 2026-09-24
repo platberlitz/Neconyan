@@ -119,14 +119,74 @@ function books(directories, names) {
     return result;
 }
 
-function selectedBooks(settings, saved, character, avatar) {
+/** Resolve the chat lock, character connection and default before reading the account's last active persona. */
+function selectedPersona(settings, saved, source, avatar, directories) {
+    const power = settings.power_user ?? {};
+    const descriptions = power.persona_descriptions ?? {};
+    if (!descriptions || typeof descriptions !== 'object' || Array.isArray(descriptions)) {
+        throw roleplayError('ROLEPLAY_INVALID', 'Saved persona descriptions are invalid.', 409);
+    }
+    const scope = saved.locator.group ? source.groupId : avatar;
+    const locked = saved.records[0].chat_metadata?.persona;
+    const connected = locked ? [] : Object.entries(descriptions)
+        .filter(([, descriptor]) => {
+            if (!descriptor || typeof descriptor !== 'object' || Array.isArray(descriptor)
+                || (descriptor.connections != null && !Array.isArray(descriptor.connections))) {
+                throw roleplayError('ROLEPLAY_INVALID', 'A saved persona connection is invalid.', 409);
+            }
+            return descriptor.connections?.some(connection => connection?.id === scope);
+        })
+        .map(([id]) => id);
+    if (!locked && connected.length > 1 && power.persona_allow_multi_connections) {
+        throw roleplayError('ROLEPLAY_INVALID', 'Select a persona for this chat before a bound World Info scan.', 409);
+    }
+    const selected = locked || connected[0] || power.default_persona || settings.user_avatar;
+    const descriptor = selected && Object.hasOwn(descriptions, selected) ? descriptions[selected] : null;
+    if (!selected || (!locked && !connected.length && !power.default_persona && !descriptor)) {
+        return { description: power.persona_description ?? '', position: power.persona_description_position ?? 0,
+            lorebook: power.persona_description_lorebook ?? '', evidence: null };
+    }
+    if (typeof selected !== 'string' || !selected || selected === '.' || selected === '..'
+        || path.basename(selected) !== selected || selected.includes('\\')) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The selected persona avatar name is invalid.', 409);
+    }
+    const savedAvatar = readRoleplayFile(path.join(directories.avatars ?? path.join(directories.root, 'User Avatars'), selected),
+        8 * 1024 * 1024, { allowMissingParent: true });
+    if (!savedAvatar) throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The selected persona avatar is missing.', 404);
+    if (descriptor && (typeof descriptor !== 'object' || Array.isArray(descriptor))) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The selected persona description is invalid.', 409);
+    }
+    const appendices = descriptor?.appendices ?? [];
+    const selections = descriptor?.activeAppendices;
+    if (selections != null && (typeof selections !== 'object' || Array.isArray(selections))) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The selected persona appendices are invalid.', 409);
+    }
+    const selectedIds = selections && Object.hasOwn(selections, scope) ? selections[scope]
+        : saved.records[0].chat_metadata?.persona_appendices?.[selected] ?? [];
+    if (!Array.isArray(appendices) || !Array.isArray(selectedIds)) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The selected persona description is invalid.', 409);
+    }
+    const parts = [String(descriptor?.description ?? '').trim()];
+    for (const appendix of appendices) {
+        if (!selectedIds.includes(appendix?.id)) continue;
+        if (typeof appendix.description !== 'string' || typeof appendix.name !== 'string') {
+            throw roleplayError('ROLEPLAY_INVALID', 'A selected persona appendix is invalid.', 409);
+        }
+        if (appendix.description.trim()) parts.push(`(${appendix.name})\n${appendix.description.trim()}`);
+    }
+    return { description: parts.filter(Boolean).join('\n\n'), position: descriptor?.position ?? 0,
+        lorebook: descriptor?.lorebook ?? '',
+        evidence: { avatar: selected, rawHash: savedAvatar.rawHash, physical: savedAvatar.physical } };
+}
+
+function selectedBooks(settings, saved, character, avatar, personaLorebook) {
     const global = settings.world_info?.globalSelect ?? [];
     const charLore = settings.world_info?.charLore ?? [];
     if (!Array.isArray(global) || !Array.isArray(charLore)) {
         throw roleplayError('ROLEPLAY_INVALID', 'Invalid saved World Info selection.', 400);
     }
     const chat = saved.records[0].chat_metadata?.world_info || '';
-    const persona = settings.power_user?.persona_description_lorebook || '';
+    const persona = personaLorebook || '';
     const file = path.parse(avatar).name;
     const extraBooks = charLore.find(item => item?.name === file)?.extraBooks ?? [];
     if (!Array.isArray(extraBooks)) throw roleplayError('ROLEPLAY_INVALID', 'Invalid character World Info selection.', 400);
@@ -153,7 +213,8 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         const savedSettings = readJson(file, {});
         const settings = { ...savedSettings, ...savedSettings.world_info_settings };
         settings.power_user = savedSettings.power_user;
-        const names = selectedBooks(settings, saved, character, avatar);
+        const persona = selectedPersona(settings, saved, source, avatar, base.directories);
+        const names = selectedBooks(settings, saved, character, avatar, persona.lorebook);
         const selected = books(base.directories, Object.values(names));
         const characterTags = savedSettings.tag_map?.[avatar] ?? [];
         if (!Array.isArray(characterTags)) throw roleplayError('ROLEPLAY_INVALID', 'The saved character tags are invalid.', 400);
@@ -215,22 +276,20 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         }
         if (note.allowWIScan && isWorldInfoAuthorNoteActive(authorNote)) {
             let prompt = activeRoleplayAuthorNote(authorNote);
-            const persona = settings.power_user?.persona_description ?? '';
-            const position = settings.power_user?.persona_description_position ?? 0;
-            if (persona && position === 2) prompt = `${persona}\n${prompt}`;
-            if (persona && position === 3) prompt = `${prompt}\n${persona}`;
+            if (persona.description && persona.position === 2) prompt = `${persona.description}\n${prompt}`;
+            if (persona.description && persona.position === 3) prompt = `${prompt}\n${persona.description}`;
             if (prompt && (prompt.includes('{{') || /<(?:USER|BOT|CHAR|GROUP)>/i.test(prompt))) {
                 throw roleplayError('ROLEPLAY_INVALID', 'The saved Author\'s Note scan needs browser-only macro substitution.', 409);
             }
             if (prompt) inject.push(prompt);
         }
         // The browser sets the persona depth prompt before World Info scans.
-        if (settings.power_user?.persona_description_position === 4 && settings.power_user.persona_description) {
-            const persona = settings.power_user.persona_description;
-            if (typeof persona !== 'string' || persona.includes('{{') || /<(?:USER|BOT|CHAR|GROUP)>/i.test(persona)) {
+        if (persona.position === 4 && persona.description) {
+            if (typeof persona.description !== 'string' || persona.description.includes('{{')
+                || /<(?:USER|BOT|CHAR|GROUP)>/i.test(persona.description)) {
                 throw roleplayError('ROLEPLAY_INVALID', 'The saved persona scan needs browser-only macro substitution.', 409);
             }
-            inject.push(persona);
+            inject.push(persona.description);
         }
         const snapshot = { account: { accountId: account.accountId, dataEpoch: account.dataEpoch }, source,
             character: { instanceId: character.instanceId, revision: character.revision, rawHash: character.rawHash },
@@ -247,7 +306,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             text: settings.power_user?.sysprompt?.post_history ?? '' },
             storyTemplate: settings.power_user?.context?.story_string ?? '',
             storyPosition: settings.power_user?.context?.story_string_position ?? 0,
-            personaPosition: settings.power_user?.persona_description_position ?? 0,
+            personaPosition: persona.position, personaEvidence: persona.evidence,
             enhancedLoreMacros: Boolean(settings.power_user?.experimental_macro_engine)
                 && !extensions.disabledExtensions?.some(name => normalizeExtensionBootId(name) === 'macroenhanced'),
             reasoningInPrompt: Boolean(settings.power_user?.reasoning?.add_to_prompts),
@@ -271,7 +330,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             global: {
                 trigger, characterDescription: character.data?.data?.description ?? character.data?.description ?? '',
                 characterPersonality: character.data?.data?.personality ?? character.data?.personality ?? '',
-                personaDescription: settings.power_user?.persona_description ?? '',
+                personaDescription: persona.description,
                 characterDepthPrompt: depthPrompt,
                 creatorNotes: character.data?.data?.creator_notes ?? character.data?.creator_notes ?? '',
                 scenario: character.data?.data?.scenario ?? character.data?.scenario ?? '',

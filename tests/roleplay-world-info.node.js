@@ -1962,6 +1962,82 @@ test('saved scan-eligible persona, character depth and Author\'s Note prompts ac
     assert.deepEqual(result.activated.map(value => value.uid), [1, 2, 3]);
 });
 
+test('a chat-locked persona selects its own saved description and lorebook, not the last active persona', async t => {
+    const f = fixture(t);
+    f.records[0].chat_metadata.persona = 'locked.png';
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    f.scope.directories.avatars = path.join(f.scope.directories.root, 'User Avatars');
+    fs.mkdirSync(f.scope.directories.avatars);
+    fs.writeFileSync(path.join(f.scope.directories.avatars, 'locked.png'), png);
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Locked.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Original', 'Locked book'),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Wrong.json'), JSON.stringify({ entries: {
+        2: entry(2, 'Original', 'Wrong book'),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        user_avatar: 'other.png',
+        power_user: { persona_description: 'Stale description', persona_description_position: 4,
+            persona_description_lorebook: 'Wrong', personas: { 'locked.png': 'Visitor' },
+            persona_descriptions: { 'locked.png': { description: 'The locked astronomer', position: 4,
+                lorebook: 'Locked', appendices: [{ id: 'stars', name: 'Star Notes', description: 'The star chart' }],
+                activeAppendices: { 'Nova.png': ['stars'] } } } },
+        world_info_settings: { world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = f.source();
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 });
+    assert.deepEqual(snapshot.names.persona, ['Locked']);
+    assert.equal(snapshot.global.personaDescription, 'The locked astronomer\n\n(Star Notes)\nThe star chart');
+    assert.deepEqual(snapshot.global.inject, ['The locked astronomer\n\n(Star Notes)\nThe star chart']);
+    assert.deepEqual((await prepareRoleplayWorldInfo(f.scope, snapshot)).activated.map(value => value.uid), [1]);
+    fs.writeFileSync(path.join(f.scope.directories.avatars, 'replacement.tmp'), png);
+    fs.renameSync(path.join(f.scope.directories.avatars, 'replacement.tmp'),
+        path.join(f.scope.directories.avatars, 'locked.png'));
+    await assert.rejects(prepareRoleplayWorldInfo(f.scope, snapshot), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+});
+
+test('a saved character connection wins over the default persona and ambiguous connections refuse', async t => {
+    const f = fixture(t);
+    f.scope.directories.avatars = path.join(f.scope.directories.root, 'User Avatars');
+    fs.mkdirSync(f.scope.directories.avatars);
+    for (const name of ['connected.png', 'default.png']) fs.writeFileSync(path.join(f.scope.directories.avatars, name), png);
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Connected.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Original', 'Connected lore'),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Default.json'), JSON.stringify({ entries: {
+        2: entry(2, 'Original', 'Default lore'),
+    } }));
+    const power = { default_persona: 'default.png', persona_descriptions: {
+        'connected.png': { description: 'Connected user', lorebook: 'Connected', connections: [{ id: 'Nova.png' }] },
+        'default.png': { description: 'Default user', lorebook: 'Default' },
+    } };
+    const settings = { power_user: power, world_info_settings: { world_info_budget: 100 } };
+    const filename = path.join(f.scope.directories.root, 'settings.json');
+    fs.writeFileSync(filename, JSON.stringify(settings));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = f.source();
+    const connected = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 });
+    assert.deepEqual(connected.names.persona, ['Connected']);
+    assert.equal(connected.global.personaDescription, 'Connected user');
+    assert.deepEqual((await prepareRoleplayWorldInfo(f.scope, connected)).activated.map(value => value.uid), [1]);
+    power.persona_descriptions['connected.png'].connections = [];
+    fs.writeFileSync(filename, JSON.stringify(settings));
+    await assert.rejects(prepareRoleplayWorldInfo(f.scope, connected), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    const fallback = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 });
+    assert.deepEqual(fallback.names.persona, ['Default']);
+    power.persona_descriptions['connected.png'].connections = [{ id: 'Nova.png' }];
+    power.persona_descriptions['default.png'].connections = [{ id: 'Nova.png' }];
+    power.persona_allow_multi_connections = true;
+    fs.writeFileSync(filename, JSON.stringify(settings));
+    assert.throws(() => captureRoleplayWorldInfo(f.scope, account, source,
+        { avatar: 'Nova.png', maxContext: 100 }), { code: 'ROLEPLAY_INVALID' });
+});
+
 test('a group scan includes the selected member depth prompt but excludes disabled companions', async t => {
     const f = fixture(t, true);
     fs.writeFileSync(path.join(f.scope.directories.characters, 'Nova.png'), writeCard(png, JSON.stringify({
