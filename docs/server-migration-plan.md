@@ -7,7 +7,13 @@ document; this file only records what is actually finished and what is not.
 Status values: `done` (implemented and verified), `partial` (implemented but an
 acceptance case is unproven), `pending` (not started).
 
-## Current checkpoint: Stage 4 saved World Info activation (verified; pause before Stage 5)
+## Current checkpoint: Stage 5 authoritative prompts (verified; owner-requested pause)
+
+- Private server prompt assembly now covers saved character/persona/group fields and protected target history, PromptManager order and depth roles, instruct/context, macros and transformations, notes/lore/examples, provider-specific budgets, supported file/image inputs, tool schemas and completed progressive results, and Mewmory context. Prepared prompts, scan inputs and request controls survive replay. Actual contributor/tool execution and the production browser caller remain assigned to Stages 6-9.
+- Whole-stage same-model self-review and one batched correction pass are complete. Final gates: 338 Jest suites (4,521 passed, two skipped), 901 Node tests, lint, budgets, changed-test lint with zero errors, whitespace, and 8/8 disposable Chromium prompt/lore cases at desktop and touch-phone sizes. Zero-page native completion and process restart/reopen were verified; Safari/WebKit was not run. Full details and evidence boundaries are in `server-migration-handover.md`.
+- The owner requested a pause after Stage 5. Stage 6 has not started. Resume Stage 6 in a new session and continue Stages 6-13 in order. No push or deployment is authorised; preserve both uncommitted owner workflow edits.
+
+## Historical Stage 4 saved World Info activation (verified)
 
 - Server selection now uses the accepted Roleplay chat, its saved books, character and effective persona, settings, account and physical file identities. The browser and server share matching, groups, entry order, probability and timed-window rules. Recursion, exact token budgets, random draws, per-pass hook decisions and final activation are saved before provider dispatch; timed metadata is part of the recorded chat effect. Read-only MacroEnhanced lore macros consume each job's saved result without a shared browser cache.
 - The saved hook policy binds Pathfinder eligibility, linked Quick Reply action identities and scan contributors. When their paid retrieval, mutating scripts or vector/Agent scan prompts require later server ownership, the private job refuses before contacting a provider instead of silently omitting them. Stages 6, 7 and 13 own those effects; Stage 8 owns complete Roleplay workflows and Stage 9 their browser cutover. This Stage 4 completion does not certify those later actions.
@@ -78,7 +84,7 @@ owner resumes this paused migration, continue automatically between verified che
 | 2. Protected Roleplay identity and effects | done | Server-assigned instance identity, exact message/swipe/range anchors, full-intent acceptance and completion records surviving job pruning, saves and all lifecycle operations. Protected storage, group updates, chat imports, chat/group/character lifecycles, Data Maid, retirement, seeding, backup imports including first-time files, BYAF chats, reset/purge, paused-job admission with typed effects and aside guards are committed. The combined browser run passed 167/167 at `3093d0ec2`; browser callers and accepted workflow execution belong to later stages. |
 | 3. Bound execution and output processing | done | Private accepted Roleplay jobs bind account/source/connection and save provider results before typed chat effects. Saved and active chat/text plus active Kobold, NovelAI and Horde use native handlers; chat/text SSE completion, reasoning, cleanup, safe custom controls and credential-free artefacts are verified. Token-only Kobold/NovelAI streaming is refused for bound jobs; their complete non-streaming results work. The browser does not submit these jobs yet. |
 | 4. Shared World Info activation | done | Protected saved chat, character, persona, settings and books drive recursive selection with exact token budgets, timed effects, saved random draws and per-pass/final hook records. Read-only lore macros consume the saved activation. Unsupported enabled Pathfinder retrieval, Quick Reply actions and vector/Agent scan contributions refuse before paid work; their execution remains in Stages 6, 7 and 13. Private server selection and affected browser scans are verified, not Roleplay browser cutover. |
-| 5. Complete prompt assembly | pending | Shared DOM-free character/persona/history, instruct/context and PromptManager budgets, tools, attachments, Mewmory and extension ordering. |
+| 5. Complete prompt assembly | done | Protected saved character/persona/group/target history, shared instruct/context and PromptManager order/depth, provider budgets, supported file/image inputs, tool schemas, immutable completed contributor/progressive inputs, Mewmory and extension ordering. Prepared prompts and request controls survive replay; unknown provider outcomes remain interrupted. Actual contributor/tool execution and browser cutover belong to Stages 6-9. |
 | 6. Prompt contributors and media | pending | Native retrieval, translation, captions, sprites, speech and the complete configured QIG pipeline with durable inputs/results. |
 | 7. Tools, Agents and generation hooks | pending | Before/after processing, companions, trackers, history, lorebook/tool actions and explicit approval gates. |
 | 8. Whole-Roleplay execution | pending | One saved progressive workflow for group speakers, tools, Agents, continuations, automatic swipes, cancellation, known-result recovery and native completion. |
@@ -311,7 +317,7 @@ The older results below describe earlier checkpoints, not the latest totals.
   routes are never substituted. The main composer, forced reply and
   branch-from-message reply now submit to durable acceptance, the browser
   append/selection/coalescing queue is removed, and observation reads authoritative
-  saved results. Roleplay prompt assembly remains pending.
+  saved results. Roleplay prompt assembly was pending at this historical checkpoint; Stage 5 above records its later completion.
 
 ## Phase 3 onward
 
