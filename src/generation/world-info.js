@@ -225,6 +225,7 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
                 book: name,
                 title: String(entry.comment ?? '').trim() || String(Array.isArray(entry.key) && entry.key[0] || entry.uid),
                 content: String(entry.content ?? ''),
+                entry,
             }))),
         activeLore: result.activated.map(({ title, content }) => ({ title, content })),
         timedBaseline: roleplayHash(snapshot.metadata.timedWorldInfo ?? {}) };

@@ -12,6 +12,7 @@ import { assertRoleplayWorldInfoCurrent, prepareRoleplayWorldInfo } from './worl
 import { assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertRoleplayPostHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets, isWorldInfoAuthorNoteActive } from './roleplay-prompt.js';
 import { getChatProfileContextLimit, resolveGenerationProfile } from './profiles.js';
 import { getCounter } from '../mewmory/tokens.js';
+import { fnv1a } from '../../public/scripts/extensions/third-party/MacroEnhanced/src/state-impl.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
@@ -104,7 +105,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             writeArtifact(directories, job.id, 'roleplay-world-info', worldInfo);
         }
         if (!Array.isArray(worldInfo.activeLore) || !Array.isArray(worldInfo.boundLore)
-            || request.worldInfo.enhancedLoreMacros && worldInfo.boundLore.some(entry => typeof entry.book !== 'string')) {
+            || request.worldInfo.enhancedLoreMacros && worldInfo.boundLore.some(entry => typeof entry.book !== 'string'
+                || !entry.entry || typeof entry.entry !== 'object')) {
             throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'This saved World Info scan predates its server macro result.', 503);
         }
         assertRoleplayWorldInfoCurrent(base, request.worldInfo);
@@ -200,10 +202,52 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     }
     const loreScope = scope => !scope || scope === 'active' ? worldInfo.activeLore
         : scope === 'bound' ? worldInfo.boundLore : null;
+    const loreInFlight = new Set();
+    const loreLookup = (title, book) => worldInfo.boundLore.find(item => (!book || item.book === book)
+        && ((String(item.entry.comment ?? '').trim()
+            && String(item.entry.comment).trim().toLowerCase() === String(title).trim().toLowerCase())
+            || String(item.entry.uid) === String(title).trim()));
+    const loreContent = (item, resolve) => {
+        if (!item) return '';
+        const identity = `${item.book}::${item.entry.uid}`;
+        if (loreInFlight.has(identity)) return item.content;
+        loreInFlight.add(identity);
+        try { return resolve(item.content); } finally { loreInFlight.delete(identity); }
+    };
+    const loreFields = {
+        title: item => item.title, keys: item => (item.entry.key ?? []).join(', '),
+        secondarykeys: item => (item.entry.keysecondary ?? []).join(', '),
+        content: item => item.content, position: item => String(item.entry.position ?? ''),
+        depth: item => String(item.entry.depth ?? ''), order: item => String(item.entry.order ?? ''),
+        probability: item => String(item.entry.probability ?? ''), constant: item => item.entry.constant ? 'true' : 'false',
+        enabled: item => item.entry.disable ? 'false' : 'true', uid: item => String(item.entry.uid),
+    };
+    const loreMacro = { unnamedArgs: [{ name: 'entry' }, { name: 'book', optional: true }],
+        handler: ({ unnamedArgs: [title, book], resolve }) => loreContent(loreLookup(title, book), resolve) };
     const result = await generate({ context: base, jobContext: context, binding: request.binding, messages,
         maxTokens: request.maxTokens, userName, characterName: request.characterName,
         groupNames: request.groupNames || [], macroEnvironment: createMacroEnvironment(request.macros || {}, {}, {
             dynamicMacros: worldInfo && request.worldInfo.enhancedLoreMacros ? {
+                lore: loreMacro,
+                wi: loreMacro,
+                lorekeys: { unnamedArgs: [{ name: 'entry' }, { name: 'book', optional: true }],
+                    handler: ({ unnamedArgs: [title, book] }) => (loreLookup(title, book)?.entry.key ?? []).join(', ') },
+                loreexists: { unnamedArgs: [{ name: 'entry' }, { name: 'book', optional: true }],
+                    handler: ({ unnamedArgs: [title, book] }) => String(Boolean(loreLookup(title, book))) },
+                lorefield: { unnamedArgs: [{ name: 'entry' }, { name: 'field' }, { name: 'book', optional: true }],
+                    handler: ({ unnamedArgs: [title, field, book] }) => {
+                        const item = loreLookup(title, book);
+                        const name = String(field ?? '').trim().toLowerCase();
+                        return item && Object.hasOwn(loreFields, name) ? loreFields[name](item) : '';
+                    } },
+                lorepick: { unnamedArgs: [{ name: 'book', optional: true }, { name: 'key', optional: true }],
+                    handler: ({ unnamedArgs: [book, key], resolve }) => {
+                        const candidates = worldInfo.boundLore.filter(item => !book || item.book === book)
+                            .sort((a, b) => String(a.entry.uid).localeCompare(String(b.entry.uid), undefined, { numeric: true }));
+                        if (!candidates.length) return '';
+                        const seed = `${request.worldInfo.metadata.chat_id_hash ?? ''}:${String(book ?? '')}:${String(key ?? '')}`;
+                        return loreContent(candidates[fnv1a(seed) % candidates.length], resolve);
+                    } },
                 loreactive: { unnamedArgs: [{ name: 'separator', optional: true }], handler: ({ unnamedArgs: [separator] }) =>
                     worldInfo.activeLore.map(entry => entry.title).join(separator || ', ') },
                 lorebooks: { unnamedArgs: [{ name: 'separator', optional: true }], handler: ({ unnamedArgs: [separator] }) =>

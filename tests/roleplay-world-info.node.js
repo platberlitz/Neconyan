@@ -927,6 +927,15 @@ test('production lore activation macros read only this job’s saved selection, 
         assert.equal(macroEnvironment.evaluate('{{loreentries}}'), 'Harbour, Other');
         assert.equal(macroEnvironment.evaluate('{{loreentries::Town::;}}'), 'Harbour;Other');
         assert.equal(macroEnvironment.evaluate('{{loreentries::Missing}}'), '');
+        assert.equal(macroEnvironment.evaluate('{{lore::Harbour}}'), 'The harbour is safe');
+        assert.equal(macroEnvironment.evaluate('{{wi::7::Town}}'), 'The harbour is safe');
+        assert.equal(macroEnvironment.evaluate('{{lorekeys::Harbour}}'), 'Original');
+        assert.equal(macroEnvironment.evaluate('{{loreexists::Other}}'), 'true');
+        assert.equal(macroEnvironment.evaluate('{{loreexists::Absent}}'), 'false');
+        assert.equal(macroEnvironment.evaluate('{{lorefield::Harbour::content}}'), 'The harbour is safe');
+        assert.equal(macroEnvironment.evaluate('{{lorefield::Harbour::uid}}'), '7');
+        assert.equal(macroEnvironment.evaluate('{{lorefield::Harbour::__proto__}}'), '');
+        assert.equal(macroEnvironment.evaluate('{{lorepick::Town}}'), 'Inactive lore');
         assert.equal(macroEnvironment.evaluate('{{loretokens}}'), String(Math.ceil('The harbour is safe'.length / 4)));
         assert.equal(macroEnvironment.evaluate('{{loretokens::bound}}'),
             String(Math.ceil('The harbour is safe\nInactive lore'.length / 4)));
