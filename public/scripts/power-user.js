@@ -1,3 +1,4 @@
+import { renderRoleplayStory } from './roleplay-text-format.js';
 import { Fuse, Handlebars } from '../lib.js';
 import { accessibleTheme } from './theme-contrast.js';
 import { resolveCustomStoppingStrings } from './chat-request-controls.js';
@@ -3420,26 +3421,11 @@ export function renderStoryString(params, { customStoryString = null, customInst
         // Validate and log possible warnings/errors
         validateStoryString(storyString, params);
 
-        // compile the story string template into a function, with no HTML escaping
-        const compiledTemplate = Handlebars.compile(storyString, { noEscape: true });
-
-        // render the story string template with the given params
-        let output = compiledTemplate(params);
-
-        // substitute {{macro}} params that are not defined in the story string
-        output = substituteParams(output, params.user, params.char);
-
-        // remove leading newlines
-        output = output.replace(/^\n+/, '');
-
-        // add a newline to the end of the story string if it doesn't have one
-        if (output.length > 0 && !output.endsWith('\n') && storyStringPosition !== extension_prompt_types.IN_CHAT) {
-            if (!instructSettings.enabled || (instructSettings.wrap && !instructSettings.story_string_suffix)) {
-                output += '\n';
-            }
-        }
-
-        return output;
+        return renderRoleplayStory(params, { template: storyString,
+            context: { ...contextSettings, story_string_position: storyStringPosition }, instruct: instructSettings,
+            compile: (template, options) => Handlebars.compile(template, options),
+            substitute: value => substituteParams(value, params.user, params.char),
+        });
     } catch (e) {
         toastr.error('Check the story string template for validity', 'Error rendering story string');
         console.error('Error rendering story string', e);

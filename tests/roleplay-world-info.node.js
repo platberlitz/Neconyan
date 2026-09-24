@@ -150,7 +150,7 @@ test('a server-owned reply uses the saved default Chat Completion prompt order',
             beforeDispatch();
             assert.deepEqual(messages.map(message => message.content), [
                 'Write Nova\'s next reply in a fictional chat between Nova and User.', 'Before the history',
-                'Original', 'Original', 'Answer',
+                'Original', '[Start a new Chat]', 'Original', 'Answer',
             ]);
             return { text: 'Bound answer' };
         },
@@ -178,7 +178,7 @@ test('Chat Completion uses its saved prompt order even when a text story templat
         generate: async ({ messages, beforeDispatch }) => {
             beforeDispatch();
             assert.deepEqual(messages.map(item => item.content), [
-                'Write Nova\'s next reply in a fictional chat between Nova and User.', 'Original', 'Original', 'Answer',
+                'Write Nova\'s next reply in a fictional chat between Nova and User.', 'Original', '[Start a new Chat]', 'Original', 'Answer',
             ]);
             return { text: 'Bound answer' };
         },
@@ -354,7 +354,7 @@ test('a server-owned group reply sends saved speaker names as provider fields', 
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Group answer');
 });
 
-test('a server-owned legacy group reply leaves speaker formatting to the bound provider', async t => {
+test('a server-owned legacy group reply saves its complete speaker formatting before dispatch', async t => {
     const f = fixture(t, true);
     f.records[1].extra = {};
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
@@ -371,13 +371,13 @@ test('a server-owned legacy group reply leaves speaker formatting to the bound p
     const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
         owner: f.scope.owner, signal: new AbortController().signal };
     await runRoleplayReplyJob(context, { promptBackend: () => ({ backend: 'kobold' }),
-        generate: async ({ messages, beforeDispatch }) => {
+        generate: async ({ messages, preparedText, beforeDispatch }) => {
             beforeDispatch();
             assert.deepEqual(messages, [
-                { role: 'system', content: 'Story: Original' },
                 { role: 'user', content: 'Original', name: 'User' },
                 { role: 'assistant', content: 'Answer', name: 'Nova' },
             ]);
+            assert.equal(preparedText, 'Story: Original\nUser: Original\nNova: Answer\nNova:');
             return { text: 'Group answer' };
         } });
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Group answer');
@@ -409,11 +409,9 @@ test('server-owned replies place saved post-history instructions according to th
             owner: f.scope.owner, signal: new AbortController().signal };
     };
     const text = context('text-post-history', request);
-    await runRoleplayReplyJob(text, { promptBackend: () => ({ backend: 'text' }), generate: async ({ messages, beforeDispatch }) => {
+    await runRoleplayReplyJob(text, { promptBackend: () => ({ backend: 'text' }), generate: async ({ preparedText, beforeDispatch }) => {
         beforeDispatch();
-        assert.deepEqual(messages.map(message => message.content), [
-            'Character: Original', 'Original', 'Answer', 'Character instruction',
-        ]);
+        assert.equal(preparedText, 'Character: Original\nUser: Original\nNova: Answer\nUser: Character instruction');
         return { text: 'Following instruction' };
     } });
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Following instruction');
@@ -1204,9 +1202,9 @@ test('a fresh protected chat uses its saved story and refuses an empty prompt', 
         power_user: { context: { story_string: 'Character: {{description}}', story_string_position: 0 } },
     }));
     const context = prepare('fresh-server-prompt', request);
-    await runRoleplayReplyJob(context, { promptBackend: () => ({ backend: 'text' }), generate: async ({ messages, beforeDispatch }) => {
+    await runRoleplayReplyJob(context, { promptBackend: () => ({ backend: 'text' }), generate: async ({ preparedText, beforeDispatch }) => {
         beforeDispatch();
-        assert.deepEqual(messages, [{ role: 'system', content: 'Character: Original' }]);
+        assert.equal(preparedText, 'Character: Original\n');
         return { text: 'First reply' };
     } });
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'First reply');
@@ -1238,10 +1236,11 @@ test('server-owned prompts trim old saved history and rebuild lore depth within 
     releaseJob(f.scope.directories, jobId);
     const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
         owner: f.scope.owner, signal: new AbortController().signal };
-    await runRoleplayReplyJob(context, { contextLimit: () => 100, promptBackend: () => ({ backend: 'text' }), generate: async ({ messages, beforeDispatch }) => {
+    await runRoleplayReplyJob(context, { contextLimit: () => 100, promptBackend: () => ({ backend: 'text' }), generate: async ({ messages, preparedText, beforeDispatch }) => {
         beforeDispatch();
-        assert.equal(messages[0].content, 'Character: Original');
-        assert.deepEqual(messages.slice(-2).map(message => message.content), ['Most recent answer', 'Saved depth lore']);
+        assert.ok(preparedText.startsWith('Character: Original\n'));
+        assert.ok(preparedText.endsWith('Nova: Most recent answer\nSaved depth lore'));
+        assert.equal(messages.at(-1).content, 'Most recent answer');
         assert.ok(messages.length < f.records.length);
         assert.ok(!messages.some(message => message.content.startsWith('Old message 0')));
         return { text: 'Bound reply' };

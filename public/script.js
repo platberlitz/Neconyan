@@ -1,3 +1,4 @@
+import { formatRoleplayTextMessage, combineRoleplayTextPrompt } from './scripts/roleplay-text-format.js';
 import {
     showdown,
     moment,
@@ -9171,18 +9172,8 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 // add chat preamble
                 mesSendString = addChatsPreamble(mesSendString);
 
-                let combinedPrompt = [
-                    combinedStoryString,
-                    mesExmString,
-                    mesSendString,
-                    generatedPromptCache,
-                ].join('').replace(/\r/gm, '');
-
-                if (power_user.collapse_newlines) {
-                    combinedPrompt = collapseNewlines(combinedPrompt);
-                }
-
-                return combinedPrompt;
+                return combineRoleplayTextPrompt({ story: combinedStoryString, examples: mesExmString,
+                    history: mesSendString, continuation: generatedPromptCache, collapseNewlines: power_user.collapse_newlines });
             };
 
             finalMesSend.forEach((item, i) => {
@@ -10057,25 +10048,9 @@ export function getBiasStrings(textareaText, type) {
  * @param {boolean|number} forceOutputSequence Whether to force the first/last output sequence for instruct mode.
  */
 function formatMessageHistoryItem(chatItem, isInstruct, forceOutputSequence) {
-    const isNarratorType = chatItem?.extra?.type === system_message_types.NARRATOR;
-    const characterName = chatItem?.name ? chatItem.name : name2;
-    const itemName = chatItem.is_user ? chatItem.name : characterName;
-    const shouldPrependName = !isNarratorType;
-
-    // If this symbol flag is set, completely ignore the message.
-    // This can be used to hide messages without affecting the number of messages in the chat.
-    if (chatItem.extra?.[IGNORE_SYMBOL]) {
-        return '';
-    }
-
-    // Don't include a name if it's empty
-    let textResult = chatItem?.name && shouldPrependName ? `${itemName}: ${chatItem.mes}\n` : `${chatItem.mes}\n`;
-
-    if (isInstruct) {
-        textResult = formatInstructModeChat(itemName, chatItem.mes, chatItem.is_user, isNarratorType, chatItem.force_avatar, name1, name2, forceOutputSequence);
-    }
-
-    return textResult;
+    if (chatItem.extra?.[IGNORE_SYMBOL]) return '';
+    return formatRoleplayTextMessage(chatItem, { instruct: isInstruct ? power_user.instruct : null,
+        userName: name1, characterName: name2, group: Boolean(selected_group), forceOutputSequence, substitute: substituteParams });
 }
 
 /**

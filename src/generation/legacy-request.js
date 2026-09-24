@@ -78,7 +78,7 @@ async function novelTokenControls(settings, model, stops, signal) {
 /** Use the already-selected legacy controls and native handler; no browser-prepared provider request. */
 export async function runLegacyProfile({ context, binding, messages, maxTokens, macroEnvironment,
     ephemeralStops = [], userName = 'User', characterName = 'Character', groupNames = [],
-    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, stream = false,
+    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText,
 } = {}) {
     signal ||= jobContext?.signal;
     signal?.throwIfAborted();
@@ -87,7 +87,8 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
         fail('This bound legacy request has unsupported controls.', 409);
     }
     if (stream) fail('This provider stream has no verified completion marker for a durable Roleplay reply.', 409);
-    const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames, rawOptions });
+    const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames, rawOptions,
+        ...(preparedText !== undefined ? { preparedText } : {}) });
     const resultName = 'horde-result:' + key;
     if (jobContext && binding?.backend === 'horde') {
         const completed = readArtifact(context.directories, jobContext.job.id, resultName);
@@ -112,7 +113,7 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
         return value;
     };
     const stops = resolveCustomStoppingStrings(material.power, substitute, ephemeralStops).filter(Boolean);
-    let prompt = createRawPrompt(structuredClone(messages), material.backend, rawOptions.instructOverride, rawOptions.quietToLoud,
+    let prompt = preparedText ?? createRawPrompt(structuredClone(messages), material.backend, rawOptions.instructOverride, rawOptions.quietToLoud,
         rawOptions.systemPrompt, rawOptions.prefill, { instruct: material.power.instruct, context: material.power.context,
             name1: userName, name2: characterName, selectedGroup: groupNames.length > 0, substitute });
     const settings = material.active;
@@ -136,6 +137,7 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
         const cleanup = { stops, power: Object.fromEntries(cleanupFields.map(name => [name, material.power[name]])) };
         writeArtifact(context.directories, jobContext.job.id, 'horde-cleanup:' + key, cleanup);
         const request = { user: { profile: { handle: context.owner }, directories: context.directories }, headers: {} };
+        await validatePrompt?.(payload, material);
         const submitted = await providerStep(jobContext, key, async () => {
             resolveGenerationProfile(context.directories, binding);
             beforeDispatch?.();
@@ -179,6 +181,7 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
             num_logprobs: material.power.request_token_probabilities ? 10 : undefined, ...tokens };
         handler = handleNovelGenerate;
     }
+    await validatePrompt?.(payload, material);
     const call = async () => {
         resolveGenerationProfile(context.directories, binding);
         beforeDispatch?.();

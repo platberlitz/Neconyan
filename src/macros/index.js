@@ -120,7 +120,7 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
         extra: { ...data.extra, powerUser: env.extra.powerUser, mainApi: env.extra.mainApi } }, capabilities, { dynamicMacros, postProcess });
     env.captureState = () => structuredClone({ variables: data.variables,
         chatMetadata: env.extra.chatMetadata, bannedWords: env.extra.bannedWords });
-    env.evaluate = (content, { legacy = false, strictCapabilities = false } = {}) => {
+    env.evaluate = (content, { legacy = false, strictCapabilities = false, original: suppliedOriginal } = {}) => {
         let unavailable;
         const extra = { ...env.extra };
         const missing = name => () => {
@@ -133,7 +133,7 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
                 if (!Object.hasOwn(capabilities, key) && !Object.hasOwn(snapshot.extra || {}, key)) extra[key] = missing(name);
             }
         }
-        let original = data.original;
+        let original = suppliedOriginal ?? data.original;
         const functions = { ...env.functions };
         if (typeof original === 'string') functions.original = () => { const value = original; original = ''; return value; };
         if (legacy) {

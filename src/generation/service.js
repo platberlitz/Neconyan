@@ -1,4 +1,5 @@
 import path from 'node:path';
+import fetch from 'node-fetch';
 import {
     buildGenerationRequestBody,
     extractGeneratedText,
@@ -26,7 +27,7 @@ import { runLegacyProfile } from './legacy-request.js';
  * server transport the Conversation API uses. Callers supply an already-built
  * request; saved chat profiles use runChatProfile below.
  */
-export async function runTextGeneration({ context, backend, payload, signal, anonymousCustom = false, boundProfile = false, fetch: fetchImpl } = {}) {
+export async function runTextGeneration({ context, backend, payload, signal, anonymousCustom = false, boundProfile = false, fetch: fetchImpl, validatePrompt } = {}) {
     if (!context?.directories) throw Object.assign(new Error('A generation context is required.'), { status: 400, code: 'GENERATION_CONTEXT_MISSING' });
     if (!payload || typeof payload !== 'object' || Object.keys(payload).length === 0) {
         throw Object.assign(new Error('A generation payload is required.'), { status: 400, code: 'GENERATION_PAYLOAD_MISSING' });
@@ -36,7 +37,15 @@ export async function runTextGeneration({ context, backend, payload, signal, ano
         user: { profile: { handle: context.owner }, directories: context.directories },
         headers: {},
     };
-    const response = await runBackendGeneration(request, resolvedBackend, payload, { signal, fetch: fetchImpl, anonymousCustom, boundProfile });
+    let validationError;
+    const send = validatePrompt && payload.chat_completion_source === 'custom' ? async (url, options) => {
+        try { await validatePrompt(JSON.parse(options.body)); } catch (error) { validationError = error; throw error; }
+        return (fetchImpl || fetch)(url, options);
+    } : fetchImpl;
+    let response;
+    try {
+        response = await runBackendGeneration(request, resolvedBackend, payload, { signal, fetch: send, anonymousCustom, boundProfile });
+    } catch (error) { throw validationError || error; }
     const text = resolvedBackend === 'text'
         ? normalizeContentText(typeof response === 'string' ? response : response?.choices?.[0]?.text ?? response?.choices?.[0]?.message?.content ?? response?.content ?? response?.response ?? response?.[0]?.content ?? '', { excludeReasoning: true })
         : extractMessageFromData(response, 'openai', { excludeReasoning: true })
@@ -47,7 +56,7 @@ export async function runTextGeneration({ context, backend, payload, signal, ano
 export { buildGenerationRequestBody, extractGeneratedText, normalizeGenerationBackend };
 
 /** Check browser-only requirements before accepting input or uploading its files. */
-export async function validateActiveGenerationContext(material, macroEnvironment, messages = [], rawOptions = {}, { maxTokens = 1, groupNames = [], ephemeralStops = [] } = {}) {
+export async function validateActiveGenerationContext(material, macroEnvironment, messages = [], rawOptions = {}, { maxTokens = 1, groupNames = [], ephemeralStops = [], preparedText } = {}) {
     if (material.kind !== 'active') return;
     const isolated = macroEnvironment?.fork ? macroEnvironment.fork() : createMacroEnvironment(macroEnvironment || {});
     isolated.extra.powerUser = { ...material.power, instruct: material.instruct || material.power.instruct || {},
@@ -60,7 +69,7 @@ export async function validateActiveGenerationContext(material, macroEnvironment
     });
     if (material.backend === 'text') {
         await buildTextProfileRequest({}, material, structuredClone(messages), maxTokens, { macroEnvironment: isolated, rawOptions, groupNames, ephemeralStops,
-            userName: isolated.names.user, characterName: isolated.names.char, validateOnly: true, captureCleanupStops: () => {} });
+            userName: isolated.names.user, characterName: isolated.names.char, validateOnly: true, captureCleanupStops: () => {}, preparedText });
     } else {
         const substitute = value => isolated.evaluate(value, { legacy: !material.power.experimental_macro_engine, strictCapabilities: true });
         const prompt = createRawPrompt(structuredClone(messages), 'openai', rawOptions.instructOverride, rawOptions.quietToLoud,
@@ -89,15 +98,17 @@ export async function validateActiveGenerationContext(material, macroEnvironment
 /** Execute a bound Chat Completion profile without browser globals or credential persistence. */
 export async function runChatProfile({ context, binding, messages, maxTokens, macroEnvironment,
     ephemeralStops = [], userName = 'User', characterName = 'Character', groupNames = [],
-    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, stream = false,
+    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText,
 } = {}) {
     if (!context?.directories) fail('A generation context is required.', 400);
     signal ||= jobContext?.signal;
     signal?.throwIfAborted();
+    if (preparedText !== undefined && (typeof preparedText !== 'string' || Buffer.byteLength(preparedText) > 8 * 1024 * 1024
+        || !['text', 'kobold', 'novel', 'horde'].includes(binding?.backend))) fail('The prepared text prompt is invalid.', 409);
     const raw = binding?.kind === 'active';
     if (['kobold', 'novel', 'horde'].includes(binding?.backend)) return runLegacyProfile({ context, binding, messages, maxTokens, macroEnvironment,
         ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, jobContext,
-        modelOverride, overridePayload, rawOptions, beforeDispatch, stream });
+        modelOverride, overridePayload, rawOptions, beforeDispatch, validatePrompt, stream, preparedText });
     if (!raw && Object.keys(rawOptions).some(option => !['jsonSchema', 'cacheScope'].includes(option))) {
         fail('This request option requires the acknowledged active connection.', 409);
     }
@@ -105,9 +116,9 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         fail('Structured request controls require a Chat Completion connection.', 409);
     }
     if (binding?.backend === 'text' || raw) {
-        const options = { context, binding, macroEnvironment, ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions, maxTokens };
+        const options = { context, binding, macroEnvironment, ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions, maxTokens, preparedText };
         const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames, modelOverride, overridePayload,
-            ...(stream ? { stream: true } : {}), ...(raw ? { rawOptions } : {}) });
+            ...(stream ? { stream: true } : {}), ...(raw ? { rawOptions } : {}), ...(preparedText !== undefined ? { preparedText } : {}) });
         if (jobContext) {
             const retained = readArtifact(context.directories, jobContext.job.id, 'provider:' + key);
             if (retained !== undefined) return retained;
@@ -124,7 +135,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
                 getMaxContextTokens: () => material.contextLimit || material.active.openai_max_context,
                 getMaxPromptTokens: () => (material.contextLimit || material.active.openai_max_context) - maxTokens });
         }
-        if (raw) await validateActiveGenerationContext(material, macroEnvironment, messages, rawOptions, { maxTokens, groupNames, ephemeralStops });
+        if (raw) await validateActiveGenerationContext(material, macroEnvironment, messages, rawOptions, { maxTokens, groupNames, ephemeralStops, preparedText });
         if (raw) {
             const allowed = ['instructOverride', 'quietToLoud', 'systemPrompt', 'prefill', 'trimNames', 'temperature', 'jsonSchema', 'cacheScope', 'preserveReasoningBudget'];
             if (Object.keys(rawOptions).some(key => !allowed.includes(key))) fail('This raw generation option cannot run on the server.', 409);
@@ -168,11 +179,12 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         }
         payload.stream = stream === true;
         const current = resolveGenerationProfile(context.directories, binding);
+        await validatePrompt?.(payload, material);
         const call = async () => {
             beforeDispatch?.();
             const requestPayload = raw && binding.backend === 'chat' ? { ...payload, proxy_password: current.proxy.proxy_password,
                 custom_include_headers: current.active.custom_include_headers, custom_include_body: current.active.custom_include_body } : payload;
-            const result = await runTextGeneration({ context, backend: binding.backend, payload: requestPayload, signal, fetch: fetchImpl,
+            const result = await runTextGeneration({ context, backend: binding.backend, payload: requestPayload, signal, fetch: fetchImpl, validatePrompt,
                 anonymousCustom: binding.backend === 'text' ? !material.secretId : payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy, boundProfile: true });
             if (raw && rawOptions.jsonSchema) return { ...result, text: extractJsonFromData(result.response, {
                 mainApi: 'openai', chatCompletionSource: material.source, returnInvalidJson: rawOptions.jsonSchema.returnInvalid,
@@ -193,9 +205,10 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions });
     payload.stream = stream === true;
     const material = resolveGenerationProfile(context.directories, binding);
+    await validatePrompt?.(payload, material);
     const call = () => {
         beforeDispatch?.();
-        return runTextGeneration({ context, backend: 'chat', payload, signal, fetch: fetchImpl,
+        return runTextGeneration({ context, backend: 'chat', payload, signal, fetch: fetchImpl, validatePrompt,
             anonymousCustom: payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy, boundProfile: true })
             .then(result => ({ ...result, text: cleanGeneratedText(removePartialStops(result.text,
                 Array.isArray(payload.stop) ? payload.stop : []), { power: material.power,

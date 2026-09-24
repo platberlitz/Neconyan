@@ -1,3 +1,4 @@
+import { getChatImageTokenCost } from './chat-prompt-tokens.js';
 import { injectChatPromptDepth } from './chat-prompt-depth.js';
 /*
 * CODE FOR OPENAI SUPPORT
@@ -5941,36 +5942,8 @@ class Message {
      * @returns {Promise<number>} The token cost of the image.
      */
     async getImageTokenCost(dataUrl, quality) {
-        if (quality === 'low') {
-            return Message.tokensPerImage;
-        }
-
-        const size = await getImageSizeFromDataURL(dataUrl);
-
-        // If the image is small enough, we can use the low quality token cost
-        if (quality === 'auto' && size.width <= 512 && size.height <= 512) {
-            return Message.tokensPerImage;
-        }
-
-        /*
-        * Images are first scaled to fit within a 2048 x 2048 square, maintaining their aspect ratio.
-        * Then, they are scaled such that the shortest side of the image is 768px long.
-        * Finally, we count how many 512px squares the image consists of.
-        * Each of those squares costs 170 tokens. Another 85 tokens are always added to the final total.
-        * https://platform.openai.com/docs/guides/vision/calculating-costs
-        */
-
-        const scale = 2048 / Math.min(size.width, size.height);
-        const scaledWidth = Math.round(size.width * scale);
-        const scaledHeight = Math.round(size.height * scale);
-
-        const finalScale = 768 / Math.min(scaledWidth, scaledHeight);
-        const finalWidth = Math.round(scaledWidth * finalScale);
-        const finalHeight = Math.round(scaledHeight * finalScale);
-
-        const squares = Math.ceil(finalWidth / 512) * Math.ceil(finalHeight / 512);
-        const tokens = squares * 170 + 85;
-        return tokens;
+        if (quality === 'low') return Message.tokensPerImage;
+        return getChatImageTokenCost(await getImageSizeFromDataURL(dataUrl), quality);
     }
 
     /**

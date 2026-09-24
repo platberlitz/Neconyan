@@ -5,6 +5,24 @@ import { AGENT_REGEX_PLACEMENT } from '../../public/scripts/extensions/in-chat-a
 
 const ROLES = ['system', 'user', 'assistant'];
 
+/** Macro inputs come from captured account sources, not a prepared page prompt. */
+export function savedRoleplayMacroSnapshot(snapshot, records) {
+    const names = snapshot.speakerNames;
+    const group = snapshot.groupNames ?? [];
+    return {
+        names: { user: names.user, char: names.character, group: group.join(', ') || names.character,
+            groupNotMuted: (snapshot.unmutedGroupNames ?? group).join(', ') || names.character,
+            notChar: [...group.filter(name => name !== names.character), names.user].join(', ') },
+        character: { description: snapshot.global.characterDescription, personality: snapshot.global.characterPersonality,
+            scenario: snapshot.global.scenario, persona: snapshot.global.personaDescription,
+            charPrompt: snapshot.systemPrompt, charInstruction: snapshot.postHistory.character,
+            mesExamplesRaw: snapshot.characterExamples, charDepthPrompt: snapshot.global.characterDepthPrompt,
+            creatorNotes: snapshot.global.creatorNotes },
+        variables: snapshot.promptVariables,
+        extra: { chat: records.slice(1), chatMetadata: snapshot.metadata },
+    };
+}
+
 export const isWorldInfoAuthorNoteActive = note => note?.interval === 1
     || note?.interval > 1 && note.userMessages > 0 && note.userMessages % note.interval === 0;
 
@@ -196,15 +214,24 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
                 function: { name: call.name, arguments: call.parameters } })) },
             ...calls.map(call => ({ role: 'tool', tool_call_id: call.id, content: call.result || '[No content]' }))];
         }
+        if (record.is_system === true) return [];
         const attachment = attachments.find(item => item.index === index);
         const selectedImages = images.filter(item => item.index === index);
         const media = record.extra?.media;
         if (typeof record.mes !== 'string' || typeof record.is_user !== 'boolean'
             || group && (typeof record.name !== 'string' || !record.name)
-            || Object.keys(record).some(key => !['name', 'is_user', 'mes', 'swipes', 'swipe_id', 'swipe_info', 'extra', 'send_date'].includes(key))
+            || record.is_system !== undefined && typeof record.is_system !== 'boolean'
+            || Object.keys(record).some(key => !['name', 'is_user', 'is_system', 'is_name', 'mes', 'swipes', 'swipe_id', 'swipe_info',
+                'extra', 'send_date', 'title', 'gen_started', 'gen_finished', 'mewmory_id', 'force_avatar', 'original_avatar'].includes(key))
             || (record.extra && (typeof record.extra !== 'object' || Array.isArray(record.extra)
                  || Object.keys(record.extra).some(key => !['token_count', 'isSmallSys', 'reasoning', 'files', 'fileLength',
-                     'media', 'media_index', 'media_display', 'inline_image'].includes(key))
+                     'media', 'media_index', 'media_display', 'inline_image', 'api', 'model', 'reasoning_effort',
+                     'reasoning_duration', 'reasoning_signature', 'reasoning_tokens', 'time_to_first_token', 'gen_id', 'type',
+                     'inChatAgentPostRuns'].includes(key))
+                 || record.extra.inChatAgentPostRuns !== undefined && (!Array.isArray(record.extra.inChatAgentPostRuns)
+                     || record.extra.inChatAgentPostRuns.some(value => typeof value !== 'string'))
+                 || record.extra.reasoning_signature
+                 || record.extra.type !== undefined && record.extra.type !== 'narrator'
                  || record.extra.files !== undefined && (!Array.isArray(record.extra.files) || !attachment)
                  || attachment && !Array.isArray(record.extra.files)
                  || media !== undefined && (!Array.isArray(media) || !media.length
@@ -216,7 +243,8 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
                 || record.extra.reasoning !== undefined && typeof record.extra.reasoning !== 'string'))) {
             throw roleplayError('ROLEPLAY_INVALID', 'This saved chat needs server handling for its non-text content.', 409);
         }
-        return { role: record.is_user ? 'user' : 'assistant', content: (attachment?.text ?? '') + record.mes };
+        return { role: record.extra?.type === 'narrator' ? 'system' : record.is_user ? 'user' : 'assistant',
+            content: (attachment?.text ?? '') + record.mes };
     });
     if (reasoningInPrompt && records.some(record => record.extra?.reasoning)) {
         if (!reasoning || !Number.isSafeInteger(reasoning.max_additions) || reasoning.max_additions < 0
@@ -293,7 +321,7 @@ export function insertWorldInfoDepth(messages, entries, historyStart) {
 }
 
 /** Keep saved card examples between lore's before/after example blocks. */
-export function insertWorldInfoExamples(messages, entries, cardExamples, historyStart, userName, characterName, groupNames = []) {
+export function insertWorldInfoExamples(messages, entries, cardExamples, historyStart, userName, characterName, groupNames = [], { blocksOnly = false } = {}) {
     if (!Number.isSafeInteger(historyStart) || historyStart < 0 || historyStart > messages.length
         || typeof cardExamples !== 'string' || typeof userName !== 'string' || !userName
         || typeof characterName !== 'string' || !characterName || !Array.isArray(groupNames)
@@ -305,7 +333,7 @@ export function insertWorldInfoExamples(messages, entries, cardExamples, history
     }
     const blocks = text => text ? (text.startsWith('<START>') ? text : `<START>\n${text.trim()}`)
         .split(/<START>/gi).slice(1).map(block => block.trim()) : [];
-    const parse = text => blocks(text).flatMap(block => {
+    const parse = text => blocks(text).map(block => {
         const lines = (`<START>\n${block}`).split('\n').slice(1);
         const result = [];
         let current;
@@ -325,7 +353,8 @@ export function insertWorldInfoExamples(messages, entries, cardExamples, history
     });
     const before = entries.filter(item => item.position === 0).reverse().flatMap(item => parse(item.content));
     const after = entries.filter(item => item.position === 1).flatMap(item => parse(item.content));
-    return [...messages.slice(0, historyStart), ...before, ...parse(cardExamples), ...after, ...messages.slice(historyStart)];
+    const examples = [...before, ...parse(cardExamples), ...after].filter(block => block.length);
+    return blocksOnly ? examples : [...messages.slice(0, historyStart), ...examples.flat(), ...messages.slice(historyStart)];
 }
 
 /** Browser Author's Note timing comes from saved chat metadata and saved extension defaults. */
@@ -399,4 +428,33 @@ export function insertRoleplayPostHistory(messages, saved, backend, effect, mate
     }
     const position = effect === 'continue' ? messages.length - 1 : messages.length;
     return [...messages.slice(0, position), { role: 'user', content: instruction }, ...messages.slice(position)];
+}
+
+/** Resolve saved static extension prompts once for both provider families. */
+export function buildRoleplayPromptExtensions(snapshot, worldInfo, render = value => value) {
+    const extensions = [];
+    const addExtension = (key, content, position, depth, role) => {
+        if (!content) return;
+        if (![0, 1, 2].includes(position) || !Number.isSafeInteger(depth) || depth < 0 || depth > 10000
+            || !ROLES.includes(role)) throw roleplayError('ROLEPLAY_INVALID', 'A saved extension prompt position is invalid.', 409);
+        extensions.push({ key, content: render(content), position, depth, role });
+    };
+    const note = snapshot.authorNote;
+    let noteText = note ? activeRoleplayAuthorNote(note) : '';
+    if (note && isWorldInfoAuthorNoteActive(note)) {
+        noteText = [snapshot.personaPosition === 2 ? snapshot.global.personaDescription : '',
+            ...worldInfo.ANBeforeEntries, noteText, ...worldInfo.ANAfterEntries,
+            snapshot.personaPosition === 3 ? snapshot.global.personaDescription : ''].filter(Boolean).join('\n');
+        addExtension('2_floating_prompt', noteText, note.position, note.depth, ROLES[note.role]);
+    }
+    if (snapshot.personaPosition === 4) {
+        addExtension('PERSONA_DESCRIPTION', snapshot.global.personaDescription, 1, snapshot.personaDepth, ROLES[snapshot.personaRole]);
+    }
+    if (snapshot.depthPrompt) {
+        addExtension('DEPTH_PROMPT', snapshot.depthPrompt.prompt, 1, snapshot.depthPrompt.depth, snapshot.depthPrompt.role);
+    }
+    for (const [index, entry] of worldInfo.WIDepthEntries.entries()) {
+        addExtension(`worldInfoDepth${index}`, entry.entries.join('\n'), 1, entry.depth, ROLES[entry.role]);
+    }
+    return extensions;
 }

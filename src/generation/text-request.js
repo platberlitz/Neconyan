@@ -32,10 +32,24 @@ export function resolveTextTokenizer(choice, source, model) {
     fail('Choose an available saved tokenizer before using text token bans or bias.', 409);
 }
 
+/** Token bans and complete prompt budgets use the same bound tokenizer endpoint. */
+export async function encodeTextProfilePrompt(context, material, text, { signal, fetch: fetchImpl, modelOverride = '', validateOnly = false } = {}) {
+    signal?.throwIfAborted();
+    const model = modelOverride.trim() || material.profile.model || '';
+    const tokenizer = resolveTextTokenizer(material.power.tokenizer, material.source, model);
+    if (validateOnly) return [];
+    if (tokenizer !== 'remote') return encodeGenerationText(tokenizer, text, model, signal);
+    const result = await runBackendRequest({ user: { profile: { handle: context.owner }, directories: context.directories }, headers: {} }, handleTextGenerationEncode,
+        { text, url: material.active.api_server, model, api_type: material.source, secret_id: material.secretId },
+        { signal, fetch: fetchImpl, anonymousCustom: !material.secretId, boundProfile: true });
+    if (!Array.isArray(result.ids) || !result.ids.every(Number.isInteger) || (text && !result.ids.length)) fail('The saved connection could not tokenise this text.', 409);
+    return result.ids;
+}
+
 /** Prepare a named text request with saved settings and request-local dependencies. */
 export async function buildTextProfileRequest(context, material, messages, maxTokens, {
     macroEnvironment, userName = 'User', characterName = 'Character', groupNames = [],
-    ephemeralStops = [], signal, fetch: fetchImpl, modelOverride = '', overridePayload = {}, rawOptions = {}, captureCleanupStops, validateOnly = false,
+    ephemeralStops = [], signal, fetch: fetchImpl, modelOverride = '', overridePayload = {}, rawOptions = {}, captureCleanupStops, validateOnly = false, preparedText,
 } = {}) {
     if ((!Array.isArray(messages) && typeof messages !== 'string') || !Number.isSafeInteger(maxTokens) || maxTokens < 1) fail('The generation input is invalid.', 400);
     const { active: settings, instruct, power, source, profile, secretId, contextLimit } = material;
@@ -53,20 +67,11 @@ export async function buildTextProfileRequest(context, material, messages, maxTo
     const raw = material.kind === 'active';
     if (raw && rawOptions.jsonSchema) fail('Structured JSON requests require a saved Chat Completion connection.', 409);
     if (raw && rawOptions.preserveReasoningBudget) fail('Preserving the active text reasoning budget is not available on the server.', 409);
-    const prompt = raw ? createRawPrompt(structuredClone(messages), 'textgenerationwebui', rawOptions.instructOverride, rawOptions.quietToLoud,
+    const prompt = preparedText ?? (raw ? createRawPrompt(structuredClone(messages), 'textgenerationwebui', rawOptions.instructOverride, rawOptions.quietToLoud,
         rawOptions.systemPrompt, rawOptions.prefill, { ...format, instruct, context: material.context }) : typeof messages === 'string' ? messages : instruct.enabled
         ? constructScopedTextPrompt(structuredClone(messages), instruct, format)
-        : messages.map(message => normalizeContentText(message.content)).join('\n\n');
-    const tokenize = async text => {
-        signal?.throwIfAborted();
-        const tokenizer = resolveTextTokenizer(power.tokenizer, source, model);
-        if (validateOnly) return [];
-        if (tokenizer !== 'remote') return encodeGenerationText(tokenizer, text, model, signal);
-        const result = await runBackendRequest({ user: { profile: { handle: context.owner }, directories: context.directories }, headers: {} }, handleTextGenerationEncode,
-            { text, url: settings.api_server, model, api_type: source, secret_id: secretId }, { signal, fetch: fetchImpl, anonymousCustom: !secretId, boundProfile: true });
-        if (!Array.isArray(result.ids) || !result.ids.every(Number.isInteger) || (text && !result.ids.length)) fail('The saved connection could not tokenise this text.', 409);
-        return result.ids;
-    };
+        : messages.map(message => normalizeContentText(message.content)).join('\n\n'));
+    const tokenize = text => encodeTextProfilePrompt(context, material, text, { signal, fetch: fetchImpl, modelOverride, validateOnly });
     const ids = [];
     const strings = [];
     if (settings.send_banned_tokens) {

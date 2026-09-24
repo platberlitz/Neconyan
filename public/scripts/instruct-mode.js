@@ -1,5 +1,6 @@
 'use strict';
 
+import { formatRoleplayTextExamples } from './roleplay-text-format.js';
 import { name1, name2, online_status, saveSettingsDebounced, substituteParams } from '../script.js';
 import { selected_group } from './group-chats.js';
 import { parseExampleIntoIndividual } from './openai.js';
@@ -375,73 +376,8 @@ export function formatInstructModeStoryString(storyString, { customContext = nul
  * @returns {string[]} Formatted example messages string.
  */
 export function formatInstructModeExamples(mesExamplesArray, name1, name2) {
-    const blockHeading = power_user.context.example_separator ? `${substituteParams(power_user.context.example_separator)}\n` : '';
-
-    if (power_user.instruct.skip_examples) {
-        return mesExamplesArray.map(x => x.replace(/<START>\n/i, blockHeading));
-    }
-
-    const includeNames = power_user.instruct.names_behavior === names_behavior_types.ALWAYS;
-    const includeGroupNames = selected_group && [names_behavior_types.ALWAYS, names_behavior_types.FORCE].includes(power_user.instruct.names_behavior);
-
-    let inputPrefix = power_user.instruct.input_sequence || '';
-    let outputPrefix = power_user.instruct.output_sequence || '';
-    let inputSuffix = power_user.instruct.input_suffix || '';
-    let outputSuffix = power_user.instruct.output_suffix || '';
-
-    if (power_user.instruct.macro) {
-        inputPrefix = substituteParams(inputPrefix, { name1Override: name1, name2Override: name2 });
-        outputPrefix = substituteParams(outputPrefix, { name1Override: name1, name2Override: name2 });
-        inputSuffix = substituteParams(inputSuffix, { name1Override: name1, name2Override: name2 });
-        outputSuffix = substituteParams(outputSuffix, { name1Override: name1, name2Override: name2 });
-
-        inputPrefix = inputPrefix.replace(/{{name}}/gi, name1);
-        outputPrefix = outputPrefix.replace(/{{name}}/gi, name2);
-        inputSuffix = inputSuffix.replace(/{{name}}/gi, name1);
-        outputSuffix = outputSuffix.replace(/{{name}}/gi, name2);
-
-        if (!inputSuffix && power_user.instruct.wrap) {
-            inputSuffix = '\n';
-        }
-
-        if (!outputSuffix && power_user.instruct.wrap) {
-            outputSuffix = '\n';
-        }
-    }
-
-    const separator = power_user.instruct.wrap ? '\n' : '';
-    const formattedExamples = [];
-
-    for (const item of mesExamplesArray) {
-        const cleanedItem = item.replace(/<START>/i, '{Example Dialogue:}').replace(/\r/gm, '');
-        const blockExamples = parseExampleIntoIndividual(cleanedItem, includeGroupNames);
-
-        if (blockExamples.length === 0) {
-            continue;
-        }
-
-        if (blockHeading) {
-            formattedExamples.push(blockHeading);
-        }
-
-        for (const example of blockExamples) {
-            // If group names were included, we don't want to add any additional prefix as it already was applied.
-            // Otherwise, if force group/persona names is set, we should override the include names for the user placeholder
-            const includeThisName = !includeGroupNames && (includeNames || (power_user.instruct.names_behavior === names_behavior_types.FORCE && example.name == 'example_user'));
-
-            const prefix = example.name == 'example_user' ? inputPrefix : outputPrefix;
-            const suffix = example.name == 'example_user' ? inputSuffix : outputSuffix;
-            const name = example.name == 'example_user' ? name1 : name2;
-            const messageContent = includeThisName ? `${name}: ${example.content}` : example.content;
-            const formattedMessage = [prefix, messageContent + suffix].filter(x => x).join(separator);
-            formattedExamples.push(formattedMessage);
-        }
-    }
-
-    if (formattedExamples.length === 0) {
-        return mesExamplesArray.map(x => x.replace(/<START>\n/i, blockHeading));
-    }
-    return formattedExamples;
+    return formatRoleplayTextExamples(mesExamplesArray, name1, name2, { instruct: power_user.instruct,
+        context: power_user.context, group: Boolean(selected_group), substitute: substituteParams, parseExamples: parseExampleIntoIndividual });
 }
 
 /**

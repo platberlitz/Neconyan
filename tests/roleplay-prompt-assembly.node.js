@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
-import { fixture } from './roleplay-transactions-fixture.js';
+import { fixture, png } from './roleplay-transactions-fixture.js';
+import { write as writeCard } from '../src/character-card-parser.js';
 
 const { captureRoleplayWorldInfo } = await import('../src/generation/world-info.js');
 const { admitRoleplayJob } = await import('../src/roleplay-jobs.js');
@@ -15,10 +16,12 @@ const { loadCurrentStateSync } = await import('../src/mewmory/sources.js');
 const { mutateState } = await import('../src/mewmory/store.js');
 const { putRecord, validateRecord } = await import('../src/mewmory/core.js');
 const { withRoleplayAccount } = await import('../src/roleplay-store.js');
+const { buildRoleplaySavedHistory } = await import('../src/generation/roleplay-prompt.js');
 
-function promptJob(t, prompts, order, settings = {}) {
+function promptJob(t, prompts, order, settings = {}, prepare = () => {}) {
     const f = fixture(t);
     f.records[1].extra = {};
+    prepare(f);
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify(settings));
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
@@ -35,7 +38,7 @@ function promptJob(t, prompts, order, settings = {}) {
         promptBackend: () => ({ backend: 'chat', active: { prompts, prompt_order: [{ character_id: 100001,
             order: order.map(identifier => ({ identifier, enabled: true })) }] } }),
     };
-    return { f, context, run: generate => runRoleplayReplyJob(context, { ...options, generate }) };
+    return { f, context, options, run: generate => runRoleplayReplyJob(context, { ...options, generate }) };
 }
 
 async function promptFor(t, prompts, order, settings = {}) {
@@ -195,4 +198,58 @@ test('enabled Mewmory refuses a disabled history marker instead of discarding re
     const job = promptJob(t, [main], ['main']);
     enableMemory(job);
     await assert.rejects(job.run(async () => assert.fail('Provider must stay idle')), /Mewmory needs.*Chat History/);
+});
+
+test('real browser message metadata preserves prompt text and skips hidden system rows', () => {
+    const records = [{ user_name: 'User', character_name: 'Nova', chat_metadata: {} },
+        { name: 'User', is_user: true, is_system: false, mes: 'Question', mewmory_id: 'user-1',
+            force_avatar: '/thumbnail?type=persona&file=user.png', extra: { isSmallSys: false } },
+        { name: 'System', is_user: false, is_system: true, mes: 'Hidden notification', extra: { type: 'generic' } },
+        { name: 'Nova', is_user: false, mes: 'Answer', title: '', gen_started: '2026-09-24T01:00:00Z',
+            gen_finished: '2026-09-24T01:00:01Z', mewmory_id: 'reply-1', extra: { api: 'custom', model: 'saved',
+                reasoning_effort: 'auto', reasoning: '', reasoning_duration: null, reasoning_signature: null,
+                inChatAgentPostRuns: ['normal|completed'],
+                token_count: 1, reasoning_tokens: 0, time_to_first_token: 0.1 } },
+    ];
+    assert.deepEqual(buildRoleplaySavedHistory(records), [{ role: 'user', content: 'Question' }, { role: 'assistant', content: 'Answer' }]);
+});
+
+test('saved card and persona names replace the unused browser header placeholders', async t => {
+    const job = promptJob(t, [{ ...main, content: '{{char}} speaks to {{user}}' }, history], ['main', 'chatHistory'],
+        { username: 'Visitor' }, f => { f.records[0].user_name = f.records[0].character_name = 'unused'; });
+    await job.run(async ({ messages }) => {
+        assert.equal(messages[0].content, 'Nova speaks to Visitor');
+        return { text: 'Saved result' };
+    });
+});
+
+test('unpinned example blocks use only spare context while pinned examples stay mandatory', async t => {
+    for (const pinned of [false, true]) {
+        const job = promptJob(t, [main, history, { identifier: 'dialogueExamples', marker: true, system_prompt: true }],
+            ['main', 'dialogueExamples', 'chatHistory'], { power_user: { pin_examples: pinned } }, f => {
+                fs.writeFileSync(path.join(f.scope.directories.characters, 'Nova.png'), writeCard(png, JSON.stringify({
+                    name: 'Nova', mes_example: '<START>\nUser: ' + 'Optional example '.repeat(500),
+                })));
+            });
+        job.options.contextLimit = () => 240;
+        const run = job.run(async ({ messages }) => {
+            assert.equal(pinned, false);
+            assert.deepEqual(messages.map(message => message.content), ['Main', 'Original', 'Answer']);
+            return { text: 'Saved result' };
+        });
+        if (pinned) await assert.rejects(run, /prompt exceeds/);
+        else await run;
+    }
+});
+
+test('character prompt overrides can reference the saved original preset prompt', async t => {
+    const job = promptJob(t, [main, history], ['main', 'chatHistory'], {}, f => {
+        fs.writeFileSync(path.join(f.scope.directories.characters, 'Nova.png'), writeCard(png, JSON.stringify({
+            name: 'Nova', system_prompt: '{{original}} / {{char}}',
+        })));
+    });
+    await job.run(async ({ messages }) => {
+        assert.equal(messages[0].content, 'Main / Nova');
+        return { text: 'Saved result' };
+    });
 });

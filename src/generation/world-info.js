@@ -143,7 +143,7 @@ function selectedPersona(settings, saved, source, avatar, directories) {
     const selected = locked || connected[0] || power.default_persona || settings.user_avatar;
     const descriptor = selected && Object.hasOwn(descriptions, selected) ? descriptions[selected] : null;
     if (!selected || (!locked && !connected.length && !power.default_persona && !descriptor)) {
-        return { description: power.persona_description ?? '', position: power.persona_description_position ?? 0,
+        return { name: settings.username, description: power.persona_description ?? '', position: power.persona_description_position ?? 0,
             depth: power.persona_description_depth ?? 2, role: power.persona_description_role ?? 0,
             lorebook: power.persona_description_lorebook ?? '', evidence: null };
     }
@@ -175,7 +175,7 @@ function selectedPersona(settings, saved, source, avatar, directories) {
         }
         if (appendix.description.trim()) parts.push(`(${appendix.name})\n${appendix.description.trim()}`);
     }
-    return { description: parts.filter(Boolean).join('\n\n'), position: descriptor?.position ?? 0,
+    return { name: power.personas?.[selected] || settings.username, description: parts.filter(Boolean).join('\n\n'), position: descriptor?.position ?? 0,
         depth: descriptor?.depth ?? 2, role: descriptor?.role ?? 0, lorebook: descriptor?.lorebook ?? '',
         evidence: { avatar: selected, rawHash: savedAvatar.rawHash, physical: savedAvatar.physical } };
 }
@@ -215,6 +215,10 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         const settings = { ...savedSettings, ...savedSettings.world_info_settings };
         settings.power_user = savedSettings.power_user;
         const persona = selectedPersona(settings, saved, source, avatar, base.directories);
+        const group = source.locator.group ? readRoleplayEntityLocked(lease, 'group', source.groupId).data : null;
+        const members = group ? group.members.map(member => ({ avatar: member,
+            card: member === avatar ? character.data : readRoleplayEntityLocked(lease, 'character', member).data })) : [];
+        const memberName = member => member.card?.data?.name ?? member.card?.name;
         const names = selectedBooks(settings, saved, character, avatar, persona.lorebook);
         const selected = books(base.directories, Object.values(names));
         const characterTags = savedSettings.tag_map?.[avatar] ?? [];
@@ -294,6 +298,12 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         }
         const snapshot = { account: { accountId: account.accountId, dataEpoch: account.dataEpoch }, source,
             character: { instanceId: character.instanceId, revision: character.revision, rawHash: character.rawHash },
+            speakerNames: { character: character.data?.data?.name ?? character.data?.name,
+                user: persona.name || (saved.records[0].user_name !== 'unused' && saved.records[0].user_name) || 'User' },
+            groupNames: members.map(memberName),
+            unmutedGroupNames: members.filter(member => !group.disabled_members?.includes(member.avatar)).map(memberName),
+            pinExamples: Boolean(settings.power_user?.pin_examples),
+            alwaysForceName: Boolean(settings.power_user?.always_force_name2),
             characterExamples: character.data?.data?.mes_example ?? character.data?.mes_example ?? '',
             attachments,
             images,
@@ -339,7 +349,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                 personaDescription: persona.description,
                 characterDepthPrompt: depthPrompt,
                 creatorNotes: character.data?.data?.creator_notes ?? character.data?.creator_notes ?? '',
-                scenario: character.data?.data?.scenario ?? character.data?.scenario ?? '',
+                scenario: saved.records[0].chat_metadata?.scenario ?? character.data?.data?.scenario ?? character.data?.scenario ?? '',
                 characterTags, inject,
             } };
         if (!Number.isSafeInteger(maxContext) || maxContext < 1 || Buffer.byteLength(JSON.stringify(snapshot)) > 2 * 1024 * 1024) {
