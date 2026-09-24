@@ -25,6 +25,22 @@ export function createChatRequestData({ stream = false, ...custom }) {
     return payload;
 }
 
+/** Resolve saved prompt and sampler controls without changing the active settings. */
+export function mergeChatPresetSettings(activeSettings, preset) {
+    if (!preset) return structuredClone(activeSettings ?? {});
+    preset = { ...preset };
+    migrateNanoGptProviderSettings(preset);
+    preset.bias_preset_selected = preset.bias_presets !== undefined ? preset.bias_preset_selected : undefined;
+    const settings = structuredClone(activeSettings ?? {});
+    settings.nanogpt_service_tier = preset.nanogpt_service_tier ?? '';
+    settings.openrouter_service_tier = preset.openrouter_service_tier ?? '';
+    for (const [key, value] of Object.entries(preset)) {
+        const mapping = settingsToUpdate[key];
+        if (mapping) settings[mapping[1]] = value;
+    }
+    return settings;
+}
+
 /** Resolve request-local settings without changing the host's active connection. */
 export async function buildChatPresetPayload(activeSettings, preset, overridePreset, overridePayload, generate) {
     if (!preset || typeof preset !== 'object') throw new Error('Invalid preset: must be an object');
@@ -35,14 +51,7 @@ export async function buildChatPresetPayload(activeSettings, preset, overridePre
     preset = { ...preset, ...overridePreset };
     overridePayload = { ...overridePayload };
     migrateNanoGptProviderSettings(overridePayload, { partial: true });
-    preset.bias_preset_selected = preset.bias_presets !== undefined ? preset.bias_preset_selected : undefined;
-    const settings = structuredClone(activeSettings);
-    settings.nanogpt_service_tier = preset.nanogpt_service_tier ?? '';
-    settings.openrouter_service_tier = preset.openrouter_service_tier ?? '';
-    for (const [key, value] of Object.entries(preset)) {
-        const mapping = settingsToUpdate[key];
-        if (mapping) settings[mapping[1]] = value;
-    }
+    const settings = mergeChatPresetSettings(activeSettings, preset);
     const sourceToUrlField = {
         custom: 'custom_url', vertexai: 'vertexai_region', zai: 'zai_endpoint',
         siliconflow: 'siliconflow_endpoint', minimax: 'minimax_endpoint', linkapi: 'linkapi_endpoint',

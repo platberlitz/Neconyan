@@ -1,25 +1,159 @@
 import { roleplayError } from '../roleplay-store.js';
 import { isDeepStrictEqual } from 'node:util';
 import Handlebars from 'handlebars';
-import { AGENT_REGEX_PLACEMENT } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
+import { AGENT_REGEX_PLACEMENT, applyRegexScriptList } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
+import { selectToolHistoryReasoning } from '../../public/scripts/chat-input-capabilities.js';
+import { shouldRetainContextAtDepth, stripHtmlTagsFromContext, stripOocBlocksFromContext } from '../../public/scripts/ooc-blocks.js';
+import { formatRoleplayTextExamples } from '../../public/scripts/roleplay-text-format.js';
+import { formatPromptReasoning } from '../../public/scripts/reasoning-prompt-format.js';
 
 const ROLES = ['system', 'user', 'assistant'];
+
+/** A saved edit target changes the prompt view; its old text remains on disk until completion. */
+export function selectRoleplayPromptRecords(records, source, effect) {
+    const anchor = effect === 'replace' ? source.range?.start : source.message?.index;
+    if (effect === 'append' || anchor === undefined) return records;
+    if (!Number.isSafeInteger(anchor) || anchor < 0 || anchor >= records.length - 1) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The saved prompt target is outside its protected history.', 409);
+    }
+    return records.slice(0, anchor + (effect === 'continue' ? 2 : 1));
+}
+
+/** Apply saved prompt-only transformations before both lore scanning and memory budgeting. */
+export function prepareRoleplayHistoryContent(records, snapshot, environment) {
+    const visibleCount = records.slice(1).filter(record => !record.is_system || record.extra?.tool_invocations).length;
+    const attachments = new Map(snapshot.attachments.map(item => [item.index, item.text]));
+    let position = 0;
+    const substitute = (value, overrides = {}, postProcess) => environment.evaluate(value, {
+        legacy: !snapshot.experimentalMacroEngine, strictCapabilities: true,
+        original: overrides.original, postProcess: overrides.postProcessFn ?? postProcess,
+    });
+    const global = { ...snapshot.global };
+    let characterExamples = snapshot.characterExamples;
+    let depthPrompts;
+    if (snapshot.groupPrompt) {
+        const group = snapshot.groupPrompt;
+        const memberSubstitute = (value, member) => {
+            const names = environment.names;
+            environment.names = { ...names, char: member.name };
+            try { return substitute(value).replace(/\r/g, ''); } finally { environment.names = names; }
+        };
+        const collect = (field, label) => group.members.filter(member => member.selected || !member.disabled || group.mode === 2)
+            .map(member => {
+                let value = member.fields[field].trim();
+                if (!value) return '';
+                if (field === 'mes_example' && !value.startsWith('<START>')) value = '<START>\n' + value;
+                return [group.prefix, value, group.suffix].map(part => memberSubstitute(part.replace(/<FIELDNAME>/gi, label), member)).join('');
+            }).filter(Boolean).join('\n');
+        global.characterDescription = collect('description', 'Description');
+        global.characterPersonality = collect('personality', 'Personality');
+        if (!snapshot.metadata.scenario?.trim()) global.scenario = collect('scenario', 'Scenario');
+        if (!snapshot.metadata.mes_example?.trim()) characterExamples = collect('mes_example', 'Example Messages');
+        depthPrompts = group.members.filter(member => member.selected || !member.disabled).map(member => ({
+            prompt: memberSubstitute(String(member.depth.prompt ?? '').trim(), member),
+            depth: member.depth.depth ?? 4, role: member.depth.role ?? 'system',
+        })).filter(prompt => prompt.prompt);
+    }
+    environment.character = { ...environment.character };
+    for (const [field, macro] of Object.entries({ characterDescription: 'description', characterPersonality: 'personality',
+        scenario: 'scenario', personaDescription: 'persona', characterDepthPrompt: 'charDepthPrompt', creatorNotes: 'creatorNotes' })) {
+        if (typeof global[field] !== 'string') throw roleplayError('ROLEPLAY_INVALID', 'A saved character or persona field is invalid.', 409);
+        global[field] = substitute(global[field]);
+        environment.character[macro] = global[field];
+    }
+    const content = records.slice(1).map((record, index) => {
+        if (record.is_system && !record.extra?.tool_invocations) return '';
+        const depth = visibleCount - position++ - 1;
+        const text = applyRegexScriptList(record.mes, snapshot.regex,
+            record.is_user ? AGENT_REGEX_PLACEMENT.USER_INPUT : AGENT_REGEX_PLACEMENT.AI_OUTPUT, {
+                isPrompt: true, depth: depth - (snapshot.global.trigger === 'continue' ? 1 : 0),
+                characterOverride: snapshot.speakerNames.character,
+                substituteParamsFn: substitute, substituteParamsExtendedFn: substitute,
+            });
+        const titles = [record.extra?.append_title && record.extra?.title,
+            ...(record.extra?.media ?? []).map(media => media?.append_title && media.title)].filter(Boolean);
+        const content = (attachments.get(index) ?? '') + text
+            + (titles.length ? `\n\n${titles.join('\n\n')}` : '');
+        return stripHtmlTagsFromContext(stripOocBlocksFromContext(content,
+            shouldRetainContextAtDepth(depth, snapshot.contextRetention?.ooc)),
+        shouldRetainContextAtDepth(depth, snapshot.contextRetention?.html));
+    });
+    const settings = { ...snapshot.reasoning, add_to_prompts: snapshot.reasoningInPrompt };
+    if ((settings.add_to_prompts || snapshot.global.trigger === 'continue')
+        && (!Number.isSafeInteger(settings.max_additions) || settings.max_additions < 0
+            || ['prefix', 'separator', 'suffix'].some(key => typeof settings[key] !== 'string'))) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The saved reasoning prompt controls are invalid.', 409);
+    }
+    const visible = records.slice(1).map((record, index) => ({ record, index })).filter(({ record, index }) => !record.is_system
+        && (content[index].trim() || record.extra?.media?.length || snapshot.global.trigger === 'continue' && index === content.length - 1));
+    let state = { counter: 0 };
+    for (let index = visible.length - 1; index >= 0; index--) {
+        const row = visible[index];
+        const continuing = snapshot.global.trigger === 'continue' && index === visible.length - 1;
+        if (!snapshot.source.locator.group || row.record.name === snapshot.speakerNames.character) {
+            const thought = applyRegexScriptList(String(row.record.extra?.reasoning ?? ''), snapshot.regex, AGENT_REGEX_PLACEMENT.REASONING, {
+                isPrompt: true, depth: visible.length - index - (snapshot.global.trigger === 'continue' ? 2 : 1),
+                characterOverride: snapshot.speakerNames.character, substituteParamsFn: substitute, substituteParamsExtendedFn: substitute,
+            });
+            const result = formatPromptReasoning(content[row.index], thought, { settings, counter: state.counter,
+                isPrefix: continuing, duration: row.record.extra?.reasoning_duration, substitute });
+            const { content: text, ...next } = result;
+            content[row.index] = text;
+            state = { ...state, ...next };
+        }
+        if (!settings.add_to_prompts || state.counter >= settings.max_additions) break;
+    }
+    const authorNote = { ...snapshot.authorNote, prompt: isWorldInfoAuthorNoteActive(snapshot.authorNote)
+        ? substitute(activeRoleplayAuthorNote(snapshot.authorNote)) : '', scoped: null };
+    const depthPrompt = { ...snapshot.depthPrompt, prompt: global.characterDepthPrompt };
+    const inject = [];
+    if (snapshot.noteScanEnabled) {
+        inject.push(...(depthPrompts?.length ? depthPrompts : [depthPrompt]).map(prompt => prompt.prompt).filter(Boolean));
+        if (authorNote.prompt) inject.push([snapshot.personaPosition === 2 ? global.personaDescription : '', authorNote.prompt,
+            snapshot.personaPosition === 3 ? global.personaDescription : ''].filter(Boolean).join('\n'));
+    }
+    if (snapshot.personaPosition === 4 && global.personaDescription) inject.push(global.personaDescription);
+    global.inject = inject;
+    return { content, reasoning: state, global, characterExamples, authorNote, depthPrompt,
+        ...(depthPrompts?.length ? { depthPrompts } : {}) };
+}
 
 /** Macro inputs come from captured account sources, not a prepared page prompt. */
 export function savedRoleplayMacroSnapshot(snapshot, records) {
     const names = snapshot.speakerNames;
     const group = snapshot.groupNames ?? [];
     return {
+        chatId: snapshot.source.locator.chat,
         names: { user: names.user, char: names.character, group: group.join(', ') || names.character,
             groupNotMuted: (snapshot.unmutedGroupNames ?? group).join(', ') || names.character,
             notChar: [...group.filter(name => name !== names.character), names.user].join(', ') },
-        character: { description: snapshot.global.characterDescription, personality: snapshot.global.characterPersonality,
+        character: { ...snapshot.characterFields, description: snapshot.global.characterDescription, personality: snapshot.global.characterPersonality,
             scenario: snapshot.global.scenario, persona: snapshot.global.personaDescription,
             charPrompt: snapshot.systemPrompt, charInstruction: snapshot.postHistory.character,
             mesExamplesRaw: snapshot.characterExamples, charDepthPrompt: snapshot.global.characterDepthPrompt,
             creatorNotes: snapshot.global.creatorNotes },
         variables: snapshot.promptVariables,
-        extra: { chat: records.slice(1), chatMetadata: snapshot.metadata },
+        extra: { chat: records.slice(1), chatMetadata: snapshot.metadata, powerUser: snapshot.promptSettings },
+    };
+}
+
+export function roleplayMacroCapabilities(snapshot, material, maxTokens, maxContext, getEnvironment) {
+    const substitute = value => getEnvironment().evaluate(value, { legacy: !snapshot.experimentalMacroEngine, strictCapabilities: true });
+    const power = { ...snapshot.promptSettings, ...material?.power };
+    const context = material?.context ?? power.context ?? {};
+    const instruct = material?.instruct ?? power.instruct ?? {};
+    return {
+        getMaxResponseTokens: () => maxTokens, getMaxContextTokens: () => maxContext,
+        getMaxPromptTokens: () => maxContext - maxTokens,
+        parseMesExamples: (value, isInstruct) => !value || value === '<START>' ? []
+            : (value.startsWith('<START>') ? value : '<START>\n' + value.trim()).split(/<START>/gi).slice(1)
+                .map(block => (material?.backend === 'chat' || !material?.backend || isInstruct ? '<START>\n'
+                    : context.example_separator ? substitute(context.example_separator) + '\n' : '') + block.trim() + '\n'),
+        formatInstructModeExamples: (examples, user, char) => formatRoleplayTextExamples(examples, user, char, {
+            instruct, context, group: snapshot.groupNames.length > 0, substitute,
+            parseExamples: (value, group) => insertWorldInfoExamples([], [], value.replace('{Example Dialogue:}', '<START>'), 0,
+                user, char, group ? snapshot.groupNames : []),
+        }),
     };
 }
 
@@ -181,7 +315,11 @@ export function assertWorldInfoDepthHistory(records, messages, historyStart, opt
 }
 
 function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = null, regex = [], characterName,
-    group = false, userName = records[0]?.user_name, namesBehavior, attachments = [], images = [], imageDetail = 'auto', mediaDisplay = 'list', toolHistory = false, toolSource = '', toolModel = '' } = {}) {
+    group = false, userName = records[0]?.user_name, namesBehavior, attachments = [], images = [], imageDetail = 'auto', mediaDisplay = 'list', toolHistory = false, toolSource = '', toolModel = '', signaturePolicy, preparedContent } = {}) {
+    if (preparedContent !== undefined && (!Array.isArray(preparedContent) || preparedContent.length !== records.length - 1
+        || preparedContent.some(value => typeof value !== 'string'))) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The prepared saved history is invalid.', 409);
+    }
     if (group && ![-1, 0, 1, 2, 'provider'].includes(namesBehavior)) {
         throw roleplayError('ROLEPLAY_INVALID', 'This group naming policy needs server-side provider formatting.', 409);
     }
@@ -195,23 +333,37 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
         || !['low', 'auto', 'high'].includes(imageDetail)) {
         throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay images are invalid.', 409);
     }
+    const sameProvider = record => record.extra?.api === signaturePolicy?.source && record.extra?.model === signaturePolicy?.model;
+    const reasoningMessages = records.slice(1).map(record => ({
+        role: record.is_system && !record.extra?.tool_invocations ? 'tool' : record.is_user ? 'user' : 'assistant',
+        content: record.mes, invocations: record.extra?.tool_invocations,
+        reasoning: sameProvider(record) ? record.extra?.reasoning : '',
+    }));
+    const lastUser = reasoningMessages.findLastIndex(message => message.role === 'user');
     const history = records.slice(1).map((record, index) => {
         if (record.extra?.tool_invocations !== undefined) {
             const calls = record.extra.tool_invocations;
             if (!toolHistory || !Array.isArray(calls) || !calls.length || calls.length > 32
                 || record.is_system !== true || record.is_user !== false || typeof record.mes !== 'string'
-                || record.extra.api !== toolSource || record.extra.model !== toolModel
-                || Object.keys(record).some(key => !['name', 'force_avatar', 'is_system', 'is_user', 'mes', 'extra', 'send_date'].includes(key))
+                || !signaturePolicy && (record.extra.api !== toolSource || record.extra.model !== toolModel)
+                || Object.keys(record).some(key => !['name', 'force_avatar', 'is_system', 'is_user', 'mes', 'extra', 'send_date', 'mewmory_id'].includes(key))
                 || Object.keys(record.extra).some(key => !['isSmallSys', 'tool_invocations', 'api', 'model'].includes(key))
                 || calls.some(call => !call || typeof call.id !== 'string' || !call.id || call.id.length > 256
                     || typeof call.name !== 'string' || !call.name || call.name.length > 256
                     || typeof call.parameters !== 'string' || typeof call.result !== 'string'
-                    || call.signature || call.reasoning)
+                    || !signaturePolicy && (call.signature || call.reasoning)
+                    || call.signature != null && typeof call.signature !== 'string'
+                    || call.reasoning != null && typeof call.reasoning !== 'string')
                 || new Set(calls.map(call => call.id)).size !== calls.length) {
                 throw roleplayError('ROLEPLAY_INVALID', 'This saved tool history needs a bound tool-capable connection.', 409);
             }
+            const thought = sameProvider(record) && index > lastUser && ['active_chain', 'since_last_user'].includes(signaturePolicy?.reasoning)
+                ? selectToolHistoryReasoning(reasoningMessages, index, lastUser, signaturePolicy.reasoning)
+                    || calls.find(call => call.reasoning)?.reasoning : '';
             return [{ role: 'assistant', tool_calls: calls.map(call => ({ id: call.id, type: 'function',
-                function: { name: call.name, arguments: call.parameters } })) },
+                function: { name: call.name, arguments: call.parameters },
+                ...(signaturePolicy?.include && sameProvider(record) && call.signature ? { signature: call.signature } : {}) })),
+            ...(thought ? { reasoning: thought } : {}) },
             ...calls.map(call => ({ role: 'tool', tool_call_id: call.id, content: call.result || '[No content]' }))];
         }
         if (record.is_system === true) return [];
@@ -227,10 +379,13 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
                  || Object.keys(record.extra).some(key => !['token_count', 'isSmallSys', 'reasoning', 'files', 'fileLength',
                      'media', 'media_index', 'media_display', 'inline_image', 'api', 'model', 'reasoning_effort',
                      'reasoning_duration', 'reasoning_signature', 'reasoning_tokens', 'time_to_first_token', 'gen_id', 'type',
-                     'inChatAgentPostRuns'].includes(key))
+                     'inChatAgentPostRuns', 'title', 'append_title', 'bias'].includes(key))
+                 || record.extra.bias != null && typeof record.extra.bias !== 'string'
+                 || record.extra.title != null && typeof record.extra.title !== 'string'
+                 || record.extra.append_title != null && typeof record.extra.append_title !== 'boolean'
                  || record.extra.inChatAgentPostRuns !== undefined && (!Array.isArray(record.extra.inChatAgentPostRuns)
                      || record.extra.inChatAgentPostRuns.some(value => typeof value !== 'string'))
-                 || record.extra.reasoning_signature
+                 || record.extra.reasoning_signature && (!signaturePolicy || typeof record.extra.reasoning_signature !== 'string')
                  || record.extra.type !== undefined && record.extra.type !== 'narrator'
                  || record.extra.files !== undefined && (!Array.isArray(record.extra.files) || !attachment)
                  || attachment && !Array.isArray(record.extra.files)
@@ -243,10 +398,13 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
                 || record.extra.reasoning !== undefined && typeof record.extra.reasoning !== 'string'))) {
             throw roleplayError('ROLEPLAY_INVALID', 'This saved chat needs server handling for its non-text content.', 409);
         }
+        if (preparedContent !== undefined && !preparedContent[index].trim() && !selectedImages.length) return [];
         return { role: record.extra?.type === 'narrator' ? 'system' : record.is_user ? 'user' : 'assistant',
-            content: (attachment?.text ?? '') + record.mes };
+            content: preparedContent?.[index] ?? (attachment?.text ?? '') + record.mes,
+            ...(signaturePolicy?.include && sameProvider(record) && record.extra?.reasoning_signature
+                ? { signature: record.extra.reasoning_signature } : {}) };
     });
-    if (reasoningInPrompt && records.some(record => record.extra?.reasoning)) {
+    if (preparedContent === undefined && reasoningInPrompt && records.some(record => record.extra?.reasoning)) {
         if (!reasoning || !Number.isSafeInteger(reasoning.max_additions) || reasoning.max_additions < 0
             || !Array.isArray(regex) || regex.some(script => script?.placement?.includes(AGENT_REGEX_PLACEMENT.REASONING)
                 && !script.disabled && script.promptOnly && !script.markdownOnly)
@@ -265,16 +423,17 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
             added++;
         }
     }
-    if (group) for (let index = 0; index < history.length; index++) {
+    if (group || namesBehavior !== undefined) for (let index = 0; index < history.length; index++) {
         if (Array.isArray(history[index])) continue;
         const name = records[index + 1].name;
-        if (namesBehavior === 'provider') {
+        if (namesBehavior === 'provider' && name) {
             history[index].name = name;
-        } else if (namesBehavior === 1) {
+        } else if (namesBehavior === 1 && name) {
             const wireName = name.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 64);
             if (!wireName) throw roleplayError('ROLEPLAY_INVALID', 'The saved group speaker cannot be named by this provider.', 409);
             history[index].name = wireName;
-        } else if (namesBehavior === 2 || namesBehavior === 0 && name !== userName) {
+        } else if (namesBehavior === 2 && history[index].role !== 'system'
+            || namesBehavior === 0 && name !== userName && (group || records[index + 1].force_avatar && history[index].role !== 'system')) {
             history[index].content = `${name}: ${history[index].content}`;
         }
     }
@@ -294,9 +453,7 @@ export function buildRoleplaySavedHistory(records, options) {
         throw roleplayError('ROLEPLAY_INVALID', 'A saved Roleplay chat is required for prompt construction.', 409);
     }
     if (records.length === 1) return [];
-    const messages = buildPromptHistory(records, options);
-    assertWorldInfoDepthHistory(records, messages, 0, options);
-    return messages;
+    return buildPromptHistory(records, options);
 }
 
 /** Place saved depth entries within the captured history, never among system prompts. */
@@ -431,7 +588,7 @@ export function insertRoleplayPostHistory(messages, saved, backend, effect, mate
 }
 
 /** Resolve saved static extension prompts once for both provider families. */
-export function buildRoleplayPromptExtensions(snapshot, worldInfo, render = value => value) {
+export function buildRoleplayPromptExtensions(snapshot, worldInfo, render = value => value, contributions = []) {
     const extensions = [];
     const addExtension = (key, content, position, depth, role) => {
         if (!content) return;
@@ -450,11 +607,17 @@ export function buildRoleplayPromptExtensions(snapshot, worldInfo, render = valu
     if (snapshot.personaPosition === 4) {
         addExtension('PERSONA_DESCRIPTION', snapshot.global.personaDescription, 1, snapshot.personaDepth, ROLES[snapshot.personaRole]);
     }
-    if (snapshot.depthPrompt) {
-        addExtension('DEPTH_PROMPT', snapshot.depthPrompt.prompt, 1, snapshot.depthPrompt.depth, snapshot.depthPrompt.role);
+    for (const [index, prompt] of (snapshot.depthPrompts ?? (snapshot.depthPrompt ? [snapshot.depthPrompt] : [])).entries()) {
+        addExtension(snapshot.depthPrompts ? `DEPTH_PROMPT_${index}` : 'DEPTH_PROMPT', prompt.prompt, 1, prompt.depth, prompt.role);
     }
     for (const [index, entry] of worldInfo.WIDepthEntries.entries()) {
         addExtension(`worldInfoDepth${index}`, entry.entries.join('\n'), 1, entry.depth, ROLES[entry.role]);
+    }
+    for (const prompt of contributions) {
+        if (extensions.some(existing => existing.key === prompt.key)) {
+            throw roleplayError('ROLEPLAY_INVALID', 'A saved contributor cannot replace a protected prompt slot.', 409);
+        }
+        extensions.push({ ...prompt });
     }
     return extensions;
 }

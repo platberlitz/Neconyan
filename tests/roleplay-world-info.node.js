@@ -1001,10 +1001,7 @@ test('completed saved tool calls preserve their calls and results in bound Custo
     await assert.rejects(runRoleplayReplyJob(context, { promptBackend: () => ({ ...material,
         active: { function_calling: false } }), generate: () => { throw Error('Provider called'); } }),
     { code: 'ROLEPLAY_INVALID' });
-    await assert.rejects(runRoleplayReplyJob(context, { promptBackend: () => ({ ...material,
-        profile: { model: 'different-model' } }), generate: () => { throw Error('Provider called'); } }),
-    { code: 'ROLEPLAY_INVALID' });
-    await runRoleplayReplyJob(context, { promptBackend: () => material, generate: async ({ messages, beforeDispatch }) => {
+    await runRoleplayReplyJob(context, { promptBackend: () => ({ ...material, profile: { model: 'different-model' } }), generate: async ({ messages, beforeDispatch }) => {
         beforeDispatch();
         assert.deepEqual(messages.map(message => message.role), ['user', 'assistant', 'tool', 'tool', 'assistant']);
         assert.equal(messages[1].tool_calls[0].function.name, 'lookup');

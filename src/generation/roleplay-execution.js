@@ -1,7 +1,10 @@
+import { mergeChatPresetSettings } from '../../public/scripts/chat-preset-request.js';
+import { supportsChatImages, supportsChatTools, supportsChatSignatures } from '../../public/scripts/chat-input-capabilities.js';
+import { prepareRoleplayCapabilities } from './roleplay-capabilities.js';
 import { getChatImageTokenCost } from '../../public/scripts/chat-prompt-tokens.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { registerHandler } from '../jobs/runner.js';
-import { setJobResume } from '../jobs/store.js';
+import { getJob, setJobResume } from '../jobs/store.js';
 import { assertRoleplaySourceLocked } from './roleplay-source.js';
 import { runChatProfile } from './service.js';
 import { createMacroEnvironment } from '../macros/index.js';
@@ -10,7 +13,7 @@ import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-st
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
 import { assertRoleplayWorldInfoCurrent, prepareRoleplayWorldInfo } from './world-info.js';
-import { assertWorldInfoDepthHistory, savedRoleplayMacroSnapshot, buildRoleplaySavedHistory, insertRoleplayChatSystem, insertRoleplayPostHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets, isWorldInfoAuthorNoteActive } from './roleplay-prompt.js';
+import { assertWorldInfoDepthHistory, roleplayMacroCapabilities, savedRoleplayMacroSnapshot, selectRoleplayPromptRecords, prepareRoleplayHistoryContent, buildRoleplaySavedHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets, isWorldInfoAuthorNoteActive } from './roleplay-prompt.js';
 import { getChatProfileContextLimit, resolveGenerationProfile } from './profiles.js';
 import { getCounter } from '../mewmory/tokens.js';
 import { fnv1a } from '../../public/scripts/extensions/third-party/MacroEnhanced/src/state-impl.js';
@@ -22,6 +25,8 @@ import { generationFingerprint } from '../mewmory/context.js';
 import { readConfig } from '../mewmory/models.js';
 import { createRoleplayChatCounter, createRoleplayTextCounter } from './roleplay-budget.js';
 import { createRoleplayTextPrompt } from './roleplay-text-prompt.js';
+import { readRoleplayPromptContributions } from './roleplay-contributions.js';
+import { inject_ids } from '../../public/scripts/constants.js';
 import { worldInfoActivationActions } from './world-info-hook-policy.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
@@ -67,7 +72,7 @@ function replyOutput(result, effect, name, material) {
 
 /** A private worker for a fully admitted, paused Roleplay job; browser cutover is a later stage. */
 export async function runRoleplayReplyJob(context, { generate = runChatProfile, host = roleplayNativeHost,
-    worldInfoHooks, contextLimit = getChatProfileContextLimit, promptBackend = resolveGenerationProfile } = {}) {
+    worldInfoHooks, modelCatalogue, contextLimit = getChatProfileContextLimit, promptBackend = resolveGenerationProfile } = {}) {
     const { job, directories, owner, signal } = context;
     const { roleplay, effect, source, request } = job.intent ?? {};
     const base = { owner, directories };
@@ -79,6 +84,24 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         signal.throwIfAborted();
         return withRoleplayAccount(base, account, lease => assertRoleplaySourceLocked(lease, source, { effect }));
     };
+    const finish = (result, selection) => {
+        if (result?.response?.choices?.[0]?.message?.tool_calls?.length
+                || result?.response?.content?.some?.(part => part.type === 'tool_use')
+                || result?.response?.output?.some?.(part => part.type === 'function_call')
+                || result?.response?.candidates?.some?.(candidate => candidate.content?.parts?.some(part => part.functionCall))) {
+            throw roleplayError('ROLEPLAY_TOOLS_PENDING', 'The saved provider result needs the native tool workflow before a reply can be written.', 409);
+        }
+        const output = replyOutput(result, effect, request.characterName, result.generation);
+        if (selection && roleplayHash({ sticky: {}, cooldown: {}, ...request.worldInfo.metadata.timedWorldInfo }) !== roleplayHash(selection.timedWorldInfo)) {
+            output.timedWorldInfo = selection.timedWorldInfo;
+            output.timedBaseline = selection.timedBaseline;
+            output.timedChatLength = request.worldInfo.savedChatLength ?? selection.chatLength;
+        }
+        writeArtifact(directories, job.id, 'roleplay-output', output);
+        setJobResume(directories, job.id, 'roleplay-delivery');
+        signal.throwIfAborted();
+        return { result: applyRoleplayJobEffect(base, account, { operationKey: roleplay.operationKey, jobId: job.id, output }, host) };
+    };
     const saved = readArtifact(directories, job.id, 'roleplay-output');
     if (saved !== undefined) {
         if (!saved || typeof saved !== 'object' || Array.isArray(saved)) {
@@ -86,6 +109,30 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         }
         const result = applyRoleplayJobEffect(base, account, { operationKey: roleplay.operationKey, jobId: job.id, output: saved }, host);
         return { result };
+    }
+    const providerReference = readArtifact(directories, job.id, 'roleplay-main-provider');
+    if (providerReference !== undefined) {
+        if (!providerReference || providerReference.intentHash !== roleplayHash(job.intent)
+            || !/^provider:[a-f0-9]{64}$/.test(providerReference.step)) {
+            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved Roleplay provider reference needs recovery.', 503);
+        }
+        const completed = readArtifact(directories, job.id, providerReference.step);
+        const result = request.binding?.backend === 'horde' && completed?.id
+            ? readArtifact(directories, job.id, 'horde-result:' + providerReference.step.slice(9)) : completed;
+        if (result !== undefined && typeof result?.text === 'string') {
+            const prompt = request.serverPrompt && readArtifact(directories, job.id, 'roleplay-prompt');
+            const selection = request.worldInfo && readArtifact(directories, job.id, 'roleplay-world-info');
+            if (request.serverPrompt && (!prompt || prompt.hash !== providerReference.promptHash
+                || prompt.hash !== roleplayHash({ messages: prompt.messages, macroState: prompt.macroState,
+                    ...(prompt.preparedText !== undefined ? { preparedText: prompt.preparedText } : {}), ...(prompt.cfgValues ? { cfgValues: prompt.cfgValues } : {}) }))
+                || request.worldInfo && (!selection || providerReference.worldInfoHash !== roleplayHash(selection))) {
+                throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The completed Roleplay request has missing prompt evidence.', 503);
+            }
+            return finish(result, selection);
+        }
+        if (completed === undefined && getJob(directories, job.id)?.resume === providerReference.step) {
+            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The previous provider outcome is unknown. It cannot be repeated automatically.', 503);
+        }
     }
     if (!request.binding || !Array.isArray(request.messages) || !Number.isSafeInteger(request.maxTokens)
         || request.maxTokens < 1 || request.maxTokens > 64000 || typeof request.characterName !== 'string'
@@ -97,7 +144,24 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     }
     const overridePayload = requestOverrides(request);
     const initialSource = assertSource();
+    const initialRecords = request.serverPrompt ? selectRoleplayPromptRecords(initialSource.records, source, effect) : initialSource.records;
+    if (request.serverPrompt && initialRecords.length !== initialSource.records.length && request.worldInfo?.serverPrompt !== true) {
+        throw roleplayError('ROLEPLAY_INVALID', 'Capture server prompt inputs for the selected saved message or range.', 409);
+    }
+    const contributions = request.serverPrompt ? readRoleplayPromptContributions(context) : { extensions: [], history: [] };
+    const functionTools = effect === 'continue' ? [] : contributions.tools ?? [];
+    const toolBudget = functionTools.length ? [{ role: 'user', content: JSON.stringify({ tools: functionTools, tool_choice: 'auto' }) }] : [];
+    const scanContributions = contributions.extensions.filter(prompt => prompt.scan).map(prompt => prompt.content);
+    const boundMaterial = request.serverPrompt ? promptBackend(directories, request.binding) : null;
+    if (boundMaterial) boundMaterial.power = { ...request.worldInfo?.promptSettings, ...boundMaterial.power };
+    const boundMacroSnapshot = snapshot => ({ ...snapshot,
+        system: { ...snapshot.system, model: request.modelOverride || boundMaterial?.profile?.model || '' },
+        extra: { ...snapshot.extra, ...(boundMaterial && { powerUser: { ...boundMaterial.power,
+            instruct: boundMaterial.instruct ?? boundMaterial.power?.instruct, context: boundMaterial.context ?? boundMaterial.power?.context },
+        mainApi: !boundMaterial.backend || boundMaterial.backend === 'chat' ? 'openai'
+            : boundMaterial.backend === 'text' ? 'textgenerationwebui' : boundMaterial.backend }) } });
     let acceptedMacros = request.macros || {};
+    let preparedHistory;
     let worldInfo;
     if (request.worldInfo) {
         const limit = contextLimit(directories, request.binding);
@@ -114,7 +178,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             throw roleplayError('ROLEPLAY_INVALID', 'World Info must belong to the admitted Roleplay source.', 409);
         }
         assertRoleplayWorldInfoCurrent(base, request.worldInfo);
-        if (request.serverPrompt) acceptedMacros = savedRoleplayMacroSnapshot(request.worldInfo, initialSource.records);
+        if (request.serverPrompt) acceptedMacros = boundMacroSnapshot(savedRoleplayMacroSnapshot(request.worldInfo, initialRecords));
         if (!Array.isArray(request.worldInfo.hookPolicy?.pathfinder)
             || request.worldInfo.hookPolicy.pathfinder.length) {
             throw roleplayError('ROLEPLAY_INVALID', 'Enabled Pathfinder retrieval needs server-owned pre-scan execution.', 409);
@@ -123,9 +187,37 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             || request.worldInfo.hookPolicy.scanContributors.length) {
             throw roleplayError('ROLEPLAY_INVALID', 'Enabled vector or Agent scan contributions need server-owned preparation.', 409);
         }
+        if (request.serverPrompt) {
+            const identity = roleplayHash({ snapshot: request.worldInfo, records: initialRecords, contributions });
+            preparedHistory = readArtifact(directories, job.id, 'roleplay-history-input');
+            if (preparedHistory === undefined) {
+                if (readArtifact(directories, job.id, 'roleplay-world-info') !== undefined) {
+                    throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved scan has lost its prepared history evidence.', 503);
+                }
+                const environment = createMacroEnvironment(acceptedMacros, roleplayMacroCapabilities(request.worldInfo, boundMaterial,
+                    request.maxTokens, limit, () => environment));
+                const { content, reasoning, global, characterExamples, authorNote, depthPrompt, depthPrompts } = prepareRoleplayHistoryContent(initialRecords, request.worldInfo, environment);
+                const promptChat = initialRecords.slice(1).flatMap((record, index) => record.is_system
+                    || !content[index].trim() && !record.extra?.media?.length ? [] : [
+                        request.worldInfo.settings.world_info_include_names ? `${record.name}: ${content[index]}` : content[index],
+                    ]).reverse();
+                const data = { identity, content, reasoning, global, characterExamples, authorNote, depthPrompt, ...(depthPrompts ? { depthPrompts } : {}), promptChat, macroState: environment.captureState() };
+                preparedHistory = { ...data, hash: roleplayHash(data) };
+                writeArtifact(directories, job.id, 'roleplay-history-input', preparedHistory);
+            }
+            const { hash, ...data } = preparedHistory ?? {};
+            if (data.identity !== identity || !Array.isArray(data.content) || data.content.length !== initialRecords.length - 1
+                || data.content.some(value => typeof value !== 'string') || !Array.isArray(data.promptChat)
+                || data.promptChat.some(value => typeof value !== 'string') || !data.global || !data.macroState || hash !== roleplayHash(data)) {
+                throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The prepared Roleplay history needs recovery.', 503);
+            }
+            acceptedMacros = { ...boundMacroSnapshot(savedRoleplayMacroSnapshot({ ...request.worldInfo, global: data.global, characterExamples: data.characterExamples }, initialRecords)), variables: data.macroState.variables,
+                extra: { ...acceptedMacros.extra, chatMetadata: data.macroState.chatMetadata, bannedWords: data.macroState.bannedWords } };
+        }
         worldInfo = readArtifact(directories, job.id, 'roleplay-world-info');
         if (worldInfo === undefined) {
-            worldInfo = await prepareRoleplayWorldInfo(base, request.worldInfo, { ...worldInfoHooks, macros: acceptedMacros });
+            worldInfo = await prepareRoleplayWorldInfo(base, request.worldInfo, { ...worldInfoHooks, macros: acceptedMacros,
+                promptChat: preparedHistory?.promptChat, promptGlobal: preparedHistory?.global, promptInjections: scanContributions });
             writeArtifact(directories, job.id, 'roleplay-world-info', worldInfo);
         }
         if (!worldInfo || typeof worldInfo !== 'object' || Array.isArray(worldInfo)) {
@@ -133,6 +225,9 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         }
         const passes = worldInfo.hookEvents?.scanPasses;
         if (worldInfo.snapshotHash !== roleplayHash(request.worldInfo)
+            || preparedHistory && worldInfo.promptChatHash !== roleplayHash(preparedHistory.promptChat)
+            || preparedHistory && worldInfo.promptGlobalHash !== roleplayHash(preparedHistory.global)
+            || scanContributions.length && worldInfo.promptInjectionsHash !== roleplayHash(scanContributions)
             || !Array.isArray(passes) || passes.length !== worldInfo.iterations
             || !Array.isArray(worldInfo.draws)
             || passes.some((pass, index) => pass?.state?.loopCount !== index + 1
@@ -177,39 +272,47 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     }
     const userName = request.userName ?? request.worldInfo?.speakerNames?.user ?? promptSource?.records[0]?.user_name ?? 'User';
     const groupNames = request.serverPrompt ? request.worldInfo.groupNames : request.groupNames || [];
-    const hasToolHistory = Boolean(promptSource?.records.some(record => record.extra?.tool_invocations !== undefined));
-    const namingMaterial = (source.locator.group && (request.serverPrompt || worldInfo?.activated.length)
-        || request.worldInfo?.images?.length || hasToolHistory)
-        ? promptBackend(directories, request.binding) : null;
-    const toolControls = namingMaterial?.preset ?? namingMaterial?.active;
-    if (hasToolHistory && (!request.serverPrompt || namingMaterial?.backend && namingMaterial.backend !== 'chat'
-        || namingMaterial?.source !== 'custom' || toolControls?.function_calling !== true
-        || !['', 'merge_tools', 'semi_tools', 'strict_tools'].includes(toolControls?.custom_prompt_post_processing ?? ''))) {
+    const hasToolHistory = Boolean(request.serverPrompt && initialRecords.some(record => record.extra?.tool_invocations !== undefined)
+        || contributions.history.some(message => message.tool_calls || message.role === 'tool'));
+    const namingMaterial = boundMaterial ?? (source.locator.group && worldInfo?.activated.length
+        ? promptBackend(directories, request.binding) : null);
+    const chatInput = namingMaterial && (!namingMaterial.backend || namingMaterial.backend === 'chat');
+    const media = request.worldInfo?.images ?? [];
+    const capabilities = request.serverPrompt && chatInput && (hasToolHistory || functionTools.length || media.length
+        || namingMaterial.source === 'openrouter' && (request.modelOverride || namingMaterial.profile?.model))
+        ? await prepareRoleplayCapabilities(context, namingMaterial, request.binding,
+            { modelOverride: request.modelOverride, fetchModels: modelCatalogue }) : null;
+    const toolControls = capabilities?.settings ?? mergeChatPresetSettings(namingMaterial?.active, namingMaterial?.preset);
+    if ((hasToolHistory || functionTools.length) && (!request.serverPrompt || !chatInput
+        || !supportsChatTools(toolControls, request.modelOverride || namingMaterial.profile?.model, { model_list: capabilities.models }))) {
         throw roleplayError('ROLEPLAY_INVALID', 'Saved tool calls need a bound tool-capable Chat Completion connection.', 409);
     }
-    const media = request.worldInfo?.images ?? [];
-    const imageDetail = namingMaterial?.preset?.inline_image_quality
-        ?? namingMaterial?.active?.inline_image_quality ?? 'auto';
-    if (media.length && (!request.serverPrompt || namingMaterial?.backend && namingMaterial.backend !== 'chat'
-        || namingMaterial?.source !== 'custom' || (namingMaterial.preset?.media_inlining
-            ?? namingMaterial.active?.media_inlining) !== true
-        || !['low', 'auto', 'high'].includes(imageDetail))) {
+    const imageDetail = toolControls.inline_image_quality ?? 'auto';
+    if (media.length && (!request.serverPrompt || !chatInput
+        || !supportsChatImages(toolControls, { model_list: capabilities.models }) || !['low', 'auto', 'high'].includes(imageDetail))) {
         throw roleplayError('ROLEPLAY_INVALID', 'These saved Roleplay images need a bound vision connection.', 409);
     }
     const historyOptions = request.worldInfo && { reasoningInPrompt: request.worldInfo.reasoningInPrompt,
         reasoning: request.worldInfo.reasoning, regex: request.worldInfo.regex,
         attachments: request.worldInfo.attachments, images: media, imageDetail, mediaDisplay: request.worldInfo.mediaDisplay,
+        preparedContent: preparedHistory?.content,
         toolHistory: hasToolHistory, toolSource: namingMaterial?.source, toolModel: namingMaterial?.profile?.model,
+        signaturePolicy: request.serverPrompt ? { source: namingMaterial.source,
+            model: request.modelOverride || namingMaterial.profile?.model, include: chatInput && supportsChatSignatures(toolControls),
+            reasoning: chatInput && namingMaterial.source === 'openrouter' && (toolControls.show_thoughts || toolControls.auto_append_reasoning_tags)
+                ? toolControls.tool_reasoning_mode : 'disabled' } : undefined,
         characterName: request.characterName, group: source.locator.group, userName,
-        namesBehavior: namingMaterial?.backend === 'chat'
-            ? (namingMaterial.preset?.names_behavior ?? namingMaterial.active?.names_behavior ?? 0)
-            : namingMaterial && (namingMaterial.backend !== 'text' || namingMaterial.instruct?.enabled || namingMaterial.kind === 'active')
-                ? 'provider' : undefined };
-    const promptMaterial = request.serverPrompt ? namingMaterial ?? promptBackend(directories, request.binding) : namingMaterial;
+        namesBehavior: chatInput ? (toolControls.names_behavior ?? 0)
+            : namingMaterial ? 'provider' : undefined };
+    const promptMaterial = namingMaterial && request.modelOverride ? { ...namingMaterial, profile: { ...namingMaterial.profile, model: request.modelOverride } } : namingMaterial;
     const countChat = request.serverPrompt && (!promptMaterial.backend || promptMaterial.backend === 'chat')
         ? await createRoleplayChatCounter(request.modelOverride ? { ...promptMaterial,
             profile: { ...promptMaterial.profile, model: request.modelOverride } } : promptMaterial,
-        { images: media, fallbackTokenizer: request.worldInfo.tokenizer }) : null;
+        { images: media, models: capabilities?.models ?? [], fallbackTokenizer: request.worldInfo.tokenizer }) : null;
+    if (request.serverPrompt && (!Number.isSafeInteger(Number(promptMaterial.power?.token_padding ?? 0))
+        || Number(promptMaterial.power?.token_padding ?? 0) < 0)) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The saved prompt token padding is invalid.', 409);
+    }
     const countText = request.serverPrompt && !countChat ? await createRoleplayTextCounter(base, promptMaterial,
         { tokenizer: request.worldInfo.tokenizer, signal, modelOverride: request.modelOverride }) : null;
     const memoryAccess = operation => withRoleplayAccount(base, account, lease => {
@@ -218,7 +321,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         return operation();
     });
     let memory;
-    let promptRecords = promptSource?.records;
+    let promptRecords = promptSource ? selectRoleplayPromptRecords(promptSource.records, source, effect) : null;
     if (request.serverPrompt) {
         const locator = promptSource.locator;
         const normalised = normalizeLocator(locator);
@@ -229,9 +332,9 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         memory = readArtifact(directories, job.id, 'roleplay-mewmory');
         if (memory === undefined) {
             memory = await prepareMewmoryPrompt(directories, { locator,
-                tokenizer: { tokenizerKey: request.worldInfo.tokenizer },
+                tokenizer: (countChat ?? countText).tokenizer,
                 history: promptRecords.slice(1).flatMap((record, index) => record.is_system && !record.extra?.tool_invocations
-                    ? [] : [{ index, text: `${record.name || ''}: ${record.mes || ''}` }]),
+                    ? [] : [{ index, text: `${record.name || ''}: ${preparedHistory?.content[index] ?? record.mes ?? ''}` }]),
             }, signal, {
                 loadState: (directories, locator) => memoryAccess(() => loadCurrentStateSync(directories, locator)),
                 mutate: (directories, locator, operation) => memoryAccess(() => mutateState(directories, locator, operation)),
@@ -254,6 +357,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         })];
         for (const key of ['attachments', 'images']) historyOptions[key] = historyOptions[key]
             .filter(item => retainedIndices.has(item.index)).map(item => ({ ...item, index: retainedIndices.get(item.index) }));
+        historyOptions.preparedContent = historyOptions.preparedContent.filter((_value, index) => retainedIndices.has(index));
     }
     const assertMemory = () => {
         if (!request.serverPrompt) return;
@@ -264,7 +368,9 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         }
     };
     assertMemory();
-    const savedHistory = promptSource ? buildRoleplaySavedHistory(promptRecords, historyOptions) : null;
+    const sourceHistory = promptSource ? buildRoleplaySavedHistory(promptRecords, historyOptions) : null;
+    const savedHistory = sourceHistory ? [...sourceHistory, ...contributions.history] : null;
+    const contributedMessages = new Set(contributions.history);
     const loreScope = scope => !scope || scope === 'active' ? worldInfo.activeLore
         : scope === 'bound' ? worldInfo.boundLore : null;
     const loreInFlight = new Set();
@@ -291,11 +397,14 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         handler: ({ unnamedArgs: [title, book], resolve }) => loreContent(loreLookup(title, book), resolve) };
     const preparedPrompt = request.serverPrompt ? readArtifact(directories, job.id, 'roleplay-prompt') : undefined;
     let preparedText = preparedPrompt?.preparedText;
+    let cfgValues = preparedPrompt?.cfgValues;
     let textPrompt;
     const macroSnapshot = { ...acceptedMacros,
         system: { ...acceptedMacros.system, ...(promptMaterial && { model: request.modelOverride || promptMaterial.profile?.model || '' }) },
         variables: preparedPrompt?.macroState?.variables ?? acceptedMacros.variables,
         extra: { ...acceptedMacros.extra,
+            ...(worldInfo && { extensionPrompts: Object.fromEntries(Object.entries(worldInfo.outletEntries)
+                .map(([key, values]) => [inject_ids.CUSTOM_WI_OUTLET(key), { value: values.join('\n') }])) }),
             ...(promptMaterial && { powerUser: { ...promptMaterial.power, instruct: promptMaterial.instruct ?? promptMaterial.power?.instruct,
                 context: promptMaterial.context ?? promptMaterial.power?.context },
             mainApi: !promptMaterial.backend || promptMaterial.backend === 'chat' ? 'openai'
@@ -303,11 +412,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             chatMetadata: preparedPrompt?.macroState?.chatMetadata ?? acceptedMacros.extra?.chatMetadata,
             bannedWords: preparedPrompt?.macroState?.bannedWords ?? [] },
     };
-    const macroEnvironment = createMacroEnvironment(macroSnapshot, request.serverPrompt ? {
-        getMaxResponseTokens: () => request.maxTokens,
-        getMaxContextTokens: () => contextLimit(directories, request.binding),
-        getMaxPromptTokens: () => contextLimit(directories, request.binding) - request.maxTokens,
-    } : {}, {
+    const macroEnvironment = createMacroEnvironment(macroSnapshot, request.serverPrompt
+        ? roleplayMacroCapabilities(request.worldInfo, promptMaterial, request.maxTokens, contextLimit(directories, request.binding), () => macroEnvironment) : {}, {
         dynamicMacros: worldInfo && request.worldInfo.enhancedLoreMacros ? {
             lore: loreMacro,
             wi: loreMacro,
@@ -347,6 +453,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     const resolvedStrings = [];
     const resolvedHistory = new WeakMap();
     const substituteHistory = message => {
+        if (contributedMessages.has(message)) return message;
         if (!resolvedHistory.has(message)) {
             const evaluate = content => macroEnvironment.evaluate(content, {
                 legacy: !request.worldInfo.experimentalMacroEngine, strictCapabilities: true,
@@ -385,48 +492,41 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 historyOptions);
         }
         const hasOutlets = Object.keys(worldInfo.outletEntries).length > 0;
-        if (isChatPrompt && hasOutlets) {
-            throw roleplayError('ROLEPLAY_INVALID', 'Named World Info outlets need a bound Chat Completion prompt slot.', 409);
-        }
         if (isChatPrompt) {
-            const assembled = await assembleRoleplayChatPrompt(history, request.worldInfo, chatBackend, worldInfo, {
+            const assembled = await assembleRoleplayChatPrompt(history, { ...request.worldInfo, global: preparedHistory.global, characterExamples: preparedHistory.characterExamples,
+                authorNote: preparedHistory.authorNote, depthPrompt: preparedHistory.depthPrompt,
+                ...(preparedHistory.depthPrompts ? { depthPrompts: preparedHistory.depthPrompts } : {}) }, chatBackend, worldInfo, {
                 userName, characterName: request.characterName, groupNames, effect, substitute, substituteHistory, memory, exampleLimit,
+                contributions: contributions.extensions, records: initialRecords,
             });
             exampleCount = assembled.exampleCount;
             return assembled.messages;
         }
         if (request.serverPrompt) {
-            textPrompt ??= createRoleplayTextPrompt(savedHistory, request.worldInfo, promptMaterial, worldInfo, {
+            textPrompt ??= createRoleplayTextPrompt(savedHistory, { ...request.worldInfo, global: preparedHistory.global, characterExamples: preparedHistory.characterExamples,
+                authorNote: preparedHistory.authorNote, depthPrompt: preparedHistory.depthPrompt,
+                ...(preparedHistory.depthPrompts ? { depthPrompts: preparedHistory.depthPrompts } : {}) }, promptMaterial, worldInfo, {
                 userName, characterName: request.characterName, groupNames, effect, substitute, substituteHistory, memory,
+                contributions: contributions.extensions, records: initialRecords,
             });
             exampleCount = textPrompt.exampleCount;
             preparedText = textPrompt.render(history, exampleLimit);
+            cfgValues = textPrompt.guidance && { guidanceScale: textPrompt.guidance,
+                ...(textPrompt.hasNegative ? { negativePrompt: textPrompt.render(history, exampleLimit, true) } : {}) };
             return history;
         }
         const storyLore = request.worldInfo.storyTemplate && (worldInfo.worldInfoBefore || worldInfo.worldInfoAfter);
         const storyNote = (worldInfo.ANBeforeEntries.length || worldInfo.ANAfterEntries.length)
             && request.worldInfo.authorNote?.position !== 1 && isWorldInfoAuthorNoteActive(request.worldInfo.authorNote);
-        const hasStory = !isChatPrompt && Boolean(hasOutlets || storyLore || storyNote || (request.serverPrompt && request.worldInfo.storyTemplate));
-        if (isChatPrompt) {
-            messages = insertRoleplayChatSystem(messages, request.worldInfo, chatBackend, userName, request.characterName,
-                worldInfo.worldInfoBefore, worldInfo.worldInfoAfter, effect);
-        } else if (hasStory) {
+        const hasStory = Boolean(hasOutlets || storyLore || storyNote);
+        if (hasStory) {
             messages = insertWorldInfoOutlets(messages, worldInfo.outletEntries, request.worldInfo, savedHistoryStart,
-                userName, request.characterName, worldInfo.worldInfoBefore, worldInfo.worldInfoAfter,
-                Boolean(storyNote || request.serverPrompt));
+                userName, request.characterName, worldInfo.worldInfoBefore, worldInfo.worldInfoAfter, Boolean(storyNote));
         }
-        const lore = hasStory || isChatPrompt
-            ? '' : [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
+        const lore = hasStory ? '' : [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
         if (lore) messages.unshift({ role: 'system', content: lore });
         let historyStart = savedHistoryStart + messages.length - history.length;
-        const controls = isChatPrompt && (chatBackend.preset ?? chatBackend.active);
-        const exampleOrder = controls?.prompt_order?.find(value => String(value?.character_id) === '100001')?.order;
-        const marker = controls?.prompts?.find(prompt => prompt.identifier === 'dialogueExamples');
-        const trigger = effect === 'append' ? 'normal' : effect === 'replace' ? 'regenerate' : effect;
-        const includeExamples = !isChatPrompt || (exampleOrder?.some(value => value.identifier === 'dialogueExamples'
-            && value.enabled === true) && (!Array.isArray(marker?.injection_trigger)
-            || !marker.injection_trigger.length || marker.injection_trigger.includes(trigger)));
-        if (includeExamples && (worldInfo.EMEntries.length || request.serverPrompt && request.worldInfo.characterExamples)) {
+        if (worldInfo.EMEntries.length) {
             const beforeExamples = messages.length;
             messages = insertWorldInfoExamples(messages, worldInfo.EMEntries, request.worldInfo.characterExamples,
                 historyStart, userName, request.characterName, groupNames);
@@ -437,24 +537,17 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         }
         if (worldInfo.ANBeforeEntries.length || worldInfo.ANAfterEntries.length) {
             messages = insertWorldInfoAuthorNote(messages, worldInfo.ANBeforeEntries, worldInfo.ANAfterEntries,
-                request.worldInfo.authorNote, historyStart, hasStory || Boolean(isChatPrompt && messages[0]?.role === 'system'));
+                request.worldInfo.authorNote, historyStart, hasStory);
         }
-        if (request.serverPrompt && (isChatPrompt || request.worldInfo.postHistory?.character || request.worldInfo.postHistory?.text)) {
-            const material = chatBackend ?? promptBackend(directories, request.binding);
-            messages = insertRoleplayPostHistory(messages, request.worldInfo.postHistory, material.backend ?? 'chat', effect,
-                material, userName, request.characterName);
-        }
-        if (memory?.enabled) messages.push(...[memory.npcText, memory.memoryText].filter(Boolean)
-            .map(content => ({ role: 'system', content })));
         return messages;
     };
     const promptIdentity = request.serverPrompt && roleplayHash({ history: promptHash, worldInfo: request.worldInfo,
-        binding: request.binding, maxTokens: request.maxTokens, effect, memory });
+        binding: request.binding, maxTokens: request.maxTokens, effect, memory, contributions });
     if (preparedPrompt !== undefined && (!preparedPrompt || preparedPrompt.identity !== promptIdentity
         || !Array.isArray(preparedPrompt.messages) || !preparedPrompt.macroState
         || countText && typeof preparedText !== 'string'
         || preparedPrompt.hash !== roleplayHash({ messages: preparedPrompt.messages, macroState: preparedPrompt.macroState,
-            ...(preparedText !== undefined ? { preparedText } : {}) }))) {
+            ...(preparedText !== undefined ? { preparedText } : {}), ...(cfgValues ? { cfgValues } : {}) }))) {
         throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved Roleplay prompt needs recovery.', 503);
     }
     const optionalExamples = Boolean(request.serverPrompt && !request.worldInfo.pinExamples);
@@ -466,12 +559,13 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     }
     if (request.serverPrompt || worldInfo?.activated.length) {
         const { count } = await getCounter(request.worldInfo.tokenizer);
-        const budget = contextLimit(directories, request.binding) - request.maxTokens;
+        const budget = contextLimit(directories, request.binding) - request.maxTokens - (countText ? Number(promptMaterial.power?.token_padding ?? 0) : 0);
         const imageCost = image => getChatImageTokenCost(image, imageDetail);
-        const tokens = countText ? () => countText(preparedText) : countChat ?? (async prompt => await count(prompt.map(message => [message.name, message.tool_call_id,
-            message.tool_calls && JSON.stringify(message.tool_calls),
-            Array.isArray(message.content) ? message.content.filter(part => part.type === 'text').map(part => part.text).join('\n')
-                : message.content].filter(Boolean).join('\n')).join('\n'))
+        const tokens = countText ? async () => Math.max(await countText(preparedText), cfgValues?.negativePrompt ? await countText(cfgValues.negativePrompt) : 0) : countChat ? prompt => countChat([...prompt, ...toolBudget])
+            : (async prompt => await count(prompt.map(message => [message.name, message.tool_call_id,
+                message.tool_calls && JSON.stringify(message.tool_calls),
+                Array.isArray(message.content) ? message.content.filter(part => part.type === 'text').map(part => part.text).join('\n')
+                    : message.content].filter(Boolean).join('\n')).join('\n'))
             + prompt.reduce((sum, message) => sum + (Array.isArray(message.content)
                 ? message.content.filter(part => part.type === 'image_url').reduce((cost, part) => {
                     const image = media.find(item => item.url === part.image_url.url);
@@ -482,10 +576,10 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (size > budget && !preparedPrompt && !memory?.enabled && savedHistory && savedHistory.length > 1) {
             // ponytail: search saved suffixes instead of rebuilding once per old message; the latest stays intact.
             const starts = savedHistory.map((message, index) => message.role === 'tool' ? null : index)
-                .filter(index => index !== null && index > 0);
+                .filter(index => index !== null && index > 0 && index < sourceHistory.length);
             let start = 0;
             let end = starts.length - 1;
-            if (end < 0) throw roleplayError('ROLEPLAY_INVALID', 'Saved tool results cannot be sent without their calls.', 409);
+            if (end < 0) throw roleplayError('ROLEPLAY_INVALID', 'The saved prompt history cannot fit without discarding required context.', 409);
             while (start < end) {
                 const middle = Math.floor((start + end) / 2);
                 const candidate = await place(savedHistory.slice(starts[middle]), initialExamples);
@@ -502,14 +596,15 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (optionalExamples && !preparedPrompt) {
             for (let limit = 1; limit <= exampleCount; limit++) {
                 const previousText = preparedText;
+                const previousCfg = cfgValues;
                 const candidate = await place(selectedHistory, limit);
-                if (await tokens(candidate) > budget) { preparedText = previousText; break; }
+                if (await tokens(candidate) > budget) { preparedText = previousText; cfgValues = previousCfg; break; }
                 messages = candidate;
             }
         }
     }
     if (request.serverPrompt && !preparedPrompt) {
-        const saved = { messages, macroState: macroEnvironment.captureState(), ...(preparedText !== undefined ? { preparedText } : {}) };
+        const saved = { messages, macroState: macroEnvironment.captureState(), ...(preparedText !== undefined ? { preparedText } : {}), ...(cfgValues ? { cfgValues } : {}) };
         writeArtifact(directories, job.id, 'roleplay-prompt', { identity: promptIdentity, hash: roleplayHash(saved), ...saved });
     }
     const beforeDispatch = () => {
@@ -522,35 +617,36 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     };
     const result = await generate({ context: base, jobContext: context, binding: request.binding, messages,
         maxTokens: request.maxTokens, userName, characterName: request.characterName,
-        groupNames, macroEnvironment, preparedText,
+        generationType: request.serverPrompt ? request.worldInfo.global.trigger : 'quiet',
+        groupNames, macroEnvironment, preparedText, cfgValues, preparedMessages: Boolean(request.serverPrompt && countChat), functionTools,
         rawOptions: request.rawOptions || {}, ephemeralStops: request.ephemeralStops || [],
+        onProviderStep: step => {
+            const reference = { intentHash: roleplayHash(job.intent), step,
+                promptHash: request.serverPrompt ? readArtifact(directories, job.id, 'roleplay-prompt').hash : null,
+                worldInfoHash: worldInfo ? roleplayHash(worldInfo) : null };
+            if (providerReference && roleplayHash(providerReference) !== roleplayHash(reference)) {
+                throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'This job already owns a different provider request.', 503);
+            }
+            if (!providerReference) writeArtifact(directories, job.id, 'roleplay-main-provider', reference);
+        },
         validatePrompt: request.serverPrompt ? async payload => {
-            const budget = contextLimit(directories, request.binding) - request.maxTokens;
+            const budget = contextLimit(directories, request.binding) - request.maxTokens - (countText ? Number(promptMaterial.power?.token_padding ?? 0) : 0);
             const { count } = await getCounter(request.worldInfo.tokenizer);
             let size;
             if (countChat && Array.isArray(payload.messages)) {
-                size = await countChat([...payload.messages, ...(payload.tools
+                size = await countChat([...payload.messages, ...(payload.assistant_prefill ? [{ role: 'assistant', content: payload.assistant_prefill }] : []), ...(payload.tools
                     ? [{ role: 'user', content: JSON.stringify({ tools: payload.tools, tool_choice: payload.tool_choice }) }] : [])]);
             } else {
                 const text = payload.prompt ?? payload.input;
                 if (typeof text !== 'string') throw roleplayError('ROLEPLAY_INVALID', 'The formatted Roleplay prompt is invalid.', 409);
-                size = await (countText ?? count)(text);
+                size = Math.max(await (countText ?? count)(text), payload.negative_prompt ? await (countText ?? count)(payload.negative_prompt) : 0);
             }
             if (size > budget) throw roleplayError('ROLEPLAY_INVALID', 'The formatted Roleplay request exceeds its bound context budget.', 409);
             beforeDispatch();
         } : undefined,
         beforeDispatch,
         modelOverride: request.modelOverride || '', overridePayload, stream: request.stream === true });
-    const output = replyOutput(result, effect, request.characterName, result.generation);
-    if (worldInfo) {
-        output.timedWorldInfo = worldInfo.timedWorldInfo;
-        output.timedBaseline = worldInfo.timedBaseline;
-        output.timedChatLength = request.worldInfo.savedChatLength ?? worldInfo.chatLength;
-    }
-    writeArtifact(directories, job.id, 'roleplay-output', output);
-    // The provider result is durable before recovery may revisit the chat write.
-    setJobResume(directories, job.id, 'roleplay-delivery');
-    return { result: applyRoleplayJobEffect(base, account, { operationKey: roleplay.operationKey, jobId: job.id, output }, host) };
+    return finish(result, worldInfo);
 }
 
 export function registerRoleplayReplyJob(options = {}) {

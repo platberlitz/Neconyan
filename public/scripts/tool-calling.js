@@ -1,7 +1,8 @@
+import { supportsChatTools } from './chat-input-capabilities.js';
 import { DOMPurify } from '../lib.js';
 
 import { addOneMessage, chat, event_types, eventSource, getGeneratingApi, getGeneratingModel, main_api, saveChatConditional, system_avatar, systemUserName } from '../script.js';
-import { chat_completion_sources, custom_prompt_post_processing_types, getChatCompletionModel, model_list, oai_settings } from './openai.js';
+import { getChatCompletionModel, model_list, oai_settings } from './openai.js';
 import { Popup } from './popup.js';
 import { SlashCommand } from './slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from './slash-commands/SlashCommandArgument.js';
@@ -606,76 +607,8 @@ export class ToolManager {
      * @returns {boolean} Whether tool calling is supported for the given type
      */
     static isToolCallingSupported(settings = null, model = null) {
-        settings = settings ?? oai_settings;
-        model = model ?? getChatCompletionModel(settings);
-
-        if (main_api !== 'openai' || !settings.function_calling) {
-            return false;
-        }
-
-        // Neconyan: Astra supports tool calls only through the Responses API.
-        if (settings.chat_completion_source === chat_completion_sources.OPENAI && model === 'gpt-6-astra') {
-            return false;
-        }
-
-        // Post-processing will forcefully remove past tool calls from the prompt, making them useless
-        const { NONE, MERGE_TOOLS, SEMI_TOOLS, STRICT_TOOLS } = custom_prompt_post_processing_types;
-        const allowedPromptPostProcessing = [NONE, MERGE_TOOLS, SEMI_TOOLS, STRICT_TOOLS];
-        if (!allowedPromptPostProcessing.includes(settings.custom_prompt_post_processing)) {
-            return false;
-        }
-
-        const currentModel = Array.isArray(model_list) ? model_list.find(m => m.id === model) : null;
-        if (currentModel) {
-            switch (settings.chat_completion_source) {
-                case chat_completion_sources.POLLINATIONS:
-                    return currentModel.tools;
-                case chat_completion_sources.FIREWORKS:
-                    return currentModel.supports_tools;
-                case chat_completion_sources.OPENROUTER:
-                    return currentModel.supported_parameters?.includes('tools');
-                case chat_completion_sources.MISTRALAI:
-                    return currentModel.capabilities?.function_calling;
-                case chat_completion_sources.AIMLAPI:
-                    return currentModel.features?.includes('openai/chat-completion.function');
-                case chat_completion_sources.CHUTES:
-                    return currentModel.supported_features?.includes('tools');
-                case chat_completion_sources.ELECTRONHUB:
-                    return currentModel.metadata?.function_call;
-                case chat_completion_sources.WORKERS_AI:
-                    return Array.isArray(currentModel.properties) && currentModel.properties.some(p => p.property_id === 'function_calling' && p.value === 'true');
-            }
-        }
-
-        const supportedSources = [
-            chat_completion_sources.OPENAI,
-            chat_completion_sources.CUSTOM,
-            chat_completion_sources.MISTRALAI,
-            chat_completion_sources.CLAUDE,
-            chat_completion_sources.OPENROUTER,
-            chat_completion_sources.AIMLAPI,
-            chat_completion_sources.GROQ,
-            chat_completion_sources.COHERE,
-            chat_completion_sources.DEEPSEEK,
-            chat_completion_sources.MAKERSUITE,
-            chat_completion_sources.VERTEXAI,
-            chat_completion_sources.AI21,
-            chat_completion_sources.XAI,
-            chat_completion_sources.POLLINATIONS,
-            chat_completion_sources.MOONSHOT,
-            chat_completion_sources.FIREWORKS,
-            chat_completion_sources.COMETAPI,
-            chat_completion_sources.CHUTES,
-            chat_completion_sources.ELECTRONHUB,
-            chat_completion_sources.AZURE_OPENAI,
-            chat_completion_sources.ZAI,
-            chat_completion_sources.SILICONFLOW,
-            chat_completion_sources.NANOGPT,
-            chat_completion_sources.WORKERS_AI,
-            chat_completion_sources.MINIMAX,
-            chat_completion_sources.LINKAPI,
-        ];
-        return supportedSources.includes(settings.chat_completion_source);
+        settings ??= oai_settings;
+        return supportsChatTools(settings, model ?? getChatCompletionModel(settings), { main_api, model_list });
     }
 
     /**

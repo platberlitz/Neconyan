@@ -1,3 +1,4 @@
+import { formatPromptReasoning } from './reasoning-prompt-format.js';
 import {
     moment,
 } from '../lib.js';
@@ -789,47 +790,11 @@ export class PromptReasoning {
      * @returns {string} Message content with reasoning
      */
     addToMessage(content, reasoning, isPrefix, duration) {
-        // Disabled or reached limit of additions
-        if (!isPrefix && (!power_user.reasoning.add_to_prompts || this.counter >= power_user.reasoning.max_additions)) {
-            return content;
-        }
-
-        // No reasoning provided or a legacy placeholder
-        if (!reasoning || reasoning === PromptReasoning.REASONING_PLACEHOLDER) {
-            return content;
-        }
-
-        // Increment the counter
-        this.counter++;
-
-        // Substitute macros in variable parts
-        const prefix = substituteParams(power_user.reasoning.prefix || '');
-        const separator = substituteParams(power_user.reasoning.separator || '');
-        const suffix = substituteParams(power_user.reasoning.suffix || '');
-
-        // Combine parts with reasoning only
-        if (isPrefix && !content) {
-            const formattedReasoning = `${prefix}${reasoning}`;
-            if (isPrefix) {
-                this.prefixReasoning = reasoning;
-                this.prefixReasoningFormatted = formattedReasoning;
-                this.prefixLength = formattedReasoning.length;
-                this.prefixDuration = duration;
-                this.prefixIncomplete = true;
-            }
-            return formattedReasoning;
-        }
-
-        // Combine parts with reasoning and content
-        const formattedReasoning = `${prefix}${reasoning}${suffix}${separator}`;
-        if (isPrefix) {
-            this.prefixReasoning = reasoning;
-            this.prefixReasoningFormatted = formattedReasoning;
-            this.prefixLength = formattedReasoning.length;
-            this.prefixDuration = duration;
-            this.prefixIncomplete = false;
-        }
-        return `${formattedReasoning}${content}`;
+        const { content: result, ...state } = formatPromptReasoning(content, reasoning, {
+            settings: power_user.reasoning, counter: this.counter, isPrefix, duration, substitute: substituteParams,
+        });
+        Object.assign(this, state);
+        return result;
     }
 
     /**

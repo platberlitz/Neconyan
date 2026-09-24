@@ -11,7 +11,7 @@ import { applyRegexScriptList, AGENT_REGEX_PLACEMENT } from '../../public/script
 import { scanWorldInfo } from './world-info-scan.js';
 import { normalizeExtensionBootId } from '../../public/scripts/extension-boot-lifecycle/index.js';
 import { captureWorldInfoHookPolicy, worldInfoActivationActions } from './world-info-hook-policy.js';
-import { activeRoleplayAuthorNote, isWorldInfoAuthorNoteActive } from './roleplay-prompt.js';
+import { activeRoleplayAuthorNote, isWorldInfoAuthorNoteActive, selectRoleplayPromptRecords, savedRoleplayMacroSnapshot } from './roleplay-prompt.js';
 
 const SETTINGS = ['world_info_depth', 'world_info_min_activations', 'world_info_min_activations_depth_max',
     'world_info_budget', 'world_info_budget_cap', 'world_info_recursive', 'world_info_case_sensitive',
@@ -199,12 +199,14 @@ function selectedBooks(settings, saved, character, avatar, personaLorebook) {
 }
 
 /** Capture the actual saved book selection before private job admission. */
-export function captureRoleplayWorldInfo(base, account, source, { avatar, maxContext, tokenizer = 'o200k_base', trigger = 'normal' }) {
-    if (!['normal', 'continue', 'swipe', 'regenerate'].includes(trigger)) {
+export function captureRoleplayWorldInfo(base, account, source, { avatar, maxContext, tokenizer = 'o200k_base', trigger = 'normal', serverPrompt = false }) {
+    if (!['normal', 'continue', 'swipe', 'regenerate'].includes(trigger) || typeof serverPrompt !== 'boolean') {
         throw roleplayError('ROLEPLAY_INVALID', 'The World Info generation trigger is invalid.', 400);
     }
     return withRoleplayAccount(base, account, lease => {
         const saved = assertRoleplaySourceLocked(lease, source);
+        const promptRecords = serverPrompt ? selectRoleplayPromptRecords(saved.records, source,
+            { normal: 'append', regenerate: 'replace', swipe: 'swipe', continue: 'continue' }[trigger]) : saved.records;
         if (!source.dependencies?.some(dependency => dependency.kind === 'character' && dependency.locator.avatar === avatar)) {
             throw roleplayError('ROLEPLAY_INVALID', 'World Info must use a character in the accepted Roleplay source.', 409);
         }
@@ -240,9 +242,9 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         const scoped = saved.locator.group ? saved.records[0].chat_metadata?.note_chara
             : note.chara?.find(item => item?.name === `individual:${avatar}`)
                 ?? note.chara?.find(item => item?.name === path.parse(avatar).name);
-        const attachments = savedAttachments(base.directories, saved.records);
-        const images = savedImages(base.directories, saved.records, settings.power_user?.media_display ?? 'list');
-        const chat = saved.records.slice(1).flatMap((message, index) => {
+        const attachments = savedAttachments(base.directories, promptRecords);
+        const images = savedImages(base.directories, promptRecords, settings.power_user?.media_display ?? 'list');
+        const chat = promptRecords.slice(1).flatMap((message, index) => {
             if (message.is_system) return [];
             const text = (attachments.find(item => item.index === index)?.text ?? '') + String(message.mes ?? '');
             return [(settings.world_info_include_names ?? DEFAULTS.world_info_include_names)
@@ -254,7 +256,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             depth: saved.records[0].chat_metadata?.note_depth ?? note.defaultDepth ?? 4,
             role: saved.records[0].chat_metadata?.note_role ?? note.defaultRole ?? 0,
             scoped: scoped ? structuredClone(scoped) : null,
-            userMessages: saved.records.slice(1).filter(message => message.is_user).length };
+            userMessages: promptRecords.slice(1).filter(message => message.is_user).length };
         const depthPrompt = character.data?.data?.extensions?.depth_prompt?.prompt
             ?? character.data?.extensions?.depth_prompt?.prompt ?? '';
         const inject = [];
@@ -273,8 +275,8 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                 }
             }
             for (const prompt of depthPrompts) {
-                if (typeof prompt !== 'string' || prompt.includes('{{') || /<(?:USER|BOT|CHAR|GROUP)>/i.test(prompt)) {
-                    throw roleplayError('ROLEPLAY_INVALID', 'The saved depth prompt needs browser-only macro substitution.', 409);
+                if (typeof prompt !== 'string') {
+                    throw roleplayError('ROLEPLAY_INVALID', 'The saved depth prompt must be text.', 409);
                 }
                 if (prompt.trim()) inject.push(prompt.trim());
             }
@@ -283,20 +285,17 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             let prompt = activeRoleplayAuthorNote(authorNote);
             if (persona.description && persona.position === 2) prompt = `${persona.description}\n${prompt}`;
             if (persona.description && persona.position === 3) prompt = `${prompt}\n${persona.description}`;
-            if (prompt && (prompt.includes('{{') || /<(?:USER|BOT|CHAR|GROUP)>/i.test(prompt))) {
-                throw roleplayError('ROLEPLAY_INVALID', 'The saved Author\'s Note scan needs browser-only macro substitution.', 409);
-            }
+            if (typeof prompt !== 'string') throw roleplayError('ROLEPLAY_INVALID', 'The saved Author\'s Note must be text.', 409);
             if (prompt) inject.push(prompt);
         }
         // The browser sets the persona depth prompt before World Info scans.
         if (persona.position === 4 && persona.description) {
-            if (typeof persona.description !== 'string' || persona.description.includes('{{')
-                || /<(?:USER|BOT|CHAR|GROUP)>/i.test(persona.description)) {
-                throw roleplayError('ROLEPLAY_INVALID', 'The saved persona scan needs browser-only macro substitution.', 409);
+            if (typeof persona.description !== 'string') {
+                throw roleplayError('ROLEPLAY_INVALID', 'The saved persona description must be text.', 409);
             }
             inject.push(persona.description);
         }
-        const snapshot = { account: { accountId: account.accountId, dataEpoch: account.dataEpoch }, source,
+        const snapshot = { account: { accountId: account.accountId, dataEpoch: account.dataEpoch }, source, serverPrompt,
             character: { instanceId: character.instanceId, revision: character.revision, rawHash: character.rawHash },
             speakerNames: { character: character.data?.data?.name ?? character.data?.name,
                 user: persona.name || (saved.records[0].user_name !== 'unused' && saved.records[0].user_name) || 'User' },
@@ -304,7 +303,18 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             unmutedGroupNames: members.filter(member => !group.disabled_members?.includes(member.avatar)).map(memberName),
             pinExamples: Boolean(settings.power_user?.pin_examples),
             alwaysForceName: Boolean(settings.power_user?.always_force_name2),
-            characterExamples: character.data?.data?.mes_example ?? character.data?.mes_example ?? '',
+            contextRetention: { html: settings.power_user?.html_context_depth ?? -1, ooc: settings.power_user?.ooc_context_depth ?? -1 },
+            characterExamples: saved.records[0].chat_metadata?.mes_example || character.data?.data?.mes_example || character.data?.mes_example || '',
+            characterFields: { version: character.data?.data?.character_version ?? character.data?.character_version ?? '',
+                firstMessage: character.data?.data?.first_mes ?? character.data?.first_mes ?? '',
+                alternateGreetings: character.data?.data?.alternate_greetings ?? character.data?.alternate_greetings ?? [] },
+            promptSettings: Object.fromEntries(['instruct', 'context', 'sysprompt', 'collapse_newlines', 'strip_examples', 'token_padding', 'user_prompt_bias']
+                .filter(key => settings.power_user?.[key] !== undefined).map(key => [key, structuredClone(settings.power_user[key])])),
+            groupPrompt: group?.generation_mode ? { mode: group.generation_mode, prefix: group.generation_mode_join_prefix ?? '',
+                suffix: group.generation_mode_join_suffix ?? '', members: members.map(member => ({ name: memberName(member),
+                    selected: member.avatar === avatar, disabled: Boolean(group.disabled_members?.includes(member.avatar)),
+                    fields: Object.fromEntries(['description', 'personality', 'scenario', 'mes_example'].map(key => [key, member.card.data?.[key] ?? member.card[key] ?? ''])),
+                    depth: member.card.data?.extensions?.depth_prompt ?? member.card.extensions?.depth_prompt ?? {} })) } : null,
             attachments,
             images,
             mediaDisplay: settings.power_user?.media_display ?? 'list',
@@ -325,13 +335,14 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                 role: (character.data?.data?.extensions ?? character.data?.extensions)?.depth_prompt?.role ?? 'system' },
             enhancedLoreMacros: Boolean(settings.power_user?.experimental_macro_engine)
                 && !extensions.disabledExtensions?.some(name => normalizeExtensionBootId(name) === 'macroenhanced'),
+            noteScanEnabled: Boolean(note.allowWIScan), cfg: extensions.cfg ?? null,
             reasoningInPrompt: Boolean(settings.power_user?.reasoning?.add_to_prompts),
-            reasoning: settings.power_user?.reasoning?.add_to_prompts ? {
-                prefix: settings.power_user.reasoning.prefix ?? '<think>',
-                suffix: settings.power_user.reasoning.suffix ?? '</think>',
-                separator: settings.power_user.reasoning.separator ?? '\n',
-                max_additions: settings.power_user.reasoning.max_additions ?? 1,
-            } : null,
+            reasoning: {
+                prefix: settings.power_user?.reasoning?.prefix ?? '<think>',
+                suffix: settings.power_user?.reasoning?.suffix ?? '</think>',
+                separator: settings.power_user?.reasoning?.separator ?? '\n',
+                max_additions: settings.power_user?.reasoning?.max_additions ?? 1,
+            },
             settingsHash: roleplayHash(savedSettings),
             hookPolicy: captureWorldInfoHookPolicy(base.directories, savedSettings,
                 saved.records[0].chat_metadata, avatar, saved.locator.group),
@@ -349,7 +360,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                 personaDescription: persona.description,
                 characterDepthPrompt: depthPrompt,
                 creatorNotes: character.data?.data?.creator_notes ?? character.data?.creator_notes ?? '',
-                scenario: saved.records[0].chat_metadata?.scenario ?? character.data?.data?.scenario ?? character.data?.scenario ?? '',
+                scenario: saved.records[0].chat_metadata?.scenario || character.data?.data?.scenario || character.data?.scenario || '',
                 characterTags, inject,
             } };
         if (!Number.isSafeInteger(maxContext) || maxContext < 1 || Buffer.byteLength(JSON.stringify(snapshot)) > 2 * 1024 * 1024) {
@@ -368,16 +379,18 @@ export function assertRoleplayWorldInfoCurrent(base, snapshot) {
     const captured = captureRoleplayWorldInfo(base, snapshot.account, snapshot.source, {
         avatar: snapshot.avatar, maxContext: snapshot.maxContext, tokenizer: snapshot.tokenizer,
         trigger: snapshot.global?.trigger,
+        serverPrompt: snapshot.serverPrompt,
     });
     if (roleplayHash(captured) !== roleplayHash(snapshot)) {
         throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info selection differs from the account sources.');
     }
 }
 
-export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.random, onEntriesLoaded, onScan, macros } = {}) {
+export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.random, onEntriesLoaded, onScan, macros, promptChat, promptGlobal, promptInjections = [] } = {}) {
     assertRoleplayWorldInfoCurrent(base, snapshot);
+    let records;
     const selected = withRoleplayAccount(base, snapshot.account, lease => {
-        assertRoleplaySourceLocked(lease, snapshot.source);
+        records = assertRoleplaySourceLocked(lease, snapshot.source).records;
         const character = readRoleplayEntityLocked(lease, 'character', snapshot.avatar);
         if (character.instanceId !== snapshot.character.instanceId || character.revision !== snapshot.character.revision
             || character.rawHash !== snapshot.character.rawHash) {
@@ -415,7 +428,7 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
     }
     const entries = prepareWorldInfoEntries(lore, Number(snapshot.settings.world_info_character_strategy ?? 1));
     const { count } = await getCounter(snapshot.tokenizer);
-    const environment = createMacroEnvironment(macros || {}, {}, { readOnly: true });
+    const environment = createMacroEnvironment(macros ?? savedRoleplayMacroSnapshot(snapshot, records), {}, { readOnly: true });
     const substitute = value => environment.evaluate(value, { strictCapabilities: true });
     if (!Array.isArray(snapshot.regex)) throw roleplayError('ROLEPLAY_INVALID', 'Saved World Info transformations are invalid.', 409);
     for (const script of snapshot.regex) {
@@ -434,8 +447,25 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
     }
     const transform = (content, entry) => applyRegexScriptList(content, snapshot.regex, AGENT_REGEX_PLACEMENT.WORLD_INFO,
         { isPrompt: true, depth: entry.position === 4 ? entry.depth ?? 4 : undefined });
-    const result = await scanWorldInfo({ entries, chat: snapshot.chat, metadata: snapshot.metadata,
-        settings: snapshot.settings, global: { ...snapshot.global, characterFile: snapshot.characterFile },
+    if (promptChat !== undefined && (!Array.isArray(promptChat) || promptChat.some(value => typeof value !== 'string')
+        || Buffer.byteLength(JSON.stringify(promptChat)) > 2 * 1024 * 1024)) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The prepared World Info history is invalid.', 409);
+    }
+    if (!Array.isArray(promptInjections) || promptInjections.some(value => typeof value !== 'string')
+        || Buffer.byteLength(JSON.stringify(promptInjections)) > 2 * 1024 * 1024) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The prepared World Info prompt contributions are invalid.', 409);
+    }
+    const global = promptGlobal ?? { ...snapshot.global, inject: snapshot.global.inject.map(substitute) };
+    if (global.trigger !== snapshot.global.trigger || roleplayHash(global.characterTags) !== roleplayHash(snapshot.global.characterTags)
+        || Object.keys(global).some(key => !Object.hasOwn(snapshot.global, key))
+        || Object.keys(snapshot.global).some(key => !Object.hasOwn(global, key))
+        || !Array.isArray(global.inject) || global.inject.some(value => typeof value !== 'string')
+        || Object.entries(global).some(([key, value]) => !['inject', 'characterTags'].includes(key) && typeof value !== 'string')
+        || Buffer.byteLength(JSON.stringify(global)) > 2 * 1024 * 1024) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The prepared World Info character context is invalid.', 409);
+    }
+    const result = await scanWorldInfo({ entries, chat: promptChat ?? snapshot.chat, metadata: snapshot.metadata,
+        settings: snapshot.settings, global: { ...global, inject: [...global.inject, ...promptInjections], characterFile: snapshot.characterFile },
         maxContext: snapshot.maxContext, countTokens: count, substitute, random, onScan, transform });
     const outputText = [result.worldInfoBefore, result.worldInfoAfter,
         ...result.EMEntries.map(entry => entry.content), ...result.WIDepthEntries.flatMap(entry => entry.entries),
@@ -447,6 +477,9 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
     const hookEvents = { ...result.hookEvents, entriesLoaded,
         actions: worldInfoActivationActions(snapshot.hookPolicy, result.activated) };
     return { ...result, hookEvents, bookHashes: snapshot.bookHashes, snapshotHash: roleplayHash(snapshot),
+        ...(promptChat !== undefined ? { promptChatHash: roleplayHash(promptChat) } : {}),
+        ...(promptGlobal !== undefined ? { promptGlobalHash: roleplayHash(promptGlobal) } : {}),
+        ...(promptInjections.length ? { promptInjectionsHash: roleplayHash(promptInjections) } : {}),
         boundLore: [...new Set([...snapshot.names.chat, ...snapshot.names.character, ...snapshot.names.global])]
             .flatMap(name => Object.values(selected[name].data.entries).filter(entry => !entry.disable).map(entry => ({
                 book: name,

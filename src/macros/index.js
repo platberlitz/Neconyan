@@ -120,7 +120,7 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
         extra: { ...data.extra, powerUser: env.extra.powerUser, mainApi: env.extra.mainApi } }, capabilities, { dynamicMacros, postProcess });
     env.captureState = () => structuredClone({ variables: data.variables,
         chatMetadata: env.extra.chatMetadata, bannedWords: env.extra.bannedWords });
-    env.evaluate = (content, { legacy = false, strictCapabilities = false, original: suppliedOriginal } = {}) => {
+    env.evaluate = (content, { legacy = false, strictCapabilities = false, original: suppliedOriginal, postProcess: suppliedPostProcess } = {}) => {
         let unavailable;
         const extra = { ...env.extra };
         const missing = name => () => {
@@ -134,7 +134,7 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
             }
         }
         let original = suppliedOriginal ?? data.original;
-        const functions = { ...env.functions };
+        const functions = { ...env.functions, ...(suppliedPostProcess ? { postProcess: suppliedPostProcess } : {}) };
         if (typeof original === 'string') functions.original = () => { const value = original; original = ''; return value; };
         if (legacy) {
             const fields = env.character;
@@ -148,8 +148,12 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
                 ...env.dynamicMacros,
             };
             if (functions.original) values.original = functions.original;
-            if (strictCapabilities) values.mesExamples = missing('mesExamples');
-            const result = evaluateLegacyMacros(content, values, extra, postProcess);
+            if (strictCapabilities) values.mesExamples = () => {
+                const instruct = extra.mainApi !== 'openai' && Boolean(extra.powerUser.instruct.enabled);
+                const examples = extra.parseMesExamples(fields.mesExamplesRaw ?? '', instruct);
+                return (instruct ? extra.formatInstructModeExamples(examples, env.names.user, env.names.char) : examples).join('');
+            };
+            const result = evaluateLegacyMacros(content, values, extra, suppliedPostProcess ?? postProcess);
             if (unavailable) throw unavailable;
             return result;
         }

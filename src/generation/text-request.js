@@ -49,7 +49,7 @@ export async function encodeTextProfilePrompt(context, material, text, { signal,
 /** Prepare a named text request with saved settings and request-local dependencies. */
 export async function buildTextProfileRequest(context, material, messages, maxTokens, {
     macroEnvironment, userName = 'User', characterName = 'Character', groupNames = [],
-    ephemeralStops = [], signal, fetch: fetchImpl, modelOverride = '', overridePayload = {}, rawOptions = {}, captureCleanupStops, validateOnly = false, preparedText,
+    ephemeralStops = [], signal, fetch: fetchImpl, modelOverride = '', overridePayload = {}, rawOptions = {}, captureCleanupStops, validateOnly = false, preparedText, cfgValues,
 } = {}) {
     if ((!Array.isArray(messages) && typeof messages !== 'string') || !Number.isSafeInteger(maxTokens) || maxTokens < 1) fail('The generation input is invalid.', 400);
     const { active: settings, instruct, power, source, profile, secretId, contextLimit } = material;
@@ -107,7 +107,7 @@ export async function buildTextProfileRequest(context, material, messages, maxTo
         return [...new Set(result.filter(value => value !== ''))];
     };
     const payload = createTextProviderParameters(settings, model, prompt, maxTokens, {
-        contextLimit, apiServer: settings.api_server, requestTokenProbabilities: power.request_token_probabilities,
+        contextLimit, cfgValues, apiServer: settings.api_server, requestTokenProbabilities: power.request_token_probabilities,
         resolveStoppingStrings: stops, tokenBans: { banned_tokens: [...new Set(ids)].join(','), banned_strings: strings },
         logitBias, substitute, cachePrompt: isLikelyLocalServerUrl(settings.api_server) ? false : undefined,
     });

@@ -1,3 +1,5 @@
+import { appendAutoAppendReasoningInstruction } from './chat-reasoning-instruction.js';
+import { supportsChatImages, supportsChatVideo, supportsChatAudio, supportsChatSignatures, selectToolHistoryReasoning } from './chat-input-capabilities.js';
 import { getChatImageTokenCost } from './chat-prompt-tokens.js';
 import { injectChatPromptDepth } from './chat-prompt-depth.js';
 /*
@@ -1165,46 +1167,8 @@ async function populateChatHistory(messages, prompts, chatCompletion, type = nul
             const promptIdx = messages.indexOf(chatPrompt);
             const reasoningIsEligible = toolReasoningMode !== tool_reasoning_modes.DISABLED
                 && promptIdx > lastUserIdx;
-            let previousAssistantReasoning = '';
-            if (reasoningIsEligible) {
-                if (toolReasoningMode === tool_reasoning_modes.ACTIVE_CHAIN) {
-                    // Strict chain mode: skip tool/tool-call messages, then use only the first assistant text boundary.
-                    for (let idx = promptIdx - 1; idx > lastUserIdx; idx--) {
-                        const candidate = messages[idx];
-                        if (candidate?.role === 'tool') {
-                            continue;
-                        }
-                        if (candidate?.role === 'assistant' && Array.isArray(candidate.invocations)) {
-                            continue;
-                        }
-                        const hasAssistantText = candidate?.role === 'assistant'
-                            && !Array.isArray(candidate.invocations)
-                            && typeof candidate.content === 'string'
-                            && candidate.content.trim().length > 0;
-                        if (hasAssistantText) {
-                            previousAssistantReasoning = String(candidate.reasoning ?? '');
-                        }
-                        break;
-                    }
-                } else if (toolReasoningMode === tool_reasoning_modes.SINCE_LAST_USER) {
-                    // Broad mode: use the latest assistant text reasoning anywhere since the last user.
-                    for (let idx = promptIdx - 1; idx > lastUserIdx; idx--) {
-                        const candidate = messages[idx];
-                        const hasAssistantText = candidate?.role === 'assistant'
-                            && !Array.isArray(candidate.invocations)
-                            && typeof candidate.content === 'string'
-                            && candidate.content.trim().length > 0;
-                        if (!hasAssistantText) {
-                            continue;
-                        }
-                        const candidateReasoning = String(candidate.reasoning ?? '');
-                        if (candidateReasoning) {
-                            previousAssistantReasoning = candidateReasoning;
-                            break;
-                        }
-                    }
-                }
-            }
+            const previousAssistantReasoning = reasoningIsEligible
+                ? selectToolHistoryReasoning(messages, promptIdx, lastUserIdx, toolReasoningMode) : '';
             /** @type {import('./tool-calling.js').ToolInvocation[]} */
             const invocations = chatPrompt.invocations.map(invocation => {
                 const clone = structuredClone(invocation);
@@ -2048,71 +2012,6 @@ function shouldRequestReasoning(settings = oai_settings) {
     return Boolean(settings.show_thoughts || settings.auto_append_reasoning_tags);
 }
 
-function getAutoAppendReasoningTagStyle(settings = oai_settings) {
-    const style = String(settings.auto_append_reasoning_tag_style ?? '').trim().toLowerCase();
-    if (Object.values(reasoning_tag_styles).includes(style)) {
-        return style;
-    }
-
-    return reasoning_tag_styles.think;
-}
-
-function getAutoAppendReasoningTagPair(settings = oai_settings) {
-    const tagName = getAutoAppendReasoningTagStyle(settings);
-    return {
-        openTag: `<${tagName}>`,
-        closeTag: `</${tagName}>`,
-    };
-}
-
-function shouldInjectAutoAppendReasoningInstruction(settings = oai_settings, model = null, type = 'normal') {
-    if (!settings.auto_append_reasoning_tags || type === 'quiet') {
-        return false;
-    }
-
-    const source = settings.chat_completion_source;
-    if (source === chat_completion_sources.CUSTOM) {
-        return true;
-    }
-
-    const normalizedModel = String(model ?? getChatCompletionModel(settings) ?? '').trim().toLowerCase();
-    if (!normalizedModel) {
-        return false;
-    }
-
-    if ([chat_completion_sources.OPENAI, chat_completion_sources.OPENAI_RESPONSES, chat_completion_sources.AZURE_OPENAI].includes(source)) {
-        return ['gpt-4.5', 'o1', 'o3'].some(prefix => normalizedModel.startsWith(prefix));
-    }
-
-    if ([chat_completion_sources.MAKERSUITE, chat_completion_sources.VERTEXAI].includes(source)) {
-        return ['gemini-2.0-flash-thinking-exp', 'gemini-2.0-pro-exp'].some(prefix => normalizedModel.startsWith(prefix));
-    }
-
-    return false;
-}
-
-function appendAutoAppendReasoningInstruction(messages, settings = oai_settings, model = null, type = 'normal') {
-    if (!shouldInjectAutoAppendReasoningInstruction(settings, model, type)) {
-        return messages;
-    }
-
-    const { openTag, closeTag } = getAutoAppendReasoningTagPair(settings);
-    const instruction = `Before your final answer, place any visible reasoning inside ${openTag}...${closeTag}. Put the user-facing reply after ${closeTag}, and always close the tag before the final reply.`;
-    const nextMessages = structuredClone(messages);
-    const systemMessage = nextMessages.find(message => message?.role === 'system' && typeof message?.content === 'string');
-
-    if (systemMessage) {
-        const existingContent = String(systemMessage.content ?? '').trim();
-        systemMessage.content = existingContent ? `${existingContent}\n\n${instruction}` : instruction;
-        return nextMessages;
-    }
-
-    nextMessages.unshift({
-        role: 'system',
-        content: instruction,
-    });
-    return nextMessages;
-}
 
 function ensureModelFavoritesStore(settings = oai_settings) {
     if (!settings.model_favorites || typeof settings.model_favorites !== 'object' || Array.isArray(settings.model_favorites)) {
@@ -8917,135 +8816,7 @@ async function onCustomizeParametersClick() {
  * @returns {boolean} True if the model supports image inlining
  */
 export function isImageInliningSupported() {
-    if (main_api !== 'openai') {
-        return false;
-    }
-
-    if (!oai_settings.media_inlining) {
-        return false;
-    }
-
-    // gultra just isn't being offered as multimodal, thanks google.
-    const visionSupportedModels = [
-        // OpenAI
-        'chatgpt-4o-latest',
-        'gpt-4-turbo',
-        'gpt-4-vision',
-        'gpt-4.1',
-        'gpt-4.5-preview',
-        'gpt-4o',
-        'gpt-5',
-        'gpt-6-astra', // Neconyan: Astra supports image input in both native OpenAI API modes.
-        'o1',
-        'o3',
-        'o4-mini',
-        // Claude
-        'claude-3',
-        'claude-fable', // Neconyan: claude-fable-5 vision support
-        'claude-opus-5', // Neconyan: claude-opus-5 vision support
-        'claude-sonnet-5', // Neconyan: claude-sonnet-5 vision support
-        'claude-opus-4',
-        'claude-sonnet-4',
-        'claude-haiku-4',
-        // Cohere
-        'c4ai-aya-vision',
-        'command-a-vision',
-        // Google AI Studio
-        'gemini-2.0',
-        'gemini-2.5',
-        'gemini-3',
-        'gemini-exp-1206',
-        'learnlm',
-        'gemini-robotics',
-        // MistralAI
-        'mistral-small-2503',
-        'mistral-small-2506',
-        'mistral-small-latest',
-        'mistral-medium-latest',
-        'mistral-medium-2505',
-        'mistral-medium-2508',
-        'pixtral',
-        // xAI (Grok)
-        'grok-4',
-        'grok-2-vision',
-        // Moonshot
-        'moonshot-v1-8k-vision-preview',
-        'moonshot-v1-32k-vision-preview',
-        'moonshot-v1-128k-vision-preview',
-        'kimi-k2.5',
-        'kimi-latest',
-        // Z.AI (GLM)
-        'glm-5.3-flash',
-        'glm-5v-turbo',
-        'glm-4.5v',
-        'glm-4.6v',
-        'autoglm-phone',
-        // SiliconFlow
-        'Qwen/Qwen3-VL-32B-Instruct',
-        'Qwen/Qwen3-VL-8B-Instruct',
-        'Qwen/Qwen3-VL-235B-A22B-Instruct',
-        'Qwen/Qwen3-VL-30B-A3B-Instruct',
-        'zai-org/GLM-4.5V',
-    ];
-
-    switch (oai_settings.chat_completion_source) {
-        case chat_completion_sources.OPENAI:
-        case chat_completion_sources.OPENAI_RESPONSES:
-        case chat_completion_sources.AZURE_OPENAI: {
-            const modelToCheck = oai_settings.chat_completion_source === chat_completion_sources.AZURE_OPENAI
-                ? oai_settings.azure_openai_model
-                : oai_settings.openai_model;
-            return visionSupportedModels.some(model =>
-                modelToCheck.includes(model)
-                && ['gpt-4-turbo-preview', 'o1-mini', 'o3-mini'].some(x => !modelToCheck.includes(x)),
-            );
-        }
-        case chat_completion_sources.MAKERSUITE:
-            return visionSupportedModels.some(model => oai_settings.google_model.includes(model));
-        case chat_completion_sources.VERTEXAI:
-            return visionSupportedModels.some(model => oai_settings.vertexai_model.includes(model));
-        case chat_completion_sources.CLAUDE:
-            return visionSupportedModels.some(model => oai_settings.claude_model.includes(model));
-        case chat_completion_sources.OPENROUTER:
-            return (Array.isArray(model_list) && model_list.find(m => m.id === oai_settings.openrouter_model)?.architecture?.input_modalities?.includes('image'));
-        case chat_completion_sources.CUSTOM:
-            return true;
-        case chat_completion_sources.MISTRALAI:
-            return (Array.isArray(model_list) && model_list.find(m => m.id === oai_settings.mistralai_model)?.capabilities?.vision);
-        case chat_completion_sources.COHERE:
-            return visionSupportedModels.some(model => oai_settings.cohere_model.includes(model));
-        case chat_completion_sources.MINIMAX:
-            return oai_settings.minimax_model === 'MiniMax-M3';
-        case chat_completion_sources.XAI:
-            // TODO: xAI's /models endpoint doesn't return modality info
-            return visionSupportedModels.some(model => oai_settings.xai_model.includes(model));
-        case chat_completion_sources.AIMLAPI:
-            return (Array.isArray(model_list) && model_list.find(m => m.id === oai_settings.aimlapi_model)?.features?.includes('openai/chat-completion.vision'));
-        case chat_completion_sources.CHUTES:
-            return (Array.isArray(model_list) && model_list.find(m => m.id === oai_settings.chutes_model)?.input_modalities?.includes('image'));
-        case chat_completion_sources.ELECTRONHUB:
-            return (Array.isArray(model_list) && model_list.find(m => m.id === oai_settings.electronhub_model)?.metadata?.vision);
-        case chat_completion_sources.POLLINATIONS:
-            return (Array.isArray(model_list) && model_list.find(m => m.id === oai_settings.pollinations_model)?.input_modalities?.includes('image'));
-        case chat_completion_sources.COMETAPI:
-            return true;
-        case chat_completion_sources.MOONSHOT:
-            return (Array.isArray(model_list) && model_list.find(m => m.id === oai_settings.moonshot_model)?.supports_image_in);
-        case chat_completion_sources.NANOGPT:
-            return (Array.isArray(model_list) && model_list.find(m => m.id === oai_settings.nanogpt_model)?.capabilities?.vision);
-        case chat_completion_sources.ZAI:
-            return visionSupportedModels.some(model => oai_settings.zai_model.includes(model));
-        case chat_completion_sources.LINKAPI:
-            return visionSupportedModels.some(model => oai_settings.linkapi_model.includes(model));
-        case chat_completion_sources.SILICONFLOW:
-            return visionSupportedModels.some(model => oai_settings.siliconflow_model.includes(model));
-        case chat_completion_sources.WORKERS_AI: {
-            const waiModel = Array.isArray(model_list) && model_list.find(m => m.id === oai_settings.workers_ai_model);
-            return Boolean(waiModel && Array.isArray(waiModel.properties) && waiModel.properties.some(p => p.property_id === 'vision' && p.value === 'true'));
-        }
-        default:
-            return false;
-    }
+    return supportsChatImages(oai_settings, { main_api, model_list });
 }
 
 /**
@@ -9053,43 +8824,7 @@ export function isImageInliningSupported() {
  * @returns {boolean} True if the model supports video inlining
  */
 export function isVideoInliningSupported() {
-    if (main_api !== 'openai') {
-        return false;
-    }
-
-    if (!oai_settings.media_inlining) {
-        return false;
-    }
-
-    const videoSupportedModels = [
-        // Gemini
-        'gemini-2.0',
-        'gemini-2.5',
-        'gemini-exp-1206',
-        'gemini-3',
-        // Z.AI (GLM)
-        'glm-5.3-flash',
-        'glm-5v-turbo',
-        'glm-4.5v',
-        'glm-4.6v',
-    ];
-
-    switch (oai_settings.chat_completion_source) {
-        case chat_completion_sources.MAKERSUITE:
-            return videoSupportedModels.some(model => oai_settings.google_model.includes(model));
-        case chat_completion_sources.VERTEXAI:
-            return videoSupportedModels.some(model => oai_settings.vertexai_model.includes(model));
-        case chat_completion_sources.MINIMAX:
-            return oai_settings.minimax_model === 'MiniMax-M3';
-        case chat_completion_sources.OPENROUTER:
-            return (Array.isArray(model_list) && model_list.find(m => m.id === oai_settings.openrouter_model)?.architecture?.input_modalities?.includes('video'));
-        case chat_completion_sources.ZAI:
-            return videoSupportedModels.some(model => oai_settings.zai_model.includes(model));
-        case chat_completion_sources.LINKAPI:
-            return videoSupportedModels.some(model => oai_settings.linkapi_model.includes(model));
-        default:
-            return false;
-    }
+    return supportsChatVideo(oai_settings, { main_api, model_list });
 }
 
 /**
@@ -9097,42 +8832,7 @@ export function isVideoInliningSupported() {
  * @returns {boolean} True if the model supports audio inlining
  */
 export function isAudioInliningSupported() {
-    if (main_api !== 'openai') {
-        return false;
-    }
-
-    if (!oai_settings.media_inlining) {
-        return false;
-    }
-
-    const audioSupportedModels = [
-        'gemini-2.0',
-        'gemini-2.5',
-        'gemini-3',
-        'gemini-exp-1206',
-        'gpt-4o-audio',
-        'gpt-4o-realtime',
-        'gpt-4o-mini-audio',
-        'gpt-4o-mini-realtime',
-        'gpt-audio',
-        'gpt-realtime',
-    ];
-
-    switch (oai_settings.chat_completion_source) {
-        case chat_completion_sources.OPENAI:
-        case chat_completion_sources.OPENAI_RESPONSES:
-            return audioSupportedModels.some(model => oai_settings.openai_model.includes(model));
-        case chat_completion_sources.MAKERSUITE:
-            return audioSupportedModels.some(model => oai_settings.google_model.includes(model));
-        case chat_completion_sources.VERTEXAI:
-            return audioSupportedModels.some(model => oai_settings.vertexai_model.includes(model));
-        case chat_completion_sources.OPENROUTER:
-            return (Array.isArray(model_list) && model_list.find(m => m.id === oai_settings.openrouter_model)?.architecture?.input_modalities?.includes('audio'));
-        case chat_completion_sources.CUSTOM:
-            return true;
-        default:
-            return false;
-    }
+    return supportsChatAudio(oai_settings, { main_api, model_list });
 }
 
 /**
@@ -9168,11 +8868,7 @@ function getEffectiveToolReasoningMode(settings = oai_settings) {
  * @returns {boolean} True if reasoning signatures should be included in the request
  */
 export function isReasoningSignatureSupported(settings = oai_settings) {
-    // If it's Vertex AI or Makersuite, that's OK - convertGooglePrompt() will handle it later
-    const isGoogle = [chat_completion_sources.VERTEXAI, chat_completion_sources.MAKERSUITE].includes(settings.chat_completion_source);
-    // Need a more crunchy check for OpenRouter: look for Gemini models
-    const isOpenRouterGemini = settings.chat_completion_source === chat_completion_sources.OPENROUTER && /google\/gemini/i.test(settings.openrouter_model);
-    return isGoogle || isOpenRouterGemini;
+    return supportsChatSignatures(settings);
 }
 
 /**

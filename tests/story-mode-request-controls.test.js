@@ -1,3 +1,4 @@
+import { formatPromptReasoning } from '../public/scripts/reasoning-prompt-format.js';
 /* eslint-disable playwright/no-standalone-expect -- Jest test.each tables are not Playwright tests. */
 import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
@@ -51,7 +52,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
         trigger: jest.fn(),
     };
     const context = vm.createContext({
-        combineRoleplayTextPrompt,
+        combineRoleplayTextPrompt, formatPromptReasoning,
         AbortController, AbortSignal, Event, MessageEvent, TextDecoderStream, TransformStream, structuredClone,
         console: { log: jest.fn(), info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn(), trace: jest.fn() },
         main_api: api,

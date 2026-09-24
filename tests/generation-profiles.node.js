@@ -1057,3 +1057,52 @@ test('server profile execution uses saved controls, caches completed calls and p
     controller.abort();
     await assert.rejects(pending, error => error.status === 499 || error.name === 'AbortError');
 });
+
+test('named chat preparation survives a stop before dispatch without expanding macros again', async t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-named-prepared-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const directories = { root, openAI_Settings: path.join(root, 'presets') };
+    fs.mkdirSync(directories.openAI_Settings);
+    fs.writeFileSync(path.join(directories.openAI_Settings, 'saved.json'), JSON.stringify({ temperature: 0.2 }));
+    fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify({
+        extension_settings: { connectionManager: { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o', preset: 'saved', proxy: 'local' }] } },
+        proxies: [{ name: 'local', url: 'https://provider.invalid/v1', password: 'private-token' }],
+        oai_settings: { chat_completion_source: 'openai', temp_openai: 1, top_p_openai: 1, n: 1 },
+        power_user: { custom_stopping_strings: '["{{random::one::two}}"]', custom_stopping_strings_macro: true },
+    }));
+    const binding = captureChatProfile(directories, 'saved');
+    const job = acceptJob(directories, { owner: 'alice', type: 'test.profile', submissionKey: 'prepared', intent: {} }).job;
+    const options = { context: { owner: 'alice', directories }, binding, messages: [{ role: 'user', content: 'Hello' }], maxTokens: 80,
+        jobContext: { owner: 'alice', directories, job, signal: new AbortController().signal } };
+    await assert.rejects(runChatProfile({ ...options, macroEnvironment: createMacroEnvironment(),
+        onProviderStep: () => { throw new Error('Simulated exit before dispatch'); }, fetch: () => assert.fail('Not dispatched') }), /Simulated exit/);
+    const result = await runChatProfile({ ...options, macroEnvironment: { evaluate: () => assert.fail('Saved stops must not reroll') },
+        fetch: async (_url, request) => {
+            assert.ok(['one', 'two'].includes(JSON.parse(request.body).stop[0]));
+            assert.equal(request.headers.Authorization, 'Bearer private-token');
+            return new Response(JSON.stringify({ choices: [{ message: { content: 'Known reply' } }] }));
+        } });
+    assert.equal(result.text, 'Known reply');
+});
+
+test('legacy prompt controls survive a pre-dispatch restart without repeating macros', async t => {
+    const fixture = textFixture(t);
+    fixture.settings._settingsRevision = 1;
+    fixture.settings.main_api = 'kobold';
+    fixture.settings.active_generation = { api: 'kobold' };
+    fixture.settings.kai_settings = { api_server: 'http://127.0.0.1:6000/api', preset_settings: 'gui' };
+    fixture.settings.power_user = { custom_stopping_strings: '["{{random::one::two}}"]', custom_stopping_strings_macro: true };
+    fixture.save();
+    const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 1 });
+    const context = { owner: 'alice', directories: fixture.directories };
+    const job = acceptJob(fixture.directories, { owner: 'alice', type: 'test.profile', submissionKey: 'legacy-prepared', intent: {} }).job;
+    const options = { context, binding, messages: [], preparedText: 'Saved prompt', maxTokens: 30,
+        jobContext: { ...context, job, signal: new AbortController().signal } };
+    await assert.rejects(runChatProfile({ ...options, macroEnvironment: createMacroEnvironment(),
+        onProviderStep: () => { throw Error('Simulated exit'); }, fetch: () => assert.fail('Not dispatched') }), /Simulated exit/);
+    assert.equal((await runChatProfile({ ...options, macroEnvironment: { evaluate: () => assert.fail('Must reuse the saved controls') },
+        fetch: async (_url, request) => {
+            assert.equal(JSON.parse(request.body).prompt, 'Saved prompt');
+            return new Response(JSON.stringify({ results: [{ text: 'Recovered' }] }));
+        } })).text, 'Recovered');
+});

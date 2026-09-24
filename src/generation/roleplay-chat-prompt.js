@@ -1,15 +1,18 @@
+import { isKimiK3Model } from '../../public/scripts/openai-model-capabilities.js';
+import { appendAutoAppendReasoningInstruction } from '../../public/scripts/chat-reasoning-instruction.js';
 import { injectChatPromptDepth } from '../../public/scripts/chat-prompt-depth.js';
 import { roleplayError } from '../roleplay-store.js';
 import { buildRoleplayPromptExtensions, insertWorldInfoExamples } from './roleplay-prompt.js';
+import { mergeChatPresetSettings } from '../../public/scripts/chat-preset-request.js';
 
 const roles = ['system', 'user', 'assistant'];
 const fail = message => { throw roleplayError('ROLEPLAY_INVALID', message, 409); };
 
 /** Assemble saved Prompt Manager slots around protected history. No page state is read. */
 export async function assembleRoleplayChatPrompt(history, snapshot, material, worldInfo, {
-    userName, characterName, groupNames = [], effect = 'append', substitute, substituteHistory = value => value, memory, exampleLimit = Infinity,
+    userName, characterName, groupNames = [], effect = 'append', substitute, substituteHistory = value => value, memory, exampleLimit = Infinity, contributions = [], records = [],
 } = {}) {
-    const controls = material.preset ?? material.active;
+    const controls = mergeChatPresetSettings(material.active, material.preset);
     const order = controls?.prompt_order?.find(value => String(value?.character_id) === '100001')?.order;
     if (!Array.isArray(order) || !Array.isArray(controls?.prompts)
         || order.some(value => !value || typeof value.identifier !== 'string' || typeof value.enabled !== 'boolean')
@@ -71,7 +74,7 @@ export async function assembleRoleplayChatPrompt(history, snapshot, material, wo
             || !Number.isSafeInteger(prompt.injection_order)) fail('A saved depth prompt is invalid.');
         return [prompt];
     });
-    const extensions = buildRoleplayPromptExtensions(snapshot, worldInfo, render);
+    const extensions = buildRoleplayPromptExtensions(snapshot, worldInfo, render, contributions);
     if (memory?.enabled && !prompts.some(prompt => prompt.identifier === 'chatHistory')) {
         fail('Mewmory needs the saved Chat History prompt marker enabled.');
     }
@@ -137,8 +140,13 @@ export async function assembleRoleplayChatPrompt(history, snapshot, material, wo
     }
     if (memory?.enabled) result.push(...[memory.npcText, memory.memoryText].filter(Boolean)
         .map(content => ({ role: 'system', content })));
+    const savedBias = effect === 'continue' ? '' : records.slice(1).findLast(record => record.is_user || record.is_system || record.extra?.type === 'narrator')?.extra?.bias;
+    const defaultBias = ['custom', 'moonshot', 'nanogpt', 'openrouter'].includes(material.source) && isKimiK3Model(material.profile?.model)
+        ? controls.kimi_partial_prefill || material.power?.user_prompt_bias : material.power?.user_prompt_bias;
+    const bias = effect === 'continue' ? '' : render(savedBias || defaultBias || '');
+    if (bias.trim()) result.push({ role: 'assistant', content: bias });
     result.push(...control);
-    if (!controls.squash_system_messages) return { messages: result, exampleCount: exampleBlocks.length };
+    if (!controls.squash_system_messages) return { messages: appendAutoAppendReasoningInstruction(result, { ...controls, chat_completion_source: material.source }, material.profile?.model, trigger), exampleCount: exampleBlocks.length };
     const messages = [];
     let previous;
     for (const message of result) {
@@ -151,5 +159,5 @@ export async function assembleRoleplayChatPrompt(history, snapshot, material, wo
             previous = merge ? copy : null;
         }
     }
-    return { messages, exampleCount: exampleBlocks.length };
+    return { messages: appendAutoAppendReasoningInstruction(messages, { ...controls, chat_completion_source: material.source }, material.profile?.model, trigger), exampleCount: exampleBlocks.length };
 }

@@ -4,6 +4,14 @@ import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { getJob, jobKey, markProviderSettled, markProviderUncertain, setJobResume } from './store.js';
 
 const MAX_BYTES = 16 * 1024 * 1024;
+const preDispatchFailures = new WeakSet();
+
+/** Only server preparation code may identify a failure known to precede the HTTP request. */
+export function providerNotDispatched(error) {
+    const failure = error && (typeof error === 'object' || typeof error === 'function') ? error : new Error(String(error));
+    preDispatchFailures.add(failure);
+    return failure;
+}
 
 function artifactPath(directories, id, name) {
     if (!getJob(directories, id)) throw Object.assign(new Error('No such job.'), { status: 404 });
@@ -38,9 +46,17 @@ export async function providerStep({ directories, job, signal }, name, call) {
     const key = 'provider:' + name;
     const saved = readArtifact(directories, job.id, key);
     if (saved !== undefined) return saved;
+    const previousResume = getJob(directories, job.id)?.resume;
     setJobResume(directories, job.id, key);
     markProviderUncertain(directories, job.id, { step: key });
-    const result = await call();
+    let result;
+    try { result = await call(); } catch (error) {
+        if (preDispatchFailures.has(error)) {
+            setJobResume(directories, job.id, previousResume);
+            markProviderSettled(directories, job.id);
+        }
+        throw error;
+    }
     writeArtifact(directories, job.id, key, result);
     markProviderSettled(directories, job.id);
     signal.throwIfAborted();

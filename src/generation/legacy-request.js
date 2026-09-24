@@ -1,5 +1,5 @@
 import { fail, hash } from '../mewmory/core.js';
-import { providerStep, readArtifact, writeArtifact } from '../jobs/artifacts.js';
+import { providerStep, providerNotDispatched, readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { setTimeout as wait } from 'node:timers/promises';
 import { runBackendRequest } from '../endpoints/conversation-generation.js';
 import { handleKoboldGenerate } from '../endpoints/backends/kobold.js';
@@ -78,7 +78,7 @@ async function novelTokenControls(settings, model, stops, signal) {
 /** Use the already-selected legacy controls and native handler; no browser-prepared provider request. */
 export async function runLegacyProfile({ context, binding, messages, maxTokens, macroEnvironment,
     ephemeralStops = [], userName = 'User', characterName = 'Character', groupNames = [],
-    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText,
+    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, onProviderStep,
 } = {}) {
     signal ||= jobContext?.signal;
     signal?.throwIfAborted();
@@ -88,7 +88,7 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
     }
     if (stream) fail('This provider stream has no verified completion marker for a durable Roleplay reply.', 409);
     const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames, rawOptions,
-        ...(preparedText !== undefined ? { preparedText } : {}) });
+        ...(preparedText !== undefined ? { preparedText } : {}), ...(cfgValues ? { cfgValues } : {}) });
     const resultName = 'horde-result:' + key;
     if (jobContext && binding?.backend === 'horde') {
         const completed = readArtifact(context.directories, jobContext.job.id, resultName);
@@ -112,14 +112,16 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
         if (String(value).includes('{{')) fail('This connection requires the captured chat macro context.', 400);
         return value;
     };
-    const stops = resolveCustomStoppingStrings(material.power, substitute, ephemeralStops).filter(Boolean);
-    let prompt = preparedText ?? createRawPrompt(structuredClone(messages), material.backend, rawOptions.instructOverride, rawOptions.quietToLoud,
+    const preparedName = 'legacy-request:' + key;
+    const prepared = jobContext && readArtifact(context.directories, jobContext.job.id, preparedName);
+    const stops = prepared?.stops ?? resolveCustomStoppingStrings(material.power, substitute, ephemeralStops).filter(Boolean);
+    let prompt = prepared?.payload?.prompt ?? prepared?.payload?.input ?? preparedText ?? createRawPrompt(structuredClone(messages), material.backend, rawOptions.instructOverride, rawOptions.quietToLoud,
         rawOptions.systemPrompt, rawOptions.prefill, { instruct: material.power.instruct, context: material.power.context,
             name1: userName, name2: characterName, selectedGroup: groupNames.length > 0, substitute });
     const settings = material.active;
-    let payload = { prompt, api_server: settings.api_server, gui_settings: settings.preset_settings === 'gui',
+    let payload = prepared?.payload ?? { prompt, api_server: settings.api_server, gui_settings: settings.preset_settings === 'gui',
         max_length: maxTokens, max_context_length: material.contextLimit, streaming: false };
-    if (!payload.gui_settings) Object.assign(payload, {
+    if (!prepared && !payload.gui_settings) Object.assign(payload, {
         rep_pen: Number(settings.rep_pen), rep_pen_range: Number(settings.rep_pen_range), rep_pen_slope: Number(settings.rep_pen_slope),
         temperature: Number(settings.temp), tfs: Number(settings.tfs), top_a: Number(settings.top_a), top_k: Number(settings.top_k),
         top_p: Number(settings.top_p), min_p: Number(settings.min_p), typical: Number(settings.typical),
@@ -129,6 +131,13 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
         grammar: substitute(settings.grammar || ''), sampler_seed: Number(settings.seed) >= 0 ? Number(settings.seed) : undefined,
         ...(stops.length ? { stop_sequence: stops } : {}),
     });
+    if (material.backend !== 'novel') payload.api_server = settings.api_server;
+    const savePrepared = () => {
+        if (!jobContext || prepared) return;
+        const { api_server: _endpoint, ...saved } = payload;
+        void _endpoint;
+        writeArtifact(context.directories, jobContext.job.id, preparedName, { payload: saved, stops });
+    };
     if (material.backend === 'horde') {
         if (!jobContext) fail('Horde needs a durable server job before submitting work.', 409);
         const { prompt: ignoredPrompt, api_server: ignoredServer, gui_settings: ignoredGui, streaming: ignoredStreaming, ...params } = payload;
@@ -137,10 +146,12 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
         const cleanup = { stops, power: Object.fromEntries(cleanupFields.map(name => [name, material.power[name]])) };
         writeArtifact(context.directories, jobContext.job.id, 'horde-cleanup:' + key, cleanup);
         const request = { user: { profile: { handle: context.owner }, directories: context.directories }, headers: {} };
+        savePrepared();
         await validatePrompt?.(payload, material);
+        await onProviderStep?.('provider:' + key);
         const submitted = await providerStep(jobContext, key, async () => {
             resolveGenerationProfile(context.directories, binding);
-            beforeDispatch?.();
+            try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
             const response = await runBackendRequest(request, handleHordeSubmit, { prompt, params: { ...params, n: 1,
                 frmtadsnsp: false, frmtrmblln: false, frmtrmspch: false, frmttriminc: false },
             trusted_workers: Boolean(material.horde.trusted_workers_only), models: material.horde.models },
@@ -154,8 +165,8 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
     if (material.backend === 'kobold' && Object.values(payload).some(value => typeof value === 'number' && !Number.isFinite(value))) {
         fail('Save complete Kobold sampler controls before generating.', 409);
     }
-    let handler = handleKoboldGenerate;
-    if (material.backend === 'novel') {
+    const handler = material.backend === 'novel' ? handleNovelGenerate : handleKoboldGenerate;
+    if (material.backend === 'novel' && !prepared) {
         const model = settings.model_novel;
         const erato = model.includes('erato');
         let maxLength = 150;
@@ -177,14 +188,14 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
             mirostat_lr: settings.mirostat_lr == null ? undefined : Number(settings.mirostat_lr),
             mirostat_tau: settings.mirostat_tau == null ? undefined : Number(settings.mirostat_tau),
             phrase_rep_pen: settings.phrase_rep_pen, prefix, order: settings.order || material.preset?.order || [1, 5, 0, 2, 3, 4],
-            generate_until_sentence: true, use_cache: false, return_full_text: false,
+            cfg_scale: cfgValues?.guidanceScale?.value, generate_until_sentence: true, use_cache: false, return_full_text: false,
             num_logprobs: material.power.request_token_probabilities ? 10 : undefined, ...tokens };
-        handler = handleNovelGenerate;
     }
+    savePrepared();
     await validatePrompt?.(payload, material);
     const call = async () => {
         resolveGenerationProfile(context.directories, binding);
-        beforeDispatch?.();
+        try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
         const response = await runBackendRequest({ user: { profile: { handle: context.owner }, directories: context.directories }, headers: {} },
             handler, payload, { signal, fetch: fetchImpl, boundProfile: true });
         const rawText = extractMessageFromData(response, material.source, { excludeReasoning: true });
@@ -194,5 +205,6 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
         if (!text) fail('No message generated.', 502);
         return { response, text, generation: { backend: material.backend, source: material.source, showThoughts: false } };
     };
+    if (jobContext) await onProviderStep?.('provider:' + key);
     return jobContext ? providerStep(jobContext, key, call) : call();
 }

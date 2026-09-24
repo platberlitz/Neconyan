@@ -266,7 +266,7 @@ export function getChatProfileContextLimit(directories, binding) {
 }
 
 /** Resolve controls through the same preset/profile builders used by the browser. */
-export async function buildChatProfileRequest(directories, binding, messages, maxTokens, generate, { modelOverride = '', overridePayload = {}, rawOptions = {} } = {}) {
+export async function buildChatProfileRequest(directories, binding, messages, maxTokens, generate, { modelOverride = '', overridePayload = {}, rawOptions = {}, generationType = 'quiet' } = {}) {
     const material = resolveGenerationProfile(directories, binding);
     if (material.backend === 'text') fail('Use the text request builder for this profile.', 400);
     if (!Array.isArray(messages) || !Number.isSafeInteger(maxTokens) || maxTokens < 1) fail('The generation input is invalid.', 400);
@@ -300,7 +300,7 @@ export async function buildChatProfileRequest(directories, binding, messages, ma
     };
     const urlField = { custom: 'custom_url', vertexai: 'vertexai_region', zai: 'zai_endpoint', siliconflow: 'siliconflow_endpoint', minimax: 'minimax_endpoint' }[source];
     if (urlField) payload[urlField] = profile['api-url'];
-    const result = createChatRequestData(preset ? await buildChatPresetPayload(active, preset, undefined, payload, generate) : payload);
+    const result = createChatRequestData(preset || generationType !== 'quiet' ? await buildChatPresetPayload(active, preset ?? {}, undefined, payload, generate) : payload);
     delete result.__connectionProfileRequestFields;
     delete result.modelOverride;
     if (result.service_tier === '') delete result.service_tier;

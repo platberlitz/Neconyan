@@ -35,7 +35,7 @@ function submitPrivateFollowup(app, account, chatName) {
     const intent = { operationKey: 'private-prompt-followup', effect: 'append', source,
         request: { binding, serverPrompt: true, messages: [], maxTokens, characterName: 'Durable Nova',
             worldInfo: captureRoleplayWorldInfo(base, stamp, source, { avatar: account.avatar,
-                maxContext: getChatProfileContextLimit(directories, binding) - maxTokens }) } };
+                maxContext: getChatProfileContextLimit(directories, binding) - maxTokens, serverPrompt: true }) } };
     const { jobId } = admitRoleplayJob(base, stamp, intent);
     releaseJob(directories, jobId);
     return { scope, locator, base, stamp, intent, jobId };

@@ -12,6 +12,8 @@ const { getCounter } = await import('../src/mewmory/tokens.js');
 const { captureGenerationBinding } = await import('../src/generation/profiles.js');
 const { createMacroEnvironment } = await import('../src/macros/index.js');
 const { runChatProfile } = await import('../src/generation/service.js');
+const { admitRoleplayJob } = await import('../src/roleplay-jobs.js');
+const { getJob, releaseJob } = await import('../src/jobs/store.js');
 
 test('native chat counting includes role, name and message framing with the bound model', async () => {
     const count = await createRoleplayChatCounter({ source: 'custom', active: { custom_model: 'decoy' }, profile: { model: 'gpt-4o' } });
@@ -53,9 +55,14 @@ test('the final custom body is budgeted after saved overrides and before the pro
         power_user: { custom_stopping_strings: '[]' },
     }));
     const binding = captureGenerationBinding(f.scope.directories, { kind: 'active' }, { settingsRevision: 1 });
+    const { jobId } = admitRoleplayJob(f.scope, { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch }, {
+        operationKey: 'wire-budget', effect: 'append', source: f.source(),
+    });
+    releaseJob(f.scope.directories, jobId);
+    const jobContext = { ...f.scope, job: getJob(f.scope.directories, jobId), signal: new AbortController().signal };
     const count = await createRoleplayChatCounter({ source: 'custom', active: {}, profile: { model } });
     let calls = 0;
-    await assert.rejects(runChatProfile({ context: f.scope, binding, maxTokens: 16,
+    await assert.rejects(runChatProfile({ context: f.scope, binding, maxTokens: 16, jobContext,
         messages: [{ role: 'user', content: 'Small' }], macroEnvironment: createMacroEnvironment(),
         validatePrompt: async payload => { if (await count(payload.messages) > 100) throw new Error('Prompt budget exceeded'); },
         fetch: async () => {
@@ -64,4 +71,6 @@ test('the final custom body is budgeted after saved overrides and before the pro
         },
     }), /Prompt budget exceeded/);
     assert.equal(calls, 0);
+    assert.equal(getJob(f.scope.directories, jobId).recoveryStep, null);
+    assert.notEqual(getJob(f.scope.directories, jobId).recoverability, 'unknown-outcome');
 });

@@ -1,3 +1,4 @@
+import { resolveGuidanceScale, resolveCfgPrompt } from '../../public/scripts/cfg-prompt-controls.js';
 import Handlebars from 'handlebars';
 import { renderRoleplayStory, formatRoleplayTextMessage, formatRoleplayTextExamples, combineRoleplayTextPrompt } from '../../public/scripts/roleplay-text-format.js';
 import { FORCE_OUTPUT_SEQUENCE, formatInstructModePrompt, formatInstructModeStoryString } from '../../public/scripts/instruct-format.js';
@@ -7,15 +8,25 @@ import { roleplayError } from '../roleplay-store.js';
 /** Render the final saved text-completion prompt before provider work or token fitting. */
 export function createRoleplayTextPrompt(history, snapshot, material, worldInfo, {
     userName, characterName, groupNames = [], effect = 'append', substitute = value => value,
-    substituteHistory = value => value, memory,
+    substituteHistory = value => value, memory, contributions = [], records = [],
 } = {}) {
     const context = material.context ?? material.power?.context ?? {
         story_string: snapshot.storyTemplate, story_string_position: snapshot.storyPosition,
     };
     const instruct = { ...(material.instruct ?? material.power?.instruct),
         enabled: material.backend !== 'novel' && Boolean(material.instruct?.enabled ?? material.power?.instruct?.enabled) };
+    const biasSource = effect === 'continue' ? '' : records.slice(1).findLast(record => record.is_user || record.is_system || record.extra?.type === 'narrator')?.extra?.bias
+        || (effect === 'continue' ? '' : material.power?.user_prompt_bias) || '';
+    const bias = substitute(biasSource);
+    const guidance = resolveGuidanceScale(snapshot.cfg, snapshot.metadata, snapshot.characterFile, Boolean(snapshot.source.locator.group));
+    if (guidance && (!Number.isFinite(guidance.value) || guidance.value <= 0)) throw roleplayError('ROLEPLAY_INVALID', 'The saved guidance scale is invalid.', 409);
+    const cfg = guidance && guidance.value !== 1 ? [false, true].map(negative => resolveCfgPrompt(snapshot.cfg, snapshot.metadata,
+        snapshot.characterFile, guidance, negative, substitute)) : null;
+    if (cfg?.some(prompt => !Number.isSafeInteger(prompt.depth) || prompt.depth < 0 || prompt.depth > 10000)) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The saved guidance prompt depth is invalid.', 409);
+    }
     const format = { instruct, userName, characterName, group: groupNames.length > 0, substitute };
-    const extensions = buildRoleplayPromptExtensions(snapshot, worldInfo, substitute).sort((a, b) => a.key.localeCompare(b.key));
+    const extensions = buildRoleplayPromptExtensions(snapshot, worldInfo, substitute, contributions).sort((a, b) => a.key.localeCompare(b.key));
     const rawExamples = [...worldInfo.EMEntries.filter(entry => entry.position === 0).reverse().map(entry => entry.content),
         snapshot.characterExamples, ...worldInfo.EMEntries.filter(entry => entry.position === 1).map(entry => entry.content)]
         .filter(Boolean).flatMap(text => substitute(text).split(/<START>/gi).filter(value => value.trim()).map(value => `<START>\n${value.trim()}\n`));
@@ -88,8 +99,8 @@ export function createRoleplayTextPrompt(history, snapshot, material, worldInfo,
     }
     const tail = effect === 'continue' ? '' : instruct.enabled
         ? formatInstructModePrompt({ name: characterName, name1: userName, name2: characterName,
-            customInstruct: instruct, selectedGroup: groupNames.length > 0, substitute })
-        : (material.power?.always_force_name2 ?? snapshot.alwaysForceName) || groupNames.length || material.backend === 'novel'
+            customInstruct: instruct, selectedGroup: groupNames.length > 0, promptBias: bias, substitute })
+        : bias || (material.power?.always_force_name2 ?? snapshot.alwaysForceName) || groupNames.length || material.backend === 'novel'
             ? `\n${characterName}:` : '';
     if (material.power?.strip_examples) examples = [];
     if (!story.trim() && !examples.some(value => value.trim()) && !injected.some(message => message.content.trim())) {
@@ -100,14 +111,23 @@ export function createRoleplayTextPrompt(history, snapshot, material, worldInfo,
     const chatStart = context.chat_start ? `${substitute(context.chat_start)}\n` : '';
     const preamble = material.backend === 'novel' ? `${substitute(material.active?.preamble ?? '')}\n` : '';
     return {
-        exampleCount: examples.length,
-        render: (selectedHistory, exampleLimit = Infinity) => {
+        exampleCount: examples.length, guidance,
+        hasNegative: Boolean(cfg && material.backend === 'text'),
+        render: (selectedHistory, exampleLimit = Infinity, negative = false) => {
             const selected = new Set(selectedHistory);
             const retained = injected.map((message, index) => ({ message, text: formatted[index] }))
                 .filter(({ message }) => !message.source || selected.has(message.source));
+            if (tail && retained.length) retained.at(-1).text += tail;
+            else if (tail) retained.push({ message: {}, text: tail });
+            const cfgPrompt = cfg?.[negative ? 1 : 0];
+            if (cfgPrompt?.value && retained.length) {
+                if (cfgPrompt.depth === 0) retained.at(-1).text += (/\s$/.test(retained.at(-1).text) ? '' : ' ') + cfgPrompt.value;
+                else retained[Math.max(0, retained.length - cfgPrompt.depth)].text = cfgPrompt.value + '\n' + retained[Math.max(0, retained.length - cfgPrompt.depth)].text;
+            }
+            if (!instruct.enabled && bias && retained.length) retained.at(-1).text += (/\s$/.test(retained.at(-1).text) ? '' : ' ') + bias.trimStart();
             const needsAlignment = alignment && retained.find(item => item.message.source)?.message.role !== 'user';
             return combineRoleplayTextPrompt({ story, examples: examples.slice(0, exampleLimit).join(''),
-                history: (needsAlignment ? alignment : '') + retained.map(item => item.text).join('') + tail,
+                history: (needsAlignment ? alignment : '') + retained.map(item => item.text).join(''),
                 chatStart, preamble, collapseNewlines: material.power?.collapse_newlines });
         },
     };
