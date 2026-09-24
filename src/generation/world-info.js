@@ -188,6 +188,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             text: settings.power_user?.sysprompt?.post_history ?? '' },
             storyTemplate: settings.power_user?.context?.story_string ?? '',
             storyPosition: settings.power_user?.context?.story_string_position ?? 0,
+            personaPosition: settings.power_user?.persona_description_position ?? 0,
             enhancedLoreMacros: Boolean(settings.power_user?.experimental_macro_engine)
                 && !extensions.disabledExtensions?.some(name => normalizeExtensionBootId(name) === 'macroenhanced'),
             reasoningInPrompt: Boolean(settings.power_user?.reasoning?.add_to_prompts),

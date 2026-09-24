@@ -19,6 +19,7 @@ const { resetRoleplayAccount } = await import('../src/roleplay-store.js');
 const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
 const { captureGenerationBinding } = await import('../src/generation/profiles.js');
 const { runChatProfile } = await import('../src/generation/service.js');
+const defaultChatPreset = JSON.parse(fs.readFileSync(new URL('../default/content/presets/openai/Default.json', import.meta.url), 'utf8'));
 
 const blankChatControls = { prompts: [{ identifier: 'main', role: 'system', system_prompt: true, content: '' },
     { identifier: 'chatHistory', marker: true, system_prompt: true }], prompt_order: [{ character_id: 100001,
@@ -57,6 +58,131 @@ test('bound Chat Completion keeps its saved main prompt before protected history
             { identifier: 'chatHistory', enabled: true },
         ] }],
     } }, 'User', 'Nova'), { code: 'ROLEPLAY_INVALID' });
+});
+
+test('the saved default Chat Completion order places character, persona and lore before history', () => {
+    const snapshot = { systemPrompt: '', postHistory: { character: '' },
+        global: { characterDescription: 'Lives by the sea', characterPersonality: 'Careful',
+            scenario: 'At the harbour', personaDescription: 'A sailor' } };
+    const history = [{ role: 'user', content: 'Question' }];
+    const preset = { ...defaultChatPreset, prompts: defaultChatPreset.prompts.map(prompt => ({ ...prompt })),
+        prompt_order: defaultChatPreset.prompt_order.map(order => ({ ...order, order: order.order.map(value => ({ ...value })) })) };
+    assert.deepEqual(insertRoleplayChatSystem(history, snapshot, { backend: 'chat', preset },
+        'Visitor', 'Nova', 'Before', 'After').map(message => message.content), [
+        'Write Nova\'s next reply in a fictional chat between Nova and Visitor.',
+        'Before', 'A sailor', 'Lives by the sea', 'Careful', 'At the harbour', 'After', 'Question',
+    ]);
+    preset.prompt_order[1].order.push({ identifier: 'unknown-extension', enabled: true });
+    assert.throws(() => insertRoleplayChatSystem(history, snapshot, { backend: 'chat', preset },
+        'Visitor', 'Nova', 'Before', 'After'), { code: 'ROLEPLAY_INVALID' });
+    preset.prompt_order[1].order.pop();
+    preset.prompt_order[1].order.find(value => value.identifier === 'charDescription').enabled = false;
+    assert.equal(insertRoleplayChatSystem(history, snapshot, { backend: 'chat', preset }, 'Visitor', 'Nova', 'Before', 'After')
+        .some(message => message.content === 'Lives by the sea'), false);
+    assert.equal(insertRoleplayChatSystem(history, { ...snapshot, personaPosition: 9 }, { backend: 'chat', preset },
+        'Visitor', 'Nova').some(message => message.content === 'A sailor'), false);
+    assert.throws(() => insertRoleplayChatSystem(history, { ...snapshot, personaPosition: 4 }, { backend: 'chat', preset },
+        'Visitor', 'Nova'), { code: 'ROLEPLAY_INVALID' });
+    preset.wi_format = 'Lore: {0}';
+    assert.ok(insertRoleplayChatSystem(history, snapshot, { backend: 'chat', preset }, 'Visitor', 'Nova', 'Before')
+        .some(message => message.content === 'Lore: Before'));
+});
+
+test('saved Chat Completion post-history and example controls follow the active prompt order', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    fs.writeFileSync(path.join(f.scope.directories.characters, 'Nova.png'), writeCard(png, JSON.stringify({
+        name: 'Nova', mes_example: '<START>\nUser: Card example\nNova: Reply',
+    })));
+    const controls = { ...blankChatControls, prompts: [...blankChatControls.prompts,
+        { identifier: 'dialogueExamples', marker: true, system_prompt: true },
+        { identifier: 'jailbreak', role: 'system', system_prompt: true, content: 'Preset instruction for {{char}}',
+            injection_trigger: ['swipe'] }], prompt_order: [{ character_id: 100001, order: [
+        { identifier: 'main', enabled: true }, { identifier: 'dialogueExamples', enabled: false },
+        { identifier: 'chatHistory', enabled: true }, { identifier: 'jailbreak', enabled: true },
+    ] }] };
+    const saved = { character: '', text: '', textEnabled: false };
+    const history = [{ role: 'user', content: 'Question' }];
+    assert.equal(insertRoleplayPostHistory(history, saved, 'chat', 'append', { preset: controls }), history);
+    assert.deepEqual(insertRoleplayPostHistory(history, saved, 'chat', 'swipe', { preset: controls }, 'User', 'Nova'), [
+        ...history, { role: 'system', content: 'Preset instruction for Nova' },
+    ]);
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'disabled-card-examples', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true, messages: [],
+            maxTokens: 20, characterName: 'Nova', worldInfo: captureRoleplayWorldInfo(f.scope, account, source,
+                { avatar: 'Nova.png', maxContext: 200 }) } });
+    releaseJob(f.scope.directories, jobId);
+    await runRoleplayReplyJob({ job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal }, { promptBackend: () => ({ backend: 'chat', preset: controls }),
+        generate: async ({ messages, beforeDispatch }) => {
+            beforeDispatch();
+            assert.deepEqual(messages.map(message => message.content), ['Original', 'Answer']);
+            return { text: 'Reply' };
+        } });
+});
+
+test('a server-owned reply uses the saved default Chat Completion prompt order', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Original', 'Before the history'),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'default-ordered-main', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true, messages: [],
+            maxTokens: 20, characterName: 'Nova', worldInfo } });
+    releaseJob(f.scope.directories, jobId);
+    await runRoleplayReplyJob({ job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal }, {
+        promptBackend: () => ({ backend: 'chat', preset: defaultChatPreset }),
+        generate: async ({ messages, beforeDispatch }) => {
+            beforeDispatch();
+            assert.deepEqual(messages.map(message => message.content), [
+                'Write Nova\'s next reply in a fictional chat between Nova and User.', 'Before the history',
+                'Original', 'Original', 'Answer',
+            ]);
+            return { text: 'Bound answer' };
+        },
+    });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Bound answer');
+});
+
+test('Chat Completion uses its saved prompt order even when a text story template is saved', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        power_user: { context: { story_string: 'Text only: {{description}}', story_string_position: 0 } },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'chat-not-text-story', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true, messages: [],
+            maxTokens: 20, characterName: 'Nova',
+            worldInfo: captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 }) } });
+    releaseJob(f.scope.directories, jobId);
+    await runRoleplayReplyJob({ job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal }, {
+        promptBackend: () => ({ backend: 'chat', preset: defaultChatPreset }),
+        generate: async ({ messages, beforeDispatch }) => {
+            beforeDispatch();
+            assert.deepEqual(messages.map(item => item.content), [
+                'Write Nova\'s next reply in a fictional chat between Nova and User.', 'Original', 'Original', 'Answer',
+            ]);
+            return { text: 'Bound answer' };
+        },
+    });
 });
 
 test('a server-owned reply sends the saved main prompt before protected history', async t => {
@@ -188,11 +314,11 @@ test('a server-owned group reply uses its saved Chat Completion naming controls'
     releaseJob(f.scope.directories, jobId);
     const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
         owner: f.scope.owner, signal: new AbortController().signal };
-    await runRoleplayReplyJob(context, { promptBackend: () => ({ backend: 'chat', preset: { names_behavior: 0 } }),
+    await runRoleplayReplyJob(context, { promptBackend: () => ({ backend: 'chat', preset: { ...blankChatControls, names_behavior: 0 } }),
         generate: async ({ messages, userName, beforeDispatch }) => {
             beforeDispatch();
             assert.equal(userName, 'Visitor');
-            assert.deepEqual(messages.map(message => message.content), ['Story: Original', 'Original', 'Nova: Answer']);
+            assert.deepEqual(messages.map(message => message.content), ['Original', 'Nova: Answer']);
             return { text: 'Group answer' };
         } });
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Group answer');
@@ -216,11 +342,10 @@ test('a server-owned group reply sends saved speaker names as provider fields', 
     releaseJob(f.scope.directories, jobId);
     const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
         owner: f.scope.owner, signal: new AbortController().signal };
-    await runRoleplayReplyJob(context, { promptBackend: () => ({ backend: 'chat', preset: { names_behavior: 1 } }),
+    await runRoleplayReplyJob(context, { promptBackend: () => ({ backend: 'chat', preset: { ...blankChatControls, names_behavior: 1 } }),
         generate: async ({ messages, beforeDispatch }) => {
             beforeDispatch();
             assert.deepEqual(messages, [
-                { role: 'system', content: 'Story: Original' },
                 { role: 'user', content: 'Original', name: 'Visitor' },
                 { role: 'assistant', content: 'Answer', name: 'Nova' },
             ]);
@@ -300,17 +425,18 @@ test('server-owned replies place saved post-history instructions according to th
     await assert.rejects(runRoleplayReplyJob(chat, {
         promptBackend: () => ({ backend: 'chat' }), generate: () => { throw Error('Provider called'); },
     }), { code: 'ROLEPLAY_INVALID' });
-    const controls = { prompts: [{ identifier: 'jailbreak', role: 'system', system_prompt: true, content: '' }],
-        prompt_order: [{ character_id: 100001, order: [
-            { identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true },
-            { identifier: 'jailbreak', enabled: true },
-        ] }] };
+    const controls = { prompts: [...blankChatControls.prompts,
+        { identifier: 'jailbreak', role: 'system', system_prompt: true, content: '' }],
+    prompt_order: [{ character_id: 100001, order: [
+        { identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true },
+        { identifier: 'jailbreak', enabled: true },
+    ] }] };
     const allowed = context('chat-post-history-bound', chatRequest, updatedSource);
     await runRoleplayReplyJob(allowed, { promptBackend: () => ({ backend: 'chat', preset: controls }),
         generate: async ({ messages, beforeDispatch }) => {
             beforeDispatch();
             assert.deepEqual(messages.map(message => message.content), [
-                'Character: Original', 'Original', 'Answer', 'Following instruction', 'Character instruction',
+                'Original', 'Answer', 'Following instruction', 'Character instruction',
             ]);
             return { text: 'Following the saved order' };
         } });
@@ -401,7 +527,7 @@ test('server story system instructions come from the saved chat and card, not ac
     await runRoleplayReplyJob({ job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
         owner: f.scope.owner, signal: new AbortController().signal }, { generate: async ({ messages, beforeDispatch }) => {
         beforeDispatch();
-        assert.deepEqual(messages.map(message => message.content), ['Saved card rule\nOriginal', 'Original', 'Answer']);
+        assert.deepEqual(messages.map(message => message.content), ['Saved card rule', 'Original', 'Answer']);
         return { text: 'Following the card' };
     } });
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Following the card');
@@ -838,7 +964,7 @@ test('server-owned prompts derive history from the protected chat and reject bro
     const accepted = prepare('server-prompt-bound', request);
     await runRoleplayReplyJob(accepted, { generate: async ({ messages, beforeDispatch }) => {
         beforeDispatch();
-        assert.deepEqual(messages.map(message => message.content), ['Character: Original', 'Original', 'Answer']);
+        assert.deepEqual(messages.map(message => message.content), ['Original', 'Answer']);
         return { text: 'Bound reply' };
     } });
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Bound reply');
@@ -1041,7 +1167,7 @@ test('a saved reply with disabled prompt reasoning can be used on the next serve
     await runRoleplayReplyJob(context('second-reasoning', captureRoleplaySource(f.scope, { locator: f.locator })), {
         generate: async ({ beforeDispatch, messages }) => {
             beforeDispatch();
-            assert.deepEqual(messages.map(item => item.content), ['Character: Original', 'Original', 'Answer', 'First reply']);
+            assert.deepEqual(messages.map(item => item.content), ['Original', 'Answer', 'First reply']);
             return { text: 'Second reply' };
         },
     });
@@ -1071,13 +1197,14 @@ test('a fresh protected chat uses its saved story and refuses an empty prompt', 
     fs.writeFileSync(settingsFile, '{}');
     const blank = prepare('empty-server-prompt', { ...request,
         worldInfo: captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 }) });
-    await assert.rejects(runRoleplayReplyJob(blank, { generate: () => { throw Error('Provider called'); } }),
-        { code: 'ROLEPLAY_INVALID' });
+    await assert.rejects(runRoleplayReplyJob(blank, { promptBackend: () => ({ backend: 'text' }),
+        generate: () => { throw Error('Provider called'); } }),
+    { code: 'ROLEPLAY_INVALID' });
     fs.writeFileSync(settingsFile, JSON.stringify({
         power_user: { context: { story_string: 'Character: {{description}}', story_string_position: 0 } },
     }));
     const context = prepare('fresh-server-prompt', request);
-    await runRoleplayReplyJob(context, { generate: async ({ messages, beforeDispatch }) => {
+    await runRoleplayReplyJob(context, { promptBackend: () => ({ backend: 'text' }), generate: async ({ messages, beforeDispatch }) => {
         beforeDispatch();
         assert.deepEqual(messages, [{ role: 'system', content: 'Character: Original' }]);
         return { text: 'First reply' };
@@ -1111,7 +1238,7 @@ test('server-owned prompts trim old saved history and rebuild lore depth within 
     releaseJob(f.scope.directories, jobId);
     const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
         owner: f.scope.owner, signal: new AbortController().signal };
-    await runRoleplayReplyJob(context, { contextLimit: () => 100, generate: async ({ messages, beforeDispatch }) => {
+    await runRoleplayReplyJob(context, { contextLimit: () => 100, promptBackend: () => ({ backend: 'text' }), generate: async ({ messages, beforeDispatch }) => {
         beforeDispatch();
         assert.equal(messages[0].content, 'Character: Original');
         assert.deepEqual(messages.slice(-2).map(message => message.content), ['Most recent answer', 'Saved depth lore']);

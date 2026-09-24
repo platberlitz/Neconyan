@@ -59,28 +59,79 @@ export function insertWorldInfoOutlets(messages, outlets, snapshot, historyStart
     return [{ role: 'system', content: rendered }, ...messages];
 }
 
-/** Place a saved Chat Completion main prompt only when its order is unambiguous. */
-export function insertRoleplayChatSystem(messages, snapshot, material, userName, characterName) {
+/** Place saved Chat Completion system slots in their bound prompt-manager order. */
+export function insertRoleplayChatSystem(messages, snapshot, material, userName, characterName, before = '', after = '', effect = 'append') {
     const controls = material?.preset ?? material?.active;
     const order = controls?.prompt_order?.find(value => String(value?.character_id) === '100001')?.order;
     const prompts = controls?.prompts;
+    const supported = new Set(['main', 'worldInfoBefore', 'personaDescription', 'charDescription', 'charPersonality',
+        'scenario', 'enhanceDefinitions', 'nsfw', 'worldInfoAfter', 'dialogueExamples', 'chatHistory', 'jailbreak']);
     if (material?.backend && material.backend !== 'chat' || !Array.isArray(order) || !Array.isArray(prompts)
-        || order.filter(value => value?.enabled).map(value => value.identifier).join(',') !== 'main,chatHistory') {
+        || order.some(value => !supported.has(value?.identifier))
+        || new Set(order.map(value => value.identifier)).size !== order.length
+        || new Set(prompts.map(value => value?.identifier)).size !== prompts.length
+        || !order.some(value => value.identifier === 'chatHistory' && value.enabled === true)) {
         throw roleplayError('ROLEPLAY_INVALID', 'This Chat Completion prompt needs server-side prompt-manager ordering.', 409);
     }
-    const main = prompts.find(value => value?.identifier === 'main');
-    if (!main || main.role !== 'system' || main.system_prompt !== true || main.injection_position != null
-        || (Array.isArray(main.injection_trigger) && main.injection_trigger.length
-            && !main.injection_trigger.includes('normal'))) {
-        throw roleplayError('ROLEPLAY_INVALID', 'This Chat Completion main prompt cannot be placed by the server.', 409);
+    const historyIndex = order.findIndex(value => value.identifier === 'chatHistory');
+    if (order.slice(historyIndex + 1).some(value => value?.enabled && value.identifier !== 'jailbreak')
+        || order.slice(0, historyIndex).some(value => value?.enabled && value.identifier === 'jailbreak')
+        || order.some(value => value.identifier === 'dialogueExamples' && value.enabled
+            && order.indexOf(value) !== historyIndex - 1)
+        || typeof userName !== 'string' || typeof characterName !== 'string') {
+        throw roleplayError('ROLEPLAY_INVALID', 'This Chat Completion prompt order cannot be placed by the server.', 409);
     }
-    const text = snapshot.systemPrompt && main.forbid_overrides !== true ? snapshot.systemPrompt : main.content;
-    if (typeof text !== 'string' || typeof userName !== 'string' || typeof characterName !== 'string'
-        || text.replaceAll('{{char}}', '').replaceAll('{{user}}', '').includes('{{')) {
-        throw roleplayError('ROLEPLAY_INVALID', 'This saved main prompt needs unsupported prompt macros.', 409);
+    const contentById = { worldInfoBefore: before, worldInfoAfter: after,
+        personaDescription: snapshot.global.personaDescription,
+        charDescription: snapshot.global.characterDescription,
+        charPersonality: snapshot.global.characterPersonality,
+        scenario: snapshot.global.scenario };
+    const prefix = [];
+    const trigger = effect === 'append' ? 'normal' : effect === 'replace' ? 'regenerate' : effect;
+    for (const value of order.slice(0, historyIndex)) {
+        if (!value.enabled) continue;
+        const prompt = prompts.find(item => item?.identifier === value.identifier);
+        if (!prompt || prompt.injection_position != null || prompt.role && prompt.role !== 'system'
+            || prompt.system_prompt !== true) {
+            throw roleplayError('ROLEPLAY_INVALID', 'This Chat Completion prompt cannot be placed by the server.', 409);
+        }
+        if (Array.isArray(prompt.injection_trigger) && prompt.injection_trigger.length
+            && !prompt.injection_trigger.includes(trigger)) continue;
+        if (value.identifier === 'dialogueExamples') {
+            if (!prompt.marker) throw roleplayError('ROLEPLAY_INVALID', 'This Chat Completion example marker is invalid.', 409);
+            continue;
+        }
+        if (value.identifier === 'personaDescription' && contentById.personaDescription && snapshot.personaPosition !== undefined
+            && snapshot.personaPosition !== 0) {
+            if (snapshot.personaPosition === 9) continue;
+            throw roleplayError('ROLEPLAY_INVALID', 'This persona description needs its saved depth or note position.', 409);
+        }
+        let content = value.identifier === 'main' && snapshot.systemPrompt && prompt.forbid_overrides !== true
+            ? snapshot.systemPrompt : Object.hasOwn(contentById, value.identifier)
+                ? contentById[value.identifier] : prompt.content;
+        if (typeof content !== 'string') {
+            throw roleplayError('ROLEPLAY_INVALID', 'This saved prompt needs unsupported prompt macros.', 409);
+        }
+        if (value.identifier === 'charPersonality' && content) {
+            content = controls.personality_format?.replaceAll('{{personality}}', content) ?? content;
+        } else if (value.identifier === 'scenario' && content) {
+            content = controls.scenario_format?.replaceAll('{{scenario}}', content) ?? content;
+        } else if (['worldInfoBefore', 'worldInfoAfter'].includes(value.identifier) && content
+            && typeof controls.wi_format === 'string' && controls.wi_format.trim()) {
+            content = controls.wi_format.replace(/\{(\d+)\}/g, (match, index) => index === '0' ? content : match);
+        }
+        if (content.replaceAll('{{char}}', '').replaceAll('{{user}}', '').includes('{{')) {
+            throw roleplayError('ROLEPLAY_INVALID', 'This saved prompt needs unsupported prompt macros.', 409);
+        }
+        content = content.replaceAll('{{char}}', characterName).replaceAll('{{user}}', userName);
+        if (content.includes('{{')) throw roleplayError('ROLEPLAY_INVALID', 'This saved prompt needs unsupported prompt macros.', 409);
+        if (content) prefix.push({ role: 'system', content });
     }
-    const content = text.replaceAll('{{char}}', characterName).replaceAll('{{user}}', userName);
-    return content ? [{ role: 'system', content }, ...messages] : messages;
+    const historyMarker = prompts.find(value => value?.identifier === 'chatHistory');
+    if (!historyMarker?.marker || historyMarker.system_prompt !== true) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The saved chat history marker is invalid.', 409);
+    }
+    return [...prefix, ...messages];
 }
 
 /** Depth positions may use only an exact plain-text suffix of the protected chat. */
@@ -296,32 +347,36 @@ export function insertWorldInfoAuthorNote(messages, before, after, note, history
 }
 
 /** Text completion puts saved post-history instructions after chat, except before a continued reply. */
-export function insertRoleplayPostHistory(messages, saved, backend, effect, material) {
+export function insertRoleplayPostHistory(messages, saved, backend, effect, material, userName = '', characterName = '') {
     if (!saved || typeof saved.character !== 'string' || typeof saved.text !== 'string'
         || typeof saved.textEnabled !== 'boolean') {
         throw roleplayError('ROLEPLAY_INVALID', 'Saved post-history instructions are invalid.', 409);
     }
     if (backend === 'chat') {
-        if (!saved.character.trim()) return messages;
         const controls = material?.preset ?? material?.active;
         const order = controls?.prompt_order?.find(value => String(value?.character_id) === '100001')?.order;
         const prompt = controls?.prompts?.find(value => value?.identifier === 'jailbreak');
-        if (!Array.isArray(order) || !Array.isArray(controls?.prompts) || !prompt) {
+        if (!Array.isArray(order) || !Array.isArray(controls?.prompts)) {
             throw roleplayError('ROLEPLAY_INVALID', 'The saved Chat Completion prompt order is unavailable.', 409);
         }
         const position = order.findIndex(value => value?.identifier === 'jailbreak');
         if (position < 0 || order[position].enabled !== true) return messages;
         const history = order.findIndex(value => value?.identifier === 'chatHistory');
-        if (history < 0 || history >= position || order[history].enabled !== true
+        if (!prompt || history < 0 || history >= position || order[history].enabled !== true
             || order.slice(history + 1).some(value => value?.enabled && value.identifier !== 'jailbreak')
-            || prompt.forbid_overrides === true || prompt.role !== 'system' || prompt.system_prompt !== true
-            || prompt.injection_position != null
-            || saved.character.includes('{{') || /<(?:USER|BOT|CHAR|GROUP)>/i.test(saved.character)
-            || (Array.isArray(prompt.injection_trigger) && prompt.injection_trigger.length
-                && !prompt.injection_trigger.includes(effect === 'append' ? 'normal' : effect === 'replace' ? 'regenerate' : effect))) {
+            || prompt.role !== 'system' || prompt.system_prompt !== true || prompt.injection_position != null) {
             throw roleplayError('ROLEPLAY_INVALID', 'This Chat Completion post-history instruction needs full prompt-manager ordering.', 409);
         }
-        return [...messages, { role: 'system', content: saved.character.trim() }];
+        const trigger = effect === 'append' ? 'normal' : effect === 'replace' ? 'regenerate' : effect;
+        if (Array.isArray(prompt.injection_trigger) && prompt.injection_trigger.length
+            && !prompt.injection_trigger.includes(trigger)) return messages;
+        const instruction = saved.character.trim() && prompt.forbid_overrides !== true ? saved.character : prompt.content;
+        if (typeof instruction !== 'string' || instruction.replaceAll('{{char}}', '').replaceAll('{{user}}', '').includes('{{')
+            || /<(?:USER|BOT|CHAR|GROUP)>/i.test(instruction)) {
+            throw roleplayError('ROLEPLAY_INVALID', 'This Chat Completion post-history instruction needs full prompt-manager ordering.', 409);
+        }
+        const content = instruction.replaceAll('{{char}}', characterName).replaceAll('{{user}}', userName).trim();
+        return content ? [...messages, { role: 'system', content }] : messages;
     }
     if (!['text', 'kobold', 'novel', 'horde'].includes(backend)) {
         throw roleplayError('ROLEPLAY_INVALID', 'This connection cannot place saved post-history instructions.', 409);

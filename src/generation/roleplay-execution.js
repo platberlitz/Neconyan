@@ -154,6 +154,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         let messages = history;
         const savedHistoryStart = request.serverPrompt ? 0 : request.historyStart;
         if (!worldInfo) return messages;
+        const chatBackend = request.serverPrompt && (namingMaterial ?? promptBackend(directories, request.binding));
+        const isChatPrompt = chatBackend && (!chatBackend.backend || chatBackend.backend === 'chat');
         if (worldInfo.activated.some(entry => entry.automationId)) {
             throw roleplayError('ROLEPLAY_INVALID', 'This World Info entry needs a server Quick Reply action before generation.', 409);
         }
@@ -162,24 +164,33 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 historyOptions);
         }
         const hasOutlets = Object.keys(worldInfo.outletEntries).length > 0;
+        if (isChatPrompt && hasOutlets) {
+            throw roleplayError('ROLEPLAY_INVALID', 'Named World Info outlets need a bound Chat Completion prompt slot.', 409);
+        }
         const storyLore = request.worldInfo.storyTemplate && (worldInfo.worldInfoBefore || worldInfo.worldInfoAfter);
         const storyNote = (worldInfo.ANBeforeEntries.length || worldInfo.ANAfterEntries.length)
             && request.worldInfo.authorNote?.position !== 1 && isWorldInfoAuthorNoteActive(request.worldInfo.authorNote);
-        const hasStory = Boolean(hasOutlets || storyLore || storyNote || (request.serverPrompt && request.worldInfo.storyTemplate));
-        if (hasStory) {
+        const hasStory = !isChatPrompt && Boolean(hasOutlets || storyLore || storyNote || (request.serverPrompt && request.worldInfo.storyTemplate));
+        if (isChatPrompt) {
+            messages = insertRoleplayChatSystem(messages, request.worldInfo, chatBackend, userName, request.characterName,
+                worldInfo.worldInfoBefore, worldInfo.worldInfoAfter, effect);
+        } else if (hasStory) {
             messages = insertWorldInfoOutlets(messages, worldInfo.outletEntries, request.worldInfo, savedHistoryStart,
                 userName, request.characterName, worldInfo.worldInfoBefore, worldInfo.worldInfoAfter,
                 Boolean(storyNote || request.serverPrompt));
-        } else if (request.serverPrompt) {
-            const material = namingMaterial ?? promptBackend(directories, request.binding);
-            if (!material.backend || material.backend === 'chat') {
-                messages = insertRoleplayChatSystem(messages, request.worldInfo, material, userName, request.characterName);
-            }
         }
-        const lore = hasStory ? '' : [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
+        const lore = hasStory || isChatPrompt
+            ? '' : [worldInfo.worldInfoBefore, worldInfo.worldInfoAfter].filter(Boolean).join('\n');
         if (lore) messages.unshift({ role: 'system', content: lore });
         let historyStart = savedHistoryStart + messages.length - history.length;
-        if (worldInfo.EMEntries.length) {
+        const controls = isChatPrompt && (chatBackend.preset ?? chatBackend.active);
+        const exampleOrder = controls?.prompt_order?.find(value => String(value?.character_id) === '100001')?.order;
+        const marker = controls?.prompts?.find(prompt => prompt.identifier === 'dialogueExamples');
+        const trigger = effect === 'append' ? 'normal' : effect === 'replace' ? 'regenerate' : effect;
+        const includeExamples = !isChatPrompt || (exampleOrder?.some(value => value.identifier === 'dialogueExamples'
+            && value.enabled === true) && (!Array.isArray(marker?.injection_trigger)
+            || !marker.injection_trigger.length || marker.injection_trigger.includes(trigger)));
+        if (includeExamples && (worldInfo.EMEntries.length || request.serverPrompt && request.worldInfo.characterExamples)) {
             const beforeExamples = messages.length;
             messages = insertWorldInfoExamples(messages, worldInfo.EMEntries, request.worldInfo.characterExamples,
                 historyStart, userName, request.characterName, request.groupNames || []);
@@ -190,11 +201,12 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         }
         if (worldInfo.ANBeforeEntries.length || worldInfo.ANAfterEntries.length) {
             messages = insertWorldInfoAuthorNote(messages, worldInfo.ANBeforeEntries, worldInfo.ANAfterEntries,
-                request.worldInfo.authorNote, historyStart, hasStory);
+                request.worldInfo.authorNote, historyStart, hasStory || Boolean(isChatPrompt && messages[0]?.role === 'system'));
         }
-        if (request.serverPrompt && (request.worldInfo.postHistory?.character || request.worldInfo.postHistory?.text)) {
-            const material = promptBackend(directories, request.binding);
-            messages = insertRoleplayPostHistory(messages, request.worldInfo.postHistory, material.backend ?? 'chat', effect, material);
+        if (request.serverPrompt && (isChatPrompt || request.worldInfo.postHistory?.character || request.worldInfo.postHistory?.text)) {
+            const material = chatBackend ?? promptBackend(directories, request.binding);
+            messages = insertRoleplayPostHistory(messages, request.worldInfo.postHistory, material.backend ?? 'chat', effect,
+                material, userName, request.characterName);
         }
         return messages;
     };
