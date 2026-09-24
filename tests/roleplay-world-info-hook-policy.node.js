@@ -222,3 +222,45 @@ test('malformed enabled Quick Reply settings cannot silently disable an activati
     assert.throws(() => captureRoleplayWorldInfo(f.scope, account, f.source(),
         { avatar: 'Nova.png', maxContext: 200 }), { code: 'ROLEPLAY_INVALID' });
 });
+
+test('enabled vector lore activation and scan injection refuse before provider work', async t => {
+    const vector = prepared(t, { extension_settings: { vectors: { enabled_world_info: true } } });
+    assert.deepEqual(vector.worldInfo.hookPolicy.scanContributors.map(value => value.kind), ['vectors']);
+    await assert.rejects(runRoleplayReplyJob(vector.context, { contextLimit: () => 4096,
+        generate: () => { throw Error('Provider called'); } }), { code: 'ROLEPLAY_INVALID' });
+    assert.equal(readArtifact(vector.f.scope.directories, vector.jobId, 'roleplay-world-info'), undefined);
+
+    const disabled = prepared(t, { extension_settings: { disabledExtensions: ['third-party/vectors'],
+        vectors: { enabled_world_info: true, include_wi: true, enabled_chats: true } } });
+    assert.deepEqual(disabled.worldInfo.hookPolicy.scanContributors, []);
+    const injected = prepared(t, { extension_settings: { vectors: { include_wi: true, enabled_chats: true } } });
+    assert.deepEqual(injected.worldInfo.hookPolicy.scanContributors.map(value => value.kind), ['vectors']);
+});
+
+test('saved Agent scan prompts are bound and refuse before a World Info scan', async t => {
+    const f = fixture(t);
+    f.scope.directories.inChatAgents = path.join(f.scope.directories.root, 'InChatAgents');
+    fs.mkdirSync(f.scope.directories.inChatAgents);
+    const filename = path.join(f.scope.directories.inChatAgents, 'scan-agent.json');
+    const agent = { id: 'scan-agent', category: 'content', name: 'Scan Agent', enabled: true, phase: 'pre',
+        prompt: 'The hidden trigger', injection: { scan: true, position: 1, depth: 2, role: 0 } };
+    fs.writeFileSync(filename, JSON.stringify(agent));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        extension_settings: { inChatAgents: { globalSettings: { enabled: true, pathfinderEnabled: false } } },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = f.source();
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 });
+    assert.deepEqual(snapshot.hookPolicy.scanContributors.map(value => value.kind), ['agent']);
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'scan-agent', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, maxTokens: 32, characterName: 'Nova',
+            worldInfo: snapshot, messages: [] } });
+    releaseJob(f.scope.directories, jobId);
+    await assert.rejects(runRoleplayReplyJob({ job: getJob(f.scope.directories, jobId),
+        directories: f.scope.directories, owner: f.scope.owner, signal: new AbortController().signal },
+    { contextLimit: () => 4096, generate: () => { throw Error('Provider called'); } }), { code: 'ROLEPLAY_INVALID' });
+    assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-world-info'), undefined);
+    agent.prompt = 'Changed scan';
+    fs.writeFileSync(filename, JSON.stringify(agent));
+    assert.throws(() => assertRoleplayWorldInfoCurrent(f.scope, snapshot), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+});

@@ -108,6 +108,10 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             || request.worldInfo.hookPolicy.pathfinder.length) {
             throw roleplayError('ROLEPLAY_INVALID', 'Enabled Pathfinder retrieval needs server-owned pre-scan execution.', 409);
         }
+        if (!Array.isArray(request.worldInfo.hookPolicy.scanContributors)
+            || request.worldInfo.hookPolicy.scanContributors.length) {
+            throw roleplayError('ROLEPLAY_INVALID', 'Enabled vector or Agent scan contributions need server-owned preparation.', 409);
+        }
         worldInfo = readArtifact(directories, job.id, 'roleplay-world-info');
         if (worldInfo === undefined) {
             worldInfo = await prepareRoleplayWorldInfo(base, request.worldInfo, { ...worldInfoHooks, macros: request.macros });

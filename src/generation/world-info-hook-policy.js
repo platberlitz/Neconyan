@@ -37,7 +37,16 @@ export function captureWorldInfoHookPolicy(directories, settings, header, avatar
         ? extensions.disabledExtensions.map(normalizeExtensionBootId) : [];
     const global = extensions.inChatAgents?.globalSettings ?? {};
     const pathfinder = [];
-    if (!disabled.includes('in-chat-agents') && global.enabled !== false && global.pathfinderEnabled !== false) {
+    const scanContributors = [];
+    const vectors = extensions.vectors ?? {};
+    if (!disabled.includes('vectors') && (!vectors || typeof vectors !== 'object' || Array.isArray(vectors))) {
+        throw roleplayError('ROLEPLAY_INVALID', 'Saved vector scan settings are invalid.', 409);
+    }
+    if (!disabled.includes('vectors') && (vectors.enabled_world_info
+        || vectors.include_wi && (vectors.enabled_chats || vectors.enabled_files))) {
+        scanContributors.push({ kind: 'vectors', settingsHash: roleplayHash(vectors) });
+    }
+    if (!disabled.includes('in-chat-agents') && global.enabled !== false) {
         const scope = group ? 'group' : 'individual';
         for (const { name, value, physical } of savedJsonFiles(directories.inChatAgents ?? path.join(directories.root, 'InChatAgents'),
             AGENT_STORAGE_LIMITS.agentCount, AGENT_STORAGE_LIMITS.agentBytes, AGENT_STORAGE_LIMITS.collectionBytes)) {
@@ -49,8 +58,15 @@ export function captureWorldInfoHookPolicy(directories, settings, header, avatar
             const candidate = value.category === 'tool' && (value.sourceTemplateId === 'tpl-pathfinder'
                 || ['Pawthfinder', 'Pathfinder'].includes(value.name)
                 || value.tools?.some(tool => tool.name?.startsWith('Pathfinder_')));
-            if (enabled && candidate && (value.settings?.sidecarEnabled || value.settings?.pipelineEnabled)) {
+            if (global.pathfinderEnabled !== false && enabled && candidate
+                && (value.settings?.sidecarEnabled || value.settings?.pipelineEnabled)) {
                 pathfinder.push({ id: value.id, revision: roleplayHash(value), physical });
+            }
+            // Browser Agents and companions can add scan text before World Info selects entries.
+            if (enabled && value.injection?.scan && (value.category === 'companion'
+                || value.category !== 'tool' && ['pre', 'both'].includes(value.phase)
+                    && value.preProcess?.mode !== 'intercept' && value.prompt?.trim())) {
+                scanContributors.push({ kind: 'agent', id: value.id, revision: roleplayHash(value), physical });
             }
         }
     }
@@ -102,7 +118,7 @@ export function captureWorldInfoHookPolicy(directories, settings, header, avatar
         }
         quickReply.sets = [...names].flatMap(name => found.has(name) ? [found.get(name)] : []);
     }
-    return { pathfinder, quickReply };
+    return { pathfinder, scanContributors, quickReply };
 }
 
 export function worldInfoActivationActions(policy, activated) {
