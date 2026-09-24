@@ -5,7 +5,7 @@ import { normalizeExtensionBootId } from '../../public/scripts/extension-boot-li
 import { getQuickReplySetNameKey } from '../../public/scripts/extensions/quick-reply/src/quick-reply-set-list.js';
 import { readRoleplayFile, roleplayError, roleplayHash } from '../roleplay-store.js';
 
-function savedJsonFiles(directory, limit, fileLimit, totalLimit) {
+function savedJsonFiles(directory, limit, fileLimit, totalLimit, { skipInvalidJson = false } = {}) {
     let folder;
     try { folder = fs.lstatSync(directory); } catch (error) {
         if (error.code === 'ENOENT') return [];
@@ -24,9 +24,10 @@ function savedJsonFiles(directory, limit, fileLimit, totalLimit) {
             return { name, value: JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(file.bytes)),
                 rawHash: file.rawHash, physical: file.physical };
         } catch {
+            if (skipInvalidJson) return null;
             throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'A saved World Info hook record is unreadable.', 409);
         }
-    });
+    }).filter(Boolean);
 }
 
 /** Captured under the Roleplay account lock; keep scripts and connection secrets out of job artifacts. */
@@ -38,17 +39,18 @@ export function captureWorldInfoHookPolicy(directories, settings, header, avatar
     const pathfinder = [];
     if (!disabled.includes('in-chat-agents') && global.enabled !== false && global.pathfinderEnabled !== false) {
         const scope = group ? 'group' : 'individual';
-        for (const { name, value } of savedJsonFiles(directories.inChatAgents ?? path.join(directories.root, 'InChatAgents'),
+        for (const { name, value, physical } of savedJsonFiles(directories.inChatAgents ?? path.join(directories.root, 'InChatAgents'),
             AGENT_STORAGE_LIMITS.agentCount, AGENT_STORAGE_LIMITS.agentBytes, AGENT_STORAGE_LIMITS.collectionBytes)) {
             if (getAgentRecordError(value) || name !== `${value.id}.json`) {
                 throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'A saved Pathfinder agent needs recovery.', 409);
             }
             const scoped = global.separateRecentChats && global.scopedEnabledAgentIdsInitialized;
             const enabled = scoped ? global.enabledAgentIdsByChatType?.[scope]?.includes(value.id) : value.enabled;
-            const candidate = value.sourceTemplateId === 'tpl-pathfinder' || ['Pawthfinder', 'Pathfinder'].includes(value.name)
-                || value.category === 'tool' && value.tools?.some(tool => tool.name?.startsWith('Pathfinder_'));
+            const candidate = value.category === 'tool' && (value.sourceTemplateId === 'tpl-pathfinder'
+                || ['Pawthfinder', 'Pathfinder'].includes(value.name)
+                || value.tools?.some(tool => tool.name?.startsWith('Pathfinder_')));
             if (enabled && candidate && (value.settings?.sidecarEnabled || value.settings?.pipelineEnabled)) {
-                pathfinder.push({ id: value.id, revision: roleplayHash(value) });
+                pathfinder.push({ id: value.id, revision: roleplayHash(value), physical });
             }
         }
     }
@@ -73,8 +75,8 @@ export function captureWorldInfoHookPolicy(directories, settings, header, avatar
             }
         }
         const records = savedJsonFiles(directories.quickreplies ?? path.join(directories.root, 'QuickReplies'),
-            256, 1024 * 1024, 2 * 1024 * 1024);
-        const found = new Set();
+            256, 1024 * 1024, 2 * 1024 * 1024, { skipInvalidJson: true });
+        const found = new Map();
         for (const { value, rawHash, physical } of records) {
             const key = getQuickReplySetNameKey(value);
             if (!names.has(key) || found.has(key)) continue;
@@ -96,9 +98,9 @@ export function captureWorldInfoHookPolicy(directories, settings, header, avatar
                     hash: roleplayHash(item),
                 }];
             });
-            quickReply.sets.push({ name: value.name, rawHash, physical, commands });
-            found.add(key);
+            found.set(key, { name: value.name, rawHash, physical, commands });
         }
+        quickReply.sets = [...names].flatMap(name => found.has(name) ? [found.get(name)] : []);
     }
     return { pathfinder, quickReply };
 }

@@ -16,7 +16,8 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', system_prompt
     { identifier: 'chatHistory', marker: true, system_prompt: true }], prompt_order: [{ character_id: 100001,
     order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }] };
 
-function prepared(t, { automationId = undefined, extension_settings = {}, quickReplySet } = {}) {
+function prepared(t, { automationId = undefined, extension_settings = {}, quickReplySet,
+    extraQuickReplySets = [], malformedUnlinked = false } = {}) {
     const f = fixture(t);
     f.records[1].extra = {};
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
@@ -29,10 +30,14 @@ function prepared(t, { automationId = undefined, extension_settings = {}, quickR
     fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
         world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 }, extension_settings,
     }));
-    if (quickReplySet) {
+    if (quickReplySet || extraQuickReplySets.length || malformedUnlinked) {
         f.scope.directories.quickreplies = path.join(f.scope.directories.root, 'QuickReplies');
         fs.mkdirSync(f.scope.directories.quickreplies);
-        fs.writeFileSync(path.join(f.scope.directories.quickreplies, 'Actions.json'), JSON.stringify(quickReplySet));
+        if (quickReplySet) fs.writeFileSync(path.join(f.scope.directories.quickreplies, 'Actions.json'), JSON.stringify(quickReplySet));
+        for (const set of extraQuickReplySets) {
+            fs.writeFileSync(path.join(f.scope.directories.quickreplies, `${set.name}.json`), JSON.stringify(set));
+        }
+        if (malformedUnlinked) fs.writeFileSync(path.join(f.scope.directories.quickreplies, 'Broken.json'), '{unfinished');
     }
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const source = captureRoleplaySource(f.scope, { locator: f.locator });
@@ -89,6 +94,29 @@ test('enabled Quick Reply with no linked matching action keeps ordinary lore gen
         generate: async ({ beforeDispatch }) => { beforeDispatch(); calls++; return { text: 'Available' }; } });
     assert.equal(calls, 1);
     assert.deepEqual(readArtifact(f.f.scope.directories, f.jobId, 'roleplay-world-info').hookEvents.actions, []);
+});
+
+test('Quick Reply hook actions retain the saved link order rather than the preset filename order', async t => {
+    const f = prepared(t, { automationId: 'qr-one', extension_settings: { quickReplyV2: {
+        isEnabled: true, config: { setList: [{ set: 'Zoo' }, { set: 'Actions' }] },
+    } }, quickReplySet: { version: 2, name: 'Actions', qrList: [{ id: 2, automationId: 'qr-one', message: '/second' }] },
+    extraQuickReplySets: [{ version: 2, name: 'Zoo', qrList: [{ id: 1, automationId: 'qr-one', message: '/first' }] }] });
+    await assert.rejects(runRoleplayReplyJob(f.context, { contextLimit: () => 4096,
+        generate: () => { throw Error('Provider called'); } }), { code: 'ROLEPLAY_INVALID' });
+    assert.deepEqual(readArtifact(f.f.scope.directories, f.jobId, 'roleplay-world-info').hookEvents.actions
+        .map(action => action.set), ['Zoo', 'Actions']);
+});
+
+test('malformed unrelated Quick Reply presets do not block linked saved actions', async t => {
+    const f = prepared(t, { automationId: 'qr-one', extension_settings: { quickReplyV2: {
+        isEnabled: true, config: { setList: [{ set: 'Actions' }] },
+    } }, quickReplySet: { version: 2, name: 'Actions', qrList: [{ id: 2, automationId: 'qr-one', message: '/linked' }] },
+    malformedUnlinked: true });
+    await assert.rejects(runRoleplayReplyJob(f.context, { contextLimit: () => 4096,
+        generate: () => { throw Error('Provider called'); } }), { code: 'ROLEPLAY_INVALID' });
+    assert.deepEqual(readArtifact(f.f.scope.directories, f.jobId, 'roleplay-world-info').hookEvents.actions
+        .map(action => action.set), ['Actions']);
+    assert.doesNotThrow(() => assertRoleplayWorldInfoCurrent(f.f.scope, f.worldInfo));
 });
 
 test('disabled extension aliases and linked Quick Reply file aliases cannot cross protected hook authority', t => {
@@ -154,6 +182,34 @@ test('a Pathfinder agent enabled after admission invalidates the accepted hook p
     assert.deepEqual(snapshot.hookPolicy.pathfinder, []);
     record.enabled = true;
     fs.writeFileSync(filename, JSON.stringify(record));
+    assert.throws(() => assertRoleplayWorldInfoCurrent(f.scope, snapshot), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+});
+
+test('a non-tool Pathfinder name does not claim a browser tool hook', t => {
+    const f = fixture(t);
+    f.scope.directories.inChatAgents = path.join(f.scope.directories.root, 'InChatAgents');
+    fs.mkdirSync(f.scope.directories.inChatAgents);
+    fs.writeFileSync(path.join(f.scope.directories.inChatAgents, 'companion.json'), JSON.stringify({
+        id: 'companion', category: 'companion', name: 'Pathfinder', enabled: true,
+        settings: { sidecarEnabled: true },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, f.source(), { avatar: 'Nova.png', maxContext: 200 });
+    assert.deepEqual(snapshot.hookPolicy.pathfinder, []);
+});
+
+test('replacing an enabled Pathfinder record with identical bytes changes the captured hook source', t => {
+    const f = fixture(t);
+    f.scope.directories.inChatAgents = path.join(f.scope.directories.root, 'InChatAgents');
+    fs.mkdirSync(f.scope.directories.inChatAgents);
+    const filename = path.join(f.scope.directories.inChatAgents, 'pathfinder.json');
+    const contents = JSON.stringify({ id: 'pathfinder', category: 'tool', name: 'Pathfinder', enabled: true,
+        settings: { sidecarEnabled: true } });
+    fs.writeFileSync(filename, contents);
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, f.source(), { avatar: 'Nova.png', maxContext: 200 });
+    fs.renameSync(filename, `${filename}.old`);
+    fs.writeFileSync(filename, contents);
     assert.throws(() => assertRoleplayWorldInfoCurrent(f.scope, snapshot), { code: 'ROLEPLAY_SOURCE_CHANGED' });
 });
 
