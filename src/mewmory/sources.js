@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import sanitize from 'sanitize-filename';
-import { parse as parseCharacterCard } from '../character-card-parser.js';
+import { read as readCharacterCard } from '../character-card-parser.js';
 import { readWorldInfoFile } from '../endpoints/worldinfo.js';
 import { fail, hash, POLICY_VERSION, purgeSources, sourceAt } from './core.js';
 import { readConfig } from './models.js';
@@ -14,6 +14,11 @@ function safeFilename(value) {
 
 /** The server resolves the applicable books; a request cannot add another story's library. */
 export async function readContextSources(directories, locator, state) {
+    return readContextSourcesSync(directories, locator, state);
+}
+
+/** Synchronous reads can stay inside the protected account lock. */
+export function readContextSourcesSync(directories, locator, state) {
     const source = readChat(directories, locator);
     const { metadata } = source;
     if (!state) {
@@ -41,7 +46,7 @@ export async function readContextSources(directories, locator, state) {
         if (!fs.existsSync(filename)) continue;
         let card;
         try {
-            const parsed = JSON.parse(await parseCharacterCard(filename, 'png'));
+            const parsed = JSON.parse(readCharacterCard(fs.readFileSync(filename)));
             card = parsed.data || parsed;
         } catch {
             fail('A character card could not be read. Reload it before updating Mewmory.', 409);
@@ -80,7 +85,11 @@ export async function readContextSources(directories, locator, state) {
 }
 
 export async function loadCurrentState(directories, locator) {
-    const state = synchronize(directories, locator, await readContextSources(directories, locator));
+    return loadCurrentStateSync(directories, locator);
+}
+
+export function loadCurrentStateSync(directories, locator) {
+    const state = synchronize(directories, locator, readContextSourcesSync(directories, locator));
     const config = readConfig(directories);
     const legacyPolicy = hash([POLICY_VERSION, ...['extractor', 'pawspective'].map(name => hash([config.localOnly, config.roles[name]]))]);
     return mutateState(directories, locator, current => {

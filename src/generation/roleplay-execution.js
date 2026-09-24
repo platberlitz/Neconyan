@@ -13,6 +13,12 @@ import { assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertRoleplayC
 import { getChatProfileContextLimit, resolveGenerationProfile } from './profiles.js';
 import { getCounter } from '../mewmory/tokens.js';
 import { fnv1a } from '../../public/scripts/extensions/third-party/MacroEnhanced/src/state-impl.js';
+import { assembleRoleplayChatPrompt } from './roleplay-chat-prompt.js';
+import { prepareMewmoryPrompt } from '../mewmory/prepare.js';
+import { loadCurrentStateSync } from '../mewmory/sources.js';
+import { mutateState, normalizeLocator, readChat } from '../mewmory/store.js';
+import { generationFingerprint } from '../mewmory/context.js';
+import { readConfig } from '../mewmory/models.js';
 import { worldInfoActivationActions } from './world-info-hook-policy.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
@@ -189,8 +195,147 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             ? (namingMaterial.preset?.names_behavior ?? namingMaterial.active?.names_behavior ?? 0)
             : namingMaterial && (namingMaterial.backend !== 'text' || namingMaterial.instruct?.enabled || namingMaterial.kind === 'active')
                 ? 'provider' : undefined };
-    const savedHistory = promptSource ? buildRoleplaySavedHistory(promptSource.records, historyOptions) : null;
-    const place = history => {
+    const memoryAccess = operation => withRoleplayAccount(base, account, lease => {
+        signal.throwIfAborted();
+        assertRoleplaySourceLocked(lease, source, { effect });
+        return operation();
+    });
+    let memory;
+    let promptRecords = promptSource?.records;
+    if (request.serverPrompt) {
+        const locator = promptSource.locator;
+        const normalised = normalizeLocator(locator);
+        if (normalised.chat !== locator.chat || normalised.group !== locator.group
+            || !locator.group && normalised.avatar !== locator.avatar) {
+            throw roleplayError('ROLEPLAY_INVALID', 'This protected chat name cannot identify its Mewmory store exactly.', 409);
+        }
+        memory = readArtifact(directories, job.id, 'roleplay-mewmory');
+        if (memory === undefined) {
+            memory = await prepareMewmoryPrompt(directories, { locator,
+                tokenizer: { tokenizerKey: request.worldInfo.tokenizer },
+                history: promptRecords.slice(1).flatMap((record, index) => record.is_system && !record.extra?.tool_invocations
+                    ? [] : [{ index, text: `${record.name || ''}: ${record.mes || ''}` }]),
+            }, signal, {
+                loadState: (directories, locator) => memoryAccess(() => loadCurrentStateSync(directories, locator)),
+                mutate: (directories, locator, operation) => memoryAccess(() => mutateState(directories, locator, operation)),
+                readSource: (directories, locator) => memoryAccess(() => readChat(directories, locator)),
+                scheduleBackground: false,
+            });
+            writeArtifact(directories, job.id, 'roleplay-mewmory', memory);
+        }
+        if (!memory || typeof memory.enabled !== 'boolean' || !Array.isArray(memory.excludedIndices)
+            || memory.excludedIndices.some(index => !Number.isSafeInteger(index) || index < 0 || index >= promptRecords.length - 1)
+            || typeof memory.npcText !== 'string' || typeof memory.memoryText !== 'string'
+            || memory.enabled && typeof memory.validationFingerprint !== 'string') {
+            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved Roleplay memory context needs recovery.', 503);
+        }
+        const retainedIndices = new Map();
+        promptRecords = [promptRecords[0], ...promptRecords.slice(1).filter((record, index) => {
+            if (memory.excludedIndices.includes(index)) return false;
+            retainedIndices.set(index, retainedIndices.size);
+            return true;
+        })];
+        for (const key of ['attachments', 'images']) historyOptions[key] = historyOptions[key]
+            .filter(item => retainedIndices.has(item.index)).map(item => ({ ...item, index: retainedIndices.get(item.index) }));
+    }
+    const assertMemory = () => {
+        if (!request.serverPrompt) return;
+        const current = memoryAccess(() => loadCurrentStateSync(directories, promptSource.locator));
+        if (current.enabled !== memory.enabled || memory.enabled
+            && generationFingerprint(current, readConfig(directories)) !== memory.validationFingerprint) {
+            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'Mewmory changed after this prompt was prepared.', 409);
+        }
+    };
+    assertMemory();
+    const savedHistory = promptSource ? buildRoleplaySavedHistory(promptRecords, historyOptions) : null;
+    const loreScope = scope => !scope || scope === 'active' ? worldInfo.activeLore
+        : scope === 'bound' ? worldInfo.boundLore : null;
+    const loreInFlight = new Set();
+    const loreLookup = (title, book) => worldInfo.boundLore.find(item => (!book || item.book === book)
+        && ((String(item.entry.comment ?? '').trim()
+            && String(item.entry.comment).trim().toLowerCase() === String(title).trim().toLowerCase())
+            || String(item.entry.uid) === String(title).trim()));
+    const loreContent = (item, resolve) => {
+        if (!item) return '';
+        const identity = `${item.book}::${item.entry.uid}`;
+        if (loreInFlight.has(identity)) return item.content;
+        loreInFlight.add(identity);
+        try { return resolve(item.content); } finally { loreInFlight.delete(identity); }
+    };
+    const loreFields = {
+        title: item => item.title, keys: item => (item.entry.key ?? []).join(', '),
+        secondarykeys: item => (item.entry.keysecondary ?? []).join(', '),
+        content: item => item.content, position: item => String(item.entry.position ?? ''),
+        depth: item => String(item.entry.depth ?? ''), order: item => String(item.entry.order ?? ''),
+        probability: item => String(item.entry.probability ?? ''), constant: item => item.entry.constant ? 'true' : 'false',
+        enabled: item => item.entry.disable ? 'false' : 'true', uid: item => String(item.entry.uid),
+    };
+    const loreMacro = { unnamedArgs: [{ name: 'entry' }, { name: 'book', optional: true }],
+        handler: ({ unnamedArgs: [title, book], resolve }) => loreContent(loreLookup(title, book), resolve) };
+    const preparedPrompt = request.serverPrompt ? readArtifact(directories, job.id, 'roleplay-prompt') : undefined;
+    const macroSnapshot = request.serverPrompt ? {
+        names: { user: userName, char: request.characterName, group: request.groupNames?.join(', ') || request.characterName },
+        character: { description: request.worldInfo.global.characterDescription, personality: request.worldInfo.global.characterPersonality,
+            scenario: request.worldInfo.global.scenario, persona: request.worldInfo.global.personaDescription,
+            charPrompt: request.worldInfo.systemPrompt, charInstruction: request.worldInfo.postHistory.character,
+            mesExamplesRaw: request.worldInfo.characterExamples, charDepthPrompt: request.worldInfo.global.characterDepthPrompt,
+            creatorNotes: request.worldInfo.global.creatorNotes },
+        variables: preparedPrompt?.macroState?.variables ?? request.worldInfo.promptVariables,
+        extra: { chat: promptSource.records.slice(1),
+            chatMetadata: preparedPrompt?.macroState?.chatMetadata ?? request.worldInfo.metadata,
+            bannedWords: preparedPrompt?.macroState?.bannedWords ?? [] },
+    } : request.macros || {};
+    const macroEnvironment = createMacroEnvironment(macroSnapshot, {}, {
+        dynamicMacros: worldInfo && request.worldInfo.enhancedLoreMacros ? {
+            lore: loreMacro,
+            wi: loreMacro,
+            lorekeys: { unnamedArgs: [{ name: 'entry' }, { name: 'book', optional: true }],
+                handler: ({ unnamedArgs: [title, book] }) => (loreLookup(title, book)?.entry.key ?? []).join(', ') },
+            loreexists: { unnamedArgs: [{ name: 'entry' }, { name: 'book', optional: true }],
+                handler: ({ unnamedArgs: [title, book] }) => String(Boolean(loreLookup(title, book))) },
+            lorefield: { unnamedArgs: [{ name: 'entry' }, { name: 'field' }, { name: 'book', optional: true }],
+                handler: ({ unnamedArgs: [title, field, book] }) => {
+                    const item = loreLookup(title, book);
+                    const name = String(field ?? '').trim().toLowerCase();
+                    return item && Object.hasOwn(loreFields, name) ? loreFields[name](item) : '';
+                } },
+            lorepick: { unnamedArgs: [{ name: 'book', optional: true }, { name: 'key', optional: true }],
+                handler: ({ unnamedArgs: [book, key], resolve }) => {
+                    const candidates = worldInfo.boundLore.filter(item => !book || item.book === book)
+                        .sort((a, b) => String(a.entry.uid).localeCompare(String(b.entry.uid), undefined, { numeric: true }));
+                    if (!candidates.length) return '';
+                    const seed = `${request.worldInfo.metadata.chat_id_hash ?? ''}:${String(book ?? '')}:${String(key ?? '')}`;
+                    return loreContent(candidates[fnv1a(seed) % candidates.length], resolve);
+                } },
+            loreactive: { unnamedArgs: [{ name: 'separator', optional: true }], handler: ({ unnamedArgs: [separator] }) =>
+                worldInfo.activeLore.map(entry => entry.title).join(separator || ', ') },
+            lorebooks: { unnamedArgs: [{ name: 'separator', optional: true }], handler: ({ unnamedArgs: [separator] }) =>
+                [...new Set([...request.worldInfo.names.chat, ...request.worldInfo.names.character,
+                    ...request.worldInfo.names.global])].join(separator || ', ') },
+            loreentries: { unnamedArgs: [{ name: 'book', optional: true }, { name: 'separator', optional: true }],
+                handler: ({ unnamedArgs: [book, separator] }) => worldInfo.boundLore
+                    .filter(entry => !book || entry.book === book).map(entry => entry.title).join(separator || ', ') },
+            lorecount: { unnamedArgs: [{ name: 'scope', optional: true }], handler: ({ unnamedArgs: [scope] }) =>
+                loreScope(scope) ? String(loreScope(scope).length) : '' },
+            loretokens: { unnamedArgs: [{ name: 'scope', optional: true }], handler: ({ unnamedArgs: [scope] }) =>
+                loreScope(scope) ? String(Math.ceil(loreScope(scope).map(entry => entry.content).join('\n').length / 4)) : '' },
+        } : {},
+    });
+    // A trimming pass reuses resolved strings; it must not reroll prompt macros.
+    const resolvedStrings = [];
+    let resolvedIndex = 0;
+    const substitute = value => {
+        const index = resolvedIndex++;
+        if (!resolvedStrings[index]) resolvedStrings[index] = { value, result: macroEnvironment.evaluate(value, {
+            legacy: !request.worldInfo.experimentalMacroEngine, strictCapabilities: true,
+        }) };
+        if (resolvedStrings[index].value !== value) {
+            throw roleplayError('ROLEPLAY_INVALID', 'Prompt trimming changed the saved prompt expansion order.', 409);
+        }
+        return resolvedStrings[index].result;
+    };
+    const place = async history => {
+        resolvedIndex = 0;
         let messages = history;
         const savedHistoryStart = request.serverPrompt ? 0 : request.historyStart;
         if (!worldInfo) return messages;
@@ -207,6 +352,9 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (isChatPrompt && hasOutlets) {
             throw roleplayError('ROLEPLAY_INVALID', 'Named World Info outlets need a bound Chat Completion prompt slot.', 409);
         }
+        if (isChatPrompt) return assembleRoleplayChatPrompt(history, request.worldInfo, chatBackend, worldInfo, {
+            userName, characterName: request.characterName, groupNames: request.groupNames || [], effect, substitute, memory,
+        });
         const storyLore = request.worldInfo.storyTemplate && (worldInfo.worldInfoBefore || worldInfo.worldInfoAfter);
         const storyNote = (worldInfo.ANBeforeEntries.length || worldInfo.ANAfterEntries.length)
             && request.worldInfo.authorNote?.position !== 1 && isWorldInfoAuthorNoteActive(request.worldInfo.authorNote);
@@ -248,9 +396,18 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             messages = insertRoleplayPostHistory(messages, request.worldInfo.postHistory, material.backend ?? 'chat', effect,
                 material, userName, request.characterName);
         }
+        if (memory?.enabled) messages.push(...[memory.npcText, memory.memoryText].filter(Boolean)
+            .map(content => ({ role: 'system', content })));
         return messages;
     };
-    let messages = place(savedHistory || structuredClone(request.messages));
+    const promptIdentity = request.serverPrompt && roleplayHash({ history: promptHash, worldInfo: request.worldInfo,
+        binding: request.binding, maxTokens: request.maxTokens, effect, memory });
+    if (preparedPrompt !== undefined && (!preparedPrompt || preparedPrompt.identity !== promptIdentity
+        || !Array.isArray(preparedPrompt.messages) || !preparedPrompt.macroState
+        || preparedPrompt.hash !== roleplayHash({ messages: preparedPrompt.messages, macroState: preparedPrompt.macroState }))) {
+        throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved Roleplay prompt needs recovery.', 503);
+    }
+    let messages = preparedPrompt?.messages ?? await place(savedHistory || structuredClone(request.messages));
     if (!messages.length && request.serverPrompt) {
         throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay prompt has no content to send.', 409);
     }
@@ -275,7 +432,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                     return cost + imageCost(image);
                 }, 0) : 0), 0);
         let size = await tokens(messages);
-        if (size > budget && savedHistory && savedHistory.length > 1) {
+        if (size > budget && !preparedPrompt && !memory?.enabled && savedHistory && savedHistory.length > 1) {
             // ponytail: search saved suffixes instead of rebuilding once per old message; the latest stays intact.
             const starts = savedHistory.map((message, index) => message.role === 'tool' ? null : index)
                 .filter(index => index !== null && index > 0);
@@ -284,79 +441,24 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             if (end < 0) throw roleplayError('ROLEPLAY_INVALID', 'Saved tool results cannot be sent without their calls.', 409);
             while (start < end) {
                 const middle = Math.floor((start + end) / 2);
-                const candidate = place(savedHistory.slice(starts[middle]));
+                const candidate = await place(savedHistory.slice(starts[middle]));
                 if (await tokens(candidate) <= budget) end = middle;
                 else start = middle + 1;
             }
-            messages = place(savedHistory.slice(starts[start]));
+            messages = await place(savedHistory.slice(starts[start]));
             size = await tokens(messages);
         }
         if (size > budget) {
             throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay prompt exceeds the bound context budget.', 409);
         }
     }
-    const loreScope = scope => !scope || scope === 'active' ? worldInfo.activeLore
-        : scope === 'bound' ? worldInfo.boundLore : null;
-    const loreInFlight = new Set();
-    const loreLookup = (title, book) => worldInfo.boundLore.find(item => (!book || item.book === book)
-        && ((String(item.entry.comment ?? '').trim()
-            && String(item.entry.comment).trim().toLowerCase() === String(title).trim().toLowerCase())
-            || String(item.entry.uid) === String(title).trim()));
-    const loreContent = (item, resolve) => {
-        if (!item) return '';
-        const identity = `${item.book}::${item.entry.uid}`;
-        if (loreInFlight.has(identity)) return item.content;
-        loreInFlight.add(identity);
-        try { return resolve(item.content); } finally { loreInFlight.delete(identity); }
-    };
-    const loreFields = {
-        title: item => item.title, keys: item => (item.entry.key ?? []).join(', '),
-        secondarykeys: item => (item.entry.keysecondary ?? []).join(', '),
-        content: item => item.content, position: item => String(item.entry.position ?? ''),
-        depth: item => String(item.entry.depth ?? ''), order: item => String(item.entry.order ?? ''),
-        probability: item => String(item.entry.probability ?? ''), constant: item => item.entry.constant ? 'true' : 'false',
-        enabled: item => item.entry.disable ? 'false' : 'true', uid: item => String(item.entry.uid),
-    };
-    const loreMacro = { unnamedArgs: [{ name: 'entry' }, { name: 'book', optional: true }],
-        handler: ({ unnamedArgs: [title, book], resolve }) => loreContent(loreLookup(title, book), resolve) };
+    if (request.serverPrompt && !preparedPrompt) {
+        const saved = { messages, macroState: macroEnvironment.captureState() };
+        writeArtifact(directories, job.id, 'roleplay-prompt', { identity: promptIdentity, hash: roleplayHash(saved), ...saved });
+    }
     const result = await generate({ context: base, jobContext: context, binding: request.binding, messages,
         maxTokens: request.maxTokens, userName, characterName: request.characterName,
-        groupNames: request.groupNames || [], macroEnvironment: createMacroEnvironment(request.macros || {}, {}, {
-            dynamicMacros: worldInfo && request.worldInfo.enhancedLoreMacros ? {
-                lore: loreMacro,
-                wi: loreMacro,
-                lorekeys: { unnamedArgs: [{ name: 'entry' }, { name: 'book', optional: true }],
-                    handler: ({ unnamedArgs: [title, book] }) => (loreLookup(title, book)?.entry.key ?? []).join(', ') },
-                loreexists: { unnamedArgs: [{ name: 'entry' }, { name: 'book', optional: true }],
-                    handler: ({ unnamedArgs: [title, book] }) => String(Boolean(loreLookup(title, book))) },
-                lorefield: { unnamedArgs: [{ name: 'entry' }, { name: 'field' }, { name: 'book', optional: true }],
-                    handler: ({ unnamedArgs: [title, field, book] }) => {
-                        const item = loreLookup(title, book);
-                        const name = String(field ?? '').trim().toLowerCase();
-                        return item && Object.hasOwn(loreFields, name) ? loreFields[name](item) : '';
-                    } },
-                lorepick: { unnamedArgs: [{ name: 'book', optional: true }, { name: 'key', optional: true }],
-                    handler: ({ unnamedArgs: [book, key], resolve }) => {
-                        const candidates = worldInfo.boundLore.filter(item => !book || item.book === book)
-                            .sort((a, b) => String(a.entry.uid).localeCompare(String(b.entry.uid), undefined, { numeric: true }));
-                        if (!candidates.length) return '';
-                        const seed = `${request.worldInfo.metadata.chat_id_hash ?? ''}:${String(book ?? '')}:${String(key ?? '')}`;
-                        return loreContent(candidates[fnv1a(seed) % candidates.length], resolve);
-                    } },
-                loreactive: { unnamedArgs: [{ name: 'separator', optional: true }], handler: ({ unnamedArgs: [separator] }) =>
-                    worldInfo.activeLore.map(entry => entry.title).join(separator || ', ') },
-                lorebooks: { unnamedArgs: [{ name: 'separator', optional: true }], handler: ({ unnamedArgs: [separator] }) =>
-                    [...new Set([...request.worldInfo.names.chat, ...request.worldInfo.names.character,
-                        ...request.worldInfo.names.global])].join(separator || ', ') },
-                loreentries: { unnamedArgs: [{ name: 'book', optional: true }, { name: 'separator', optional: true }],
-                    handler: ({ unnamedArgs: [book, separator] }) => worldInfo.boundLore
-                        .filter(entry => !book || entry.book === book).map(entry => entry.title).join(separator || ', ') },
-                lorecount: { unnamedArgs: [{ name: 'scope', optional: true }], handler: ({ unnamedArgs: [scope] }) =>
-                    loreScope(scope) ? String(loreScope(scope).length) : '' },
-                loretokens: { unnamedArgs: [{ name: 'scope', optional: true }], handler: ({ unnamedArgs: [scope] }) =>
-                    loreScope(scope) ? String(Math.ceil(loreScope(scope).map(entry => entry.content).join('\n').length / 4)) : '' },
-            } : {},
-        }),
+        groupNames: request.groupNames || [], macroEnvironment,
         rawOptions: request.rawOptions || {}, ephemeralStops: request.ephemeralStops || [],
         beforeDispatch: () => {
             const current = assertSource();
@@ -364,6 +466,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved Roleplay prompt history changed before dispatch.', 409);
             }
             if (worldInfo) assertRoleplayWorldInfoCurrent(base, request.worldInfo);
+            assertMemory();
         },
         modelOverride: request.modelOverride || '', overridePayload, stream: request.stream === true });
     const output = replyOutput(result, effect, request.characterName, result.generation);

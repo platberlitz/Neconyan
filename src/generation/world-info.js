@@ -144,6 +144,7 @@ function selectedPersona(settings, saved, source, avatar, directories) {
     const descriptor = selected && Object.hasOwn(descriptions, selected) ? descriptions[selected] : null;
     if (!selected || (!locked && !connected.length && !power.default_persona && !descriptor)) {
         return { description: power.persona_description ?? '', position: power.persona_description_position ?? 0,
+            depth: power.persona_description_depth ?? 2, role: power.persona_description_role ?? 0,
             lorebook: power.persona_description_lorebook ?? '', evidence: null };
     }
     if (typeof selected !== 'string' || !selected || selected === '.' || selected === '..'
@@ -175,7 +176,7 @@ function selectedPersona(settings, saved, source, avatar, directories) {
         if (appendix.description.trim()) parts.push(`(${appendix.name})\n${appendix.description.trim()}`);
     }
     return { description: parts.filter(Boolean).join('\n\n'), position: descriptor?.position ?? 0,
-        lorebook: descriptor?.lorebook ?? '',
+        depth: descriptor?.depth ?? 2, role: descriptor?.role ?? 0, lorebook: descriptor?.lorebook ?? '',
         evidence: { avatar: selected, rawHash: savedAvatar.rawHash, physical: savedAvatar.physical } };
 }
 
@@ -306,7 +307,12 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             text: settings.power_user?.sysprompt?.post_history ?? '' },
             storyTemplate: settings.power_user?.context?.story_string ?? '',
             storyPosition: settings.power_user?.context?.story_string_position ?? 0,
-            personaPosition: persona.position, personaEvidence: persona.evidence,
+            personaPosition: persona.position, personaDepth: persona.depth, personaRole: persona.role, personaEvidence: persona.evidence,
+            promptVariables: { local: saved.records[0].chat_metadata?.variables ?? {}, global: extensions.variables?.global ?? {} },
+            experimentalMacroEngine: Boolean(settings.power_user?.experimental_macro_engine),
+            depthPrompt: { prompt: depthPrompt,
+                depth: (character.data?.data?.extensions ?? character.data?.extensions)?.depth_prompt?.depth ?? 4,
+                role: (character.data?.data?.extensions ?? character.data?.extensions)?.depth_prompt?.role ?? 'system' },
             enhancedLoreMacros: Boolean(settings.power_user?.experimental_macro_engine)
                 && !extensions.disabledExtensions?.some(name => normalizeExtensionBootId(name) === 'macroenhanced'),
             reasoningInPrompt: Boolean(settings.power_user?.reasoning?.add_to_prompts),

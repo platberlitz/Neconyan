@@ -1,3 +1,4 @@
+import { injectChatPromptDepth } from './chat-prompt-depth.js';
 /*
 * CODE FOR OPENAI SUPPORT
 * By CncAnon (@CncAnon1)
@@ -927,96 +928,25 @@ export function formatWorldInfo(value, { wiFormat = null } = {}) {
  * @returns {Promise<Object[]>} - Array containing all messages with injections.
  */
 async function populationInjectionPrompts(prompts, messages) {
-    let totalInsertedMessages = 0;
-
-    const roleTypes = {
-        'system': extension_prompt_roles.SYSTEM,
-        'user': extension_prompt_roles.USER,
-        'assistant': extension_prompt_roles.ASSISTANT,
-    };
-
-    const maxDepth = getExtensionPromptMaxDepth();
-    for (let i = 0; i <= maxDepth; i++) {
-        // Get prompts for current depth
-        const depthPrompts = prompts.filter(prompt => prompt.injection_depth === i && prompt.content);
-
-        const roleMessages = [];
-        const separator = '\n';
-        const wrap = false;
-
-        // Group prompts by priority
-        const extensionPromptsOrder = '100';
-        const orderGroups = {
-            [extensionPromptsOrder]: [],
-        };
-        for (const prompt of depthPrompts) {
-            const order = prompt.injection_order ?? 100;
-            if (!orderGroups[order]) {
-                orderGroups[order] = [];
-            }
-            orderGroups[order].push(prompt);
-        }
-
-        // Process each order group in order (b - a = low to high ; a - b = high to low)
-        const orders = Object.keys(orderGroups).sort((a, b) => +b - +a);
-        for (const order of orders) {
-            const orderPrompts = orderGroups[order];
-
-            // Order of priority for roles (most important go lower)
-            const roles = ['system', 'user', 'assistant'];
-            for (const role of roles) {
-                const rolePrompts = orderPrompts
-                    .filter(prompt => prompt.role === role)
-                    .map(x => x.content)
-                    .join(separator);
-
-                // Get extension prompt
-                const extensionContributions = [];
-                const extensionPrompt = order === extensionPromptsOrder
-                    ? await getExtensionPrompt(extension_prompt_types.IN_CHAT, i, separator, roleTypes[role], wrap, ({ key, prompt, value }) => {
-                        if (!key.startsWith(IN_CHAT_AGENT_PROMPT_KEY_PREFIX) || !value.trim()) return;
-                        extensionContributions.push({
-                            identifier: key.replace(/\W/g, '_'),
-                            name: String(prompt.name ?? '').trim() || key,
-                            role,
-                            content: value.trim(),
-                            kind: getInChatAgentContributionKind(key),
-                        });
-                    })
-                    : '';
-                const jointPrompt = [rolePrompts, extensionPrompt].filter(x => x).map(x => x.trim()).join(separator);
-
-                const promptContributions = orderPrompts
-                    .filter(prompt => prompt.role === role && isInChatAgentPromptIdentifier(prompt.identifier) && prompt.content)
-                    .map(prompt => ({
-                        identifier: prompt.identifier,
-                        name: String(prompt.name ?? '').trim() || prompt.identifier,
-                        role,
-                        content: String(prompt.content).trim(),
-                        kind: getInChatAgentContributionKind(prompt.identifier),
-                    }));
-                const agentContributions = [...promptContributions, ...extensionContributions];
-
-                if (jointPrompt && jointPrompt.length) {
-                    roleMessages.push({
-                        'role': role,
-                        'content': jointPrompt,
-                        injected: true,
-                        ...(agentContributions.length > 0 && { agentContributions }),
-                    });
-                }
-            }
-        }
-
-        if (roleMessages.length) {
-            const injectIdx = i + totalInsertedMessages;
-            messages.splice(injectIdx, 0, ...roleMessages);
-            totalInsertedMessages += roleMessages.length;
-        }
-    }
-
-    messages = messages.reverse();
-    return messages;
+    const roleTypes = { system: extension_prompt_roles.SYSTEM, user: extension_prompt_roles.USER,
+        assistant: extension_prompt_roles.ASSISTANT };
+    return injectChatPromptDepth(prompts, messages, {
+        maxDepth: getExtensionPromptMaxDepth(),
+        extensionAt: async (depth, role) => {
+            const contributions = [];
+            const content = await getExtensionPrompt(extension_prompt_types.IN_CHAT, depth, '\n', roleTypes[role], false,
+                ({ key, prompt, value }) => {
+                    if (!key.startsWith(IN_CHAT_AGENT_PROMPT_KEY_PREFIX) || !value.trim()) return;
+                    contributions.push({ identifier: key.replace(/\W/g, '_'), name: String(prompt.name ?? '').trim() || key,
+                        role, content: value.trim(), kind: getInChatAgentContributionKind(key) });
+                });
+            return { content, contributions };
+        },
+        describePrompt: prompt => isInChatAgentPromptIdentifier(prompt.identifier) ? [{
+            identifier: prompt.identifier, name: String(prompt.name ?? '').trim() || prompt.identifier,
+            role: prompt.role, content: String(prompt.content).trim(), kind: getInChatAgentContributionKind(prompt.identifier),
+        }] : [],
+    });
 }
 
 /**

@@ -118,6 +118,8 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
     // while variables and mutation sinks remain shared within the operation.
     env.fork = () => createMacroEnvironment({ ...data, names: env.names, character: env.character, system: env.system,
         extra: { ...data.extra, powerUser: env.extra.powerUser, mainApi: env.extra.mainApi } }, capabilities, { dynamicMacros, postProcess });
+    env.captureState = () => structuredClone({ variables: data.variables,
+        chatMetadata: env.extra.chatMetadata, bannedWords: env.extra.bannedWords });
     env.evaluate = (content, { legacy = false, strictCapabilities = false } = {}) => {
         let unavailable;
         const extra = { ...env.extra };

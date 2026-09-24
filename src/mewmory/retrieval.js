@@ -151,9 +151,10 @@ async function selectMemories(state, directories, config, documents, scene, allD
 
 export async function recall(directories, locator, {
     asOf = Infinity, query: manualQuery = '', tokenizer = {}, signal, local = false, background = false, operationId,
-} = {}, { call = callJsonRole, embedFn = embed } = {}) {
+} = {}, { call = callJsonRole, embedFn = embed, loadState = loadCurrentState, mutate = mutateState,
+    scheduleBackground = true } = {}) {
     const config = readConfig(directories);
-    const state = await loadCurrentState(directories, locator);
+    const state = await loadState(directories, locator);
     if (!state.enabled) return { enabled: false, npcText: '', memoryText: '', tokens: { npc: 0, memory: 0 } };
     const fingerprint = assemblyFingerprint(state, config);
     const validationFingerprint = generationFingerprint(state, config);
@@ -195,7 +196,7 @@ export async function recall(directories, locator, {
         documents: candidates, usage: [], fallbackUsed: false, error: '',
     } : await selectMemories(state, directories, config, candidates, scene, allDocuments, asOf, signal, call);
     usage.push(...selection.usage);
-    await loadCurrentState(directories, locator);
+    await loadState(directories, locator);
     const selectedIds = new Set([...forced.map(document => document.id), ...selection.status.selections.map(item => item.recordId),
         ...(local ? candidates.map(document => document.id) : [])]);
     // Use one coherent completed snapshot; the model never supplies assembled memory text.
@@ -213,7 +214,7 @@ export async function recall(directories, locator, {
         sourceCount, validationFingerprint, background,
     };
     const retainedJobs = operationId ? new Set(listJobs(directories, { includeDismissed: true }).map(job => job.id)) : null;
-    mutateState(directories, locator, current => {
+    mutate(directories, locator, current => {
         signal?.throwIfAborted();
         const currentConfig = readConfig(directories);
         if ((background ? recallFingerprint(current, currentConfig, sourceCount) : generationFingerprint(current, currentConfig)) !== validationFingerprint) {
@@ -229,6 +230,6 @@ export async function recall(directories, locator, {
         if (!background) current.preview = { ...assembly, fingerprint };
         addUsage(current, usage);
     });
-    if (local) recallInBackground(directories, locator, { asOf: Math.min(asOf, sourceCount - 1), query: manualQuery, tokenizer }, { call, embedFn });
+    if (local && scheduleBackground) recallInBackground(directories, locator, { asOf: Math.min(asOf, sourceCount - 1), query: manualQuery, tokenizer }, { call, embedFn });
     return { enabled: true, ...assembly, inspection, fingerprint, validationFingerprint };
 }
