@@ -201,6 +201,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             names, settings: Object.fromEntries(SETTINGS.map(key => [key, settings[key] ?? DEFAULTS[key]])),
             bookHashes: Object.fromEntries(Object.entries(selected).map(([name, value]) => [name, value.hash])),
             characterFile: path.parse(avatar).name, avatar, maxContext, tokenizer, chat, regex,
+            savedChatLength: saved.records.length - 1,
             metadata: structuredClone(saved.records[0].chat_metadata ?? {}),
             authorNote: { prompt: saved.records[0].chat_metadata?.note_prompt ?? note.default ?? '',
                 interval: saved.records[0].chat_metadata?.note_interval ?? note.defaultInterval ?? 1,

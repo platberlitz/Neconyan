@@ -73,7 +73,7 @@ export function assertWorldInfoDepthHistory(records, messages, historyStart, opt
 }
 
 function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = null, regex = [], characterName,
-    group = false, userName = records[0]?.user_name, namesBehavior, attachments = [], images = [], imageDetail = 'auto', mediaDisplay = 'list' } = {}) {
+    group = false, userName = records[0]?.user_name, namesBehavior, attachments = [], images = [], imageDetail = 'auto', mediaDisplay = 'list', toolHistory = false, toolSource = '', toolModel = '' } = {}) {
     if (group && ![-1, 0, 1, 2, 'provider'].includes(namesBehavior)) {
         throw roleplayError('ROLEPLAY_INVALID', 'This group naming policy needs server-side provider formatting.', 409);
     }
@@ -88,6 +88,24 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
         throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay images are invalid.', 409);
     }
     const history = records.slice(1).map((record, index) => {
+        if (record.extra?.tool_invocations !== undefined) {
+            const calls = record.extra.tool_invocations;
+            if (!toolHistory || !Array.isArray(calls) || !calls.length || calls.length > 32
+                || record.is_system !== true || record.is_user !== false || typeof record.mes !== 'string'
+                || record.extra.api !== toolSource || record.extra.model !== toolModel
+                || Object.keys(record).some(key => !['name', 'force_avatar', 'is_system', 'is_user', 'mes', 'extra', 'send_date'].includes(key))
+                || Object.keys(record.extra).some(key => !['isSmallSys', 'tool_invocations', 'api', 'model'].includes(key))
+                || calls.some(call => !call || typeof call.id !== 'string' || !call.id || call.id.length > 256
+                    || typeof call.name !== 'string' || !call.name || call.name.length > 256
+                    || typeof call.parameters !== 'string' || typeof call.result !== 'string'
+                    || call.signature || call.reasoning)
+                || new Set(calls.map(call => call.id)).size !== calls.length) {
+                throw roleplayError('ROLEPLAY_INVALID', 'This saved tool history needs a bound tool-capable connection.', 409);
+            }
+            return [{ role: 'assistant', tool_calls: calls.map(call => ({ id: call.id, type: 'function',
+                function: { name: call.name, arguments: call.parameters } })) },
+            ...calls.map(call => ({ role: 'tool', tool_call_id: call.id, content: call.result || '[No content]' }))];
+        }
         const attachment = attachments.find(item => item.index === index);
         const selectedImages = images.filter(item => item.index === index);
         const media = record.extra?.media;
@@ -121,6 +139,7 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
         let added = 0;
         for (let index = history.length - 1; index >= 0 && added < reasoning.max_additions; index--) {
             const record = records[index + 1];
+            if (Array.isArray(history[index])) continue;
             if (group && record.name !== characterName) continue;
             const thought = record.extra?.reasoning;
             if (!thought || thought === '\u200B') continue;
@@ -129,6 +148,7 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
         }
     }
     if (group) for (let index = 0; index < history.length; index++) {
+        if (Array.isArray(history[index])) continue;
         const name = records[index + 1].name;
         if (namesBehavior === 'provider') {
             history[index].name = name;
@@ -141,12 +161,13 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
         }
     }
     for (const [index, message] of history.entries()) {
+        if (Array.isArray(message)) continue;
         const selectedImages = images.filter(item => item.index === index);
         if (selectedImages.length) message.content = [{ type: 'text', text: message.content }, ...selectedImages.map(item => ({
             type: 'image_url', image_url: { url: item.url, detail: imageDetail },
         }))];
     }
-    return history;
+    return history.flat();
 }
 
 /** Derive the plain-text history from the protected chat, rather than an accepted page payload. */

@@ -121,9 +121,16 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved Roleplay speaker names differ from the accepted prompt.', 409);
     }
     const userName = request.userName ?? promptSource?.records[0]?.user_name ?? 'User';
+    const hasToolHistory = Boolean(promptSource?.records.some(record => record.extra?.tool_invocations !== undefined));
     const namingMaterial = (source.locator.group && (request.serverPrompt || worldInfo?.activated.length)
-        || request.worldInfo?.images?.length)
+        || request.worldInfo?.images?.length || hasToolHistory)
         ? promptBackend(directories, request.binding) : null;
+    const toolControls = namingMaterial?.preset ?? namingMaterial?.active;
+    if (hasToolHistory && (!request.serverPrompt || namingMaterial?.backend && namingMaterial.backend !== 'chat'
+        || namingMaterial?.source !== 'custom' || toolControls?.function_calling !== true
+        || !['', 'merge_tools', 'semi_tools', 'strict_tools'].includes(toolControls?.custom_prompt_post_processing ?? ''))) {
+        throw roleplayError('ROLEPLAY_INVALID', 'Saved tool calls need a bound tool-capable Chat Completion connection.', 409);
+    }
     const media = request.worldInfo?.images ?? [];
     const imageDetail = namingMaterial?.preset?.inline_image_quality
         ?? namingMaterial?.active?.inline_image_quality ?? 'auto';
@@ -136,6 +143,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     const historyOptions = request.worldInfo && { reasoningInPrompt: request.worldInfo.reasoningInPrompt,
         reasoning: request.worldInfo.reasoning, regex: request.worldInfo.regex,
         attachments: request.worldInfo.attachments, images: media, imageDetail, mediaDisplay: request.worldInfo.mediaDisplay,
+        toolHistory: hasToolHistory, toolSource: namingMaterial?.source, toolModel: namingMaterial?.profile?.model,
         characterName: request.characterName, group: source.locator.group, userName,
         namesBehavior: namingMaterial?.backend === 'chat'
             ? (namingMaterial.preset?.names_behavior ?? namingMaterial.active?.names_behavior ?? 0)
@@ -199,7 +207,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             return 85 + 170 * Math.ceil(Math.round(Math.round(image.width * scale) * finalScale) / 512)
                 * Math.ceil(Math.round(Math.round(image.height * scale) * finalScale) / 512);
         };
-        const tokens = async prompt => await count(prompt.map(message => [message.name,
+        const tokens = async prompt => await count(prompt.map(message => [message.name, message.tool_call_id,
+            message.tool_calls && JSON.stringify(message.tool_calls),
             Array.isArray(message.content) ? message.content.filter(part => part.type === 'text').map(part => part.text).join('\n')
                 : message.content].filter(Boolean).join('\n')).join('\n'))
             + prompt.reduce((sum, message) => sum + (Array.isArray(message.content)
@@ -211,15 +220,18 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         let size = await tokens(messages);
         if (size > budget && savedHistory && savedHistory.length > 1) {
             // ponytail: search saved suffixes instead of rebuilding once per old message; the latest stays intact.
-            let start = 1;
-            let end = savedHistory.length - 1;
+            const starts = savedHistory.map((message, index) => message.role === 'tool' ? null : index)
+                .filter(index => index !== null && index > 0);
+            let start = 0;
+            let end = starts.length - 1;
+            if (end < 0) throw roleplayError('ROLEPLAY_INVALID', 'Saved tool results cannot be sent without their calls.', 409);
             while (start < end) {
                 const middle = Math.floor((start + end) / 2);
-                const candidate = place(savedHistory.slice(middle));
+                const candidate = place(savedHistory.slice(starts[middle]));
                 if (await tokens(candidate) <= budget) end = middle;
                 else start = middle + 1;
             }
-            messages = place(savedHistory.slice(start));
+            messages = place(savedHistory.slice(starts[start]));
             size = await tokens(messages);
         }
         if (size > budget) {
@@ -301,7 +313,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     if (worldInfo) {
         output.timedWorldInfo = worldInfo.timedWorldInfo;
         output.timedBaseline = worldInfo.timedBaseline;
-        output.timedChatLength = worldInfo.chatLength;
+        output.timedChatLength = request.worldInfo.savedChatLength ?? worldInfo.chatLength;
     }
     writeArtifact(directories, job.id, 'roleplay-output', output);
     // The provider result is durable before recovery may revisit the chat write.

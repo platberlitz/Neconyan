@@ -793,6 +793,140 @@ test('server-owned prompts derive history from the protected chat and reject bro
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Bound reply');
 });
 
+test('completed saved tool calls preserve their calls and results in bound Custom prompts', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    f.records.splice(2, 0, { name: 'System', is_system: true, is_user: false, mes: 'Tool calls',
+        extra: { isSmallSys: true, api: 'custom', model: 'tool-model', tool_invocations: [
+            { id: 'call-1', name: 'lookup', parameters: '{"term":"sea"}', result: 'Calm seas' },
+            { id: 'call-2', name: 'weather', parameters: '{}', result: 'Clear' },
+        ] } });
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 300 });
+    const material = { backend: 'chat', source: 'custom', profile: { model: 'tool-model' },
+        active: { function_calling: true, custom_prompt_post_processing: '' } };
+    assert.deepEqual(buildRoleplaySavedHistory(f.records, { toolHistory: true, toolSource: 'custom', toolModel: 'tool-model' }), [
+        { role: 'user', content: 'Original' },
+        { role: 'assistant', tool_calls: [
+            { id: 'call-1', type: 'function', function: { name: 'lookup', arguments: '{"term":"sea"}' } },
+            { id: 'call-2', type: 'function', function: { name: 'weather', arguments: '{}' } },
+        ] },
+        { role: 'tool', tool_call_id: 'call-1', content: 'Calm seas' },
+        { role: 'tool', tool_call_id: 'call-2', content: 'Clear' },
+        { role: 'assistant', content: 'Answer' },
+    ]);
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'saved-tool-history', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true, messages: [],
+            maxTokens: 20, characterName: 'Nova', worldInfo } });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    await assert.rejects(runRoleplayReplyJob(context, { promptBackend: () => ({ ...material,
+        active: { function_calling: false } }), generate: () => { throw Error('Provider called'); } }),
+    { code: 'ROLEPLAY_INVALID' });
+    await assert.rejects(runRoleplayReplyJob(context, { promptBackend: () => ({ ...material,
+        profile: { model: 'different-model' } }), generate: () => { throw Error('Provider called'); } }),
+    { code: 'ROLEPLAY_INVALID' });
+    await runRoleplayReplyJob(context, { promptBackend: () => material, generate: async ({ messages, beforeDispatch }) => {
+        beforeDispatch();
+        assert.deepEqual(messages.map(message => message.role), ['user', 'assistant', 'tool', 'tool', 'assistant']);
+        assert.equal(messages[1].tool_calls[0].function.name, 'lookup');
+        assert.equal(messages[3].tool_call_id, 'call-2');
+        return { text: 'New reply' };
+    } });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'New reply');
+});
+
+test('saved tool history refuses malformed or unsigned calls before provider work', t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    const tool = { name: 'System', is_system: true, is_user: false, mes: 'Tool calls',
+        extra: { isSmallSys: true, api: 'custom', model: 'tool-model', tool_invocations: [
+            { id: 'call-1', name: 'lookup', parameters: '{}', result: 'safe', signature: 'signed' },
+        ] } };
+    f.records.splice(2, 0, tool);
+    assert.throws(() => buildRoleplaySavedHistory(f.records, { toolHistory: true, toolSource: 'custom', toolModel: 'tool-model' }),
+        { code: 'ROLEPLAY_INVALID' });
+    delete tool.extra.tool_invocations[0].signature;
+    tool.extra.tool_invocations[0].id = '__proto__';
+    assert.deepEqual(buildRoleplaySavedHistory(f.records, { toolHistory: true, toolSource: 'custom', toolModel: 'tool-model' })[2].tool_call_id,
+        '__proto__');
+    tool.extra.tool_invocations.push({ ...tool.extra.tool_invocations[0] });
+    assert.throws(() => buildRoleplaySavedHistory(f.records, { toolHistory: true, toolSource: 'custom', toolModel: 'tool-model' }),
+        { code: 'ROLEPLAY_INVALID' });
+});
+
+test('context trimming keeps a saved tool call together with every result', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    f.records[1].mes = 'Old context '.repeat(80);
+    f.records.splice(2, 0, { name: 'System', is_system: true, is_user: false, mes: 'Tool calls',
+        extra: { isSmallSys: true, api: 'custom', model: 'tool-model', tool_invocations: [
+            { id: 'call-1', name: 'lookup', parameters: '{}', result: 'Calm seas' },
+        ] } });
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 120 });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'trim-tool-history', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true, messages: [],
+            maxTokens: 20, characterName: 'Nova', worldInfo } });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    await runRoleplayReplyJob(context, { contextLimit: () => 140,
+        promptBackend: () => ({ backend: 'chat', source: 'custom', profile: { model: 'tool-model' },
+            active: { function_calling: true, custom_prompt_post_processing: '' } }),
+        generate: async ({ messages, beforeDispatch }) => {
+            beforeDispatch();
+            assert.deepEqual(messages.map(item => item.role), ['assistant', 'tool', 'assistant']);
+            assert.equal(messages[0].tool_calls[0].id, messages[1].tool_call_id);
+            return { text: 'Reply' };
+        },
+    });
+});
+
+test('the native Custom request receives saved tool calls and their linked results', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    f.records.splice(2, 0, { name: 'System', is_system: true, is_user: false, mes: 'Tool calls',
+        extra: { isSmallSys: true, api: 'custom', model: 'tool-model', tool_invocations: [
+            { id: 'call-1', name: 'lookup', parameters: '{}', result: 'Calm seas' },
+        ] } });
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ _settingsRevision: 1,
+        main_api: 'openai', active_generation: { api: 'openai', source: 'custom', model: 'tool-model' },
+        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000',
+            custom_model: 'tool-model', function_calling: true, openai_max_context: 512 },
+        power_user: { custom_stopping_strings: '[]' },
+    }));
+    const binding = captureGenerationBinding(f.scope.directories, { kind: 'active' }, { settingsRevision: 1 });
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 400 });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'native-tool-history', effect: 'append', source,
+        request: { binding, serverPrompt: true, messages: [], maxTokens: 24, characterName: 'Nova', worldInfo } });
+    releaseJob(f.scope.directories, jobId);
+    let calls = 0;
+    await runReply({ job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal }, { contextLimit: undefined,
+        generate: options => runChatProfile({ ...options, fetch: async (_url, request) => {
+            calls++;
+            const { messages } = JSON.parse(request.body);
+            assert.deepEqual(messages.map(item => item.role), ['user', 'assistant', 'tool', 'assistant']);
+            assert.deepEqual(messages[1].tool_calls, [{ id: 'call-1', type: 'function',
+                function: { name: 'lookup', arguments: '{}' } }]);
+            assert.equal(messages[2].tool_call_id, 'call-1');
+            assert.equal(messages[2].content, 'Calm seas');
+            return new Response(JSON.stringify({ choices: [{ message: { content: 'Safe return' } }] }));
+        } }),
+    });
+    assert.equal(calls, 1);
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Safe return');
+});
+
 test('server-owned prompts refuse unsupported saved media before paying a provider', async t => {
     const f = fixture(t);
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
