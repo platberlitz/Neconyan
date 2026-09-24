@@ -10,6 +10,7 @@ import { createMacroEnvironment } from '../macros/index.js';
 import { applyRegexScriptList, AGENT_REGEX_PLACEMENT } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { scanWorldInfo } from './world-info-scan.js';
 import { normalizeExtensionBootId } from '../../public/scripts/extension-boot-lifecycle/index.js';
+import { captureWorldInfoHookPolicy, worldInfoActivationActions } from './world-info-hook-policy.js';
 
 const SETTINGS = ['world_info_depth', 'world_info_min_activations', 'world_info_min_activations_depth_max',
     'world_info_budget', 'world_info_budget_cap', 'world_info_recursive', 'world_info_case_sensitive',
@@ -199,6 +200,8 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                 max_additions: settings.power_user.reasoning.max_additions ?? 1,
             } : null,
             settingsHash: roleplayHash(savedSettings),
+            hookPolicy: captureWorldInfoHookPolicy(base.directories, savedSettings,
+                saved.records[0].chat_metadata, avatar, saved.locator.group),
             names, settings: Object.fromEntries(SETTINGS.map(key => [key, settings[key] ?? DEFAULTS[key]])),
             bookHashes: Object.fromEntries(Object.entries(selected).map(([name, value]) => [name, value.hash])),
             characterFile: path.parse(avatar).name, avatar, maxContext, tokenizer, chat, regex,
@@ -309,7 +312,9 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
         throw roleplayError('ROLEPLAY_INVALID', 'The transformed World Info exceeds the saved context limit.', 409);
     }
     assertRoleplayWorldInfoCurrent(base, snapshot);
-    return { ...result, hookEvents: { ...result.hookEvents, entriesLoaded }, bookHashes: snapshot.bookHashes,
+    const hookEvents = { ...result.hookEvents, entriesLoaded,
+        actions: worldInfoActivationActions(snapshot.hookPolicy, result.activated) };
+    return { ...result, hookEvents, bookHashes: snapshot.bookHashes,
         boundLore: [...new Set([...snapshot.names.chat, ...snapshot.names.character, ...snapshot.names.global])]
             .flatMap(name => Object.values(selected[name].data.entries).filter(entry => !entry.disable).map(entry => ({
                 book: name,

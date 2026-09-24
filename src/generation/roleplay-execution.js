@@ -13,6 +13,7 @@ import { assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertRoleplayC
 import { getChatProfileContextLimit, resolveGenerationProfile } from './profiles.js';
 import { getCounter } from '../mewmory/tokens.js';
 import { fnv1a } from '../../public/scripts/extensions/third-party/MacroEnhanced/src/state-impl.js';
+import { worldInfoActivationActions } from './world-info-hook-policy.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
@@ -99,6 +100,11 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             || request.worldInfo.global?.trigger !== ({ append: 'normal', continue: 'continue', swipe: 'swipe', replace: 'regenerate' }[effect])) {
             throw roleplayError('ROLEPLAY_INVALID', 'World Info must belong to the admitted Roleplay source.', 409);
         }
+        assertRoleplayWorldInfoCurrent(base, request.worldInfo);
+        if (!Array.isArray(request.worldInfo.hookPolicy?.pathfinder)
+            || request.worldInfo.hookPolicy.pathfinder.length) {
+            throw roleplayError('ROLEPLAY_INVALID', 'Enabled Pathfinder retrieval needs server-owned pre-scan execution.', 409);
+        }
         worldInfo = readArtifact(directories, job.id, 'roleplay-world-info');
         if (!worldInfo) {
             worldInfo = await prepareRoleplayWorldInfo(base, request.worldInfo, { ...worldInfoHooks, macros: request.macros });
@@ -109,6 +115,9 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             || !worldInfo.hookEvents.entriesLoaded || !worldInfo.hookEvents.entriesLoaded.bookHashes
             || roleplayHash(worldInfo.hookEvents.entriesLoaded.bookHashes) !== roleplayHash(request.worldInfo.bookHashes)
             || roleplayHash(worldInfo.hookEvents.activated) !== roleplayHash(worldInfo.activated.length ? worldInfo.activated : null)
+            || !Array.isArray(worldInfo.hookEvents.actions)
+            || roleplayHash(worldInfo.hookEvents.actions)
+                !== roleplayHash(worldInfoActivationActions(request.worldInfo.hookPolicy, worldInfo.activated))
             || !Array.isArray(worldInfo.activeLore) || !Array.isArray(worldInfo.boundLore)
             || request.worldInfo.enhancedLoreMacros && worldInfo.boundLore.some(entry => typeof entry.book !== 'string'
                 || !entry.entry || typeof entry.entry !== 'object')) {
@@ -161,7 +170,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (!worldInfo) return messages;
         const chatBackend = request.serverPrompt && (namingMaterial ?? promptBackend(directories, request.binding));
         const isChatPrompt = chatBackend && (!chatBackend.backend || chatBackend.backend === 'chat');
-        if (worldInfo.activated.some(entry => entry.automationId)) {
+        if (worldInfo.hookEvents.actions.length) {
             throw roleplayError('ROLEPLAY_INVALID', 'This World Info entry needs a server Quick Reply action before generation.', 409);
         }
         if (worldInfo.activated.length) {

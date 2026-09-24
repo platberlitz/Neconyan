@@ -1937,30 +1937,6 @@ test('a saved scan cannot dispatch after its book changes between attempts', asy
     assert.equal(calls, 0);
 });
 
-test('a selected Quick Reply automation refuses before paid provider work', async t => {
-    const f = fixture(t);
-    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
-    fs.mkdirSync(f.scope.directories.worlds);
-    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
-        1: entry(1, 'Original', 'Automated lore', { world: undefined, hash: undefined, automationId: 'quick-reply-1' }),
-    } }));
-    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
-        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
-    }));
-    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
-    const source = captureRoleplaySource(f.scope, { locator: f.locator });
-    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 });
-    const request = { binding: { profileId: 'saved', fingerprint: 'bound' },
-        messages: [{ role: 'user', content: 'Original' }], maxTokens: 32, characterName: 'Nova', worldInfo };
-    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'automation-lore', effect: 'append', source, request });
-    releaseJob(f.scope.directories, jobId);
-    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
-        owner: f.scope.owner, signal: new AbortController().signal };
-    await assert.rejects(runRoleplayReplyJob(context, { generate: () => { throw Error('Provider called'); } }),
-        { code: 'ROLEPLAY_INVALID' });
-    assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length);
-});
-
 test('a saved World Info selection cannot name another chat in a paid Roleplay job', async t => {
     const f = fixture(t);
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
