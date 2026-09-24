@@ -103,6 +103,9 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             worldInfo = await prepareRoleplayWorldInfo(base, request.worldInfo, { ...worldInfoHooks, macros: request.macros });
             writeArtifact(directories, job.id, 'roleplay-world-info', worldInfo);
         }
+        if (!Array.isArray(worldInfo.activeLore) || !Array.isArray(worldInfo.boundLore)) {
+            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'This saved World Info scan predates its server macro result.', 503);
+        }
         assertRoleplayWorldInfoCurrent(base, request.worldInfo);
     }
     if (request.serverPrompt && (!request.worldInfo || request.messages.length || request.historyStart !== undefined)) {
@@ -194,9 +197,20 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay prompt exceeds the bound context budget.', 409);
         }
     }
+    const loreScope = scope => !scope || scope === 'active' ? worldInfo.activeLore
+        : scope === 'bound' ? worldInfo.boundLore : null;
     const result = await generate({ context: base, jobContext: context, binding: request.binding, messages,
         maxTokens: request.maxTokens, userName, characterName: request.characterName,
-        groupNames: request.groupNames || [], macroEnvironment: createMacroEnvironment(request.macros || {}),
+        groupNames: request.groupNames || [], macroEnvironment: createMacroEnvironment(request.macros || {}, {}, {
+            dynamicMacros: worldInfo && request.worldInfo.enhancedLoreMacros ? {
+                loreactive: { unnamedArgs: [{ name: 'separator', optional: true }], handler: ({ unnamedArgs: [separator] }) =>
+                    worldInfo.activeLore.map(entry => entry.title).join(separator || ', ') },
+                lorecount: { unnamedArgs: [{ name: 'scope', optional: true }], handler: ({ unnamedArgs: [scope] }) =>
+                    loreScope(scope) ? String(loreScope(scope).length) : '' },
+                loretokens: { unnamedArgs: [{ name: 'scope', optional: true }], handler: ({ unnamedArgs: [scope] }) =>
+                    loreScope(scope) ? String(Math.ceil(loreScope(scope).map(entry => entry.content).join('\n').length / 4)) : '' },
+            } : {},
+        }),
         rawOptions: request.rawOptions || {}, ephemeralStops: request.ephemeralStops || [],
         beforeDispatch: () => {
             const current = assertSource();

@@ -893,6 +893,65 @@ test('the account captures saved books and refuses a changed book before the pro
     await assert.rejects(prepareRoleplayWorldInfo(f.scope, snapshot), { code: 'ROLEPLAY_SOURCE_CHANGED' });
 });
 
+test('production lore activation macros read only this job’s saved selection, including on replay', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        7: entry(7, 'Original', 'The harbour is safe', { comment: 'Harbour', world: undefined, hash: undefined }),
+        8: entry(8, 'Elsewhere', 'Inactive lore', { comment: 'Other', world: undefined, hash: undefined }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        power_user: { experimental_macro_engine: true },
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'production-lore-macros', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true, messages: [],
+            maxTokens: 32, characterName: 'Nova', worldInfo } });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    let calls = 0;
+    const options = { generate: async ({ beforeDispatch, macroEnvironment }) => {
+        beforeDispatch();
+        assert.equal(macroEnvironment.evaluate('{{loreactive}}'), 'Harbour');
+        assert.equal(macroEnvironment.evaluate('{{loreactive::;}}'), 'Harbour');
+        assert.equal(macroEnvironment.evaluate('{{lorecount}}'), '1');
+        assert.equal(macroEnvironment.evaluate('{{lorecount::bound}}'), '2');
+        assert.equal(macroEnvironment.evaluate('{{loretokens}}'), String(Math.ceil('The harbour is safe'.length / 4)));
+        assert.equal(macroEnvironment.evaluate('{{loretokens::bound}}'),
+            String(Math.ceil('The harbour is safe\nInactive lore'.length / 4)));
+        if (++calls === 1) throw Error('Provider unavailable');
+        return { text: 'Saved reply' };
+    } };
+    await assert.rejects(runRoleplayReplyJob(context, options), /Provider unavailable/);
+    assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-world-info').activeLore[0].title, 'Harbour');
+    await runRoleplayReplyJob(context, options);
+    assert.equal(calls, 2);
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Saved reply');
+    const nextSource = captureRoleplaySource(f.scope, { locator: f.locator });
+    const nextWorldInfo = captureRoleplayWorldInfo(f.scope, account, nextSource, { avatar: 'Nova.png', maxContext: 200 });
+    const next = admitRoleplayJob(f.scope, account, { operationKey: 'next-lore-macros', effect: 'append', source: nextSource,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true, messages: [],
+            maxTokens: 32, characterName: 'Nova', worldInfo: nextWorldInfo } });
+    releaseJob(f.scope.directories, next.jobId);
+    await runRoleplayReplyJob({ ...context, job: getJob(f.scope.directories, next.jobId) }, {
+        generate: async ({ beforeDispatch, macroEnvironment }) => {
+            beforeDispatch();
+            assert.equal(macroEnvironment.evaluate('{{loreactive}}'), '');
+            assert.equal(macroEnvironment.evaluate('{{lorecount}}'), '0');
+            assert.equal(macroEnvironment.evaluate('{{lorecount::bound}}'), '2');
+            return { text: 'Next reply' };
+        },
+    });
+    assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-world-info').activeLore[0].title, 'Harbour');
+});
+
 test('saved books and outlets named like object properties keep their own content', async t => {
     const f = fixture(t);
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');

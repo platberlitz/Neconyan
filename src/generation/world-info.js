@@ -102,6 +102,8 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             text: settings.power_user?.sysprompt?.post_history ?? '' },
             storyTemplate: settings.power_user?.context?.story_string ?? '',
             storyPosition: settings.power_user?.context?.story_string_position ?? 0,
+            enhancedLoreMacros: Boolean(settings.power_user?.experimental_macro_engine)
+                && !extensions.disabledExtensions?.includes('third-party/MacroEnhanced'),
             reasoningInPrompt: Boolean(settings.power_user?.reasoning?.add_to_prompts),
             reasoning: settings.power_user?.reasoning?.add_to_prompts ? {
                 prefix: settings.power_user.reasoning.prefix ?? '<think>',
@@ -217,5 +219,11 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
     }
     assertRoleplayWorldInfoCurrent(base, snapshot);
     return { ...result, bookHashes: snapshot.bookHashes,
+        boundLore: [...new Set([...snapshot.names.chat, ...snapshot.names.character, ...snapshot.names.global])]
+            .flatMap(name => Object.values(selected[name].data.entries).filter(entry => !entry.disable).map(entry => ({
+                title: String(entry.comment ?? '').trim() || String(Array.isArray(entry.key) && entry.key[0] || entry.uid),
+                content: String(entry.content ?? ''),
+            }))),
+        activeLore: result.activated.map(({ title, content }) => ({ title, content })),
         timedBaseline: roleplayHash(snapshot.metadata.timedWorldInfo ?? {}) };
 }
