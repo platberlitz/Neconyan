@@ -110,8 +110,23 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             worldInfo = await prepareRoleplayWorldInfo(base, request.worldInfo, { ...worldInfoHooks, macros: request.macros });
             writeArtifact(directories, job.id, 'roleplay-world-info', worldInfo);
         }
-        if (!Array.isArray(worldInfo.hookEvents?.scanPasses)
-            || worldInfo.hookEvents.scanPasses.length !== worldInfo.iterations
+        const passes = worldInfo.hookEvents?.scanPasses;
+        if (!Array.isArray(passes) || passes.length !== worldInfo.iterations
+            || !Array.isArray(worldInfo.draws)
+            || passes.some((pass, index) => pass?.state?.loopCount !== index + 1
+                || pass.state.current !== (index ? passes[index - 1]?.state?.next : 1)
+                || ![0, 1, 2, 3].includes(pass.state.next)
+                || !Number.isSafeInteger(pass.drawCount)
+                || pass.drawCount < (index ? passes[index - 1].drawCount : 0)
+                || pass.drawCount > worldInfo.draws.length
+                || !Array.isArray(pass.all) || !Array.isArray(pass.successful) || !Array.isArray(pass.activated)
+                || pass.successful.some(entry => !pass.all.some(candidate => roleplayHash(candidate) === roleplayHash(entry)))
+                || roleplayHash(pass.activated) !== roleplayHash([
+                    ...(index ? passes[index - 1].activated : []), ...pass.successful,
+                ]))
+            || (passes.length && passes.at(-1).drawCount !== worldInfo.draws.length)
+            || roleplayHash((passes.at(-1)?.activated ?? []).map(({ world, uid, hash }) => [world, uid, hash]).sort())
+                !== roleplayHash(worldInfo.activated.map(({ world, uid, hash }) => [world, uid, hash]).sort())
             || !worldInfo.hookEvents.entriesLoaded || !worldInfo.hookEvents.entriesLoaded.bookHashes
             || roleplayHash(worldInfo.hookEvents.entriesLoaded.bookHashes) !== roleplayHash(request.worldInfo.bookHashes)
             || roleplayHash(worldInfo.hookEvents.activated) !== roleplayHash(worldInfo.activated.length ? worldInfo.activated : null)

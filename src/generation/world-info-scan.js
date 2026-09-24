@@ -148,6 +148,8 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
             budget: { current: budget, overflowed }, timedEffects: effects };
         const entryHash = roleplayHash(sorted);
         const activeEntries = [...activated];
+        const observedCandidates = [...candidates];
+        const observedAccepted = [...accepted];
         const timedHash = roleplayHash(effects.metadata);
         const activeTimed = Object.fromEntries(Object.entries(effects.active).map(([type, entries]) => [type, [...entries]]));
         const remainingDelay = [...delayed];
@@ -158,10 +160,10 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
             || hook.sortedEntries.some((entry, index) => entry !== sorted[index])
             || !(hook.activated.entries instanceof Set) || hook.activated.entries.size !== activeEntries.length
             || [...hook.activated.entries].some((entry, index) => entry !== activeEntries[index])
-            || !Array.isArray(hook.new.all) || hook.new.all.length !== candidates.length
-            || hook.new.all.some((entry, index) => entry !== candidates[index])
-            || !Array.isArray(hook.new.successful) || hook.new.successful.length !== accepted.length
-            || hook.new.successful.some((entry, index) => entry !== accepted[index])
+            || hook.new.all !== candidates || candidates.length !== observedCandidates.length
+            || candidates.some((entry, index) => entry !== observedCandidates[index])
+            || hook.new.successful !== accepted || accepted.length !== observedAccepted.length
+            || accepted.some((entry, index) => entry !== observedAccepted[index])
             || hook.timedEffects !== effects || roleplayHash(effects.metadata) !== timedHash
             || Object.entries(activeTimed).some(([type, entries]) => !(effects.active[type] instanceof Set)
                 || effects.active[type].size !== entries.length || entries.some(value => !effects.active[type].has(value)))
