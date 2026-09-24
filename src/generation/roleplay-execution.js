@@ -104,7 +104,12 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             worldInfo = await prepareRoleplayWorldInfo(base, request.worldInfo, { ...worldInfoHooks, macros: request.macros });
             writeArtifact(directories, job.id, 'roleplay-world-info', worldInfo);
         }
-        if (!Array.isArray(worldInfo.activeLore) || !Array.isArray(worldInfo.boundLore)
+        if (!Array.isArray(worldInfo.hookEvents?.scanPasses)
+            || worldInfo.hookEvents.scanPasses.length !== worldInfo.iterations
+            || !worldInfo.hookEvents.entriesLoaded || !worldInfo.hookEvents.entriesLoaded.bookHashes
+            || roleplayHash(worldInfo.hookEvents.entriesLoaded.bookHashes) !== roleplayHash(request.worldInfo.bookHashes)
+            || roleplayHash(worldInfo.hookEvents.activated) !== roleplayHash(worldInfo.activated.length ? worldInfo.activated : null)
+            || !Array.isArray(worldInfo.activeLore) || !Array.isArray(worldInfo.boundLore)
             || request.worldInfo.enhancedLoreMacros && worldInfo.boundLore.some(entry => typeof entry.book !== 'string'
                 || !entry.entry || typeof entry.entry !== 'object')) {
             throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'This saved World Info scan predates its server macro result.', 503);

@@ -6,6 +6,13 @@ const INITIAL = 1;
 const RECURSION = 2;
 const MIN_ACTIVATIONS = 3;
 const MAX_SCAN_DEPTH = 1000;
+const MAX_HOOK_RECORD_BYTES = 2 * 1024 * 1024;
+
+function hookEntry(entry) {
+    return { world: String(entry.world ?? ''), uid: entry.uid ?? null, hash: entry.hash ?? null,
+        comment: String(entry.comment ?? ''), keys: Array.isArray(entry.key) ? entry.key.map(String) : [],
+        position: entry.position ?? null, depth: entry.depth ?? null, order: entry.order ?? null };
+}
 
 /** Scan saved entries without browser globals. The caller must save the result before provider dispatch. */
 export async function scanWorldInfo({ entries, chat, metadata = {}, settings, global = {}, maxContext,
@@ -15,7 +22,7 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
     const active = (type, entry) => effects.active[type].has(entry.hash);
     if (!sorted.length) return { worldInfoBefore: '', worldInfoAfter: '', EMEntries: [], WIDepthEntries: [],
         ANBeforeEntries: [], ANAfterEntries: [], outletEntries: {}, activated: [], chatLength: chat.length,
-        timedWorldInfo: effects.metadata, draws: [], iterations: 0 };
+        timedWorldInfo: effects.metadata, draws: [], iterations: 0, hookEvents: { scanPasses: [], activated: null } };
     let budget = Math.min(maxContext, Math.round(settings.world_info_budget * maxContext / 100) || 1);
     if (settings.world_info_budget_cap > 0) budget = Math.min(budget, settings.world_info_budget_cap);
     if (!Number.isFinite(budget) || budget < 1) throw roleplayError('ROLEPLAY_INVALID', 'World Info needs a valid saved context budget.', 400);
@@ -28,6 +35,8 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
     const failed = new Set();
     const recursion = [];
     const draws = [];
+    const scanPasses = [];
+    let hookBytes = 0;
     const roll = () => {
         const value = random();
         if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value >= 1) {
@@ -145,6 +154,7 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
         const savedDelay = currentDelay;
         await onScan(hook);
         if (roleplayHash(sorted) !== entryHash || !Array.isArray(hook.sortedEntries) || hook.sortedEntries.length !== sorted.length
+            || hook.state.current !== previous || hook.state.loopCount !== iterations
             || hook.sortedEntries.some((entry, index) => entry !== sorted[index])
             || !(hook.activated.entries instanceof Set) || hook.activated.entries.size !== activeEntries.length
             || [...hook.activated.entries].some((entry, index) => entry !== activeEntries[index])
@@ -171,6 +181,15 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
         currentDelay = hook.recursionDelay.currentLevel;
         budget = hook.budget.current;
         overflowed = hook.budget.overflowed;
+        const pass = { state: { ...hook.state }, all: candidates.map(hookEntry), successful: accepted.map(hookEntry),
+            activated: [...activated].map(hookEntry), activatedTextHash: roleplayHash(activatedText),
+            budget: { current: budget, overflowed }, drawCount: draws.length,
+            recursionDelay: { availableLevels: [...delayed], currentLevel: currentDelay } };
+        hookBytes += Buffer.byteLength(JSON.stringify(pass));
+        if (hookBytes > MAX_HOOK_RECORD_BYTES) {
+            throw roleplayError('ROLEPLAY_INVALID', 'The World Info scan hook record exceeds its saved limit.', 409);
+        }
+        scanPasses.push(pass);
     }
     const activatedEntries = [...activated].sort((a, b) => b.order - a.order);
     const output = { worldInfoBefore: [], worldInfoAfter: [], EMEntries: [], WIDepthEntries: [],
@@ -198,11 +217,13 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
     }
     output.worldInfoBefore = output.worldInfoBefore.join('\n');
     output.worldInfoAfter = output.worldInfoAfter.join('\n');
-    return { ...output, activated: activatedEntries.map(entry => ({
+    const activation = activatedEntries.map(entry => ({
         world: entry.world, uid: entry.uid, hash: entry.hash,
         title: String(entry.comment ?? '').trim() || String(Array.isArray(entry.key) && entry.key[0] || entry.uid),
         content: String(entry.content ?? ''),
         ...(entry.automationId ? { automationId: entry.automationId } : {}),
-    })),
-    chatLength: chat.length, timedWorldInfo: applyWorldInfoTimedEffects(effects.metadata, activatedEntries, chat.length), draws, iterations };
+    }));
+    return { ...output, activated: activation,
+        chatLength: chat.length, timedWorldInfo: applyWorldInfoTimedEffects(effects.metadata, activatedEntries, chat.length),
+        draws, iterations, hookEvents: { scanPasses, activated: activation.length ? activation : null } };
 }

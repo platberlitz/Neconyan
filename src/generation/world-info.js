@@ -270,6 +270,9 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
             const { uid = Number.isNaN(Number(key)) ? key : Number(key), ...rest } = entry;
             return { uid, world: name, ...rest };
         }))]));
+    const entriesLoaded = { bookHashes: snapshot.bookHashes, entries: Object.fromEntries(
+        ['global', 'character', 'chat', 'persona'].map(type => [type,
+            lore[type + 'Lore'].map(entry => ({ world: entry.world, uid: entry.uid, rawHash: roleplayHash(entry) }))])) };
     const loadedHash = roleplayHash(lore);
     await onEntriesLoaded?.(lore);
     if (roleplayHash(lore) !== loadedHash) {
@@ -306,7 +309,7 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
         throw roleplayError('ROLEPLAY_INVALID', 'The transformed World Info exceeds the saved context limit.', 409);
     }
     assertRoleplayWorldInfoCurrent(base, snapshot);
-    return { ...result, bookHashes: snapshot.bookHashes,
+    return { ...result, hookEvents: { ...result.hookEvents, entriesLoaded }, bookHashes: snapshot.bookHashes,
         boundLore: [...new Set([...snapshot.names.chat, ...snapshot.names.character, ...snapshot.names.global])]
             .flatMap(name => Object.values(selected[name].data.entries).filter(entry => !entry.disable).map(entry => ({
                 book: name,

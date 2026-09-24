@@ -13,7 +13,7 @@ const { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } = await import('../
 const { captureRoleplaySource, readRoleplayChat } = await import('../src/generation/roleplay-source.js');
 const { admitRoleplayJob, applyRoleplayJobEffect } = await import('../src/roleplay-jobs.js');
 const { getJob, releaseJob } = await import('../src/jobs/store.js');
-const { readArtifact } = await import('../src/jobs/artifacts.js');
+const { readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
 const { runRoleplayReplyJob: runReply } = await import('../src/generation/roleplay-execution.js');
 const { resetRoleplayAccount } = await import('../src/roleplay-store.js');
 const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
@@ -1254,6 +1254,90 @@ test('server selection recurses on saved text and places entries with a bounded 
     assert.deepEqual(result.activated.map(value => value.uid), [1, 2]);
     assert.equal(result.worldInfoBefore, 'A gate opens\nThe moon is bright');
     assert.equal(result.iterations, 3);
+});
+
+test('saved World Info hook records retain every pass and the final activation', async () => {
+    const entries = [entry(1, 'cat', 'The moon is bright'), entry(2, 'moon', 'A gate opens')];
+    const result = await scan(entries, { onScan: hook => { if (hook.state.loopCount === 2) hook.state.next = 0; } });
+    assert.equal(result.hookEvents.entriesLoaded, undefined);
+    assert.deepEqual(result.hookEvents.scanPasses.map(pass => [pass.state.current, pass.state.next,
+        pass.successful.map(value => value.uid), pass.activated.map(value => value.uid)]), [
+        [1, 2, [1], [1]], [2, 0, [2], [1, 2]],
+    ]);
+    assert.deepEqual(result.hookEvents.activated, result.activated);
+    assert.equal(result.hookEvents.scanPasses[1].drawCount, result.draws.length);
+});
+
+test('a scan hook cannot forge pass identity or exceed the bounded saved hook record', async () => {
+    await assert.rejects(scan([entry(1, 'cat', 'Selected')], { onScan: hook => { hook.state.loopCount = 99; } }),
+        { code: 'ROLEPLAY_INVALID' });
+    await assert.rejects(scan([entry(1, 'cat', 'Selected')], { onScan: hook => { hook.state.current = 99; } }),
+        { code: 'ROLEPLAY_INVALID' });
+    await assert.rejects(scan([entry(1, 'cat', 'Selected', { comment: 'x'.repeat(2 * 1024 * 1024) })]),
+        { code: 'ROLEPLAY_INVALID' });
+});
+
+test('a bound job saves immutable scan passes and activation before any paid call, then reuses them', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'Original', 'The moon is bright', { world: undefined, hash: undefined }),
+        2: entry(2, 'moon', 'A gate opens', { world: undefined, hash: undefined }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'saved-world-info-hooks', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, maxTokens: 32, characterName: 'Nova',
+            messages: [{ role: 'user', content: 'Original' }, { role: 'assistant', content: 'Answer' }], historyStart: 0,
+            worldInfo: captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 }) } });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    let scans = 0;
+    const options = { worldInfoHooks: { onScan: () => { scans++; } }, generate: () => {
+        throw Error('Provider unavailable');
+    } };
+    await assert.rejects(runRoleplayReplyJob(context, options), /Provider unavailable/);
+    const saved = readArtifact(f.scope.directories, jobId, 'roleplay-world-info');
+    assert.equal(saved.hookEvents.entriesLoaded.bookHashes.Town.length, 64);
+    assert.deepEqual(saved.hookEvents.scanPasses[0].successful.map(value => value.uid), [1]);
+    assert.deepEqual(saved.hookEvents.activated.map(value => value.uid), [1, 2]);
+    const once = scans;
+    await runRoleplayReplyJob(context, { ...options, generate: async ({ beforeDispatch }) => {
+        beforeDispatch();
+        assert.deepEqual(readArtifact(f.scope.directories, jobId, 'roleplay-world-info'), saved);
+        return { text: 'Reply' };
+    } });
+    assert.equal(scans, once);
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Reply');
+});
+
+test('a saved scan without a complete hook record cannot dispatch paid work', async t => {
+    const f = fixture(t);
+    f.records[1].extra = {};
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'damaged-hook-record', effect: 'append', source,
+        request: { binding: { profileId: 'saved', fingerprint: 'bound' }, maxTokens: 32, characterName: 'Nova',
+            messages: [{ role: 'user', content: 'Original' }], historyStart: 0,
+            worldInfo: captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 }) } });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+        owner: f.scope.owner, signal: new AbortController().signal };
+    let called = false;
+    const saved = await prepareRoleplayWorldInfo(f.scope, context.job.intent.request.worldInfo);
+    writeArtifact(f.scope.directories, jobId, 'roleplay-world-info', { ...saved, hookEvents: null });
+    await assert.rejects(runRoleplayReplyJob(context, { generate: () => { called = true; } }),
+        { code: 'ROLEPLAY_RECOVERY_REQUIRED' });
+    assert.equal(called, false);
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length);
 });
 
 test('an activated automation is identified before a bound provider can run', async () => {
