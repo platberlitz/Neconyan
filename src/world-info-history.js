@@ -3,12 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { tryWriteFileSync } from './util.js';
 import { isNativeLorebook, serializeLorebook } from '../public/scripts/neconyan-lorebook-tools-core.js';
+import { deleteAuthoringFileLocked, readAuthoringFileLocked, writeAuthoringFileLocked } from './authoring-store.js';
 
 export function worldInfoRevision(data) {
     return createHash('sha256').update(serializeLorebook(data)).digest('hex');
 }
 
-function historyPath(bookPath) {
+export function worldInfoHistoryPath(bookPath) {
     const filename = createHash('sha256').update(path.basename(bookPath)).digest('hex');
     return path.join(path.dirname(bookPath), '.history', `${filename}.json`);
 }
@@ -30,28 +31,45 @@ export function validateWorldInfoHistory(history) {
     return history.headCommitId === null || ids.has(history.headCommitId);
 }
 
-export function readWorldInfoHistory(bookPath) {
-    const filename = historyPath(bookPath);
+export function readWorldInfoHistory(bookPath, lease = null) {
+    const filename = worldInfoHistoryPath(bookPath);
+    if (lease) {
+        const file = readAuthoringFileLocked(lease, filename);
+        if (!file) return null;
+        const history = JSON.parse(file.bytes.toString('utf8'));
+        if (!validateWorldInfoHistory(history)) throw new Error('Invalid World Info history');
+        return history;
+    }
     if (!fs.existsSync(filename)) return null;
     const history = JSON.parse(fs.readFileSync(filename, 'utf8'));
     if (!validateWorldInfoHistory(history)) throw new Error('Invalid World Info history');
     return history;
 }
 
-export function writeWorldInfoHistory(bookPath, history) {
+export function writeWorldInfoHistory(bookPath, history, lease = null) {
     if (!validateWorldInfoHistory(history)) throw new Error('Invalid World Info history');
-    const filename = historyPath(bookPath);
+    const filename = worldInfoHistoryPath(bookPath);
+    if (lease) return writeAuthoringFileLocked(lease, filename, JSON.stringify(history));
     fs.mkdirSync(path.dirname(filename), { recursive: true });
     tryWriteFileSync(filename, JSON.stringify(history));
 }
 
-export function deleteWorldInfoHistory(bookPath) {
-    fs.rmSync(historyPath(bookPath), { force: true });
+export function deleteWorldInfoHistory(bookPath, lease = null) {
+    if (lease) return deleteAuthoringFileLocked(lease, worldInfoHistoryPath(bookPath));
+    fs.rmSync(worldInfoHistoryPath(bookPath), { force: true });
 }
 
-export function renameWorldInfoHistory(oldPath, newPath) {
-    const source = historyPath(oldPath);
-    const target = historyPath(newPath);
+export function renameWorldInfoHistory(oldPath, newPath, lease = null) {
+    const source = worldInfoHistoryPath(oldPath);
+    const target = worldInfoHistoryPath(newPath);
+    if (lease) {
+        const file = readAuthoringFileLocked(lease, source);
+        if (!file) return;
+        if (readAuthoringFileLocked(lease, target)) throw new Error('World Info history already exists');
+        writeAuthoringFileLocked(lease, target, file.bytes, { expected: null });
+        deleteAuthoringFileLocked(lease, source, { rawHash: file.rawHash, physical: file.physical });
+        return;
+    }
     if (!fs.existsSync(source)) return;
     if (fs.existsSync(target)) throw new Error('World Info history already exists');
     fs.renameSync(source, target);

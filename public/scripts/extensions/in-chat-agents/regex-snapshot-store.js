@@ -175,6 +175,15 @@ export function resolveRegexScriptsForSnapshot(snapshot) {
         return [];
     }
 
+    if (Object.hasOwn(snapshot, 'nativeRegexScripts')) {
+        if (!Array.isArray(snapshot.nativeRegexScripts) || !Array.isArray(snapshot.regexScriptRefs)) return [];
+        return snapshot.regexScriptRefs.flatMap(ref => {
+            const saved = snapshot.nativeRegexScripts.find(item => item?.agentId === ref?.agentId && item?.script?.id === ref?.scriptId
+                && getRegexScriptRevision(item.script) === ref.revision);
+            return saved ? [cloneValue(saved.script)] : [];
+        });
+    }
+
     if (Array.isArray(snapshot.regexScriptRefs)) {
         const resolvedScripts = [];
         for (const ref of snapshot.regexScriptRefs) {

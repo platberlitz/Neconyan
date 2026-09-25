@@ -5,6 +5,7 @@ import { assertRoleplaySourceLocked } from './roleplay-source.js';
 import { assertUntrackedRoleplayFiles, confirmRoleplayAccount, createRoleplayDirectory, readRoleplayFile,
     roleplayError, roleplayHash, roleplayLease, roleplayStoreDirectory, withRoleplayAccount } from '../roleplay-store.js';
 import { fsyncDirectorySync, tryWriteFileSync } from '../util.js';
+import { reserveJobApprovalCapacityLocked } from './job-approvals.js';
 
 // Reserve enough for every allowed sprite replacement or 256-part speech result
 // before accepting work, including file evidence and the final completion list.
@@ -88,7 +89,7 @@ export function assertNativeMediaTargetIdle(lease, target) {
 }
 
 /** Private admission for media work. Ownership survives job history and imported account settings. */
-export function admitNativeMediaJob(base, account, { operationKey, source, kind, request, target }) {
+export function admitNativeMediaJob(base, account, { operationKey, source, kind, request, target, approvalReservation = null }) {
     if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 200
         || !/^[a-z][a-z-]{0,31}$/.test(kind) || !source || !request || !target
         || Buffer.byteLength(JSON.stringify(request)) > 2 * 1024 * 1024) {
@@ -97,6 +98,10 @@ export function admitNativeMediaJob(base, account, { operationKey, source, kind,
     const intent = { media: { ...stamp(account), operationKey }, source, kind, request, target };
     const intentHash = roleplayHash(intent);
     const targetHash = roleplayHash([account.accountId, account.dataEpoch, target]);
+    if (approvalReservation && (typeof approvalReservation.key !== 'string' || !approvalReservation.key
+        || approvalReservation.key.length > 256 || !Number.isSafeInteger(approvalReservation.bytes))) {
+        throw fail('The accepted media approval reservation is invalid.', 'MEDIA_INVALID');
+    }
     return withRoleplayAccount(base, account, lease => {
         confirmRoleplayAccount(lease);
         const filename = receiptPath(base, account, operationKey);
@@ -105,9 +110,13 @@ export function admitNativeMediaJob(base, account, { operationKey, source, kind,
         if (value && value.state !== 'preparing') return { jobId: value.jobId, state: value.state, created: false, result: value.result ?? null };
         assertRoleplaySourceLocked(lease, source);
         if (!value) {
+            if (approvalReservation) reserveJobApprovalCapacityLocked(lease, approvalReservation);
             reserveReceipt(base, filename, targetHash);
-            value = { version: 1, account: stamp(account), intentHash, targetHash, jobId: null, state: 'preparing', effects: {} };
+            value = { version: 1, account: stamp(account), intentHash, targetHash, jobId: null, state: 'preparing', effects: {},
+                ...(approvalReservation ? { approvalReservation } : {}) };
             file = saveReceipt(filename, value, null);
+        } else if (roleplayHash(value.approvalReservation ?? null) !== roleplayHash(approvalReservation)) {
+            throw fail('The saved approval reservation differs from the accepted media request.', 'MEDIA_INTENT_CONFLICT');
         }
         const { job, created } = acceptJob(base.directories, { owner: base.owner, type: `media.${kind}`,
             submissionKey: `media:${account.accountId}:${operationKey}`, intent, target, paused: true });
@@ -136,10 +145,26 @@ export function withNativeMediaReceipt(context, operation, { checkSource = true 
     });
 }
 
-export function finishNativeMediaJob(context, result) {
+/** A parent can prove a child's completed result after the replayable job has been pruned. */
+export function readNativeMediaJobResult(base, account, { operationKey, jobId, intentHash }) {
+    if (typeof operationKey !== 'string' || !operationKey || typeof jobId !== 'string' || !jobId || !HASH.test(intentHash)) {
+        throw fail('The media result ownership is incomplete.');
+    }
+    return withRoleplayAccount(base, account, () => {
+        const { value } = readReceipt(receiptPath(base, account, operationKey));
+        if (!value || value.jobId !== jobId || value.intentHash !== intentHash
+            || roleplayHash(value.account) !== roleplayHash(stamp(account))) {
+            throw fail('This media job does not own the saved result.');
+        }
+        return value.state === 'closed' ? structuredClone(value.result) : null;
+    });
+}
+
+export function finishNativeMediaJob(context, result, { checkSource = true, checkLocked } = {}) {
     if (Buffer.byteLength(JSON.stringify(result)) > 128 * 1024) throw fail('The media completion receipt is too large.', 'MEDIA_INVALID');
     roleplayHash(result);
-    return withNativeMediaReceipt(context, ({ value, save }) => {
+    return withNativeMediaReceipt(context, ({ lease, value, save }) => {
+        checkLocked?.(lease, value);
         if (value.state === 'closed') {
             if (roleplayHash(value.result) !== roleplayHash(result)) throw fail('This media job already recorded a different result.');
             return { result: value.result };
@@ -149,7 +174,7 @@ export function finishNativeMediaJob(context, result) {
         value.state = 'closed';
         save();
         return { result };
-    });
+    }, { checkSource });
 }
 
 function destination(base, relative) {

@@ -15,6 +15,9 @@ import { capturePathfinderSource } from './world-info-pathfinder.js';
 import { captureIncomingRoleplayTranslation, captureRoleplayInputTranslation } from './roleplay-translation.js';
 import { captureRoleplayCaptions } from './roleplay-captions.js';
 import { captureSpeechPolicy } from './speech-config.js';
+import { agentHistorySources, captureRoleplayAgents, readRoleplayAgentsLocked } from './roleplay-agents-source.js';
+import { captureCompanionCapacity } from './companion-capacity.js';
+import { captureRoleplayToolBindings } from './roleplay-tool-bindings.js';
 import { activeRoleplayAuthorNote, isWorldInfoAuthorNoteActive, selectRoleplayPromptRecords, savedRoleplayMacroSnapshot } from './roleplay-prompt.js';
 
 const SETTINGS = ['world_info_depth', 'world_info_min_activations', 'world_info_min_activations_depth_max',
@@ -139,7 +142,7 @@ function books(directories, names) {
 }
 
 function boundBooks(directories, snapshot) {
-    const current = books(directories, [...Object.values(snapshot.names).flat(), ...(snapshot.pathfinder?.books ?? [])]);
+    const current = books(directories, [...Object.values(snapshot.names).flat(), ...(snapshot.pathfinder?.books ?? []), ...(snapshot.tools?.pathfinder?.books ?? [])]);
     for (const [name, hash] of Object.entries(snapshot.bookHashes)) {
         if (current[name]?.hash !== hash
             || roleplayHash({ rawHash: current[name].rawHash, physical: current[name].physical })
@@ -249,8 +252,10 @@ function selectedBooks(settings, saved, character, avatar, personaLorebook) {
 }
 
 /** Capture the actual saved book selection before private job admission. */
-export function captureRoleplayWorldInfo(base, account, source, { avatar, maxContext, tokenizer = 'o200k_base', trigger = 'normal', serverPrompt = false }) {
-    if (!['normal', 'continue', 'swipe', 'regenerate'].includes(trigger) || typeof serverPrompt !== 'boolean') {
+export function captureRoleplayWorldInfo(base, account, source, { avatar, maxContext, tokenizer = 'o200k_base', trigger = 'normal', serverPrompt = false,
+    agentIds = [], agentContext = false, nativeBindingVersion = 1 }) {
+    if (!['normal', 'continue', 'swipe', 'regenerate'].includes(trigger) || typeof serverPrompt !== 'boolean'
+        || ![0, 1].includes(nativeBindingVersion) || nativeBindingVersion === 0 && agentIds.length) {
         throw roleplayError('ROLEPLAY_INVALID', 'The World Info generation trigger is invalid.', 400);
     }
     return withRoleplayAccount(base, account, lease => {
@@ -278,7 +283,15 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             chatBook: saved.records[0].chat_metadata?.world_info, personaBook: persona.lorebook,
             members: group ? members : [{ avatar, card: character.data }], charLore: settings.world_info?.charLore ?? [],
         });
-        const selected = books(base.directories, [...Object.values(names).flat(), ...(pathfinder?.books ?? [])]);
+        const agents = nativeBindingVersion && serverPrompt ? captureRoleplayAgents(lease, savedSettings,
+            { group: Boolean(source.locator.group), serverPrompt,
+                characterAvatars: source.locator.group ? members.map(member => member.avatar) : [avatar],
+                ...agentHistorySources(saved.records), forcedIds: agentIds }) : null;
+        const companionCapacity = agents ? captureCompanionCapacity(readRoleplayAgentsLocked(lease, agents), saved.records,
+            source, { agentContext, trigger }) : null;
+        const tools = nativeBindingVersion && serverPrompt && !agentContext
+            ? captureRoleplayToolBindings(lease, source, avatar, character.data, agents, savedSettings) : null;
+        const selected = books(base.directories, [...Object.values(names).flat(), ...(pathfinder?.books ?? []), ...(tools?.pathfinder?.books ?? [])]);
         const characterTags = savedSettings.tag_map?.[avatar] ?? [];
         if (!Array.isArray(characterTags)) throw roleplayError('ROLEPLAY_INVALID', 'The saved character tags are invalid.', 400);
         const extensions = savedSettings.extension_settings ?? {};
@@ -298,9 +311,9 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         const scoped = saved.locator.group ? saved.records[0].chat_metadata?.note_chara
             : note.chara?.find(item => item?.name === `individual:${avatar}`)
                 ?? note.chara?.find(item => item?.name === path.parse(avatar).name);
-        const attachments = savedAttachments(base.directories, promptRecords);
-        const images = captureSavedRoleplayImages(base.directories, promptRecords, settings.power_user?.media_display ?? 'list', extensions.caption);
-        const captions = captureRoleplayCaptions(base.directories, savedSettings, { records: promptRecords, images,
+        const attachments = agentContext ? [] : savedAttachments(base.directories, promptRecords);
+        const images = agentContext ? [] : captureSavedRoleplayImages(base.directories, promptRecords, settings.power_user?.media_display ?? 'list', extensions.caption);
+        const captions = agentContext ? null : captureRoleplayCaptions(base.directories, savedSettings, { records: promptRecords, images,
             serverPrompt, display: settings.power_user?.media_display ?? 'list' });
         const chat = promptRecords.slice(1).flatMap((message, index) => {
             if (message.is_system) return [];
@@ -353,10 +366,12 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             }
             inject.push(persona.description);
         }
-        const translation = captureIncomingRoleplayTranslation(base.directories, savedSettings, { serverPrompt });
-        const inputTranslation = captureRoleplayInputTranslation(base.directories, savedSettings, promptRecords, { serverPrompt });
-        const speech = serverPrompt ? captureSpeechPolicy(base.directories, savedSettings) : null;
+        const translation = captureIncomingRoleplayTranslation(base.directories, savedSettings, { serverPrompt: serverPrompt && !agentContext });
+        const inputTranslation = captureRoleplayInputTranslation(base.directories, savedSettings, promptRecords, { serverPrompt: serverPrompt && !agentContext });
+        const speech = serverPrompt && !agentContext ? captureSpeechPolicy(base.directories, savedSettings) : null;
         const snapshot = { account: { accountId: account.accountId, dataEpoch: account.dataEpoch }, source, serverPrompt,
+            ...(serverPrompt && nativeBindingVersion ? { nativeBindingVersion } : {}),
+            ...(agentContext ? { agentContext: true } : {}),
             character: { instanceId: character.instanceId, revision: character.revision, rawHash: character.rawHash },
             speakerNames: { character: character.data?.data?.name ?? character.data?.name,
                 user: persona.name || (saved.records[0].user_name !== 'unused' && saved.records[0].user_name) || 'User' },
@@ -405,6 +420,9 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                 max_additions: settings.power_user?.reasoning?.max_additions ?? 1,
             },
             settingsHash: roleplayHash(savedSettings),
+            ...(agents ? { agents } : {}),
+            ...(companionCapacity ? { companionCapacity } : {}),
+            ...(tools ? { tools } : {}),
             hookPolicy, ...(pathfinder ? { pathfinder } : {}),
             ...(translation ? { translation } : {}),
             ...(inputTranslation ? { inputTranslation } : {}),
@@ -444,6 +462,8 @@ export function assertRoleplayWorldInfoCurrent(base, snapshot) {
         avatar: snapshot.avatar, maxContext: snapshot.maxContext, tokenizer: snapshot.tokenizer,
         trigger: snapshot.global?.trigger,
         serverPrompt: snapshot.serverPrompt,
+        agentIds: snapshot.agents?.forcedIds ?? [], agentContext: snapshot.agentContext ?? false,
+        nativeBindingVersion: Object.hasOwn(snapshot, 'nativeBindingVersion') ? snapshot.nativeBindingVersion : 0,
     });
     if (roleplayHash(captured) !== roleplayHash(snapshot)) {
         throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info selection differs from the account sources.');

@@ -220,7 +220,7 @@ function translatedTarget(output, effect, savedSource, source) {
         }
         const prefix = effect.type === 'continue' ? savedSource?.records?.[index + 1]?.mes : '';
         if (typeof prefix !== 'string') throw bad('The accepted continuation text is unavailable.');
-        return { original: prefix + output.text, extra: output.extra };
+        return { original: output.continuedText ?? prefix + output.text, extra: output.extra };
     }
     throw bad('The saved reply cannot be translated.');
 }

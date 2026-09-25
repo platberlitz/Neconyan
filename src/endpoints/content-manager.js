@@ -18,6 +18,8 @@ import { DEFAULT_AVATAR_PATH, USER_DIRECTORY_TEMPLATE } from '../constants.js';
 import { invalidateThumbnail } from './thumbnails.js';
 import { assertUntrackedRoleplayFiles, roleplayAccountBase, roleplayLease, validRoleplayAvatar, withRoleplayAccount } from '../roleplay-store.js';
 import { commitRoleplayLifecycleLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
+import { writeAuthoringFileLocked } from '../authoring-store.js';
+import { assertNativeMediaTargetIdle } from '../generation/media-jobs.js';
 
 const contentDirectory = path.join(serverDirectory, 'default/content');
 const scaffoldDirectory = path.join(serverDirectory, 'default/scaffold');
@@ -382,7 +384,7 @@ export function findDefaultPreset(directories, { folder, name }) {
  * @param {string[]|null} types Content types to restore, or null for all preset types
  * @returns {{restored: string[], failed: {filename: string, error: string}[]}}
  */
-export function restoreDefaultPresetFiles(directories, types = null) {
+export function restoreDefaultPresetFiles(directories, types = null, lease = null) {
     const allowedTypes = Array.isArray(types) && types.length ? new Set(types) : null;
     const defaultPresets = getDefaultPresets(directories, { includeDeleted: true })
         .filter(preset => !allowedTypes || allowedTypes.has(preset.type));
@@ -400,12 +402,18 @@ export function restoreDefaultPresetFiles(directories, types = null) {
                 throw new Error('Default preset source is missing.');
             }
 
-            fs.mkdirSync(targetFolder, { recursive: true });
-            fs.cpSync(sourcePath, targetPath, { recursive: true, force: true });
+            if (lease) {
+                assertNativeMediaTargetIdle(lease, { kind: 'preset', id: path.relative(directories.root, targetPath) });
+                writeAuthoringFileLocked(lease, targetPath, fs.readFileSync(sourcePath));
+            } else {
+                fs.mkdirSync(targetFolder, { recursive: true });
+                fs.cpSync(sourcePath, targetPath, { recursive: true, force: true });
+            }
             setPermissionsSync(targetPath);
             clearDefaultPresetDeletion(directories, preset);
             restored.push(preset.filename);
         } catch (error) {
+            if (error.code === 'MEDIA_TARGET_BUSY') throw error;
             failed.push({
                 filename: preset.filename,
                 error: error.message || String(error),

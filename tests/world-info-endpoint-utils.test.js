@@ -11,6 +11,8 @@ import { setConfigFilePath } from '../src/util.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { getWorldInfoFilename, getWorldInfoName, isValidWorldInfoData, router } = await import('../src/endpoints/worldinfo.js');
+const { initialiseRoleplayAccount } = await import('../src/roleplay-store.js');
+const { USER_DIRECTORY_TEMPLATE } = await import('../src/constants.js');
 
 describe('World Info endpoint helpers', () => {
     test('canonicalizes names the same way for reads and writes', () => {
@@ -56,7 +58,7 @@ describe('World Info endpoints', () => {
         app.use(express.json());
         app.use(multer({ storage: createUploadStorage(uploadsPath) }).single('avatar'));
         app.use((request, _response, next) => {
-            request.user = { directories };
+            request.user = { directories, profile: { handle: 'world-info-test' } };
             next();
         });
         app.use('/api/worldinfo', router);
@@ -68,8 +70,10 @@ describe('World Info endpoints', () => {
 
     beforeEach(() => {
         tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-world-info-endpoints-'));
-        directories = { worlds: path.join(tempRoot, 'worlds') };
-        fs.mkdirSync(directories.worlds, { recursive: true });
+        const root = path.join(tempRoot, 'world-info-test');
+        directories = { ...Object.fromEntries(Object.entries(USER_DIRECTORY_TEMPLATE).map(([key, value]) => [key, path.join(root, value)])), root };
+        for (const folder of Object.values(directories)) fs.mkdirSync(folder, { recursive: true });
+        initialiseRoleplayAccount({ owner: 'world-info-test', directories });
     });
 
     afterEach(() => {
@@ -183,7 +187,7 @@ describe('World Info endpoints', () => {
         jest.spyOn(console, 'error').mockImplementation(() => {});
         fs.mkdirSync(path.join(directories.worlds, 'Blocked.json'));
         const response = await postImport({ filename: 'Blocked.json', contents: JSON.stringify({ entries: {} }) });
-        expect(response.status).toBe(500);
+        expect(response.status).toBe(409);
         expect(fs.statSync(path.join(directories.worlds, 'Blocked.json')).isDirectory()).toBe(true);
         expect(fs.readdirSync(uploadsPath)).toEqual([]);
     });

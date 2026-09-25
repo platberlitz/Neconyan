@@ -189,7 +189,7 @@ export function normalizeCompanionMacroSyntax(content = '') {
         .replace(ENTITY_CLOSE_BRACE_RE, '}');
 }
 
-function getActiveCompanionResults(message) {
+export function getActiveCompanionResults(message) {
     const swipeInfo = !message?.is_user
         && typeof message?.swipe_id === 'number'
         && Array.isArray(message?.swipe_info)
@@ -232,10 +232,10 @@ export function hasCompanionChatHistoryForHiddenHost(message) {
  * @param {{ policyMessages?: object[] }} options
  * @returns {Map<object, Set<string>>}
  */
-export function selectCompanionChatHistory(messages = [], { policyMessages = messages } = {}) {
-    const policyByAgent = new Map();
+export function selectCompanionChatHistory(messages = [], { policyMessages = messages, policies = null } = {}) {
+    const policyByAgent = new Map(policies ? Object.entries(policies) : []);
 
-    for (const message of policyMessages) {
+    for (const message of policies ? [] : policyMessages) {
         if (!message || message.is_user) continue;
 
         for (const [agentId, result] of Object.entries(getActiveCompanionResults(message))) {

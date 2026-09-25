@@ -114,6 +114,7 @@ export function setDirectoriesResolver(resolver) {
 }
 
 let directoriesResolver = null;
+let waitingResolver = null;
 
 async function runJob(job) {
     let directories;
@@ -234,6 +235,15 @@ async function tick() {
             }
             let candidates;
             try {
+                if (waitingResolver) {
+                    for (const job of listJobs(directories, { owner, includeDismissed: true })) {
+                        if (job.state !== 'waiting' || job.cancellation?.requested) continue;
+                        try { await waitingResolver({ job, directories, owner }); } catch (error) {
+                            updateJob(directories, job.id, { state: 'conflict', finishedAt: Date.now(),
+                                error: { message: error?.message || 'The saved review needs recovery.', code: error?.code ?? null, status: error?.status ?? 409 } });
+                        }
+                    }
+                }
                 candidates = listJobs(directories, { owner, includeDismissed: true })
                     .filter(job => job.state === 'queued' && !job.cancellation?.requested)
                     .sort((left, right) => (left.createdAt ?? 0) - (right.createdAt ?? 0));
@@ -268,8 +278,9 @@ export function abortJob(id) {
  * Start the dispatcher. Recovery runs once so queued work and interrupts are
  * known before the first tick; the interval then only picks up new jobs.
  */
-export function startJobsRunner({ directoriesFor, owners }) {
+export function startJobsRunner({ directoriesFor, owners, recoverWaiting = null }) {
     setDirectoriesResolver(directoriesFor);
+    waitingResolver = recoverWaiting;
     let stopped = false;
     // Recover each owner's saved work, then let the interval dispatch. Recovery
     // of one owner never prevents the others from being reconciled.
@@ -302,6 +313,7 @@ export function startJobsRunner({ directoriesFor, owners }) {
         timer = null;
         for (const controller of controllers.values()) controller.abort();
         knownOwners.clear();
+        waitingResolver = null;
         serverEvents.emit('job-runner-stopped');
     };
 }

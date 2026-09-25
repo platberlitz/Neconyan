@@ -14,7 +14,8 @@ const collections = [
 for (const { prefix, kind, directory, normalize } of collections) {
     router.post(`${prefix}/list`, (request, response) => {
         try {
-            const result = readAgentCollection(directory(request.user), kind);
+            const result = readAgentCollection(directory(request.user), kind,
+                { owner: request.user.profile.handle, directories: request.user.directories });
             response.set('X-Neconyan-Account', request.user.profile.handle);
             return response.json(request.body?.withDiagnostics ? result : result.records);
         } catch (error) {

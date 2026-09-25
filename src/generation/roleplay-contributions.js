@@ -19,8 +19,30 @@ function validate(values) {
             || Object.keys(prompt).some(key => !['key', 'content', 'position', 'depth', 'role', 'scan'].includes(key))) invalid('A saved extension prompt is invalid.');
         keys.add(prompt.key);
     }
+    validateRoleplayToolHistory(values.history, { allowMedia: false, maxMessages: 128 });
+    return values;
+}
+
+/** Validate a complete context, including matching tool results, before an interceptor can replace it. */
+export function validateRoleplayToolHistory(history, { allowMedia = true, maxMessages = 8192 } = {}) {
+    if (!Array.isArray(history) || history.length > maxMessages || Buffer.byteLength(JSON.stringify(history)) > 2 * 1024 * 1024) {
+        invalid('The complete prompt context exceeds its input limit.');
+    }
     const pending = new Set();
-    for (const message of values.history) {
+    const seen = new Set();
+    for (const original of history) {
+        let message = original;
+        if (allowMedia && Array.isArray(original?.content)) {
+            if (original.content.some(part => !part || (part.type === 'text' ? typeof part.text !== 'string'
+                || Object.keys(part).some(key => !['type', 'text'].includes(key)) : part.type !== 'image_url'
+                || typeof part.image_url?.url !== 'string' || !part.image_url.url
+                || Object.keys(part).some(key => !['type', 'image_url'].includes(key))
+                || Object.keys(part.image_url).some(key => !['url', 'detail'].includes(key))
+                || part.image_url.detail !== undefined && !['auto', 'low', 'high'].includes(part.image_url.detail)))) {
+                invalid('The complete prompt context contains unsupported media.');
+            }
+            message = { ...original, content: JSON.stringify(original.content) };
+        }
         if (!message || ![...roles, 'tool'].includes(message.role)
             || message.content !== undefined && typeof message.content !== 'string'
             || message.name !== undefined && typeof message.name !== 'string'
@@ -39,18 +61,19 @@ function validate(values) {
             if (message.role !== 'assistant' || !Array.isArray(message.tool_calls) || !message.tool_calls.length
                 || message.tool_calls.length > 32) invalid('Saved progressive tool calls are invalid.');
             for (const call of message.tool_calls) {
-                if (!call || typeof call.id !== 'string' || !call.id || call.id.length > 256 || pending.has(call.id)
+                if (!call || typeof call.id !== 'string' || !call.id || call.id.length > 256 || seen.has(call.id)
                     || call.type !== 'function' || typeof call.function?.name !== 'string' || !call.function.name
                     || typeof call.function.arguments !== 'string'
                     || call.signature !== undefined && typeof call.signature !== 'string'
                     || Object.keys(call).some(key => !['id', 'type', 'function', 'signature'].includes(key))
                     || Object.keys(call.function).some(key => !['name', 'arguments'].includes(key))) invalid('A saved progressive tool call is invalid.');
                 pending.add(call.id);
+                seen.add(call.id);
             }
         } else if (typeof message.content !== 'string') invalid('A saved progressive prompt message has no content.');
     }
     if (pending.size) invalid('A saved tool call has incomplete results.');
-    return values;
+    return history;
 }
 
 /** Contributors publish a complete immutable input after their own durable steps finish. */

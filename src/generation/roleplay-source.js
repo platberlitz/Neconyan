@@ -276,7 +276,7 @@ export function captureRoleplayRange(records, { start, count }) {
         prefixHash: roleplayHash(messages.slice(0, start)), suffixHash: roleplayHash(messages.slice(start + count)) };
 }
 
-function captureRoleplaySourceLocked(lease, { locator, groupId, message, range }) {
+export function captureRoleplaySourceLocked(lease, { locator, groupId, message, range }) {
     const saved = readRoleplayChatLocked(lease, locator);
     const { dependencies, changed } = captureRoleplayDependenciesLocked(lease, saved.locator, groupId);
     const source = { accountId: saved.accountId, dataEpoch: saved.dataEpoch, instanceId: saved.instanceId,

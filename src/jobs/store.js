@@ -617,27 +617,38 @@ export function appendChild(directories, id, child) {
  * as an unknown outcome rather than silently repeated.
  */
 export function markProviderUncertain(directories, id, { step = null } = {}) {
-    return updateJob(directories, id, {
-        recoverability: 'unknown-outcome',
-        recoveryStep: step,
-    });
+    return updateJob(directories, id, job => ({
+        recoverability: 'unknown-outcome', recoveryStep: step,
+        recoverySteps: [...new Set([...providerRecoverySteps(job).filter(key => !hasSavedProviderResult(directories, job, key)), step])]
+            .filter(key => typeof key === 'string' && key.startsWith('provider:')),
+    }));
 }
 
 /** Save the recoverable result before the uncertainty is cleared. */
-export function markProviderSettled(directories, id) {
-    return updateJob(directories, id, job => ({
-        recoverability: job.resume ? 'resumable' : 'settled',
-        recoveryStep: null,
-    }));
+export function markProviderSettled(directories, id, step = null) {
+    return updateJob(directories, id, job => {
+        const remaining = step === null ? [] : providerRecoverySteps(job)
+            .filter(key => key !== step && !hasSavedProviderResult(directories, job, key));
+        return { recoverability: remaining.length ? 'unknown-outcome' : job.resume ? 'resumable' : 'settled',
+            recoveryStep: remaining.at(-1) ?? null, recoverySteps: remaining };
+    });
 }
 
 /** A server-side checkpoint nominates the next safe step after a restart. */
 export function setJobResume(directories, id, step) {
-    return updateJob(directories, id, { resume: typeof step === 'string' && step ? step : null, recoverability: 'resumable' });
+    return updateJob(directories, id, job => ({ resume: typeof step === 'string' && step ? step : null,
+        recoverability: job.recoverability === 'unknown-outcome' || providerRecoverySteps(job).length ? 'unknown-outcome' : 'resumable' }));
 }
 
-function hasSavedProviderResult(directories, job) {
-    const step = job.recoveryStep;
+export function providerRecoverySteps(job) {
+    if (job?.recoverySteps !== undefined && !Array.isArray(job.recoverySteps)) {
+        throw Object.assign(new Error('The saved provider recovery records need repair.'), { status: 409 });
+    }
+    return [...new Set([...(job?.recoverySteps ?? []), job?.recoveryStep])]
+        .filter(step => typeof step === 'string' && step.startsWith('provider:'));
+}
+
+function hasSavedProviderResult(directories, job, step = job.recoveryStep) {
     if (typeof step !== 'string' || !step.startsWith('provider:') || !step.slice(9)) return false;
     const filename = path.join(stateDir(directories), 'artifacts', jobKey(job.id), jobKey(step) + '.json');
     try {
@@ -665,16 +676,19 @@ export function recoverJobs(directories) {
                 job.finishedAt = now();
                 continue;
             }
-            if (job.state === 'queued') {
+            const providerSteps = providerRecoverySteps(job);
+            const unknown = providerSteps.some(step => !hasSavedProviderResult(directories, job, step))
+                || !providerSteps.length && job.recoverability === 'unknown-outcome';
+            if (job.state === 'queued' && !unknown) {
                 recoverable.push(job);
                 continue;
             }
             // A saved review stays waiting for its decision, not another execution.
-            if (job.state === 'running') {
+            if (job.state === 'running' || job.state === 'queued' && unknown) {
                 changed = true;
                 // The result can be saved immediately before the status write; its artifact proves a retry will not repeat the provider call.
-                const savedResult = job.recoverability === 'unknown-outcome' && hasSavedProviderResult(directories, job);
-                const resumable = (job.recoverability === 'resumable' || savedResult) && typeof job.resume === 'string' && job.resume;
+                const savedResult = providerSteps.length > 0 && !unknown;
+                const resumable = !unknown && (job.recoverability === 'resumable' || savedResult) && typeof job.resume === 'string' && job.resume;
                 if (resumable) {
                     job.state = 'queued';
                     job.stage = null;
@@ -685,7 +699,7 @@ export function recoverJobs(directories) {
                 }
                 job.state = 'interrupted';
                 job.finishedAt = now();
-                job.error = { message: job.recoverability === 'unknown-outcome' ? 'The provider result is unknown after a restart. Retry deliberately if the request was not completed.' : 'The server stopped before this job finished.', code: 'INTERRUPTED' };
+                job.error = { message: unknown ? 'The provider result is unknown after a restart. Retry deliberately if the request was not completed.' : 'The server stopped before this job finished.', code: 'INTERRUPTED' };
                 job.recoverability = 'needs-retry';
             }
         }

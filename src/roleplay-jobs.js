@@ -13,12 +13,17 @@
  * account incarnation are refused.
  */
 import { acceptJob, getJob } from './jobs/store.js';
+import { readArtifact } from './jobs/artifacts.js';
 import { assertRoleplaySourceLocked, captureRoleplayMessage, captureRoleplayRange, captureRoleplayStorageSourceLocked } from './generation/roleplay-source.js';
 import { commitSingleChatWriteLocked } from './roleplay-lifecycle.js';
 import { applyCaptionRecords } from './generation/caption-records.js';
+import { applyAgentCompletionRecords } from './generation/agent-completion-records.js';
+import { assertRoleplayQuickReplyProof } from './generation/roleplay-quick-replies.js';
+import { applyManualAgentRecords } from './generation/agent-manual-records.js';
+import { applyPathfinderNotebookRecords } from './generation/pathfinder-notebook-records.js';
 import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, withRoleplayAccount } from './roleplay-store.js';
 
-export const ROLEPLAY_JOB_EFFECTS = Object.freeze(['append', 'continue', 'swipe', 'replace', 'caption']);
+export const ROLEPLAY_JOB_EFFECTS = Object.freeze(['append', 'continue', 'swipe', 'replace', 'caption', 'agent', 'notebook']);
 // A closed receipt holds one chat-write result twice (outcome and effect) plus its keys.
 const RECEIPT_RESERVE_BYTES = 8 * 1024;
 // Admission also holds room for the completion's pending chat-write record, so
@@ -37,7 +42,7 @@ function assertOperationKey(operationKey) {
 function assertEffectSource(effect, source) {
     if (!ROLEPLAY_JOB_EFFECTS.includes(effect)) throw invalid('Unknown Roleplay job effect.');
     if (source?.kind !== undefined) throw invalid('A Roleplay job needs a generation source, not a storage source.');
-    const needsMessage = ['continue', 'swipe', 'caption'].includes(effect);
+    const needsMessage = ['continue', 'swipe', 'caption', 'agent'].includes(effect);
     if (needsMessage !== (source?.message !== undefined) || (effect === 'replace') !== (source?.range !== undefined)) {
         throw invalid('The Roleplay job source does not carry the anchor its effect needs.');
     }
@@ -93,7 +98,9 @@ function outputMessage(value) {
     return structuredClone(value);
 }
 
-function effectRecords(records, source, effect, output, request) {
+function effectRecords(records, source, effect, output, request, job, directories) {
+    if (effect === 'notebook') return applyPathfinderNotebookRecords(directories, job, records, output);
+    if (effect === 'agent') return applyManualAgentRecords(directories, job, records, output);
     const captionPolicy = request?.worldInfo?.captions;
     if (output?.captions && !captionPolicy?.persist) throw invalid('The job did not accept a caption update.');
     const next = captionPolicy?.persist ? applyCaptionRecords(records, captionPolicy.items, output?.captions) : structuredClone(records);
@@ -114,6 +121,13 @@ function effectRecords(records, source, effect, output, request) {
         record.mes = change.text;
         record.extra = { ...record.extra, display_text: change.displayText };
     }
+    const agentBaseline = output?.quickReply ? structuredClone(next) : next;
+    if (output?.quickReply) assertRoleplayQuickReplyProof(directories, job, next, output);
+    else if (request?.worldInfo?.hookPolicy?.quickReply?.enabled && output?.quickReply === undefined
+        && readArtifact(directories, job.id, 'roleplay-quick-replies') !== undefined) {
+        throw invalid('The saved Quick Reply actions were not included with this reply.');
+    }
+    applyAgentCompletionRecords(directories, job, next, output, agentBaseline);
     if (output?.timedWorldInfo) {
         if (next.length - 1 !== output.timedChatLength
             || roleplayHash(next[0].chat_metadata?.timedWorldInfo ?? {}) !== output.timedBaseline) {
@@ -133,7 +147,7 @@ function effectRecords(records, source, effect, output, request) {
     const selected = Number(message.swipe_id ?? 0);
     if (!Number.isInteger(selected) || selected < 0 || selected >= swipes.length) throw invalid('The anchored message has an unreadable swipe selection.');
     if (effect === 'continue') {
-        message.mes += output.text;
+        message.mes = output.continuedText ?? message.mes + output.text;
         if (output.extra) message.extra = { ...message.extra, ...output.extra };
         if (Array.isArray(message.swipes) && message.swipes.length) message.swipes[selected] = message.mes;
         if (output.extra && Array.isArray(message.swipe_info) && message.swipe_info[selected]) {
@@ -164,11 +178,25 @@ export function readRoleplayJobResult(base, account, { operationKey, jobId, effe
     });
 }
 
+/** Read a completed typed child effect without requiring its pruned job/artifacts. */
+export function readRoleplayJobResultByIntentHash(base, account, { operationKey, jobId, intentHash }) {
+    assertOperationKey(operationKey);
+    if (typeof jobId !== 'string' || !jobId || !/^[a-f0-9]{64}$/u.test(intentHash)) throw invalid('Invalid child Roleplay result ownership.');
+    return withRoleplayAccount(base, account, lease => {
+        const { state } = roleplayLease(lease);
+        const receipt = state.submissions[jobKey(state, operationKey)];
+        if (!receipt || receipt.jobId !== jobId || receipt.intentHash !== intentHash) {
+            throw roleplayError('ROLEPLAY_JOB_REJECTED', 'The child job does not own this accepted result.', 409);
+        }
+        return receipt.state === 'closed' ? structuredClone(receipt.outcome) : null;
+    });
+}
+
 /** The effect's anchor must still hold; unrelated later edits elsewhere are allowed only where the anchor permits. */
 function assertAnchor(saved, source, effect) {
     const changed = () => roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved chat moved past this job\'s anchor; the reply was not written.');
     if (saved.instanceId !== source.instanceId) throw changed();
-    if (effect === 'append') {
+    if (effect === 'append' || effect === 'notebook') {
         if (saved.rawHash !== source.rawHash) throw changed();
         return;
     }
@@ -228,7 +256,7 @@ export function applyRoleplayJobEffect(base, account, { operationKey, jobId, out
         }
         const captured = captureRoleplayStorageSourceLocked(lease, resource.locator);
         assertAnchor(captured.saved, source, effect);
-        const records = effectRecords(captured.saved.records, source, effect, output, request);
+        const records = effectRecords(captured.saved.records, source, effect, output, request, job, scope.directories);
         // The admission reservation covers this write's pending record; hand it over.
         receipt.reservedReceiptBytes = RECEIPT_RESERVE_BYTES;
         const result = commitSingleChatWriteLocked(lease, { operationKey: `job:${operationKey}`, mode: 'update', sourceKind: 'storage',

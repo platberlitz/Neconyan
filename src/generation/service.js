@@ -132,9 +132,10 @@ export async function fetchChatProfileModels({ context, material, signal, fetch:
 /** Execute a bound Chat Completion profile without browser globals or credential persistence. */
 export async function runChatProfile({ context, binding, messages, maxTokens, macroEnvironment,
     ephemeralStops = [], userName = 'User', characterName = 'Character', groupNames = [],
-    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, preparedMessages = false, onProviderStep, functionTools = [], generationType = 'quiet',
+    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, preparedMessages = false, onProviderStep, functionTools = [], generationType = 'quiet', stepNamespace = '',
 } = {}) {
     if (!context?.directories) fail('A generation context is required.', 400);
+    if (typeof stepNamespace !== 'string' || stepNamespace.length > 512) fail('The saved generation step identity is invalid.', 400);
     signal ||= jobContext?.signal;
     signal?.throwIfAborted();
     if (preparedText !== undefined && (typeof preparedText !== 'string' || Buffer.byteLength(preparedText) > 8 * 1024 * 1024
@@ -154,7 +155,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     const raw = binding?.kind === 'active';
     if (['kobold', 'novel', 'horde'].includes(binding?.backend)) return runLegacyProfile({ context, binding, messages, maxTokens, macroEnvironment,
         ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, jobContext,
-        modelOverride, overridePayload, rawOptions, beforeDispatch, validatePrompt, stream, preparedText, cfgValues, onProviderStep });
+        modelOverride, overridePayload, rawOptions, beforeDispatch, validatePrompt, stream, preparedText, cfgValues, onProviderStep, stepNamespace });
     if (!raw && Object.keys(rawOptions).some(option => !['jsonSchema', 'cacheScope'].includes(option))) {
         fail('This request option requires the acknowledged active connection.', 409);
     }
@@ -165,7 +166,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         const options = { context, binding, macroEnvironment, ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions, maxTokens, preparedText, cfgValues, functionTools, generationType };
         const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames, modelOverride, overridePayload, ...(generationType !== 'quiet' ? { generationType } : {}),
             ...(stream ? { stream: true } : {}), ...(raw ? { rawOptions } : {}), ...(preparedText !== undefined ? { preparedText } : {}), ...(cfgValues ? { cfgValues } : {}),
-            ...(preparedMessages ? { preparedMessages: true } : {}), ...(functionTools.length ? { functionTools } : {}) });
+            ...(preparedMessages ? { preparedMessages: true } : {}), ...(functionTools.length ? { functionTools } : {}), ...(stepNamespace ? { stepNamespace } : {}) });
         if (jobContext) {
             const retained = readArtifact(context.directories, jobContext.job.id, 'provider:' + key);
             if (retained !== undefined) return retained;
@@ -250,7 +251,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         return jobContext ? providerStep(jobContext, key, call) : call();
     }
     const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames,
-        modelOverride, overridePayload, rawOptions, functionTools, stream, generationType });
+        modelOverride, overridePayload, rawOptions, functionTools, stream, generationType, ...(stepNamespace ? { stepNamespace } : {}) });
     if (jobContext) {
         const result = readArtifact(context.directories, jobContext.job.id, 'provider:' + key);
         if (result !== undefined) return result;

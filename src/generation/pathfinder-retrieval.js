@@ -25,19 +25,19 @@ function category(entry) {
     return 'Uncategorized';
 }
 
-function treeForBook(bookName, book, bookHash) {
+export function pathfinderTreeForBook(bookName, book, bookHash) {
     const runtimeId = localId => `node_${createHash('sha256').update(JSON.stringify([bookName, bookHash, localId])).digest('hex').slice(0, 20)}`;
     const nodes = new Map();
     const categories = new Map();
     const restore = saved => {
-        const node = { id: runtimeId(saved.id), name: saved.name, entries: [], children: [] };
+        const node = { id: runtimeId(saved.id), localId: saved.id, name: saved.name, entries: [], children: [] };
         nodes.set(saved.id, node);
         if (saved.generatedCategory) categories.set(saved.generatedCategory, node);
         node.children = saved.children.map(restore);
         return node;
     };
     const saved = readTreeLayout(book);
-    const root = saved ? restore(saved) : { id: runtimeId('root'), name: 'Root', entries: [], children: [] };
+    const root = saved ? restore(saved) : { id: runtimeId('root'), localId: 'root', name: 'Root', entries: [], children: [] };
     nodes.set(saved?.id ?? 'root', root);
     const seen = new Set();
     for (const [key, entry] of Object.entries(book.entries)) {
@@ -52,7 +52,7 @@ function treeForBook(bookName, book, bookHash) {
             if (!node) {
                 let localId = `category_${name.replaceAll(' ', '_')}`;
                 while (nodes.has(localId)) localId += '_';
-                node = { id: runtimeId(localId), name, entries: [], children: [] };
+                node = { id: runtimeId(localId), localId, name, entries: [], children: [] };
                 nodes.set(localId, node);
                 categories.set(name, node);
                 root.children.push(node);
@@ -86,7 +86,7 @@ function entriesForBooks(names, books, hashes) {
     const trees = new Map();
     for (const name of names) {
         const book = books[name];
-        const tree = treeForBook(name, book, hashes[name]);
+        const tree = pathfinderTreeForBook(name, book, hashes[name]);
         trees.set(name, tree);
         const uids = namesInTree(tree);
         for (const [key, entry] of Object.entries(book.entries)) {

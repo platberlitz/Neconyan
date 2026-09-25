@@ -116,6 +116,16 @@ test('only supported active individual-chat assistant metadata registers tools',
     }
 });
 
+test('native assistant definitions keep the browser descriptions and argument contracts', async () => {
+    const { manager } = await runtime();
+    const { ASSISTANT_TOOL_NAMES, nativeToolDefinitions } = await import('../src/generation/native-tool-definitions.js');
+    const browser = manager.tools.map(tool => {
+        const definition = tool.toFunctionOpenAI();
+        return JSON.parse(JSON.stringify({ type: definition.type, function: definition.function }));
+    });
+    expect(nativeToolDefinitions(ASSISTANT_TOOL_NAMES)).toEqual(browser);
+});
+
 test('real ToolManager list/read actions keep exact names and omit inaccessible fields', async () => {
     const { invoke } = await runtime();
     expect(await invoke('ListLorebooks')).toMatchObject({ books: [{ name: ' Notes' }] });

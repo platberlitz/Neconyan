@@ -78,17 +78,18 @@ async function novelTokenControls(settings, model, stops, signal) {
 /** Use the already-selected legacy controls and native handler; no browser-prepared provider request. */
 export async function runLegacyProfile({ context, binding, messages, maxTokens, macroEnvironment,
     ephemeralStops = [], userName = 'User', characterName = 'Character', groupNames = [],
-    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, onProviderStep,
+    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, onProviderStep, stepNamespace = '',
 } = {}) {
     signal ||= jobContext?.signal;
     signal?.throwIfAborted();
+    if (typeof stepNamespace !== 'string' || stepNamespace.length > 512) fail('The saved generation step identity is invalid.', 400);
     if (!Array.isArray(messages) || !Number.isSafeInteger(maxTokens) || maxTokens < 1 || modelOverride
         || Object.keys(overridePayload || {}).length || Object.keys(rawOptions || {}).some(key => !['instructOverride', 'quietToLoud', 'systemPrompt', 'prefill', 'trimNames'].includes(key))) {
         fail('This bound legacy request has unsupported controls.', 409);
     }
     if (stream) fail('This provider stream has no verified completion marker for a durable Roleplay reply.', 409);
     const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames, rawOptions,
-        ...(preparedText !== undefined ? { preparedText } : {}), ...(cfgValues ? { cfgValues } : {}) });
+        ...(preparedText !== undefined ? { preparedText } : {}), ...(cfgValues ? { cfgValues } : {}), ...(stepNamespace ? { stepNamespace } : {}) });
     const resultName = 'horde-result:' + key;
     if (jobContext && binding?.backend === 'horde') {
         const completed = readArtifact(context.directories, jobContext.job.id, resultName);

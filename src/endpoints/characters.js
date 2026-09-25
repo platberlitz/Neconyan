@@ -28,6 +28,7 @@ import { removeSourceMemory } from '../mewmory/store.js';
 import { ByafParser } from '../byaf.js';
 import { assertUntrackedRoleplayFiles, roleplayAvatarOwner, roleplayError, roleplayLease, roleplayPathKey, saveRoleplayAccount, validRoleplayAvatar, withRoleplayAccount } from '../roleplay-store.js';
 import { commitRoleplayLifecycleLocked, commitSingleChatWriteLocked, forgetRoleplayReceiptLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
+import { assertNativeMediaTargetIdle } from '../generation/media-jobs.js';
 import { readRoleplayChatLocked, readRoleplayEntityLocked, roleplayEntityContent } from '../generation/roleplay-source.js';
 import { CharXParser, persistCharXAssets } from '../charx.js';
 import { getSuspiciousEmptyCharacterDefinitionFields } from '../character-save-guard.js';
@@ -639,6 +640,7 @@ function isDamagedCard(error) {
 function publishCharacterCard(request, avatar, bytes, legacyWrite) {
     const filename = path.join(request.user.directories.characters, avatar);
     return withRoleplayAccount(characterBase(request), null, lease => {
+        assertNativeMediaTargetIdle(lease, { kind: 'character', id: avatar });
         let valid = true;
         try {
             roleplayEntityContent('character', avatar, bytes, { storage: true });
@@ -1851,6 +1853,8 @@ function looseCardTask(lease, avatar, filename) {
 // ponytail: server-generated keys; the browser does not retry renames with a stable key yet.
 function renameCharacterCard(request, oldAvatar, newAvatar, bytes) {
     return withRoleplayAccount(characterBase(request), null, lease => {
+        assertNativeMediaTargetIdle(lease, { kind: 'character', id: oldAvatar });
+        assertNativeMediaTargetIdle(lease, { kind: 'character', id: newAvatar });
         const card = enrolCharacterCard(lease, oldAvatar);
         if (card === 'damaged') throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'The character card cannot be read.', 422);
         const { tracked, vanished } = characterChats(lease, request, oldAvatar);
@@ -2070,6 +2074,8 @@ router.post('/edit-attribute', validateAvatarUrlMiddleware, async function (requ
 
     try {
         const avatarPath = path.join(request.user.directories.characters, request.body.avatar_url);
+        withRoleplayAccount(characterBase(request), null, lease => assertNativeMediaTargetIdle(lease,
+            { kind: 'character', id: request.body.avatar_url }));
         const charJSON = await readCharacterData(avatarPath);
         if (typeof charJSON !== 'string') throw new Error('Failed to read character file');
 
@@ -2089,7 +2095,7 @@ router.post('/edit-attribute', validateAvatarUrlMiddleware, async function (requ
         return response.sendStatus(200);
     } catch (err) {
         console.error('An error occurred, character edit invalidated.', err);
-        return response.sendStatus(500);
+        return response.sendStatus(err?.status === 409 ? 409 : 500);
     }
 });
 
@@ -2204,6 +2210,7 @@ router.post('/last-chat', getFileNameValidationFunction('avatar'), async functio
 // ponytail: server-generated keys; the browser does not retry deletions with a stable key yet.
 function deleteCharacterCard(request, avatar, avatarPath, chatsDirectory, deleteChats) {
     return withRoleplayAccount(characterBase(request), null, lease => {
+        assertNativeMediaTargetIdle(lease, { kind: 'character', id: avatar });
         const card = enrolCharacterCard(lease, avatar);
         const cardTracked = card === 'tracked';
         const chats = deleteChats ? characterChats(lease, request, avatar) : { tracked: [], untracked: [], vanished: [], loose: [] };

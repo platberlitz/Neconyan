@@ -16,6 +16,8 @@ jest.unstable_mockModule('../src/util.js', () => ({
     setPermissionsSync: jest.fn(),
 }));
 jest.unstable_mockModule('../src/endpoints/thumbnails.js', () => ({ invalidateThumbnail: jest.fn() }));
+jest.unstable_mockModule('../src/authoring-store.js', () => ({ writeAuthoringFileLocked: jest.fn() }));
+jest.unstable_mockModule('../src/generation/media-jobs.js', () => ({ assertNativeMediaTargetIdle: jest.fn() }));
 jest.unstable_mockModule('../src/roleplay-store.js', () => ({
     assertUntrackedRoleplayFiles: jest.fn(), roleplayAccountBase: jest.fn(() => null), roleplayLease: jest.fn(),
     validRoleplayAvatar: jest.fn(() => true), withRoleplayAccount: jest.fn(),

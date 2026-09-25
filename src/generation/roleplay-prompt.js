@@ -6,6 +6,7 @@ import { selectToolHistoryReasoning } from '../../public/scripts/chat-input-capa
 import { shouldRetainContextAtDepth, stripHtmlTagsFromContext, stripOocBlocksFromContext } from '../../public/scripts/ooc-blocks.js';
 import { formatRoleplayTextExamples } from '../../public/scripts/roleplay-text-format.js';
 import { formatPromptReasoning } from '../../public/scripts/reasoning-prompt-format.js';
+import { applyAgentHistoryRegex, prepareCompanionPromptHistory } from './agent-history.js';
 
 const ROLES = ['system', 'user', 'assistant'];
 
@@ -20,8 +21,7 @@ export function selectRoleplayPromptRecords(records, source, effect) {
 }
 
 /** Apply saved prompt-only transformations before both lore scanning and memory budgeting. */
-export function prepareRoleplayHistoryContent(records, snapshot, environment) {
-    const visibleCount = records.slice(1).filter(record => !record.is_system || record.extra?.tool_invocations).length;
+export function prepareRoleplayHistoryContent(records, snapshot, environment, agentHistory = {}) {
     const attachments = new Map(snapshot.attachments.map(item => [item.index, item.text]));
     let position = 0;
     const substitute = (value, overrides = {}, postProcess) => environment.evaluate(value, {
@@ -61,22 +61,31 @@ export function prepareRoleplayHistoryContent(records, snapshot, environment) {
         global[field] = substitute(global[field]);
         environment.character[macro] = global[field];
     }
+    const companionHistory = prepareCompanionPromptHistory(records, snapshot, environment, agentHistory);
+    const visibleCount = records.slice(1).filter((record, index) => !record.is_system || record.extra?.tool_invocations || index === companionHistory.hostIndex).length;
+    const worldInfoContent = [];
     const content = records.slice(1).map((record, index) => {
-        if (record.is_system && !record.extra?.tool_invocations) return '';
+        if (record.is_system && !record.extra?.tool_invocations && index !== companionHistory.hostIndex) { worldInfoContent.push(''); return ''; }
         const depth = visibleCount - position++ - 1;
-        const text = applyRegexScriptList(record.mes, snapshot.regex,
+        const original = record.is_system && !record.extra?.tool_invocations ? '' : record.mes;
+        const afterAgent = applyAgentHistoryRegex(original, record, agentHistory.scripts?.[index],
+            depth - (snapshot.global.trigger === 'continue' ? 1 : 0), snapshot, environment);
+        const transform = value => applyRegexScriptList(value, snapshot.regex,
             record.is_user ? AGENT_REGEX_PLACEMENT.USER_INPUT : AGENT_REGEX_PLACEMENT.AI_OUTPUT, {
                 isPrompt: true, depth: depth - (snapshot.global.trigger === 'continue' ? 1 : 0),
                 characterOverride: snapshot.speakerNames.character,
                 substituteParamsFn: substitute, substituteParamsExtendedFn: substitute,
             });
-        const titles = [record.extra?.append_title && record.extra?.title,
+        const text = transform(afterAgent);
+        const titles = record.is_system ? [] : [record.extra?.append_title && record.extra?.title,
             ...(record.extra?.media ?? []).map(media => media?.append_title && media.title)].filter(Boolean);
-        const content = (attachments.get(index) ?? '') + text
-            + (titles.length ? `\n\n${titles.join('\n\n')}` : '');
-        return stripHtmlTagsFromContext(stripOocBlocksFromContext(content,
-            shouldRetainContextAtDepth(depth, snapshot.contextRetention?.ooc)),
+        const finish = value => stripHtmlTagsFromContext(stripOocBlocksFromContext((record.is_system ? '' : attachments.get(index) ?? '') + value
+            + (titles.length ? `\n\n${titles.join('\n\n')}` : ''),
+        shouldRetainContextAtDepth(depth, snapshot.contextRetention?.ooc)),
         shouldRetainContextAtDepth(depth, snapshot.contextRetention?.html));
+        const retained = index === companionHistory.hostIndex ? companionHistory.entries : [];
+        worldInfoContent.push([finish(afterAgent === original ? text : transform(original)), ...retained.map(item => item.worldInfoContent)].filter(Boolean).join('\n\n'));
+        return [finish(text), ...retained.map(item => item.content)].filter(Boolean).join('\n\n');
     });
     const settings = { ...snapshot.reasoning, add_to_prompts: snapshot.reasoningInPrompt };
     if ((settings.add_to_prompts || snapshot.global.trigger === 'continue')
@@ -95,8 +104,13 @@ export function prepareRoleplayHistoryContent(records, snapshot, environment) {
                 isPrompt: true, depth: visible.length - index - (snapshot.global.trigger === 'continue' ? 2 : 1),
                 characterOverride: snapshot.speakerNames.character, substituteParamsFn: substitute, substituteParamsExtendedFn: substitute,
             });
+            const resolved = [];
             const result = formatPromptReasoning(content[row.index], thought, { settings, counter: state.counter,
-                isPrefix: continuing, duration: row.record.extra?.reasoning_duration, substitute });
+                isPrefix: continuing, duration: row.record.extra?.reasoning_duration,
+                substitute: value => { const text = substitute(value); resolved.push(text); return text; } });
+            let resolvedIndex = 0;
+            worldInfoContent[row.index] = formatPromptReasoning(worldInfoContent[row.index], thought, { settings, counter: state.counter,
+                isPrefix: continuing, duration: row.record.extra?.reasoning_duration, substitute: () => resolved[resolvedIndex++] }).content;
             const { content: text, ...next } = result;
             content[row.index] = text;
             state = { ...state, ...next };
@@ -115,6 +129,8 @@ export function prepareRoleplayHistoryContent(records, snapshot, environment) {
     if (snapshot.personaPosition === 4 && global.personaDescription) inject.push(global.personaDescription);
     global.inject = inject;
     return { content, reasoning: state, global, characterExamples, authorNote, depthPrompt,
+        ...(companionHistory.hostIndex >= 0 ? { companionHostIndex: companionHistory.hostIndex } : {}),
+        ...(worldInfoContent.some((value, index) => value !== content[index]) ? { worldInfoContent } : {}),
         ...(depthPrompts?.length ? { depthPrompts } : {}) };
 }
 
@@ -315,7 +331,7 @@ export function assertWorldInfoDepthHistory(records, messages, historyStart, opt
 }
 
 function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = null, regex = [], characterName,
-    group = false, userName = records[0]?.user_name, namesBehavior, attachments = [], images = [], imageDetail = 'auto', mediaDisplay = 'list', toolHistory = false, toolSource = '', toolModel = '', signaturePolicy, preparedContent } = {}) {
+    group = false, userName = records[0]?.user_name, namesBehavior, attachments = [], images = [], imageDetail = 'auto', mediaDisplay = 'list', toolHistory = false, toolSource = '', toolModel = '', signaturePolicy, preparedContent, companionHostIndex } = {}) {
     if (preparedContent !== undefined && (!Array.isArray(preparedContent) || preparedContent.length !== records.length - 1
         || preparedContent.some(value => typeof value !== 'string'))) {
         throw roleplayError('ROLEPLAY_INVALID', 'The prepared saved history is invalid.', 409);
@@ -369,7 +385,10 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
             ...(thought ? { reasoning: thought } : {}) },
             ...calls.map(call => ({ role: 'tool', tool_call_id: call.id, content: call.result || '[No content]' }))];
         }
-        if (record.is_system === true) return [];
+        if (record.is_system === true) {
+            if (index !== companionHostIndex || !preparedContent?.[index]) return [];
+            record = { name: record.name, is_user: false, mes: '', extra: {} };
+        }
         const attachment = attachments.find(item => item.index === index);
         const selectedImages = images.filter(item => item.index === index);
         const media = record.extra?.media;
@@ -382,12 +401,18 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
                  || Object.keys(record.extra).some(key => !['token_count', 'isSmallSys', 'reasoning', 'files', 'fileLength',
                      'media', 'media_index', 'media_display', 'inline_image', 'api', 'model', 'reasoning_effort',
                      'reasoning_duration', 'reasoning_signature', 'reasoning_tokens', 'time_to_first_token', 'gen_id', 'type',
-                     'inChatAgentPostRuns', 'title', 'append_title', 'bias', 'display_text', 'reasoning_display_text', 'server_narration'].includes(key))
+                     'inChatAgentPostRuns', 'inChatAgents', 'inChatAgentPromptRuns', 'inChatAgentTransformHistory', 'inChatAgentTransformRedo',
+                     'inChatAgentPreGenerationInterceptHistory', 'inChatAgentCompanionResults',
+                     'title', 'append_title', 'bias', 'display_text', 'reasoning_display_text', 'server_narration'].includes(key))
                  || record.extra.bias != null && typeof record.extra.bias !== 'string'
                  || record.extra.title != null && typeof record.extra.title !== 'string'
                   || record.extra.append_title != null && typeof record.extra.append_title !== 'boolean'
                   || ['display_text', 'reasoning_display_text'].some(key => record.extra[key] != null && typeof record.extra[key] !== 'string')
                   || record.extra.server_narration != null && (typeof record.extra.server_narration !== 'object' || Array.isArray(record.extra.server_narration))
+                  || record.extra.inChatAgents != null && (typeof record.extra.inChatAgents !== 'object' || Array.isArray(record.extra.inChatAgents))
+                   || record.extra.inChatAgentCompanionResults != null && (typeof record.extra.inChatAgentCompanionResults !== 'object' || Array.isArray(record.extra.inChatAgentCompanionResults))
+                   || ['inChatAgentPromptRuns', 'inChatAgentTransformHistory', 'inChatAgentTransformRedo', 'inChatAgentPreGenerationInterceptHistory']
+                       .some(key => record.extra[key] != null && !Array.isArray(record.extra[key]))
                  || record.extra.inChatAgentPostRuns !== undefined && (!Array.isArray(record.extra.inChatAgentPostRuns)
                      || record.extra.inChatAgentPostRuns.some(value => typeof value !== 'string'))
                  || record.extra.reasoning_signature && (!signaturePolicy || typeof record.extra.reasoning_signature !== 'string')

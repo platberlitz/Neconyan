@@ -13,7 +13,7 @@ const { readArtifact, providerStep } = await import('../src/jobs/artifacts.js');
 const { getJob, recoverJobs, releaseJob, updateJob } = await import('../src/jobs/store.js');
 const { readRoleplayChat } = await import('../src/generation/roleplay-source.js');
 
-const controls = { prompts: [{ identifier: 'main', role: 'system', system_prompt: true, content: '' },
+const controls = { function_calling: true, prompts: [{ identifier: 'main', role: 'system', system_prompt: true, content: '' },
     { identifier: 'chatHistory', marker: true, system_prompt: true }], prompt_order: [{ character_id: 100001,
     order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }] };
 
@@ -39,7 +39,7 @@ function prepared(t, { pipelineEnabled = true, skipSecondPass = false, connectio
     fs.writeFileSync(agentFile, JSON.stringify(agent));
     const settingsFile = path.join(f.scope.directories.root, 'settings.json');
     const settings = { world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 200 },
-        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1' },
+        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1', function_calling: true },
         extension_settings: {
             inChatAgents: { globalSettings: { enabled: true, pathfinderEnabled: true } },
             connectionManager: { profiles: [

@@ -22,7 +22,7 @@ const { captureGenerationBinding, resolveGenerationProfile } = await import('../
 const { runChatProfile } = await import('../src/generation/service.js');
 const { captureRoleplaySource, readRoleplayChat } = await import('../src/generation/roleplay-source.js');
 
-function promptJob(t, prompts, order, settings = {}, prepare = () => {}, captureBinding = () => ({ profileId: 'saved', fingerprint: 'bound' }), requestFields = {}) {
+function promptJob(t, prompts, order, settings = {}, prepare = () => {}, captureBinding = () => ({ profileId: 'saved', fingerprint: 'bound' }), requestFields = {}, worldInfoOptions = {}) {
     const f = fixture(t);
     f.records[1].extra = {};
     prepare(f);
@@ -33,7 +33,7 @@ function promptJob(t, prompts, order, settings = {}, prepare = () => {}, capture
     const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'prompt-assembly', effect: 'append', source,
         request: { ...requestFields, binding: captureBinding(f.scope.directories), serverPrompt: true, messages: [],
             maxTokens: 20, characterName: 'Nova', worldInfo: captureRoleplayWorldInfo(f.scope, account, source,
-                { avatar: 'Nova.png', maxContext: 200 }) } });
+                { avatar: 'Nova.png', maxContext: 200, ...worldInfoOptions }) } });
     releaseJob(f.scope.directories, jobId);
     const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
         owner: f.scope.owner, signal: new AbortController().signal };
@@ -319,12 +319,10 @@ test('saved contributor results keep extension ordering and literal text in the 
     const job = promptJob(t, prompts, order, settings, () => {},
         directories => captureGenerationBinding(directories, { kind: 'active' }, { settingsRevision: 1 }));
     job.options.promptBackend = resolveGenerationProfile;
-    const tools = [{ type: 'function', function: { name: 'lookup', description: 'Read saved evidence.',
-        parameters: { type: 'object', properties: {}, additionalProperties: false } } }];
     const values = { extensions: [
         { key: 'z-note', content: 'Later note', position: 1, depth: 0, role: 'system', scan: false },
         { key: 'a-note', content: '{{input}} stays literal', position: 1, depth: 0, role: 'system', scan: false },
-    ], history: [{ role: 'assistant', content: '{{input}} is saved model output' }], tools };
+    ], history: [{ role: 'assistant', content: '{{input}} is saved model output' }] };
     saveRoleplayPromptContributions(job.context, values);
     assert.deepEqual(saveRoleplayPromptContributions(job.context, values), values);
     assert.throws(() => saveRoleplayPromptContributions(job.context, { ...values, history: [] }), { code: 'ROLEPLAY_INVALID' });
@@ -332,8 +330,7 @@ test('saved contributor results keep extension ordering and literal text in the 
     await job.run(options => runChatProfile({ ...options, fetch: async (_url, init) => {
         calls++;
         const body = JSON.parse(init.body);
-        assert.deepEqual(body.tools, tools);
-        assert.equal(body.tool_choice, 'auto');
+        assert.equal(body.tools, undefined);
         assert.deepEqual(body.messages.map(message => message.content), ['Main', 'Original', 'Answer',
             '{{input}} is saved model output', '{{input}} stays literal\nLater note']);
         return new Response(JSON.stringify({ choices: [{ message: { content: 'Saved final reply' } }] }));
@@ -488,7 +485,7 @@ test('a saved system prompt can stand alone after every history row is filtered'
     assert.deepEqual(messages, [{ role: 'system', content: 'Main' }]);
 });
 
-test('a saved reply containing text and tool calls remains pending without provider replay', async t => {
+test('an unbound browser tool definition cannot make a paid model request', async t => {
     const prompts = [main, history];
     const order = ['main', 'chatHistory'];
     const settings = { _settingsRevision: 1, username: 'User', main_api: 'openai',
@@ -498,7 +495,8 @@ test('a saved reply containing text and tool calls remains pending without provi
             prompt_order: [{ character_id: 100001, order: order.map(identifier => ({ identifier, enabled: true })) }] },
         power_user: { custom_stopping_strings: '[]' } };
     const job = promptJob(t, prompts, order, settings, () => {},
-        directories => captureGenerationBinding(directories, { kind: 'active' }, { settingsRevision: 1 }));
+        directories => captureGenerationBinding(directories, { kind: 'active' }, { settingsRevision: 1 }),
+        {}, { serverPrompt: true, nativeBindingVersion: 1 });
     job.options.promptBackend = resolveGenerationProfile;
     const tools = [{ type: 'function', function: { name: 'lookup', description: 'Read saved evidence.',
         parameters: { type: 'object', properties: {}, additionalProperties: false } } }];
@@ -509,8 +507,8 @@ test('a saved reply containing text and tool calls remains pending without provi
         return new Response(JSON.stringify({ choices: [{ message: { content: 'I will look it up.', tool_calls: [
             { id: 'lookup-1', type: 'function', function: { name: 'lookup', arguments: '{}' } },
         ] } }] }));
-    } })), { code: 'ROLEPLAY_TOOLS_PENDING' });
-    await assert.rejects(job.run(async () => assert.fail('A saved tool decision cannot repeat the provider')), { code: 'ROLEPLAY_TOOLS_PENDING' });
-    assert.equal(calls, 1);
+    } })), { code: 'ROLEPLAY_TOOL_INVALID' });
+    await assert.rejects(job.run(async () => assert.fail('An unbound tool cannot call the provider')), { code: 'ROLEPLAY_TOOL_INVALID' });
+    assert.equal(calls, 0);
     assert.equal(readRoleplayChat(job.f.scope, job.f.locator).records.at(-1).mes, 'Answer');
 });

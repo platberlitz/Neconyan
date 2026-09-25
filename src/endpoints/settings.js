@@ -351,7 +351,8 @@ router.post('/get', (request, response) => {
     const context = readAndParseFromDirectory(request.user.directories.context);
     const sysprompt = readAndParseFromDirectory(request.user.directories.sysprompt);
     const reasoning = readAndParseFromDirectory(request.user.directories.reasoning);
-    const agentLibrary = readAgentCollection(request.user.directories.inChatAgents);
+    const agentLibrary = readAgentCollection(request.user.directories.inChatAgents, 'agent',
+        { owner: request.user.profile.handle, directories: request.user.directories });
     const inChatAgents = agentLibrary.records;
     let roleplayAccount = null;
     try {

@@ -8,6 +8,7 @@ import { roleplayAccountBase, withRoleplayAccount } from '../roleplay-store.js';
 import { startOperation } from '../mewmory/operations.js';
 import { retryConversationRoot } from '../generation/conversation-jobs.js';
 import { retainConversationAutomaticAcceptance } from '../generation/conversation-effects.js';
+import { decideJobApproval, readJobApproval } from '../generation/job-approvals.js';
 
 export const router = express.Router();
 
@@ -93,6 +94,25 @@ router.get('/:id/audio/:name', (request, response) => {
     } catch (error) {
         return fail(response, error);
     }
+});
+
+router.get('/:id/approval/:approval', (request, response) => {
+    try {
+        const { owner, directories } = directoriesFor(request);
+        const job = getJob(directories, request.params.id);
+        if (!job || job.owner !== owner) return response.status(404).json({ error: 'No such job.' });
+        return response.json(readJobApproval({ owner, directories, job }, request.params.approval));
+    } catch (error) { return fail(response, error); }
+});
+
+router.post('/:id/approval/:approval', (request, response) => {
+    try {
+        const { owner, directories } = directoriesFor(request);
+        const job = getJob(directories, request.params.id);
+        if (!job || job.owner !== owner) return response.status(404).json({ error: 'No such job.' });
+        return response.json(decideJobApproval({ owner, directories, job }, { id: request.params.approval,
+            proposalHash: request.body?.proposalHash, decision: request.body?.decision }));
+    } catch (error) { return fail(response, error); }
 });
 
 // Source-bound work needs native preparation and permanent acceptance receipts.

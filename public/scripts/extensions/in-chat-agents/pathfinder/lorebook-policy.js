@@ -20,3 +20,13 @@ export function canReadBook(bookName, settings) {
     const perm = getBookPermission(bookName, 'read', settings);
     return settings.bookPermissions?.[bookName]?.enabled !== false && isPermissionAllowed(perm);
 }
+
+export function canWriteBook(bookName, settings) {
+    return settings.bookPermissions?.[bookName]?.enabled !== false
+        && isPermissionAllowed(getBookPermission(bookName, 'write', settings));
+}
+
+export function canDeleteBook(bookName, settings) {
+    return settings.bookPermissions?.[bookName]?.enabled !== false
+        && isPermissionAllowed(getBookPermission(bookName, 'delete', settings));
+}

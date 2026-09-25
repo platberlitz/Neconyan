@@ -1,10 +1,10 @@
-import fs from 'node:fs';
 import path from 'node:path';
 
 import express from 'express';
 import sanitize from 'sanitize-filename';
 
-import { tryWriteFileSync } from '../util.js';
+import { authoringRoute, deleteAuthoringFileLocked, readAuthoringFileLocked, writeAuthoringFileLocked } from '../authoring-store.js';
+import { assertNativeMediaTargetIdle } from '../generation/media-jobs.js';
 import {
     clearDefaultPresetDeletion,
     findDefaultPreset,
@@ -20,7 +20,7 @@ import {
  * @param {import('../users.js').UserDirectoryList} directories User directories
  * @returns {{folder: string?, extension: string?}} Object containing the folder and extension for the preset settings
  */
-function getPresetSettingsByAPI(apiId, directories) {
+export function getPresetSettingsByAPI(apiId, directories) {
     switch (apiId) {
         case 'kobold':
         case 'koboldhorde':
@@ -67,7 +67,7 @@ function getPresetContentTypeByAPI(apiId) {
 
 export const router = express.Router();
 
-router.post('/save', function (request, response) {
+router.post('/save', authoringRoute(function (request, response, lease) {
     const name = sanitize(request.body.name);
     if (!request.body.preset || !name) {
         return response.sendStatus(400);
@@ -81,9 +81,10 @@ router.post('/save', function (request, response) {
     }
 
     const fullpath = path.join(settings.folder, filename);
+    assertNativeMediaTargetIdle(lease, { kind: 'preset', id: path.relative(request.user.directories.root, fullpath) });
     const defaultPreset = findDefaultPreset(request.user.directories, { folder: settings.folder, name });
 
-    tryWriteFileSync(fullpath, JSON.stringify(request.body.preset, null, 4));
+    writeAuthoringFileLocked(lease, fullpath, JSON.stringify(request.body.preset, null, 4));
 
     // A save request is always user-initiated (save, save as, rename, import, or restore), so it may
     // claim a deleted bundled default's name. The tombstone only exists to stop the content seeder
@@ -93,9 +94,9 @@ router.post('/save', function (request, response) {
     }
 
     return response.send({ name });
-});
+}));
 
-router.post('/delete', function (request, response) {
+router.post('/delete', authoringRoute(function (request, response, lease) {
     const name = sanitize(request.body.name);
     if (!name) {
         return response.sendStatus(400);
@@ -109,15 +110,16 @@ router.post('/delete', function (request, response) {
     }
 
     const fullpath = path.join(settings.folder, filename);
+    assertNativeMediaTargetIdle(lease, { kind: 'preset', id: path.relative(request.user.directories.root, fullpath) });
 
     const defaultPreset = findDefaultPreset(request.user.directories, { folder: settings.folder, name });
 
-    if (fs.existsSync(fullpath)) {
+    if (readAuthoringFileLocked(lease, fullpath)) {
         if (defaultPreset) {
             recordDefaultPresetDeletion(request.user.directories, defaultPreset);
         }
 
-        fs.unlinkSync(fullpath);
+        deleteAuthoringFileLocked(lease, fullpath);
         return response.sendStatus(200);
     }
 
@@ -127,9 +129,9 @@ router.post('/delete', function (request, response) {
     }
 
     return response.sendStatus(404);
-});
+}));
 
-router.post('/restore', function (request, response) {
+router.post('/restore', authoringRoute(function (request, response, lease) {
     try {
         const settings = getPresetSettingsByAPI(request.body.apiId, request.user.directories);
         const name = sanitize(request.body.name);
@@ -143,18 +145,21 @@ router.post('/restore', function (request, response) {
             result.isDefault = true;
             result.preset = getDefaultPresetFile(defaultPreset.filename) || {};
             if (request.body.clearTombstone === true) {
+                assertNativeMediaTargetIdle(lease, { kind: 'preset', id: path.relative(request.user.directories.root,
+                    path.join(settings.folder, name + settings.extension)) });
                 result.tombstoneCleared = clearDefaultPresetDeletion(request.user.directories, defaultPreset);
             }
         }
 
         return response.send(result);
     } catch (error) {
+        if (error.code === 'MEDIA_TARGET_BUSY') return response.sendStatus(409);
         console.error(error);
         return response.sendStatus(500);
     }
-});
+}));
 
-router.post('/restore-defaults', function (request, response) {
+router.post('/restore-defaults', authoringRoute(function (request, response, lease) {
     try {
         const apiId = request.body.apiId ? String(request.body.apiId) : '';
         const contentType = apiId ? getPresetContentTypeByAPI(apiId) : null;
@@ -163,14 +168,15 @@ router.post('/restore-defaults', function (request, response) {
             return response.sendStatus(400);
         }
 
-        const result = restoreDefaultPresetFiles(request.user.directories, contentType ? [contentType] : null);
+        const result = restoreDefaultPresetFiles(request.user.directories, contentType ? [contentType] : null, lease);
 
         return response.send({
             ok: result.failed.length === 0,
             ...result,
         });
     } catch (error) {
+        if (error.code === 'MEDIA_TARGET_BUSY') return response.sendStatus(409);
         console.error(error);
         return response.sendStatus(500);
     }
-});
+}));

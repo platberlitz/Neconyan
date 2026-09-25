@@ -131,6 +131,24 @@ function syncOriginalEntry(book, uid, source = originalEntry(book, uid)) {
     book.originalData.entries[index] = serializeWorldInfoEntry(book.entries[uid], positions, source);
 }
 
+/** Keep imported Character Book fields in step with a native World Info edit. */
+export function syncLorebookOriginalEntry(book, uid, source) {
+    if (source === undefined) syncOriginalEntry(book, uid);
+    else syncOriginalEntry(book, uid, source);
+}
+
+export function deleteLorebookOriginalEntry(book, uid) {
+    if (!Array.isArray(book.originalData?.entries)) return;
+    const entries = book.originalData.entries;
+    const index = book.originalDataUidMap?.[uid] ?? entries.findIndex(entry => String(entry.id ?? entry.uid) === String(uid));
+    if (!Number.isSafeInteger(index) || index < 0 || index >= entries.length) return;
+    entries.splice(index, 1);
+    if (!book.originalDataUidMap) return;
+    book.originalDataUidMap = Object.fromEntries(Object.entries(book.originalDataUidMap)
+        .filter(([key]) => key !== String(uid))
+        .map(([key, position]) => [key, position > index ? position - 1 : position]));
+}
+
 export function mergeLorebooks(data, incoming, choices) {
     const book = structuredClone(data);
     if (incoming.originalData && !book.originalData) {

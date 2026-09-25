@@ -11,17 +11,28 @@ import { AGENT_STORAGE_LIMITS } from '../public/scripts/extensions/in-chat-agent
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { router } = await import('../src/endpoints/in-chat-agents.js');
 const { router: settingsRouter } = await import('../src/endpoints/settings.js');
+const { initialiseRoleplayAccount } = await import('../src/roleplay-store.js');
 let server;
 let root;
 let baseUrl;
+const accountDirectories = new Map();
 
 beforeAll(async () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-agent-setups-'));
+    for (const owner of ['one', 'two']) {
+        const directory = path.join(root, owner);
+        fs.mkdirSync(directory);
+        const directories = { root: directory, inChatAgents: directory, inChatAgentGroups: path.join(directory, 'agent-groups'),
+            ...Object.fromEntries(['characters', 'groups', 'chats', 'groupChats'].map(key => [key, path.join(directory, key)])) };
+        for (const value of Object.values(directories)) fs.mkdirSync(value, { recursive: true });
+        accountDirectories.set(owner, directories);
+        initialiseRoleplayAccount({ owner, directories });
+    }
     const app = express();
     app.use(express.json({ limit: '2mb' }));
     app.use((request, _response, next) => {
         const profile = request.header('test-profile') === 'two' ? 'two' : 'one';
-        request.user = { profile: { handle: profile }, directories: { inChatAgents: path.join(root, profile), inChatAgentGroups: path.join(root, profile, 'groups') } };
+        request.user = { profile: { handle: profile }, directories: accountDirectories.get(profile) };
         next();
     });
     app.use('/settings', settingsRouter);
@@ -77,7 +88,7 @@ test('invalid identifiers and duplicate agents are rejected without writing outs
 test('a filesystem write failure returns an error and the same save succeeds after retry', async () => {
     const filename = path.join(root, 'one/presets/blocked.json');
     fs.mkdirSync(filename);
-    expect((await post('/presets/save', { ...setup, id: 'blocked' })).status).toBe(500);
+    expect((await post('/presets/save', { ...setup, id: 'blocked' })).status).toBe(409);
     expect(fs.statSync(filename).isDirectory()).toBe(true);
     fs.rmdirSync(filename);
     expect((await post('/presets/save', { ...setup, id: 'blocked' })).status).toBe(200);

@@ -12,6 +12,8 @@ setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.ur
 
 const contentManager = await import('../src/endpoints/content-manager.js');
 const { router: presetsRouter } = await import('../src/endpoints/presets.js');
+const { initialiseRoleplayAccount } = await import('../src/roleplay-store.js');
+const { USER_DIRECTORY_TEMPLATE } = await import('../src/constants.js');
 
 const PRESET_NAME = 'Default';
 
@@ -41,11 +43,10 @@ describe('saving over a deleted bundled default preset', () => {
 
     beforeEach(() => {
         tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-preset-save-'));
-        directories = {
-            root: tempRoot,
-            openAI_Settings: path.join(tempRoot, 'presets', 'openai'),
-        };
-        fs.mkdirSync(directories.openAI_Settings, { recursive: true });
+        const root = path.join(tempRoot, 'preset-save-test-user');
+        directories = { ...Object.fromEntries(Object.entries(USER_DIRECTORY_TEMPLATE).map(([key, value]) => [key, path.join(root, value)])), root };
+        for (const folder of Object.values(directories)) fs.mkdirSync(folder, { recursive: true });
+        initialiseRoleplayAccount({ owner: 'preset-save-test-user', directories });
     });
 
     afterEach(() => {

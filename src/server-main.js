@@ -769,14 +769,21 @@ async function postSetupTasks(result) {
     await import('./generation/sprite-jobs.js');
     await import('./generation/speech-jobs.js');
     await import('./generation/caption-jobs.js');
+    await import('./generation/agent-jobs.js');
+    await import('./generation/agent-draft-jobs.js');
+    await import('./generation/pathfinder-tool-jobs.js');
+    await import('./generation/pathfinder-notebook-jobs.js');
+    await import('./generation/assistant-tool-jobs.js');
     await import('./generation/quick-image-gen-workflow.js');
-    const [{ startJobsRunner }, { getUserDirectories, getAllUserHandles }] = await Promise.all([
+    const [{ startJobsRunner }, { getUserDirectories, getAllUserHandles }, { recoverJobApproval }] = await Promise.all([
         import('./jobs/runner.js'),
         import('./users.js'),
+        import('./generation/job-approvals.js'),
     ]);
     startJobsRunner({
         directoriesFor: handle => getUserDirectories(handle),
         owners: () => getAllUserHandles(),
+        recoverWaiting: recoverJobApproval,
     });
     const { startConversationWorker } = await import('./generation/conversation-worker.js');
     startConversationWorker({
