@@ -17,7 +17,7 @@ import { normalizeLocator } from '../mewmory/store.js';
 import { roleplayAccountBase, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
 import { releaseJob } from '../jobs/store.js';
 import { captureRoleplaySourceLocked, readRoleplayChatLocked } from './roleplay-source.js';
-import { captureGenerationBinding } from './profiles.js';
+import { captureGenerationBinding, getChatProfileContextLimit } from './profiles.js';
 import { readNativeMediaJobResultForOwner } from './media-jobs.js';
 import { captureRoleplayNamedWorkflow, ROLEPLAY_WORKFLOW_NAMES } from './roleplay-workflow-named.js';
 import { admitRoleplayWorkflowJob, captureRoleplayWorkflowRequest } from './roleplay-workflow.js';
@@ -29,7 +29,7 @@ const MAX_REVISION_BYTES = 512 * 1024;
 const MAX_TOKENS = 8192;
 const DEFAULT_TOKENS = 512;
 const SUBMISSION = ['key', 'name', 'intent', 'source', 'anchor', 'messageRevision', 'groupRevision', 'maxTokens', 'account', 'acknowledgement'];
-const ANCHOR_FIELDS = { end: [], last: [], chosen: ['messageIndex'] };
+const ANCHOR_FIELDS = ['messageIndex', 'chosen'];
 
 const invalid = (message, code = 'roleplay_workflow_invalid') => Object.assign(new Error(message), { status: 400, apiError: code });
 const changed = (message, code = 'roleplay_workflow_changed') => Object.assign(new Error(message), { status: 409, apiError: code });
@@ -90,18 +90,33 @@ export function normalizeRoleplayWorkflowSubmission(body = {}) {
         ? '' : identifier(body.source.locator.avatar, 'character file');
     if (!avatar || sanitize(avatar) !== avatar) throw invalid('A chat workflow needs a character file.');
     const named = captureRoleplayNamedWorkflow(name, body.intent ?? {});
-    assertKeys(body.anchor, ANCHOR_FIELDS[named.anchor], 'workflow anchor');
-    const messageIndex = named.anchor === 'chosen' ? body.anchor.messageIndex : null;
-    if (messageIndex !== null && (!Number.isSafeInteger(messageIndex) || messageIndex < 0)) {
-        throw invalid('Invalid workflow message index.');
-    }
-    const maxTokens = body.maxTokens === undefined || body.maxTokens === null ? DEFAULT_TOKENS : body.maxTokens;
-    if (!Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > MAX_TOKENS) throw invalid('Invalid workflow token limit.');
+    assertKeys(body.anchor, ANCHOR_FIELDS, 'workflow anchor');
+    // The browser names the message the user was looking at. `chosen` says it was
+    // a deliberate pick; otherwise the server's own anchor derivation must agree
+    // with it, so a chat that moved on is refused rather than answered elsewhere.
+    if (typeof body.anchor.chosen !== 'boolean') throw invalid('Invalid workflow anchor choice.');
+    if (named.anchor === 'chosen' && body.anchor.chosen !== true) throw invalid('This workflow needs a message the user chose.');
+    if (named.anchor !== 'chosen' && body.anchor.chosen) throw invalid('This workflow answers the chat itself, not a chosen message.');
+    const messageIndex = body.anchor.messageIndex;
+    if (!Number.isSafeInteger(messageIndex) || messageIndex < 0) throw invalid('Invalid workflow message index.');
+    const maxTokens = body.maxTokens === undefined || body.maxTokens === null ? null : body.maxTokens;
+    if (maxTokens !== null && (!Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > MAX_TOKENS)) throw invalid('Invalid workflow token limit.');
     return { key, name, named, locator: { chat: chatName(body.source.locator.chat), avatar, group: false },
-        messageIndex, messageRevision: revision(body.messageRevision, 'message revision'),
+        messageIndex, chosen: body.anchor.chosen === true, messageRevision: revision(body.messageRevision, 'message revision'),
         maxTokens, account: accountStamp(body.account),
         acknowledgement: { account: identifier(body.acknowledgement?.account, 'account handle'),
             settingsRevision: body.acknowledgement?.settingsRevision } };
+}
+
+/**
+ * A workflow with no stated token limit still needs one the saved context can
+ * hold, so the limit comes from the acknowledged connection rather than a guess.
+ */
+function workflowTokenLimit(directories, binding, requested) {
+    if (requested !== null) return requested;
+    const contextLimit = getChatProfileContextLimit(directories, binding);
+    if (!Number.isSafeInteger(contextLimit) || contextLimit <= 128) throw changed('The saved connection has no room for a Roleplay workflow.', 'roleplay_workflow_context');
+    return Math.max(64, Math.min(DEFAULT_TOKENS, Math.floor((contextLimit - 128) / 2)));
 }
 
 function submissionScope(request) {
@@ -134,23 +149,28 @@ function captureWorkflowSource(base, account, submission) {
         const saved = readRoleplayChatLocked(lease, locator);
         const messages = saved.records.slice(1);
         let index = null;
-        if (submission.named.anchor === 'last' || submission.named.anchor === 'assistant') {
+        if (submission.named.anchor === 'chosen') {
+            index = submission.messageIndex;
+        } else if (submission.named.anchor === 'end') {
+            if (!messages.length) throw changed('The saved Roleplay chat has no message to answer.', 'roleplay_workflow_anchor');
+            index = messages.length - 1;
+        } else {
             index = lastModelIndex(saved.records);
             if (index === null) throw changed('The saved Roleplay chat has no model message to answer.', 'roleplay_workflow_anchor');
-        } else if (submission.named.anchor === 'chosen') {
-            index = submission.messageIndex;
-        } else if (!messages.length) {
-            throw changed('The saved Roleplay chat has no message to answer.', 'roleplay_workflow_anchor');
         }
-        // Every named workflow proves the message the user was looking at, so a
+        // The server's own anchor must be the message the user was looking at, so a
         // chat that moved on cannot absorb a different intent.
-        const proven = index === null ? messages.length - 1 : index;
-        if (!messages[proven] || getRoleplaySourceMessageRevision(messages[proven]) !== submission.messageRevision) {
+        if (index !== submission.messageIndex) {
+            throw changed('The saved Roleplay chat moved on after this workflow was captured.', 'roleplay_workflow_anchor');
+        }
+        if (!messages[index] || getRoleplaySourceMessageRevision(messages[index]) !== submission.messageRevision) {
             throw changed('The saved Roleplay message changed after this workflow was captured.', 'roleplay_workflow_changed');
         }
+        // An append anchors the whole chat, so its source carries no message anchor.
         const captured = captureRoleplaySourceLocked(lease, { locator,
-            ...(index === null ? {} : submission.named.effect === 'replace'
-                ? { range: { start: index, count: 1 } } : { message: index }) });
+            ...(submission.named.effect === 'append' ? {}
+                : submission.named.effect === 'replace'
+                    ? { range: { start: index, count: 1 } } : { message: index }) });
         if (saved.changed || captured.changed) saveRoleplayAccount(lease);
         return { source: captured.source, index };
     });
@@ -166,9 +186,17 @@ export async function acceptRoleplayNamedWorkflow(request, body = {}) {
     const submission = normalizeRoleplayWorkflowSubmission(body);
     if (submission.acknowledgement.account !== owner) throw changed('This account does not match the saved one.');
     const captured = captureWorkflowSource(base, submission.account, submission);
-    const binding = captureGenerationBinding(directories, { kind: 'active' }, submission.acknowledgement);
+    let binding;
+    try {
+        binding = captureGenerationBinding(directories, { kind: 'active' }, submission.acknowledgement);
+    } catch (error) {
+        // A stale acknowledgement is the one refusal a caller can clear for itself.
+        if (error?.status !== 409) throw error;
+        throw changed('The active connection settings are not acknowledged. Save them before generating a reply.', 'roleplay_settings_ack_required');
+    }
+    const maxTokens = workflowTokenLimit(directories, binding, submission.maxTokens);
     const workflow = captureRoleplayWorkflowRequest(base, submission.account, captured.source,
-        { avatar: submission.locator.avatar, binding, maxTokens: submission.maxTokens, named: submission.named });
+        { avatar: submission.locator.avatar, binding, maxTokens, named: submission.named });
     const accepted = admitRoleplayWorkflowJob(base, submission.account,
         { operationKey: submission.key, source: captured.source, request: workflow });
     if (accepted.jobId) releaseJob(directories, accepted.jobId);

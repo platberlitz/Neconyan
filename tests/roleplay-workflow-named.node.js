@@ -44,15 +44,21 @@ function saved(t, { settingsRevision = 7 } = {}) {
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const records = () => fs.readFileSync(f.filename, 'utf8').trim().split('\n').map(line => JSON.parse(line));
     const messages = () => records().slice(1);
-    /** The browser's own message revision, proved again server-side. */
-    const revision = (name, anchor = {}) => {
+    /**
+     * The anchor the browser sends: the message the user was looking at, and
+     * whether it was a deliberate pick rather than the chat's own final message.
+     */
+    const anchorFor = (name, anchor = {}) => {
         const list = messages();
-        const index = anchor.messageIndex ?? (ROLEPLAY_WORKFLOW_NAMES[name].anchor === 'end' ? list.length - 1
-            : list.findLastIndex(message => message.is_user !== true && message.is_system !== true));
-        return getRoleplaySourceMessageRevision(list[index]);
+        const kind = ROLEPLAY_WORKFLOW_NAMES[name].anchor;
+        return { messageIndex: anchor.messageIndex ?? (kind === 'end' ? list.length - 1
+            : list.findLastIndex(message => message.is_user !== true && message.is_system !== true)),
+            chosen: anchor.chosen ?? kind === 'chosen' };
     };
+    /** The browser's own message revision, proved again server-side. */
+    const revision = (name, anchor = {}) => getRoleplaySourceMessageRevision(messages()[anchorFor(name, anchor).messageIndex]);
     const request = () => ({ user: { profile: { handle: f.scope.owner }, directories: dirs } });
-    const body = (name, { intent = {}, anchor = {}, key = `named-${name}`, messageRevision = revision(name, anchor), ...rest } = {}) =>
+    const body = (name, { intent = {}, anchor = anchorFor(name), key = `named-${name}`, messageRevision = revision(name, anchor), ...rest } = {}) =>
         ({ key, name, intent, source: { locator: f.locator }, anchor, messageRevision, account,
             acknowledgement: { account: f.scope.owner, settingsRevision }, ...rest });
     const turn = (child, calls, text) => runRoleplayReplyJob({ owner: f.scope.owner, directories: dirs, job: getJob(dirs, child.id),
@@ -136,7 +142,7 @@ test('a named continuation proves its cut and a named alternative adds one unsel
     assert.deepEqual(story.result.named, { cut: 'Answer'.length, length: 'Answer And then the door opened.'.length });
     const swiped = saved(t);
     const deep = await swiped.run('deep-swipe.reply', { intent: { instruction: 'Say it as a rumour.' },
-        text: 'They say the tower fell.', anchor: { messageIndex: 1 }, key: 'named-deep' });
+        text: 'They say the tower fell.', anchor: { messageIndex: 1, chosen: true }, key: 'named-deep' });
     assert.equal(deep.result.status, 'completed');
     assert.equal(swiped.records()[2].mes, 'Answer');
     assert.equal(swiped.records()[2].swipe_id, 0);
@@ -180,7 +186,7 @@ test('a named Story passage contributes its saved rules and direction, and Guide
 
 test('a named workflow refuses a changed anchor, an unknown name, a missing instruction, a group turn and a stale key', async t => {
     const f = saved(t);
-    const base = f.body('deep-swipe.reply', { intent: { instruction: 'A rumour.' }, anchor: { messageIndex: 1 } });
+    const base = f.body('deep-swipe.reply', { intent: { instruction: 'A rumour.' }, anchor: { messageIndex: 1, chosen: true } });
     const refuse = async (body, status) => assert.rejects(acceptRoleplayNamedWorkflow(f.request(), body), error => error.status === status);
     // The browser looked at a different message than the one the effect would write.
     await refuse({ ...base, messageRevision: f.revision('deep-swipe.reply', { messageIndex: 0 }) }, 409);
@@ -190,7 +196,15 @@ test('a named workflow refuses a changed anchor, an unknown name, a missing inst
     await refuse({ ...base, maxTokens: 9000 }, 400);
     await refuse({ ...base, key: 'x'.repeat(300) }, 400);
     await refuse({ ...base, extra: 1 }, 400);
-    await refuse({ ...base, anchor: { messageIndex: 1, other: 2 } }, 400);
+    await refuse({ ...base, anchor: { messageIndex: 1, chosen: true, other: 2 } }, 400);
+    // A chosen workflow needs the user's own pick, and a chat-owned one refuses it.
+    await refuse({ ...base, anchor: { messageIndex: 1, chosen: false } }, 400);
+    await refuse(f.body('roleplay.reply', { anchor: { messageIndex: 1, chosen: true } }), 400);
+    await refuse(f.body('roleplay.reply', { anchor: { messageIndex: 1 } }), 400);
+    await refuse(f.body('roleplay.reply', { anchor: { messageIndex: -1, chosen: false } }), 400);
+    // A chat-owned workflow answers the chat's own final message, so a stale index is refused.
+    await refuse(f.body('roleplay.reply', { anchor: { messageIndex: 0, chosen: false } }), 409);
+    await refuse(f.body('roleplay.swipe', { anchor: { messageIndex: 0, chosen: false } }), 409);
     await refuse({ ...base, acknowledgement: { account: 'someone-else', settingsRevision: 7 } }, 409);
     await refuse({ ...base, acknowledgement: { account: f.owner, settingsRevision: 8 } }, 409);
     // A named workflow answers one saved chat, so a missing one is refused too.
@@ -265,4 +279,15 @@ test('a saved profile binding and a named record agree with the same source anch
     assert.equal(job.intent.request.automatic, undefined);
     assert.equal(job.intent.request.worldInfo.global.promptEffect, 'replace');
     assert.equal(job.intent.request.worldInfo.global.trigger, 'regenerate');
+});
+
+test('a named workflow with no stated token limit takes one the saved context can hold, and a stale acknowledgement is named', async t => {
+    const f = saved(t);
+    const { accepted } = await f.run('roleplay.reply', { maxTokens: null, text: 'A bounded reply.' });
+    // The fixture's saved context is 4096, so the derived limit leaves room for it.
+    assert.equal(getJob(f.dirs, accepted.jobId).intent.request.maxTokens, 512);
+    assert.equal(getJob(f.dirs, accepted.jobId).intent.request.worldInfo.maxContext, 4096 - 512);
+    await assert.rejects(acceptRoleplayNamedWorkflow(f.request(),
+        f.body('roleplay.reply', { key: 'named-stale-ack', acknowledgement: { account: f.owner, settingsRevision: 8 } })),
+        error => error.status === 409 && error.apiError === 'roleplay_settings_ack_required');
 });

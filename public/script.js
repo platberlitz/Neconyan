@@ -7918,6 +7918,7 @@ function removeLastMessage(messageId = null) {
  * @property {'main'|'auxiliary'|'none'} [cacheScope] Prompt cache lane for local backends.
  * @property {boolean} [preserveLastMessage] Whether regeneration should retain the last assistant message as context.
  * @property {ChatMessage} [companionHistoryTarget] Rewrite target whose Companion output must stay excluded during recursive tool calls.
+ * @property {boolean} [skipNativeRoleplay=false] Keep this call site on the browser's own generation. Only for callers that read the provider response directly.
  */
 
 /**
@@ -7951,6 +7952,18 @@ export function setPendingUserMessageExtra(extra) {
     pendingUserMessageExtra = extra && typeof extra === 'object' ? { ...extra } : null;
 }
 
+// Neconyan: the named Roleplay workflow module is loaded on demand, so the host
+// keeps no import cycle with the shell that submits work on its behalf.
+let nativeRoleplayWorkflows = null;
+
+async function loadNativeRoleplayWorkflows() {
+    if (!nativeRoleplayWorkflows) {
+        nativeRoleplayWorkflows = import('./scripts/neconyan-conversation/roleplay-workflows.js')
+            .catch(() => { nativeRoleplayWorkflows = null; return null; });
+    }
+    return nativeRoleplayWorkflows;
+}
+
 function consumePendingGeneratedMessageExtra(message) {
     if (!pendingGeneratedMessageExtra || !message) {
         return;
@@ -7969,8 +7982,21 @@ function consumePendingUserMessageExtra(message) {
     pendingUserMessageExtra = null;
 }
 
-export async function Generate(type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, jsonSchema = null, depth = 0, suppressUserMessage = false, cacheScope = null, preserveLastMessage = false, companionHistoryTarget = null, suppressAutoContinue = false, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false } = {}, dryRun = false) {
+export async function Generate(type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, jsonSchema = null, depth = 0, suppressUserMessage = false, cacheScope = null, preserveLastMessage = false, companionHistoryTarget = null, suppressAutoContinue = false, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, skipNativeRoleplay = false } = {}, dryRun = false) {
     if (!dryRun && signal?.aborted) return;
+
+    // Neconyan Stage 9: a migrated Roleplay control is one accepted server
+    // workflow, submitted before any browser generation state is touched. The
+    // module refuses the call sites it cannot serve faithfully, so those keep the
+    // browser path instead of silently losing their own options.
+    if (!dryRun) {
+        const workflows = await loadNativeRoleplayWorkflows();
+        const native = workflows
+            ? await workflows.runNativeRoleplayGeneration(type, { maxOutputTokens, jsonSchema, force_chid, force_name2,
+                quiet_prompt, depth, cacheScope, suppressUserMessage, preserveLastMessage, signal, skipNativeRoleplay })
+            : null;
+        if (native) return native;
+    }
 
     // Neconyan: keep cancellation and terminal cleanup attached to this invocation,
     // not to a successor group member, tool pass, or a newly selected chat.
