@@ -10,7 +10,7 @@ The account lock and job runner also own Agent authoring, lorebooks, presets and
 
 Final Stage 7 checks passed: 341 Jest suites with 4,539 tests and two skipped tests, 1,191 Node tests, lint, budgets, changed-test lint and whitespace. The owned Chromium Agent, prompt and lore suite passed 12/12 across desktop and touch-phone viewports, including zero-page work and actual serving-process death/restart. These are controlled provider fixtures; Safari/WebKit and live vendor availability remain unverified.
 
-Stage 8 still owns the complete progressive parent Roleplay turn: saved tool child results must resume their parent, alongside group speakers, continuations and automatic swipes. Stage 9 owns the production browser cutover. The owner authorised an Oracle deployment of verified Stages 1-7 before Stage 8 continues, then requested a pause after verified Stage 8 with a Stage 9 handover. Do not push. No deployment had occurred at this checkpoint.
+Stage 8 still owns the complete progressive parent Roleplay turn: saved tool child results must resume their parent, alongside group speakers, continuations and automatic swipes. Stage 9 owns the production browser cutover. The owner-authorised Oracle deployment of committed Stages 1-7 passed its file, runtime, service and public-asset checks. Stage 8 remains local and must be verified before the requested pause with a Stage 9 handover. Do not push or deploy Stage 8.
 
 ### Historical Stage 4 checkpoint
 
