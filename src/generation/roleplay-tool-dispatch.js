@@ -17,7 +17,8 @@ const STEP = /^provider:[a-f0-9]{64}$/u;
 function bound(context) {
     const { job, directories, owner } = context;
     const { roleplay, request, source } = job.intent ?? {};
-    if (job.type !== 'roleplay.reply' || !roleplay || !request?.serverPrompt || !request.worldInfo?.tools?.definitions?.length) {
+    if (!['roleplay.reply', 'roleplay.candidate'].includes(job.type) || job.type === 'roleplay.candidate' && request?.workflowCandidate?.version !== 1
+        || !roleplay || !request?.serverPrompt || !request.worldInfo?.tools?.definitions?.length) {
         throw invalid('This Roleplay reply has no accepted native tool definitions.');
     }
     const base = { owner, directories }, account = { accountId: roleplay.accountId, dataEpoch: roleplay.dataEpoch };
@@ -26,12 +27,47 @@ function bound(context) {
     return { base, account, source, request };
 }
 
+function advancedToolSource(context, staged, index) {
+    const { job, directories, owner } = context;
+    const turn = job.intent.request.workflowCandidate?.turn ?? 0;
+    const parentId = job.intent.request.workflowCandidate?.parentJobId;
+    const parent = getJob(directories, parentId);
+    const lineage = readArtifact(directories, parentId, `roleplay-workflow-lineage:${turn}:${index}`);
+    const candidate = readArtifact(directories, job.id, 'roleplay-candidate');
+    if (!Number.isSafeInteger(index) || index < 0 || index >= staged.calls.length - 1
+        || !parent || parent.type !== 'media.roleplay-workflow' || parent.owner !== owner || parent.cancellation?.requested
+        || roleplayHash(parent.intent) !== job.intent.request.workflowCandidate.parentIntentHash
+        || job.parentId !== parent.id || !parent.children.includes(job.id)
+        || !candidate || candidate.hash !== roleplayHash(Object.fromEntries(Object.entries(candidate).filter(([key]) => key !== 'hash')))
+        || candidate.callsHash !== staged.hash || lineage?.index !== index || lineage.hash !== roleplayHash(
+        Object.fromEntries(Object.entries(lineage).filter(([key]) => key !== 'hash')))
+        || lineage.account.accountId !== parent.intent.media.accountId || lineage.account.dataEpoch !== parent.intent.media.dataEpoch) {
+        throw invalid('The parent cannot prove this tool source advancement.');
+    }
+    const verified = [];
+    for (let step = 0; step <= index; step++) {
+        const pointer = readArtifact(directories, parent.id, `roleplay-workflow-tool:${turn}:${step}`);
+        const result = readBoundModelToolResult(context, step);
+        if (!pointer || pointer.hash !== roleplayHash(Object.fromEntries(Object.entries(pointer).filter(([key]) => key !== 'hash')))
+            || pointer.childJobId !== result.childJobId || pointer.candidateHash !== candidate.hash
+            || !result.completed || !parent.children.includes(result.childJobId)) throw invalid('The previous tool result is not owned by this workflow.');
+        verified.push({ childJobId: result.childJobId, callId: result.call.id, resultHash: roleplayHash(result.result) });
+    }
+    const identity = roleplayHash({ parentIntentHash: roleplayHash(parent.intent), candidateHash: candidate.hash,
+        callsHash: staged.hash, results: verified });
+    if (lineage.identity !== identity) throw invalid('The parent source advancement changed.');
+    const base = { owner, directories }, account = { accountId: parent.intent.media.accountId, dataEpoch: parent.intent.media.dataEpoch };
+    withRoleplayAccount(base, account, lease => assertRoleplaySourceLocked(lease, lineage.source));
+    assertRoleplayWorldInfoCurrent(base, lineage.worldInfo);
+    return lineage;
+}
+
 /** Stage only the model's actual saved provider response; client tool schemas or invented calls have no authority. */
-export function stageBoundModelToolCalls(context) {
+export function stageBoundModelToolCalls(context, { lineageIndex } = {}) {
     const { base, account, source, request } = bound(context);
     const { job, directories } = context;
     const record = withRoleplayAccount(base, account, lease => {
-        assertRoleplaySourceLocked(lease, source);
+        if (lineageIndex === undefined) assertRoleplaySourceLocked(lease, source);
         const reference = readArtifact(directories, job.id, 'roleplay-main-provider');
         const prompt = readArtifact(directories, job.id, 'roleplay-prompt');
         const quickReply = request.worldInfo.hookPolicy?.quickReply?.enabled && readArtifact(directories, job.id, 'roleplay-quick-replies');
@@ -59,26 +95,30 @@ export function stageBoundModelToolCalls(context) {
         writeArtifact(directories, job.id, 'roleplay-native-tool-calls', staged);
         return staged;
     });
-    assertRoleplayWorldInfoCurrent(base, request.worldInfo);
+    if (lineageIndex === undefined) assertRoleplayWorldInfoCurrent(base, request.worldInfo);
+    else advancedToolSource(context, record, lineageIndex);
     return record;
 }
 
 /** Accept one exact child call. The Stage 8 coordinator handles parent waiting, child release, and subsequent model turns. */
-export function admitBoundModelToolCall(context, index) {
+export function admitBoundModelToolCall(context, index, { lineageIndex } = {}) {
     if (!Number.isSafeInteger(index) || index < 0 || index >= 32) throw invalid('The selected tool call index is invalid.');
     const { base, account, source, request } = bound(context);
     const { job, directories } = context;
-    const staged = stageBoundModelToolCalls(context);
+    if (lineageIndex !== undefined && lineageIndex >= index) throw invalid('A later tool cannot use its own source as evidence.');
+    const staged = stageBoundModelToolCalls(context, { lineageIndex });
     const call = staged.calls[index];
     if (!call) throw invalid('The model did not request this saved tool call.');
     const operationKey = `model-tool:${roleplayHash([job.id, index, call]).slice(0, 48)}`;
+    const advanced = lineageIndex === undefined ? null : advancedToolSource(context, staged, lineageIndex);
+    const boundSource = advanced?.source ?? source;
     const childSource = call.name === 'Pathfinder_Notebook' ? withRoleplayAccount(base, account, lease => {
-        assertRoleplaySourceLocked(lease, source);
-        const captured = captureRoleplaySourceLocked(lease, { locator: source.locator, groupId: source.groupId });
+        assertRoleplaySourceLocked(lease, boundSource);
+        const captured = captureRoleplaySourceLocked(lease, { locator: boundSource.locator, groupId: boundSource.groupId });
         if (captured.changed) throw invalid('The notebook chat needs its protected source confirmed before work.');
         return captured.source;
-    }) : source;
-    const input = { avatar: request.worldInfo.avatar, callId: call.id, args: call.arguments };
+    }) : boundSource;
+    const input = { avatar: (advanced?.worldInfo ?? request.worldInfo).avatar, callId: call.id, args: call.arguments };
     const childRequest = call.name.startsWith('Neconyan_Assistant_')
         ? captureAssistantToolRequest(base, account, childSource, { ...input, name: call.name })
         : call.name === 'Pathfinder_Notebook'

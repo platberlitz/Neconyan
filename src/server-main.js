@@ -775,6 +775,7 @@ async function postSetupTasks(result) {
     await import('./generation/pathfinder-notebook-jobs.js');
     await import('./generation/assistant-tool-jobs.js');
     await import('./generation/quick-image-gen-workflow.js');
+    const { recoverWaitingRoleplayWorkflow } = await import('./generation/roleplay-workflow.js');
     const [{ startJobsRunner }, { getUserDirectories, getAllUserHandles }, { recoverJobApproval }] = await Promise.all([
         import('./jobs/runner.js'),
         import('./users.js'),
@@ -783,7 +784,10 @@ async function postSetupTasks(result) {
     startJobsRunner({
         directoriesFor: handle => getUserDirectories(handle),
         owners: () => getAllUserHandles(),
-        recoverWaiting: recoverJobApproval,
+        recoverWaiting: context => {
+            recoverJobApproval(context);
+            recoverWaitingRoleplayWorkflow(context);
+        },
     });
     const { startConversationWorker } = await import('./generation/conversation-worker.js');
     startConversationWorker({

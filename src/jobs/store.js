@@ -706,3 +706,29 @@ export function recoverJobs(directories) {
         return { recoverable, changed };
     });
 }
+/** Attach a privately admitted child before releasing it, retaining its evidence for a live root. */
+export function attachOwnedChild(directories, parentId, childId, { parentIntentHash, childIntentHash } = {}) {
+    return mutateJobs(directories, store => {
+        const parent = store.jobs[jobKey(parentId)];
+        const child = store.jobs[jobKey(childId)];
+        if (!parent || !child || parent.id !== parentId || child.id !== childId
+            || parent.owner !== child.owner || crypto.createHash('sha256').update(canonical(parent.intent)).digest('hex') !== parentIntentHash
+            || crypto.createHash('sha256').update(canonical(child.intent)).digest('hex') !== childIntentHash) {
+            throw fail(409, 'JOB_FAMILY_CONFLICT', 'The saved workflow child does not belong to its accepted parent.');
+        }
+        if (parent.type !== 'media.roleplay-workflow' || child.parentId && child.parentId !== parentId
+            || isTerminal(parent) || parent.cancellation?.requested || child.cancellation?.requested) {
+            throw fail(409, 'JOB_FAMILY_CONFLICT', 'The saved workflow family changed before a child could run.');
+        }
+        if (!['waiting', 'queued', 'running', ...TERMINAL_STATES].includes(child.state)
+            || (parent.children ?? []).length >= 128 && !parent.children.includes(childId)) {
+            throw fail(409, 'JOB_FAMILY_CONFLICT', 'The accepted workflow cannot retain another child result.');
+        }
+        if (child.parentId === parentId && parent.children.includes(childId)) return { job: parent, child, changed: false };
+        child.parentId = parentId;
+        child.updatedAt = now();
+        parent.children = [...new Set([...(parent.children ?? []), childId])];
+        parent.updatedAt = now();
+        return { job: parent, child };
+    });
+}

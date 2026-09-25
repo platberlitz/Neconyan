@@ -8,7 +8,7 @@ import { getJob, setJobResume } from '../jobs/store.js';
 import { assertRoleplaySourceLocked } from './roleplay-source.js';
 import { runChatProfile } from './service.js';
 import { createMacroEnvironment } from '../macros/index.js';
-import { applyRoleplayJobEffect, readRoleplayJobResult } from '../roleplay-jobs.js';
+import { applyRoleplayJobEffect, assertRoleplayCandidateOwner, completeRoleplayCandidateJob, readRoleplayJobResult } from '../roleplay-jobs.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
@@ -38,6 +38,7 @@ import { applyCaptionRecords } from './caption-records.js';
 import { prepareRoleplayAgentContributions, runRoleplayAgentInterceptors, runRoleplayAgentPostprocessing, roleplayAgentOutputBaseline } from './roleplay-agent-processing.js';
 import { runRoleplayCompanions } from './roleplay-companions.js';
 import { createProviderScope } from '../jobs/artifacts.js';
+import { stageBoundModelToolCalls } from './roleplay-tool-dispatch.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
@@ -95,11 +96,41 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         operationKey: roleplay.operationKey, jobId: job.id, effect, source, request,
     });
     if (completedReceipt !== null) return { result: completedReceipt };
+    if (job.type === 'roleplay.candidate' && (request.workflowCandidate?.version !== 1 || !request.serverPrompt)) {
+        throw roleplayError('ROLEPLAY_INVALID', 'A workflow candidate requires a bound native Roleplay request.', 409);
+    }
+    if (job.type === 'roleplay.candidate') {
+        assertRoleplayCandidateOwner(base, account, { operationKey: roleplay.operationKey, jobId: job.id });
+    }
     const assertSource = () => {
         signal.throwIfAborted();
         return withRoleplayAccount(base, account, lease => assertRoleplaySourceLocked(lease, source, { effect }));
     };
     const finish = async (result, selection) => {
+        const saveCandidate = (kind, contents) => {
+            const reference = readArtifact(directories, job.id, 'roleplay-main-provider');
+            const providerResult = reference?.step && readArtifact(directories, job.id, reference.step);
+            if (!providerResult || roleplayHash(providerResult) !== roleplayHash(result)) {
+                throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The candidate needs its saved provider result.', 503);
+            }
+            const value = { intentHash: roleplayHash(job.intent), kind, providerHash: roleplayHash(result), ...contents };
+            const saved = readArtifact(directories, job.id, 'roleplay-candidate');
+            if (saved !== undefined) {
+                const { hash, ...savedValue } = saved;
+                if (hash !== roleplayHash(savedValue) || roleplayHash(savedValue) !== roleplayHash(value)) {
+                    throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The candidate result changed after it was saved.', 503);
+                }
+            }
+            if (saved === undefined) writeArtifact(directories, job.id, 'roleplay-candidate', { ...value, hash: roleplayHash(value) });
+            return { result: completeRoleplayCandidateJob(base, account, { operationKey: roleplay.operationKey, jobId: job.id }) };
+        };
+        if (job.type === 'roleplay.candidate' && (result?.response?.choices?.[0]?.message?.tool_calls?.length
+            || result?.response?.content?.some?.(part => part.type === 'tool_use')
+            || result?.response?.output?.some?.(part => part.type === 'function_call')
+            || result?.response?.candidates?.some?.(candidate => candidate.content?.parts?.some(part => part.functionCall)))) {
+            const staged = stageBoundModelToolCalls(context);
+            return saveCandidate('tool-turn', { callsHash: staged.hash });
+        }
         if (result?.response?.choices?.[0]?.message?.tool_calls?.length
                 || result?.response?.content?.some?.(part => part.type === 'tool_use')
                 || result?.response?.output?.some?.(part => part.type === 'function_call')
@@ -200,6 +231,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             output.timedBaseline = selection.timedBaseline;
             output.timedChatLength = request.worldInfo.savedChatLength ?? selection.chatLength;
         }
+        if (job.type === 'roleplay.candidate') return saveCandidate('text', { output });
         writeArtifact(directories, job.id, 'roleplay-output', output);
         setJobResume(directories, job.id, 'roleplay-delivery');
         signal.throwIfAborted();
@@ -861,6 +893,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
 
 export function registerRoleplayReplyJob(options = {}) {
     registerHandler('roleplay.reply', context => runRoleplayReplyJob(context, options));
+    registerHandler('roleplay.candidate', context => runRoleplayReplyJob(context, options));
 }
 
 registerRoleplayReplyJob();

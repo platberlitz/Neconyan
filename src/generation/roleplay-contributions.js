@@ -5,9 +5,9 @@ import { validFunctionTools } from '../../public/scripts/chat-input-capabilities
 const invalid = message => { throw roleplayError('ROLEPLAY_INVALID', message, 409); };
 const roles = ['system', 'user', 'assistant'];
 
-function validate(values) {
+function validate(values, { maxMessages = 128 } = {}) {
     if (!values || !Array.isArray(values.extensions) || !Array.isArray(values.history)
-        || values.extensions.length > 128 || values.history.length > 128 || !validFunctionTools(values.tools ?? [])
+        || values.extensions.length > 128 || values.history.length > maxMessages || !validFunctionTools(values.tools ?? [])
         || Object.keys(values).some(key => !['extensions', 'history', 'tools'].includes(key))
         || Buffer.byteLength(JSON.stringify(values)) > 2 * 1024 * 1024) invalid('The saved prompt contributions exceed their input limit.');
     const keys = new Set();
@@ -19,7 +19,7 @@ function validate(values) {
             || Object.keys(prompt).some(key => !['key', 'content', 'position', 'depth', 'role', 'scan'].includes(key))) invalid('A saved extension prompt is invalid.');
         keys.add(prompt.key);
     }
-    validateRoleplayToolHistory(values.history, { allowMedia: false, maxMessages: 128 });
+    validateRoleplayToolHistory(values.history, { allowMedia: false, maxMessages });
     return values;
 }
 
@@ -78,7 +78,8 @@ export function validateRoleplayToolHistory(history, { allowMedia = true, maxMes
 
 /** Contributors publish a complete immutable input after their own durable steps finish. */
 export function saveRoleplayPromptContributions(context, values) {
-    validate(values);
+    const maxMessages = context.job.type === 'roleplay.candidate' && context.job.intent?.request?.workflowCandidate?.version === 1 ? 8192 : 128;
+    validate(values, { maxMessages });
     const record = { intentHash: roleplayHash(context.job.intent), values, hash: roleplayHash(values) };
     const previous = readArtifact(context.directories, context.job.id, 'roleplay-prompt-contributions');
     if (previous !== undefined) {
@@ -99,5 +100,6 @@ export function readRoleplayPromptContributions(context) {
     if (!saved || saved.intentHash !== roleplayHash(context.job.intent) || saved.hash !== roleplayHash(saved.values)) {
         throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved prompt contributions need recovery.', 503);
     }
-    return validate(saved.values);
+    const maxMessages = context.job.type === 'roleplay.candidate' && context.job.intent?.request?.workflowCandidate?.version === 1 ? 8192 : 128;
+    return validate(saved.values, { maxMessages });
 }

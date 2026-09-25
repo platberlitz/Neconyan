@@ -166,6 +166,19 @@ function effectRecords(records, source, effect, output, request, job, directorie
     return next;
 }
 
+/** Build a protected candidate's final chat without publishing a provisional message. */
+export function previewRoleplayWorkflowEffect(lease, { source, effect, output, request, job }) {
+    if (job?.type !== 'roleplay.candidate' || !job.intent?.request?.workflowCandidate || !source || !output) {
+        throw roleplayError('ROLEPLAY_WORKFLOW_INVALID', 'Only a bound workflow candidate can prepare this chat.', 409);
+    }
+    const { scope } = roleplayLease(lease);
+    if (job.owner !== scope.owner || roleplayHash(job.intent) !== roleplayHash({ ...job.intent, source, effect, request })) {
+        throw roleplayError('ROLEPLAY_WORKFLOW_INVALID', 'The saved workflow candidate changed.', 409);
+    }
+    const saved = assertRoleplaySourceLocked(lease, source, { effect });
+    return effectRecords(saved.records, source, effect, output, request, job, scope.directories);
+}
+
 /** Completed ownership remains available after the replayable job and its artifacts have expired. */
 export function readRoleplayJobResult(base, account, { operationKey, jobId, effect, source, request }) {
     assertOperationKey(operationKey);
@@ -189,6 +202,76 @@ export function readRoleplayJobResultByIntentHash(base, account, { operationKey,
             throw roleplayError('ROLEPLAY_JOB_REJECTED', 'The child job does not own this accepted result.', 409);
         }
         return receipt.state === 'closed' ? structuredClone(receipt.outcome) : null;
+    });
+}
+
+function candidateOwnershipLocked(lease, operationKey, jobId) {
+    confirmRoleplayAccount(lease);
+    const { state, scope } = roleplayLease(lease);
+    const receipt = state.submissions[jobKey(state, operationKey)];
+    if (!receipt || receipt.jobId !== jobId) throw roleplayError('ROLEPLAY_JOB_REJECTED', 'This workflow candidate has no accepted receipt.', 409);
+    if (receipt.state !== 'accepted' || state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The workflow candidate cannot run during another operation.', 503);
+    const job = getJob(scope.directories, jobId);
+    const { roleplay, source, request, effect } = job?.intent ?? {};
+    const marker = request?.workflowCandidate;
+    const parent = marker && getJob(scope.directories, marker.parentJobId);
+    const capacity = parent?.intent?.request?.capacity;
+    if (job?.type !== 'roleplay.candidate' || job.owner !== scope.owner || job.cancellation?.requested
+        || roleplay?.operationKey !== operationKey || !marker || marker.version !== 1
+        || parent?.type !== 'media.roleplay-workflow' || parent.owner !== scope.owner || parent.cancellation?.requested
+        || !capacity || capacity.version !== 1 || capacity.limitBytes !== 64 * 1024 * 1024
+        || capacity.hash !== roleplayHash(Object.fromEntries(Object.entries(capacity).filter(([key]) => key !== 'hash')))
+        || capacity.accountId !== state.accountId || capacity.dataEpoch !== state.dataEpoch
+        || capacity.sourceHash !== roleplayHash(parent.intent.source)
+        || !['waiting', 'queued', 'running'].includes(parent.state) || parent.intent?.media?.accountId !== state.accountId
+        || parent.intent.media.dataEpoch !== state.dataEpoch || roleplayHash(parent.intent) !== marker.parentIntentHash
+        || job.parentId !== parent.id || !parent.children.includes(jobId)
+        || receipt.intentHash !== roleplayHash({ accountId: state.accountId, dataEpoch: state.dataEpoch,
+            intent: { effect, source, request } })) {
+        throw roleplayError('ROLEPLAY_JOB_REJECTED', 'The candidate is not owned by this accepted workflow.', 409);
+    }
+    assertRoleplaySourceLocked(lease, source, { effect });
+    return { receipt, job, scope };
+}
+
+/** Refuse an unowned candidate BEFORE it can spend a model call. */
+export function assertRoleplayCandidateOwner(base, account, { operationKey, jobId }) {
+    assertOperationKey(operationKey);
+    return withRoleplayAccount(base, account, lease => {
+        candidateOwnershipLocked(lease, operationKey, jobId);
+        return true;
+    });
+}
+
+/** Complete an owned workflow candidate without exposing a provisional reply in saved chat. */
+export function completeRoleplayCandidateJob(base, account, { operationKey, jobId }) {
+    assertOperationKey(operationKey);
+    return withRoleplayAccount(base, account, lease => {
+        const { state } = roleplayLease(lease);
+        const receipt = state.submissions[jobKey(state, operationKey)];
+        if (!receipt || receipt.jobId !== jobId) throw roleplayError('ROLEPLAY_JOB_REJECTED', 'This workflow candidate has no accepted receipt.', 409);
+        if (receipt.state === 'closed') return structuredClone(receipt.outcome);
+        const { job, scope } = candidateOwnershipLocked(lease, operationKey, jobId);
+        const saved = readArtifact(scope.directories, jobId, 'roleplay-candidate');
+        if (!saved || typeof saved !== 'object' || Array.isArray(saved) || saved.intentHash !== roleplayHash(job.intent)
+            || !['text', 'tool-turn'].includes(saved.kind) || saved.hash !== roleplayHash({
+            intentHash: saved.intentHash, kind: saved.kind, providerHash: saved.providerHash,
+            ...(saved.kind === 'text' ? { output: saved.output } : { callsHash: saved.callsHash }) })) {
+            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved candidate result needs recovery.', 503);
+        }
+        if (saved.kind === 'text' && (!saved.output || typeof saved.output !== 'object')
+            || saved.kind === 'tool-turn' && !/^[a-f0-9]{64}$/u.test(saved.callsHash)) {
+            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved candidate result is incomplete.', 503);
+        }
+        const outcome = { kind: 'candidate', turnKind: saved.kind, candidateArtifact: 'roleplay-candidate', proofHash: saved.hash };
+        receipt.state = 'closed';
+        receipt.reservedReceiptBytes = 0;
+        receipt.outcome = outcome;
+        receipt.effects = { [JOB_EFFECT_KEY]: { effectHash: receipt.intentHash, writeId: null,
+            instanceId: receipt.targetInstanceId, appliedRevision: state.resources[receipt.targetInstanceId].revision,
+            result: outcome } };
+        saveRoleplayAccount(lease);
+        return structuredClone(outcome);
     });
 }
 

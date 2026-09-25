@@ -245,6 +245,11 @@ function validRangeAnchor(value) {
 }
 
 function validSubmissionResult(value) {
+    if (value?.kind === 'candidate') {
+        return object(value) && Object.keys(value).length === 4 && ['text', 'tool-turn'].includes(value.turnKind)
+            && value.candidateArtifact === 'roleplay-candidate'
+            && HASH.test(value.proofHash);
+    }
     if (value?.kind === 'lifecycle') {
         return object(value) && Object.keys(value).length === 9 && value.mode === 'lifecycle' && LIFECYCLE_ACTION.test(value.action)
             && UUID.test(value.instanceId) && integer(value.revision) && value.revision >= 1 && HASH.test(value.rawHash)
@@ -328,6 +333,13 @@ function validateState(state, identity) {
             || (value.outcome?.kind === 'group' && target.kind !== 'group')
             || (value.outcome?.kind === 'import' && target.kind !== 'chat')) throw damaged();
         for (const [effectKey, effect] of Object.entries(value.effects)) {
+            if (effect.result?.kind === 'candidate') {
+                if (!HASH.test(effectKey) || value.state !== 'closed' || !object(effect)
+                    || effect.effectHash !== value.intentHash || effect.instanceId !== value.targetInstanceId
+                    || effect.writeId !== null || !integer(effect.appliedRevision)
+                    || !isDeepStrictEqual(effect.result, value.outcome) || effect.cleanup !== undefined) throw damaged();
+                continue;
+            }
             if (!HASH.test(effectKey) || !object(effect) || !HASH.test(effect.effectHash) || !UUID.test(effect.writeId)
                 || !Object.hasOwn(state.resources, effect.instanceId) || !integer(effect.appliedRevision)
                  || (value.state === 'closed' && !validSubmissionResult(effect.result))

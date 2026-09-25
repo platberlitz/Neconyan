@@ -145,8 +145,8 @@ export function withNativeMediaReceipt(context, operation, { checkSource = true 
     });
 }
 
-/** A parent can prove a child's completed result after the replayable job has been pruned. */
-export function readNativeMediaJobResult(base, account, { operationKey, jobId, intentHash }) {
+/** Prove a child's completed result and exact file effects after its replayable job has been pruned. */
+export function readNativeMediaJobProof(base, account, { operationKey, jobId, intentHash }) {
     if (typeof operationKey !== 'string' || !operationKey || typeof jobId !== 'string' || !jobId || !HASH.test(intentHash)) {
         throw fail('The media result ownership is incomplete.');
     }
@@ -156,8 +156,18 @@ export function readNativeMediaJobResult(base, account, { operationKey, jobId, i
             || roleplayHash(value.account) !== roleplayHash(stamp(account))) {
             throw fail('This media job does not own the saved result.');
         }
-        return value.state === 'closed' ? structuredClone(value.result) : null;
+        if (value.state !== 'closed') return null;
+        if (Object.values(value.effects).some(effect => effect.state !== 'done')) {
+            throw fail('The saved media result has an unsettled file effect.');
+        }
+        return { result: structuredClone(value.result), effects: structuredClone(value.effects) };
     });
+}
+
+/** A parent can prove a child's completed result after the replayable job has been pruned. */
+export function readNativeMediaJobResult(base, account, identity) {
+    const proof = readNativeMediaJobProof(base, account, identity);
+    return proof === null ? null : proof.result;
 }
 
 export function finishNativeMediaJob(context, result, { checkSource = true, checkLocked } = {}) {
