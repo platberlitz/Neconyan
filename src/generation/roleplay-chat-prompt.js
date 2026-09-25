@@ -2,7 +2,7 @@ import { isKimiK3Model } from '../../public/scripts/openai-model-capabilities.js
 import { appendAutoAppendReasoningInstruction } from '../../public/scripts/chat-reasoning-instruction.js';
 import { injectChatPromptDepth } from '../../public/scripts/chat-prompt-depth.js';
 import { roleplayError } from '../roleplay-store.js';
-import { buildRoleplayPromptExtensions, insertWorldInfoExamples } from './roleplay-prompt.js';
+import { buildRoleplayPromptExtensions, insertWorldInfoExamples, roleplayEffectTrigger } from './roleplay-prompt.js';
 import { mergeChatPresetSettings } from '../../public/scripts/chat-preset-request.js';
 
 const roles = ['system', 'user', 'assistant'];
@@ -30,7 +30,7 @@ export async function assembleRoleplayChatPrompt(history, snapshot, material, wo
         if (typeof value !== 'string') fail('A saved Chat Completion prompt has invalid content.');
         return substitute(value, original);
     };
-    const trigger = effect === 'append' ? 'normal' : effect === 'replace' ? 'regenerate' : effect;
+    const trigger = roleplayEffectTrigger(effect);
     const values = {
         worldInfoBefore: worldInfo.worldInfoBefore, worldInfoAfter: worldInfo.worldInfoAfter,
         personaDescription: snapshot.personaPosition === 0 || snapshot.personaPosition === undefined ? snapshot.global.personaDescription : '',

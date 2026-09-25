@@ -17,6 +17,8 @@ import { captureRoleplayWorkflowPolicy, decideRoleplayWorkflowCandidate } from '
 import { captureRoleplayGroupSpeakers } from './roleplay-workflow-groups.js';
 import { addWorkflowAlternatives, collectWorkflowAlternatives } from './roleplay-workflow-alternatives.js';
 import { captureRoleplayWorkflowCapacity, MAX_WORKFLOW_CHAT_BYTES } from './roleplay-workflow-capacity.js';
+import { assertRoleplayNamedWorkflow, roleplayWorkflowContributions, roleplayWorkflowResultFacts } from './roleplay-workflow-named.js';
+import { roleplayEffectTrigger } from './roleplay-prompt.js';
 import { registerHandler } from '../jobs/runner.js';
 
 const error = (message, code = 'ROLEPLAY_WORKFLOW_RECOVERY') => roleplayError(code, message, 409);
@@ -29,8 +31,13 @@ const decisionKey = turn => `roleplay-workflow-decision:${turn}`;
 const speakerKey = index => `roleplay-workflow-speaker:${index}`;
 
 export function captureRoleplayWorkflowRequest(base, account, source, { avatar, binding, maxTokens = 128,
-    effect = 'append', forcedAvatars, selectedSpeakerAvatar, random, generationId } = {}) {
-    if (!['append', 'continue', 'swipe', 'replace'].includes(effect)
+    effect = 'append', named = null, forcedAvatars, selectedSpeakerAvatar, random, generationId } = {}) {
+    if (named) {
+        assertRoleplayNamedWorkflow(named);
+        effect = named.effect;
+    }
+    if (named && source.locator.group) throw error('A named workflow answers one speaker, not a group turn.', 'ROLEPLAY_WORKFLOW_INVALID');
+    if (!['append', 'continue', 'swipe', 'alternative', 'replace'].includes(effect)
         || !Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > 8192 || !binding?.fingerprint) {
         throw error('The saved workflow selection is invalid.', 'ROLEPLAY_WORKFLOW_INVALID');
     }
@@ -45,24 +52,27 @@ export function captureRoleplayWorkflowRequest(base, account, source, { avatar, 
     if (source.locator.group ? avatar && avatar !== selectedAvatar : avatar !== source.locator.avatar) {
         throw error('The selected speaker differs from the protected source.', 'ROLEPLAY_WORKFLOW_INVALID');
     }
-    const options = { maxContext: contextLimit - maxTokens,
-        trigger: { append: 'normal', continue: 'continue', swipe: 'swipe', replace: 'regenerate' }[effect], serverPrompt: true };
+    const options = { maxContext: contextLimit - maxTokens, trigger: roleplayEffectTrigger(effect),
+        promptEffect: effect, serverPrompt: true };
     const speakers = group?.speakers.map(speaker => ({ ...speaker,
         worldInfo: captureRoleplayWorldInfo(base, account, source, { ...options, avatar: speaker.avatar }) }));
     const worldInfo = speakers?.[0]?.worldInfo ?? captureRoleplayWorldInfo(base, account, source, { ...options, avatar: selectedAvatar });
-    const automatic = captureRoleplayWorkflowPolicy(base, account, source, worldInfo,
+    // A named workflow asks for one specific generation, so it never captures the
+    // automatic policy that would keep a whole turn running.
+    const automatic = named ? null : captureRoleplayWorkflowPolicy(base, account, source, worldInfo,
         { backend: binding.backend === 'text' ? 'text' : 'chat' });
     const companionBytes = Math.max(worldInfo.companionCapacity?.requiredBytes ?? 0,
         ...(speakers?.map(speaker => speaker.worldInfo.companionCapacity?.requiredBytes ?? 0) ?? []));
     const capacity = captureRoleplayWorkflowCapacity(base, account, source, { companionBytes });
     return { version: 1, avatar: selectedAvatar, effect, binding, maxTokens, worldInfo,
         capacity,
+        ...(named ? { named } : {}),
         ...(group ? { group: { ...group, speakers } } : {}),
         ...(automatic ? { automatic } : {}) };
 }
 
 export function admitRoleplayWorkflowJob(base, account, { operationKey, source, request }) {
-    if (request?.version !== 1 || !['append', 'continue', 'swipe', 'replace'].includes(request.effect)
+    if (request?.version !== 1 || !['append', 'continue', 'swipe', 'alternative', 'replace'].includes(request.effect)
         || !request.worldInfo || roleplayHash(request.worldInfo.source) !== roleplayHash(source)
         || !request.capacity || request.capacity.hash !== roleplayHash(Object.fromEntries(
         Object.entries(request.capacity).filter(([key]) => key !== 'hash')))
@@ -85,6 +95,11 @@ export function admitRoleplayWorkflowJob(base, account, { operationKey, source, 
     if (roleplayHash(captureRoleplayWorkflowCapacity(base, account, source,
         { companionBytes: request.capacity.companionBytes })) !== roleplayHash(request.capacity)) {
         throw error('The saved workflow chat capacity changed before admission.', 'ROLEPLAY_WORKFLOW_INVALID');
+    }
+    if (request.named !== undefined) {
+        if (request.group) throw error('A named workflow answers one speaker, not a group turn.', 'ROLEPLAY_WORKFLOW_INVALID');
+        assertRoleplayNamedWorkflow(request.named, { effect: request.effect });
+        if (request.automatic) throw error('A named workflow runs one bounded model turn.', 'ROLEPLAY_WORKFLOW_INVALID');
     }
     return admitNativeMediaJob(base, account, { operationKey, source, kind: 'roleplay-workflow', request,
         target: { kind: 'chat', id: source.instanceId } });
@@ -137,15 +152,17 @@ function acceptedChild(context, job, turn = 0, history = [], lineage = null, dec
     if (turn) validateRoleplayToolHistory(history, { allowMedia: false, maxMessages: 8192 });
     const request = childRequest(job, turn, history, lineage, decision, speakerIndex);
     const speaker = job.intent.request.group?.speakers[speakerIndex];
-    const contributions = { extensions: speaker ? [{ key: `roleplay_group_speaker_${speakerIndex}`,
-        content: speaker.contextPrompt, position: 0, depth: 0, role: 'system', scan: false }] : [], history, tools: [] };
+    // A named workflow publishes its own saved prompt on its only model turn.
+    const named = turn === 0 ? (job.intent.request.named ?? null) : null;
+    const contributions = roleplayWorkflowContributions(named, { speaker, speakerIndex, history });
+    const published = Boolean(turn) || Boolean(speaker) || Boolean(named);
     const source = lineage?.source ?? job.intent.source;
     const existing = savedChild(context, job, turn);
     if (existing) {
         if (existing.record.requestHash !== roleplayHash(request) || roleplayHash(existing.child.intent.source) !== roleplayHash(source)) {
             throw error('The accepted workflow model turn changed.');
         }
-        if (turn || speaker) saveRoleplayPromptContributions({ ...context, job: existing.child }, contributions);
+        if (published) saveRoleplayPromptContributions({ ...context, job: existing.child }, contributions);
         return existing;
     }
     const account = job.intent.media;
@@ -159,7 +176,7 @@ function acceptedChild(context, job, turn = 0, history = [], lineage = null, dec
     const record = { parentIntentHash: roleplayHash(job.intent), jobId: admitted.jobId,
         operationKey, requestHash: roleplayHash(request) };
     writeArtifact(context.directories, job.id, childKey(turn), { ...record, hash: roleplayHash(record) });
-    if (turn || speaker) saveRoleplayPromptContributions({ ...context, job: child }, contributions);
+    if (published) saveRoleplayPromptContributions({ ...context, job: child }, contributions);
     return savedChild(context, job, turn);
 }
 
@@ -332,7 +349,8 @@ function finalPlan(context, job, chosen, { key = FINAL, speakerIndex = null, pri
             || record.candidateHash !== chosen.candidate.hash || record.childJobId !== chosen.child.id
             || record.speakerIndex !== (speakerIndex ?? undefined)
             || record.alternativesHash !== (alternatives.length ? roleplayHash(alternatives) : undefined)
-            || record.outputHash !== undefined && record.outputHash !== roleplayHash(chosen.output)) {
+            || record.outputHash !== undefined && record.outputHash !== roleplayHash(chosen.output)
+            || Boolean(record.named) !== Boolean(job.intent.request.named)) {
             throw error('The saved workflow delivery changed.');
         }
         return record;
@@ -349,8 +367,11 @@ function finalPlan(context, job, chosen, { key = FINAL, speakerIndex = null, pri
             || storage.instanceId !== priorSpeaker.result.instanceId || storage.revision !== priorSpeaker.result.revision)) {
             throw error('The previous group speaker is not the saved completed chat.');
         }
-        return { records, storage };
+        return { records, storage, original };
     }, { checkSource: false });
+    const named = job.intent.request.named ? roleplayWorkflowResultFacts(job.intent.request.named,
+        { before: before.original, after: before.records, messageIndex: source.message?.index ?? source.range?.start ?? null }) : null;
+    if (job.intent.request.named && !named) throw error('The saved named workflow result changed.', 'ROLEPLAY_WORKFLOW_INVALID');
     const recordBytes = Buffer.byteLength(before.records.map(record => JSON.stringify(record)).join('\n'));
     if (recordBytes > (job.intent.request.capacity?.limitBytes ?? MAX_WORKFLOW_CHAT_BYTES)) {
         throw error('The finished reply exceeds its protected chat capacity.', 'ROLEPLAY_WORKFLOW_CAPACITY');
@@ -360,6 +381,7 @@ function finalPlan(context, job, chosen, { key = FINAL, speakerIndex = null, pri
         candidateHash: chosen.candidate.hash, recordsHash: proof.recordsHash, recordsDigest: proof.digest,
         storage: before.storage, writeKey: speakerIndex === null ? `workflow:${job.id}:publish` : `workflow:${job.id}:speaker:${speakerIndex}`,
         ...(speakerIndex === null ? {} : { speakerIndex }),
+        ...(named ? { named } : {}),
         ...(alternatives.length ? { alternativesHash: roleplayHash(alternatives) } : {}),
         ...(chosen.output !== chosen.candidate.output ? { outputHash: roleplayHash(chosen.output) } : {}),
         ...(roleplayHash(source) !== roleplayHash(job.intent.source) ? { sourceHash: roleplayHash(source) } : {}) };
@@ -634,7 +656,8 @@ export async function runRoleplayWorkflowJob(context, { beforePublication, befor
     const outcome = publishPlan(context, job, chosen, plan);
     await beforePublication?.();
     const result = { status: 'completed', childJobId: chosen.child.id, candidateHash: chosen.candidate.hash,
-        writeId: outcome.writeId, revision: outcome.revision, instanceId: outcome.instanceId };
+        writeId: outcome.writeId, revision: outcome.revision, instanceId: outcome.instanceId,
+        ...(plan.named ? { named: plan.named } : {}) };
     finishNativeMediaJob(context, result, { checkSource: false,
         checkLocked: (lease, value) => {
             const effect = value.effects.final;

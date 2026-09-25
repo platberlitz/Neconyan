@@ -253,15 +253,16 @@ function selectedBooks(settings, saved, character, avatar, personaLorebook) {
 
 /** Capture the actual saved book selection before private job admission. */
 export function captureRoleplayWorldInfo(base, account, source, { avatar, maxContext, tokenizer = 'o200k_base', trigger = 'normal', serverPrompt = false,
-    agentIds = [], agentContext = false, nativeBindingVersion = 1 }) {
+    agentIds = [], agentContext = false, nativeBindingVersion = 1, promptEffect = null }) {
     if (!['normal', 'continue', 'swipe', 'regenerate'].includes(trigger) || typeof serverPrompt !== 'boolean'
-        || ![0, 1].includes(nativeBindingVersion) || nativeBindingVersion === 0 && agentIds.length) {
+        || ![0, 1].includes(nativeBindingVersion) || nativeBindingVersion === 0 && agentIds.length
+        || promptEffect !== null && !['append', 'continue', 'swipe', 'alternative', 'replace'].includes(promptEffect)) {
         throw roleplayError('ROLEPLAY_INVALID', 'The World Info generation trigger is invalid.', 400);
     }
     return withRoleplayAccount(base, account, lease => {
         const saved = assertRoleplaySourceLocked(lease, source);
         const promptRecords = serverPrompt ? selectRoleplayPromptRecords(saved.records, source,
-            { normal: 'append', regenerate: 'replace', swipe: 'swipe', continue: 'continue' }[trigger]) : saved.records;
+            promptEffect ?? { normal: 'append', regenerate: 'replace', swipe: 'swipe', continue: 'continue' }[trigger]) : saved.records;
         if (!source.dependencies?.some(dependency => dependency.kind === 'character' && dependency.locator.avatar === avatar)) {
             throw roleplayError('ROLEPLAY_INVALID', 'World Info must use a character in the accepted Roleplay source.', 409);
         }
@@ -437,7 +438,8 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             metadata: structuredClone(saved.records[0].chat_metadata ?? {}),
             authorNote,
             global: {
-                trigger, characterDescription: character.data?.data?.description ?? character.data?.description ?? '',
+                trigger, ...(promptEffect ? { promptEffect } : {}),
+                characterDescription: character.data?.data?.description ?? character.data?.description ?? '',
                 characterPersonality: character.data?.data?.personality ?? character.data?.personality ?? '',
                 personaDescription: persona.description,
                 characterDepthPrompt: depthPrompt,
@@ -461,6 +463,7 @@ export function assertRoleplayWorldInfoCurrent(base, snapshot) {
     const captured = captureRoleplayWorldInfo(base, snapshot.account, snapshot.source, {
         avatar: snapshot.avatar, maxContext: snapshot.maxContext, tokenizer: snapshot.tokenizer,
         trigger: snapshot.global?.trigger,
+        promptEffect: snapshot.global?.promptEffect ?? null,
         serverPrompt: snapshot.serverPrompt,
         agentIds: snapshot.agents?.forcedIds ?? [], agentContext: snapshot.agentContext ?? false,
         nativeBindingVersion: Object.hasOwn(snapshot, 'nativeBindingVersion') ? snapshot.nativeBindingVersion : 0,

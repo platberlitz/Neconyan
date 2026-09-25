@@ -13,7 +13,7 @@ import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-st
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
 import { assertRoleplayWorldInfoCurrent, prepareRoleplayWorldInfo } from './world-info.js';
-import { assertWorldInfoDepthHistory, roleplayMacroCapabilities, savedRoleplayMacroSnapshot, selectRoleplayPromptRecords, prepareRoleplayHistoryContent, buildRoleplaySavedHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets, isWorldInfoAuthorNoteActive } from './roleplay-prompt.js';
+import { assertWorldInfoDepthHistory, roleplayEffectTrigger, roleplayMacroCapabilities, savedRoleplayMacroSnapshot, selectRoleplayPromptRecords, prepareRoleplayHistoryContent, buildRoleplaySavedHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets, isWorldInfoAuthorNoteActive } from './roleplay-prompt.js';
 import { getChatProfileContextLimit, resolveGenerationProfile } from './profiles.js';
 import { getCounter } from '../mewmory/tokens.js';
 import { fnv1a } from '../../public/scripts/extensions/third-party/MacroEnhanced/src/state-impl.js';
@@ -339,7 +339,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             || request.worldInfo.account?.dataEpoch !== account.dataEpoch
             || roleplayHash(request.worldInfo.source) !== roleplayHash(source)
             || (!source.locator.group && request.worldInfo.avatar !== source.locator.avatar)
-            || request.worldInfo.global?.trigger !== ({ append: 'normal', continue: 'continue', swipe: 'swipe', replace: 'regenerate' }[effect])) {
+            || request.worldInfo.global?.trigger !== roleplayEffectTrigger(effect)) {
             throw roleplayError('ROLEPLAY_INVALID', 'World Info must belong to the admitted Roleplay source.', 409);
         }
         assertRoleplayWorldInfoCurrent(base, request.worldInfo);

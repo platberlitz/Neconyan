@@ -6,8 +6,9 @@
  * The job is created paused (not dispatchable); execution arrives in a later
  * stage; it stays paused until a complete bound request is released.
  * Each job carries one typed effect bound to exact saved anchors:
- * append (whole chat unchanged), continue, swipe and caption (one message unchanged) or
- * replace (a message range with unchanged prefix and suffix). Applying the
+ * append (whole chat unchanged), continue, alternative, swipe and caption (one
+ * message unchanged) or replace (a message range with unchanged prefix and
+ * suffix). Applying the
  * effect is a recorded chat write; a completed receipt replays its outcome and
  * never writes again, and callbacks from another job, a retired job or an older
  * account incarnation are refused.
@@ -23,7 +24,7 @@ import { applyManualAgentRecords } from './generation/agent-manual-records.js';
 import { applyPathfinderNotebookRecords } from './generation/pathfinder-notebook-records.js';
 import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, withRoleplayAccount } from './roleplay-store.js';
 
-export const ROLEPLAY_JOB_EFFECTS = Object.freeze(['append', 'continue', 'swipe', 'replace', 'caption', 'agent', 'notebook']);
+export const ROLEPLAY_JOB_EFFECTS = Object.freeze(['append', 'continue', 'swipe', 'alternative', 'replace', 'caption', 'agent', 'notebook']);
 // A closed receipt holds one chat-write result twice (outcome and effect) plus its keys.
 const RECEIPT_RESERVE_BYTES = 8 * 1024;
 // Admission also holds room for the completion's pending chat-write record, so
@@ -42,7 +43,7 @@ function assertOperationKey(operationKey) {
 function assertEffectSource(effect, source) {
     if (!ROLEPLAY_JOB_EFFECTS.includes(effect)) throw invalid('Unknown Roleplay job effect.');
     if (source?.kind !== undefined) throw invalid('A Roleplay job needs a generation source, not a storage source.');
-    const needsMessage = ['continue', 'swipe', 'caption', 'agent'].includes(effect);
+    const needsMessage = ['continue', 'swipe', 'alternative', 'caption', 'agent'].includes(effect);
     if (needsMessage !== (source?.message !== undefined) || (effect === 'replace') !== (source?.range !== undefined)) {
         throw invalid('The Roleplay job source does not carry the anchor its effect needs.');
     }
@@ -144,6 +145,15 @@ function effectRecords(records, source, effect, output, request, job, directorie
     if (typeof output?.text !== 'string') throw invalid('A Roleplay job output needs text.');
     const message = next[source.message.index + 1];
     const swipes = Array.isArray(message.swipes) && message.swipes.length ? message.swipes : [message.mes];
+    if (effect === 'alternative') {
+        // A named alternative adds one more unselected swipe. The selected text,
+        // its index and the message's own metadata stay exactly as they were.
+        const info = Array.isArray(message.swipe_info) ? message.swipe_info.slice(0, swipes.length) : [];
+        while (info.length < swipes.length) info.push({});
+        message.swipes = [...swipes, output.text];
+        message.swipe_info = [...info, { ...(output.extra ? { extra: output.extra } : {}) }];
+        return next;
+    }
     const selected = Number(message.swipe_id ?? 0);
     if (!Number.isInteger(selected) || selected < 0 || selected >= swipes.length) throw invalid('The anchored message has an unreadable swipe selection.');
     if (effect === 'continue') {

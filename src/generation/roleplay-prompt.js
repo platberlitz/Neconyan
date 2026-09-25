@@ -10,6 +10,18 @@ import { applyAgentHistoryRegex, prepareCompanionPromptHistory } from './agent-h
 
 const ROLES = ['system', 'user', 'assistant'];
 
+/**
+ * The one effect-to-trigger map. A named alternative rewrite reads the history
+ * that precedes its anchor but keeps the normal reply trigger, because it adds
+ * a further swipe instead of replacing what the user is reading.
+ */
+export function roleplayEffectTrigger(effect) {
+    if (effect === 'append' || effect === 'alternative') return 'normal';
+    if (effect === 'replace') return 'regenerate';
+    if (['continue', 'swipe'].includes(effect)) return effect;
+    throw roleplayError('ROLEPLAY_INVALID', 'Unknown Roleplay generation effect.', 409);
+}
+
 /** A saved edit target changes the prompt view; its old text remains on disk until completion. */
 export function selectRoleplayPromptRecords(records, source, effect) {
     const anchor = effect === 'replace' ? source.range?.start : source.message?.index;
@@ -17,6 +29,9 @@ export function selectRoleplayPromptRecords(records, source, effect) {
     if (!Number.isSafeInteger(anchor) || anchor < 0 || anchor >= records.length - 1) {
         throw roleplayError('ROLEPLAY_INVALID', 'The saved prompt target is outside its protected history.', 409);
     }
+    // An alternative rewrite of the anchored message writes a further swipe, so
+    // the model never reads the text it is about to replace.
+    if (effect === 'alternative') return records.slice(0, anchor);
     return records.slice(0, anchor + (effect === 'continue' ? 2 : 1));
 }
 
@@ -270,7 +285,7 @@ export function insertRoleplayChatSystem(messages, snapshot, material, userName,
         charPersonality: snapshot.global.characterPersonality,
         scenario: snapshot.global.scenario };
     const prefix = [];
-    const trigger = effect === 'append' ? 'normal' : effect === 'replace' ? 'regenerate' : effect;
+    const trigger = roleplayEffectTrigger(effect);
     for (const value of order.slice(0, historyIndex)) {
         if (!value.enabled) continue;
         const prompt = prompts.find(item => item?.identifier === value.identifier);
@@ -590,7 +605,7 @@ export function insertRoleplayPostHistory(messages, saved, backend, effect, mate
             || prompt.role !== 'system' || prompt.system_prompt !== true || prompt.injection_position != null) {
             throw roleplayError('ROLEPLAY_INVALID', 'This Chat Completion post-history instruction needs full prompt-manager ordering.', 409);
         }
-        const trigger = effect === 'append' ? 'normal' : effect === 'replace' ? 'regenerate' : effect;
+        const trigger = roleplayEffectTrigger(effect);
         if (Array.isArray(prompt.injection_trigger) && prompt.injection_trigger.length
             && !prompt.injection_trigger.includes(trigger)) return messages;
         const instruction = saved.character.trim() && prompt.forbid_overrides !== true ? saved.character : prompt.content;

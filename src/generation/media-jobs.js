@@ -170,6 +170,28 @@ export function readNativeMediaJobResult(base, account, identity) {
     return proof === null ? null : proof.result;
 }
 
+/**
+ * The owner's own readback of one accepted operation, named by the same
+ * operation key the browser submitted. The receipt is account-scoped and
+ * outlives the replayable job, so a reopened page learns a finished result
+ * without submitting or replaying anything. A missing receipt is not an
+ * error: the operation may never have been accepted.
+ */
+export function readNativeMediaJobResultForOwner(base, { operationKey } = {}) {
+    if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 256) {
+        throw fail('The media result ownership is incomplete.', 'MEDIA_INVALID');
+    }
+    return withRoleplayAccount(base, null, (lease, account) => {
+        const { value } = readReceipt(receiptPath(base, account, operationKey));
+        if (!value || roleplayHash(value.account) !== roleplayHash(stamp(account))) return null;
+        if (value.state === 'accepted' && Object.values(value.effects).some(effect => effect.state !== 'done')) {
+            throw fail('The saved media result has an unsettled file effect.');
+        }
+        return { state: value.state, jobId: value.jobId ?? null,
+            result: value.state === 'closed' ? structuredClone(value.result) : null };
+    });
+}
+
 export function finishNativeMediaJob(context, result, { checkSource = true, checkLocked } = {}) {
     if (Buffer.byteLength(JSON.stringify(result)) > 128 * 1024) throw fail('The media completion receipt is too large.', 'MEDIA_INVALID');
     roleplayHash(result);

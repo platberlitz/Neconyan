@@ -128,6 +128,9 @@ app.use('/api/in-chat-agents', express.json({ limit: AGENT_STORAGE_LIMITS.preset
 // A job intent is bounded before the general parser so one account cannot feed
 // the dispatcher a ledger-sized body that would later break the read limit.
 app.use('/api/jobs', express.json({ limit: JOB_INTENT_LIMIT_BYTES }), express.urlencoded({ extended: false, limit: JOB_INTENT_LIMIT_BYTES }));
+// A named Roleplay workflow carries one instruction, one Story or Guided prompt
+// and the chat revisions it answers, so it stays far below the job intent size.
+app.use('/api/roleplay', express.json({ limit: '256kb' }), express.urlencoded({ extended: false, limit: '256kb' }));
 app.use(express.json({ limit: '500mb' }));
 app.use(express.urlencoded({ extended: true, limit: '500mb' }));
 
