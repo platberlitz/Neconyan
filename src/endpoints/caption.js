@@ -1,5 +1,5 @@
 import express from 'express';
-import { getPipeline, getRawImage } from '../transformers.js';
+import { runPipeline, getRawImage } from '../transformers.js';
 
 export const router = express.Router();
 
@@ -16,8 +16,7 @@ router.post('/', async (req, res) => {
             return res.sendStatus(400);
         }
 
-        const pipe = await getPipeline(TASK);
-        const result = await pipe(rawImage);
+        const result = await runPipeline(TASK, '', pipe => pipe(rawImage));
         const text = result[0].generated_text;
         console.info('Image caption:', text);
 

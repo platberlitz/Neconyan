@@ -29,6 +29,13 @@ export function readArtifact(directories, id, name) {
     }
 }
 
+/** Recovery may change job status without resolving an uncertain external result. */
+export function unresolvedProviderStep(directories, id) {
+    const job = getJob(directories, id);
+    return [job?.recoveryStep, job?.resume].find(step => typeof step === 'string' && step.startsWith('provider:')
+        && readArtifact(directories, id, step) === undefined);
+}
+
 export function writeArtifact(directories, id, name, value) {
     const filename = artifactPath(directories, id, name);
     const data = JSON.stringify(value);
@@ -41,11 +48,16 @@ export function writeArtifact(directories, id, name, value) {
 }
 
 /** Persist provider results separately from status; an uncertain call is never replayed on restart. */
-export async function providerStep({ directories, job, signal }, name, call) {
+export async function providerStep({ directories, job, signal }, name, call, resultStore = {}) {
+    const { readResult = readArtifact, writeResult = writeArtifact } = resultStore;
     signal.throwIfAborted();
     const key = 'provider:' + name;
-    const saved = readArtifact(directories, job.id, key);
+    const saved = readResult(directories, job.id, key);
     if (saved !== undefined) return saved;
+    if (unresolvedProviderStep(directories, job.id)) {
+        throw Object.assign(new Error('The previous provider outcome is unknown and cannot be repeated automatically.'),
+            { code: 'PROVIDER_OUTCOME_UNKNOWN', status: 503 });
+    }
     const previousResume = getJob(directories, job.id)?.resume;
     setJobResume(directories, job.id, key);
     markProviderUncertain(directories, job.id, { step: key });
@@ -57,7 +69,7 @@ export async function providerStep({ directories, job, signal }, name, call) {
         }
         throw error;
     }
-    writeArtifact(directories, job.id, key, result);
+    writeResult(directories, job.id, key, result);
     markProviderSettled(directories, job.id);
     signal.throwIfAborted();
     return result;

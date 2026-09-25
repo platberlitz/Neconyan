@@ -90,6 +90,54 @@ afterEach(() => {
 });
 
 describe('TTS Conversation integration', () => {
+    test('saved narration queues every part in order at its admitted playback speed', async () => {
+        const conversationTts = await importConversationTts();
+        const { context, listeners } = preparedPlaybackContext();
+        context.extension_settings.tts.playback_rate = 2;
+        const playPreparedAudio = jest.fn(context.playPreparedAudio);
+        installCapabilityRegistry([['tts', { playPreparedAudio }]]);
+        const record = { status: 'ready', job: 'saved-job', artifact: 'first', playbackRate: 0.75,
+            artifacts: [{ artifact: 'first' }, { artifact: 'second' }, { artifact: 'third' }] };
+        await expect(conversationTts.playConversationNarration(record, { name: 'Nova' })).resolves.toBe(true);
+        expect(context.fetch.mock.calls.map(([url]) => url)).toEqual([
+            '/api/jobs/saved-job/audio/first', '/api/jobs/saved-job/audio/second', '/api/jobs/saved-job/audio/third',
+        ]);
+        expect(context.audioJobQueue).toHaveLength(2);
+        expect(context.currentAudioJob.playbackRate).toBe(0.75);
+        listeners.canplay();
+        expect(context.audioElement.playbackRate).toBe(0.75);
+        for (const call of playPreparedAudio.mock.calls) expect(call[1]).toMatchObject({ speaker: 'Nova', playbackRate: 0.75 });
+        context.resetTtsPlayback();
+    });
+
+    test('Stop during the first saved audio part prevents any later part from downloading', async () => {
+        const conversationTts = await importConversationTts();
+        const { context } = preparedPlaybackContext();
+        const token = context.beginPlayback();
+        context.fetch.mockImplementationOnce(async () => {
+            context.resetTtsPlayback();
+            return { ok: true, blob: async () => new Blob(['audio'], { type: 'audio/wav' }) };
+        });
+        installCapabilityRegistry([['tts', { playPreparedAudio: context.playPreparedAudio }]]);
+        await expect(conversationTts.playConversationNarration({ status: 'ready', job: 'saved', artifact: 'one',
+            artifacts: [{ artifact: 'one' }, { artifact: 'two' }] }, { name: 'Nova' }, () => true, token)).resolves.toBe(false);
+        expect(context.fetch).toHaveBeenCalledTimes(1);
+        expect(context.audioJobQueue).toHaveLength(0);
+        expect(context.audioElement.play).not.toHaveBeenCalled();
+        token.end();
+    });
+
+    test('saved audio rejects invalid rates and a malformed playlist before fetching', async () => {
+        const conversationTts = await importConversationTts();
+        const { context } = preparedPlaybackContext();
+        installCapabilityRegistry([['tts', { playPreparedAudio: context.playPreparedAudio }]]);
+        await expect(context.playPreparedAudio('/saved/audio', { playbackRate: 0 })).resolves.toBe(false);
+        await expect(context.playPreparedAudio('/saved/audio', { playbackRate: Infinity })).resolves.toBe(false);
+        await expect(conversationTts.playConversationNarration({ status: 'ready', job: 'saved', artifact: 'one',
+            artifacts: [{ artifact: 'one' }, {}] }, { name: 'Nova' })).resolves.toBe(false);
+        expect(context.fetch).not.toHaveBeenCalled();
+    });
+
     test('Stop invalidates the token captured before a claim and during Kokoro readiness', async () => {
         const { context } = preparedPlaybackContext();
         const token = context.beginPlayback();

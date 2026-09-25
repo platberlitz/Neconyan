@@ -352,10 +352,20 @@ test('the aside delay is resumable across a restart', async () => {
     assert.equal(getJob(directories, jobId).state, 'completed');
 });
 
-test('image delivery revalidates the Roleplay aside source before any image work', async () => {
+test('image delivery revalidates the Roleplay aside source before any image work', async t => {
     const directories = makeDirectories();
+    t.after(() => { cancelAutoSaves(); fs.rmSync(path.dirname(directories.root), { recursive: true, force: true }); });
     writeSettings(directories);
-    const generateImage = createConversationImageGenerator();
+    writeCardFile(directories);
+    const { initialiseRoleplayAccount } = await import('../src/roleplay-store.js');
+    const { captureConversationTarget } = await import('../src/generation/conversation-effects.js');
+    const { acceptJob } = await import('../src/jobs/store.js');
+    const owner = path.basename(directories.root);
+    initialiseRoleplayAccount({ owner, directories });
+    const request = { user: { profile: { handle: owner }, directories } };
+    const target = captureConversationTarget(request, { avatar: 'nova.png', personaId: '', branchId: 'main' });
+    const { job } = acceptJob(directories, { owner, type: 'conversation.reply', submissionKey: 'image-aside-source', intent: { target } });
+    const generateImage = createConversationImageGenerator({ fetchImpl: () => assert.fail('A missing aside source must not reach the image provider.') });
     const staleSource = {
         target: { avatar: 'nova.png', personaId: '', branchId: 'main' },
         source: { locator: { chat: 'missing', avatar: '', group: true }, groupId: 'g1' },
@@ -363,11 +373,11 @@ test('image delivery revalidates the Roleplay aside source before any image work
     };
     await assert.rejects(
         () => generateImage(
-            { directories, job: { id: 'job-1' }, signal: new AbortController().signal },
+            { directories, owner, job, signal: new AbortController().signal },
             {
                 settings: { image_gen_enabled: true },
                 automation: { roleplaySource: staleSource },
-                target: { avatar: 'nova.png', personaId: '', branchId: 'main' },
+                target,
                 userName: 'User',
             },
             'show me',

@@ -5,6 +5,10 @@ import { providerStep } from '../jobs/artifacts.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { createHostedProviderDeadline } from '../../public/scripts/extensions/quick-image-gen/lib/hosted-provider.js';
 import { DEFAULT_TTS_VOICE_MARKER, DISABLED_TTS_VOICE_MARKER, parseTtsVoiceMap, prepareTtsNarrationText, resolveTtsVoiceMapEntry } from '../../public/scripts/extensions/tts/lib/text-prep.js';
+import { generateSavedSpeech } from './speech-jobs.js';
+import { assertConversationEffectSource } from './conversation-effects.js';
+import { captureConversationRoleplaySource } from './conversation-roleplay-source.js';
+import { isConversationGroupSpeakerEligible } from '../../public/scripts/neconyan-conversation/partners-utils.js';
 
 const HOSTED_TTS_TIMEOUT_SECONDS = 30;
 const OPENAI_VOICE_MATCH = /^[a-z0-9-]+$/;
@@ -15,11 +19,27 @@ const SUPPORTED_PROVIDERS = new Set(['OpenAI', 'OpenAI Compatible', 'ElevenLabs'
  * Automatic Conversation narration. Prepared server-side in the same write as
  * the reply bubble, so a reply is narrated once no matter how many tabs watch.
  * Bundled browser Kokoro stays a page-open exception (reported as `browser`);
- * System speech is a capability refusal. Provider trouble becomes a `failed`
- * record instead of throwing, so the reply is always saved.
+ * New admissions freeze speech settings and use saved, ordered audio parts.
+ * Already accepted older snapshots retain their original narration path.
  */
-export function createConversationNarrator({ fetchImpl } = {}) {
+export function createConversationNarrator(deps = {}) {
+    const { fetchImpl } = deps;
     return async function narrateConversationReply(context, snapshot, text, speaker, delivery = {}) {
+        if (Object.hasOwn(snapshot ?? {}, 'speechPolicy')) {
+            if (!snapshot.speechPolicy) return null;
+            if (!delivery.effectId) throw new Error('Narration requires a delivery effect identity.');
+            return generateSavedSpeech(context, { effectId: delivery.effectId, policy: snapshot.speechPolicy,
+                account: snapshot.speechAccount, text, displayText: delivery.extra?.display_text || '', speaker, snapshot: { macros: snapshot.macros },
+                assertSourceLocked: lease => {
+                    const current = assertConversationEffectSource(context, snapshot.target, delivery.effectId);
+                    if (snapshot.target.groupId && !isConversationGroupSpeakerEligible(current.group, speaker.avatar)) {
+                        throw Object.assign(new Error('The narration speaker is no longer available.'), { status: 409 });
+                    }
+                    if (snapshot.automation?.roleplaySource) captureConversationRoleplaySource({ user: { directories: context.directories } },
+                        snapshot.automation.roleplaySource, { characterName: speaker.name, userName: snapshot.userName, accountLease: lease });
+                },
+            }, deps);
+        }
         const saved = readSavedSettings(context);
         const data = saved?.ok ? saved.data : null;
         const tts = data?.extension_settings?.tts;

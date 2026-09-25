@@ -5,7 +5,7 @@ import wavefile from 'wavefile';
 import fetch from 'node-fetch';
 import FormData from 'form-data';
 import mime from 'mime-types';
-import { getPipeline } from '../transformers.js';
+import { runPipeline } from '../transformers.js';
 import { readSecret, SECRET_KEYS } from './secrets.js';
 import { fetchElevenLabsHistoryAudio, generatePollinationsSpeech, listElevenLabsHistory, listElevenLabsVoices, synthesizeElevenLabs } from './speech-transports.js';
 
@@ -43,10 +43,9 @@ router.post('/recognize', async (req, res) => {
     try {
         const TASK = 'automatic-speech-recognition';
         const { model, audio, lang } = req.body;
-        const pipe = await getPipeline(TASK, model);
         const wav = getWaveFile(audio);
         const start = performance.now();
-        const result = await pipe(wav, { language: lang || null, task: 'transcribe' });
+        const result = await runPipeline(TASK, model, pipe => pipe(wav, { language: lang || null, task: 'transcribe' }));
         const end = performance.now();
         console.info(`Execution duration: ${(end - start) / 1000} seconds`);
         console.info('Transcribed audio:', result.text);
@@ -62,12 +61,11 @@ router.post('/synthesize', async (req, res) => {
     try {
         const TASK = 'text-to-speech';
         const { text, model, speaker } = req.body;
-        const pipe = await getPipeline(TASK, model);
         const speaker_embeddings = speaker
             ? new Float32Array(new Uint8Array(Buffer.from(speaker.startsWith('data:') ? speaker.split(',')[1] : speaker, 'base64')).buffer)
             : null;
         const start = performance.now();
-        const result = await pipe(text, { speaker_embeddings: speaker_embeddings });
+        const result = await runPipeline(TASK, model, pipe => pipe(text, { speaker_embeddings: speaker_embeddings }));
         const end = performance.now();
         console.debug(`Execution duration: ${(end - start) / 1000} seconds`);
 

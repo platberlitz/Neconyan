@@ -6,7 +6,7 @@
  * The job is created paused (not dispatchable); execution arrives in a later
  * stage; it stays paused until a complete bound request is released.
  * Each job carries one typed effect bound to exact saved anchors:
- * append (whole chat unchanged), continue and swipe (one message unchanged) or
+ * append (whole chat unchanged), continue, swipe and caption (one message unchanged) or
  * replace (a message range with unchanged prefix and suffix). Applying the
  * effect is a recorded chat write; a completed receipt replays its outcome and
  * never writes again, and callbacks from another job, a retired job or an older
@@ -15,9 +15,10 @@
 import { acceptJob, getJob } from './jobs/store.js';
 import { assertRoleplaySourceLocked, captureRoleplayMessage, captureRoleplayRange, captureRoleplayStorageSourceLocked } from './generation/roleplay-source.js';
 import { commitSingleChatWriteLocked } from './roleplay-lifecycle.js';
+import { applyCaptionRecords } from './generation/caption-records.js';
 import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, withRoleplayAccount } from './roleplay-store.js';
 
-export const ROLEPLAY_JOB_EFFECTS = Object.freeze(['append', 'continue', 'swipe', 'replace']);
+export const ROLEPLAY_JOB_EFFECTS = Object.freeze(['append', 'continue', 'swipe', 'replace', 'caption']);
 // A closed receipt holds one chat-write result twice (outcome and effect) plus its keys.
 const RECEIPT_RESERVE_BYTES = 8 * 1024;
 // Admission also holds room for the completion's pending chat-write record, so
@@ -36,7 +37,7 @@ function assertOperationKey(operationKey) {
 function assertEffectSource(effect, source) {
     if (!ROLEPLAY_JOB_EFFECTS.includes(effect)) throw invalid('Unknown Roleplay job effect.');
     if (source?.kind !== undefined) throw invalid('A Roleplay job needs a generation source, not a storage source.');
-    const needsMessage = effect === 'continue' || effect === 'swipe';
+    const needsMessage = ['continue', 'swipe', 'caption'].includes(effect);
     if (needsMessage !== (source?.message !== undefined) || (effect === 'replace') !== (source?.range !== undefined)) {
         throw invalid('The Roleplay job source does not carry the anchor its effect needs.');
     }
@@ -92,8 +93,27 @@ function outputMessage(value) {
     return structuredClone(value);
 }
 
-function effectRecords(records, source, effect, output) {
-    const next = structuredClone(records);
+function effectRecords(records, source, effect, output, request) {
+    const captionPolicy = request?.worldInfo?.captions;
+    if (output?.captions && !captionPolicy?.persist) throw invalid('The job did not accept a caption update.');
+    const next = captionPolicy?.persist ? applyCaptionRecords(records, captionPolicy.items, output?.captions) : structuredClone(records);
+    if (effect === 'caption') {
+        if (!captionPolicy?.manual || !captionPolicy.persist || captionPolicy.items.some(item => item.index !== source.message.index)
+            || Object.keys(output ?? {}).some(key => key !== 'captions')) throw invalid('A caption effect only updates its accepted media.');
+        return next;
+    }
+    if (output?.inputTranslation) {
+        const accepted = request?.worldInfo?.inputTranslation?.item;
+        const change = output.inputTranslation;
+        const record = Number.isSafeInteger(change.index) && next[change.index + 1];
+        if (!accepted || change.index !== accepted.index || change.recordHash !== accepted.recordHash || !record?.is_user
+            || roleplayHash(records[change.index + 1]) !== accepted.recordHash || typeof change.text !== 'string' || typeof change.displayText !== 'string'
+            || Buffer.byteLength(change.text) > 256 * 1024 || Buffer.byteLength(change.displayText) > 256 * 1024) {
+            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The translated user input no longer matches its accepted source.');
+        }
+        record.mes = change.text;
+        record.extra = { ...record.extra, display_text: change.displayText };
+    }
     if (output?.timedWorldInfo) {
         if (next.length - 1 !== output.timedChatLength
             || roleplayHash(next[0].chat_metadata?.timedWorldInfo ?? {}) !== output.timedBaseline) {
@@ -130,6 +150,18 @@ function effectRecords(records, source, effect, output) {
     message.mes = output.text;
     if (output.extra) message.extra = { ...message.extra, ...output.extra };
     return next;
+}
+
+/** Completed ownership remains available after the replayable job and its artifacts have expired. */
+export function readRoleplayJobResult(base, account, { operationKey, jobId, effect, source, request }) {
+    assertOperationKey(operationKey);
+    return withRoleplayAccount(base, account, lease => {
+        const { state } = roleplayLease(lease);
+        const receipt = state.submissions[jobKey(state, operationKey)];
+        if (!receipt || receipt.jobId !== jobId || receipt.intentHash !== roleplayHash({ accountId: state.accountId,
+            dataEpoch: state.dataEpoch, intent: { effect, source, request } })) throw roleplayError('ROLEPLAY_JOB_REJECTED', 'The job does not own this accepted result.', 409);
+        return receipt.state === 'closed' ? structuredClone(receipt.outcome) : null;
+    });
 }
 
 /** The effect's anchor must still hold; unrelated later edits elsewhere are allowed only where the anchor permits. */
@@ -196,7 +228,7 @@ export function applyRoleplayJobEffect(base, account, { operationKey, jobId, out
         }
         const captured = captureRoleplayStorageSourceLocked(lease, resource.locator);
         assertAnchor(captured.saved, source, effect);
-        const records = effectRecords(captured.saved.records, source, effect, output);
+        const records = effectRecords(captured.saved.records, source, effect, output, request);
         // The admission reservation covers this write's pending record; hand it over.
         receipt.reservedReceiptBytes = RECEIPT_RESERVE_BYTES;
         const result = commitSingleChatWriteLocked(lease, { operationKey: `job:${operationKey}`, mode: 'update', sourceKind: 'storage',

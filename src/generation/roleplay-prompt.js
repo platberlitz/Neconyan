@@ -329,7 +329,10 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
     }
     if (!Array.isArray(images) || images.some(item => !item || !Number.isSafeInteger(item.index)
         || item.index < 0 || item.index >= records.length - 1 || typeof item.url !== 'string'
-        || !/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(item.url))
+        || !(/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(item.url)
+            || item.captionOnly === true && /^video\/(?:mp4|webm|quicktime|mpeg|ogg)$/.test(item.mimeType)
+                && /^[a-f0-9]{64}$/.test(item.rawHash) && typeof item.file === 'string')
+        || item.captionOnly !== undefined && typeof item.captionOnly !== 'boolean')
         || !['low', 'auto', 'high'].includes(imageDetail)) {
         throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay images are invalid.', 409);
     }
@@ -379,10 +382,12 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
                  || Object.keys(record.extra).some(key => !['token_count', 'isSmallSys', 'reasoning', 'files', 'fileLength',
                      'media', 'media_index', 'media_display', 'inline_image', 'api', 'model', 'reasoning_effort',
                      'reasoning_duration', 'reasoning_signature', 'reasoning_tokens', 'time_to_first_token', 'gen_id', 'type',
-                     'inChatAgentPostRuns', 'title', 'append_title', 'bias'].includes(key))
+                     'inChatAgentPostRuns', 'title', 'append_title', 'bias', 'display_text', 'reasoning_display_text', 'server_narration'].includes(key))
                  || record.extra.bias != null && typeof record.extra.bias !== 'string'
                  || record.extra.title != null && typeof record.extra.title !== 'string'
-                 || record.extra.append_title != null && typeof record.extra.append_title !== 'boolean'
+                  || record.extra.append_title != null && typeof record.extra.append_title !== 'boolean'
+                  || ['display_text', 'reasoning_display_text'].some(key => record.extra[key] != null && typeof record.extra[key] !== 'string')
+                  || record.extra.server_narration != null && (typeof record.extra.server_narration !== 'object' || Array.isArray(record.extra.server_narration))
                  || record.extra.inChatAgentPostRuns !== undefined && (!Array.isArray(record.extra.inChatAgentPostRuns)
                      || record.extra.inChatAgentPostRuns.some(value => typeof value !== 'string'))
                  || record.extra.reasoning_signature && (!signaturePolicy || typeof record.extra.reasoning_signature !== 'string')
@@ -439,7 +444,7 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
     }
     for (const [index, message] of history.entries()) {
         if (Array.isArray(message)) continue;
-        const selectedImages = images.filter(item => item.index === index);
+        const selectedImages = images.filter(item => item.index === index && !item.captionOnly);
         if (selectedImages.length) message.content = [{ type: 'text', text: message.content }, ...selectedImages.map(item => ({
             type: 'image_url', image_url: { url: item.url, detail: imageDetail },
         }))];

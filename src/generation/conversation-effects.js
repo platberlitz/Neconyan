@@ -163,10 +163,7 @@ export function readConversationEffectReceipt(context, target, effectId) {
     return receipt && Object.hasOwn(receipt.effects, effectKey) ? receipt.effects[effectKey] : undefined;
 }
 
-/** Write a native effect and its receipt in the same settings-file replacement. */
-export async function commitConversationEffect(context, target, effectId, mutate) {
-    const { request, current, jobKey, effectKey, receipt } = readConversationEffectState(context, target, effectId);
-    if (receipt && Object.hasOwn(receipt.effects, effectKey)) return receipt.effects[effectKey];
+function assertConversationCheckpoint(current, target, receipt) {
     const currentMessages = current.branch.messages;
     // Verify both the frozen request's captured prefix and this family's
     // advancing receipt. The receipt can be shorter than the frozen request when
@@ -198,6 +195,20 @@ export async function commitConversationEffect(context, target, effectId, mutate
     if (!unchanged) {
         conflict('The Conversation messages changed before this reply could be saved.');
     }
+}
+
+/** The same source check protects provider work and the final message write. Caller may hold the account lock. */
+export function assertConversationEffectSource(context, target, effectId) {
+    const state = readConversationEffectState(context, target, effectId);
+    assertConversationCheckpoint(state.current, target, state.receipt);
+    return state.current;
+}
+
+/** Write a native effect and its receipt in the same settings-file replacement. */
+export async function commitConversationEffect(context, target, effectId, mutate) {
+    const { request, current, jobKey, effectKey, receipt } = readConversationEffectState(context, target, effectId);
+    if (receipt && Object.hasOwn(receipt.effects, effectKey)) return receipt.effects[effectKey];
+    assertConversationCheckpoint(current, target, receipt);
     const result = mutate(current.branch, current.store, current.settings);
     if (result?.then) throw new TypeError('A Conversation effect must finish before releasing its settings write.');
     current.branch.serverOperations ??= {};

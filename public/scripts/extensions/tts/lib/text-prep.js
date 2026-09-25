@@ -215,6 +215,7 @@ export function prepareTtsNarrationText(text, tts = {}, {
     characterName = '',
     allowName2Display = false,
     substitute = null,
+    processText = null,
     displayText = '',
     separator = ' ... ',
 } = {}) {
@@ -256,6 +257,8 @@ export function prepareTtsNarrationText(text, tts = {}, {
 
     // Remove embedded images
     result = result.replace(/!\[.*?]\([^)]*\)/g, '');
+
+    if (typeof processText === 'function') result = processText(result);
 
     // Collapse newlines and spaces into single space
     result = result.replace(/\s+/g, ' ').trim();

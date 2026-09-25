@@ -1218,7 +1218,7 @@ function makeCanvasBackgroundTransparent(canvas) {
     ];
     const cornerIsBackground = sampleCorners.map(([cx, cy]) => {
         const i = ((cy * width) + cx) * 4;
-        return isSheetBackgroundPixel(data, i, backgroundPalette);
+        return data[i + 3] >= SPRITE_FOREGROUND_ALPHA_THRESHOLD && isSheetBackgroundPixel(data, i, backgroundPalette);
     });
     const backgroundCornerCount = cornerIsBackground.filter(Boolean).length;
     const useGlobalFlatWhitePass = backgroundPalette.length === 0 && backgroundCornerCount >= 2;

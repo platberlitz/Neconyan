@@ -8,7 +8,7 @@ import { getJob, setJobResume } from '../jobs/store.js';
 import { assertRoleplaySourceLocked } from './roleplay-source.js';
 import { runChatProfile } from './service.js';
 import { createMacroEnvironment } from '../macros/index.js';
-import { applyRoleplayJobEffect } from '../roleplay-jobs.js';
+import { applyRoleplayJobEffect, readRoleplayJobResult } from '../roleplay-jobs.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
@@ -28,6 +28,10 @@ import { createRoleplayTextPrompt } from './roleplay-text-prompt.js';
 import { readRoleplayPromptContributions } from './roleplay-contributions.js';
 import { inject_ids } from '../../public/scripts/constants.js';
 import { worldInfoActivationActions } from './world-info-hook-policy.js';
+import { runBoundPathfinderRetrieval } from './pathfinder-retrieval.js';
+import { prepareRoleplayInputTranslation, translateIncomingRoleplayOutput } from './roleplay-translation.js';
+import { generateSavedSpeech } from './speech-jobs.js';
+import { prepareRoleplayCaptions } from './roleplay-captions.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
@@ -72,7 +76,8 @@ function replyOutput(result, effect, name, material) {
 
 /** A private worker for a fully admitted, paused Roleplay job; browser cutover is a later stage. */
 export async function runRoleplayReplyJob(context, { generate = runChatProfile, host = roleplayNativeHost,
-    worldInfoHooks, modelCatalogue, contextLimit = getChatProfileContextLimit, promptBackend = resolveGenerationProfile } = {}) {
+    worldInfoHooks, modelCatalogue, contextLimit = getChatProfileContextLimit, promptBackend = resolveGenerationProfile,
+    generatePathfinder, translationFetch, captionFetch, localCaption, captionWait, speechDependencies } = {}) {
     const { job, directories, owner, signal } = context;
     const { roleplay, effect, source, request } = job.intent ?? {};
     const base = { owner, directories };
@@ -80,11 +85,15 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     if (!account || !source || !request || typeof roleplay.operationKey !== 'string') {
         throw roleplayError('ROLEPLAY_INVALID', 'The accepted Roleplay request is missing.', 409);
     }
+    const completedReceipt = readRoleplayJobResult(base, account, {
+        operationKey: roleplay.operationKey, jobId: job.id, effect, source, request,
+    });
+    if (completedReceipt !== null) return { result: completedReceipt };
     const assertSource = () => {
         signal.throwIfAborted();
         return withRoleplayAccount(base, account, lease => assertRoleplaySourceLocked(lease, source, { effect }));
     };
-    const finish = (result, selection) => {
+    const finish = async (result, selection) => {
         if (result?.response?.choices?.[0]?.message?.tool_calls?.length
                 || result?.response?.content?.some?.(part => part.type === 'tool_use')
                 || result?.response?.output?.some?.(part => part.type === 'function_call')
@@ -92,6 +101,35 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             throw roleplayError('ROLEPLAY_TOOLS_PENDING', 'The saved provider result needs the native tool workflow before a reply can be written.', 409);
         }
         const output = replyOutput(result, effect, request.characterName, result.generation);
+        if (request.worldInfo?.captions?.persist) {
+            const { hash, ...captions } = readArtifact(directories, job.id, 'roleplay-captions') ?? {};
+            if (hash !== roleplayHash(captions) || !Array.isArray(captions.results)) {
+                throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved caption completion needs recovery.', 503);
+            }
+            output.captions = captions.results;
+        }
+        if (request.worldInfo?.inputTranslation) {
+            const { hash, ...translation } = readArtifact(directories, job.id, 'roleplay-input-translation') ?? {};
+            if (hash !== roleplayHash(translation) || typeof translation.text !== 'string' || typeof translation.displayText !== 'string') {
+                throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved user translation needs recovery.', 503);
+            }
+            output.inputTranslation = { ...request.worldInfo.inputTranslation.item, text: translation.text, displayText: translation.displayText };
+        }
+        if (request.worldInfo?.translation) {
+            await translateIncomingRoleplayOutput(context, { base, snapshot: request.worldInfo,
+                effect: { type: effect }, output, assertSource, fetchImpl: translationFetch ?? fetch });
+        }
+        if (request.worldInfo?.speech) {
+            const speechRecords = assertSource().records;
+            const message = output.message ?? output.messages?.[0] ?? output;
+            const text = effect === 'continue' ? String(speechRecords[source.message.index + 1].mes ?? '') + output.text : message.mes ?? output.text;
+            const narration = await generateSavedSpeech(context, { effectId: 'roleplay', policy: request.worldInfo.speech, account,
+                text, displayText: message.extra?.display_text || '', speaker: { name: request.characterName, avatar: request.worldInfo.avatar },
+                snapshot: { macros: savedRoleplayMacroSnapshot(request.worldInfo, selectRoleplayPromptRecords(speechRecords, source, effect)) },
+                assertSourceLocked: lease => assertRoleplaySourceLocked(lease, source, { effect }),
+            }, speechDependencies);
+            if (narration) message.extra = { ...message.extra, server_narration: narration };
+        }
         if (selection && roleplayHash({ sticky: {}, cooldown: {}, ...request.worldInfo.metadata.timedWorldInfo }) !== roleplayHash(selection.timedWorldInfo)) {
             output.timedWorldInfo = selection.timedWorldInfo;
             output.timedBaseline = selection.timedBaseline;
@@ -122,9 +160,24 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (result !== undefined && typeof result?.text === 'string') {
             const prompt = request.serverPrompt && readArtifact(directories, job.id, 'roleplay-prompt');
             const selection = request.worldInfo && readArtifact(directories, job.id, 'roleplay-world-info');
+            const retrieval = request.worldInfo?.pathfinder && readArtifact(directories, job.id, 'roleplay-pathfinder');
+            const { hash: retrievalHash, ...retrievalData } = retrieval ?? {};
+            const captions = request.worldInfo?.captions && readArtifact(directories, job.id, 'roleplay-captions');
+            const { hash: captionsHash, ...captionsData } = captions ?? {};
+            const inputTranslation = request.worldInfo?.inputTranslation && readArtifact(directories, job.id, 'roleplay-input-translation');
+            const { hash: inputTranslationHash, ...inputTranslationData } = inputTranslation ?? {};
             if (request.serverPrompt && (!prompt || prompt.hash !== providerReference.promptHash
                 || prompt.hash !== roleplayHash({ messages: prompt.messages, macroState: prompt.macroState,
-                    ...(prompt.preparedText !== undefined ? { preparedText: prompt.preparedText } : {}), ...(prompt.cfgValues ? { cfgValues: prompt.cfgValues } : {}) }))
+                    ...(prompt.preparedText !== undefined ? { preparedText: prompt.preparedText } : {}), ...(prompt.cfgValues ? { cfgValues: prompt.cfgValues } : {}),
+                    ...(request.worldInfo?.pathfinder ? { pathfinderHash: prompt.pathfinderHash } : {}),
+                    ...(request.worldInfo?.captions ? { captionsHash: prompt.captionsHash } : {}),
+                    ...(request.worldInfo?.inputTranslation ? { inputTranslationHash: prompt.inputTranslationHash } : {}) }))
+                || request.worldInfo?.pathfinder && (!retrieval || retrievalHash !== roleplayHash(retrievalData)
+                    || prompt.pathfinderHash !== retrievalHash)
+                || request.worldInfo?.captions && (!captions || captionsHash !== roleplayHash(captionsData)
+                    || prompt.captionsHash !== captionsHash)
+                || request.worldInfo?.inputTranslation && (!inputTranslation || inputTranslationHash !== roleplayHash(inputTranslationData)
+                    || prompt.inputTranslationHash !== inputTranslationHash)
                 || request.worldInfo && (!selection || providerReference.worldInfoHash !== roleplayHash(selection))) {
                 throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The completed Roleplay request has missing prompt evidence.', 503);
             }
@@ -144,7 +197,9 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     }
     const overridePayload = requestOverrides(request);
     const initialSource = assertSource();
-    const initialRecords = request.serverPrompt ? selectRoleplayPromptRecords(initialSource.records, source, effect) : initialSource.records;
+    let initialRecords = request.serverPrompt ? selectRoleplayPromptRecords(initialSource.records, source, effect) : initialSource.records;
+    let captions;
+    let inputTranslation;
     if (request.serverPrompt && initialRecords.length !== initialSource.records.length && request.worldInfo?.serverPrompt !== true) {
         throw roleplayError('ROLEPLAY_INVALID', 'Capture server prompt inputs for the selected saved message or range.', 409);
     }
@@ -180,7 +235,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         assertRoleplayWorldInfoCurrent(base, request.worldInfo);
         if (request.serverPrompt) acceptedMacros = boundMacroSnapshot(savedRoleplayMacroSnapshot(request.worldInfo, initialRecords));
         if (!Array.isArray(request.worldInfo.hookPolicy?.pathfinder)
-            || request.worldInfo.hookPolicy.pathfinder.length) {
+            || request.worldInfo.hookPolicy.pathfinder.length && (!request.serverPrompt || !request.worldInfo.pathfinder)) {
             throw roleplayError('ROLEPLAY_INVALID', 'Enabled Pathfinder retrieval needs server-owned pre-scan execution.', 409);
         }
         if (!Array.isArray(request.worldInfo.hookPolicy.scanContributors)
@@ -188,6 +243,19 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             throw roleplayError('ROLEPLAY_INVALID', 'Enabled vector or Agent scan contributions need server-owned preparation.', 409);
         }
         if (request.serverPrompt) {
+            if (request.worldInfo.captions) {
+                captions = await prepareRoleplayCaptions(context, { base, snapshot: request.worldInfo, records: initialRecords,
+                    macros: acceptedMacros, assertCurrent: () => { assertSource(); assertRoleplayWorldInfoCurrent(base, request.worldInfo); },
+                    fetchImpl: captionFetch, localCaption, wait: captionWait });
+                initialRecords = captions.records;
+                acceptedMacros = boundMacroSnapshot(savedRoleplayMacroSnapshot(request.worldInfo, initialRecords));
+            }
+            if (request.worldInfo.inputTranslation) {
+                inputTranslation = await prepareRoleplayInputTranslation(context, { base, snapshot: request.worldInfo,
+                    records: initialRecords, assertSource, fetchImpl: translationFetch ?? fetch });
+                initialRecords = inputTranslation.records;
+                acceptedMacros = boundMacroSnapshot(savedRoleplayMacroSnapshot(request.worldInfo, initialRecords));
+            }
             const identity = roleplayHash({ snapshot: request.worldInfo, records: initialRecords, contributions });
             preparedHistory = readArtifact(directories, job.id, 'roleplay-history-input');
             if (preparedHistory === undefined) {
@@ -256,6 +324,13 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'This saved World Info scan predates its server macro result.', 503);
         }
         assertRoleplayWorldInfoCurrent(base, request.worldInfo);
+        if (request.worldInfo.pathfinder && worldInfo.hookEvents.actions.length) {
+            throw roleplayError('ROLEPLAY_INVALID', 'This World Info entry needs a server Quick Reply action before generation.', 409);
+        }
+        if (request.worldInfo.pathfinder && contributions.extensions.some(prompt =>
+            ['pathfinder_sidecar_retrieval', 'pathfinder_pipeline_retrieval'].includes(prompt.key))) {
+            throw roleplayError('ROLEPLAY_INVALID', 'A saved contributor cannot replace a Pathfinder prompt.', 409);
+        }
     }
     if (request.serverPrompt && (!request.worldInfo || request.messages.length || request.historyStart !== undefined)) {
         throw roleplayError('ROLEPLAY_INVALID', 'Server-owned prompts cannot include prepared browser messages.', 409);
@@ -277,7 +352,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     const namingMaterial = boundMaterial ?? (source.locator.group && worldInfo?.activated.length
         ? promptBackend(directories, request.binding) : null);
     const chatInput = namingMaterial && (!namingMaterial.backend || namingMaterial.backend === 'chat');
-    const media = request.worldInfo?.images ?? [];
+    let media = request.worldInfo?.images ?? [];
     const capabilities = request.serverPrompt && chatInput && (hasToolHistory || functionTools.length || media.length
         || namingMaterial.source === 'openrouter' && (request.modelOverride || namingMaterial.profile?.model))
         ? await prepareRoleplayCapabilities(context, namingMaterial, request.binding,
@@ -288,9 +363,15 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         throw roleplayError('ROLEPLAY_INVALID', 'Saved tool calls need a bound tool-capable Chat Completion connection.', 409);
     }
     const imageDetail = toolControls.inline_image_quality ?? 'auto';
-    if (media.length && (!request.serverPrompt || !chatInput
-        || !supportsChatImages(toolControls, { model_list: capabilities.models }) || !['low', 'auto', 'high'].includes(imageDetail))) {
-        throw roleplayError('ROLEPLAY_INVALID', 'These saved Roleplay images need a bound vision connection.', 409);
+    if (media.length && (!request.serverPrompt || !chatInput || !supportsChatImages(toolControls, { model_list: capabilities?.models ?? [] }))) {
+        if (media.some((image, imageIndex) => !image.captioned && (!captions
+            || !request.worldInfo.captions.items.some(item => item.imageIndex === imageIndex)))) {
+            throw roleplayError('ROLEPLAY_INVALID', 'These saved Roleplay images need a bound vision connection or saved captions.', 409);
+        }
+        media = media.map(image => ({ ...image, captionOnly: true }));
+    }
+    if (media.length && !['low', 'auto', 'high'].includes(imageDetail)) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The saved image detail setting is invalid.', 409);
     }
     const historyOptions = request.worldInfo && { reasoningInPrompt: request.worldInfo.reasoningInPrompt,
         reasoning: request.worldInfo.reasoning, regex: request.worldInfo.regex,
@@ -321,7 +402,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         return operation();
     });
     let memory;
-    let promptRecords = promptSource ? selectRoleplayPromptRecords(promptSource.records, source, effect) : null;
+    let promptRecords = promptSource ? (captions || inputTranslation ? structuredClone(initialRecords) : selectRoleplayPromptRecords(promptSource.records, source, effect)) : null;
     if (request.serverPrompt) {
         const locator = promptSource.locator;
         const normalised = normalizeLocator(locator);
@@ -370,6 +451,12 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     assertMemory();
     const sourceHistory = promptSource ? buildRoleplaySavedHistory(promptRecords, historyOptions) : null;
     const savedHistory = sourceHistory ? [...sourceHistory, ...contributions.history] : null;
+    const retrieval = request.worldInfo?.pathfinder && await runBoundPathfinderRetrieval(context, {
+        base, snapshot: request.worldInfo, records: initialRecords, preparedHistory, worldInfo,
+        contributions, mainBinding: request.binding, macroSnapshot: acceptedMacros, generate: generatePathfinder,
+        assertBeforeDispatch: assertSource,
+    });
+    const promptExtensions = retrieval?.prompt ? [...contributions.extensions, retrieval.prompt] : contributions.extensions;
     const contributedMessages = new Set(contributions.history);
     const loreScope = scope => !scope || scope === 'active' ? worldInfo.activeLore
         : scope === 'bound' ? worldInfo.boundLore : null;
@@ -497,7 +584,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 authorNote: preparedHistory.authorNote, depthPrompt: preparedHistory.depthPrompt,
                 ...(preparedHistory.depthPrompts ? { depthPrompts: preparedHistory.depthPrompts } : {}) }, chatBackend, worldInfo, {
                 userName, characterName: request.characterName, groupNames, effect, substitute, substituteHistory, memory, exampleLimit,
-                contributions: contributions.extensions, records: initialRecords,
+                contributions: promptExtensions, records: initialRecords,
             });
             exampleCount = assembled.exampleCount;
             return assembled.messages;
@@ -507,7 +594,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 authorNote: preparedHistory.authorNote, depthPrompt: preparedHistory.depthPrompt,
                 ...(preparedHistory.depthPrompts ? { depthPrompts: preparedHistory.depthPrompts } : {}) }, promptMaterial, worldInfo, {
                 userName, characterName: request.characterName, groupNames, effect, substitute, substituteHistory, memory,
-                contributions: contributions.extensions, records: initialRecords,
+                contributions: promptExtensions, records: initialRecords,
             });
             exampleCount = textPrompt.exampleCount;
             preparedText = textPrompt.render(history, exampleLimit);
@@ -542,12 +629,16 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         return messages;
     };
     const promptIdentity = request.serverPrompt && roleplayHash({ history: promptHash, worldInfo: request.worldInfo,
-        binding: request.binding, maxTokens: request.maxTokens, effect, memory, contributions });
+        binding: request.binding, maxTokens: request.maxTokens, effect, memory, contributions,
+        ...(retrieval ? { pathfinderHash: retrieval.hash } : {}), ...(captions ? { captionsHash: captions.hash } : {}),
+        ...(inputTranslation ? { inputTranslationHash: inputTranslation.hash } : {}) });
     if (preparedPrompt !== undefined && (!preparedPrompt || preparedPrompt.identity !== promptIdentity
         || !Array.isArray(preparedPrompt.messages) || !preparedPrompt.macroState
-        || countText && typeof preparedText !== 'string'
-        || preparedPrompt.hash !== roleplayHash({ messages: preparedPrompt.messages, macroState: preparedPrompt.macroState,
-            ...(preparedText !== undefined ? { preparedText } : {}), ...(cfgValues ? { cfgValues } : {}) }))) {
+         || countText && typeof preparedText !== 'string'
+         || preparedPrompt.hash !== roleplayHash({ messages: preparedPrompt.messages, macroState: preparedPrompt.macroState,
+             ...(preparedText !== undefined ? { preparedText } : {}), ...(cfgValues ? { cfgValues } : {}),
+             ...(retrieval ? { pathfinderHash: retrieval.hash } : {}), ...(captions ? { captionsHash: captions.hash } : {}),
+             ...(inputTranslation ? { inputTranslationHash: inputTranslation.hash } : {}) }))) {
         throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved Roleplay prompt needs recovery.', 503);
     }
     const optionalExamples = Boolean(request.serverPrompt && !request.worldInfo.pinExamples);
@@ -604,7 +695,9 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         }
     }
     if (request.serverPrompt && !preparedPrompt) {
-        const saved = { messages, macroState: macroEnvironment.captureState(), ...(preparedText !== undefined ? { preparedText } : {}), ...(cfgValues ? { cfgValues } : {}) };
+        const saved = { messages, macroState: macroEnvironment.captureState(), ...(preparedText !== undefined ? { preparedText } : {}),
+            ...(cfgValues ? { cfgValues } : {}), ...(retrieval ? { pathfinderHash: retrieval.hash } : {}),
+            ...(captions ? { captionsHash: captions.hash } : {}), ...(inputTranslation ? { inputTranslationHash: inputTranslation.hash } : {}) };
         writeArtifact(directories, job.id, 'roleplay-prompt', { identity: promptIdentity, hash: roleplayHash(saved), ...saved });
     }
     const beforeDispatch = () => {

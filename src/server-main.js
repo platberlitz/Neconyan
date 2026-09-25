@@ -55,6 +55,7 @@ import { FRONTEND_ASSET_PREFIX, rewriteFrontendHtml } from './frontend-assets.js
 import { getFrontendAssetMiddleware, redirectLegacyFrontendAsset, setPublicAssetHeaders, shouldServeFrontendAssets } from './middleware/frontend-assets.js';
 import getResponseCompressionMiddleware from './middleware/response-compression.js';
 import basicAuthMiddleware from './middleware/basicAuth.js';
+import { createImageReferenceHandler } from './generation/image-reference-links.js';
 import requireHttpsMiddleware from './middleware/requireHttps.js';
 import authRouter, { setAuthRouterBasicAuthMode } from './endpoints/auth.js';
 import { createSession, destroySession, validateCredentials, isSessionAuthEnabled } from './middleware/sessionAuth.js';
@@ -160,6 +161,8 @@ if (corsEnabled) {
 
 // HTTPS enforcement (applies to all connections when enabled)
 app.use(requireHttpsMiddleware);
+
+app.get('/api/media-reference/:store/:id/:token', createImageReferenceHandler());
 
 // Session auth login/logout endpoints (registered before basic auth to allow unauthenticated login)
 if (isSessionAuthEnabled()) {
@@ -763,6 +766,10 @@ async function postSetupTasks(result) {
     const { startMewmoryWorker } = await import('./mewmory/worker.js');
     startMewmoryWorker(getUserDirectoriesList);
     await import('./generation/roleplay-execution.js');
+    await import('./generation/sprite-jobs.js');
+    await import('./generation/speech-jobs.js');
+    await import('./generation/caption-jobs.js');
+    await import('./generation/quick-image-gen-workflow.js');
     const [{ startJobsRunner }, { getUserDirectories, getAllUserHandles }] = await Promise.all([
         import('./jobs/runner.js'),
         import('./users.js'),

@@ -121,18 +121,22 @@ async function migrateCacheToDataDir() {
  * @returns {Promise<import('sillytavern-transformers').Pipeline>} The transformers.js pipeline
  */
 export async function getPipeline(task, forceModel = '') {
+    if (!Object.hasOwn(tasks, task)) throw new Error('Unsupported local model task.');
     await migrateCacheToDataDir();
 
+    const model = forceModel || getModelForTask(task);
     if (tasks[task].pipeline) {
-        if (forceModel === '' || tasks[task].currentModel === forceModel) {
+        if (tasks[task].currentModel === model) {
             return tasks[task].pipeline;
         }
         console.log('Disposing transformers.js pipeline for for task', task, 'with model', tasks[task].currentModel);
-        await tasks[task].pipeline.dispose();
+        const previous = tasks[task].pipeline;
+        tasks[task].pipeline = null;
+        tasks[task].currentModel = undefined;
+        await previous.dispose();
     }
 
     const cacheDir = path.join(globalThis.DATA_ROOT, '_cache');
-    const model = forceModel || getModelForTask(task);
     const localOnly = !getConfigValue('extensions.models.autoDownload', true, 'boolean');
     console.log('Initializing transformers.js pipeline for task', task, 'with model', model);
     const instance = await pipeline(task, model, { cache_dir: cacheDir, quantized: tasks[task].quantized ?? true, local_files_only: localOnly });
@@ -142,7 +146,27 @@ export async function getPipeline(task, forceModel = '') {
     return instance;
 }
 
+const taskOperations = new Map();
+
+/** Keep a task's model alive until its current operation settles, including after cancellation. */
+export function runPipeline(task, forceModel, operation, { signal } = {}) {
+    const previous = taskOperations.get(task) ?? Promise.resolve();
+    const work = previous.then(async () => {
+        signal?.throwIfAborted();
+        const pipe = await getPipeline(task, forceModel);
+        signal?.throwIfAborted();
+        const result = await operation(pipe);
+        signal?.throwIfAborted();
+        return result;
+    });
+    const settled = work.then(() => {}, () => {});
+    taskOperations.set(task, settled);
+    void settled.then(() => { if (taskOperations.get(task) === settled) taskOperations.delete(task); });
+    return work;
+}
+
 export default {
     getRawImage,
     getPipeline,
+    runPipeline,
 };

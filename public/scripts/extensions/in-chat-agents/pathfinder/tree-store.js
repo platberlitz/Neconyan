@@ -1,4 +1,7 @@
 import { listConnectionProfiles as listSupportedConnectionProfiles } from '../profile-utils.js';
+import { isEntryEligible, getBookPermission as savedBookPermission, canReadBook as canReadSavedBook } from './lorebook-policy.js';
+
+export { isEntryEligible };
 
 export const generateNodeId = () => 'node_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
@@ -201,10 +204,6 @@ export function getAllEntryUids(tree) {
     return [...new Set(uids)];
 }
 
-export function isEntryEligible(entry) {
-    return Boolean(entry && !entry.disable && !entry.agentBlacklisted);
-}
-
 export function parseEntryUid(value) {
     if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return null;
     const uid = Number(value);
@@ -344,8 +343,7 @@ export function listConnectionProfiles() {
 }
 
 export function getBookPermission(bookName, permission, s = getSettings()) {
-    const perms = Object.hasOwn(s.bookPermissions ?? {}, bookName) ? s.bookPermissions[bookName] : undefined;
-    return perms?.[permission] ?? 'readwrite';
+    return savedBookPermission(bookName, permission, s);
 }
 
 export function setBookPermission(bookName, permission, value) {
@@ -354,26 +352,16 @@ export function setBookPermission(bookName, permission, value) {
     s.bookPermissions = { ...s.bookPermissions, [bookName]: { ...previous, [permission]: value } };
 }
 
-function isPermissionAllowed(value) {
-    if (value === undefined || value === null) {
-        return true;
-    }
-
-    if (typeof value === 'boolean') {
-        return value;
-    }
-
-    if (typeof value === 'number') {
-        return value !== 0;
-    }
-
-    const normalized = String(value).trim().toLowerCase();
-    return !['none', 'false', 'off', 'deny', 'denied', 'no', '0', 'disabled'].includes(normalized);
+export function canReadBook(bookName, s = getSettings()) {
+    return canReadSavedBook(bookName, s);
 }
 
-export function canReadBook(bookName, s = getSettings()) {
-    const perm = getBookPermission(bookName, 'read', s);
-    return s.bookPermissions?.[bookName]?.enabled !== false && isPermissionAllowed(perm);
+function isPermissionAllowed(value) {
+    if (value === undefined || value === null) return true;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    const normalized = String(value).trim().toLowerCase();
+    return !['none', 'false', 'off', 'deny', 'denied', 'no', '0', 'disabled'].includes(normalized);
 }
 
 export function canWriteBook(bookName, s = getSettings()) {

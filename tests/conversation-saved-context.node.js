@@ -11,6 +11,8 @@ const { buildSavedConversationContext } = await import('../src/generation/conver
 const { getConversationThreadKey } = await import('../src/endpoints/conversation-store.js');
 const { resolveConversationPartners, buildConversationParticipantPlan, buildConversationParticipantSnapshot } = await import('../src/generation/conversation-participants.js');
 const { captureChatProfile } = await import('../src/generation/profiles.js');
+const { quickImageGenSettingsFingerprint } = await import('../src/generation/quick-image-gen-job.js');
+const { initialiseRoleplayAccount } = await import('../src/roleplay-store.js');
 
 test('saved context uses only the captured persona and evaluates schedules in the captured timezone', async () => {
     const target = { avatar: 'nova.png', personaId: 'alice.png', groupId: '', branchId: 'main' };
@@ -60,6 +62,48 @@ test('solo context resolves known partners while group discovery excludes muted,
     await assert.rejects(buildConversationParticipantSnapshot(request, current, target, plan[1], {
         binding: captureChatProfile(directories, 'saved'), directive: plan[1].directive, timeZone: 'UTC',
     }), error => error.status === 409 && /card no longer exists/.test(error.message));
+});
+
+test('a Conversation participant freezes its configured image provider with the accepted request', async t => {
+    const temporary = fs.mkdtempSync(path.join('/tmp/opencode', 'conversation-image-binding-'));
+    const root = path.join(temporary, 'tester');
+    t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+    const directories = { root, characters: path.join(root, 'characters') };
+    fs.mkdirSync(directories.characters, { recursive: true });
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
+    fs.writeFileSync(path.join(directories.characters, 'Nova.png'), writeCharacterCard(png, JSON.stringify({ name: 'Nova', description: 'silver hair' })));
+    const qig = { provider: 'together', togetherKey: 'private-key', seed: -1,
+        llmOverrideEnabled: true, llmOverrideProfileId: 'saved',
+        _backupActiveFilterPoolIdsGlobal: ['qig_pool_default_global'],
+        _backupContextualFilters: [{ id: 'llm', enabled: true, matchMode: 'LLM', description: 'image scene', positive: 'details' }] };
+    const sd = { prompt_prefix: 'portrait of {prompt}', negative_prompt: 'private-style-secret' };
+    const settings = { oai_settings: {}, extension_settings: {
+        connectionManager: { profiles: [{ id: 'saved', api: 'custom', model: 'fixture', 'api-url': 'http://127.0.0.1:5000' }] },
+        'quick-image-gen': qig,
+        sd,
+    } };
+    fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify(settings));
+    const account = initialiseRoleplayAccount({ owner: 'tester', directories });
+    const request = { user: { profile: { handle: 'tester' }, directories } };
+    const target = { avatar: 'Nova.png', personaId: '', groupId: '', branchId: 'main' };
+    const current = { settings, branch: { id: 'main', messages: [{ role: 'user', mes: 'Send a photo.' }] },
+        store: { settings: { connection_profile: 'saved', image_gen_enabled: true }, characters: {} } };
+    const snapshot = await buildConversationParticipantSnapshot(request, current, target, { avatar: 'Nova.png' }, {
+        binding: captureChatProfile(directories, 'saved'), directive: '', timeZone: 'UTC',
+    });
+    assert.equal(snapshot.quickImageGenSettingsFingerprint, quickImageGenSettingsFingerprint(qig));
+    assert.deepEqual(snapshot.quickImageGenAccount, { accountId: account.accountId, dataEpoch: account.dataEpoch });
+    assert.equal(snapshot.quickImageGenSDSettingsFingerprint, quickImageGenSettingsFingerprint(sd));
+    assert.equal(snapshot.quickImageGenLLMBinding.kind, 'profile');
+    assert.equal(snapshot.quickImageGenLLMBinding.profileId, 'saved');
+    assert.match(snapshot.quickImageGenLLMBinding.fingerprint, /^[a-f0-9]{64}$/);
+    assert.ok(!JSON.stringify(snapshot).includes(qig.togetherKey));
+    assert.ok(!JSON.stringify(snapshot).includes(sd.negative_prompt));
+    settings.extension_settings['quick-image-gen'] = { provider: 'stability', stabilityKey: 'different' };
+    assert.equal(snapshot.quickImageGenSettingsFingerprint, quickImageGenSettingsFingerprint(qig));
+    settings.extension_settings.sd = { prompt_prefix: 'edited after admission' };
+    assert.equal(snapshot.quickImageGenSDSettingsFingerprint, quickImageGenSettingsFingerprint(sd));
+    assert.equal(snapshot.macros.extra.character.description, 'silver hair');
 });
 
 test('an oversized solo partner list rejects strictly but stays total for the background scan', async t => {

@@ -17,6 +17,7 @@ globalThis.DATA_ROOT = root;
 const { router: jobsRouter } = await import('../src/endpoints/jobs.js');
 const { JOB_INTENT_LIMIT_BYTES, JOB_INTENT_MAX_BYTES } = await import('../src/jobs/store.js');
 const { writeArtifact } = await import('../src/jobs/artifacts.js');
+const { pcmWave } = await import('../src/jobs/audio-artifacts.js');
 
 process.on('exit', () => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -62,11 +63,13 @@ function submit(owner, { key = 'h1', intent = { operation: 'roleplay' } } = {}) 
     return request('POST', '/api/jobs/submit', { account: owner, body: { type: 'roleplay', submissionKey: key, intent } });
 }
 
-test('reserved Conversation work cannot bypass its own acceptance endpoint', async () => {
-    const bypass = await request('POST', '/api/jobs/submit', {
-        account: 'alice', body: { type: 'conversation.reply', submissionKey: 'bypass', intent: {} },
-    });
-    assert.equal(bypass.status, 400, 'the generic route refuses a reserved job type');
+test('native Conversation, Roleplay and media work cannot bypass its own acceptance endpoint', async () => {
+    for (const type of ['conversation.reply', 'roleplay.reply', 'roleplay.caption', 'media.images', 'media.speech', 'media.sprites']) {
+        const bypass = await request('POST', '/api/jobs/submit', {
+            account: 'alice', body: { type, submissionKey: `bypass-${type}`, intent: {} },
+        });
+        assert.equal(bypass.status, 400, `the generic route refuses ${type}`);
+    }
 });
 
 test('stale browser account headers refuse every job route before accessing the new account', async () => {
@@ -130,21 +133,28 @@ test('job reads, cancels and capacity are isolated between two accounts', async 
 test('prepared audio artifacts are owner-scoped and served as bytes', async () => {
     const { job } = await (await submit('alice', { key: 'audio-a' })).json();
     const name = 'narration:reply:0';
-    writeArtifact(aliceDirs, job.id, name, { mimeType: 'audio/wav', base64: Buffer.from('RIFFfake').toString('base64') });
+    const wave = pcmWave(Buffer.alloc(480));
+    writeArtifact(aliceDirs, job.id, name, { mimeType: 'audio/wav', base64: wave.toString('base64') });
     const path = `/api/jobs/${job.id}/audio/${encodeURIComponent(name)}`;
 
     const mine = await request('GET', path, { account: 'alice' });
     assert.equal(mine.status, 200);
     assert.equal(mine.headers.get('content-type'), 'audio/wav');
     assert.equal(mine.headers.get('x-content-type-options'), 'nosniff');
-    assert.equal(Buffer.from(await mine.arrayBuffer()).toString(), 'RIFFfake');
+    assert.deepEqual(Buffer.from(await mine.arrayBuffer()), wave);
 
     assert.equal((await request('GET', path, { account: 'bob' })).status, 404, 'another account cannot read the audio');
     assert.equal((await request('GET', `/api/jobs/${job.id}/audio/missing`, { account: 'alice' })).status, 404, 'a missing artifact is not found');
-    for (const invalid of [{ mimeType: 'text/html', base64: 'PHNjcmlwdD4=' }, { ok: false, error: 'offline' }]) {
+    const truncatedWave = Buffer.from(wave.subarray(0, wave.length - 2));
+    for (const invalid of [{ mimeType: 'text/html', base64: 'PHNjcmlwdD4=' },
+        { mimeType: 'audio/wav', base64: Buffer.from('RIFFfake').toString('base64') },
+        { mimeType: 'audio/wav', base64: Buffer.from('RIFF\x04\x00\x00\x00WAVE', 'binary').toString('base64') },
+        { mimeType: 'audio/wav', base64: truncatedWave.toString('base64') }]) {
         writeArtifact(aliceDirs, job.id, name, invalid);
-        assert.equal((await request('GET', path, { account: 'alice' })).status, 404);
+        assert.equal((await request('GET', path, { account: 'alice' })).status, 409, 'corrupt saved audio requires recovery');
     }
+    writeArtifact(aliceDirs, job.id, name, { ok: false, error: 'offline' });
+    assert.equal((await request('GET', path, { account: 'alice' })).status, 404);
 });
 
 test('an account with a damaged ledger gets an actionable error while healthy accounts keep working', async () => {

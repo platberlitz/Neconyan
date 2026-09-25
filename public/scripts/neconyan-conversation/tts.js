@@ -87,9 +87,16 @@ export async function playConversationNarration(record, message, isStillVisible 
         return false;
     }
 
-    const url = `/api/jobs/${encodeURIComponent(record.job)}/audio/${encodeURIComponent(record.artifact)}`;
+    const parts = record.artifacts ?? [{ artifact: record.artifact }];
+    if (!Array.isArray(parts) || !parts.length || parts.length > 256 || parts.some(part => typeof part?.artifact !== 'string' || !part.artifact)) return false;
     try {
-        return await tts.playPreparedAudio(url, { speaker: String(message?.name || 'Character'), isStillVisible, token });
+        for (const part of parts) {
+            if (token?.isCurrent?.() === false || typeof isStillVisible === 'function' && !isStillVisible()) return false;
+            const url = `/api/jobs/${encodeURIComponent(record.job)}/audio/${encodeURIComponent(part.artifact)}`;
+            if (!await tts.playPreparedAudio(url, { speaker: String(message?.name || 'Character'), isStillVisible, token,
+                ...(record.playbackRate !== undefined ? { playbackRate: record.playbackRate } : {}) })) return false;
+        }
+        return true;
     } catch (error) {
         console.warn('Conversation Mode: prepared narration playback failed', error);
         return false;

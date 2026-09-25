@@ -10,6 +10,7 @@ import { buildChatPresetPayload, createChatRequestData } from '../../public/scri
 import { resolveProfileProxy, resolveProfileRequestOverrides, resolveProfileServiceTier } from '../../public/scripts/connection-profile-request.js';
 import { textgen_types } from '../../public/scripts/text-provider-parameters.js';
 import { mergeTextPresetSettings, TEXT_PROVIDER_URLS } from '../../public/scripts/text-preset-request.js';
+import { readRoleplayFile } from '../roleplay-store.js';
 
 const sources = new Set(Object.values(CHAT_COMPLETION_SOURCES));
 const aliases = { oai: 'openai', google: 'makersuite' };
@@ -94,7 +95,7 @@ function readTextProfile(directories, profile, settings, source, activeBinding =
     return { backend: 'text', profile, source, active, preset, instruct, context, power, contextLimit, secretId, fingerprint };
 }
 
-function readProfile(directories, profileId) {
+function readProfile(directories, profileId, presetOverride) {
     if (typeof profileId !== 'string' || !profileId || profileId.length > 256) fail('Choose a saved connection profile.', 400);
     const settings = readJson(path.join(directories.root, 'settings.json'), {});
     if (settings.extension_settings?.disabledExtensions?.includes('connection-manager')) fail('Connection Manager is disabled.', 409);
@@ -107,6 +108,10 @@ function readProfile(directories, profileId) {
         profile = named[0];
     }
     if (!profile) fail('The saved connection profile no longer exists.', 409);
+    if (presetOverride !== undefined) {
+        if (typeof presetOverride !== 'string' || !presetOverride || sanitize(presetOverride) !== presetOverride) fail('The selected completion preset is invalid.', 409);
+        profile = { ...profile, preset: presetOverride, ...(Array.isArray(profile.exclude) ? { exclude: profile.exclude.filter(field => field !== 'preset') } : {}) };
+    }
     if (profile.mode === 'tc' || profile.api === 'openrouter-text' || (profile.api !== 'openrouter' && textSources.has(profile.api)) || profile.api === 'kcpp') {
         const source = { 'openrouter-text': 'openrouter', kcpp: 'koboldcpp' }[profile.api] || profile.api;
         return readTextProfile(directories, profile, settings, source);
@@ -242,9 +247,35 @@ export function captureChatProfile(directories, profileId) {
     return { profileId: profile.id, fingerprint, ...(backend === 'text' ? { backend } : {}) };
 }
 
+function presetEvidence(directories, backend, name) {
+    const directory = backend === 'text' ? directories.textGen_Settings : directories.openAI_Settings;
+    if (!directory || typeof name !== 'string' || !name || sanitize(name) !== name) fail('The selected completion preset is invalid.', 409);
+    const file = readRoleplayFile(path.join(directory, name + '.json'), 8 * 1024 * 1024);
+    if (!file) fail('The selected completion preset is missing.', 409);
+    return { rawHash: file.rawHash, physical: file.physical };
+}
+
+/** Bind an explicit auxiliary preset without changing the saved connection or its other callers. */
+export function captureProfilePresetBinding(directories, binding, presetName) {
+    if (!presetName) return binding;
+    if (binding?.kind === 'active' || binding?.presetOverride !== undefined) fail('Select a saved profile for a separate completion preset.', 409);
+    const original = resolveGenerationProfile(directories, binding);
+    const material = readProfile(directories, original.profile.id, presetName);
+    return { kind: 'profile', profileId: original.profile.id, fingerprint: material.fingerprint,
+        ...(material.backend === 'text' ? { backend: 'text' } : {}), baseFingerprint: original.fingerprint,
+        presetOverride: presetName, presetEvidence: presetEvidence(directories, material.backend, presetName) };
+}
+
 /** Read current controls only when they still match the accepted reference. */
 export function resolveGenerationProfile(directories, binding) {
-    const material = binding?.kind === 'active' ? readActiveConnection(directories) : readProfile(directories, binding?.profileId);
+    let material = binding?.kind === 'active' ? readActiveConnection(directories) : readProfile(directories, binding?.profileId);
+    if (binding?.presetOverride !== undefined) {
+        if (binding.kind === 'active' || binding.baseFingerprint !== material.fingerprint
+            || hash(presetEvidence(directories, material.backend, binding.presetOverride)) !== hash(binding.presetEvidence)) {
+            fail('The saved auxiliary completion preset or connection changed after acceptance.', 409);
+        }
+        material = readProfile(directories, binding.profileId, binding.presetOverride);
+    }
     if (!binding?.fingerprint || material.fingerprint !== binding.fingerprint) fail('The saved connection settings changed after this operation was accepted. Retry with the current settings.', 409);
     return material;
 }

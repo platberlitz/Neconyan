@@ -1,6 +1,6 @@
 import express from 'express';
 
-import { getPipeline } from '../transformers.js';
+import { runPipeline } from '../transformers.js';
 
 const TASK = 'text-classification';
 
@@ -13,8 +13,7 @@ const cacheObject = new Map();
 
 router.post('/labels', async (req, res) => {
     try {
-        const pipe = await getPipeline(TASK);
-        const result = Object.keys(pipe.model.config.label2id);
+        const result = await runPipeline(TASK, '', pipe => Object.keys(pipe.model.config.label2id));
         return res.json({ labels: result });
     } catch (error) {
         console.error(error);
@@ -35,8 +34,7 @@ router.post('/', async (req, res) => {
             if (cacheObject.has(text)) {
                 return cacheObject.get(text);
             } else {
-                const pipe = await getPipeline(TASK);
-                const result = await pipe(text, { topk: 5 });
+                const result = await runPipeline(TASK, '', pipe => pipe(text, { topk: 5 }));
                 result.sort((a, b) => b.score - a.score);
                 cacheObject.set(text, result);
                 return result;

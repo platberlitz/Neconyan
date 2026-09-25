@@ -11,6 +11,10 @@ import { applyRegexScriptList, AGENT_REGEX_PLACEMENT } from '../../public/script
 import { scanWorldInfo } from './world-info-scan.js';
 import { normalizeExtensionBootId } from '../../public/scripts/extension-boot-lifecycle/index.js';
 import { captureWorldInfoHookPolicy, worldInfoActivationActions } from './world-info-hook-policy.js';
+import { capturePathfinderSource } from './world-info-pathfinder.js';
+import { captureIncomingRoleplayTranslation, captureRoleplayInputTranslation } from './roleplay-translation.js';
+import { captureRoleplayCaptions } from './roleplay-captions.js';
+import { captureSpeechPolicy } from './speech-config.js';
 import { activeRoleplayAuthorNote, isWorldInfoAuthorNoteActive, selectRoleplayPromptRecords, savedRoleplayMacroSnapshot } from './roleplay-prompt.js';
 
 const SETTINGS = ['world_info_depth', 'world_info_min_activations', 'world_info_min_activations_depth_max',
@@ -57,7 +61,7 @@ function savedAttachments(directories, records) {
     }).filter(Boolean);
 }
 
-function savedImages(directories, records, display) {
+export function captureSavedRoleplayImages(directories, records, display, caption = {}) {
     return records.slice(1).flatMap((message, index) => {
         const media = message.extra?.media;
         if (media === undefined) return [];
@@ -67,7 +71,7 @@ function savedImages(directories, records, display) {
         const mode = message.extra?.media_display ?? display;
         if (!['list', 'gallery'].includes(mode)) throw roleplayError('ROLEPLAY_INVALID', 'The saved media display is unsupported.', 409);
         const selected = mode === 'gallery' ? [media[message.extra?.media_index ?? 0]] : media;
-        if (selected.some(item => !item || (item.type !== undefined && item.type !== 'image')
+        if (selected.some(item => !item || (item.type !== undefined && !['image', 'video'].includes(item.type))
             || typeof item.url !== 'string' || !item.url.startsWith('/user/images/'))) {
             throw roleplayError('ROLEPLAY_INVALID', 'Only saved account images can enter a bound Roleplay prompt.', 409);
         }
@@ -80,8 +84,23 @@ function savedImages(directories, records, display) {
                 || part === '..' || part.includes('\\') || part.includes('/') || part.includes('\0'))) {
                 throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay image path is invalid.', 409);
             }
-            const saved = readRoleplayFile(path.join(directories.userImages, ...components), 1024 * 1024);
+            const filename = path.join(directories.userImages ?? path.join(directories.root, 'user/images'), ...components);
+            const video = item.type === 'video';
+            const saved = readRoleplayFile(filename, (video ? 25 : 1) * 1024 * 1024);
             if (!saved) throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'A saved Roleplay image is missing.', 404);
+            const captioned = item.captioned === true && typeof item.title === 'string' && item.title.trim()
+                && (item.append_title === true || String(message.mes ?? '').includes(item.title));
+            if (video) {
+                if (!captioned && (caption.source !== 'multimodal' || !['google', 'vertexai', 'zai'].includes(caption.multimodal_api))) {
+                    throw roleplayError('ROLEPLAY_INVALID', 'This saved video needs a compatible caption connection.', 409);
+                }
+                const mimeType = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.mpeg': 'video/mpeg', '.mpg': 'video/mpeg', '.ogv': 'video/ogg' }[path.extname(filename).toLowerCase()];
+                if (!mimeType || saved.bytes.length < 12) throw roleplayError('ROLEPLAY_INVALID', 'The saved video format is unsupported.', 409);
+                const file = path.relative(directories.root, filename).split(path.sep).join('/');
+                if (file.split('/').some(part => !part || part === '..' || part === '.')) throw roleplayError('ROLEPLAY_INVALID', 'The saved video is outside this account.', 409);
+                return { index, file, url: item.url, mimeType, width: 0, height: 0, captionOnly: true,
+                    ...(captioned ? { captioned: true } : {}), rawHash: saved.rawHash, physical: saved.physical };
+            }
             let dimensions;
             try { dimensions = imageSize(saved.bytes); } catch {
                 throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'A saved Roleplay image is unreadable.', 409);
@@ -92,7 +111,7 @@ function savedImages(directories, records, display) {
                 || dimensions.width > 2048 || dimensions.height > 2048) {
                 throw roleplayError('ROLEPLAY_INVALID', 'This saved image format is not supported in a bound prompt.', 409);
             }
-            return { index, url: `data:${mime};base64,${saved.bytes.toString('base64')}`,
+            return { index, url: `data:${mime};base64,${saved.bytes.toString('base64')}`, ...(captioned ? { captioned: true } : {}),
                 width: dimensions.width, height: dimensions.height, rawHash: saved.rawHash, physical: saved.physical };
         });
     });
@@ -117,6 +136,35 @@ function books(directories, names) {
         result[name] = { data: book, hash: roleplayHash(book), rawHash: file.rawHash, physical: file.physical };
     }
     return result;
+}
+
+function boundBooks(directories, snapshot) {
+    const current = books(directories, [...Object.values(snapshot.names).flat(), ...(snapshot.pathfinder?.books ?? [])]);
+    for (const [name, hash] of Object.entries(snapshot.bookHashes)) {
+        if (current[name]?.hash !== hash
+            || roleplayHash({ rawHash: current[name].rawHash, physical: current[name].physical })
+                !== roleplayHash(snapshot.bookEvidence?.[name])) {
+            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'A World Info book changed after admission.');
+        }
+    }
+    if (Object.keys(current).length !== Object.keys(snapshot.bookHashes).length) {
+        throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The World Info selection changed after admission.');
+    }
+    return current;
+}
+
+/** Read a manually enabled Pathfinder book under the same account/source/physical identity checks as native lore. */
+export function readBoundPathfinderBooks(base, snapshot) {
+    if (!snapshot.pathfinder) return {};
+    assertRoleplayWorldInfoCurrent(base, snapshot);
+    return withRoleplayAccount(base, snapshot.account, lease => {
+        assertRoleplaySourceLocked(lease, snapshot.source);
+        if (roleplayHash(readJson(path.join(base.directories.root, 'settings.json'), {})) !== snapshot.settingsHash) {
+            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved Pathfinder settings changed after admission.');
+        }
+        const current = boundBooks(base.directories, snapshot);
+        return Object.fromEntries(snapshot.pathfinder.books.map(name => [name, current[name].data]));
+    });
 }
 
 /** Resolve the chat lock, character connection and default before reading the account's last active persona. */
@@ -180,6 +228,8 @@ function selectedPersona(settings, saved, source, avatar, directories) {
         evidence: { avatar: selected, rawHash: savedAvatar.rawHash, physical: savedAvatar.physical } };
 }
 
+export { selectedPersona as selectSavedRoleplayPersona };
+
 function selectedBooks(settings, saved, character, avatar, personaLorebook) {
     const global = settings.world_info?.globalSelect ?? [];
     const charLore = settings.world_info?.charLore ?? [];
@@ -222,7 +272,13 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             card: member === avatar ? character.data : readRoleplayEntityLocked(lease, 'character', member).data })) : [];
         const memberName = member => member.card?.data?.name ?? member.card?.name;
         const names = selectedBooks(settings, saved, character, avatar, persona.lorebook);
-        const selected = books(base.directories, Object.values(names));
+        const hookPolicy = captureWorldInfoHookPolicy(base.directories, savedSettings,
+            saved.records[0].chat_metadata, avatar, saved.locator.group);
+        const pathfinder = capturePathfinderSource(base.directories, hookPolicy, {
+            chatBook: saved.records[0].chat_metadata?.world_info, personaBook: persona.lorebook,
+            members: group ? members : [{ avatar, card: character.data }], charLore: settings.world_info?.charLore ?? [],
+        });
+        const selected = books(base.directories, [...Object.values(names).flat(), ...(pathfinder?.books ?? [])]);
         const characterTags = savedSettings.tag_map?.[avatar] ?? [];
         if (!Array.isArray(characterTags)) throw roleplayError('ROLEPLAY_INVALID', 'The saved character tags are invalid.', 400);
         const extensions = savedSettings.extension_settings ?? {};
@@ -243,7 +299,9 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             : note.chara?.find(item => item?.name === `individual:${avatar}`)
                 ?? note.chara?.find(item => item?.name === path.parse(avatar).name);
         const attachments = savedAttachments(base.directories, promptRecords);
-        const images = savedImages(base.directories, promptRecords, settings.power_user?.media_display ?? 'list');
+        const images = captureSavedRoleplayImages(base.directories, promptRecords, settings.power_user?.media_display ?? 'list', extensions.caption);
+        const captions = captureRoleplayCaptions(base.directories, savedSettings, { records: promptRecords, images,
+            serverPrompt, display: settings.power_user?.media_display ?? 'list' });
         const chat = promptRecords.slice(1).flatMap((message, index) => {
             if (message.is_system) return [];
             const text = (attachments.find(item => item.index === index)?.text ?? '') + String(message.mes ?? '');
@@ -295,6 +353,9 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             }
             inject.push(persona.description);
         }
+        const translation = captureIncomingRoleplayTranslation(base.directories, savedSettings, { serverPrompt });
+        const inputTranslation = captureRoleplayInputTranslation(base.directories, savedSettings, promptRecords, { serverPrompt });
+        const speech = serverPrompt ? captureSpeechPolicy(base.directories, savedSettings) : null;
         const snapshot = { account: { accountId: account.accountId, dataEpoch: account.dataEpoch }, source, serverPrompt,
             character: { instanceId: character.instanceId, revision: character.revision, rawHash: character.rawHash },
             speakerNames: { character: character.data?.data?.name ?? character.data?.name,
@@ -344,8 +405,11 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                 max_additions: settings.power_user?.reasoning?.max_additions ?? 1,
             },
             settingsHash: roleplayHash(savedSettings),
-            hookPolicy: captureWorldInfoHookPolicy(base.directories, savedSettings,
-                saved.records[0].chat_metadata, avatar, saved.locator.group),
+            hookPolicy, ...(pathfinder ? { pathfinder } : {}),
+            ...(translation ? { translation } : {}),
+            ...(inputTranslation ? { inputTranslation } : {}),
+            ...(speech ? { speech } : {}),
+            ...(captions ? { captions } : {}),
             names, settings: Object.fromEntries(SETTINGS.map(key => [key, settings[key] ?? DEFAULTS[key]])),
             bookHashes: Object.fromEntries(Object.entries(selected).map(([name, value]) => [name, value.hash])),
             bookEvidence: Object.fromEntries(Object.entries(selected).map(([name, value]) =>
@@ -400,18 +464,7 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
         if (roleplayHash(readJson(path.join(base.directories.root, 'settings.json'), {})) !== snapshot.settingsHash) {
             throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info settings changed after admission.');
         }
-        const current = books(base.directories, Object.values(snapshot.names));
-        for (const [name, hash] of Object.entries(snapshot.bookHashes)) {
-            if (current[name]?.hash !== hash
-                || roleplayHash({ rawHash: current[name].rawHash, physical: current[name].physical })
-                    !== roleplayHash(snapshot.bookEvidence?.[name])) {
-                throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'A World Info book changed after admission.');
-            }
-        }
-        if (Object.keys(current).length !== Object.keys(snapshot.bookHashes).length) {
-            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The World Info selection changed after admission.');
-        }
-        return current;
+        return boundBooks(base.directories, snapshot);
     });
     const lore = Object.fromEntries(['global', 'character', 'chat', 'persona'].map(type => [type + 'Lore',
         (snapshot.names[type] ?? []).flatMap(name => Object.entries(selected[name].data.entries).map(([key, entry]) => {

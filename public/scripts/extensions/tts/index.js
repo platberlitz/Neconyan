@@ -577,7 +577,7 @@ async function playAudioData(audioJob) {
     audioElement.addEventListener('canplay', () => {
         if (!isCurrent()) { discard(); return; }
         console.debug('Starting TTS playback');
-        audioElement.playbackRate = extension_settings.tts.playback_rate;
+        audioElement.playbackRate = audioJob.playbackRate ?? extension_settings.tts.playback_rate;
         void audioElement.play();
     }, { once: true });
 }
@@ -680,7 +680,7 @@ function completeCurrentAudioJob(audioJob = currentAudioJob) {
  * @param {string} char
  * @returns {Promise<{audioBlob: Blob|string, mimeType: string}>}
  */
-async function addAudioJob(response, char, epoch = ttsPlaybackEpoch, isCurrent = null) {
+async function addAudioJob(response, char, epoch = ttsPlaybackEpoch, isCurrent = null, playbackRate = null) {
     let audioBlob, mimeType;
     if (typeof response === 'string') {
         audioBlob = response;
@@ -696,7 +696,7 @@ async function addAudioJob(response, char, epoch = ttsPlaybackEpoch, isCurrent =
     if (!isTtsEpochCurrent(epoch) || isCurrent?.() === false) {
         return null;
     }
-    audioJobQueue.push({ audioBlob, char, epoch, isCurrent });
+    audioJobQueue.push({ audioBlob, char, epoch, isCurrent, playbackRate });
     console.debug('Pushed audio job to queue.');
     await processAudioJobQueue();
     return { audioBlob, mimeType };
@@ -706,10 +706,11 @@ async function addAudioJob(response, char, epoch = ttsPlaybackEpoch, isCurrent =
  * Play audio the server already prepared for a native completion. The audio is
  * fetched as a Blob so VRM lip sync keeps working, exactly like extension TTS.
  * @param {string} url Server audio URL
- * @param {{speaker?: string, isStillVisible?: () => boolean}} [options]
+ * @param {{speaker?: string, isStillVisible?: () => boolean, token?: object, playbackRate?: number}} [options]
  * @returns {Promise<boolean>}
  */
-async function playPreparedAudio(url, { speaker = '', isStillVisible = null, token = null } = {}) {
+async function playPreparedAudio(url, { speaker = '', isStillVisible = null, token = null, playbackRate = null } = {}) {
+    if (playbackRate !== null && (!Number.isFinite(playbackRate) || playbackRate <= 0 || playbackRate > 16)) return false;
     const epoch = token?.epoch ?? ttsPlaybackEpoch;
     const controller = new AbortController();
     const abort = () => controller.abort();
@@ -730,7 +731,7 @@ async function playPreparedAudio(url, { speaker = '', isStillVisible = null, tok
         const response = await fetch(url, { credentials: 'same-origin', signal: controller.signal });
         if (!response.ok || !current()) return false;
         const char = String(speaker || DEFAULT_VOICE_MARKER).trim() || DEFAULT_VOICE_MARKER;
-        const result = await addAudioJob(response, char, epoch, current);
+        const result = await addAudioJob(response, char, epoch, current, playbackRate);
         return result !== null && current();
     } catch (error) {
         if (error?.name !== 'AbortError') console.warn('Prepared TTS playback failed', error);

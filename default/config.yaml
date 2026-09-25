@@ -41,6 +41,10 @@ port: 4433
 # Interval in seconds to write a heartbeat file. Set to 0 to disable.
 # This is used primarily for Docker healthchecks.
 heartbeatInterval: 0
+# Public HTTPS address used only for saved image references in URL-only proxy mode.
+# Each link grants access to one saved image; the rest of the app keeps its normal authentication.
+media:
+  referenceBaseUrl: ''
 # Enable HTTP/HTTPS keep-alive globally.
 # Disabling restores old Node 18 behavior, can help if ECONNRESET and other network errors occur.
 enableKeepAlive: false

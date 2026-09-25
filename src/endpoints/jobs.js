@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { acceptJob, dismissJob, getJob, listJobs, requestCancellation, retryConversationFamily, updateJob, validateOwner } from '../jobs/store.js';
 import { abortJob, capacity, noteOwner, ownerCount } from '../jobs/runner.js';
 import { readArtifact } from '../jobs/artifacts.js';
+import { readAudioArtifact } from '../jobs/audio-artifacts.js';
+import { roleplayAccountBase, withRoleplayAccount } from '../roleplay-store.js';
 import { startOperation } from '../mewmory/operations.js';
 import { retryConversationRoot } from '../generation/conversation-jobs.js';
 import { retainConversationAutomaticAcceptance } from '../generation/conversation-effects.js';
@@ -77,7 +79,11 @@ router.get('/:id/audio/:name', (request, response) => {
         const { owner, directories } = directoriesFor(request);
         const job = getJob(directories, request.params.id);
         if (!job || job.owner !== owner) return response.status(404).json({ error: 'No such job.' });
-        const artifact = readArtifact(directories, job.id, request.params.name);
+        const base = roleplayAccountBase(directories);
+        const read = () => readAudioArtifact(directories, job.id, request.params.name);
+        const account = job.intent?.request?.account ?? job.intent?.media ?? job.intent?.roleplay
+            ?? (job.type === 'conversation.participant' ? readArtifact(directories, job.id, 'request')?.speechAccount : null);
+        const artifact = base ? withRoleplayAccount(base, account, read) : read();
         if (typeof artifact?.base64 !== 'string' || !/^audio\/[a-z0-9.+-]+$/i.test(artifact?.mimeType || '')) {
             return response.status(404).json({ error: 'No such audio.' });
         }
@@ -89,16 +95,16 @@ router.get('/:id/audio/:name', (request, response) => {
     }
 });
 
-// Conversation work needs native preparation (input writes, private captures)
-// that this generic route cannot perform. Its own endpoint owns acceptance.
+// Source-bound work needs native preparation and permanent acceptance receipts.
+// The generic route cannot create that authority from browser-supplied intent.
 const RESERVED_JOB_TYPES = new Set(['conversation.reply', 'conversation.participant', 'conversation.summary', 'conversation.schedule']);
 
 router.post('/submit', (request, response) => {
     try {
         const { owner, directories } = directoriesFor(request);
         const body = request.body ?? {};
-        if (RESERVED_JOB_TYPES.has(body.type)) {
-            return response.status(400).json({ error: 'This job type must be submitted through its Conversation endpoint.' });
+        if (RESERVED_JOB_TYPES.has(body.type) || /^(media|roleplay)\./.test(String(body.type))) {
+            return response.status(400).json({ error: 'This job type requires its native acceptance endpoint.' });
         }
         const accepted = acceptJob(directories, {
             owner,

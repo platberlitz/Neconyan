@@ -10,7 +10,7 @@ const { captureRoleplaySource, readRoleplayChat } = await import('../src/generat
 const { admitRoleplayJob, applyRoleplayJobEffect } = await import('../src/roleplay-jobs.js');
 const { runRoleplayReplyJob } = await import('../src/generation/roleplay-execution.js');
 const { readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
-const { getJob, releaseJob, recoverJobs, updateJob } = await import('../src/jobs/store.js');
+const { acceptJob, getJob, releaseJob, recoverJobs, updateJob } = await import('../src/jobs/store.js');
 const { testExports: runner } = await import('../src/jobs/runner.js');
 const { readRoleplayAccount } = await import('../src/roleplay-store.js');
 const { captureGenerationBinding } = await import('../src/generation/profiles.js');
@@ -49,6 +49,22 @@ test('a bound server reply retains its reasoning and commits a single recorded a
     assert.deepEqual(await runRoleplayReplyJob(context, { generate }), first);
     assert.equal(calls, 1);
     assert.equal(readRoleplayChat(f.scope, f.locator).revision, saved.revision);
+});
+
+test('a forged Roleplay job cannot spend on providers before its permanent admission is checked', async t => {
+    const { f, context } = accepted(t);
+    const intent = structuredClone(context.job.intent);
+    intent.roleplay.operationKey = 'not-admitted';
+    const { job } = acceptJob(f.scope.directories, { owner: f.scope.owner, type: 'roleplay.reply', submissionKey: 'forged', intent });
+    let calls = 0;
+    await assert.rejects(runRoleplayReplyJob({ ...context, job }, { generate: async () => { calls++; return { text: 'Unpaid only' }; } }));
+    assert.equal(calls, 0);
+    assert.equal(readArtifact(f.scope.directories, job.id, 'roleplay-output'), undefined);
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length);
+    const altered = structuredClone(context.job);
+    altered.intent.request.maxTokens++;
+    await assert.rejects(runRoleplayReplyJob({ ...context, job: altered }, { generate: async () => { calls++; return { text: 'Changed intent' }; } }));
+    assert.equal(calls, 0);
 });
 
 test('a saved null output cannot be mistaken for an absent result and repeat paid work', async t => {

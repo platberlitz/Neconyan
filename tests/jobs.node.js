@@ -20,7 +20,7 @@ const {
 } = await import('../src/jobs/runner.js');
 const { registerTool, unregisterTool, invokeTool } = await import('../src/tools/registry.js');
 const { createGenerationContext, resolveCredential } = await import('../src/generation/context.js');
-const { providerStep, readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
+const { providerNotDispatched, providerStep, readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
 
 const roots = [];
 
@@ -119,6 +119,41 @@ test('provider results survive cancellation and retry without growing the status
     }), error => error.name === 'AbortError');
     assert.deepEqual(readArtifact(directories, job.id, 'provider:late'), { text: 'late' });
     assert.equal(getJob(directories, job.id).state, 'cancelled');
+});
+
+test('unknown provider results remain blocked after recovery until a saved receipt proves completion', async () => {
+    const directories = tempDirectories('unknown-provider');
+    const job = acceptJob(directories, { owner: 'alice', type: 'artifact-test', submissionKey: 'unknown', intent: {} }).job;
+    const context = { directories, job, signal: new AbortController().signal };
+    updateJob(directories, job.id, { state: 'running' });
+    let calls = 0;
+    await assert.rejects(providerStep(context, 'first', async () => {
+        calls++;
+        throw new Error('Provider response lost');
+    }), /Provider response lost/);
+    assert.equal(calls, 1);
+    recoverJobs(directories);
+    assert.equal(getJob(directories, job.id).state, 'interrupted');
+    assert.equal(getJob(directories, job.id).recoverability, 'needs-retry');
+    assert.equal(getJob(directories, job.id).recoveryStep, 'provider:first');
+    for (const step of ['first', 'second']) {
+        await assert.rejects(providerStep(context, step, () => { calls++; return { text: 'unsafe' }; }),
+            { code: 'PROVIDER_OUTCOME_UNKNOWN' });
+    }
+    assert.equal(calls, 1);
+    writeArtifact(directories, job.id, 'provider:first', { text: 'saved completion' });
+    assert.deepEqual(await providerStep(context, 'first', () => { throw new Error('Replayed completed provider'); }),
+        { text: 'saved completion' });
+    assert.deepEqual(await providerStep(context, 'second', () => { calls++; return { text: 'new work' }; }),
+        { text: 'new work' });
+    assert.equal(calls, 2);
+    await assert.rejects(providerStep(context, 'known', () => {
+        throw providerNotDispatched(new Error('No external request was sent'));
+    }), /No external request was sent/);
+    assert.equal(getJob(directories, job.id).recoveryStep, null);
+    assert.deepEqual(await providerStep(context, 'known', () => { calls++; return { text: 'safe retry' }; }),
+        { text: 'safe retry' });
+    assert.equal(calls, 3);
 });
 
 test('finished history makes room for new work and removes only expired artifacts', () => {

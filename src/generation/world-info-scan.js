@@ -219,6 +219,8 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
     }
     output.worldInfoBefore = output.worldInfoBefore.join('\n');
     output.worldInfoAfter = output.worldInfoAfter.join('\n');
+    // Keep special outlet names as own properties and return the same plain data that is saved on disk.
+    output.outletEntries = Object.fromEntries(Object.entries(output.outletEntries));
     const activation = activatedEntries.map(entry => ({
         world: entry.world, uid: entry.uid, hash: entry.hash,
         title: String(entry.comment ?? '').trim() || String(Array.isArray(entry.key) && entry.key[0] || entry.uid),

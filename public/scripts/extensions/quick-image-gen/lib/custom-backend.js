@@ -656,16 +656,24 @@ export async function executeCustomBackend(config, input, options = {}) {
     else options.signal?.addEventListener("abort", abortFromParent, { once: true });
 
     try {
-        const response = await fetchImpl(request.url, {
-            method: request.method,
-            headers: request.headers,
-            body: request.body,
-            signal: controller.signal,
-            redirect: "error",
-            credentials: "omit",
-            referrerPolicy: "no-referrer",
-        });
-        const submitted = await readCustomResponse(response, request.config, request.url);
+        const submit = async () => {
+            const response = await fetchImpl(request.url, {
+                method: request.method,
+                headers: request.headers,
+                body: request.body,
+                signal: controller.signal,
+                redirect: "error",
+                credentials: "omit",
+                referrerPolicy: "no-referrer",
+            });
+            const value = await readCustomResponse(response, request.config, request.url);
+            if (value.buffer || request.config.mode === "json") return value;
+            return { jobId: normalizeJobId(resolveJsonPointer(value.data, request.config.jobIdPath)) };
+        };
+        // A native owner can save the normalised submission ID before polling.
+        // Browser callers retain the same one-call interface.
+        const submitted = request.config.mode === "async" && options.runSubmission
+            ? await options.runSubmission(submit) : await submit();
         if (submitted.buffer) return submitted;
         if (request.config.mode === "json") {
             const image = extractCustomBackendImage(submitted.data, request.config.responsePath, request.config.responseType);
@@ -673,7 +681,7 @@ export async function executeCustomBackend(config, input, options = {}) {
             return await materializeImage(image, submitted.responseUrl, request.config, fetchImpl, controller.signal);
         }
 
-        const jobId = normalizeJobId(resolveJsonPointer(submitted.data, request.config.jobIdPath));
+        const jobId = normalizeJobId(submitted.jobId);
         const success = new Set(request.config.successValues.map(value => value.toLowerCase()));
         const failure = new Set(request.config.failureValues.map(value => value.toLowerCase()));
         while (true) {

@@ -21,6 +21,14 @@ import { buildSavedConversationContext } from './conversation-context.js';
 import { activeCharacterRegexHash } from './active-regex.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { validateActiveGenerationContext } from './service.js';
+import { quickImageGenSettingsFingerprint } from './quick-image-gen-job.js';
+import { resolveCharacterImageSettings } from '../../public/scripts/extensions/quick-image-gen/lib/character-settings.js';
+import { captureBoundSpeechPolicy } from './speech-config.js';
+import { resolveSavedImageFilters } from './quick-image-gen-filters.js';
+import { captureQuickImageTextSettings } from './quick-image-gen-text.js';
+import { buildSavedProxyImageContext } from './quick-image-gen-proxy.js';
+import { captureBoundQuickImageReferenceSources } from './quick-image-gen-reference.js';
+import { roleplayAccountBase, roleplayAccountStamp } from '../roleplay-store.js';
 
 // Matches the browser regex: flexible whitespace and the curly apostrophe iOS
 // keyboards produce, so "y’all" and "you  all" are broad addresses too.
@@ -327,8 +335,14 @@ export async function buildConversationParticipantSnapshot(request, current, tar
         avatar: member, name: (member === avatar ? character : await getCharacterData(request, member, { allowOverride: false })).name,
     }))) : [];
     const groupNames = groupMembers.map(member => member.name);
-    return {
+    const imageSettings = settings.image_gen_enabled
+        ? resolveCharacterImageSettings(current.settings.extension_settings?.['quick-image-gen'] || {}, { avatar }) : null;
+    const snapshot = {
         target, binding, settings, force, purpose: plan.purpose || 'reply', timeZone,
+        ...(settings.image_gen_enabled ? { quickImageGenCharacterScope: { avatar }, quickImageGenSettingsFingerprint:
+            quickImageGenSettingsFingerprint(imageSettings),
+        quickImageGenSDSettingsFingerprint: quickImageGenSettingsFingerprint(
+            current.settings.extension_settings?.sd || current.settings.extension_settings?.['stable-diffusion'] || {}) } : {}),
         speaker: { avatar, name: character.name }, speakers: savedContext.speakers, userName, groupNames, now,
         activity, gate: plan.gate === true, assistantKnowledgeTokens,
         extra: plan.extra && typeof plan.extra === 'object' ? plan.extra : extra,
@@ -356,4 +370,25 @@ export async function buildConversationParticipantSnapshot(request, current, tar
                 chatMetadata: {}, powerUser: current.settings.power_user || {} },
         },
     };
+    if (imageSettings && Array.isArray(imageSettings._backupContextualFilters)
+        && imageSettings._backupContextualFilters.some(filter => filter?.enabled !== false && filter?.matchMode === 'LLM')) {
+        const environment = createMacroEnvironment(snapshot.macros, {}, { readOnly: true });
+        if (resolveSavedImageFilters(imageSettings, snapshot, '', environment).llm.length) {
+            snapshot.quickImageGenTextAI = captureQuickImageTextSettings(directories, imageSettings,
+                binding.kind ? binding : { kind: 'profile', ...binding }, [{}, ...snapshot.macros.extra.chat.map(message => ({ ...message,
+                    mes: message.content || message.mes || '', name: message.role === 'user' ? userName : character.name }))]);
+            snapshot.quickImageGenLLMBinding = snapshot.quickImageGenTextAI.binding;
+        }
+    }
+    if (imageSettings?.provider === 'proxy' && imageSettings.proxyChatImageIncludePersonality) {
+        snapshot.quickImageGenProxyContext = buildSavedProxyImageContext(snapshot);
+    }
+    if (imageSettings) {
+        const imageBase = roleplayAccountBase(directories);
+        if (!imageBase) throw Object.assign(new Error('Image generation requires a protected account.'), { status: 409 });
+        snapshot.quickImageGenAccount = roleplayAccountStamp(imageBase);
+        snapshot.quickImageGenReferenceSources = captureBoundQuickImageReferenceSources(directories, imageSettings);
+    }
+    Object.assign(snapshot, captureBoundSpeechPolicy(directories, current.settings));
+    return snapshot;
 }

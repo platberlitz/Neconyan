@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, jest, tes
 import express from 'express';
 
 const writeFileAtomicSync = jest.fn();
+const saveSpriteFiles = jest.fn();
 
 await jest.unstable_mockModule('../node_modules/write-file-atomic/lib/index.js', () => ({
     sync: writeFileAtomicSync,
@@ -18,6 +19,12 @@ await jest.unstable_mockModule('../src/endpoints/assets.js', () => ({
 await jest.unstable_mockModule('../src/util.js', () => ({
     clientRelativePath: () => '/files/memory.txt',
     getImageBuffers: jest.fn(),
+}));
+await jest.unstable_mockModule('../src/generation/sprite-storage.js', () => ({
+    saveSpriteFiles, listSpriteFiles: jest.fn(), deleteSpriteFiles: jest.fn(),
+}));
+await jest.unstable_mockModule('../src/roleplay-store.js', () => ({
+    roleplayAccountBase: jest.fn(), roleplayAccountStamp: jest.fn(),
 }));
 
 const { router: filesRouter } = await import('../src/endpoints/files.js');
@@ -55,6 +62,7 @@ beforeEach(() => {
     };
     fs.mkdirSync(directories.files, { recursive: true });
     writeFileAtomicSync.mockClear();
+    saveSpriteFiles.mockClear();
 });
 
 afterEach(() => {
@@ -89,7 +97,7 @@ describe('Base64 atomic writes', () => {
         expect(writeFileAtomicSync.mock.calls[0]).toHaveLength(2);
     });
 
-    test('decodes RisuAI sprites before writing', () => {
+    test('decodes RisuAI sprites before passing them to the protected writer', () => {
         jest.spyOn(console, 'info').mockImplementation(() => {});
         const pngHeader = Buffer.from('89504e470d0a1a0a', 'hex');
         const data = {
@@ -105,11 +113,15 @@ describe('Base64 atomic writes', () => {
 
         importRisuSprites(directories, data);
 
-        expect(writeFileAtomicSync).toHaveBeenCalledTimes(1);
-        const [filePath, sprite] = writeFileAtomicSync.mock.calls[0];
-        expect(filePath).toBe(path.join(directories.characters, 'Alice', 'happy.png'));
-        expect(Buffer.isBuffer(sprite)).toBe(true);
-        expect(sprite.equals(pngHeader)).toBe(true);
-        expect(writeFileAtomicSync.mock.calls[0]).toHaveLength(2);
+        expect(saveSpriteFiles).toHaveBeenCalledTimes(1);
+        const [target, name, sprites, options] = saveSpriteFiles.mock.calls[0];
+        expect(target).toBe(directories);
+        expect(name).toBe('Alice');
+        expect(sprites).toHaveLength(1);
+        expect(sprites[0].filename).toBe('happy.png');
+        expect(Buffer.isBuffer(sprites[0].bytes)).toBe(true);
+        expect(sprites[0].bytes.equals(pngHeader)).toBe(true);
+        expect(options).toEqual({ overwrite: false });
+        expect(writeFileAtomicSync).not.toHaveBeenCalled();
     });
 });

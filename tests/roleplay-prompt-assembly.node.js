@@ -22,7 +22,7 @@ const { captureGenerationBinding, resolveGenerationProfile } = await import('../
 const { runChatProfile } = await import('../src/generation/service.js');
 const { captureRoleplaySource, readRoleplayChat } = await import('../src/generation/roleplay-source.js');
 
-function promptJob(t, prompts, order, settings = {}, prepare = () => {}, captureBinding = () => ({ profileId: 'saved', fingerprint: 'bound' })) {
+function promptJob(t, prompts, order, settings = {}, prepare = () => {}, captureBinding = () => ({ profileId: 'saved', fingerprint: 'bound' }), requestFields = {}) {
     const f = fixture(t);
     f.records[1].extra = {};
     prepare(f);
@@ -31,7 +31,7 @@ function promptJob(t, prompts, order, settings = {}, prepare = () => {}, capture
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const source = f.source();
     const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'prompt-assembly', effect: 'append', source,
-        request: { binding: captureBinding(f.scope.directories), serverPrompt: true, messages: [],
+        request: { ...requestFields, binding: captureBinding(f.scope.directories), serverPrompt: true, messages: [],
             maxTokens: 20, characterName: 'Nova', worldInfo: captureRoleplayWorldInfo(f.scope, account, source,
                 { avatar: 'Nova.png', maxContext: 200 }) } });
     releaseJob(f.scope.directories, jobId);
@@ -99,8 +99,8 @@ test('inactive notes stay absent and depth personas use their saved role and dep
 });
 
 test('prompt macros use saved card and variables instead of supplied page values', async t => {
-    const job = promptJob(t, [{ ...main, content: '{{description}} / {{getvar::weather}}' }, history], ['main', 'chatHistory']);
-    job.context.job.intent.request.macros = { character: { description: 'Forged' }, variables: { local: { weather: 'forged' } } };
+    const job = promptJob(t, [{ ...main, content: '{{description}} / {{getvar::weather}}' }, history], ['main', 'chatHistory'],
+        {}, undefined, undefined, { macros: { character: { description: 'Forged' }, variables: { local: { weather: 'forged' } } } });
     await job.run(async ({ messages }) => {
         assert.equal(messages[0].content, 'Original / ');
         return { text: 'Saved result' };

@@ -61,6 +61,9 @@ import {
     MAX_INJECT_MATCHES,
 } from "./lib/inject-regex.js";
 import { mergeSTStylePrompts, resolveSTStyleSettings } from "./lib/st-style.js";
+import { applyQuickImageStyle, QIG_STYLES as STYLES } from "./lib/styles.js";
+import { NBP_DIRECTOR_PROMPTS, normalizeNbpDirectorPreset, buildNbpDirectorInstruction,
+    getNanobananaAspectRatio, getNanobananaImageSize } from "./lib/nanobanana-settings.js";
 import { createDialogHost, DEFAULT_DIALOG_TITLE } from "./lib/st-dialogs.js";
 import { createNotifier } from "./lib/notifications.js";
 import { executeCustomBackend, getCustomBackendCapabilities } from "./lib/custom-backend.js";
@@ -424,50 +427,6 @@ const NANOBANANA_MODEL_OPTIONS = [
     { id: "gemini-2.0-flash-exp", name: "Gemini 2.0 Flash Exp" },
 ];
 
-const NBP_DIRECTOR_PROMPTS = {
-    house: {
-        name: "TLD House Anime",
-        text: [
-            "You are an expert anime illustration director specializing in high-production character art in a Girls' Frontline 2 / Realistic Nijigen-inspired style.",
-            "Render anime first and polished second: a refined anime CG illustration, never a filtered photograph, oily glamour render, or flat cartoon.",
-            "Face: fully anime-styled with large expressive eyes, soft simplified features, small nose and mouth, even readable lighting, visible iris color, layered catchlights, and clear emotional expression.",
-            "Skin: smooth, stylized, cleanly shaded with soft tonal transitions and small controlled anime-CG highlight accents only where light naturally catches rounded forms.",
-            "Hair: stylized grouped strands with layered highlight bands and clear volume separation.",
-            "Clothing: believable fabric weight, fold logic, tension, seams, and material distinction while staying inside an anime illustration language.",
-            "Legwear: when present, render as a distinct surface over skin with controlled material highlights and clean transitions.",
-            "Feet: when visible, render clean anatomy, continuous limb path, natural arches and soles, exactly five toes per foot with clear toe separation, soft warm accents, and tasteful anime-CG sheen.",
-            "Toenails: when visible, treat as distinct surfaces from skin and preserve existing polish color, finish, edge shape, and gloss character.",
-            "Anatomical accuracy: exactly two arms, two legs, five fingers per hand, five toes per foot. Every limb traces a continuous path from joint to extremity and bends only in anatomically possible directions.",
-            "When reference images are provided, use them as the identity, outfit, pose, composition, and value-structure anchor. Change only what the prompt requests.",
-        ].join(" "),
-    },
-    preservation: {
-        name: "Reference Preservation",
-        text: [
-            "This is a localized preservation edit. The source image is the primary anchor.",
-            "Preserve character identity, face, hairstyle, outfit design, composition, lighting intensity, value range, and non-target regions.",
-            "Repair or enhance only the requested region. Do not globally reinterpret, beautify, redesign, or increase contrast unless explicitly requested.",
-            "Use controlled satin highlights only. Keep the image anime first, polished second.",
-        ].join(" "),
-    },
-    structural: {
-        name: "Anatomy Repair",
-        text: [
-            "Prioritize anatomical construction and continuity.",
-            "Correct only visible structural errors. Ensure exactly two arms, two legs, five fingers per hand, and five toes per foot.",
-            "Every limb must trace a continuous path from joint to extremity. Joints bend only in anatomically possible directions.",
-            "Do not idealize, redesign, change outfit details, or change the scene beyond the requested correction.",
-        ].join(" "),
-    },
-    custom: {
-        name: "Custom Director",
-        text: "",
-    },
-};
-
-const NBP_NEGATIVE_GUIDANCE = "Avoid wet-looking skin, oily shine, greasy gloss, plastic skin, blown white highlight patches, exaggerated redness, extra toes, fused toes, missing toes, malformed feet, broken ankles, extra limbs, missing limbs, stronger contrast than the source image, photorealistic face drift, flat cartoon simplification, text, watermark, and signature.";
-const NANOBANANA_ASPECT_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
-const NANOBANANA_FLASH31_EXTRA_RATIOS = ["1:4", "1:8", "4:1", "8:1"];
 const QIG_DEFAULT_COLLAPSED_SECTIONS = {
     sectionProvider: false,
     sectionCreate: true,
@@ -479,27 +438,6 @@ const QIG_DEFAULT_COLLAPSED_SECTIONS = {
     setupPanel: true,
 };
 let qigKeyboardShortcutsBound = false;
-
-function normalizeNbpDirectorPreset(value) {
-    return NBP_DIRECTOR_PROMPTS[value] ? value : "house";
-}
-
-function buildNbpDirectorInstruction(settings = getSettings()) {
-    if (!settings?.nanobananaNbpMode) return "";
-    const presetKey = normalizeNbpDirectorPreset(settings.nanobananaNbpPreset);
-    const customDirector = String(settings.nanobananaNbpCustomDirector || "").trim();
-    const preset = presetKey === "custom"
-        ? (customDirector || NBP_DIRECTOR_PROMPTS.house.text)
-        : (NBP_DIRECTOR_PROMPTS[presetKey]?.text || NBP_DIRECTOR_PROMPTS.house.text);
-    const custom = String(settings.nanobananaNbpCustomPrompt || "").trim();
-    const useNegativeGuidance = settings.nanobananaNbpUseNegative !== false;
-    return [
-        "Nano Banana Pro director instructions:",
-        preset,
-        custom ? `Scene-specific house direction: ${custom}` : "",
-        useNegativeGuidance ? `Negative guidance: ${NBP_NEGATIVE_GUIDANCE}` : "",
-    ].filter(Boolean).join(" ");
-}
 
 function buildNanobananaModelOptions(selectedModel) {
     const selected = String(selectedModel || "").trim();
@@ -991,29 +929,6 @@ function updateQigStatusLine() {
     }
     const eyebrow = document.getElementById("qig-status-eyebrow");
     if (eyebrow) eyebrow.textContent = isGenerating ? "Generating" : (warnings.length ? "Needs attention" : "Ready to generate");
-}
-
-function getNanobananaAspectRatio(settings = getSettings()) {
-    const width = Math.max(1, parseIntOr(settings?.width, SIZE_DEFAULT));
-    const height = Math.max(1, parseIntOr(settings?.height, SIZE_DEFAULT));
-    const ratio = width / height;
-    const options = /3\.1.*flash/i.test(settings?.nanobananaModel || "")
-        ? [...NANOBANANA_ASPECT_RATIOS, ...NANOBANANA_FLASH31_EXTRA_RATIOS]
-        : NANOBANANA_ASPECT_RATIOS;
-    return options.reduce((best, option) => {
-        const [w, h] = option.split(":").map(Number);
-        const score = Math.abs(Math.log(ratio / (w / h)));
-        return score < best.score ? { value: option, score } : best;
-    }, { value: "1:1", score: Number.POSITIVE_INFINITY }).value;
-}
-
-function getNanobananaImageSize(settings = getSettings()) {
-    if (!/gemini-3/i.test(settings?.nanobananaModel || "")) return null;
-    const maxSide = Math.max(parseIntOr(settings?.width, SIZE_DEFAULT), parseIntOr(settings?.height, SIZE_DEFAULT));
-    if (/3\.1.*flash/i.test(settings?.nanobananaModel || "") && maxSide <= 512) return "512";
-    if (maxSide >= 3072) return "4K";
-    if (maxSide >= 1536) return "2K";
-    return "1K";
 }
 
 function applyChatGptNbpWorkflowPreset({ persist = true, notify = true } = {}) {
@@ -2953,53 +2868,6 @@ function buildProxyImagesPayload(prompt, negative, s, refImages, payloadMode, pr
 
     return payload;
 }
-
-const STYLES = {
-    none: { name: "None", prefix: "", suffix: "" },
-    anime: { name: "Anime", prefix: "anime style, anime artwork, 2D illustration, anime key visual, ", suffix: ", sharp lineart, anime coloring, vibrant colors" },
-    photorealistic: { name: "Photorealistic", prefix: "realistic, photorealistic, hyperrealistic, ", suffix: ", 8k uhd, dslr" },
-    digitalart: { name: "Digital Art", prefix: "digital painting, concept art, ", suffix: ", artstation" },
-    oilpainting: { name: "Oil Painting", prefix: "oil painting, classical, ", suffix: ", renaissance style" },
-    watercolor: { name: "Watercolor", prefix: "watercolor painting, ", suffix: ", soft edges, flowing colors" },
-    pencilsketch: { name: "Pencil Sketch", prefix: "pencil sketch, graphite, ", suffix: ", hand drawn" },
-    inkdrawing: { name: "Ink Drawing", prefix: "ink drawing, lineart, ", suffix: ", pen and ink" },
-    pixelart: { name: "Pixel Art", prefix: "pixel art, 16-bit, ", suffix: ", retro game style" },
-    render3d: { name: "3D Render", prefix: "3d render, octane render, ", suffix: ", unreal engine 5" },
-    cyberpunk: { name: "Cyberpunk", prefix: "cyberpunk, neon lights, ", suffix: ", futuristic, sci-fi" },
-    fantasy: { name: "Fantasy", prefix: "fantasy art, magical, ", suffix: ", ethereal, mystical" },
-    comicbook: { name: "Comic Book", prefix: "comic book style, bold lines, ", suffix: ", halftone" },
-    manga: { name: "Manga", prefix: "manga style, japanese manga, black and white, ", suffix: ", screentone, ink" },
-    chibi: { name: "Chibi", prefix: "chibi, cute anime, kawaii, ", suffix: ", super deformed, adorable" },
-    ghibli: { name: "Ghibli", prefix: "studio ghibli style, anime, miyazaki, ", suffix: ", whimsical, hand painted" },
-    ukiyoe: { name: "Ukiyo-e", prefix: "ukiyo-e, ", suffix: ", japanese woodblock print" },
-    artnouveau: { name: "Art Nouveau", prefix: "art nouveau, ornate, ", suffix: ", decorative, mucha style" },
-    artdeco: { name: "Art Deco", prefix: "art deco, geometric, ", suffix: ", 1920s style" },
-    impressionist: { name: "Impressionist", prefix: "impressionist, monet style, ", suffix: ", soft brushstrokes" },
-    surrealist: { name: "Surrealist", prefix: "surrealist, dreamlike, ", suffix: ", dali style" },
-    popart: { name: "Pop Art", prefix: "pop art, warhol style, ", suffix: ", bold colors" },
-    minimalist: { name: "Minimalist", prefix: "minimalist, simple, ", suffix: ", clean lines" },
-    gothic: { name: "Gothic", prefix: "gothic, dark, macabre, ", suffix: ", victorian" },
-    steampunk: { name: "Steampunk", prefix: "steampunk, victorian sci-fi, ", suffix: ", brass and gears" },
-    vaporwave: { name: "Vaporwave", prefix: "vaporwave, 80s aesthetic, ", suffix: ", synthwave, retrowave" },
-    lowpoly: { name: "Low Poly", prefix: "low poly, geometric, ", suffix: ", polygonal 3d" },
-    isometric: { name: "Isometric", prefix: "isometric, isometric view, ", suffix: ", game asset" },
-    stainedglass: { name: "Stained Glass", prefix: "stained glass, colorful glass, ", suffix: ", cathedral" },
-    graffiti: { name: "Graffiti", prefix: "graffiti art, street art, ", suffix: ", urban" },
-    charcoal: { name: "Charcoal", prefix: "charcoal drawing, smudged, ", suffix: ", dramatic shadows" },
-    pastel: { name: "Pastel", prefix: "pastel colors, soft, ", suffix: ", dreamy, light" },
-    filmnoir: { name: "Film Noir", prefix: "noir, black and white, ", suffix: ", high contrast, dramatic" },
-    vintagephoto: { name: "Vintage Photo", prefix: "vintage photo, old photograph, ", suffix: ", sepia, aged" },
-    polaroid: { name: "Polaroid", prefix: "polaroid, instant photo, ", suffix: ", nostalgic" },
-    cinematic: { name: "Cinematic", prefix: "cinematic, movie still, ", suffix: ", dramatic lighting, anamorphic" },
-    portrait: { name: "Portrait", prefix: "portrait photography, ", suffix: ", studio lighting, professional" },
-    landscape: { name: "Landscape", prefix: "landscape photography, ", suffix: ", nature, scenic" },
-    macro: { name: "Macro", prefix: "macro photography, close-up, ", suffix: ", detailed" },
-    abstract: { name: "Abstract", prefix: "abstract, non-representational, ", suffix: ", shapes and colors" },
-    psychedelic: { name: "Psychedelic", prefix: "psychedelic, trippy, ", suffix: ", vibrant, kaleidoscopic" },
-    darkfantasy: { name: "Dark Fantasy", prefix: "dark fantasy, grimdark, ", suffix: ", elden ring style" },
-    moeanime: { name: "Moe Anime", prefix: "anime style, cute anime, moe, kawaii, ", suffix: ", adorable, soft colors" },
-    retroanime: { name: "90s Anime", prefix: "90s anime style, retro anime, cel animation, ", suffix: ", vintage anime, old school anime" }
-};
 
 const POLLINATIONS_MODEL_OPTIONS = [
     { id: "", name: "Default (legacy anonymous endpoint)" },
@@ -6411,10 +6279,9 @@ function applyStyle(prompt, s) {
     const cacheKey = `${s.style}|${prompt}`;
     if (styleCache.has(cacheKey)) return styleCache.get(cacheKey);
 
-    const style = STYLES[s.style];
-    if (!style) return prompt;
+    if (!Object.hasOwn(STYLES, s.style)) return prompt;
 
-    const result = style.prefix + prompt + style.suffix;
+    const result = applyQuickImageStyle(prompt, s.style);
 
     styleCache.set(cacheKey, result);
     if (styleCache.size > 100) styleCache.delete(styleCache.keys().next().value);
