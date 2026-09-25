@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import path from 'node:path';
 import { runSupervisor, shouldSupervise } from './src/server-supervisor.js';
 
 // Supervise a child copy so restarts and transactional plugin replacement are
@@ -20,7 +21,7 @@ process.chdir(serverDirectory);
 
 // config.yaml will be set when parsing command line arguments
 const cliArgs = new CommandLineParser().parse(process.argv);
-globalThis.DATA_ROOT = cliArgs.dataRoot;
+globalThis.DATA_ROOT = path.resolve(cliArgs.dataRoot);
 globalThis.COMMAND_LINE_ARGS = cliArgs;
 
 try {

@@ -64,8 +64,9 @@ export const test = base.extend({
                 imageProvider.mode.reply = { images: ['iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'] };
                 return imageProvider;
             },
-            async start() {
-                child = spawn(process.execPath, ['server.js', '--configPath', configPath, '--dataRoot', config.dataRoot,
+            async start({ useConfigDataRoot = false } = {}) {
+                child = spawn(process.execPath, ['server.js', '--configPath', configPath,
+                    ...(useConfigDataRoot ? [] : ['--dataRoot', config.dataRoot]),
                     '--port', String(port), '--browserLaunchEnabled', 'false'], {
                     cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, NECONYAN_SUPERVISED: '1' },
                 });
@@ -87,7 +88,7 @@ export const test = base.extend({
                 const timer = setTimeout(() => child.kill('SIGKILL'), 10000);
                 try { await exited; } finally { clearTimeout(timer); }
             },
-            async restart() { await app.stop('SIGKILL'); await app.start(); },
+            async restart(options) { await app.stop('SIGKILL'); await app.start(options); },
             async release() {
                 await fetch(provider.url.replace(/\/v1$/, '') + '/fixture/release', { method: 'POST', body: '{}' });
             },
