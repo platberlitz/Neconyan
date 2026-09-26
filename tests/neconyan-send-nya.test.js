@@ -117,6 +117,48 @@ describe('paw send button', () => {
         expect(appended[0].style).toMatchObject({ left: '120px', top: '220px' });
     });
 
+    test('a cancelled pointer still pops once from the iOS fast-tap touch sequence', () => {
+        const touch = { identifier: 7, clientX: 111, clientY: 222 };
+        const event = { target: sendButton, isTrusted: true, changedTouches: [touch] };
+        listeners.pointerdown({ target: sendButton, isTrusted: true, button: 0, pointerId: 7, pointerType: 'touch' });
+        listeners.touchstart(event);
+        listeners.pointercancel({ pointerId: 7 });
+        listeners.touchend(event);
+        expect(appended).toHaveLength(1);
+        expect(appended[0].style).toMatchObject({ left: '111px', top: '222px' });
+    });
+
+    test('touch and pointer events from one tap do not duplicate the pop', () => {
+        const event = {
+            target: sendButton, isTrusted: true, button: 0, pointerId: 8, pointerType: 'touch',
+            clientX: 111, clientY: 222,
+            changedTouches: [{ identifier: 8, clientX: 111, clientY: 222 }],
+        };
+        listeners.pointerdown(event);
+        listeners.touchstart(event);
+        listeners.pointerup(event);
+        listeners.touchend(event);
+        listeners.click({ ...event, detail: 1 });
+        expect(appended).toHaveLength(1);
+    });
+
+    test('cancelled, dragged-off and untrusted touches do not pop', () => {
+        const event = {
+            target: sendButton, isTrusted: true,
+            changedTouches: [{ identifier: 9, clientX: 111, clientY: 222 }],
+        };
+        listeners.touchstart(event);
+        listeners.touchcancel(event);
+        listeners.touchend(event);
+        listeners.touchstart(event);
+        hitTarget = elsewhere;
+        listeners.touchend(event);
+        hitTarget = sendButton;
+        listeners.touchstart({ ...event, isTrusted: false });
+        listeners.touchend(event);
+        expect(appended).toHaveLength(0);
+    });
+
     test('reduced motion fades in place without movement', () => {
         const pop = sendNya.popNya(0, 0, { reduced: true });
         expect(pop.options.duration).toBe(700);

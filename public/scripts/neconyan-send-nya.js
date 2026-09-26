@@ -1,10 +1,12 @@
 // A 'nya!' pops out of the paw Send button wherever it was pressed, then floats up and fades.
-// Pointer events are used because the iOS fast-tap path cancels the click on the send button;
-// keyboard presses arrive as trusted clicks with no pointer (detail 0).
+// Observe touches before the iOS fast-tap handler consumes them. Do not depend on
+// a pointerup or compatibility click surviving that handler's preventDefault().
+// Mouse/pen use pointer events; keyboard activation uses trusted clicks (detail 0).
 export const SEND_NYA_SELECTOR = '#send_but, #sb_conversation_send';
 const MAX_ACTIVE_POPS = 8;
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const pressed = new Map();
+const touched = new Map();
 let activePops = 0;
 
 export function popNya(x, y, { reduced = reducedMotion.matches, random = Math.random } = {}) {
@@ -56,6 +58,7 @@ export function popNya(x, y, { reduced = reducedMotion.matches, random = Math.ra
 }
 
 function onPointerDown(event) {
+    if (event.pointerType === 'touch') return;
     const button = event.target.closest?.(SEND_NYA_SELECTOR);
     if (!button || !event.isTrusted || event.button > 0) return;
     pressed.set(event.pointerId, button);
@@ -77,7 +80,31 @@ function onClick(event) {
     popNya(rect.left + rect.width / 2, rect.top + rect.height / 2);
 }
 
+function onTouchStart(event) {
+    if (!event.isTrusted) return;
+    const button = event.target.closest?.(SEND_NYA_SELECTOR);
+    if (!button) return;
+    for (const touch of event.changedTouches) touched.set(touch.identifier, button);
+}
+
+function onTouchEnd(event) {
+    for (const touch of event.changedTouches) {
+        const button = touched.get(touch.identifier);
+        touched.delete(touch.identifier);
+        if (!button || !event.isTrusted) continue;
+        const target = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (target && button.contains(target)) popNya(touch.clientX, touch.clientY);
+    }
+}
+
+function onTouchCancel(event) {
+    for (const touch of event.changedTouches) touched.delete(touch.identifier);
+}
+
 document.addEventListener('pointerdown', onPointerDown, true);
 document.addEventListener('pointerup', onPointerUp, true);
 document.addEventListener('pointercancel', event => pressed.delete(event.pointerId), true);
+document.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
+document.addEventListener('touchend', onTouchEnd, { capture: true, passive: true });
+document.addEventListener('touchcancel', onTouchCancel, { capture: true, passive: true });
 document.addEventListener('click', onClick, true);
