@@ -197,10 +197,10 @@ export const test = base.extend({
                         }
                         return job;
                     },
-                    async open({ workspace = true } = {}) {
+                    async open({ workspace = true, timeout = 20000 } = {}) {
                         const page = await context.newPage();
                         navigationErrors.push(trackNavigationErrors(page).errors);
-                        page.setDefaultTimeout(20000);
+                        page.setDefaultTimeout(timeout);
                         await page.goto('/', { waitUntil: 'domcontentloaded' });
                         await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
                         const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');

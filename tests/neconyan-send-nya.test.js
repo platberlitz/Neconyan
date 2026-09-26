@@ -64,6 +64,8 @@ beforeEach(() => {
     jest.runAllTimers();
     appended.length = 0;
     hitTarget = sendButton;
+    global.window.navigator = { platform: 'Linux', maxTouchPoints: 0 };
+    delete global.window.visualViewport;
 });
 
 function press(target, { trusted = true, x = 110, y = 210, pointerId = 1 } = {}) {
@@ -166,6 +168,48 @@ describe('paw send button', () => {
         listeners.touchend(event);
         listeners.click({ ...event, detail: 1 });
         expect(appended).toHaveLength(1);
+    });
+
+    test('an iPhone touch pop stays in view as the open keyboard pans the viewport', () => {
+        global.window.navigator = { platform: 'iPhone', maxTouchPoints: 1 };
+        const viewport = Object.assign(new EventTarget(), { offsetLeft: 6, offsetTop: 400 });
+        global.window.visualViewport = viewport;
+        const removeListener = jest.spyOn(viewport, 'removeEventListener');
+        const event = {
+            target: sendButton, isTrusted: true,
+            changedTouches: [{ identifier: 10, clientX: 111, clientY: 222 }],
+        };
+        listeners.touchstart(event);
+        listeners.touchend(event);
+        expect(appended).toHaveLength(1);
+        const [pop] = appended;
+        expect(pop.style).toMatchObject({ left: '117px', top: '622px' });
+        viewport.offsetTop = 460;
+        viewport.dispatchEvent(new Event('scroll'));
+        expect(pop.style.top).toBe('682px');
+        viewport.offsetLeft = 0;
+        viewport.offsetTop = 0;
+        viewport.dispatchEvent(new Event('resize'));
+        expect(pop.style).toMatchObject({ left: '111px', top: '222px' });
+        paint();
+        pop.animation().finish();
+        expect(removeListener).toHaveBeenCalledWith('scroll', expect.any(Function));
+        expect(removeListener).toHaveBeenCalledWith('resize', expect.any(Function));
+        viewport.offsetTop = 400;
+        viewport.dispatchEvent(new Event('scroll'));
+        expect(pop.style.top).toBe('222px');
+    });
+
+    test('other browsers do not add Safari viewport offsets to a pop', () => {
+        global.window.visualViewport = Object.assign(new EventTarget(), { offsetLeft: 6, offsetTop: 400 });
+        const pop = sendNya.popNya(111, 222);
+        expect(pop.style).toMatchObject({ left: '111px', top: '222px' });
+    });
+
+    test('iOS without a visual viewport still displays the pop at the touch', () => {
+        global.window.navigator = { platform: 'iPhone', maxTouchPoints: 1 };
+        const pop = sendNya.popNya(111, 222);
+        expect(pop.style).toMatchObject({ left: '111px', top: '222px' });
     });
 
     test('cancelled, dragged-off and untrusted touches do not pop', () => {
