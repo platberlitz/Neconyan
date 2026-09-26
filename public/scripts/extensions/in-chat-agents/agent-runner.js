@@ -4537,7 +4537,9 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
         // Commit the actual combined edit once. Per-agent outputs remain diagnostics,
         // while Undo records the text that was really applied (including raw regex and utilities).
         const agentTextChanged = currentPromptTransformText !== historyBaselineText;
-        const textNeedsCommit = currentPromptTransformText !== message.mes;
+        // When no agent changed the words, a Dialogue Colours recolour made during the run is kept.
+        const textNeedsCommit = currentPromptTransformText !== message.mes
+            && (agentTextChanged || !isDialogueColourOnlyChange(currentPromptTransformText, message.mes));
         if (textNeedsCommit) {
             if (!setPostProcessingText(message, currentPromptTransformText, postProcessingTarget)) return;
             if (agentTextChanged) recordAppliedTransformation(message, historyBaselineText, promptRuns);

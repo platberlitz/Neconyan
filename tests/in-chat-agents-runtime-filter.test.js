@@ -551,6 +551,26 @@ describe('runtime checks at agent dispatch', () => {
         expect(context.generateRaw).toHaveBeenCalledTimes(1);
     });
 
+    test('a Dialogue Colours recolour during a companion request keeps its result, while edited words do not', async () => {
+        const [agent] = loadAgents({ id: 'companion', execution: 'companion' });
+        const message = addMessage();
+        const companions = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        context.generateRaw.mockImplementationOnce(async () => {
+            message.mes = '<font color="#aabbcc">original</font>\n[COLORS:Assistant=#aabbcc]';
+            return 'companion note';
+        });
+        await companions.runCompanionStage({ messageIndex: 0, message, activeAgents: [agent] });
+        expect(Object.keys(companions.getCompanionResults(message))).toEqual([agent.id]);
+
+        const edited = addMessage();
+        context.generateRaw.mockImplementationOnce(async () => {
+            edited.mes = '<font color="#aabbcc">rewritten</font>\n[COLORS:Assistant=#aabbcc]';
+            return 'companion note';
+        });
+        await companions.runCompanionStage({ messageIndex: 1, message: edited, activeAgents: [agent] });
+        expect(companions.getCompanionResults(edited)).toEqual({});
+    });
+
     test('rechecks companion-output post passes after a prompt wait', async () => {
         loadAgents({ id: 'companion', execution: 'companion' }, ...['first', 'blocked', 'last'].map(id => ({ id, conditions: { runOnCompanionOutputs: true } })));
         addMessage();

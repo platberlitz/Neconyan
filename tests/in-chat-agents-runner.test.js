@@ -7217,6 +7217,25 @@ describe('in-chat agent post-processing runner', () => {
         expect(saveChatDebounced).toHaveBeenCalledTimes(1);
     });
 
+    test('a Dialogue Colours recolour during a post pass that changes no words is kept', async () => {
+        usePromptTransformPostAgent();
+        const quietResolvers = [];
+        generateQuietPrompt.mockImplementation(async () => await new Promise(resolve => quietResolvers.push(resolve)));
+        const coloured = '<font color="#aabbcc">Keep this reply</font>\n[COLORS:Assistant=#aabbcc]';
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        chat.push({ name: 'Assistant', mes: 'Keep this reply', is_user: false, is_system: false, extra: {} });
+
+        const received = eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await waitFor(() => quietResolvers.length === 1);
+        chat[0].mes = coloured;
+        quietResolvers.shift()('Keep this reply');
+        await received;
+
+        expect(chat[0].mes).toBe(coloured);
+    });
+
     test('excludes Kimi K3 partial prefill from prompt-transform rewrites', async () => {
         usePromptTransformPostAgent();
         generateQuietPrompt.mockResolvedValue('Rewritten continuation');

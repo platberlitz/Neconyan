@@ -37,6 +37,7 @@ import {
     getAgentExtraValue,
     getAgentGenerationCancelRevision,
     getAgentPostProcessingTarget,
+    isDialogueColourOnlyChange,
     isMessageTargetCurrent,
     registerCompanionRuntime,
     resolveAgentConnectionProfile,
@@ -1680,9 +1681,12 @@ function captureCompanionTarget(messageIndex) {
     const postProcessingTarget = getAgentPostProcessingTarget(message);
     const name = message?.name;
     const avatar = message?.original_avatar;
+    // Dialogue Colours can add colour tags to the reply while a companion is running; that is
+    // not an edit, so it must not silently discard the companion's result.
+    const isTextCurrent = expected => message.mes === expected || isDialogueColourOnlyChange(expected, message.mes);
     return () => !!message && isMessageTargetCurrent(message, state, messageIndex, { text: false })
         && getChatGeneration() === generation && (message.swipe_id ?? 0) === swipe
-        && (postProcessingTarget ? postProcessingTarget.valid && message.mes === postProcessingTarget.text : message.mes === text)
+        && (postProcessingTarget ? postProcessingTarget.valid && isTextCurrent(postProcessingTarget.text) : isTextCurrent(text))
         && message.name === name && message.original_avatar === avatar;
 }
 
