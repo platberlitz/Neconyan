@@ -543,10 +543,10 @@ test('real Regenerate validates its replacement prompt rather than the unused ex
     }));
     const page = await account.open();
     app.provider.mode.reply = { choices: [{ text: 'Valid replacement.' }] };
-    const replacement = page.waitForResponse(value => value.url().endsWith('/binding/generate'));
+    const replacement = page.waitForResponse(value => value.url().endsWith('/rewrite/submit'));
     await page.locator('.sb-conversation-message[data-message-id="replace-first"] .sb-conversation-more-actions').click();
     await page.locator('[data-sb-conversation-action="regenerate-message"][data-message-id="replace-first"]').click();
-    expect((await replacement).status()).toBe(200);
+    expect((await replacement).status()).toBe(202);
     await expect.poll(async () => (await account.branch()).messages.find(message => message.id === 'replace-first').mes).toBe('Valid replacement.');
     await page.locator('#sb_conversation_input').fill('A new reply must validate the assistant history.');
     const rejected = page.waitForResponse(value => value.url().endsWith('/binding/preflight') && value.status() === 409
@@ -647,7 +647,7 @@ for (const change of ['profile', 'branch', 'edit', 'delete']) {
             if (change === 'edit') branch.messages[0].mes = 'Edited source.';
             if (change === 'delete') branch.messages.shift();
         });
-        const rejected = page.waitForResponse(response => response.url().endsWith('/binding/generate'));
+        const rejected = page.waitForResponse(response => response.url().endsWith('/rewrite/submit'));
         release();
         expect((await rejected).status()).toBe(409);
         expect((await account.branch()).messages.find(message => message.id === 'manual-reply').mes).toBe('Keep this original reply.');
@@ -669,7 +669,7 @@ for (const changeImage of [false, true]) {
         const page = await account.open();
         await page.evaluate(() => Object.defineProperty(globalThis.crypto, 'subtle', { value: undefined, configurable: true }));
         app.provider.mode.reply = { choices: [{ message: { content: 'Saved inline image accepted.' } }] };
-        await page.route('**/api/neconyan-conversation/binding/generate', async route => {
+        await page.route('**/api/neconyan-conversation/rewrite/submit', async route => {
             const body = route.request().postDataJSON();
             expect(body.triggers.every(anchor => /^[a-f0-9]{64}$/.test(anchor.revisionHash) && !anchor.revision)).toBe(true);
             expect(JSON.stringify(body.triggers).length).toBeLessThan(512);
@@ -678,10 +678,10 @@ for (const changeImage of [false, true]) {
             });
             await route.continue();
         });
-        const response = page.waitForResponse(value => value.url().endsWith('/binding/generate'));
+        const response = page.waitForResponse(value => value.url().endsWith('/rewrite/submit'));
         await page.locator('.sb-conversation-message[data-message-id="inline-reply"] .sb-conversation-more-actions').click();
         await page.locator('[data-sb-conversation-action="regenerate-message"][data-message-id="inline-reply"]').click();
-        expect((await response).status()).toBe(changeImage ? 409 : 200);
+        expect((await response).status()).toBe(changeImage ? 409 : 202);
         await expect.poll(async () => (await account.branch()).messages.find(message => message.id === 'inline-reply').mes)
             .toBe(changeImage ? 'Keep the inline reply.' : 'Saved inline image accepted.');
         expect(app.provider.calls).toHaveLength(changeImage ? 0 : 1);

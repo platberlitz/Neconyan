@@ -6,8 +6,8 @@ import { fixture, png } from './roleplay-transactions-fixture.js';
 
 const { acceptConversationSelfie, registerConversationSelfieJobs } = await import('../src/generation/conversation-selfie.js');
 const { preflightConversationBindings } = await import('../src/generation/conversation-jobs.js');
-const { getJob, listJobs } = await import('../src/jobs/store.js');
-const { readArtifact } = await import('../src/jobs/artifacts.js');
+const { explicitRetryRecovery, getJob, listJobs, updateJob } = await import('../src/jobs/store.js');
+const { providerStep, readArtifact } = await import('../src/jobs/artifacts.js');
 const { testExports: { runJob }, setDirectoriesResolver } = await import('../src/jobs/runner.js');
 const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
 const { getConversationMessageRevision } = await import('../public/scripts/neconyan-conversation/message-identity-utils.js');
@@ -159,6 +159,40 @@ test('a failed caption keeps the paid picture with the stock caption', async t =
     assert.equal(getJob(f.directories, accepted.job.id).state, 'completed');
     assert.equal(f.messages().at(-1).mes, 'Here, I took this for you.');
     assert.equal(readArtifact(f.directories, accepted.job.id, 'caption-reply').error, 'Caption provider refused.');
+});
+
+test('an unknown caption outcome keeps the picture and waits for an explicit retry', async t => {
+    const f = prepared(t);
+    let paid = 0;
+    let captionCalls = 0;
+    registerConversationSelfieJobs({
+        generate: async options => {
+            const system = options.messages.find(message => message.role === 'system')?.content || '';
+            if (system.includes('image generation prompt')) return { text: 'Nova in the rain' };
+            return providerStep(options.jobContext, 'caption', async () => {
+                if (++captionCalls === 1) throw new Error('socket hang up');
+                return { text: 'Back again.' };
+            });
+        },
+        fetchImpl: async () => { paid++; return imageResponse(); },
+    });
+    const accepted = await acceptConversationSelfie(f.request, await f.submission());
+    await runJob(getJob(f.directories, accepted.job.id));
+    assert.equal(getJob(f.directories, accepted.job.id).state, 'interrupted');
+    assert.ok(readArtifact(f.directories, accepted.job.id, 'selfie-image').url);
+    assert.equal(readArtifact(f.directories, accepted.job.id, 'caption-reply'), undefined);
+    assert.equal(f.messages().length, 2);
+
+    await runJob(getJob(f.directories, accepted.job.id));
+    assert.equal(captionCalls, 1);
+    assert.equal(f.messages().length, 2);
+
+    updateJob(f.directories, accepted.job.id, current => ({ state: 'queued', finishedAt: null, error: null, ...explicitRetryRecovery(current) }));
+    await runJob(getJob(f.directories, accepted.job.id));
+    assert.equal(getJob(f.directories, accepted.job.id).state, 'completed');
+    assert.equal(f.messages().at(-1).mes, 'Back again.');
+    assert.equal(captionCalls, 2);
+    assert.equal(paid, 1);
 });
 
 test('a rendered picture is reused after an interruption instead of paying again', async t => {

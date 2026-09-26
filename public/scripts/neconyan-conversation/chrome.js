@@ -872,8 +872,12 @@ export function bindConversationChromeControls(sheld) {
                         toastr.warning('Schedule generation returned no data. Try again.');
                     }
                 } catch (err) {
-                    console.error('Schedule generation error:', err);
-                    toastr.error('Schedule generation failed.');
+                    if (err?.pending) {
+                        toastr.info('The schedule is still being written on the server. It appears here when it is saved.');
+                    } else {
+                        console.error('Schedule generation error:', err);
+                        toastr.error(`Schedule generation failed. ${err?.message || ''}`.trim());
+                    }
                 } finally {
                     conversationState.scheduleGenerationBusy = false;
                     genBtn.removeAttribute('disabled');

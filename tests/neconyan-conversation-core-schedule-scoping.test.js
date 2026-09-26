@@ -19,16 +19,20 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.
     },
     persistConversationStore: jest.fn(),
 }));
-await jest.unstable_mockModule('../public/scripts/neconyan-conversation/generation.js', () => ({ captureConversationTextBinding: jest.fn() }));
+const captureConversationTextBinding = jest.fn();
+const requestConversationBinding = jest.fn();
+const waitForNativeConversationJob = jest.fn();
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/generation.js', () => ({ captureConversationTextBinding }));
 await jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => 'tester' }));
-await jest.unstable_mockModule('../public/scripts/neconyan-conversation/bindings.js', () => ({ requestConversationBinding: jest.fn() }));
-await jest.unstable_mockModule('../public/scripts/neconyan-conversation/native-jobs.js', () => ({ waitForNativeConversationJob: jest.fn() }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/bindings.js', () => ({ requestConversationBinding }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/native-jobs.js', () => ({ waitForNativeConversationJob }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({ flushConversationStore: jest.fn(), refreshConversationStore: jest.fn() }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/shared-helpers.js', () => ({ formatPromptText: value => String(value || '') }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/settings-store.js', () => ({ getSettings: () => ({}) }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js', () => ({ runtimeStatusOverrides }));
 
 const {
+    generateCharacterSchedule,
     getConversationRuntimeStatusKey,
     getCurrentActivityFromSchedule,
     getStoredSchedule,
@@ -71,5 +75,26 @@ describe('Conversation schedule persona scoping', () => {
             source: 'default',
             status: 'online',
         });
+    });
+
+    test('asks the server for the schedule and reports a job the page stopped watching as pending', async () => {
+        captureConversationTextBinding.mockResolvedValue({ account: 'tester', scope: { target: { avatar: 'char.png' }, branchCreatedAt: '1' },
+            bindingRequest: { participants: {}, acknowledgement: 'ack' } });
+        requestConversationBinding.mockResolvedValue({ job: { id: 'job-1' } });
+        const saved = { days: { 0: [] }, marker: 'server' };
+        waitForNativeConversationJob.mockImplementationOnce(async () => {
+            saveStoredSchedule('char.png', saved, { personaId: 'persona-a.png' });
+            return { state: 'completed' };
+        });
+
+        await expect(generateCharacterSchedule({ avatar: 'char.png', name: 'Char' }, { personaId: 'persona-a.png' })).resolves.toBe(saved);
+        expect(requestConversationBinding).toHaveBeenCalledWith('schedule/submit', expect.objectContaining({
+            target: { avatar: 'char.png' }, acknowledgement: 'ack', submissionKey: expect.any(String) }), 'tester');
+
+        waitForNativeConversationJob.mockResolvedValueOnce(null);
+        await expect(generateCharacterSchedule({ avatar: 'char.png' }, { personaId: 'persona-a.png' })).rejects.toMatchObject({ pending: true });
+
+        waitForNativeConversationJob.mockResolvedValueOnce({ state: 'failed', error: { message: 'The provider refused.' } });
+        await expect(generateCharacterSchedule({ avatar: 'char.png' }, { personaId: 'persona-a.png' })).rejects.toThrow('The provider refused.');
     });
 });

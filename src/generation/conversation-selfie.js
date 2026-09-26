@@ -9,7 +9,7 @@ import { buildConversationParticipantSnapshot } from './conversation-participant
 import { buildConversationImagePrompt, characterImageDetails, renderConversationImage } from './conversation-images.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { hash } from '../mewmory/core.js';
-import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
+import { readArtifact, unresolvedProviderStep, writeArtifact } from '../jobs/artifacts.js';
 import { acceptJob, getJob, listJobs, releaseJob, setJobResume, updateJob } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
@@ -224,9 +224,11 @@ async function runConversationSelfieJob(context, { generate, fetchImpl, narrate 
         caption = normalizeConversationOutputText(stripSpeakerPrefixText(formatPromptText(raw, 240), snapshot.characterName, normalizeConversationOutputText));
     } catch (error) {
         // The picture is already paid for; a refused caption falls back to the
-        // stock line instead of discarding it. Cancellation and changed
-        // context still stop the post.
-        if (error?.name === 'AbortError' || error?.status === 409 || context.signal?.aborted) throw error;
+        // stock line instead of discarding it. Cancellation, changed context
+        // and an unknown caption outcome still stop the post, keeping the
+        // picture for an explicit retry.
+        if (error?.name === 'AbortError' || error?.status === 409 || context.signal?.aborted
+            || unresolvedProviderStep(directories, job.id)) throw error;
         writeArtifact(directories, job.id, 'caption-reply', { text: '', error: String(error?.message || 'Caption failed.').slice(0, 500) });
     }
     const text = caption || FALLBACK_CAPTION;

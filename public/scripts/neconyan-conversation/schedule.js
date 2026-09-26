@@ -91,7 +91,10 @@ export async function generateCharacterSchedule(character, { groupId = getConver
         return null;
     }
     const job = await waitForNativeConversationJob(response.job.id, account);
-    if (job?.state !== 'completed') {
+    if (job === null) {
+        throw Object.assign(new Error('The schedule is still being written on the server.'), { pending: true });
+    }
+    if (job.state !== 'completed') {
         throw new Error(job?.error?.message || 'Schedule generation did not finish.');
     }
     return getStoredSchedule(character.avatar, { personaId });
