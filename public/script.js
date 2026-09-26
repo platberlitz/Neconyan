@@ -2020,6 +2020,16 @@ function chatFileTimestamp() {
     return `${now.getFullYear()}-${part(now.getMonth() + 1)}-${part(now.getDate())} ${part(now.getHours())}-${part(now.getMinutes())}-${part(now.getSeconds())}`;
 }
 
+// Neconyan: the server refuses chat names it would have to sanitise, so names like 'Rico | Again' must be cleaned first.
+function newCharacterChatName(characterName) {
+    const safeName = String(characterName ?? '')
+        .replace(/[/?<>\\:*|"\x00-\x1f\x80-\x9f]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 150) || 'Chat';
+    return `${safeName} - ${chatFileTimestamp()}`;
+}
+
 async function resolveCharacterChatForLoad(characterId, { allowCreate = false, allowMissingPersisted = false } = {}) {
     const character = characters[characterId];
     if (!character) {
@@ -2038,7 +2048,7 @@ async function resolveCharacterChatForLoad(characterId, { allowCreate = false, a
         persistedChat,
         existingChats,
         allowCreate,
-        newChatName: allowCreate ? `${character.name} - ${chatFileTimestamp()}` : '',
+        newChatName: allowCreate ? newCharacterChatName(character.name) : '',
     });
     const nextChatName = resolvedChat.chatName;
 
@@ -2103,7 +2113,7 @@ export async function deleteCharacterChatByName(characterId, fileName) {
         });
         const chats = Object.values(await chatsResponse.json());
         chats.sort((a, b) => sortMoments(timestampToMoment(a.last_mes), timestampToMoment(b.last_mes)));
-        const newChatName = chats.length && typeof chats[0] === 'object' ? chats[0].file_name.replace('.jsonl', '') : `${character.name} - ${chatFileTimestamp()}`;
+        const newChatName = chats.length && typeof chats[0] === 'object' ? chats[0].file_name.replace('.jsonl', '') : newCharacterChatName(character.name);
         await updateRemoteChatName(characterId, newChatName);
     }
 
@@ -2137,7 +2147,7 @@ export async function replaceCurrentChat() {
             await getChat();
         } else {
             // start new chat
-            characters[this_chid].chat = `${name2} - ${chatFileTimestamp()}`;
+            characters[this_chid].chat = newCharacterChatName(name2);
             $('#selected_chat_pole').val(characters[this_chid].chat);
             await updateRemoteChatName(this_chid, characters[this_chid].chat);
             await getChat();
@@ -17451,7 +17461,7 @@ export async function doNewChat({ deleteCurrentChat = false } = {}) {
     } else {
         //RossAscends: added character name to new chat filenames; Neconyan uses a tidy date-time stamp.
         chat_metadata = {};
-        const newChatName = `${name2} - ${chatFileTimestamp()}`;
+        const newChatName = newCharacterChatName(name2);
         const previousChatName = characters[this_chid].chat;
         characters[this_chid].chat = newChatName;
         $('#selected_chat_pole').val(newChatName);
