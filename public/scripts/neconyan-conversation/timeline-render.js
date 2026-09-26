@@ -30,7 +30,7 @@ import {
     getCurrentCharName,
     persistConversationStore,
 } from './context.js';
-import { captureConversationTextBinding, generateSelfieFromContext, reportConversationGenerationError, submitConversationRewrite } from './generation.js';
+import { captureConversationTextBinding, reportConversationGenerationError, requestConversationSelfie, submitConversationRewrite } from './generation.js';
 import { createConversationSubmissionKey } from './message-identity-utils.js';
 import { getCharacterForAvatar, getConversationParticipants, getEffectiveConversationStatus } from './media.js';
 import { getConversationMessageAvatar, getConversationMessageReceipt } from './pals-rail.js';
@@ -1201,13 +1201,12 @@ export async function quickConversationSelfie() {
     const groupId = getConversationGroupIdForAvatar(avatar);
     const personaId = getConversationPersonaId();
     const branchId = getConversationThreadStore(avatar, { create: false, groupId, personaId })?.activeBranchId || '';
-    const settings = getSettings(avatar, { groupId, personaId });
     const context = globalThis.prompt?.('Describe the selfie context', 'a casual selfie in the current DM conversation');
     if (typeof context !== 'string') {
         return;
     }
 
-    await generateSelfieFromContext(context.trim(), settings, avatar, { branchId, groupId, personaId, force: true, notify: true });
+    await requestConversationSelfie({ avatar, branchId, groupId, personaId, context: context.trim() });
 }
 
 export async function generateConversationSelfieFromMessageCommand(messageId, selfieIndex = 0) {
@@ -1226,19 +1225,14 @@ export async function generateConversationSelfieFromMessageCommand(messageId, se
     const speakerAvatar = context.message.role === 'partner'
         ? context.message.extra?.partner_avatar || context.avatar
         : context.avatar;
-    const role = context.message.role === 'partner' ? 'partner' : 'character';
-    const settings = getSettings(speakerAvatar, { groupId: context.groupId, personaId: context.personaId });
-    const extra = role === 'partner' ? { partner_avatar: speakerAvatar } : {};
-    await generateSelfieFromContext(request.context, settings, speakerAvatar, {
-        threadAvatar: context.avatar,
+    await requestConversationSelfie({
+        avatar: context.avatar,
+        speakerAvatar,
         branchId: context.branchId,
-        role,
-        name: context.message.name || '',
-        extra,
         groupId: context.groupId,
         personaId: context.personaId,
-        force: true,
-        notify: true,
+        context: request.context,
+        sourceMessageId: String(context.message.id || ''),
     });
 }
 

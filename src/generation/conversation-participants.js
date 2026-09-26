@@ -290,7 +290,7 @@ export async function captureConversationParticipantBindings(request, current, t
 }
 
 /** Build one participant's frozen request. The native target stays the thread's, only the speaker changes. */
-export async function buildConversationParticipantSnapshot(request, current, target, plan, { directive, timeZone, binding, force = false, now = Date.now(), extra = {}, automation = null, referenceMessageId = '' } = {}) {
+export async function buildConversationParticipantSnapshot(request, current, target, plan, { directive, timeZone, binding, force = false, now = Date.now(), extra = {}, automation = null, referenceMessageId = '', image = false } = {}) {
     const directories = request.user.directories;
     const avatar = plan.avatar;
     const settings = getParticipantSettings(request, current, target, avatar);
@@ -335,11 +335,13 @@ export async function buildConversationParticipantSnapshot(request, current, tar
         avatar: member, name: (member === avatar ? character : await getCharacterData(request, member, { allowOverride: false })).name,
     }))) : [];
     const groupNames = groupMembers.map(member => member.name);
-    const imageSettings = settings.image_gen_enabled
+    // A manual selfie asks for an image even when automatic images are off.
+    const imageEnabled = Boolean(settings.image_gen_enabled || image);
+    const imageSettings = imageEnabled
         ? resolveCharacterImageSettings(current.settings.extension_settings?.['quick-image-gen'] || {}, { avatar }) : null;
     const snapshot = {
         target, binding, settings, force, purpose: plan.purpose || 'reply', timeZone,
-        ...(settings.image_gen_enabled ? { quickImageGenCharacterScope: { avatar }, quickImageGenSettingsFingerprint:
+        ...(imageEnabled ? { quickImageGenCharacterScope: { avatar }, quickImageGenSettingsFingerprint:
             quickImageGenSettingsFingerprint(imageSettings),
         quickImageGenSDSettingsFingerprint: quickImageGenSettingsFingerprint(
             current.settings.extension_settings?.sd || current.settings.extension_settings?.['stable-diffusion'] || {}) } : {}),

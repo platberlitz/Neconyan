@@ -7,6 +7,7 @@ let currentPersonaId = 'persona-a.png';
 const stores = new Map();
 const extractCharacterReplyCommands = jest.fn(rawText => ({ text: String(rawText || '').trim(), selfieRequests: [] }));
 const submitConversationRewrite = jest.fn();
+const requestConversationSelfie = jest.fn();
 const captureConversationTextBinding = jest.fn(async () => ({}));
 const buildConversationPromptMessages = jest.fn(async () => []);
 const saveConversationThread = jest.fn();
@@ -49,7 +50,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/generati
     captureConversationTextBinding,
     commitCharacterReplyCommands,
     extractCharacterReplyCommands,
-    generateSelfieFromContext: jest.fn(),
+    requestConversationSelfie,
     getCharacterReplyCommandMetadata: parts => parts?.selfieRequests?.length ? { selfieRequests: parts.selfieRequests } : null,
     normalizeConversationOutputText: value => String(value || '').trim(),
     reportConversationGenerationError: jest.fn(),

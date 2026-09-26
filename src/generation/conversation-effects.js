@@ -228,7 +228,7 @@ export async function commitConversationEffect(context, target, effectId, mutate
     return result;
 }
 
-export function appendConversationJobMessage(context, target, effectId, value, { mutate, presentation } = {}) {
+export function appendConversationJobMessage(context, target, effectId, value, { mutate, presentation, verify } = {}) {
     return commitConversationEffect(context, target, effectId, (branch, store, settings) => {
         const message = createConversationMessage({ ...value, id: `job_${digest([context.job.id, effectId]).slice(0, 32)}` });
         if (!message) throw Object.assign(new Error('The generated Conversation message is invalid.'), { status: 400 });
@@ -249,7 +249,7 @@ export function appendConversationJobMessage(context, target, effectId, value, {
         refreshBranchPreview(branch);
         mutate?.(branch, store, settings);
         return { id: message.id };
-    });
+    }, { verify });
 }
 
 /**

@@ -1,10 +1,9 @@
 import { SAFE_TOAST_OPTIONS } from './constants.js';
 import { getConversationGroupIdForAvatar, getConversationPersonaId, getConversationThreadStore, getCurrentCharAvatar } from './context.js';
-import { generateSelfieFromContext } from './generation.js';
+import { requestConversationSelfie } from './generation.js';
 import { updateConversationMemorySummary } from './prompt.js';
 import { scheduleTimelineRender } from './render-scheduler.js';
 import { openScheduleEditorModal, renderConversationMemoryPanel } from './settings-panel.js';
-import { getSettings } from './settings-store.js';
 import { addConversationReminder, appendConversationThreadMessage } from './thread-store.js';
 import { updateLastPreviewFromConversation } from './typing.js';
 
@@ -73,9 +72,8 @@ export async function quickConversationSummarize({ avatar = getCurrentCharAvatar
     return updated;
 }
 
-export async function handleConversationSlashAction(text, { avatar = getCurrentCharAvatar(), branchId = '', settings = null, groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {
+export async function handleConversationSlashAction(text, { avatar = getCurrentCharAvatar(), branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {
     const capturedBranchId = branchId || getConversationThreadStore(avatar, { create: false, groupId, personaId })?.activeBranchId || '';
-    const resolvedSettings = settings || getSettings(avatar, { groupId, personaId });
     const parsed = parseConversationSlashCommand(text);
     if (!parsed || !avatar) {
         return false;
@@ -84,7 +82,7 @@ export async function handleConversationSlashAction(text, { avatar = getCurrentC
     switch (parsed.command) {
         case 'selfie': {
             const context = parsed.args || 'a casual selfie in the current DM conversation';
-            const posted = await generateSelfieFromContext(context, resolvedSettings, avatar, { branchId: capturedBranchId, groupId, personaId, force: true, notify: true });
+            const posted = await requestConversationSelfie({ avatar, branchId: capturedBranchId, groupId, personaId, context });
             return { handled: true, clearDraft: posted === true };
         }
         case 'remind': {

@@ -23,7 +23,7 @@ function cooldownRemainingMs(branch, settings, now) {
     return Math.max(0, minutes * 60 * 1000 - (now - lastImageAt));
 }
 
-function characterImageDetails(character) {
+export function characterImageDetails(character) {
     if (!character) return '';
     return [
         character.description ? `Description: ${character.description}` : '',
@@ -44,6 +44,48 @@ export function buildConversationImagePrompt(template, scene, character, details
         basePrompt,
         `Depict ${charName} specifically, not a generic person. Use these character-card details: ${details}`,
     ].join('\n') : basePrompt;
+}
+
+/**
+ * Render one image through the account's Quick Image Gen provider, save it to
+ * the user's images and keep its address as a job artifact named `effectName`.
+ * The provider input and result are saved by the Quick Image Gen job helper, so
+ * an unknown provider outcome is never requested twice.
+ */
+export async function renderConversationImage(context, snapshot, { effectName, prompt, speaker, assertSourceLocked, fetchImpl }) {
+    const directories = context.directories;
+    const scoped = await prepareConversationScopedImagePrompt(context, {
+        effectId: effectName, prompt, negative: snapshot.settings?.image_gen_negative || '', snapshot,
+        expectedAccount: snapshot.quickImageGenAccount, assertSourceLocked,
+    });
+    const image = await generateQuickImageGenJobImage(context, {
+        effectId: effectName,
+        prompt: scoped.prompt,
+        negative: scoped.negative,
+        expectedAccount: scoped.account,
+        assertSourceLocked: scoped.assertSourceLocked,
+        seedOverride: scoped.seedOverride,
+        ...(snapshot.quickImageGenProxyContext !== undefined ? { proxyContext: snapshot.quickImageGenProxyContext } : {}),
+        // Older accepted snapshots had no image settings identity; their
+        // first image step freezes the current account configuration.
+        settingsFingerprint: snapshot.quickImageGenSettingsFingerprint,
+        characterScope: snapshot.quickImageGenCharacterScope,
+        referenceSources: snapshot.quickImageGenReferenceSources,
+        fetch: fetchImpl,
+    });
+    const accepted = readArtifact(directories, context.job.id, `input:quick-image:${effectName}`);
+    if (!accepted?.account) throw Object.assign(new Error('The saved image account identity needs recovery.'), { status: 409 });
+    const imageUrl = await saveQuickImageToUserImages(directories, {
+        base64: image.base64,
+        format: image.format,
+        chName: speaker.name,
+        filename: `qig-${createHash('sha256').update(JSON.stringify([context.job.id, effectName])).digest('hex')}`,
+        account: accepted.account, owner: context.owner,
+        assertSourceLocked,
+    });
+    context.signal.throwIfAborted();
+    writeArtifact(directories, context.job.id, effectName, { url: imageUrl, prompt });
+    return imageUrl;
 }
 
 /**
@@ -90,37 +132,7 @@ export function createConversationImageGenerator({ fetchImpl } = {}) {
                 scene,
             );
             prompt = buildConversationImagePrompt(template, scene, character);
-            const scoped = await prepareConversationScopedImagePrompt(context, {
-                effectId: effectName, prompt, negative: settings.image_gen_negative || '', snapshot,
-                expectedAccount: snapshot.quickImageGenAccount, assertSourceLocked,
-            });
-            const image = await generateQuickImageGenJobImage(context, {
-                effectId: effectName,
-                prompt: scoped.prompt,
-                negative: scoped.negative,
-                expectedAccount: scoped.account,
-                assertSourceLocked: scoped.assertSourceLocked,
-                seedOverride: scoped.seedOverride,
-                ...(snapshot.quickImageGenProxyContext !== undefined ? { proxyContext: snapshot.quickImageGenProxyContext } : {}),
-                // Older accepted snapshots had no image settings identity; their
-                // first image step freezes the current account configuration.
-                settingsFingerprint: snapshot.quickImageGenSettingsFingerprint,
-                characterScope: snapshot.quickImageGenCharacterScope,
-                referenceSources: snapshot.quickImageGenReferenceSources,
-                fetch: fetchImpl,
-            });
-            const accepted = readArtifact(directories, context.job.id, `input:quick-image:${effectName}`);
-            if (!accepted?.account) throw Object.assign(new Error('The saved image account identity needs recovery.'), { status: 409 });
-            imageUrl = await saveQuickImageToUserImages(directories, {
-                base64: image.base64,
-                format: image.format,
-                chName: speaker.name,
-                filename: `qig-${createHash('sha256').update(JSON.stringify([context.job.id, effectName])).digest('hex')}`,
-                account: accepted.account, owner: context.owner,
-                assertSourceLocked,
-            });
-            context.signal.throwIfAborted();
-            writeArtifact(directories, context.job.id, effectName, { url: imageUrl, prompt });
+            imageUrl = await renderConversationImage(context, snapshot, { effectName, prompt, speaker, assertSourceLocked, fetchImpl });
             await commitConversationEffect(context, snapshot.target, `image-mark:${effectName}`, branchState => {
                 branchState.sessionMarkers = { ...(branchState.sessionMarkers || {}), image_at: Date.now() };
                 return true;

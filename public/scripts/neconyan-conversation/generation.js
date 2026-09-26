@@ -1,40 +1,13 @@
-import { characters } from '../../script.js';
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget, isNeconyanAssistant } from '../neconyan-assistant-knowledge.js';
 import { getCurrentUserHandle } from '../user.js';
 import { preflightConversationBinding, requestConversationBinding } from './bindings.js';
-import {
-    CONVERSATION_ERROR_DETAIL_MAX_LENGTH,
-    MAX_CONVERSATION_REPLY_MAX_TOKENS,
-    MIN_CONVERSATION_REPLY_MAX_TOKENS,
-    SAFE_TOAST_OPTIONS,
-} from './constants.js';
-import { getConversationGroupById, getConversationGroupIdForAvatar, getConversationPersonaId, getConversationThreadStore, getCurrentCharAvatar, getCurrentCharName } from './context.js';
-import {
-    buildSelfieImagePromptTemplate,
-    extractCharacterReplyCommandParts,
-    normalizeConversationOutputText,
-    resolveConversationScheduleUpdate,
-} from './generation-utils.js';
-import { buildCharacterImagePrompt, generateConversationImage, getCharacterForAvatar, getCharacterImageDetails } from './media.js';
-import { appendConversationMessage } from './message-writer.js';
-import { stripSpeakerPrefix } from './partners.js';
-import { deliverConversationReply } from './reply-delivery.js';
-import { buildConversationPromptMessages, buildConversationSystemPrompt } from './prompt.js';
-import { formatPromptText } from './shared-helpers.js';
-import { clamp, getConversationReplyMaxTokens, getConversationRuntimeStatusKey } from './schedule.js';
-import { runtimeStatusOverrides } from './state.js';
-import {
-    addConversationReminder,
-    buildConversationMessageReplyReference,
-    getConversationThread,
-    getImageCooldownRemainingSeconds,
-    hasConversationMessageContent,
-    markImageGenerated,
-    updateConversationThreadMessage,
-} from './thread-store.js';
-import { waitForReplyDelay, withTypingParticipant } from './typing.js';
+import { CONVERSATION_ERROR_DETAIL_MAX_LENGTH, SAFE_TOAST_OPTIONS } from './constants.js';
+import { getConversationGroupIdForAvatar, getConversationPersonaId, getConversationThreadStore, getCurrentCharAvatar } from './context.js';
+import { getConversationThread, updateConversationThreadMessage } from './thread-store.js';
 import { createConversationMessageAnchors, createConversationSubmissionKey } from './message-identity-utils.js';
-import { waitForNativeConversationJob } from './native-jobs.js';
+import { cancelNativeConversationJob, waitForNativeConversationJob } from './native-jobs.js';
+import { scheduleTimelineRender } from './render-scheduler.js';
+import { conversationState } from './state.js';
 
 let activeConversationEditor = null;
 
@@ -107,24 +80,51 @@ export async function submitConversationRewrite(mode, messageId, options, assist
     return { messageId, job };
 }
 
-export async function generateConversationReply(directive, settings, { responseLength = null, speakerName = getCurrentCharName(), trimNames = true, avatar = getCurrentCharAvatar(), threadAvatar = avatar, speakerAvatar = avatar, branchId = '', groupId = getConversationGroupIdForAvatar(threadAvatar), personaId = getConversationPersonaId() } = {}) {
-    const messages = getConversationThread(threadAvatar, { branchId, create: false, groupId, personaId });
-    const assistantContext = { character: getCharacterForAvatar(speakerAvatar), messages: messages.map(message => ({ role: message.role, mes: message.mes })) };
-    const resolvedResponseLength = Number.isFinite(responseLength) && responseLength > 0
-        ? clamp(Math.round(responseLength), MIN_CONVERSATION_REPLY_MAX_TOKENS, MAX_CONVERSATION_REPLY_MAX_TOKENS)
-        : getConversationReplyMaxTokens(settings);
-    const bindingContext = await captureConversationTextBinding({ avatar: threadAvatar, speakerAvatar, branchId, groupId, personaId, messages });
-    const prompt = await buildConversationPromptMessages(messages, directive, speakerName, { groupId, personaId });
+/**
+ * Submit a manual selfie as a server job. The server writes the image prompt,
+ * renders the picture, writes the caption and posts it, so closing the page
+ * does not lose a picture that was already paid for.
+ * @returns {Promise<object|null>} the finished job, or null when the page stopped watching.
+ */
+export async function submitConversationSelfie({ avatar, speakerAvatar = avatar, branchId = '', groupId = '', personaId = '', context = '', sourceMessageId = '' } = {}) {
+    const { account, scope, bindingRequest } = await captureConversationTextBinding({ avatar, speakerAvatar, branchId, groupId, personaId });
+    const response = await requestConversationBinding('selfie/submit', { ...scope, bindingRequest,
+        context: String(context || '').trim(), ...(sourceMessageId ? { sourceMessageId: String(sourceMessageId) } : {}),
+        submissionKey: createConversationSubmissionKey('selfie'), acknowledgement: bindingRequest.acknowledgement }, account);
+    if (!response?.job?.id) throw new Error('The server did not accept the selfie.');
+    // The pending image bubble's Stop button cancels the server job; anything
+    // already posted stays.
+    const pending = { abort: () => cancelNativeConversationJob(response.job.id).catch(() => {}) };
+    conversationState.imageGenerationActive = true;
+    conversationState.imageGenerationAbortController = pending;
+    scheduleTimelineRender();
+    try {
+        const job = await waitForNativeConversationJob(response.job.id, account);
+        if (!job) return null;
+        if (job.state === 'cancelled') return job;
+        if (job.state !== 'completed') throw new Error(job.error?.message || 'The selfie did not finish.');
+        return job;
+    } finally {
+        if (conversationState.imageGenerationAbortController === pending) {
+            conversationState.imageGenerationActive = false;
+            conversationState.imageGenerationAbortController = null;
+            scheduleTimelineRender();
+        }
+    }
+}
 
-    return generateConversationRaw({
-        prompt,
-        systemPrompt: buildConversationSystemPrompt(settings, speakerAvatar, { threadAvatar, branchId, groupId, personaId }),
-        responseLength: resolvedResponseLength,
-        trimNames,
-        bindingContext,
-        cacheScope: 'conversation-mode',
-        scope: { avatar: threadAvatar, speakerAvatar, branchId, groupId, personaId },
-    }, settings, assistantContext);
+/** Run a manual selfie from a button or command and say how it went. */
+export async function requestConversationSelfie(options) {
+    try {
+        const job = await submitConversationSelfie(options);
+        if (!job) {
+            globalThis.toastr?.info?.('The selfie is still being made on the server. It appears here when it is posted.', '', SAFE_TOAST_OPTIONS);
+        }
+        return true;
+    } catch (error) {
+        reportConversationGenerationError('selfie', error, { level: 'warning' });
+        return false;
+    }
 }
 
 export function editConversationMessage(messageId) {
@@ -243,26 +243,6 @@ export function editConversationMessage(messageId) {
     textarea.focus({ preventScroll: true });
 }
 
-export function applyScheduleUpdateCommand(avatar, rawArgs, { personaId = getConversationPersonaId() } = {}) {
-    const update = resolveConversationScheduleUpdate(rawArgs);
-    if (avatar && update) runtimeStatusOverrides.set(getConversationRuntimeStatusKey(avatar, personaId), update);
-}
-
-export function extractCharacterReplyCommands(rawText, settings) {
-    return extractCharacterReplyCommandParts(rawText, settings);
-}
-
-export function commitCharacterReplyCommands(commandParts, avatar = getCurrentCharAvatar(), { branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId(), reminderAvatar = avatar } = {}) {
-    for (const rawArgs of commandParts.scheduleUpdates) {
-        applyScheduleUpdateCommand(avatar, rawArgs, { personaId });
-    }
-
-    // Always enable parsing of the reminder command from character DMs!
-    for (const reminder of commandParts.reminders) {
-        addConversationReminder(reminderAvatar, groupId, reminder.delay, reminder.memo, { branchId, personaId });
-    }
-}
-
 export function getConversationErrorDetail(error) {
     let detail = '';
     if (typeof error === 'string') {
@@ -305,271 +285,4 @@ export function reportConversationGenerationError(context, error, { toast = true
     } else {
         globalThis.toastr?.error?.(message, '', SAFE_TOAST_OPTIONS);
     }
-}
-
-export { splitPartnerChatroomMessages } from './reply-delivery.js';
-
-function addConversationReplySpeaker(speakers, speaker) {
-    const avatar = String(speaker?.avatar || '').trim();
-    const name = String(speaker?.name || '').trim();
-    if (!avatar || !name || speakers.some(item => item.avatar === avatar)) {
-        return;
-    }
-
-    speakers.push({ avatar, name });
-}
-
-function getConversationReplySpeakers(threadAvatar, fallbackSpeaker, groupId, personaId) {
-    const speakers = [];
-    addConversationReplySpeaker(speakers, fallbackSpeaker);
-
-    const threadCharacter = getCharacterForAvatar(threadAvatar);
-    addConversationReplySpeaker(speakers, threadCharacter || { avatar: threadAvatar, name: getCurrentCharName() });
-
-    const group = groupId ? getConversationGroupById(groupId, { personaId }) : null;
-    if (group?.members?.length) {
-        for (const memberAvatar of group.members) {
-            if (group.disabled_members?.includes(memberAvatar)) {
-                continue;
-            }
-            const character = getCharacterForAvatar(memberAvatar);
-            addConversationReplySpeaker(speakers, character);
-        }
-    }
-
-    return speakers;
-}
-
-function getResolvedReplyRole(speakerAvatar, threadAvatar) {
-    return speakerAvatar && speakerAvatar !== threadAvatar ? 'partner' : 'character';
-}
-
-function getConversationGeneratedMessageSpeakerId(message, threadAvatar) {
-    if (message?.role === 'user') {
-        return 'user';
-    }
-    if (message?.role === 'partner') {
-        return String(message.extra?.partner_avatar || '').trim();
-    }
-    if (message?.role === 'character') {
-        return String(threadAvatar || '').trim();
-    }
-
-    return '';
-}
-
-function getGeneratedReplyReference(speakerAvatar, threadAvatar, { branchId = '', groupId = undefined, personaId = getConversationPersonaId() } = {}) {
-    const speakerId = String(speakerAvatar || '').trim();
-    const messages = getConversationThread(threadAvatar, { branchId, create: false, groupId, personaId });
-    for (let index = messages.length - 1; index >= 0; index--) {
-        const message = messages[index];
-        if (!message || message.role === 'system' || !hasConversationMessageContent(message)) {
-            continue;
-        }
-
-        const messageSpeakerId = getConversationGeneratedMessageSpeakerId(message, threadAvatar);
-        if (speakerId && messageSpeakerId && speakerId === messageSpeakerId) {
-            // Stop at a previous message from the same speaker. Follow-up messages
-            // should not keep replying to the same older user/partner message.
-            break;
-        }
-
-        const reference = buildConversationMessageReplyReference(message);
-        if (reference) {
-            return reference;
-        }
-    }
-
-    return null;
-}
-
-function getResolvedReplyExtra(extra, speakerAvatar, threadAvatar, { branchId = '', groupId = undefined, personaId = getConversationPersonaId(), attachReplyReference = true } = {}) {
-    const resolvedExtra = { ...extra };
-    if (speakerAvatar && speakerAvatar !== threadAvatar) {
-        resolvedExtra.partner_avatar = speakerAvatar;
-    } else {
-        delete resolvedExtra.partner_avatar;
-    }
-
-    if (!attachReplyReference) {
-        delete resolvedExtra.conversation_reply_to;
-    } else if (!resolvedExtra.conversation_reply_to) {
-        const replyReference = getGeneratedReplyReference(speakerAvatar, threadAvatar, { branchId, groupId, personaId });
-        if (replyReference) {
-            resolvedExtra.conversation_reply_to = replyReference;
-        }
-    }
-
-    return resolvedExtra;
-}
-
-async function appendResolvedConversationReply(messageText, speaker, settings, { avatar, extra = {}, branchId = '', groupId = undefined, personaId = getConversationPersonaId(), attachReplyReference = true, validateTarget = null } = {}) {
-    const speakerAvatar = speaker?.avatar || avatar;
-    const speakerName = speaker?.name || 'Character';
-    const role = getResolvedReplyRole(speakerAvatar, avatar);
-    const resolvedInputExtra = { ...extra };
-    if (!attachReplyReference) {
-        delete resolvedInputExtra.conversation_reply_to;
-    }
-    const resolvedExtra = getResolvedReplyExtra(resolvedInputExtra, speakerAvatar, avatar, { branchId, groupId, personaId, attachReplyReference });
-
-    return withTypingParticipant({ avatar: speakerAvatar, name: speakerName }, async () => {
-        await waitForReplyDelay(messageText, settings, speakerAvatar, { branchId, groupId, personaId });
-        if (typeof validateTarget === 'function' && !validateTarget()) {
-            return null;
-        }
-        return appendConversationMessage(messageText, {
-            name: speakerName,
-            role,
-            extra: resolvedExtra,
-            branchId,
-            groupId,
-            personaId,
-        }, avatar);
-    }, avatar, { branchId, groupId, personaId });
-}
-
-export async function postPartnerConversationReply(rawText, partner, partnerSettings, { avatar = getCurrentCharAvatar(), extra = {}, branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId(), validateTarget = null } = {}) {
-    if (!avatar || !partner) return false;
-    const result = await deliverReply(rawText, partnerSettings, { avatar: partner.avatar, name: partner.name || 'A friend' }, {
-        avatar, extra, branchId, groupId, personaId, validateTarget, partner: true,
-    });
-    return result.posted;
-}
-
-function deliverReply(rawText, settings, fallbackSpeaker, { avatar, extra, branchId, groupId, personaId, validateTarget, partner = false }) {
-    const scope = { branchId, groupId, personaId };
-    return deliverConversationReply(rawText, settings, {
-        fallbackSpeaker, groupId, extra, splitEveryLine: partner,
-        getSpeakers: () => getConversationReplySpeakers(avatar, fallbackSpeaker, groupId, personaId),
-        validateTarget: () => typeof validateTarget !== 'function' || validateTarget(),
-        append: (text, speaker, options) => appendResolvedConversationReply(text, speaker, settings, { avatar, ...scope, ...options, validateTarget }),
-        commitCommands: (commands, speakerAvatar) => commitCharacterReplyCommands(commands, speakerAvatar, { ...scope, reminderAvatar: avatar }),
-        generateImage: (context, speaker, { attachReplyReference }) => {
-            const speakerAvatar = speaker.avatar || fallbackSpeaker.avatar;
-            const generate = () => generateSelfieFromContext(context, settings, speakerAvatar, {
-                threadAvatar: avatar, role: getResolvedReplyRole(speakerAvatar, avatar), name: speaker.name || '',
-                extra: getResolvedReplyExtra(extra, speakerAvatar, avatar, { ...scope, attachReplyReference }), ...scope, validateTarget,
-            });
-            return partner ? withTypingParticipant({ avatar: speakerAvatar, name: speaker.name || fallbackSpeaker.name }, generate, avatar, scope) : generate();
-        },
-    });
-}
-
-export async function generateSelfieFromContext(context, settings, avatar = getCurrentCharAvatar(), { threadAvatar = avatar, role = 'character', name = '', extra = {}, branchId = '', groupId = undefined, personaId = getConversationPersonaId(), force = false, notify = false, validateTarget = null } = {}) {
-    const resolvedSettings = settings || {};
-    if (!avatar) {
-        return false;
-    }
-    if (typeof validateTarget === 'function' && !validateTarget()) {
-        return false;
-    }
-
-    const cooldownRemaining = getImageCooldownRemainingSeconds(avatar, resolvedSettings, Date.now(), { branchId, groupId, personaId });
-    if (!force && (!resolvedSettings.image_gen_enabled || cooldownRemaining > 0)) {
-        return false;
-    }
-
-    const character = getCharacterForAvatar(avatar);
-    const charName = character?.name || 'Character';
-    const appearance = getCharacterImageDetails(avatar);
-    const metaPrompt = [
-        'You are an image prompt generator. Write a concise, detailed image generation prompt for a selfie photo.',
-        `Character name: ${charName}.`,
-        appearance ? `Appearance: ${appearance}` : '',
-        context ? `Photo context: ${context}` : 'Photo context: a casual selfie in the current moment.',
-        'Include appearance, clothing, expression and selfie pose, setting/background, and lighting. Output ONLY the prompt text, nothing else.',
-    ].filter(Boolean).join('\n');
-
-    let imagePrompt = '';
-    let bindingContext;
-    try {
-        bindingContext = await captureConversationTextBinding({ avatar: threadAvatar, speakerAvatar: avatar, branchId, groupId, personaId });
-        imagePrompt = await generateConversationRaw({
-            prompt: metaPrompt,
-            systemPrompt: 'You output only a raw image generation prompt with no preamble.',
-            responseLength: 200,
-            trimNames: false,
-            bindingContext,
-        }, resolvedSettings);
-    } catch (error) {
-        console.warn('Conversation Mode: selfie prompt generation failed', error);
-        if (notify) reportConversationGenerationError('selfie', error, { level: 'warning' });
-        return false;
-    }
-
-    const scene = context || 'a casual selfie in the current moment';
-    imagePrompt = buildCharacterImagePrompt(
-        buildSelfieImagePromptTemplate(formatPromptText(imagePrompt, 600), resolvedSettings.selfie_prompt, scene),
-        scene,
-        avatar,
-    );
-
-    const imageUrl = await generateConversationImage(imagePrompt, resolvedSettings.image_gen_negative || '', { avatar, character, notify });
-    if (imageUrl && (typeof validateTarget !== 'function' || validateTarget())) {
-        let caption;
-        try {
-            caption = await generateSelfieCaption(scene, resolvedSettings, avatar, imagePrompt, bindingContext);
-        } catch (error) {
-            if (notify) reportConversationGenerationError('selfie caption', error, { level: 'warning' });
-            return false;
-        }
-        if (typeof validateTarget === 'function' && !validateTarget()) {
-            return false;
-        }
-        markImageGenerated(avatar, Date.now(), { branchId, groupId, personaId });
-        await appendConversationMessage(caption, {
-            name,
-            role,
-            extra: { ...extra, conversation_mode_image: true, image_url: imageUrl, image_prompt: imagePrompt },
-            branchId,
-            groupId,
-            personaId,
-        }, threadAvatar);
-        return true;
-    }
-
-    return false;
-}
-
-async function generateSelfieCaption(context, settings, avatar, imagePrompt, bindingContext) {
-    const character = getCharacterForAvatar(avatar);
-    const charName = character?.name || getCurrentCharName() || 'Character';
-    const captionPrompt = [
-        `Character name: ${charName}.`,
-        character?.description ? `Description: ${formatPromptText(character.description, 900)}` : '',
-        character?.personality ? `Personality: ${formatPromptText(character.personality, 700)}` : '',
-        context ? `Selfie context: ${formatPromptText(context, 400)}` : 'Selfie context: a casual selfie in the current moment.',
-        imagePrompt ? `Generated image prompt: ${formatPromptText(imagePrompt, 600)}` : '',
-        'Write one short in-character chat message to accompany this selfie. Keep it natural, under 25 words, and output only the message text.',
-    ].filter(Boolean).join('\n');
-
-    try {
-        const rawCaption = await generateConversationRaw({
-            prompt: captionPrompt,
-            systemPrompt: 'You write only a short in-character chat caption. No speaker labels, no stage directions, no preamble.',
-            responseLength: 80,
-            trimNames: false,
-            bindingContext,
-        }, settings || {});
-        const caption = normalizeConversationOutputText(stripSpeakerPrefix(formatPromptText(rawCaption, 240), charName));
-        if (caption) {
-            return caption;
-        }
-    } catch (error) {
-        console.warn('Conversation Mode: selfie caption generation failed', error);
-        throw error;
-    }
-
-    return 'Here, I took this for you.';
-}
-
-export async function postCharacterReply(rawText, settings, { extra = {}, branchId = '', groupId = undefined, personaId = getConversationPersonaId(), validateTarget = null } = {}, avatar = getCurrentCharAvatar()) {
-    if (!avatar) return '';
-    const character = (Array.isArray(characters) ? characters : []).find(c => c?.avatar === avatar);
-    const speakerName = character?.name || getCurrentCharName();
-    const result = await deliverReply(rawText, settings, { avatar, name: speakerName }, {
-        avatar, extra, branchId, groupId, personaId, validateTarget,
-    });
-    return result.text.join('\n');
 }

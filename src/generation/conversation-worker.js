@@ -8,6 +8,7 @@ import { getSettingsVersion } from '../settings-version.js';
 import { acceptConversationAutonomousReply, finalizeConversationSubmission } from './conversation-jobs.js';
 import { acceptConversationSummary, countNewMessages, eligibleMessages, finalizeConversationMaintenanceSubmission } from './conversation-maintenance.js';
 import { finalizeConversationRewriteSubmission } from './conversation-rewrite.js';
+import { finalizeConversationSelfieSubmission } from './conversation-selfie.js';
 import { MEMORY_SUMMARY_INTERVAL_MESSAGES, MEMORY_SUMMARY_MIN_MESSAGES } from '../../public/scripts/neconyan-conversation/constants.js';
 import { resolveConversationPartners } from './conversation-participants.js';
 import { backfillConversationAutomaticAcceptances, wasConversationAutomaticOccurrenceAccepted } from './conversation-effects.js';
@@ -141,7 +142,7 @@ export async function runConversationWorkerTick({ directoriesFor, owners, now = 
             continue;
         }
         for (const job of jobs) {
-            if (!['conversation.reply', 'conversation.summary', 'conversation.schedule', 'conversation.rewrite'].includes(job.type)) continue;
+            if (!['conversation.reply', 'conversation.summary', 'conversation.schedule', 'conversation.rewrite', 'conversation.selfie'].includes(job.type)) continue;
             try {
                 if (job.stage === 'preparing' && job.state === 'waiting' && !job.cancellation?.requested && !(Number(job.coalesce?.deadline) > now)
                     // A composer send batch must have every submitted message saved
@@ -151,6 +152,7 @@ export async function runConversationWorkerTick({ directoriesFor, owners, now = 
                     const scopedRequest = { user: { profile: { handle: owner }, directories } };
                     if (job.type === 'conversation.reply') await finalizeConversationSubmission(scopedRequest, job);
                     else if (job.type === 'conversation.rewrite') await finalizeConversationRewriteSubmission(scopedRequest, job);
+                    else if (job.type === 'conversation.selfie') await finalizeConversationSelfieSubmission(scopedRequest, job);
                     else await finalizeConversationMaintenanceSubmission(scopedRequest, job);
                 } else if (job.type === 'conversation.reply' && job.stage === 'children' && !job.result) {
                     // A cancelled root is terminal but still needs its aggregate.

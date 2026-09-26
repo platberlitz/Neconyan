@@ -60,6 +60,7 @@ const pollinationsTtsSource = normalizeSource(readFileSync(path.join(repoRoot, '
 const speechEndpointSource = normalizeSource(readFileSync(path.join(repoRoot, 'src', 'endpoints', 'speech.js'), 'utf8'));
 const speechTransportsSource = normalizeSource(readFileSync(path.join(repoRoot, 'src', 'endpoints', 'speech-transports.js'), 'utf8'));
 const conversationParticipantsSource = normalizeSource(readFileSync(path.join(repoRoot, 'src', 'generation', 'conversation-participants.js'), 'utf8'));
+const conversationJobsSource = normalizeSource(readFileSync(path.join(repoRoot, 'src', 'generation', 'conversation-jobs.js'), 'utf8'));
 const serverEndpointSource = normalizeSource(readFileSync(path.join(repoRoot, 'src', 'endpoints', 'neconyan-conversation.js'), 'utf8'));
 const conversationGenerationSource = normalizeSource(readFileSync(path.join(repoRoot, 'src', 'endpoints', 'conversation-generation.js'), 'utf8'));
 const serverStartupSource = normalizeSource(readFileSync(path.join(repoRoot, 'src', 'server-startup.js'), 'utf8'));
@@ -118,8 +119,9 @@ describe('conversation mode scoped connection profile', () => {
 
     test('routes explicitly prefixed group replies to the named participant', () => {
         expect(readConversationSource('reply-delivery.js')).toContain('getSpeakerPrefixMatch');
-        expect(generationSource).toContain('deliverConversationReply');
-        expect(generationSource).toContain('resolvedExtra.partner_avatar = speakerAvatar');
+        expect(conversationJobsSource).toContain('deliverConversationReply');
+        expect(conversationJobsSource).toContain('partner_avatar: author.avatar');
+        expect(generationSource).not.toContain('deliverConversationReply');
     });
 
     test('adds context-aware implicit references for group DMs', () => {
@@ -128,7 +130,7 @@ describe('conversation mode scoped connection profile', () => {
         expect(promptMessagesSource).toContain('conversation-group-reference-context');
         expect(sharedHelpersSource).toContain('last non-user speaker before it');
         expect(sharedHelpersSource).toContain('do not assume every you means');
-        expect(generationSource).toContain('buildConversationPromptMessages(messages, directive, speakerName, { groupId, personaId })');
+        expect(conversationParticipantsSource).toContain('buildConversationPromptMessages(current.branch.messages, directive, character.name, {');
         expect(conversationParticipantsSource).toContain('isBroadGroupAddress');
         expect(conversationParticipantsSource).toContain('chooseGroupReplyCandidates');
     });
@@ -216,17 +218,11 @@ describe('conversation mode scoped connection profile', () => {
     test('lets generated character replies use message reply metadata', () => {
         expect(threadStoreSource).toContain('export function buildConversationMessageReplyReference');
         expect(timelineSource).toContain('buildConversationMessageReplyReference(context.message)');
-        expect(generationSource).toContain('getGeneratedReplyReference');
-        expect(generationSource).toContain('buildConversationMessageReplyReference(message)');
-        expect(generationSource).toContain('resolvedExtra.conversation_reply_to = replyReference');
+        expect(conversationParticipantsSource).toContain('replyReference: automation ? null : buildConversationMessageReplyReference(');
+        expect(conversationJobsSource).toContain('conversation_reply_to: snapshot.replyReference');
         expect(readConversationSource('reply-delivery.js')).toContain('const attachReplyReference = !referenced.has(speakerAvatar)');
         expect(readConversationSource('reply-delivery.js')).toContain('referenced.add(speakerAvatar)');
-
-        const replyRefFuncStart = generationSource.indexOf('function getGeneratedReplyReference(');
-        const nextFuncStart = generationSource.indexOf('function getResolvedReplyExtra(', replyRefFuncStart);
-        const replyRefSource = generationSource.slice(replyRefFuncStart, nextFuncStart);
-        expect(replyRefSource).toContain('previous message from the same speaker');
-        expect(replyRefSource).toContain('break;');
+        expect(generationSource).not.toContain('getGeneratedReplyReference');
     });
 
     test('adds Quick Image Gen actions for actual selfie commands', () => {
@@ -234,14 +230,13 @@ describe('conversation mode scoped connection profile', () => {
         expect(timelineSource).toContain('conversation_commands?.selfieRequests');
         expect(timelineSource).toContain('SELFIE_COMMAND_RE');
         expect(timelineSource).toContain('sb-conversation-selfie-action');
-        expect(timelineSource).toContain('force: true');
-        expect(timelineSource).toContain('notify: true');
-        expect(timelineSlashSource).toContain('force: true, notify: true');
+        expect(timelineSource).toContain('requestConversationSelfie({');
+        expect(timelineSource).toContain('sourceMessageId: String(context.message.id');
+        expect(timelineSlashSource).toContain('requestConversationSelfie({ avatar, branchId: capturedBranchId');
         expect(renderUtilsSource).toContain('compactConversationCommandsFingerprint');
         expect(chromeSource).toContain('generate-selfie-command');
-        expect(generationSource).toContain('force = false');
-        expect(generationSource).toContain('notify = false');
-        expect(generationSource).toContain('!force && (!resolvedSettings.image_gen_enabled');
+        expect(generationSource).toContain('requestConversationBinding(\'selfie/submit\'');
+        expect(generationSource).not.toContain('generateConversationImage');
         expect(mediaSource).toContain('Quick Image Gen failed');
         expect(mediaSource).toContain('getExtensionCapability(\'quick-image-gen\')');
         expect(mediaSource).not.toContain('../extensions/quick-image-gen/index.js');

@@ -8,9 +8,12 @@ const updateConversationThreadMessage = jest.fn();
 const runtimeStatusOverrides = new Map();
 const threadMessages = [{ id: 'user-1', role: 'user', name: 'User', mes: 'hello', extra: {} }];
 await jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => 'alice' }));
+const requestConversationBinding = jest.fn();
+const waitForNativeConversationJob = jest.fn();
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/bindings.js', () => ({
-    preflightConversationBinding: jest.fn(), requestConversationBinding: jest.fn(),
+    preflightConversationBinding: jest.fn(async () => ({ participants: {}, acknowledgement: null })), requestConversationBinding,
 }));
+await jest.unstable_mockModule('../public/lib.js', () => ({ sha256: value => `hash:${value}` }));
 
 await jest.unstable_mockModule('../public/script.js', () => ({
     characters: [{ avatar: 'char.png', name: 'Aster' }],
@@ -52,8 +55,11 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/schedule
     getConversationRuntimeStatusKey: (avatar, personaId) => `${personaId}\u001f${avatar}`,
     parseDurationToMs: () => 60_000,
 }));
-await jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js', () => ({ runtimeStatusOverrides }));
-await jest.unstable_mockModule('../public/scripts/neconyan-conversation/native-jobs.js', () => ({ waitForNativeConversationJob: jest.fn() }));
+const conversationState = { imageGenerationActive: false, imageGenerationAbortController: null };
+const cancelNativeConversationJob = jest.fn(async () => {});
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js', () => ({ runtimeStatusOverrides, conversationState }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/native-jobs.js', () => ({ cancelNativeConversationJob, waitForNativeConversationJob }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/render-scheduler.js', () => ({ scheduleTimelineRender: jest.fn() }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/thread-store.js', () => ({
     addConversationReminder,
     buildConversationMessageReplyReference: message => message ? { messageId: message.id, name: message.name, role: message.role, text: message.mes } : null,
@@ -71,17 +77,13 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/typing.j
 
 const {
     editConversationMessage,
-    postCharacterReply,
+    requestConversationSelfie,
 } = await import('../public/scripts/neconyan-conversation/generation.js');
-
-const settings = {
-    image_gen_enabled: false,
-    schedule_command_enabled: true,
-    selfie_command_enabled: true,
-};
 
 describe('Conversation core generated reply regressions', () => {
     beforeEach(() => {
+        requestConversationBinding.mockReset();
+        waitForNativeConversationJob.mockReset();
         appendConversationMessage.mockReset().mockImplementation(async (text, options) => ({ id: `message-${appendConversationMessage.mock.calls.length}`, mes: text, ...options }));
         addConversationReminder.mockClear();
         generateConversationImage.mockClear();
@@ -91,68 +93,53 @@ describe('Conversation core generated reply regressions', () => {
         delete globalThis.confirm;
     });
 
-    test('keeps native selfie command metadata when image generation is disabled', async () => {
-        await postCharacterReply('Here you go [selfie: context="at my desk"]', settings, {
-            branchId: 'branch-a',
-            groupId: '',
-            personaId: 'persona-a.png',
-        }, 'char.png');
+    test('a manual selfie is submitted to the server with its source message and never written in the page', async () => {
+        requestConversationBinding.mockResolvedValueOnce({ job: { id: 'selfie-job' } });
+        waitForNativeConversationJob.mockResolvedValueOnce({ id: 'selfie-job', state: 'completed' });
+        await expect(requestConversationSelfie({ avatar: 'char.png', speakerAvatar: 'partner.png', branchId: 'main', groupId: '',
+            personaId: 'persona-a.png', context: ' at my desk ', sourceMessageId: 'message-9' })).resolves.toBe(true);
 
-        expect(appendConversationMessage).toHaveBeenCalledTimes(1);
-        expect(appendConversationMessage.mock.calls[0][1].extra.conversation_commands).toEqual({
-            selfieRequests: ['at my desk'],
-        });
-        expect(generateConversationImage).not.toHaveBeenCalled();
-    });
-
-    test('attaches a reply card only to the first bubble from the same speaker', async () => {
-        const replyReference = { messageId: 'user-1', name: 'User', role: 'user', text: 'hello' };
-        await postCharacterReply('First bubble\n\nSecond bubble\n\nThird bubble', settings, {
-            branchId: 'branch-a',
-            extra: { conversation_reply_to: replyReference },
-            groupId: '',
-            personaId: 'persona-a.png',
-        }, 'char.png');
-
-        expect(appendConversationMessage).toHaveBeenCalledTimes(3);
-        expect(appendConversationMessage.mock.calls[0][1].extra.conversation_reply_to).toEqual(replyReference);
-        expect(appendConversationMessage.mock.calls[1][1].extra.conversation_reply_to).toBeUndefined();
-        expect(appendConversationMessage.mock.calls[2][1].extra.conversation_reply_to).toBeUndefined();
-    });
-
-    test('does not commit command side effects when final target validation fails', async () => {
-        const validateTarget = jest.fn()
-            .mockReturnValueOnce(true)
-            .mockReturnValueOnce(false);
-
-        await postCharacterReply('Later [schedule_update: status="dnd" activity="working"] [reminder: 15m | check in]', settings, {
-            branchId: 'branch-a',
-            groupId: '',
-            personaId: 'persona-a.png',
-            validateTarget,
-        }, 'char.png');
-
+        const [path, payload, account] = requestConversationBinding.mock.calls[0];
+        expect(path).toBe('selfie/submit');
+        expect(account).toBe('alice');
+        expect(payload).toMatchObject({ context: 'at my desk', sourceMessageId: 'message-9', speakerAvatar: 'partner.png',
+            target: { avatar: 'char.png', personaId: 'persona-a.png', branchId: 'main' }, branchCreatedAt: '111' });
+        expect(payload.submissionKey).toEqual(expect.any(String));
         expect(appendConversationMessage).not.toHaveBeenCalled();
-        expect(addConversationReminder).not.toHaveBeenCalled();
-        expect(runtimeStatusOverrides.size).toBe(0);
+        expect(conversationState.imageGenerationActive).toBe(false);
     });
 
-    test('commits command side effects to the captured persona after append succeeds', async () => {
-        await postCharacterReply('Later [schedule_update: status="dnd" activity="working"] [reminder: 15m | check in]', settings, {
-            branchId: 'branch-a',
-            groupId: '',
-            personaId: 'persona-a.png',
-            validateTarget: () => true,
-        }, 'char.png');
+    test('the pending image bubble stops the server job and a cancelled selfie is not reported as a failure', async () => {
+        const toastr = { info: jest.fn(), warning: jest.fn() };
+        globalThis.toastr = toastr;
+        let finish;
+        requestConversationBinding.mockResolvedValueOnce({ job: { id: 'stop-job' } });
+        waitForNativeConversationJob.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+        const run = requestConversationSelfie({ avatar: 'char.png' });
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(conversationState.imageGenerationActive).toBe(true);
+        conversationState.imageGenerationAbortController.abort();
+        expect(cancelNativeConversationJob).toHaveBeenCalledWith('stop-job');
+        finish({ id: 'stop-job', state: 'cancelled' });
+        await expect(run).resolves.toBe(true);
+        expect(conversationState.imageGenerationActive).toBe(false);
+        expect(toastr.warning).not.toHaveBeenCalled();
+        delete globalThis.toastr;
+    });
 
-        expect(runtimeStatusOverrides.get('persona-a.png\u001fchar.png')).toMatchObject({
-            activity: 'working',
-            status: 'dnd',
-        });
-        expect(addConversationReminder).toHaveBeenCalledWith('char.png', '', '15m', 'check in', {
-            branchId: 'branch-a',
-            personaId: 'persona-a.png',
-        });
+    test('a refused selfie is reported and a stopped watch says the server is still working', async () => {
+        const toastr = { info: jest.fn(), warning: jest.fn() };
+        globalThis.toastr = toastr;
+        requestConversationBinding.mockResolvedValueOnce({ job: { id: 'failed-job' } });
+        waitForNativeConversationJob.mockResolvedValueOnce({ id: 'failed-job', state: 'failed', error: { message: 'The selfie speaker is no longer available in this group.' } });
+        await expect(requestConversationSelfie({ avatar: 'char.png' })).resolves.toBe(false);
+        expect(toastr.warning.mock.calls[0][0]).toContain('no longer available');
+
+        requestConversationBinding.mockResolvedValueOnce({ job: { id: 'watched-job' } });
+        waitForNativeConversationJob.mockResolvedValueOnce(null);
+        await expect(requestConversationSelfie({ avatar: 'char.png' })).resolves.toBe(true);
+        expect(toastr.info.mock.calls[0][0]).toContain('still being made on the server');
+        delete globalThis.toastr;
     });
 
     test('saves only changed content and closes the editor in all cases', () => {
