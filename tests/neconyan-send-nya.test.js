@@ -29,6 +29,8 @@ function createElement(tag) {
 
 const listeners = {};
 const appended = [];
+const pendingFrames = [];
+const paint = () => pendingFrames.splice(0).forEach(callback => callback());
 const sendButton = {
     id: 'send_but',
     contains: node => node === sendButton,
@@ -41,7 +43,7 @@ let sendNya;
 
 beforeAll(async () => {
     jest.useFakeTimers();
-    global.window = { matchMedia: () => ({ matches: false }) };
+    global.window = { matchMedia: () => ({ matches: false }), requestAnimationFrame: callback => pendingFrames.push(callback) };
     global.document = {
         addEventListener: (type, handler) => { listeners[type] = handler; },
         createElement,
@@ -58,6 +60,7 @@ afterAll(() => {
 });
 
 beforeEach(() => {
+    paint();
     jest.runAllTimers();
     appended.length = 0;
     hitTarget = sendButton;
@@ -83,22 +86,45 @@ describe('paw send button', () => {
         expect(sendNya.SEND_NYA_SELECTOR).toBe('#send_but, #sb_conversation_send');
     });
 
-    test('a press released on the button pops one nya! at the pointer', () => {
+    test('a press released on the button pops one cat sound at the pointer', () => {
         press(sendButton, { x: 111, y: 222 });
         expect(appended).toHaveLength(1);
         const [pop] = appended;
-        expect(pop.textContent).toBe('nya!');
+        expect(['nya!', 'mrrp?', 'mrrah', 'mew', 'purr']).toContain(pop.textContent);
         expect(pop.className).toBe('neconyan-send-nya');
         expect(pop.attributes['aria-hidden']).toBe('true');
         expect(pop.style).toMatchObject({ position: 'fixed', left: '111px', top: '222px', pointerEvents: 'none' });
+        paint();
         expect(pop.options.duration).toBe(900);
     });
 
-    test('the pop removes itself when the animation ends, or after a fallback timeout', () => {
+    for (const [index, sound] of ['nya!', 'mrrp?', 'mrrah', 'mew', 'purr'].entries()) {
+        test(`random selection can produce ${sound}`, () => {
+            expect(sendNya.popNya(5, 5, { random: () => (index + 0.5) / 5 }).textContent).toBe(sound);
+        });
+    }
+
+    test('busy message preparation cannot expire a pop before its first paint', () => {
         const pop = sendNya.popNya(5, 5);
+        jest.advanceTimersByTime(2000);
+        expect(pop.removed).toBe(false);
+        expect(pop.animate).not.toHaveBeenCalled();
+        paint();
+        expect(pop.animate).toHaveBeenCalledTimes(1);
         expect(pop.removed).toBe(false);
         jest.advanceTimersByTime(1200);
         expect(pop.removed).toBe(true);
+    });
+
+    test('finishing the animation removes the pop and releases its slot only once', () => {
+        const pop = sendNya.popNya(5, 5);
+        paint();
+        pop.animation().finish();
+        expect(pop.removed).toBe(true);
+        jest.advanceTimersByTime(1200);
+        appended.length = 0;
+        for (let i = 0; i < 9; i++) sendNya.popNya(5, 5);
+        expect(appended).toHaveLength(8);
     });
 
     test('script clicks, other buttons and presses dragged off the button do not pop', () => {
@@ -161,6 +187,7 @@ describe('paw send button', () => {
 
     test('reduced motion fades in place without movement', () => {
         const pop = sendNya.popNya(0, 0, { reduced: true });
+        paint();
         expect(pop.options.duration).toBe(700);
         expect(pop.frames.every(frame => !('transform' in frame))).toBe(true);
     });
