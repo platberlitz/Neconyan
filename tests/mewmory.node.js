@@ -691,6 +691,18 @@ test('accepted revisions stay stable; editing and replacing even an identical sw
     assert.equal(recordEligible(state, memory), false, 'a reverted source is a new accepted revision');
 });
 
+test('hiding a message only to fit the context size keeps its memories, while a plain hide switches it off', () => {
+    const state = base();
+    const memory = event(state);
+    const original = structuredClone(state.timeline);
+    const hidden = structuredClone(fixture.messages).map(message => ({ ...message, is_system: true, extra: { mewmoryKeepHidden: true } }));
+    syncSources(state, hidden, fixture.lore);
+    assert.deepEqual(state.timeline, original);
+    assert.equal(recordEligible(state, memory), true);
+    syncSources(state, hidden.map(message => ({ ...message, extra: {} })), fixture.lore);
+    assert.equal(recordEligible(state, memory), false);
+});
+
 test('deleted chat purges source copies, dependent memories, search and undo history', () => {
     const state = base();
     const memory = event(state);

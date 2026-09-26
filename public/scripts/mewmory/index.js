@@ -1,10 +1,12 @@
 import {
-    characters, chat_metadata, flushPendingChatSaves, getChatGeneration, getCurrentChatId,
-    getRequestHeaders, this_chid,
+    characters, chat, chat_metadata, flushPendingChatSaves, getChatGeneration, getCurrentChatId,
+    getMaxContextTokens, getRequestHeaders, this_chid,
 } from '../../script.js';
+import { hideChatMessageRange } from '../chats.js';
+import { Popup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
 import { selected_group } from '../group-chats.js';
 import { eventSource, event_types } from '../events.js';
-import { getFriendlyTokenizerName } from '../tokenizers.js';
+import { getFriendlyTokenizerName, getTokenCountAsync } from '../tokenizers.js';
 import { conversationState } from '../neconyan-conversation/state.js';
 import { cancelJob } from '../jobs.js';
 import { uuidv4 } from '../utils.js';
@@ -131,6 +133,60 @@ export async function stopMewmoryBackfill() {
             notifyMewmory();
         }
     }
+}
+
+/**
+ * Visible messages that no longer fit the context size, counting back from the end of the chat.
+ * The latest AI reply and anything after it always stay.
+ */
+export async function getOverflowMessages(limit = getMaxContextTokens()) {
+    const latest = chat.findLastIndex(message => !message.is_user && !message.is_system);
+    const result = { limit, indices: [] };
+    if (!(limit > 0) || latest < 1) return result;
+    let used = 0;
+    let cut = -1;
+    for (let index = chat.length - 1; index >= 0; index--) {
+        if (chat[index].is_system) continue;
+        used += await getTokenCountAsync(String(chat[index].mes ?? ''));
+        if (index < latest && used > limit) {
+            cut = index;
+            break;
+        }
+    }
+    for (let index = 0; index <= cut; index++) if (!chat[index].is_system) result.indices.push(index);
+    return result;
+}
+
+export async function hideOverflowMessages() {
+    const chatId = getCurrentChatId();
+    const { limit, indices } = await getOverflowMessages();
+    if (!indices.length) {
+        toastr.info('Everything since the start of this chat still fits your context size of ' + limit.toLocaleString() + ' tokens, so nothing needs hiding.');
+        return 0;
+    }
+    const answer = await new Popup('Hide ' + indices.length + ' older ' + (indices.length === 1 ? 'message' : 'messages')
+        + ' that no longer fit your context size of ' + limit.toLocaleString() + ' tokens? The latest reply and the messages that fit stay visible. '
+        + 'Mewmory keeps reading the hidden messages, so their memories stay. You can unhide them any time with the eye button on a message.',
+    POPUP_TYPE.CONFIRM).show();
+    if (answer !== POPUP_RESULT.AFFIRMATIVE) return 0;
+    const again = await getOverflowMessages(limit);
+    if (getCurrentChatId() !== chatId || JSON.stringify(again.indices) !== JSON.stringify(indices)) {
+        toastr.warning('The chat changed while the question was open, so nothing was hidden.');
+        return 0;
+    }
+    const ranges = [];
+    for (const index of indices) {
+        const range = ranges.at(-1);
+        if (range && range[1] === index - 1) range[1] = index;
+        else ranges.push([index, index]);
+    }
+    let hidden = 0;
+    for (const [start, end] of ranges) {
+        if (getCurrentChatId() !== chatId || !await hideChatMessageRange(start, end, false, null, { keepInMewmory: true })) break;
+        hidden += end - start + 1;
+    }
+    if (hidden) toastr.success('Hid ' + hidden + ' older ' + (hidden === 1 ? 'message' : 'messages') + ' from the prompt.');
+    return hidden;
 }
 
 export async function processMewmory({ all = false, checkpoint = false } = {}) {

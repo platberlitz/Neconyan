@@ -234,7 +234,8 @@ export function syncSources(state, messages, context = []) {
         const ref = appendSource(state, sourceId, 'chat', {
             text: String(message.mes ?? ''), speaker: String(message.name ?? ''),
             isPlayer: Boolean(message.is_user), sequence,
-            enabled: !message.is_system && !message.extra?.mewmoryExclude,
+            // Messages hidden only to fit the context size stay readable, so their memories survive.
+            enabled: (!message.is_system || message.extra?.mewmoryKeepHidden === true) && !message.extra?.mewmoryExclude,
             // Selection identity matters even if two swipes happen to contain the same words.
             acceptedAlternative: Number.isInteger(message.swipe_id) ? message.swipe_id : 0,
             attachments, storyTime: null,

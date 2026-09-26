@@ -47,8 +47,8 @@
 .mewmory-page { display: flex; flex-direction: column; gap: 1.2rem; min-width: 0; }
 .mewmory-section { display: flex; flex-direction: column; gap: .7rem; }
 .mewmory-section > h4 { font-size: 1.12em; font-weight: 700; }
-.mewmory-list { display: flex; flex-direction: column; min-width: 0; }
-.mewmory-record { padding-block: 1rem; border-bottom: 1px solid var(--SmartThemeBorderColor); display: flex; flex-direction: column; gap: .7rem; }
+.mewmory-list { display: flex; flex-direction: column; gap: .75rem; min-width: 0; }
+.mewmory-record { padding: .9rem 1rem; border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor) 70%, transparent); border-radius: var(--radius-md, 14px); background: color-mix(in srgb, var(--SmartThemeBodyColor) 5%, transparent); display: flex; flex-direction: column; gap: .7rem; min-width: 0; }
 .mewmory-record-heading { justify-content: space-between; align-items: start; }
 .mewmory-record-heading h4 { flex: 1 1 15rem; }
 .mewmory-record[data-ineligible="true"] > .mewmory-record-heading { color: var(--SmartThemeEmColor); }

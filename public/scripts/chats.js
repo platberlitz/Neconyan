@@ -145,9 +145,10 @@ const messageVisibilityOperations = new WeakMap();
  * @param {number} end Ending message ID (inclusive)
  * @param {boolean} unhide If true, unhide the messages instead.
  * @param {string} nameFitler Optional name filter
+ * @param {{ keepInMewmory?: boolean }} [options] keepInMewmory hides from prompts only; Mewmory still reads the messages.
  * @returns {Promise<boolean>} Whether the change was saved in the original chat.
  */
-export async function hideChatMessageRange(start, end, unhide, nameFitler = null) {
+export async function hideChatMessageRange(start, end, unhide, nameFitler = null, { keepInMewmory = false } = {}) {
     start = Number(start);
     end = end === undefined || end === null ? start : Number(end);
     if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start) return false;
@@ -165,9 +166,11 @@ export async function hideChatMessageRange(start, end, unhide, nameFitler = null
         if (!message) continue;
         if (nameFitler && message.name !== nameFitler) continue;
 
-        changed.push({ messageId, message, previous: message.is_system });
+        changed.push({ messageId, message, previous: message.is_system, previousKeep: message.extra?.mewmoryKeepHidden });
         messageVisibilityOperations.set(message, operation);
         message.is_system = hide;
+        if (hide && keepInMewmory) (message.extra ??= {}).mewmoryKeepHidden = true;
+        else if (message.extra) delete message.extra.mewmoryKeepHidden;
 
         // Also toggle "hidden" state for all visible messages
         const messageBlock = $(`.mes[mesid="${messageId}"]`);
@@ -185,11 +188,13 @@ export async function hideChatMessageRange(start, end, unhide, nameFitler = null
         console.error('Could not save message visibility.', error);
     }
     const sameChat = isCurrent();
-    for (const { messageId, message, previous } of changed) {
+    for (const { messageId, message, previous, previousKeep } of changed) {
         if (messageVisibilityOperations.get(message) !== operation) continue;
         messageVisibilityOperations.delete(message);
         if (!saved && message.is_system === hide) {
             message.is_system = previous;
+            if (previousKeep) (message.extra ??= {}).mewmoryKeepHidden = true;
+            else if (message.extra) delete message.extra.mewmoryKeepHidden;
             if (sameChat) $(`.mes[mesid="${messageId}"]`).attr('is_system', String(Boolean(previous)));
         }
     }

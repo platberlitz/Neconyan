@@ -4,20 +4,34 @@ let chatId = 'first';
 let generation = 1;
 const listeners = new Map();
 const conversationState = { conversationWorkspaceOpen: false };
+const chat = [];
+let contextSize = 30;
+let popupAnswer = 1;
+const hideChatMessageRange = jest.fn(async (start, end, unhide, filter, options) => {
+    for (let index = start; index <= end; index++) Object.assign(chat[index], { is_system: true, extra: { mewmoryKeepHidden: options?.keepInMewmory } });
+    return true;
+});
+global.toastr = { info: jest.fn(), success: jest.fn(), warning: jest.fn() };
 jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => 'default-user' }));
 jest.unstable_mockModule('../public/script.js', () => ({
     characters: [{ avatar: 'Mara.png' }], this_chid: 0, chat_metadata: {}, is_send_press: false,
-    getCurrentChatId: () => chatId, getChatGeneration: () => generation,
+    getCurrentChatId: () => chatId, getChatGeneration: () => generation, chat, getMaxContextTokens: () => contextSize,
     flushPendingChatSaves: async () => true, getRequestHeaders: () => ({}),
 }));
 jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ is_group_generating: false, selected_group: null }));
-jest.unstable_mockModule('../public/scripts/tokenizers.js', () => ({ getFriendlyTokenizerName: () => ({ tokenizerKey: 'openai' }) }));
+jest.unstable_mockModule('../public/scripts/tokenizers.js', () => ({
+    getFriendlyTokenizerName: () => ({ tokenizerKey: 'openai' }), getTokenCountAsync: async text => text.length,
+}));
+jest.unstable_mockModule('../public/scripts/chats.js', () => ({ hideChatMessageRange }));
+jest.unstable_mockModule('../public/scripts/popup.js', () => ({
+    POPUP_TYPE: { CONFIRM: 'confirm' }, POPUP_RESULT: { AFFIRMATIVE: 1 }, Popup: class { show() { return popupAnswer; } },
+}));
 jest.unstable_mockModule('../public/scripts/utils.js', () => ({ uuidv4: () => 'memory-test-submission' }));
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js', () => ({ conversationState }));
 jest.unstable_mockModule('../public/scripts/events.js', () => ({
     event_types: new Proxy({}, { get: (_, name) => name }), eventSource: { on: (name, handler) => listeners.set(name, handler) },
 }));
-const { getMewmoryLocator, getMewmoryScope, initMewmory, mewmory, prepareMewmoryGeneration, processMewmory, refreshMewmory, requestMewmory, stopMewmoryBackfill } = await import('../public/scripts/mewmory/index.js');
+const { getMewmoryLocator, getMewmoryScope, getOverflowMessages, hideOverflowMessages, initMewmory, mewmory, prepareMewmoryGeneration, processMewmory, refreshMewmory, requestMewmory, stopMewmoryBackfill } = await import('../public/scripts/mewmory/index.js');
 const config = { revision: 1, roles: {} };
 const response = data => ({ ok: true, json: async () => data });
 
@@ -154,4 +168,26 @@ test('generation waits for the newest overlapping refresh instead of treating a 
     await expect(generation).resolves.toEqual({ enabled: false, chat: messages });
     await newer;
     expect(mewmory.error).toBe('');
+});
+
+test('hiding old messages keeps the latest reply and what fits the context size, and marks them for Mewmory', async () => {
+    const line = (is_user, mes, extra = {}) => ({ is_user, mes, ...extra });
+    chat.splice(0, chat.length, line(true, 'aaaaaaaaaa'), line(false, 'bbbbbbbbbb'), line(true, 'cccccccccc', { is_system: true }),
+        line(false, 'dddddddddd'), line(true, 'eeeeeeeeee'), line(false, 'ffffffffff'), line(true, 'gggggggggg'));
+    contextSize = 30;
+    expect((await getOverflowMessages()).indices).toEqual([0, 1, 3]);
+    contextSize = 1;
+    expect((await getOverflowMessages()).indices).toEqual([0, 1, 3, 4]);
+    contextSize = 1000;
+    expect((await getOverflowMessages()).indices).toEqual([]);
+
+    contextSize = 30;
+    popupAnswer = 0;
+    expect(await hideOverflowMessages()).toBe(0);
+    expect(hideChatMessageRange).not.toHaveBeenCalled();
+    popupAnswer = 1;
+    expect(await hideOverflowMessages()).toBe(3);
+    expect(hideChatMessageRange.mock.calls.map(call => call.slice(0, 2))).toEqual([[0, 1], [3, 3]]);
+    expect(hideChatMessageRange.mock.calls.every(call => call[4]?.keepInMewmory === true)).toBe(true);
+    expect(chat.map(message => Boolean(message.is_system))).toEqual([true, true, true, true, false, false, false]);
 });

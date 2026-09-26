@@ -1,5 +1,5 @@
 import {
-    changeMewmory, getMewmoryLocator, getMewmoryScope, initMewmory, mewmory, notifyMewmory,
+    changeMewmory, getMewmoryLocator, getMewmoryScope, hideOverflowMessages, initMewmory, mewmory, notifyMewmory,
     processMewmory, refreshMewmory, requestMewmory, stopMewmoryBackfill,
 } from './index.js';
 import { getFriendlyTokenizerName } from '../tokenizers.js';
@@ -629,12 +629,14 @@ function renderHealth(root) {
     node('p', 'mewmory-caption', 'Search: ' + (view.health.indexStatus === 'lexical' ? 'keyword search only'
         : view.health.indexStatus === 'ready' ? 'meaning search (embeddings) and keyword search ready' : 'building meaning search (embeddings); keyword search works meanwhile')
         + (view.health.indexVersion ? ' · index ' + view.health.indexVersion.slice(0, 12) : '')),
-    node('p', 'mewmory-caption', 'Older messages stay saved and searchable. If the memories plus recent chat cannot fit the writing model, the reply stops with an error instead of dropping them.'));
+    node('p', 'mewmory-caption', 'Older messages stay saved and searchable. If the memories plus recent chat cannot fit the writing model, the reply stops with an error instead of dropping them.'),
+    node('p', 'mewmory-caption', 'Hide old messages that no longer fit: counts back from the latest reply using your context size and hides everything older from the prompt. Mewmory still remembers them.'));
     const actions = node('div', 'mewmory-actions');
     actions.append(button('Catch up on this whole chat', () => processMewmory({ all: true }), { disabled: mewmory.busy || !view.enabled }),
         button('Check for missed details', () => processMewmory({ all: true, checkpoint: true }), { disabled: mewmory.busy || !view.enabled }),
         button('Rebuild search index', () => act(scope => requestMewmory('index', { reset: true }, { scope })),
-            { disabled: !mewmory.config.roles.embedding.enabled || mewmory.busy }));
+            { disabled: !mewmory.config.roles.embedding.enabled || mewmory.busy }),
+        button('Hide old messages that no longer fit', () => act(() => hideOverflowMessages())));
     if (mewmory.busy) actions.append(button('Stop updating', stopMewmoryBackfill));
     health.append(actions);
     if (view.operationsError) health.append(node('p', 'mewmory-caption', view.operationsError));
@@ -820,7 +822,7 @@ export async function mountMewmory(root) {
         const style = document.createElement('link');
         style.id = 'mewmory-css';
         style.rel = 'stylesheet';
-        style.href = 'css/mewmory.css?v=20260926b';
+        style.href = 'css/mewmory.css?v=20260926c';
         document.head.append(style);
     }
     if (ui.root !== root) {
