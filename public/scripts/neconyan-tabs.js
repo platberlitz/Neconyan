@@ -38,6 +38,7 @@ import {
     MODEL_FILTER_PHONE_ONLY_SELECTORS,
     computeVisibleModelOptions,
 } from './neconyan-model-filter.js';
+import { getReasoningEffortShortLabel, isReasoningEffortSupported } from './neconyan-reasoning-effort.js';
 import {
     mountNeconyanCharacterWorkspace,
     mountNeconyanLorebookWorkspace,
@@ -18375,6 +18376,16 @@ function buildBottomChatBar() {
     });
     updatePersonaBubble(personaBubble);
 
+    const reasoningButton = createElement('button', {
+        id: 'sb-reasoning-effort-button',
+        className: 'sb-bottom-chat-btn',
+        attrs: { type: 'button', 'aria-haspopup': 'listbox', 'aria-expanded': 'false', hidden: '' },
+    });
+    reasoningButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleReasoningEffortPicker();
+    });
+
     const chatSelect = createElement('select', {
         id: 'sb-bottom-chat-select',
         attrs: { title: 'Switch chat' },
@@ -18423,12 +18434,13 @@ function buildBottomChatBar() {
     navCluster.append(topBtn, bottomBtn);
     managementCluster.append(regenerateBtn, chatManagerBtn, newBtn, massDeleteBtn, autoNameBtn, renameBtn, searchToggleBtn, hideBtn, deleteBtn);
     secondaryRow.append(managementCluster);
-    container.append(personaBubble, chatSelect, search.field, navCluster, collapseToggleBtn, secondaryRow);
+    container.append(personaBubble, reasoningButton, chatSelect, search.field, navCluster, collapseToggleBtn, secondaryRow);
 
     // Store references for refresh and late context binding retries.
     Object.assign(getBottomChatBarState(), {
         chatSelect,
         personaBubble,
+        reasoningButton,
         searchField: search.field,
         searchInput: search.input,
         searchStatus: search.status,
@@ -18449,6 +18461,7 @@ function buildBottomChatBar() {
 
     // Defer initial persona bubble update in case user_avatar isn't ready yet
     setTimeout(() => updatePersonaBubble(personaBubble), 100);
+    updateReasoningEffortButton();
 
     // Close persona picker when clicking outside
     const bottomChatBarState = getBottomChatBarState();
@@ -18457,6 +18470,9 @@ function buildBottomChatBar() {
             const picker = document.getElementById('sb-persona-picker');
             if (picker && !picker.contains(e.target) && e.target !== bottomChatBarState.personaBubble) {
                 picker.remove();
+            }
+            if (!bottomChatBarState.reasoningButton?.contains(e.target) && !document.getElementById('sb-reasoning-effort-picker')?.contains(e.target)) {
+                closeReasoningEffortPicker();
             }
         });
         bottomChatBarState.outsideClickBound = true;
@@ -18855,9 +18871,153 @@ function bindBottomChatBarEvents() {
         eventSource.on(eventName, refreshPersona);
     }
 
+    const refreshReasoningEffort = () => window.requestAnimationFrame(() => updateReasoningEffortButton());
+    const reasoningEvents = [
+        eventTypes.APP_READY,
+        eventTypes.SETTINGS_LOADED_AFTER,
+        eventTypes.SETTINGS_UPDATED,
+        eventTypes.MAIN_API_CHANGED,
+        eventTypes.CHATCOMPLETION_SOURCE_CHANGED,
+        eventTypes.OAI_PRESET_CHANGED_AFTER,
+        eventTypes.CONNECTION_PROFILE_LOADED,
+    ].filter(Boolean);
+    for (const eventName of new Set(reasoningEvents)) {
+        eventSource.on(eventName, refreshReasoningEffort);
+    }
+
     bottomChatBarState.boundEventSource = eventSource;
     scheduleBottomChatBarRefresh(0);
     refreshPersona();
+}
+
+function getReasoningEffortSelect() {
+    const select = document.getElementById('openai_reasoning_effort');
+    return select instanceof HTMLSelectElement ? select : null;
+}
+
+function isReasoningEffortAvailable(select = getReasoningEffortSelect()) {
+    const context = getSillyTavernContext();
+    return Boolean(select) && isReasoningEffortSupported({
+        mainApi: context?.mainApi,
+        source: context?.chatCompletionSettings?.chat_completion_source,
+        dataSource: select.closest('[data-source]')?.getAttribute('data-source'),
+    });
+}
+
+function bindReasoningEffortSelect(select) {
+    if (select.dataset.sbReasoningBound === 'true') {
+        return;
+    }
+
+    select.addEventListener('input', () => updateReasoningEffortButton());
+    select.addEventListener('change', () => updateReasoningEffortButton());
+    select.dataset.sbReasoningBound = 'true';
+}
+
+function updateReasoningEffortButton() {
+    const button = getBottomChatBarState().reasoningButton;
+    if (!(button instanceof HTMLElement)) {
+        return;
+    }
+
+    const select = getReasoningEffortSelect();
+    const available = isReasoningEffortAvailable(select);
+    button.hidden = !available;
+    button.closest('#sb-bottom-chat-bar')?.classList.toggle('sb-has-reasoning-effort', available);
+    if (!available) {
+        closeReasoningEffortPicker();
+        return;
+    }
+
+    bindReasoningEffortSelect(select);
+    const fullLabel = select.selectedOptions[0]?.textContent?.trim() || select.value;
+    const title = `${t`Reasoning Effort`}: ${fullLabel}`;
+    button.title = title;
+    button.setAttribute('aria-label', title);
+    button.dataset.effort = select.value;
+    button.innerHTML = '<i class="fa-solid fa-brain" aria-hidden="true"></i><span></span>';
+    button.querySelector('span').textContent = getReasoningEffortShortLabel(select.value);
+}
+
+function setReasoningEffort(value) {
+    const select = getReasoningEffortSelect();
+    if (!select || select.value === value) {
+        return;
+    }
+
+    select.value = value;
+    select.dispatchEvent(new Event('input', { bubbles: true }));
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    updateReasoningEffortButton();
+}
+
+function toggleReasoningEffortPicker() {
+    if (document.getElementById('sb-reasoning-effort-picker')) {
+        closeReasoningEffortPicker({ restoreFocus: true });
+        return;
+    }
+
+    openReasoningEffortPicker();
+}
+
+function openReasoningEffortPicker() {
+    const select = getReasoningEffortSelect();
+    const button = getBottomChatBarState().reasoningButton;
+    if (!(button instanceof HTMLElement) || !isReasoningEffortAvailable(select)) {
+        return;
+    }
+
+    closePersonaPicker();
+    const picker = createElement('div', {
+        id: 'sb-reasoning-effort-picker',
+        className: 'sb-persona-options',
+        attrs: { role: 'listbox', 'aria-label': t`Reasoning Effort` },
+    });
+    for (const option of Array.from(select.options)) {
+        const isActive = option.value === select.value;
+        const item = createElement('button', {
+            className: `sb-persona-option${isActive ? ' is-active' : ''}`,
+            attrs: { type: 'button', role: 'option', 'aria-selected': String(isActive) },
+        });
+        item.innerHTML = `<i class="fa-solid ${isActive ? 'fa-check' : 'fa-brain'} fa-fw" aria-hidden="true"></i><span class="sb-persona-option-name"></span>`;
+        item.querySelector('span').textContent = option.textContent?.trim() || option.value;
+        item.addEventListener('click', () => {
+            setReasoningEffort(option.value);
+            closeReasoningEffortPicker({ restoreFocus: true });
+        });
+        picker.appendChild(item);
+    }
+    picker.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeReasoningEffortPicker({ restoreFocus: true });
+        } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            const items = Array.from(picker.querySelectorAll('.sb-persona-option'));
+            const index = items.indexOf(document.activeElement);
+            const step = event.key === 'ArrowDown' ? 1 : -1;
+            items[(index + step + items.length) % items.length]?.focus({ preventScroll: true });
+        }
+    });
+
+    document.body.appendChild(picker);
+    button.setAttribute('aria-expanded', 'true');
+    positionPersonaPicker(picker, button);
+    (picker.querySelector('.is-active') ?? picker.querySelector('button'))?.focus({ preventScroll: true });
+}
+
+function closeReasoningEffortPicker({ restoreFocus = false } = {}) {
+    const picker = document.getElementById('sb-reasoning-effort-picker');
+    if (!picker) {
+        return;
+    }
+
+    picker.remove();
+    const button = getBottomChatBarState().reasoningButton;
+    button?.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) {
+        button?.focus({ preventScroll: true });
+    }
 }
 
 function togglePersonaPicker() {
@@ -18874,6 +19034,7 @@ function togglePersonaPicker() {
 function openPersonaPicker({ focus = true } = {}) {
     const context = getSillyTavernContext();
     if (!context) return;
+    closeReasoningEffortPicker();
 
     const { personas, currentAvatarId } = getCurrentPersonaSelection(context);
     const personaDescriptions = context?.powerUserSettings?.persona_descriptions ?? {};
@@ -18958,14 +19119,21 @@ function renderPersonaPickerAppendixControls(picker, context, avatarId) {
         attrs: { 'aria-label': `Scenario Notes for ${personaName}` },
     });
     const header = createElement('div', { className: 'sb-persona-picker-appendices-header' });
-    const title = createElement('strong', { text: 'Use with Scenario Notes' });
+    const title = createElement('strong', { text: 'Scenario Notes' });
+    const count = createElement('span', { className: 'sb-persona-picker-appendices-count' });
+    const updateCount = () => {
+        const activeCount = appendices.filter(appendix => activeIds.has(appendix.id)).length;
+        count.textContent = `${activeCount}/${appendices.length} on`;
+        count.hidden = !appendices.length;
+    };
+    updateCount();
     const manageButton = createElement('button', {
         className: 'sb-persona-picker-manage menu_button menu_button_icon',
         attrs: { type: 'button', title: 'Manage Scenario Notes' },
     });
     manageButton.innerHTML = '<i class="fa-solid fa-pen-to-square fa-fw" aria-hidden="true"></i><span>Manage</span>';
     manageButton.addEventListener('click', openPersonaAppendicesManager);
-    header.append(title, manageButton);
+    header.append(title, count, manageButton);
     section.appendChild(header);
 
     if (!appendices.length) {
@@ -18975,9 +19143,12 @@ function renderPersonaPickerAppendixControls(picker, context, avatarId) {
         return;
     }
 
-    const controls = createElement('div', { className: 'sb-persona-picker-appendix-toggles' });
+    const controls = createElement('div', {
+        className: 'sb-persona-picker-appendix-toggles',
+        attrs: { role: 'group', 'aria-label': 'Use with Scenario Notes' },
+    });
     for (const appendix of appendices) {
-        const label = createElement('label', { className: 'sb-persona-picker-appendix-toggle' });
+        const label = createElement('label', { className: 'sb-persona-picker-appendix-toggle', attrs: { title: appendix.name } });
         const checkbox = createElement('input', {
             attrs: {
                 type: 'checkbox',
@@ -18991,6 +19162,12 @@ function renderPersonaPickerAppendixControls(picker, context, avatarId) {
                 nextIds.push(appendix.id);
             }
             setActivePersonaAppendixIdsFromContext(context, avatarId, nextIds);
+            if (checkbox.checked) {
+                activeIds.add(appendix.id);
+            } else {
+                activeIds.delete(appendix.id);
+            }
+            updateCount();
             updatePersonaBubble();
         });
 
@@ -19117,7 +19294,7 @@ function addPersonaOption(picker, avatarId, name, title, isActive, context) {
             loading: 'lazy',
         },
     });
-    img.addEventListener('error', () => { img.style.display = 'none'; });
+    img.addEventListener('error', () => { img.style.visibility = 'hidden'; });
 
     const label = createElement('span', { className: 'sb-persona-option-name' });
     label.textContent = name;

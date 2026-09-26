@@ -4943,8 +4943,19 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
         border-radius: var(--sb-bottom-chat-mobile-radius);
     }
 
+    #sb-bottom-chat-bar.sb-has-reasoning-effort {
+        grid-template-columns: var(--sb-bottom-chat-mobile-persona-size) auto minmax(0, 1fr) repeat(3, var(--sb-bottom-chat-mobile-button-size));
+    }
+
+    #sb-bottom-chat-bar #sb-reasoning-effort-button {
+        grid-row: 1;
+        width: auto;
+        max-width: none;
+        padding-inline: 6px;
+    }
+
     #sb-bottom-chat-select {
-        grid-column: 2;
+        grid-column: -5 / -4;
         grid-row: 1;
         width: 100%;
         min-width: 0;
@@ -4958,14 +4969,14 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     }
 
     .sb-bottom-chat-collapse-toggle {
-        grid-column: 5;
+        grid-column: -2;
         grid-row: 1;
         display: inline-flex;
         justify-self: stretch;
     }
 
     .sb-bottom-chat-nav-actions {
-        grid-column: 3 / span 2;
+        grid-column: -4 / span 2;
         grid-row: 1;
         display: grid;
         grid-template-columns: repeat(2, var(--sb-bottom-chat-mobile-button-size));
@@ -5288,6 +5299,16 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     transition: border-color var(--sb-transition-fast), transform var(--sb-transition-fast);
 }
 
+#sb-reasoning-effort-button {
+    gap: 4px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+#sb-reasoning-effort-button span {
+    font-size: 0.78em;
+}
+
 #sb-persona-bubble:hover {
     border-color: var(--color-primary, var(--sb-accent));
     transform: scale(1.08);
@@ -5315,7 +5336,8 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     }
 }
 
-#sb-persona-picker {
+#sb-persona-picker,
+#sb-reasoning-effort-picker {
     position: fixed;
     left: 0;
     top: 0;
@@ -5333,6 +5355,12 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     z-index: calc(var(--sb-z-modal-content, 3100) + 1);
     box-shadow: 0 8px 24px color-mix(in srgb, var(--SmartThemeShadowColor) 30%, transparent);
     animation: sbShellContentReveal 200ms var(--sb-ease-out);
+}
+
+#sb-reasoning-effort-picker {
+    min-width: 180px;
+    max-height: min(360px, calc(100dvh - 96px));
+    overflow-y: auto;
 }
 
 .sb-persona-options {
@@ -5447,18 +5475,26 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 .sb-persona-picker-appendices {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
     min-width: 0;
-    padding: 6px;
+    min-height: 0;
+    padding: 6px 4px 2px;
     border-top: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor) 74%, transparent);
 }
 
 .sb-persona-picker-appendices-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 6px;
     min-width: 0;
+    padding-inline-start: 4px;
+}
+
+.sb-persona-picker-appendices-count {
+    flex: 1;
+    font-size: calc(var(--mainFontSize) * 0.72);
+    opacity: 0.65;
+    white-space: nowrap;
 }
 
 .sb-persona-picker-appendices-header strong {
@@ -5474,6 +5510,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 
 .sb-persona-picker-manage {
     min-height: 32px;
+    margin: 0 0 0 auto;
     padding-inline: 8px;
     font-size: calc(var(--mainFontSize) * 0.76);
 }
@@ -5487,26 +5524,36 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 
 .sb-persona-picker-appendix-toggles {
     display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
+    flex-direction: column;
+    gap: 2px;
+    max-height: min(172px, 30dvh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .sb-persona-picker-appendix-toggle {
-    min-height: 32px;
-    max-width: 100%;
-    display: inline-flex;
+    min-height: 36px;
+    display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     margin: 0;
-    padding: 4px 7px;
-    border-radius: 999px;
+    padding: 4px 8px;
+    border-radius: 8px;
     cursor: pointer;
     color: var(--SmartThemeBodyColor);
-    background: color-mix(in srgb, var(--SmartThemeBodyColor) 7%, transparent);
-    border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor) 72%, transparent);
+}
+
+.sb-persona-picker-appendix-toggle:hover {
+    background: color-mix(in srgb, var(--SmartThemeBodyColor) 8%, transparent);
+}
+
+.sb-persona-picker-appendix-toggle:has(input:checked) {
+    background: color-mix(in srgb, var(--color-primary, var(--sb-accent)) 16%, transparent);
 }
 
 .sb-persona-picker-appendix-toggle input {
+    flex: none;
+    margin: 0;
     accent-color: var(--color-primary, var(--sb-accent));
 }
 
@@ -5515,8 +5562,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: calc(var(--mainFontSize) * 0.76);
-    font-weight: 700;
+    font-size: calc(var(--mainFontSize) * 0.8);
 }
 
 @media screen and (max-width: 520px) {
@@ -5524,14 +5570,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
         min-width: min(300px, calc(100vw - 16px));
     }
 
-    .sb-persona-picker-appendices-header {
-        align-items: stretch;
-        flex-direction: column;
-    }
-
     .sb-persona-picker-manage {
-        width: 100%;
-        justify-content: center;
         min-height: 44px;
     }
 
@@ -8513,6 +8552,7 @@ body.charListGrid #right-nav-panel.openDrawer #rm_print_characters_block:not(.gr
     #sb-bottom-chat-select,
     #sb-persona-bubble,
     #sb-persona-picker,
+    #sb-reasoning-effort-picker,
     .sb-persona-option,
     .sb-shell-resize-handle {
         animation: none !important;
