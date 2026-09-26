@@ -5921,9 +5921,18 @@ function hasPromptTransformHistoryForActiveSwipe(message) {
     return Array.isArray(preGenerationHistory) && preGenerationHistory.some(entry => entry && typeof entry === 'object');
 }
 
-// Mirrors the agent runner: Dialogue Colors <font> tags do not count as a text change.
+// Mirrors the agent runner: Dialogue Colors <font> tags, its trailing [COLORS:...] line
+// and the entities its recolour escapes do not count as a text change.
 function getTransformChainText(value) {
-    return normalizeContentText(value).replace(/<\/?font\b[^>]*>/gi, '');
+    return normalizeContentText(value)
+        .replace(/<\/?font\b[^>]*>/gi, '')
+        .replace(/\s*\[COLORS?:[^\]\n]*\]\s*$/i, '')
+        .replace(/&(?:quot|#34|#x22);/gi, '"')
+        .replace(/&(?:apos|#39|#x27);/gi, '\'')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&amp;/gi, '&')
+        .trim();
 }
 
 function getActiveSwipeExtraValue(message, key) {

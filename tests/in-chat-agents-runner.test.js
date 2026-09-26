@@ -6672,6 +6672,33 @@ describe('in-chat agent post-processing runner', () => {
         await new Promise(resolve => setTimeout(resolve, 5));
     });
 
+    test('a reordered Dialogue Colors metadata line and escaped recolours keep the agent history', async () => {
+        useRegexOnlyAgent();
+
+        const { initAgentRunner, getPromptTransformHistoryForMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        chat.push({
+            name: 'Assistant',
+            mes: 'She said <font color="#ff8800">&quot;it&#39;s fine&quot;</font> softly.\n\n[COLORS:Kris=#b9ffbf,Zhongli=#e6ac00]',
+            is_user: false,
+            is_system: false,
+            extra: {
+                inChatAgentTransformHistory: [{
+                    agentName: 'Prose Polisher',
+                    beforeText: 'Draft',
+                    afterText: 'She said "it\'s fine" softly.\n\n[COLORS:Zhongli=#e6ac00,Kris=#b9ffbf]',
+                }],
+            },
+        });
+
+        expect(getPromptTransformHistoryForMessage(chat[0]).map(entry => entry.agentName)).toEqual(['Prose Polisher']);
+
+        chat[0].mes = chat[0].mes.replace('#ff8800', '#00aaff');
+        await eventSource.emit(eventTypes.MESSAGE_EDITED, 0);
+        expect(getPromptTransformHistoryForMessage(chat[0]).map(entry => entry.agentName)).toEqual(['Prose Polisher']);
+    });
+
     test('an edit after the agents keeps their history and becomes its own undo step', async () => {
         useRegexOnlyAgent();
 

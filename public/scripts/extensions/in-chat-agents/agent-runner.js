@@ -2876,7 +2876,15 @@ function shouldRefreshTransformHistoryUi(messageIndex, message) {
 // Dialogue Colors rewrites message text with <font> tags, often without an edit event,
 // so colouring alone must not break the chain back to the agent rewrites.
 function getTransformChainText(value) {
-    return normalizeContentText(value).replace(/<\/?font\b[^>]*>/gi, '');
+    return normalizeContentText(value)
+        .replace(/<\/?font\b[^>]*>/gi, '')
+        .replace(/\s*\[COLORS?:[^\]\n]*\]\s*$/i, '')
+        .replace(/&(?:quot|#34|#x22);/gi, '"')
+        .replace(/&(?:apos|#39|#x27);/gi, '\'')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&amp;/gi, '&')
+        .trim();
 }
 
 function getPromptTransformHistoryForText(history, currentText) {
