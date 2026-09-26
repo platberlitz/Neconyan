@@ -1479,7 +1479,7 @@ function initializeNeconyanRailOrder(rail) {
     status.className = 'sr-only';
     status.setAttribute('role', 'status');
     rail.appendChild(status);
-    for (const [name, selector] of Object.entries({ primary: '[data-neconyan-primary-nav]', advanced: '[data-neconyan-advanced-nav]', modes: '[data-neconyan-mode-nav]' })) {
+    for (const [name, selector] of Object.entries({ primary: '[data-neconyan-primary-nav]', advanced: '[data-neconyan-advanced-nav]', finer: '[data-neconyan-finer-nav]', modes: '[data-neconyan-mode-nav]' })) {
         const host = rail.querySelector(selector);
         const buttons = new Map([...host.children].map(button => [button.dataset.neconyanRoute || button.dataset.neconyanChatMode, button]));
         neconyanRailGroups[name] = { host, buttons };
@@ -1673,6 +1673,10 @@ function activateNeconyanRailRoute(route) {
         case 'settings':
             shell?.openTab?.('right', 'settings');
             break;
+        case 'server':
+        case 'console-logs':
+            shell?.openTab?.('right', route);
+            break;
         case 'search':
             shell?.openGlobalSearch?.({ focusInput: true });
             break;
@@ -1772,6 +1776,10 @@ function ensureNeconyanRail() {
                     <div id="neconyan-rail-advanced-title" class="neconyan-rail-section-heading"><span>Fine-tuning</span></div>
                     <div data-neconyan-advanced-nav></div>
                 </section>
+                <section class="neconyan-rail-advanced neconyan-rail-finer" aria-labelledby="neconyan-rail-finer-title">
+                    <div id="neconyan-rail-finer-title" class="neconyan-rail-section-heading"><span>Finer-tuning</span></div>
+                    <div data-neconyan-finer-nav></div>
+                </section>
                 <div class="neconyan-rail-section-label neconyan-rail-modes-label">Modes</div>
                 <div data-neconyan-mode-nav></div>
             </nav>
@@ -1831,6 +1839,20 @@ function ensureNeconyanRail() {
     ];
     for (const [route, label, icon] of advancedRoutes) {
         advancedNav.appendChild(createNeconyanRailButton({
+            label,
+            icon,
+            route,
+            onClick: () => activateNeconyanRailRoute(route),
+        }));
+    }
+
+    const finerNav = rail.querySelector('[data-neconyan-finer-nav]');
+    const finerRoutes = [
+        ['server', 'Server', 'fa-server'],
+        ['console-logs', 'Console Logs', 'fa-terminal'],
+    ];
+    for (const [route, label, icon] of finerRoutes) {
+        finerNav.appendChild(createNeconyanRailButton({
             label,
             icon,
             route,

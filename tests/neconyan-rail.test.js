@@ -110,7 +110,11 @@ describe('Neconyan workspace rail behavior', () => {
     test('places Modes below Fine-tuning and mounts order settings in both outlets', () => {
         const build = getWelcomeFunctionSource('ensureNeconyanRail');
         expect(build.indexOf('data-neconyan-primary-nav')).toBeLessThan(build.indexOf('data-neconyan-advanced-nav'));
-        expect(build.indexOf('data-neconyan-advanced-nav')).toBeLessThan(build.indexOf('data-neconyan-mode-nav'));
+        expect(build.indexOf('data-neconyan-advanced-nav')).toBeLessThan(build.indexOf('data-neconyan-finer-nav'));
+        expect(build.indexOf('data-neconyan-finer-nav')).toBeLessThan(build.indexOf('data-neconyan-mode-nav'));
+        expect(build).toContain('>Finer-tuning<');
+        expect(build).toContain('[\'server\', \'Server\', \'fa-server\']');
+        expect(build).toContain('[\'console-logs\', \'Console Logs\', \'fa-terminal\']');
         expect(tabsSource).toContain('createRailOrderSettingsGroup(\'desktop\')');
         expect(tabsSource).toContain('createRailOrderSettingsGroup(\'mobile\')');
         expect(tabsSource).toContain('desktopBottomChatBarSettingsGroup,\n            desktopRailOrderSettingsGroup,');

@@ -55,20 +55,15 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
         });
 
         for (const resume of ['visible again', 'restored tab']) {
-            test(`${resume} restores the newest history window and lets manual scrolling win`, async ({ page }, info) => {
-                await page.evaluate(async () => {
-                    const context = window.SillyTavern.getContext();
-                    context.powerUserSettings.aggressive_dom_unload = true;
-                    context.powerUserSettings.auto_scroll_chat_to_bottom = false;
-                    await context.showMoreMessages();
+            test(`${resume} keeps the reader's scroll position`, async ({ page }, info) => {
+                await page.evaluate(() => {
+                    window.SillyTavern.getContext().powerUserSettings.auto_scroll_chat_to_bottom = false;
                 });
-                await expect(page.locator('#chat .mes[mesid="95"]')).toHaveCount(0);
                 await scrollUp(page);
                 const before = await getChatScrollSnapshot(page);
+                const beforeTop = await page.locator('#chat').evaluate(element => element.scrollTop);
                 await setPageVisibility(page, true);
-                await page.evaluate(() => window.dispatchEvent(new Event('focus')));
                 await waitForAnimationFrames(page, 3);
-                expect((await getChatScrollSnapshot(page)).lastMesId).toBe(before.lastMesId);
 
                 if (resume === 'visible again') {
                     await setPageVisibility(page, false);
@@ -79,20 +74,13 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                         window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
                     });
                 }
-                await expect(page.locator('#chat .mes[mesid="95"]')).toHaveCount(1);
-                await expect.poll(() => bottomGap(page)).toBeLessThanOrEqual(16);
-                const restored = await getChatScrollSnapshot(page);
-                expect(restored.lastVisibleMesId).toBe('95');
-                expect(await page.locator('#chat').evaluate(element => getComputedStyle(element).overflowY)).toMatch(/auto|scroll/);
-                await info.attach('restored-chat-geometry', { body: JSON.stringify(restored), contentType: 'application/json' });
-                await page.screenshot({ path: info.outputPath('restored-chat.png') });
-
-                await scrollUp(page);
-                await page.waitForTimeout(1800);
-                await expect.poll(() => bottomGap(page)).toBeGreaterThan(200);
                 await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-                await waitForAnimationFrames(page, 3);
-                await expect.poll(() => bottomGap(page)).toBeGreaterThan(200);
+                await page.waitForTimeout(1800);
+                const restored = await getChatScrollSnapshot(page);
+                expect(restored.lastVisibleMesId).toBe(before.lastVisibleMesId);
+                expect(Math.abs(await page.locator('#chat').evaluate(element => element.scrollTop) - beforeTop)).toBeLessThanOrEqual(2);
+                expect(await bottomGap(page)).toBeGreaterThan(200);
+                await info.attach('restored-chat-geometry', { body: JSON.stringify(restored), contentType: 'application/json' });
             });
         }
 
@@ -175,7 +163,7 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             await expect.poll(() => bottomGap(page)).toBeLessThanOrEqual(16);
         });
 
-        test('same Conversation reopening and app return show the bottom without losing the draft', async ({ page }) => {
+        test('same Conversation reopening shows the bottom, app return keeps the position, and the draft survives', async ({ page }) => {
             await activateMode(page, 'conversation');
             await expect(page.locator('#sb_conversation_stage')).toBeVisible();
             await page.evaluate(async () => {
@@ -204,8 +192,8 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
 
             await setPageVisibility(page, true);
             await setPageVisibility(page, false);
-            await expect.poll(() => bottomGap(page, timeline)).toBeLessThanOrEqual(16);
-            await scrollUp(page, timeline);
+            await page.waitForTimeout(800);
+            expect(await bottomGap(page, timeline)).toBeGreaterThan(200);
             await page.evaluate(() => window.NeconyanShell.showHome());
             await activateMode(page, 'conversation');
             await expect.poll(() => bottomGap(page, timeline)).toBeLessThanOrEqual(16);

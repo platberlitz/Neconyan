@@ -956,12 +956,6 @@ function bindNeconyanModeStateEvents() {
         void activateNeconyanMode(requestedMode);
     });
     window.addEventListener('neconyan:home-hidden', queueReopenedChatBottomScroll);
-    document.addEventListener('visibilitychange', queueReopenedChatBottomScroll);
-    window.addEventListener('pageshow', event => {
-        if (event.persisted) {
-            queueReopenedChatBottomScroll();
-        }
-    });
 
     if (document.body instanceof HTMLElement && typeof MutationObserver !== 'undefined') {
         neconyanModeObserver = new MutationObserver(queueNeconyanModeSync);
@@ -8755,6 +8749,8 @@ function syncNeconyanRailSelection() {
             : isShellOpen('right') ? ({
                 extensions: 'extensions',
                 background: 'background',
+                server: 'server',
+                'console-logs': 'console-logs',
             }[getShellState('right')?.activeTabId] ?? 'settings')
                 : isLandingPageVisible() ? 'home' : '';
     for (const button of document.querySelectorAll('#neconyan-workspace-rail [data-neconyan-route]')) {
@@ -12142,6 +12138,103 @@ async function requestServerAdmin(endpoint, body = {}, { signal } = {}) {
     }
 
     return data;
+}
+
+const NN_UPDATE_TOAST_STORAGE_KEY = 'neconyan:update-toast-commit';
+const NN_UPDATE_TOAST_INTERVAL_MS = 30 * 60 * 1000;
+let nnUpdateToastTimer = null;
+let nnUpdateToastChecking = false;
+
+function readNotifiedUpdateCommit() {
+    try {
+        return localStorage.getItem(NN_UPDATE_TOAST_STORAGE_KEY) || '';
+    } catch {
+        return '';
+    }
+}
+
+function rememberNotifiedUpdateCommit(commit) {
+    try {
+        localStorage.setItem(NN_UPDATE_TOAST_STORAGE_KEY, commit);
+    } catch {
+        /* storage unavailable; the toast may show again next check */
+    }
+}
+
+function dismissUpdateToast() {
+    document.getElementById('nn-update-toast')?.remove();
+}
+
+let nnUpdateToastStyles = null;
+
+function loadUpdateToastStyles() {
+    nnUpdateToastStyles ??= new Promise(resolve => {
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = 'css/neconyan-update-toast.css?v=20260926a';
+        link.addEventListener('load', resolve, { once: true });
+        link.addEventListener('error', resolve, { once: true });
+        document.head.append(link);
+    });
+    return nnUpdateToastStyles;
+}
+
+async function showUpdateToast(repository) {
+    const commit = String(repository.remoteCommit || '');
+    rememberNotifiedUpdateCommit(commit);
+    dismissUpdateToast();
+    await loadUpdateToastStyles();
+
+    const behind = Number(repository.behind) || 0;
+    const toast = document.createElement('div');
+    toast.id = 'nn-update-toast';
+    toast.className = 'nn-update-toast';
+    toast.setAttribute('role', 'status');
+    toast.innerHTML = `
+        <button type="button" class="nn-update-toast-open">
+            <i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i>
+            <span class="nn-update-toast-text">
+                <strong>Update available</strong>
+                <span></span>
+            </span>
+        </button>
+        <button type="button" class="nn-update-toast-close" aria-label="Dismiss" title="Dismiss">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>`;
+    toast.querySelector('.nn-update-toast-text > span').textContent = behind === 1
+        ? '1 new change. Open Server to update.'
+        : `${behind} new changes. Open Server to update.`;
+    toast.querySelector('.nn-update-toast-open').addEventListener('click', () => {
+        dismissUpdateToast();
+        openShell('right', 'server');
+    });
+    toast.querySelector('.nn-update-toast-close').addEventListener('click', dismissUpdateToast);
+    document.body.append(toast);
+}
+
+async function checkForNeconyanUpdate() {
+    if (nnUpdateToastChecking) return;
+    nnUpdateToastChecking = true;
+    try {
+        const status = await requestServerAdmin('/api/server-admin/status');
+        const repository = status?.repository;
+        if (!repository?.isRepo || !repository.remoteCommit || !(Number(repository.behind) > 0)) return;
+        if (repository.remoteCommit === readNotifiedUpdateCommit()) return;
+        await showUpdateToast(repository);
+    } catch (error) {
+        if (error?.status === 401 || error?.status === 403) {
+            clearInterval(nnUpdateToastTimer);
+            nnUpdateToastTimer = null;
+        }
+    } finally {
+        nnUpdateToastChecking = false;
+    }
+}
+
+function startNeconyanUpdateToast() {
+    if (nnUpdateToastTimer) return;
+    nnUpdateToastTimer = setInterval(() => void checkForNeconyanUpdate(), NN_UPDATE_TOAST_INTERVAL_MS);
+    void checkForNeconyanUpdate();
 }
 
 async function requestUserPrivateAction(endpoint, { body = {}, useFormData = false, onProgress = null } = {}) {
@@ -19434,4 +19527,5 @@ window.addEventListener('neconyan:ready', () => {
         console.error('Failed to open Neconyan workspace link.', error);
         toastr.warning('This workspace link could not be opened. Try again from Home.');
     });
+    startNeconyanUpdateToast();
 });
