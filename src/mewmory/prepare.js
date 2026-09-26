@@ -8,10 +8,10 @@ import { mutateState, normalizeLocator, readChat } from './store.js';
 import { getCounter } from './tokens.js';
 
 export async function prepareMewmoryPrompt(directories, body, signal, {
-    loadState = loadCurrentState, mutate = mutateState, readSource = readChat, scheduleBackground = true,
+    loadState = loadCurrentState, mutate = mutateState, readSource = readChat, scheduleBackground = true, readConfiguration = readConfig,
 } = {}) {
     const locator = normalizeLocator(body.locator);
-    const config = readConfig(directories);
+    const config = readConfiguration(directories);
     const state = await loadState(directories, locator);
     if (!state.enabled) return { enabled: false, excludedIndices: [], npcText: '', memoryText: '' };
     const snapshot = generationFingerprint(state, config);
@@ -47,8 +47,8 @@ export async function prepareMewmoryPrompt(directories, body, signal, {
         if (!ref || (sourceEligible(state, ref) && state.checkpoints[refKey(ref)] !== policy)) break;
         excludedIndices.push(item.index);
     }
-    const context = await recall(directories, locator, { asOf, tokenizer: body.tokenizer || {}, signal, local: true }, { loadState, mutate, scheduleBackground });
-    if (generationFingerprint(await loadState(directories, locator), readConfig(directories)) !== snapshot) {
+    const context = await recall(directories, locator, { asOf, tokenizer: body.tokenizer || {}, signal, local: true }, { loadState, mutate, scheduleBackground, readConfiguration });
+    if (generationFingerprint(await loadState(directories, locator), readConfiguration(directories)) !== snapshot) {
         fail('The chat, Mewmory settings, or a memory you edited changed while the reply was being prepared. Reload and send again.', 409);
     }
     const excluded = new Set(excludedIndices);

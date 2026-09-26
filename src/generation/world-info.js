@@ -29,7 +29,7 @@ const DEFAULTS = { world_info_depth: 2, world_info_budget: 25, world_info_recurs
     world_info_character_strategy: 1, world_info_budget_cap: 0, world_info_min_activations: 0,
     world_info_min_activations_depth_max: 0, world_info_use_group_scoring: false, world_info_max_recursion_steps: 0 };
 
-function savedAttachments(directories, records) {
+export function savedAttachments(directories, records) {
     return records.slice(1).map((message, index) => {
         const files = message.extra?.files;
         if (files === undefined) return null;

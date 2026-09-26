@@ -10,7 +10,7 @@ const fail = message => { throw roleplayError('ROLEPLAY_INVALID', message, 409);
 
 /** Assemble saved Prompt Manager slots around protected history. No page state is read. */
 export async function assembleRoleplayChatPrompt(history, snapshot, material, worldInfo, {
-    userName, characterName, groupNames = [], effect = 'append', substitute, substituteHistory = value => value, memory, exampleLimit = Infinity, contributions = [], records = [],
+    userName, characterName, groupNames = [], effect = 'append', substitute, substituteHistory = value => value, memory, exampleLimit = Infinity, contributions = [], records = [], onSection, transformPrompt = (_id, content) => content,
 } = {}) {
     const controls = mergeChatPresetSettings(material.active, material.preset);
     const order = controls?.prompt_order?.find(value => String(value?.character_id) === '100001')?.order;
@@ -68,13 +68,14 @@ export async function assembleRoleplayChatPrompt(history, snapshot, material, wo
         if (content && ['worldInfoBefore', 'worldInfoAfter'].includes(item.identifier) && controls.wi_format?.trim()) {
             content = controls.wi_format.replaceAll('{0}', content);
         }
-        const prompt = { ...saved, role, content: render(content ?? '', original), injection_depth: saved.injection_depth ?? 4,
+        const prompt = { ...saved, role, content: transformPrompt(item.identifier, render(content ?? '', original)), injection_depth: saved.injection_depth ?? 4,
             injection_order: saved.injection_order ?? 100 };
         if (!Number.isSafeInteger(prompt.injection_depth) || prompt.injection_depth < 0 || prompt.injection_depth > 10000
             || !Number.isSafeInteger(prompt.injection_order)) fail('A saved depth prompt is invalid.');
         return [prompt];
     });
     const extensions = buildRoleplayPromptExtensions(snapshot, worldInfo, render, contributions);
+    for (const prompt of extensions) prompt.content = transformPrompt(prompt.key, prompt.content);
     if (memory?.enabled && !prompts.some(prompt => prompt.identifier === 'chatHistory')) {
         fail('Mewmory needs the saved Chat History prompt marker enabled.');
     }
@@ -120,6 +121,11 @@ export async function assembleRoleplayChatPrompt(history, snapshot, material, wo
     };
     const examples = exampleBlocks.slice(0, exampleLimit).flatMap(block => exampleSeparator
         ? [boundary(exampleSeparator), ...block] : block);
+    for (const prompt of prompts) {
+        const content = prompt.identifier === 'chatHistory' ? injected : prompt.identifier === 'dialogueExamples' ? examples : prompt.content ?? '';
+        onSection?.({ id: prompt.identifier, content });
+    }
+    for (const prompt of extensions) onSection?.({ id: prompt.key, content: prompt.content });
     const newChat = render((groupNames.length ? controls.new_group_chat_prompt : controls.new_chat_prompt) ?? '');
     const groupNudge = groupNames.length ? render(controls.group_nudge_prompt ?? '') : '';
     if (newChat) injected.unshift(boundary(newChat));

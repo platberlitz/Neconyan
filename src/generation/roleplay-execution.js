@@ -16,7 +16,7 @@ import { assertRoleplayWorldInfoCurrent, prepareRoleplayWorldInfo } from './worl
 import { assertWorldInfoDepthHistory, roleplayEffectTrigger, roleplayMacroCapabilities, savedRoleplayMacroSnapshot, selectRoleplayPromptRecords, prepareRoleplayHistoryContent, buildRoleplaySavedHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets, isWorldInfoAuthorNoteActive } from './roleplay-prompt.js';
 import { getChatProfileContextLimit, resolveGenerationProfile } from './profiles.js';
 import { getCounter } from '../mewmory/tokens.js';
-import { fnv1a } from '../../public/scripts/extensions/third-party/MacroEnhanced/src/state-impl.js';
+import { createRoleplayLoreMacros } from './roleplay-lore-macros.js';
 import { assembleRoleplayChatPrompt } from './roleplay-chat-prompt.js';
 import { prepareMewmoryPrompt } from '../mewmory/prepare.js';
 import { recallInBackground } from '../mewmory/retrieval.js';
@@ -589,30 +589,6 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     });
     const promptExtensions = retrieval?.prompt ? [...contributions.extensions, retrieval.prompt] : contributions.extensions;
     const contributedMessages = new Set(contributions.history);
-    const loreScope = scope => !scope || scope === 'active' ? worldInfo.activeLore
-        : scope === 'bound' ? worldInfo.boundLore : null;
-    const loreInFlight = new Set();
-    const loreLookup = (title, book) => worldInfo.boundLore.find(item => (!book || item.book === book)
-        && ((String(item.entry.comment ?? '').trim()
-            && String(item.entry.comment).trim().toLowerCase() === String(title).trim().toLowerCase())
-            || String(item.entry.uid) === String(title).trim()));
-    const loreContent = (item, resolve) => {
-        if (!item) return '';
-        const identity = `${item.book}::${item.entry.uid}`;
-        if (loreInFlight.has(identity)) return item.content;
-        loreInFlight.add(identity);
-        try { return resolve(item.content); } finally { loreInFlight.delete(identity); }
-    };
-    const loreFields = {
-        title: item => item.title, keys: item => (item.entry.key ?? []).join(', '),
-        secondarykeys: item => (item.entry.keysecondary ?? []).join(', '),
-        content: item => item.content, position: item => String(item.entry.position ?? ''),
-        depth: item => String(item.entry.depth ?? ''), order: item => String(item.entry.order ?? ''),
-        probability: item => String(item.entry.probability ?? ''), constant: item => item.entry.constant ? 'true' : 'false',
-        enabled: item => item.entry.disable ? 'false' : 'true', uid: item => String(item.entry.uid),
-    };
-    const loreMacro = { unnamedArgs: [{ name: 'entry' }, { name: 'book', optional: true }],
-        handler: ({ unnamedArgs: [title, book], resolve }) => loreContent(loreLookup(title, book), resolve) };
     const preparedPrompt = request.serverPrompt ? readArtifact(directories, job.id, request.worldInfo?.agents ? 'roleplay-base-prompt' : 'roleplay-prompt') : undefined;
     let preparedText = preparedPrompt?.preparedText;
     let cfgValues = preparedPrompt?.cfgValues;
@@ -632,40 +608,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     };
     const macroEnvironment = createMacroEnvironment(macroSnapshot, request.serverPrompt
         ? roleplayMacroCapabilities(request.worldInfo, promptMaterial, request.maxTokens, contextLimit(directories, request.binding), () => macroEnvironment) : {}, {
-        dynamicMacros: worldInfo && request.worldInfo.enhancedLoreMacros ? {
-            lore: loreMacro,
-            wi: loreMacro,
-            lorekeys: { unnamedArgs: [{ name: 'entry' }, { name: 'book', optional: true }],
-                handler: ({ unnamedArgs: [title, book] }) => (loreLookup(title, book)?.entry.key ?? []).join(', ') },
-            loreexists: { unnamedArgs: [{ name: 'entry' }, { name: 'book', optional: true }],
-                handler: ({ unnamedArgs: [title, book] }) => String(Boolean(loreLookup(title, book))) },
-            lorefield: { unnamedArgs: [{ name: 'entry' }, { name: 'field' }, { name: 'book', optional: true }],
-                handler: ({ unnamedArgs: [title, field, book] }) => {
-                    const item = loreLookup(title, book);
-                    const name = String(field ?? '').trim().toLowerCase();
-                    return item && Object.hasOwn(loreFields, name) ? loreFields[name](item) : '';
-                } },
-            lorepick: { unnamedArgs: [{ name: 'book', optional: true }, { name: 'key', optional: true }],
-                handler: ({ unnamedArgs: [book, key], resolve }) => {
-                    const candidates = worldInfo.boundLore.filter(item => !book || item.book === book)
-                        .sort((a, b) => String(a.entry.uid).localeCompare(String(b.entry.uid), undefined, { numeric: true }));
-                    if (!candidates.length) return '';
-                    const seed = `${request.worldInfo.metadata.chat_id_hash ?? ''}:${String(book ?? '')}:${String(key ?? '')}`;
-                    return loreContent(candidates[fnv1a(seed) % candidates.length], resolve);
-                } },
-            loreactive: { unnamedArgs: [{ name: 'separator', optional: true }], handler: ({ unnamedArgs: [separator] }) =>
-                worldInfo.activeLore.map(entry => entry.title).join(separator || ', ') },
-            lorebooks: { unnamedArgs: [{ name: 'separator', optional: true }], handler: ({ unnamedArgs: [separator] }) =>
-                [...new Set([...request.worldInfo.names.chat, ...request.worldInfo.names.character,
-                    ...request.worldInfo.names.global])].join(separator || ', ') },
-            loreentries: { unnamedArgs: [{ name: 'book', optional: true }, { name: 'separator', optional: true }],
-                handler: ({ unnamedArgs: [book, separator] }) => worldInfo.boundLore
-                    .filter(entry => !book || entry.book === book).map(entry => entry.title).join(separator || ', ') },
-            lorecount: { unnamedArgs: [{ name: 'scope', optional: true }], handler: ({ unnamedArgs: [scope] }) =>
-                loreScope(scope) ? String(loreScope(scope).length) : '' },
-            loretokens: { unnamedArgs: [{ name: 'scope', optional: true }], handler: ({ unnamedArgs: [scope] }) =>
-                loreScope(scope) ? String(Math.ceil(loreScope(scope).map(entry => entry.content).join('\n').length / 4)) : '' },
-        } : {},
+        dynamicMacros: worldInfo && request.worldInfo.enhancedLoreMacros ? createRoleplayLoreMacros(worldInfo, request.worldInfo) : {},
     });
     // A trimming pass reuses resolved strings; it must not reroll prompt macros.
     const resolvedStrings = [];

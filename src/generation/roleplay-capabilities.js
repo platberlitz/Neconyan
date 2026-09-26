@@ -7,14 +7,15 @@ import { fetchChatProfileModels } from './service.js';
 const catalogued = new Set(['openrouter', 'mistralai', 'aimlapi', 'chutes', 'electronhub', 'pollinations', 'moonshot', 'nanogpt', 'workers_ai']);
 
 /** Save only the selected model's public input capabilities, never the account's catalogue credentials. */
-export async function prepareRoleplayCapabilities(context, material, binding, { modelOverride = '', fetchModels = fetchChatProfileModels } = {}) {
+export async function prepareRoleplayCapabilities(context, material, binding, { modelOverride = '', fetchModels = fetchChatProfileModels,
+    artifactName = 'roleplay-model-capabilities' } = {}) {
     const settings = bindChatInputSettings(mergeChatPresetSettings(material.active, material.preset),
         material.source, modelOverride || material.profile?.model);
     settings.custom_prompt_post_processing ??= '';
     if (!catalogued.has(material.source)) return { settings, models: [] };
     const model = modelOverride || material.profile?.model;
     const identity = roleplayHash({ binding, model });
-    let saved = readArtifact(context.directories, context.job.id, 'roleplay-model-capabilities');
+    let saved = readArtifact(context.directories, context.job.id, artifactName);
     if (saved === undefined) {
         const models = await fetchModels({ context: { owner: context.owner, directories: context.directories }, material, signal: context.signal });
         const found = models.find(item => item?.id === model);
@@ -33,7 +34,7 @@ export async function prepareRoleplayCapabilities(context, material, binding, { 
             throw roleplayError('ROLEPLAY_INVALID', 'The saved model capability record is too large.', 409);
         }
         saved = { identity, record, hash: roleplayHash(record) };
-        writeArtifact(context.directories, context.job.id, 'roleplay-model-capabilities', saved);
+        writeArtifact(context.directories, context.job.id, artifactName, saved);
     }
     if (!saved || saved.identity !== identity || saved.record?.id !== model || saved.hash !== roleplayHash(saved.record)) {
         throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved model input capabilities need recovery.', 503);

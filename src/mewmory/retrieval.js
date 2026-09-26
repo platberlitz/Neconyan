@@ -24,7 +24,7 @@ export function recallInBackground(directories, locator, options = {}, dependenc
     return job;
 }
 
-function recallFingerprint(state, config, sourceCount) {
+export function recallFingerprint(state, config, sourceCount) {
     return generationFingerprint({ ...state, timeline: state.timeline.slice(0, sourceCount) }, config);
 }
 
@@ -152,8 +152,8 @@ async function selectMemories(state, directories, config, documents, scene, allD
 export async function recall(directories, locator, {
     asOf = Infinity, query: manualQuery = '', tokenizer = {}, signal, local = false, background = false, operationId,
 } = {}, { call = callJsonRole, embedFn = embed, loadState = loadCurrentState, mutate = mutateState,
-    scheduleBackground = true } = {}) {
-    const config = readConfig(directories);
+    scheduleBackground = true, readConfiguration = readConfig } = {}) {
+    const config = readConfiguration(directories);
     const state = await loadState(directories, locator);
     if (!state.enabled) return { enabled: false, npcText: '', memoryText: '', tokens: { npc: 0, memory: 0 } };
     const fingerprint = assemblyFingerprint(state, config);
@@ -216,7 +216,7 @@ export async function recall(directories, locator, {
     const retainedJobs = operationId ? new Set(listJobs(directories, { includeDismissed: true }).map(job => job.id)) : null;
     mutate(directories, locator, current => {
         signal?.throwIfAborted();
-        const currentConfig = readConfig(directories);
+        const currentConfig = readConfiguration(directories);
         if ((background ? recallFingerprint(current, currentConfig, sourceCount) : generationFingerprint(current, currentConfig)) !== validationFingerprint) {
             fail('The chat, Mewmory settings, or a memory you edited changed while memories were being picked. Send or regenerate again.', 409);
         }

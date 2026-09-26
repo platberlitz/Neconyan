@@ -8,7 +8,7 @@ import { roleplayError } from '../roleplay-store.js';
 /** Render the final saved text-completion prompt before provider work or token fitting. */
 export function createRoleplayTextPrompt(history, snapshot, material, worldInfo, {
     userName, characterName, groupNames = [], effect = 'append', substitute = value => value,
-    substituteHistory = value => value, memory, contributions = [], records = [],
+    substituteHistory = value => value, memory, contributions = [], records = [], onSections,
 } = {}) {
     const context = material.context ?? material.power?.context ?? {
         story_string: snapshot.storyTemplate, story_string_position: snapshot.storyPosition,
@@ -126,9 +126,10 @@ export function createRoleplayTextPrompt(history, snapshot, material, worldInfo,
             }
             if (!instruct.enabled && bias && retained.length) retained.at(-1).text += (/\s$/.test(retained.at(-1).text) ? '' : ' ') + bias.trimStart();
             const needsAlignment = alignment && retained.find(item => item.message.source)?.message.role !== 'user';
-            return combineRoleplayTextPrompt({ story, examples: examples.slice(0, exampleLimit).join(''),
-                history: (needsAlignment ? alignment : '') + retained.map(item => item.text).join(''),
-                chatStart, preamble, collapseNewlines: material.power?.collapse_newlines });
+            const parts = { story, examples: examples.slice(0, exampleLimit).join(''),
+                history: (needsAlignment ? alignment : '') + retained.map(item => item.text).join(''), chatStart, preamble };
+            onSections?.(parts);
+            return combineRoleplayTextPrompt({ ...parts, collapseNewlines: material.power?.collapse_newlines });
         },
     };
 }

@@ -65,8 +65,13 @@ export async function buildTextProfileRequest(context, material, messages, maxTo
             max_tokens: maxTokens, max_new_tokens: maxTokens, model, api_type: source, api_server: settings.api_server,
             ...(secretId ? { secret_id: secretId } : {}), ...overridePayload };
     }
-    if (material.kind !== 'active' && (rawOptions.includePreset === false || rawOptions.includeInstruct === false)) {
-        fail('Omit both the sampler and instruct presets together for an unformatted text request.', 409);
+    if (material.kind !== 'active' && rawOptions.includePreset === false) {
+        const format = { name1: userName, name2: characterName, selectedGroup: groupNames.length > 0, substitute };
+        const prompt = typeof messages === 'string' ? messages : instruct.enabled
+            ? constructScopedTextPrompt(structuredClone(messages), instruct, format)
+            : messages.map(message => normalizeContentText(message.content)).join('\n\n');
+        return { stream: false, prompt, max_tokens: maxTokens, max_new_tokens: maxTokens, model,
+            api_type: source, api_server: settings.api_server, ...(secretId ? { secret_id: secretId } : {}), ...overridePayload };
     }
     if (macroEnvironment?.extra) {
         macroEnvironment.extra.mainApi = 'textgenerationwebui';
@@ -77,7 +82,7 @@ export async function buildTextProfileRequest(context, material, messages, maxTo
     if (raw && rawOptions.jsonSchema) fail('Structured JSON requests require a saved Chat Completion connection.', 409);
     if (raw && rawOptions.preserveReasoningBudget) fail('Preserving the active text reasoning budget is not available on the server.', 409);
     const prompt = preparedText ?? (raw ? createRawPrompt(structuredClone(messages), 'textgenerationwebui', rawOptions.instructOverride, rawOptions.quietToLoud,
-        rawOptions.systemPrompt, rawOptions.prefill, { ...format, instruct, context: material.context }) : typeof messages === 'string' ? messages : instruct.enabled
+        rawOptions.systemPrompt, rawOptions.prefill, { ...format, instruct, context: material.context }) : typeof messages === 'string' ? messages : instruct.enabled && rawOptions.includeInstruct !== false
         ? constructScopedTextPrompt(structuredClone(messages), instruct, format)
         : messages.map(message => normalizeContentText(message.content)).join('\n\n'));
     const tokenize = text => encodeTextProfilePrompt(context, material, text, { signal, fetch: fetchImpl, modelOverride, validateOnly });
