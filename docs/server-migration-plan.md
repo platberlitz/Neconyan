@@ -7,7 +7,15 @@ document; this file only records what is actually finished and what is not.
 Status values: `done` (implemented and verified), `partial` (implemented but an
 acceptance case is unproven), `pending` (not started).
 
-## Current checkpoint: Stage 10 remaining manual Conversation work (verified)
+## Current checkpoint: Stage 11 Meower (verified)
+
+- I have completed Stage 11 locally on top of Stage 10 and the owner changes at `4af51fb`. Native refresh and profile jobs capture their source, selected cast, connection and feed epoch, own provider and image work, and save activity or profile drafts after every page closes.
+- The existing native store publishes private permanent receipts and feed/profile changes together. Replays, deleted posts, pruned jobs and lost acknowledgements cannot trigger another paid operation. Reserved receipt capacity refuses exhaustion; unknown provider outcomes require explicit recovery.
+- The browser observes and merges saved snapshots without losing local edits, reads retained results, reattaches running refreshes and sends cancellation only for Stop. Persona profiles remain reviewed drafts. Meower carryover stays a page prompt addition.
+- One whole-stage self-review and its batched corrections are complete. Final verification passed 347 Jest suites (4,608 tests, 2 skipped, 1 snapshot), 1,285 Node tests, seven serial desktop/touch Chromium cases, root lint, changed/new-file lint, frontend budgets and whitespace. Separate tests-folder lint retains 183 existing errors with no new errors in modified legacy tests. Providers were local fixtures; iOS is inferred from Chromium.
+- Continue with Stage 12 Labs and Stage 13 remaining application/final audit, including import/reset preservation of Meower receipts. No push or deployment is authorised.
+
+## Historical Stage 10 remaining manual Conversation work (verified)
 
 - I have completed Stage 10 locally, on top of verified Stage 9. Regenerate, Rewrite, Generate schedule, the hand-edited schedule and every selfie entry point now run as native server jobs or version-checked server writes; the page builds prompts where it did before, but never applies a result itself. The Oracle VM runs `staging` up to `9e87a12` (Stages 1-9, deployed 26 September 2026); Stage 10 is not deployed.
 - `conversation.rewrite` caches the paid text before writing and replaces the message in one receipt-protected write that depends only on the messages the rewrite used, so unrelated activity does not discard a paid result and an edited or deleted target keeps the original reply.
@@ -132,7 +140,7 @@ owner resumes this paused migration, continue automatically between verified che
 | 8. Whole-Roleplay execution | done | One saved progressive workflow for group speakers, tools, Agents, continuations, automatic swipes, cancellation, known-result recovery and native completion. Root workflow, no-chat candidates, bound tool children with own-source lineage, saved automatic decisions, group speakers and the journalled final write are implemented and verified. Zero-page completion, real serving-process restart and no-repeat recovery are covered by disposable fixtures. Private admission started the workflow; Stage 9 added the production browser caller. |
 | 9. Named workflows and browser cutover | done | This is the Roleplay ownership checkpoint. Ten server-owned names carry the reply, continuation, swipe, correction, Story, Guided and Deep Swipe semantics, including a new unselected-swipe effect for Deep Swipe. The browser submits one accepted workflow per migrated control, observes it, cancels on Stop, and adopts the durable write by reloading the chat it does not own; a reopened page reads its permanent receipt back instead of submitting again. The page reports rendered and mention asides as native facts, and the server samples them and chooses at most one recipient through the existing admission, cooldown and occurrence key. Group turns from the browser, `/impersonate` and Story Mode's transforms remain browser-owned by decision and are not stage scope. |
 | 10. Remaining manual Conversation | done | Regeneration and polishing, selfies and schedule generation run as native jobs with cached paid results and one receipt-protected completion write that checks only the messages the result depends on; hand-edited schedules save through a version-checked route. Definite provider refusals now fail instead of staying unknown, explicit retry releases unknown steps, and a failed narration no longer stops a reply. The six pre-existing durable browser failures are fixed. |
-| 11. Meower | pending | Saved profile/feed/interaction waves using its revisioned native store. |
+| 11. Meower | done | Native saved profile/feed/interaction/image waves, permanent receipts, conflict checks and closed-page completion using its revisioned store. |
 | 12. Labs | pending | Prompting Lab, Distiller, LoreStitch and World Info Lab compute saved proposals, with separate reviewed, version-checked apply. |
 | 13. Remaining application and final audit | pending | Translation, vectors, automation, archive, import, backup, maintenance and every remaining bundled workflow; final ownership verification. |
 
@@ -391,7 +399,7 @@ The older results below describe earlier checkpoints, not the latest totals.
   Conversation work includes manual regeneration, polishing, scheduling and image
   coordination completion writes. Text-completion and acknowledged active bindings
   are implemented.
-- `pending` Meower.
+- `done` Meower: native refresh/profile jobs, saved image/activity waves, private permanent receipts, observed results and explicit Stop.
 - `pending` Prompting Lab, Distiller, LoreStitch, World Info Lab.
 - `pending` remaining bundled model and file workflows.
 - `pending` removal of duplicate browser execution and old-client protection.
