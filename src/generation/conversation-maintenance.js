@@ -69,7 +69,7 @@ function automaticSummaryAllowed(request, current, target) {
 }
 
 /** Older manual summaries stored a count rather than a cursor. */
-function countNewMessages(messages, cursor, count) {
+export function countNewMessages(messages, cursor, count) {
     if (!cursor) return Math.max(0, messages.length - (Number(count) || 0));
     const index = messages.findIndex(message => message.id === cursor);
     return index >= 0 ? messages.length - index - 1 : messages.length;

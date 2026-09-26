@@ -5,6 +5,7 @@ import sanitize from 'sanitize-filename';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { acquireChatFileLock, withChatFileLocks } from '../chat-file-lock.js';
 import { readChatJsonlStrict } from '../chat-recovery.js';
+import { recoverFileWriteSync } from '../util.js';
 import { fail, forkState, hash, newState, object, purgeSources, sourceAt, syncSources, text } from './core.js';
 
 export const MAX_ARCHIVE_BYTES = 256 * 1024 * 1024;
@@ -122,6 +123,178 @@ export function readJson(filename, fallback) {
     }
 }
 
+/**
+ * Stat-validated parsed JSON for files that Mewmory reads many times inside one
+ * scan (settings.json, connection presets). The returned object is shared
+ * between callers, so treat it as read-only; never mutate it. A cached copy is
+ * reused only while the file still has the same device, inode, size and
+ * modification time, so an edited or replaced file is read again on its next
+ * use. The cache is bounded by source bytes rather than entry count because a
+ * single archive may be large.
+ */
+const sharedJsonCache = new Map();
+const SHARED_JSON_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+let sharedJsonCacheBytes = 0;
+
+function sameCachedFileStat(cached, stat) {
+    return cached.dev === stat.dev && cached.ino === stat.ino && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs;
+}
+
+function removeCachedJson(key) {
+    const cached = sharedJsonCache.get(key);
+    if (!cached) return;
+    sharedJsonCache.delete(key);
+    sharedJsonCacheBytes -= cached.bytes;
+}
+
+export function readJsonShared(filename, fallback) {
+    const key = path.resolve(filename);
+    let stat;
+    try {
+        stat = fs.statSync(key);
+    } catch (error) {
+        removeCachedJson(key);
+        if (error.code === 'ENOENT') return fallback;
+        if (error.status) throw error;
+        fail('Mewmory could not read its saved data. Restore a valid export before making changes.', 409);
+    }
+    if (!stat.isFile() || stat.size > MAX_ARCHIVE_BYTES) {
+        removeCachedJson(key);
+        fail('The Mewmory file is too large or is not a regular file.', 409);
+    }
+    const cached = sharedJsonCache.get(key);
+    if (cached && sameCachedFileStat(cached, stat)) {
+        // Refresh recency so a hot archive is not evicted before its next scan.
+        sharedJsonCache.delete(key);
+        sharedJsonCache.set(key, cached);
+        return cached.data;
+    }
+    removeCachedJson(key);
+    let data;
+    try {
+        data = JSON.parse(fs.readFileSync(key, 'utf8'));
+    } catch (error) {
+        removeCachedJson(key);
+        if (error.code === 'ENOENT') return fallback;
+        fail('Mewmory could not read its saved data. Restore a valid export before making changes.', 409);
+    }
+    const entry = { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, bytes: stat.size, data };
+    sharedJsonCache.set(key, entry);
+    sharedJsonCacheBytes += entry.bytes;
+    while (sharedJsonCacheBytes > SHARED_JSON_CACHE_MAX_BYTES && sharedJsonCache.size > 1) {
+        removeCachedJson(sharedJsonCache.keys().next().value);
+    }
+    return data;
+}
+
+const chatReadCache = new Map();
+const CHAT_READ_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+let chatReadCacheBytes = 0;
+
+function removeCachedChat(key) {
+    const cached = chatReadCache.get(key);
+    if (!cached) return;
+    chatReadCache.delete(key);
+    chatReadCacheBytes -= cached.bytes;
+}
+
+function chatSourceFromResult(result, filename) {
+    if (result.status !== 'ok') fail('Save or reload this chat before using Mewmory. Its source file is unavailable.', 409);
+    return { metadata: result.records[0].chat_metadata || {}, messages: result.records.slice(1), filename };
+}
+
+/** Shared, read-only chat snapshots for Mewmory's periodic reconciliation path. */
+export function readChatShared(directories, locator) {
+    const filename = chatPath(directories, locator);
+    const key = path.resolve(filename);
+    recoverFileWriteSync(key);
+    let stat;
+    try {
+        stat = fs.lstatSync(key);
+    } catch {
+        removeCachedChat(key);
+        return chatSourceFromResult(readChatJsonlStrict(key), filename);
+    }
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+        removeCachedChat(key);
+        return chatSourceFromResult(readChatJsonlStrict(key), filename);
+    }
+    const cached = chatReadCache.get(key);
+    if (cached && sameCachedFileStat(cached, stat)) {
+        chatReadCache.delete(key);
+        chatReadCache.set(key, cached);
+        return cached.source;
+    }
+    removeCachedChat(key);
+    const result = readChatJsonlStrict(key, { recover: false });
+    const source = chatSourceFromResult(result, filename);
+    const entry = { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, bytes: stat.size, source };
+    chatReadCache.set(key, entry);
+    chatReadCacheBytes += entry.bytes;
+    while (chatReadCacheBytes > CHAT_READ_CACHE_MAX_BYTES && chatReadCache.size > 1) {
+        removeCachedChat(chatReadCache.keys().next().value);
+    }
+    return source;
+}
+
+const storySummaryCache = new Map();
+const STORY_SUMMARY_CACHE_MAX_ENTRIES = 128;
+
+function cloneStorySummary(summary) {
+    return {
+        ...summary,
+        locator: { ...summary.locator },
+        processing: summary.processing ? { ...summary.processing } : null,
+    };
+}
+
+function readStorySummary(directories, filename) {
+    const key = path.resolve(filename);
+    const expectedHash = path.basename(filename, '.json');
+    let stat;
+    try {
+        stat = fs.statSync(key);
+    } catch {
+        storySummaryCache.delete(key);
+        return null;
+    }
+    const cached = storySummaryCache.get(key);
+    if (cached && sameCachedFileStat(cached, stat)) {
+        if (!fs.existsSync(chatPath(directories, cached.summary.locator))) {
+            storySummaryCache.delete(key);
+            return null;
+        }
+        // Refresh recency just like the shared JSON cache.
+        storySummaryCache.delete(key);
+        storySummaryCache.set(key, cached);
+        return cloneStorySummary(cached.summary);
+    }
+    let state;
+    try {
+        state = readJson(key, null);
+        if (!state || state.format !== 1 || !state.locator) {
+            storySummaryCache.delete(key);
+            return null;
+        }
+        const locator = normalizeLocator(state.locator);
+        validateState(locator, state, expectedHash);
+        if (!fs.existsSync(chatPath(directories, locator))) {
+            storySummaryCache.delete(key);
+            return null;
+        }
+    } catch {
+        storySummaryCache.delete(key);
+        return null;
+    }
+    const summary = {
+        locator: state.locator, storyId: state.storyId, branchId: state.branchId, enabled: state.enabled,
+        updatedAt: state.updatedAt, processing: state.processing ? { status: state.processing.status, automatic: state.processing.automatic } : null,
+    };
+    storySummaryCache.set(key, { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, summary });
+    while (storySummaryCache.size > STORY_SUMMARY_CACHE_MAX_ENTRIES) storySummaryCache.delete(storySummaryCache.keys().next().value);
+    return cloneStorySummary(summary);
+}
+
 export function writeJson(filename, value) {
     const serialized = JSON.stringify(value);
     if (Buffer.byteLength(serialized) > MAX_ARCHIVE_BYTES) fail('This Mewmory archive reached 256 MiB. Export it and start a new story before adding more memory.', 413);
@@ -136,17 +309,30 @@ export function readChat(directories, locator) {
     return { metadata: result.records[0].chat_metadata || {}, messages: result.records.slice(1), filename };
 }
 
-export function readState(directories, locator) {
+function validateState(locator, state, expectedHash = hash(locator)) {
+    if (state.format !== 1 || hash(normalizeLocator(state.locator)) !== expectedHash || hash(locator) !== expectedHash || !Array.isArray(state.records)) {
+        fail('This Mewmory archive has an unsupported format or chat identity.', 409);
+    }
+    return state;
+}
+
+/**
+ * Read-only worker and index paths share the parsed archive. The cache is
+ * stat-validated, and callers must not mutate the returned object.
+ */
+export function readStateShared(directories, locator) {
     locator = normalizeLocator(locator);
-    const state = readJson(statePath(directories, locator), null);
+    const state = readJsonShared(statePath(directories, locator), null);
     if (!state) {
         if (fs.existsSync(recoveryPath(directories, locator))) fail('The Mewmory archive is missing. Recover it from an export before making changes.', 409);
         return newState(locator);
     }
-    if (state.format !== 1 || hash(normalizeLocator(state.locator)) !== hash(locator) || !Array.isArray(state.records)) {
-        fail('This Mewmory archive has an unsupported format or chat identity.', 409);
-    }
-    return state;
+    return validateState(locator, state);
+}
+
+/** All callers of readState may mutate the result, so never expose the shared object. */
+export function readState(directories, locator) {
+    return structuredClone(readStateShared(directories, locator));
 }
 
 export function mutateState(directories, locator, mutate, expectedRevision, { existingOnly = false } = {}) {
@@ -174,11 +360,10 @@ export function mutateState(directories, locator, mutate, expectedRevision, { ex
     }
 }
 
-export function synchronize(directories, locator, context = []) {
+export function synchronize(directories, locator, context = [], source = readChatShared(directories, locator)) {
     locator = normalizeLocator(locator);
     // Native saves take this lock first too; never reconcile a chat snapshot read before it.
     return withChatFileLocks([chatPath(directories, locator)], () => {
-        const source = readChat(directories, locator);
         captureBranchMemory(directories, locator, source);
         return mutateState(directories, locator, state => syncSources(state, source.messages, context));
     });
@@ -217,19 +402,28 @@ export function buildBranchMemoryState(parent, locator, messages) {
 }
 
 export function listStories(directories) {
+    if (!directories.root) {
+        storySummaryCache.clear();
+        return [];
+    }
     const directory = path.join(directories.root, 'mewmory', 'stories');
-    if (!fs.existsSync(directory)) return [];
-    return fs.readdirSync(directory).filter(name => /^[a-f0-9]{64}\.json$/.test(name)).flatMap(name => {
-        try {
-            const state = readJson(path.join(directory, name), null);
-            return state?.format === 1 && fs.existsSync(chatPath(directories, state.locator))
-                ? [{ locator: state.locator, storyId: state.storyId, branchId: state.branchId, enabled: state.enabled, updatedAt: state.updatedAt,
-                    processing: state.processing ? { status: state.processing.status, automatic: state.processing.automatic } : null }]
-                : [];
-        } catch {
-            return [];
-        }
-    });
+    if (!fs.existsSync(directory)) {
+        storySummaryCache.clear();
+        return [];
+    }
+    const names = fs.readdirSync(directory).filter(name => /^[a-f0-9]{64}\.json$/.test(name));
+    const seen = new Set();
+    const stories = [];
+    for (const name of names) {
+        const filename = path.join(directory, name);
+        seen.add(path.resolve(filename));
+        const summary = readStorySummary(directories, filename);
+        if (summary) stories.push(summary);
+    }
+    for (const key of storySummaryCache.keys()) {
+        if (key.startsWith(path.resolve(directory) + path.sep) && !seen.has(key)) storySummaryCache.delete(key);
+    }
+    return stories;
 }
 
 export function removeChatMemory(directories, locator) {
@@ -294,7 +488,7 @@ export function removeSourceMemory(directories, { avatar = '', world = '', delet
     const directory = path.join(directories.root, 'mewmory', 'stories');
     if (!fs.existsSync(directory)) return;
     for (const filename of fs.readdirSync(directory).filter(name => /^[a-f0-9]{64}\.json$/.test(name))) {
-        const state = readJson(path.join(directory, filename), null);
+        const state = readJsonShared(path.join(directory, filename), null);
         if (state?.format !== 1) continue;
         if (avatar && deleteChats && !state.locator.group && state.locator.avatar === avatar) {
             removeChatMemory(directories, state.locator);
@@ -345,7 +539,7 @@ function renameLibraryMemory(directories, type, oldName, newName, { resume = fal
     if (!fs.existsSync(directory)) return undo;
     try {
         for (const filename of fs.readdirSync(directory).filter(name => /^[a-f0-9]{64}\.json$/.test(name))) {
-            const state = readJson(path.join(directory, filename), null);
+            const state = readJsonShared(path.join(directory, filename), null);
             if (state?.format !== 1) continue;
             const canonical = state[aliasKey]?.[oldName] || oldName;
             const ownsChat = type === 'character' && !state.locator.group && state.locator.avatar === oldName;

@@ -6,7 +6,28 @@ import { readWorldInfoFile } from '../endpoints/worldinfo.js';
 import { fail, hash, POLICY_VERSION, purgeSources, sourceAt } from './core.js';
 import { readConfig } from './models.js';
 import { processingVersion } from './processing.js';
-import { captureBranchMemory, mutateState, readChat, readJson, readState, synchronize } from './store.js';
+import { captureBranchMemory, mutateState, readChatShared, readJsonShared, readStateShared, synchronize } from './store.js';
+
+const cardTextCache = new Map();
+const CARD_TEXT_CACHE_MAX_ENTRIES = 128;
+
+/** Decoding a card PNG costs a crc32 pass plus base64 decode; the text is immutable, so share it. */
+function readCharacterCardTextSync(filename) {
+    const key = path.resolve(filename);
+    let stat;
+    try {
+        stat = fs.statSync(filename);
+    } catch {
+        cardTextCache.delete(key);
+        return null;
+    }
+    const cached = cardTextCache.get(key);
+    if (cached && cached.dev === stat.dev && cached.ino === stat.ino && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) return cached.text;
+    const text = readCharacterCard(fs.readFileSync(filename));
+    cardTextCache.set(key, { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, text });
+    if (cardTextCache.size > CARD_TEXT_CACHE_MAX_ENTRIES) cardTextCache.delete(cardTextCache.keys().next().value);
+    return text;
+}
 
 function safeFilename(value) {
     return typeof value === 'string' && value && value === sanitize(value);
@@ -18,22 +39,21 @@ export async function readContextSources(directories, locator, state) {
 }
 
 /** Synchronous reads can stay inside the protected account lock. */
-export function readContextSourcesSync(directories, locator, state) {
-    const source = readChat(directories, locator);
+export function readContextSourcesSync(directories, locator, state, source = readChatShared(directories, locator)) {
     const { metadata } = source;
     if (!state) {
         captureBranchMemory(directories, locator, source);
-        state = readState(directories, locator);
+        state = readStateShared(directories, locator);
     }
     const aliases = state.characterAliases || {};
-    const settings = readJson(path.join(directories.root, 'settings.json'), {});
+    const settings = readJsonShared(path.join(directories.root, 'settings.json'), {});
     const worlds = new Set(Array.isArray(settings.world_info?.globalSelect) ? settings.world_info.globalSelect : []);
     if (metadata.world_info) worlds.add(metadata.world_info);
     if (settings.power_user?.persona_description_lorebook) worlds.add(settings.power_user.persona_description_lorebook);
     const avatars = new Set(locator.avatar ? [locator.avatar] : []);
     if (locator.group && fs.existsSync(directories.groups)) {
         for (const filename of fs.readdirSync(directories.groups).filter(name => name.endsWith('.json'))) {
-            const group = readJson(path.join(directories.groups, filename), {});
+            const group = readJsonShared(path.join(directories.groups, filename), {});
             if (String(group.chat_id) !== locator.chat && !(group.chats || []).map(String).includes(locator.chat)
                 && !(group.past_chats || []).map(String).includes(locator.chat)) continue;
             for (const avatar of group.members || []) if (safeFilename(avatar)) avatars.add(avatar);
@@ -46,7 +66,7 @@ export function readContextSourcesSync(directories, locator, state) {
         if (!fs.existsSync(filename)) continue;
         let card;
         try {
-            const parsed = JSON.parse(readCharacterCard(fs.readFileSync(filename)));
+            const parsed = JSON.parse(readCharacterCardTextSync(filename));
             card = parsed.data || parsed;
         } catch {
             fail('A character card could not be read. Reload it before updating Mewmory.', 409);
@@ -89,7 +109,9 @@ export async function loadCurrentState(directories, locator) {
 }
 
 export function loadCurrentStateSync(directories, locator) {
-    const state = synchronize(directories, locator, readContextSourcesSync(directories, locator));
+    const source = readChatShared(directories, locator);
+    const context = readContextSourcesSync(directories, locator, undefined, source);
+    const state = synchronize(directories, locator, context, source);
     const config = readConfig(directories);
     const legacyPolicy = hash([POLICY_VERSION, ...['extractor', 'pawspective'].map(name => hash([config.localOnly, config.roles[name]]))]);
     return mutateState(directories, locator, current => {

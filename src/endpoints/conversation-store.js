@@ -24,16 +24,52 @@ import {
 } from './conversation-utils.js';
 
 /**
+ * Stat-validated cache of file text. Conversation workers read the same JSON
+ * files many times inside one scan, and an 8 MB settings file costs tens of
+ * milliseconds to pull from disk each time even when it has not changed. Only
+ * the text is shared, never the parsed object, because callers mutate their
+ * parsed copy before saving it back. A cached copy is reused only while the
+ * file still has the same inode, size and modification time.
+ */
+const jsonTextCache = new Map();
+const JSON_TEXT_CACHE_MAX_ENTRIES = 16;
+
+function readJsonText(filePath) {
+    const key = path.resolve(filePath);
+    let stat;
+    try {
+        stat = fs.statSync(key);
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            jsonTextCache.delete(key);
+            return null;
+        }
+        throw error;
+    }
+    if (!stat.isFile()) throw new Error('not a file');
+    const cached = jsonTextCache.get(key);
+    if (cached && cached.ino === stat.ino && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
+        return cached.text;
+    }
+    const text = fs.readFileSync(key, 'utf8');
+    jsonTextCache.set(key, { ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, text });
+    while (jsonTextCache.size > JSON_TEXT_CACHE_MAX_ENTRIES) {
+        jsonTextCache.delete(jsonTextCache.keys().next().value);
+    }
+    return text;
+}
+
+/**
  * Read JSON file with error handling
  * Returns { ok, data, missing?, error? }
  */
 export function readJsonFile(filePath, fallback = {}) {
     try {
-        if (!fs.existsSync(filePath)) {
+        const content = readJsonText(filePath);
+        if (content === null) {
             return { ok: true, data: fallback, missing: true };
         }
 
-        const content = fs.readFileSync(filePath, 'utf8');
         const data = JSON.parse(content);
         return { ok: true, data, missing: false };
     } catch (error) {
@@ -41,6 +77,16 @@ export function readJsonFile(filePath, fallback = {}) {
         return { ok: false, error: error.message, missing: false };
     }
 }
+
+/**
+ * Store validation walks every thread and message, which costs tens of
+ * milliseconds on a large settings file. The verdict only depends on the file
+ * text, so remember the last verdict for as long as that exact text is still
+ * the current content. One entry per settings path keeps this bounded, and the
+ * key is a path string, so a plain Map is required: a WeakMap rejects it.
+ */
+const storeValidationByPath = new Map();
+const STORE_VALIDATION_CACHE_MAX_ENTRIES = 16;
 
 /**
  * Get the path to the user's settings.json file
@@ -64,7 +110,8 @@ export function readUserSettings(request) {
  * Read user settings with status (returns { ok, data, error? })
  */
 export function readUserSettingsWithStatus(request) {
-    const result = readJsonFile(getSettingsPath(request), {});
+    const settingsPath = getSettingsPath(request);
+    const result = readJsonFile(settingsPath, {});
     if (!result.ok) {
         return result;
     }
@@ -80,7 +127,24 @@ export function readUserSettingsWithStatus(request) {
         return { ok: false, error: 'Conversation settings must contain a JSON object', missing: false };
     }
     if (isObject(result.data.extension_settings) && hasOwn(result.data.extension_settings, CONVERSATION_STORE_KEY)) {
-        const storeValidation = validateStoreStructure(result.data.extension_settings[CONVERSATION_STORE_KEY], { strictMessages: false });
+        let content;
+        try {
+            content = readJsonText(settingsPath);
+        } catch {
+            content = null;
+        }
+        const cacheKey = path.resolve(settingsPath);
+        const cached = content === null ? undefined : storeValidationByPath.get(cacheKey);
+        let storeValidation = cached && cached.text === content ? cached.validation : null;
+        if (!storeValidation) {
+            storeValidation = validateStoreStructure(result.data.extension_settings[CONVERSATION_STORE_KEY], { strictMessages: false });
+            if (content !== null) {
+                storeValidationByPath.set(cacheKey, { text: content, validation: storeValidation });
+                while (storeValidationByPath.size > STORE_VALIDATION_CACHE_MAX_ENTRIES) {
+                    storeValidationByPath.delete(storeValidationByPath.keys().next().value);
+                }
+            }
+        }
         if (!storeValidation.valid) {
             return { ok: false, error: storeValidation.error, missing: false };
         }

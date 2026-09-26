@@ -64,6 +64,61 @@ export function normalizeCharacterData(rawCharacter, avatar = '') {
 }
 
 /**
+ * Parsed character cards, keyed by card path. A cached copy is used only while
+ * the file on disk still has the same inode, size and modification time, so an
+ * edited or replaced card is read again on its next use.
+ * @type {Map<string, { ino: number, size: number, mtimeMs: number, bytes: number, data: object }>}
+ */
+const characterDataCache = new Map();
+const CHARACTER_DATA_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+let characterDataCacheBytes = 0;
+
+function readCachedCharacterData(avatarPath) {
+    const cached = characterDataCache.get(avatarPath);
+    if (!cached) return null;
+    let stat;
+    try {
+        stat = fs.statSync(avatarPath);
+    } catch {
+        characterDataCache.delete(avatarPath);
+        characterDataCacheBytes -= cached.bytes;
+        return null;
+    }
+    if (stat.ino !== cached.ino || stat.size !== cached.size || stat.mtimeMs !== cached.mtimeMs) {
+        characterDataCache.delete(avatarPath);
+        characterDataCacheBytes -= cached.bytes;
+        return null;
+    }
+    // Refresh recency so a scan in progress does not evict cards it still needs.
+    characterDataCache.delete(avatarPath);
+    characterDataCache.set(avatarPath, cached);
+    return cached.data;
+}
+
+function storeCachedCharacterData(avatarPath, data, bytes) {
+    const previous = characterDataCache.get(avatarPath);
+    if (previous) {
+        characterDataCache.delete(avatarPath);
+        characterDataCacheBytes -= previous.bytes;
+    }
+    let stat;
+    try {
+        stat = fs.statSync(avatarPath);
+    } catch {
+        return;
+    }
+    characterDataCache.set(avatarPath, { ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, bytes, data });
+    characterDataCacheBytes += bytes;
+    while (characterDataCacheBytes > CHARACTER_DATA_CACHE_MAX_BYTES && characterDataCache.size > 1) {
+        const oldest = characterDataCache.keys().next().value;
+        if (oldest === undefined) break;
+        const evicted = characterDataCache.get(oldest);
+        characterDataCache.delete(oldest);
+        characterDataCacheBytes -= evicted?.bytes || 0;
+    }
+}
+
+/**
  * Load character data from request body or disk
  */
 export async function getCharacterData(request, avatar, { allowOverride = true, requireExisting = false } = {}) {
@@ -84,8 +139,12 @@ export async function getCharacterData(request, avatar, { allowOverride = true, 
         }
 
         recoverFileWriteSync(avatarPath);
+        const cached = readCachedCharacterData(avatarPath);
+        if (cached) return normalizeCharacterData(cached, avatar);
         const cardText = await parseCharacterCard(avatarPath, 'png');
-        return normalizeCharacterData(JSON.parse(cardText), avatar);
+        const raw = JSON.parse(cardText);
+        storeCachedCharacterData(avatarPath, raw, cardText.length);
+        return normalizeCharacterData(raw, avatar);
     } catch (error) {
         if (error?.status) throw error;
         console.warn('Conversation REST API: failed to read character card', error);

@@ -6,7 +6,8 @@ import { unScopeConversationStorageKey } from '../endpoints/conversation-utils.j
 import { getCharacterData } from '../endpoints/conversation-generation.js';
 import { getSettingsVersion } from '../settings-version.js';
 import { acceptConversationAutonomousReply, finalizeConversationSubmission } from './conversation-jobs.js';
-import { acceptConversationSummary, eligibleMessages, finalizeConversationMaintenanceSubmission } from './conversation-maintenance.js';
+import { acceptConversationSummary, countNewMessages, eligibleMessages, finalizeConversationMaintenanceSubmission } from './conversation-maintenance.js';
+import { MEMORY_SUMMARY_INTERVAL_MESSAGES, MEMORY_SUMMARY_MIN_MESSAGES } from '../../public/scripts/neconyan-conversation/constants.js';
 import { resolveConversationPartners } from './conversation-participants.js';
 import { backfillConversationAutomaticAcceptances, wasConversationAutomaticOccurrenceAccepted } from './conversation-effects.js';
 import { getConversationSummarySubmissionKey, REMINDER_RETRY_DELAY_MS, resolveAutomationActivity, selectConversationReminder, selectNextConversationThreadAutomation } from './conversation-auto-policy.js';
@@ -51,12 +52,25 @@ async function buildAutomationFrames(request, store, personaId, savedSettings, n
     }
     const frames = [];
     const branches = new Map();
+    // A disabled thread can still own reminders, which need branch lookups to
+    // be resolved; every other disabled thread can be skipped outright.
+    const reminderThreads = new Set((Array.isArray(store.reminders) ? store.reminders : [])
+        .map(reminder => `${reminder.avatar}\u001f${reminder.groupId || ''}`));
     for (const [key, characterStore] of Object.entries(store.characters || {})) {
         const local = unScopeConversationStorageKey(key, personaId);
         const split = splitThreadKey(local);
         if (!split || !characterStore) continue;
         const target = { avatar: split.avatar, groupId: split.groupId, personaId };
         const settings = getConversationSettings(request, store, target.avatar, target.groupId, {}, { personaId });
+        if (settings.enabled === false && !reminderThreads.has(`${split.avatar}\u001f${split.groupId}`)) {
+            // Disabled threads are never eligible for automation or summaries,
+            // so their card images and partner lists are not worth reading.
+            for (const [branchId, branch] of Object.entries(characterStore.branches || {})) {
+                if (!branch || !Array.isArray(branch.messages)) continue;
+                branches.set(`${split.avatar}\u001f${split.groupId}\u001f${branchId}`, { target: { ...target, branchId }, settings });
+            }
+            continue;
+        }
         const group = target.groupId ? (store.groups || []).find(item => String(item.id) === String(target.groupId)) : null;
         let host;
         try { host = await getCharacterData(request, target.avatar, { allowOverride: false, requireExisting: true }); } catch { continue; }
@@ -268,6 +282,10 @@ export async function scanConversationAutonomy({ directoriesFor, owners, now = D
             if (!throughId) continue;
             const submissionKey = getConversationSummarySubmissionKey(frame.target, throughId);
             if (taken(submissionKey)) continue;
+            // The maintenance API applies these same gates. Checking them here keeps
+            // its per-thread settings read off the sender for threads that cannot act.
+            if (messages.length < MEMORY_SUMMARY_MIN_MESSAGES
+                || countNewMessages(messages, frame.branch.memorySummaryThrough, frame.branch.memoryMessageCount) < MEMORY_SUMMARY_INTERVAL_MESSAGES) continue;
             try {
                 const summary = await acceptConversationSummary(request, {
                     submissionKey,

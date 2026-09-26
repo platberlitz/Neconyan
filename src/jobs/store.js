@@ -29,6 +29,45 @@ export const CANCELLABLE_STATES = Object.freeze(['queued', 'running', 'waiting']
 const STORE_FILE = 'index.json';
 const pruneHolds = new Set();
 
+/**
+ * The jobs runner polls every 500 ms per owner, so the ledger text is kept in
+ * memory and reused while the file's inode, size and modification time are
+ * unchanged. Only the text is shared, never the parsed object, because callers
+ * mutate their parsed copy before saving it back.
+ */
+const ledgerTextCache = new Map();
+const LEDGER_TEXT_CACHE_MAX_ENTRIES = 16;
+
+function readLedgerText(filename) {
+    let stat;
+    try {
+        stat = fs.statSync(filename);
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            ledgerTextCache.delete(filename);
+            return null;
+        }
+        throw fail(500, 'JOB_STORE_UNREADABLE', 'The saved job ledger could not be read.');
+    }
+    if (!stat.isFile()) throw fail(500, 'JOB_STORE_UNREADABLE', 'The saved job ledger could not be read.');
+    if (stat.size > JOB_LEDGER_MAX_BYTES) throw fail(409, 'JOB_STORE_RECOVERABLE', 'The saved job ledger needs recovery and was left untouched. Recent job history cannot be trusted until an operator repairs or removes it.');
+    const cached = ledgerTextCache.get(filename);
+    if (cached && cached.ino === stat.ino && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
+        return cached.text;
+    }
+    let text;
+    try {
+        text = fs.readFileSync(filename, 'utf8');
+    } catch {
+        throw fail(409, 'JOB_STORE_RECOVERABLE', 'The saved job ledger needs recovery and was left untouched. Recent job history cannot be trusted until an operator repairs or removes it.');
+    }
+    ledgerTextCache.set(filename, { ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, text });
+    while (ledgerTextCache.size > LEDGER_TEXT_CACHE_MAX_ENTRIES) {
+        ledgerTextCache.delete(ledgerTextCache.keys().next().value);
+    }
+    return text;
+}
+
 /** Keep upgrade evidence until the account's durable ownership has been copied. */
 export function holdJobPruning(owner, held = true) {
     if (held) pruneHolds.add(owner);
@@ -134,20 +173,13 @@ function emptyStore() {
 function readStore(directories) {
     const filename = storePath(directories);
     let raw;
-    let stat;
     try {
-        stat = fs.statSync(filename);
+        raw = readLedgerText(filename);
     } catch (error) {
-        if (error.code === 'ENOENT') return emptyStore();
+        if (error.status) throw error;
         throw fail(500, 'JOB_STORE_UNREADABLE', 'The saved job ledger could not be read.');
     }
-    try {
-        if (!stat.isFile()) throw new Error('not a file');
-        if (stat.size > JOB_LEDGER_MAX_BYTES) throw new Error('too large');
-        raw = fs.readFileSync(filename, 'utf8');
-    } catch {
-        throw fail(409, 'JOB_STORE_RECOVERABLE', 'The saved job ledger needs recovery and was left untouched. Recent job history cannot be trusted until an operator repairs or removes it.');
-    }
+    if (raw === null) return emptyStore();
     let store;
     try {
         store = JSON.parse(raw);
@@ -216,6 +248,7 @@ function writeStore(directories, store, protectedId) {
     }
     fs.mkdirSync(stateDir(directories), { recursive: true, mode: 0o700 });
     writeFileAtomicSync(storePath(directories), text, { mode: 0o600 });
+    ledgerTextCache.delete(storePath(directories));
     // Delete artifacts only after the ledger no longer references their job.
     for (const key of previousKeys) {
         if (ordered.jobs[key]) continue;
@@ -428,6 +461,33 @@ export function acceptChildJobs(directories, parentId, inputs) {
         parent.updatedAt = now();
         return { children, job: parent };
     }).children;
+}
+
+/** Attach a privately admitted child before releasing it, retaining its evidence for a live root. */
+export function attachOwnedChild(directories, parentId, childId, { parentIntentHash, childIntentHash } = {}) {
+    return mutateJobs(directories, store => {
+        const parent = store.jobs[jobKey(parentId)];
+        const child = store.jobs[jobKey(childId)];
+        if (!parent || !child || parent.id !== parentId || child.id !== childId
+            || parent.owner !== child.owner || crypto.createHash('sha256').update(canonical(parent.intent)).digest('hex') !== parentIntentHash
+            || crypto.createHash('sha256').update(canonical(child.intent)).digest('hex') !== childIntentHash) {
+            throw fail(409, 'JOB_FAMILY_CONFLICT', 'The saved workflow child does not belong to its accepted parent.');
+        }
+        if (parent.type !== 'media.roleplay-workflow' || child.parentId && child.parentId !== parentId
+            || isTerminal(parent) || parent.cancellation?.requested || child.cancellation?.requested) {
+            throw fail(409, 'JOB_FAMILY_CONFLICT', 'The saved workflow family changed before a child could run.');
+        }
+        if (!['waiting', 'queued', 'running', ...TERMINAL_STATES].includes(child.state)
+            || (parent.children ?? []).length >= 128 && !parent.children.includes(childId)) {
+            throw fail(409, 'JOB_FAMILY_CONFLICT', 'The accepted workflow cannot retain another child result.');
+        }
+        if (child.parentId === parentId && parent.children.includes(childId)) return { job: parent, child, changed: false };
+        child.parentId = parentId;
+        child.updatedAt = now();
+        parent.children = [...new Set([...(parent.children ?? []), childId])];
+        parent.updatedAt = now();
+        return { job: parent, child };
+    });
 }
 
 /**
@@ -704,31 +764,5 @@ export function recoverJobs(directories) {
             }
         }
         return { recoverable, changed };
-    });
-}
-/** Attach a privately admitted child before releasing it, retaining its evidence for a live root. */
-export function attachOwnedChild(directories, parentId, childId, { parentIntentHash, childIntentHash } = {}) {
-    return mutateJobs(directories, store => {
-        const parent = store.jobs[jobKey(parentId)];
-        const child = store.jobs[jobKey(childId)];
-        if (!parent || !child || parent.id !== parentId || child.id !== childId
-            || parent.owner !== child.owner || crypto.createHash('sha256').update(canonical(parent.intent)).digest('hex') !== parentIntentHash
-            || crypto.createHash('sha256').update(canonical(child.intent)).digest('hex') !== childIntentHash) {
-            throw fail(409, 'JOB_FAMILY_CONFLICT', 'The saved workflow child does not belong to its accepted parent.');
-        }
-        if (parent.type !== 'media.roleplay-workflow' || child.parentId && child.parentId !== parentId
-            || isTerminal(parent) || parent.cancellation?.requested || child.cancellation?.requested) {
-            throw fail(409, 'JOB_FAMILY_CONFLICT', 'The saved workflow family changed before a child could run.');
-        }
-        if (!['waiting', 'queued', 'running', ...TERMINAL_STATES].includes(child.state)
-            || (parent.children ?? []).length >= 128 && !parent.children.includes(childId)) {
-            throw fail(409, 'JOB_FAMILY_CONFLICT', 'The accepted workflow cannot retain another child result.');
-        }
-        if (child.parentId === parentId && parent.children.includes(childId)) return { job: parent, child, changed: false };
-        child.parentId = parentId;
-        child.updatedAt = now();
-        parent.children = [...new Set([...(parent.children ?? []), childId])];
-        parent.updatedAt = now();
-        return { job: parent, child };
     });
 }

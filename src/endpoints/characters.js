@@ -33,8 +33,8 @@ import { readRoleplayChatLocked, readRoleplayEntityLocked, roleplayEntityContent
 import { CharXParser, persistCharXAssets } from '../charx.js';
 import { getSuspiciousEmptyCharacterDefinitionFields } from '../character-save-guard.js';
 import { serverDirectory } from '../server-directory.js';
-import { createEntityDateAdded, ensureEntityDateAdded, prepareEntityDateAddedMove, reconcileEntityDateAdded, removeEntityDateAdded } from '../entity-date-added.js';
-import { getEntityLastChat, prepareEntityLastChatMove, readEntityLastChats, removeEntityLastChat, setEntityLastChat } from '../entity-last-chat.js';
+import { createEntityDateAdded, ensureEntityDateAdded, prepareEntityDateAddedMove, reconcileEntityDateAdded, removeEntityDateAdded, ENTITY_DATE_ADDED_FILE } from '../entity-date-added.js';
+import { getEntityLastChat, prepareEntityLastChatMove, readEntityLastChats, removeEntityLastChat, setEntityLastChat, ENTITY_LAST_CHAT_FILE } from '../entity-last-chat.js';
 import {
     clearChatRecoveryState,
     createCharacterChatTarget,
@@ -48,6 +48,80 @@ import {
 // With 100 MB limit it would take roughly 3000 characters to reach this limit
 const memoryCacheCapacity = getConfigValue('performance.memoryCacheCapacity', '100mb');
 const memoryCache = new MemoryLimitedMap(memoryCacheCapacity);
+
+/**
+ * The shallow character list is requested many times per page load (home, search, tags,
+ * editor refreshes). Rebuilding it re-reads and re-parses every card, so remember the
+ * finished response for a short while and drop it as soon as a card is written.
+ * @type {Map<string, { data: object[], expiresAt: number }>}
+ */
+const characterListCache = new Map();
+const CHARACTER_LIST_CACHE_TTL_MS = 5 * 60 * 1000;
+const CHARACTER_LIST_CACHE_MAX_USERS = 8;
+
+/**
+ * Cheap signature of everything the shallow list is built from: the card
+ * directory, plus the two sidecar stores that supply date_added and last chat.
+ * Three stat calls replace re-reading and re-parsing every card, and any write
+ * that bypasses the explicit invalidations below still changes one of them.
+ * @param {object} directories User directory map
+ * @returns {string} Signature of the current inputs
+ */
+function characterListCacheSignature(directories) {
+    const targets = [directories.characters,
+        path.join(getEntityDateAddedRoot(directories), ENTITY_DATE_ADDED_FILE),
+        path.join(getEntityDateAddedRoot(directories), ENTITY_LAST_CHAT_FILE)];
+    return targets.map(target => {
+        try {
+            const stat = fs.statSync(target);
+            return `${stat.ino}:${stat.size}:${Math.round(stat.mtimeMs)}`;
+        } catch {
+            return '-';
+        }
+    }).join('|');
+}
+
+/**
+ * Returns the cached shallow list for a user, if it is still fresh.
+ * @param {string} handle User handle
+ * @param {object} directories User directory map
+ * @returns {object[] | undefined}
+ */
+function getCharacterListCache(handle, directories) {
+    const entry = characterListCache.get(handle);
+    if (!entry) return undefined;
+    if (entry.expiresAt <= Date.now() || entry.signature !== characterListCacheSignature(directories)) {
+        characterListCache.delete(handle);
+        return undefined;
+    }
+    return entry.data;
+}
+
+/**
+ * Stores the shallow list for a user and evicts the oldest entry when the map is full.
+ * @param {string} handle User handle
+ * @param {object[]} data Shallow character list
+ * @param {object} directories User directory map
+ * @returns {void}
+ */
+function setCharacterListCache(handle, data, directories) {
+    while (characterListCache.size >= CHARACTER_LIST_CACHE_MAX_USERS && !characterListCache.has(handle)) {
+        const oldest = characterListCache.keys().next().value;
+        if (oldest === undefined) break;
+        characterListCache.delete(oldest);
+    }
+    characterListCache.set(handle, { data, signature: characterListCacheSignature(directories),
+        expiresAt: Date.now() + CHARACTER_LIST_CACHE_TTL_MS });
+}
+
+/**
+ * Drops the cached list for a user after any card write.
+ * @param {string} handle User handle
+ * @returns {void}
+ */
+function invalidateCharacterListCache(handle) {
+    characterListCache.delete(handle);
+}
 // Some Android devices require tighter memory management
 const isAndroid = process.platform === 'android';
 // Use shallow character data for the character list
@@ -754,15 +828,15 @@ async function writeCharacterData(inputFile, data, outputFile, request, crop = u
         }
 
         // Reset the cache only when the card actually changed.
+        // Buffer inputs are written under outputImagePath, so match on that path.
+        const cachePathPrefix = Buffer.isBuffer(inputFile) ? outputImagePath : inputFile;
         for (const key of memoryCache.keys()) {
-            if (Buffer.isBuffer(inputFile)) {
-                break;
-            }
-            if (key.startsWith(inputFile)) {
+            if (key.startsWith(cachePathPrefix)) {
                 memoryCache.delete(key);
                 break;
             }
         }
+        invalidateCharacterListCache(request.user.profile.handle);
         if (useDiskCache && !Buffer.isBuffer(inputFile)) {
             diskCache.syncQueue.add(request.user.profile.handle);
         }
@@ -775,6 +849,9 @@ async function writeCharacterData(inputFile, data, outputFile, request, crop = u
             expectedFileIdentity,
             replaceFileOnly: shouldReplaceFileOnly,
         }));
+        // A protected card is published by renaming a staged file into place, which lands after
+        // the invalidation above, so drop the list again in case it was rebuilt in between.
+        invalidateCharacterListCache(request.user.profile.handle);
         if (!fileExists) {
             try {
                 if (preserveDateAdded) {
@@ -1923,6 +2000,7 @@ router.post('/rename', validateAvatarUrlMiddleware, async function (request, res
 
         const oldBytes = await fsPromises.readFile(oldAvatarPath);
         renameCharacterCard(request, oldAvatarName, newAvatarName, write(oldBytes, newData));
+        invalidateCharacterListCache(request.user.profile.handle);
 
         // Return new avatar name to ST
         return response.send({ avatar: newAvatarName });
@@ -2307,6 +2385,7 @@ router.post('/delete', validateAvatarUrlMiddleware, async function (request, res
         console.error('Could not remove last-chat metadata after character deletion.', metadataError);
     }
     invalidateThumbnail(request.user.directories, 'avatar', avatar);
+    invalidateCharacterListCache(request.user.profile.handle);
 
     return response.sendStatus(200);
 });
@@ -2366,6 +2445,10 @@ router.post('/regenerate-thumbnail', validateAvatarUrlMiddleware, async function
 router.post('/all', async function (request, response) {
     try {
         recoverFileWritesInDirectorySync(request.user.directories.characters);
+        const cachedList = useShallowCharacters ? getCharacterListCache(request.user.profile.handle, request.user.directories) : undefined;
+        if (cachedList) {
+            return response.send(cachedList);
+        }
         const files = fs.readdirSync(request.user.directories.characters);
         const pngFiles = files.filter(file => file.endsWith('.png'));
         const fileStats = new Map();
@@ -2394,6 +2477,9 @@ router.post('/all', async function (request, response) {
         for (const character of data) {
             character.date_added = dateAddedByFile.get(character.avatar);
             character.chat = lastChatByFile.get(character.avatar) ?? character.chat;
+        }
+        if (useShallowCharacters) {
+            setCharacterListCache(request.user.profile.handle, data, request.user.directories);
         }
         return response.send(data);
     } catch (err) {
@@ -2631,6 +2717,7 @@ router.post('/duplicate', validateAvatarUrlMiddleware, async function (request, 
         } catch (metadataError) {
             console.error('Could not record date-added metadata after duplicating a character.', metadataError);
         }
+        invalidateCharacterListCache(request.user.profile.handle);
         console.info(`${filename} was copied to ${newFilename}`);
         response.send({ path: path.parse(newFilename).base });
     } catch (error) {

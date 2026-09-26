@@ -109,6 +109,15 @@ const EXPORTABLE_KEYS = [
 export const allowKeysExposure = !!getConfigValue('allowKeysExposure', false, 'boolean');
 
 /**
+ * Stat-validated cache of parsed secrets, shared across SecretManager instances.
+ * Entries are only reused while the file's inode, size and modification time are
+ * unchanged, and every write path goes through _readSecretsFile plus an atomic
+ * rewrite, so an edited file is never served from here.
+ */
+const sharedSecretsCache = new Map();
+const SHARED_SECRETS_CACHE_MAX_ENTRIES = 16;
+
+/**
  * SecretManager class to handle all secret operations
  */
 export class SecretManager {
@@ -307,7 +316,7 @@ export class SecretManager {
             return '';
         }
 
-        const secrets = this._readSecretsFile();
+        const secrets = this._readSharedSecrets();
         const secretArray = secrets[key];
 
         if (Array.isArray(secretArray) && secretArray.length > 0) {
@@ -316,6 +325,34 @@ export class SecretManager {
         }
 
         return '';
+    }
+
+    /**
+     * Read-only, stat-validated view of the secrets file. Background workers ask for
+     * the same keys many times a minute, and decrypting plus parsing the file on
+     * every ask blocks the event loop for no new information. The cached object is
+     * shared, so only readers may use it; writers keep using _readSecretsFile.
+     * @private
+     * @returns {SecretKeys}
+     */
+    _readSharedSecrets() {
+        let stat;
+        try {
+            stat = fs.statSync(this.filePath);
+        } catch {
+            this._ensureSecretsFile();
+            stat = fs.statSync(this.filePath);
+        }
+        const cached = sharedSecretsCache.get(this.filePath);
+        if (cached && cached.ino === stat.ino && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
+            return cached.data;
+        }
+        const data = this._readSecretsFile();
+        sharedSecretsCache.set(this.filePath, { ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, data });
+        while (sharedSecretsCache.size > SHARED_SECRETS_CACHE_MAX_ENTRIES) {
+            sharedSecretsCache.delete(sharedSecretsCache.keys().next().value);
+        }
+        return data;
     }
 
     /**

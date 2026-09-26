@@ -3,7 +3,7 @@ import { fail, hash, sourceFingerprint } from './core.js';
 import { readConfig } from './models.js';
 import { pendingSources, processBatch, processingVersion } from './processing.js';
 import { loadCurrentState } from './sources.js';
-import { listStories, mutateState, readState, statePath } from './store.js';
+import { listStories, mutateState, readStateShared, statePath } from './store.js';
 
 const running = new Map();
 const MAX_RUNNING = 4;
@@ -52,7 +52,7 @@ async function run(directories, locator, branchId, job, signal, call) {
     }, undefined, { existingOnly: true });
     try {
         do {
-            const current = readState(directories, locator);
+            const current = readStateShared(directories, locator);
             if (signal.aborted || current.branchId !== branchId || current.processing?.id !== job.id) return;
             if (!current.enabled || (job.automatic && !readConfig(directories).autoUpdate)) break;
             const state = await processBatch(directories, locator, { checkpoint: job.checkpoint, signal }, call);
@@ -96,7 +96,7 @@ export async function scanProcessing(directories, call, { reconcile = true } = {
             }
             if (!story.enabled || atCapacity(directories, story.processing?.status !== 'running' || story.processing.automatic)) continue;
             if (story.processing?.status !== 'running' && !(config.autoUpdate && config.roles.extractor.enabled)) continue;
-            const state = reconcile ? await loadCurrentState(directories, story.locator) : readState(directories, story.locator);
+            const state = reconcile ? await loadCurrentState(directories, story.locator) : readStateShared(directories, story.locator);
             const previous = state.processing;
             if (previous?.status === 'running' && (!previous.automatic || config.autoUpdate)) {
                 await startProcessing(directories, story.locator, previous, call);
