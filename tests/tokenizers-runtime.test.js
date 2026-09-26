@@ -88,7 +88,7 @@ describe('web tokenizer runtime bootstrap', () => {
             expect(tokenizer.loadedModel).toBe('llama3');
             await expect(encodeGenerationText('qwen2', 'word')).rejects.toThrow(/qwen2.*llama3/);
             const { getCounter } = await import('../src/mewmory/tokens.js');
-            await expect(getCounter('qwen2')).rejects.toThrow(/qwen2.*llama3.*History has been kept/);
+            await expect(getCounter('qwen2')).rejects.toThrow(/qwen2.*llama3.*No chat history was trimmed/);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

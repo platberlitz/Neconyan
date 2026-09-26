@@ -23,6 +23,46 @@ export function text(value, label, max = 32000, optional = false) {
     return value.trim();
 }
 
+/** Folds case, spacing, dash styles and quote or emphasis marks so a copied quote still matches its message. */
+function looseText(value) {
+    const source = String(value);
+    const chars = [];
+    const map = [];
+    for (let index = 0; index < source.length; index++) {
+        for (let char of source[index].normalize('NFKC').toLocaleLowerCase()) {
+            if (/\s/u.test(char)) {
+                if (chars.length && chars.at(-1) !== ' ') {
+                    chars.push(' ');
+                    map.push(index);
+                }
+                continue;
+            }
+            if (/[*_~`"'\u2018\u2019\u201c\u201d\u00ab\u00bb\u201e]/u.test(char)) continue;
+            if (/[\u2010-\u2015\u2212]/u.test(char)) char = '-';
+            chars.push(char);
+            map.push(index);
+        }
+    }
+    return { text: chars.join(''), map };
+}
+
+/** Returns the exact passage of sourceText that quote copies, allowing '...' gaps, or '' when it is not there. */
+export function findQuote(sourceText, quote) {
+    const source = looseText(sourceText);
+    const parts = looseText(quote).text.split('...')
+        .map(part => part.replace(/^[\s.,;:!?-]+|[\s.,;:!?-]+$/gu, '')).filter(Boolean);
+    if (parts.join('').length < 3) return '';
+    let start = -1;
+    let end = 0;
+    for (const part of parts) {
+        const found = source.text.indexOf(part, end);
+        if (found < 0) return '';
+        if (start < 0) start = found;
+        end = found + part.length;
+    }
+    return String(sourceText).slice(source.map[start], source.map[end - 1] + 1);
+}
+
 export function list(value, label, max = 100) {
     if (!Array.isArray(value) || value.length > max) fail(label + ' is not a list, or has too many items.');
     return value;
@@ -423,8 +463,9 @@ export function validateRecord(state, input, { asOf, origin = 'author', allowedR
     if (record.kind === 'knowledge') {
         record.method = input.method;
         if (!['witnessed', 'told', 'read', 'inferred', 'author'].includes(record.method)) fail('Choose how the character found this out: saw it, was told, read it, worked it out, or author note.');
-        record.evidenceText = text(input.evidenceText, 'Knowledge evidence', 4000);
-        if (!record.refs.some(ref => sourceAt(state, ref).text.includes(record.evidenceText))) {
+        const quote = text(input.evidenceText, 'Knowledge evidence', 4000);
+        record.evidenceText = record.refs.map(ref => findQuote(sourceAt(state, ref).text, quote)).find(Boolean);
+        if (!record.evidenceText) {
             fail('The quote showing how the character learned this must be copied word for word from one of the chosen messages or lore entries.');
         }
     }

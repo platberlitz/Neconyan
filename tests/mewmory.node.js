@@ -956,8 +956,36 @@ test('claims stay reported; a temporary disguise never replaces stable appearanc
     ], interviews: [], activeNpcIds: ['npc:mara'] }, { asOf: 2, sources: refs.map(ref => ({ ...ref, type: 'chat' })) });
     assert.equal(state.records.find(record => record.id === 'event:claim').evidenceStatus, 'reported');
     assert.equal(state.records.find(record => record.id === 'entity:mara').appearance, fixture.expectations.appearance);
-    assert.throws(() => applyExtraction(state, { records: [{ id: 'bad', kind: 'interview' }], interviews: [], activeNpcIds: [] },
-        { asOf: 2, sources: [] }), /unknown type, or the same memory twice/);
+    const skipped = [];
+    applyExtraction(state, { records: [{ id: 'bad', kind: 'interview' }], interviews: [], activeNpcIds: [] }, { asOf: 2, sources: [] }, skipped);
+    assert.equal(state.records.some(record => record.id === 'bad'), false);
+    assert.match(skipped[0], /unknown type, or the same memory twice/);
+});
+
+test('cheap-model slips are repaired, and one wrong memory is left out without sinking the rest', () => {
+    const state = base();
+    const sources = [2, 4, 5].map(sequence => ({ ...state.timeline[sequence], type: 'chat' }));
+    const [gift, receipt] = [state.timeline[2], state.timeline[5]];
+    const skipped = [];
+    applyExtraction(state, { reasoning: 'Ignored extra section.', records: [
+        { id: 'knowledge:loose quote', kind: 'knowledge', ownerId: 'npc:mara', subjectIds: ['gift'], text: 'Mara took the gift.',
+            method: 'witnessed', evidenceText: '*mara accepts the gift*', refs: [{ id: gift.id, revision: '7' }] },
+        { id: 'knowledge:elsewhere', kind: 'knowledge', ownerId: 'npc:mara', subjectIds: ['receipt'], text: 'Mara saw the receipt date.',
+            method: 'read', evidenceText: '“Then perhaps I judged you … quickly”', refs: [gift.id] },
+        { id: 'knowledge:invented', kind: 'knowledge', ownerId: 'npc:mara', subjectIds: ['gift'], text: 'Mara loves the player.',
+            method: 'witnessed', evidenceText: 'Mara confesses her love.', refs: [gift] },
+        { id: 'event:receipt', kind: 'event', text: 'The player showed the receipt.', subjectIds: ['receipt'], refs: [receipt.id + '@99'] },
+    ], activeNpcIds: ['npc:mara', 'npc:nobody'] }, { asOf: 5, sources }, skipped);
+    const saved = id => state.records.find(record => record.id === id);
+    assert.equal(saved('knowledge:loose-quote').evidenceText, 'Mara accepts the gift');
+    assert.deepEqual(saved('knowledge:loose-quote').refs, [gift]);
+    assert.equal(saved('knowledge:elsewhere').evidenceText, 'Then perhaps I judged you too quickly');
+    assert.ok(saved('knowledge:elsewhere').refs.some(ref => ref.id === receipt.id));
+    assert.deepEqual(saved('event:receipt').refs, [receipt]);
+    assert.equal(saved('knowledge:invented'), undefined);
+    assert.equal(skipped.length, 1);
+    assert.match(skipped[0], /copied word for word/);
+    assert.deepEqual(state.sceneNpcIds, ['npc:mara']);
 });
 
 test('character interviews receive acquired knowledge, not source-wide or future secrets; player owners are rejected', () => {
@@ -1263,6 +1291,24 @@ test('deletion removes source text from older audit copies and prepared previews
     state.preview = { memoryText: 'UNIQUE DELETED MEMORY' };
     syncSources(state, fixture.messages.filter((_, index) => index !== 2), fixture.lore);
     assert.equal(JSON.stringify(state).includes('UNIQUE DELETED MEMORY'), false);
+});
+
+test('a batch finishes with its good memories and counts the one the model got wrong', async t => {
+    const { directories } = disk(t, fixture.messages.slice(0, 3));
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    const state = await processBatch(directories, locator, {}, async (_directories, _config, role, _contract, input) => {
+        const last = input.sources.filter(source => source.type === 'chat').at(-1);
+        return { value: { records: [
+            { id: 'event:accepted', kind: 'event', text: 'The gift was accepted.', subjectIds: ['gift'], refs: [last.id] },
+            { id: 'knowledge:made-up', kind: 'knowledge', ownerId: 'npc:mara', subjectIds: ['gift'], text: 'Invented.',
+                method: 'witnessed', evidenceText: 'Nothing like this was said.', refs: [last.id] },
+        ], interviews: [], activeNpcIds: [] }, usage: { role, input: 1, output: 1, milliseconds: 1 } };
+    });
+    assert.ok(eligibleRecords(state).some(record => record.id === 'event:accepted'));
+    assert.equal(state.jobs.at(-1).status, 'complete');
+    assert.equal(state.jobs.at(-1).skipped, 1);
+    assert.equal(pendingSources(state, defaultConfig()).length, 0);
 });
 
 test('processing is idempotent and never changes saved chat; a source edit during an LLM request discards the whole job', async t => {

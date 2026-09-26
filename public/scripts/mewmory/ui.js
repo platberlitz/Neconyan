@@ -648,7 +648,9 @@ function renderHealth(root) {
         health.append(node('p', 'mewmory-caption', (job.checkpoint ? 'Missed-details check' : 'Memory update') + ', messages '
             + (job.from + 1) + ' to ' + (job.through + 1) + ': '
             + ({ processing: 'running', complete: 'done', failed: 'didn’t finish' }[job.status] || job.status)
-            + (job.error ? '. ' + job.error : '')));
+            + (job.error ? '. ' + job.error : '')
+            + (job.skipped ? '. ' + job.skipped + (job.skipped === 1 ? ' detail the model got wrong was' : ' details the model got wrong were')
+                + ' left out' + (job.skippedReasons?.length ? ', for example: ' + job.skippedReasons[0] : '.') : '')));
     }
     const usage = node('dl', 'mewmory-tokens');
     for (const [role, total] of Object.entries(view.health.usage)) {

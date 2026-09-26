@@ -19,6 +19,7 @@ import { getCounter } from '../mewmory/tokens.js';
 import { fnv1a } from '../../public/scripts/extensions/third-party/MacroEnhanced/src/state-impl.js';
 import { assembleRoleplayChatPrompt } from './roleplay-chat-prompt.js';
 import { prepareMewmoryPrompt } from '../mewmory/prepare.js';
+import { recallInBackground } from '../mewmory/retrieval.js';
 import { loadCurrentStateSync } from '../mewmory/sources.js';
 import { mutateState, normalizeLocator, readChat } from '../mewmory/store.js';
 import { generationFingerprint } from '../mewmory/context.js';
@@ -549,6 +550,10 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 scheduleBackground: false,
             });
             writeArtifact(directories, job.id, 'roleplay-mewmory', memory);
+            // The reply uses the last picked memories; the Recall selector refreshes them alongside it.
+            if (memory.enabled) recallInBackground(directories, normalised, {
+                asOf: memory.inspection.asOf, tokenizer: (countChat ?? countText).tokenizer,
+            });
         }
         if (!memory || typeof memory.enabled !== 'boolean' || !Array.isArray(memory.excludedIndices)
             || memory.excludedIndices.some(index => !Number.isSafeInteger(index) || index < 0 || index >= promptRecords.length - 1)

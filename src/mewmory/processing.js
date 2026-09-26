@@ -1,5 +1,5 @@
 import {
-    currentRecords, eligibleRecords, fail, hash, id, list, object, POLICY_VERSION,
+    currentRecords, eligibleRecords, fail, findQuote, hash, id, list, object, POLICY_VERSION,
     putRecord, recordEligible, recordRevision, refKey, sourceAt, sourceEligible, sourceFingerprint,
     strings, uniqueRefs, validateRecord, validateRefs,
 } from './core.js';
@@ -89,6 +89,45 @@ function settleSignificance(state, proposed, refs) {
     return { significance: proposed.significance, evidenceRefs };
 }
 
+/** Small models often slip on IDs; spaces become dashes and other characters are dropped, with a hash so names stay distinct. */
+function cleanId(value) {
+    if (typeof value !== 'string') return value;
+    const dashed = value.trim().replace(/\s+/g, '-');
+    if (/^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$/.test(dashed)) return dashed;
+    const kept = dashed.replace(/[^a-zA-Z0-9_.:-]/g, '').replace(/^[^a-zA-Z0-9]+/, '').slice(0, 140);
+    return (kept ? kept + '-' : 'id-') + hash(value).slice(0, 8);
+}
+
+const cleanIds = value => Array.isArray(value) ? value.map(cleanId) : [];
+
+/** Points model-cited sources at this batch's current revisions, whatever revision or format the model wrote. */
+function batchRefs(value, batch) {
+    return uniqueRefs((Array.isArray(value) ? value : [value])
+        .map(ref => batch.get(typeof ref === 'string' ? ref.split('@')[0] : ref?.id)).filter(Boolean));
+}
+
+/** Repairs the slips cheap models make, so one wrong detail does not sink an otherwise good reply. */
+function tidyProposal(state, proposed, batch, asOf) {
+    const tidy = { ...proposed, id: cleanId(proposed.id), subjectIds: cleanIds(proposed.subjectIds) };
+    for (const key of ['entityId', 'ownerId']) if (key in tidy) tidy[key] = cleanId(tidy[key]);
+    tidy.refs = batchRefs(proposed.refs, batch);
+    tidy.evidenceRefs = batchRefs(proposed.evidenceRefs || [], batch);
+    const usable = eligibleRecords(state, { asOf }).filter(record => objectiveKinds.includes(record.kind));
+    tidy.dependencies = (Array.isArray(proposed.dependencies) ? proposed.dependencies : [])
+        .map(dependency => usable.find(record => record.id === (typeof dependency === 'string' ? dependency : dependency?.id)))
+        .filter(Boolean).map(record => ({ id: record.id, version: record.version }));
+    if (tidy.kind === 'knowledge' && typeof tidy.evidenceText === 'string') {
+        const sources = [...tidy.refs, ...batch.values()];
+        const found = sources.map(ref => ({ ref, quote: findQuote(sourceAt(state, ref)?.text || '', tidy.evidenceText) }))
+            .find(item => item.quote);
+        if (found) {
+            tidy.evidenceText = found.quote;
+            tidy.refs = uniqueRefs([...tidy.refs, found.ref]);
+        }
+    }
+    return tidy;
+}
+
 function modelOutput(name, action) {
     try {
         return action();
@@ -99,14 +138,16 @@ function modelOutput(name, action) {
     }
 }
 
-export function applyExtraction(state, output, input) {
+/** A wrong detail from the model is left out and noted in skipped; only a reply Mewmory cannot read at all fails the batch. */
+export function applyExtraction(state, output, input, skipped = []) {
     object(output, 'Extraction');
-    if (Object.keys(output).some(key => !['records', 'interviews', 'activeNpcIds'].includes(key))) fail('The reply contained sections Mewmory does not expect.');
     const refs = new Set(input.sources.map(refKey));
-    const records = list(output.records, 'Extracted records', 80);
+    const batch = new Map(input.sources.map(source => [source.id, { id: source.id, revision: source.revision }]));
+    const records = list(output.records ?? [], 'Extracted records', Infinity).slice(0, 80)
+        .filter(proposed => proposed && typeof proposed === 'object').map(proposed => tidyProposal(state, proposed, batch, input.asOf));
     const order = { entity: 0, state: 1, event: 2, relationship: 3, knowledge: 4, commitment: 5 };
     const seen = new Set();
-    for (const proposed of records.slice().sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9))) {
+    for (const proposed of records.slice().sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9))) try {
         if (!objectiveKinds.includes(proposed.kind) || seen.has(proposed.id)) fail('The reply listed a memory of an unknown type, or the same memory twice.');
         seen.add(proposed.id);
         let candidate = { ...proposed, ...settleSignificance(state, proposed, refs) };
@@ -128,22 +169,31 @@ export function applyExtraction(state, output, input) {
         record.provenance = input.provenance;
         record.inputRefs = input.sources.filter(source => source.type === 'chat').map(({ id, revision }) => ({ id, revision }));
         putRecord(state, record, { automatic: true });
+    } catch (error) {
+        if (![400, 409].includes(error.status)) throw error;
+        skipped.push(error.message);
     }
-    const active = strings(output.activeNpcIds, 'Active characters');
-    if (active.some(entityId => !state.records.some(record => record.kind === 'entity' && record.entityId === entityId
-        && record.isCharacter && recordEligible(state, record, { asOf: input.asOf })))) fail('The reply named someone in the scene who is not a known character played by the AI.');
+    const active = [...new Set(cleanIds(output.activeNpcIds))].filter(entityId => state.records.some(record => record.kind === 'entity'
+        && record.entityId === entityId && record.isCharacter && recordEligible(state, record, { asOf: input.asOf })));
     state.castHistory = [...(state.castHistory || []).filter(entry => entry.asOf !== input.asOf), {
         asOf: input.asOf, ids: active, refs: input.sources.map(({ id, revision }) => ({ id, revision })),
     }].sort((a, b) => a.asOf - b.asOf);
     state.sceneNpcIds = state.castHistory.at(-1).ids;
-    return list(output.interviews, 'Interview requests', 4).map(request => {
-        object(request, 'Interview request');
-        return {
-            ownerId: id(request.ownerId), subjectIds: strings(request.subjectIds),
-            knowledgeIds: strings(request.knowledgeIds, 'Knowledge IDs', 24),
-            refs: validateRefs(state, request.refs, { asOf: input.asOf, allowedRefs: refs }),
-            ...settleSignificance(state, request, refs), reason: String(request.reason || '').slice(0, 2000),
-        };
+    return (Array.isArray(output.interviews) ? output.interviews : []).slice(0, 4).flatMap(request => {
+        try {
+            object(request, 'Interview request');
+            const tidy = { ...request, refs: batchRefs(request.refs, batch), evidenceRefs: batchRefs(request.evidenceRefs || [], batch) };
+            return [{
+                ownerId: id(cleanId(request.ownerId)), subjectIds: strings(cleanIds(request.subjectIds)),
+                knowledgeIds: strings(cleanIds(request.knowledgeIds), 'Knowledge IDs', 24),
+                refs: validateRefs(state, tidy.refs, { asOf: input.asOf, allowedRefs: refs }),
+                ...settleSignificance(state, tidy, refs), reason: String(request.reason || '').slice(0, 2000),
+            }];
+        } catch (error) {
+            if (![400, 409].includes(error.status)) throw error;
+            skipped.push(error.message);
+            return [];
+        }
     });
 }
 
@@ -180,11 +230,13 @@ export function interviewEvidenceKey(state, request, asOf = Infinity) {
 
 export function applyInterview(state, request, output, input, jobId) {
     object(output, 'Pawspective');
+    if (output.changed === 'false' || output.changed === 'true') output = { ...output, changed: output.changed === 'true' };
+    if (output.changed === undefined && Array.isArray(output.interview)) output = { ...output, changed: true };
     if (output.changed === false) {
-        if (Object.keys(output).some(key => key !== 'changed')) fail('The reply said nothing changed but still included new interview content.');
+        if (Array.isArray(output.interview) && output.interview.length) fail('The reply said nothing changed but still included new interview content.');
         return;
     }
-    if (output.changed !== true || Object.keys(output).some(key => !['changed', 'interview', 'searchDescription', 'changeExplanation', 'overviews'].includes(key))) {
+    if (output.changed !== true) {
         fail('The reply was not a Pawspective interview in the expected format.');
     }
     const knowledge = request.knowledgeIds.map(key => knowledgeForTime(state, key, input.asOf));
@@ -247,6 +299,7 @@ async function runBatch(directories, locator, options, call) {
     const snapshotFingerprint = processingFingerprint(state, sourceCount);
     const auditLength = state.audit.length;
     const usage = [];
+    const skipped = [];
     try {
         const input = extractionInput(state, refs, asOf, options.checkpoint);
         input.provenance = { policy: POLICY_VERSION, jobId, role: 'extractor', model: config.roles.extractor.model, modelRevision: config.roles.extractor.modelRevision };
@@ -254,17 +307,34 @@ async function runBatch(directories, locator, options, call) {
         const extraction = await call(directories, config, 'extractor', EXTRACTION_CONTRACT, input, { dataTypes, signal: options.signal });
         usage.push(extraction.usage);
         const requestAsOf = request => Math.max(-1, ...request.refs.map(ref => sourceAt(state, ref).sequence));
-        const requests = modelOutput('extractor', () => applyExtraction(state, extraction.value, input)).sort((a, b) => requestAsOf(a) - requestAsOf(b));
+        const requests = modelOutput('extractor', () => applyExtraction(state, extraction.value, input, skipped)).sort((a, b) => requestAsOf(a) - requestAsOf(b));
         for (const request of requests) {
             const interviewAsOf = requestAsOf(request);
-            const interview = modelOutput('extractor', () => interviewInput(state, request, interviewAsOf));
+            let interview;
+            try {
+                interview = interviewInput(state, request, interviewAsOf);
+            } catch (error) {
+                if (error.status !== 400) throw error;
+                skipped.push(error.message);
+                continue;
+            }
             const evidenceKey = interviewEvidenceKey(state, request, interviewAsOf);
             if (state.records.some(record => record.kind === 'interview' && record.evidenceKey === evidenceKey && recordEligible(state, record, { asOf: interviewAsOf }))) continue;
             interview.provenance = { policy: POLICY_VERSION, jobId, role: 'pawspective',
                 model: config.roles.pawspective.model, modelRevision: config.roles.pawspective.modelRevision };
             const generated = await call(directories, config, 'pawspective', PAWSPECTIVE_CONTRACT, interview, { dataTypes: ['memory'], signal: options.signal });
             usage.push(generated.usage);
-            modelOutput('pawspective', () => applyInterview(state, request, generated.value, interview, jobId));
+            const records = state.records;
+            const interviewAudit = state.audit.length;
+            try {
+                applyInterview(state, request, generated.value, interview, jobId);
+            } catch (error) {
+                if (error.status !== 400) throw error;
+                // A half-written interview must not stay behind without its overviews.
+                state.records = records;
+                state.audit.length = interviewAudit;
+                skipped.push(error.message);
+            }
         }
         await loadCurrentState(directories, locator);
         if (options.signal?.aborted) fail('Mewmory request cancelled.', 499);
@@ -282,7 +352,8 @@ async function runBatch(directories, locator, options, call) {
                 current.coverage[refKey(ref)] = policy;
                 if (options.checkpoint) current.checkpoints[refKey(ref)] = policy;
             }
-            Object.assign(current.jobs.find(job => job.id === jobId), { status: 'complete', finishedAt: Date.now(), usage });
+            Object.assign(current.jobs.find(job => job.id === jobId), { status: 'complete', finishedAt: Date.now(), usage,
+                skipped: skipped.length, skippedReasons: [...new Set(skipped)].slice(0, 3) });
             addUsage(current, usage);
         });
     } catch (error) {

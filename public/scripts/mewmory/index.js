@@ -32,8 +32,8 @@ export const getMewmoryScope = () => key([getMewmoryLocator(), getChatGeneration
 
 export function notifyMewmory() {
     window.dispatchEvent(new CustomEvent('mewmory:updated'));
-    const state = mewmory.error ? 'Needs attention' : mewmory.loading ? 'Loading' : mewmory.busy || mewmory.preparing ? 'Processing'
-        : mewmory.view?.enabled ? 'Current' : 'Off';
+    const state = mewmory.error ? 'Needs attention' : mewmory.loading ? 'Loading' : mewmory.busy || mewmory.preparing ? 'Updating memories'
+        : mewmory.view?.enabled ? 'Up to date' : 'Off';
     for (const button of document.querySelectorAll('[data-neconyan-route="mewmory"], [data-sb-tab="mewmory"]')) {
         button.dataset.mewmoryStatus = state;
         button.title = 'Mewmory: ' + state;

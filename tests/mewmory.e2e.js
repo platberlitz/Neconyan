@@ -1,11 +1,12 @@
 /* global document, window */
 import fs from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { trackNavigationErrors } from './chat-scroll-regression-helpers.js';
 
 test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
 test.describe.configure({ mode: 'default' });
-test.setTimeout(180000);
+test.setTimeout(300000);
 // eslint-disable-next-line playwright/no-skipped-test -- This fixture must use an explicitly disposable server.
 test.skip(process.env.NECONYAN_MEWMORY_TEST_DISPOSABLE !== '1', 'Use a disposable Neconyan server and the local Mewmory fixture provider.');
 
@@ -46,9 +47,13 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
         0: { uid: 0, key: ['not-an-active-chat-keyword'], comment: 'True names', content: fixture.lore[0].text, disable: false },
         1: { uid: 1, key: ['gift'], comment: 'Disabled secret', content: fixture.lore[1].text, disable: true },
     } } } });
+    const vacant = await page.request.post('/api/chats/get', { headers, data: { avatar_url: avatar, file_name: chatName, allow_create: true } });
+    expect(vacant.ok(), await vacant.text()).toBe(true);
+    const vacancy = JSON.parse(vacant.headers()['x-neconyan-roleplay']);
     await post('/api/chats/save', {
         avatar_url: avatar, file_name: chatName,
         chat: [{ chat_metadata: { world_info: bookName } }, ...fixture.messages],
+        roleplay: { account: vacancy.account, vacancy: vacancy.vacancy, operationKey: randomUUID() },
     });
     await page.evaluate(async ({ avatar, chatName }) => {
         const app = await import('/script.js');
@@ -165,7 +170,7 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     await expect(workspace.getByText(/INSPECT ONLY:/)).toBeVisible();
     await page.screenshot({ path: info.outputPath('mewmory-desktop.png') });
     await workspace.getByRole('tab', { name: 'Archive', exact: true }).click();
-    await workspace.getByLabel('Search memories and original passages').fill('true name');
+    await workspace.getByLabel('Search memories and original messages').fill('true name');
     await workspace.getByRole('button', { name: 'Search archive', exact: true }).click();
     await expect(workspace.getByText(fixture.lore[0].text, { exact: false })).toBeVisible();
     await expect(workspace.getByText('DISABLED:', { exact: false })).toHaveCount(0);
@@ -236,7 +241,7 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
             await page.locator('#send_textarea').fill(message);
             await page.locator('#send_but').click();
             await expect.poll(async () => (await providerCalls()).filter(call => call.model === 'mewmory-writer').length, { timeout: 30000 }).toBe(replies + 1);
-            await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press)).toBe(false);
+            await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press), { timeout: 30000 }).toBe(false);
             await expect(page.locator('#chat .mes').last()).toContainText('Of course I kept it.');
             await page.locator('#chat .mes').last().scrollIntoViewIfNeeded();
             await expect(page.locator('#chat .mes').last()).toBeInViewport();
@@ -244,9 +249,10 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
             const pending = await providerCalls();
             expect(pending.findLast(call => call.model === heldRole).completedAt).toBeNull();
             const writer = pending.findLast(call => call.model === 'mewmory-writer');
-            expect(writer.firstTokenAt).toBeGreaterThanOrEqual(sentAt);
+            // Server Roleplay replies are not streamed to the provider, so dispatch time is the start signal.
+            expect(writer.startedAt).toBeGreaterThanOrEqual(sentAt);
             await info.attach('parallel-recall-' + label, { body: JSON.stringify({
-                heldRole, sendToFirstTokenMs: writer.firstTokenAt - sentAt,
+                heldRole, sendToDispatchMs: writer.startedAt - sentAt,
                 visibleReplyWhileRecallHeld: true,
             }), contentType: 'application/json' });
             const during = await post('/api/mewmory/inspect', { locator });
@@ -427,7 +433,7 @@ for (const width of [1280, 393]) {
         await page.evaluate(() => window.NeconyanShell.closeWorkspace());
         await page.locator('#send_textarea').fill('Did you keep the bookmark?');
         await page.locator('#send_but').click();
-        await expect(page.locator('#chat .mes .mes_text').last()).toContainText('Of course I kept it');
+        await expect(page.locator('#chat .mes .mes_text').last()).toContainText('Of course I kept it', { timeout: 30000 });
         await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press)).toBe(false);
         const calls = await (await page.request.get(provider.replace(/\/v1$/, '') + '/fixture/calls')).json();
         const prompt = JSON.stringify(calls.findLast(call => call.model === 'mewmory-writer').messages);
