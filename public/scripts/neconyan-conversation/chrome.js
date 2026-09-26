@@ -25,7 +25,6 @@ import {
     parsePositiveInt,
     renameConversationBranch,
     resetCharacterConversationBranches,
-    saveGroupConversationSettings,
     setActiveConversationBranch,
 } from './context.js';
 import { editConversationMessage } from './generation.js';
@@ -57,7 +56,7 @@ import {
     updateUserFooter,
 } from './pickers.js';
 import { scheduleInterfaceRefresh, schedulePalsRailRender, scheduleTimelineRender } from './render-scheduler.js';
-import { generateCharacterSchedule, saveStoredSchedule } from './schedule.js';
+import { generateCharacterSchedule } from './schedule.js';
 import {
     clearConversationMemoryFromPanel,
     closeConversationSettings,
@@ -862,16 +861,7 @@ export function bindConversationChromeControls(sheld) {
                     const groupId = getConversationGroupIdForAvatar(genAvatar);
                     const schedule = await generateCharacterSchedule(character, { groupId, personaId });
                     if (schedule) {
-                        saveStoredSchedule(genAvatar, schedule, { personaId });
                         const genSettings = getSettings(genAvatar, { groupId, personaId });
-                        genSettings.auto_schedule = JSON.stringify(schedule);
-                        genSettings.talkativeness = schedule.talkativeness;
-                        genSettings.inactivity_threshold = schedule.inactivityThresholdMinutes;
-                        genSettings.schedule_generated_at = Date.now();
-                        if (groupId) {
-                            saveGroupConversationSettings(groupId, genSettings, { personaId });
-                        }
-                        saveSettings(genAvatar, genSettings, { groupId, personaId });
                         if (isConversationActiveThread(genAvatar, groupId, { personaId })) {
                             applySettingsToPanel(genSettings);
                             renderScheduleDisplay();

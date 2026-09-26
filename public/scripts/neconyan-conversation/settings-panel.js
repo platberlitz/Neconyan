@@ -13,7 +13,6 @@ import {
     getConversationThreadStore,
     getCurrentCharAvatar,
     parsePositiveInt,
-    saveGroupConversationSettings,
 } from './context.js';
 import { applySettingsToPanel, saveCurrentPanelSettings, updateConversationChrome } from './interface.js';
 import { isConversationActiveThread } from './notifications.js';
@@ -25,11 +24,10 @@ import {
     clamp,
     getCurrentActivityFromSchedule,
     getStoredSchedule,
-    normalizeScheduleBlock,
-    parseScheduleTimeRange,
-    saveStoredSchedule,
+    normalizeEditedSchedule,
+    saveEditedCharacterSchedule,
 } from './schedule.js';
-import { clearConversationMemorySummary, getConversationMemorySummary, getSettings, saveConversationMemorySummary, saveSettings } from './settings-store.js';
+import { clearConversationMemorySummary, getConversationMemorySummary, getSettings, saveConversationMemorySummary } from './settings-store.js';
 import { hasConversationMessageContent } from './thread-store.js';
 import {
     buildChimingPartnerOptions,
@@ -421,48 +419,24 @@ export function openScheduleEditorModal(initialAvatar = getCurrentCharAvatar()) 
         modal.focus({ preventScroll: true });
     }, 0);
 
-    saveBtn?.addEventListener('click', () => {
+    saveBtn?.addEventListener('click', async () => {
         if (!editAvatar) {
             closeModal();
             return;
         }
 
-        const normalized = {
-            days: {},
-            talkativeness: editedSchedule.talkativeness,
-            inactivityThresholdMinutes: editedSchedule.inactivityThresholdMinutes,
-            generatedAt: Date.now(),
-        };
-
-        for (let d = 0; d <= 6; d++) {
-            const rawBlocks = editedSchedule.days[String(d)] || [];
-            const normalizedBlocks = [];
-            for (const b of rawBlocks) {
-                const norm = normalizeScheduleBlock(b);
-                if (norm) {
-                    normalizedBlocks.push(norm);
-                }
-            }
-            normalizedBlocks.sort((x, y) => {
-                const xr = parseScheduleTimeRange(x.time);
-                const yr = parseScheduleTimeRange(y.time);
-                return (xr?.startMinutes ?? Number.MAX_SAFE_INTEGER) - (yr?.startMinutes ?? Number.MAX_SAFE_INTEGER);
-            });
-            normalized.days[String(d)] = normalizedBlocks;
-        }
-
-        saveStoredSchedule(editAvatar, normalized, { personaId });
         const editTarget = targets.find(target => target.avatar === editAvatar);
         const editGroupId = editTarget?.groupId || '';
-        const editSettings = getSettings(editAvatar, { groupId: editGroupId, personaId });
-        editSettings.auto_schedule = JSON.stringify(normalized);
-        editSettings.talkativeness = normalized.talkativeness;
-        editSettings.inactivity_threshold = normalized.inactivityThresholdMinutes;
-        editSettings.schedule_generated_at = normalized.generatedAt;
-        if (editGroupId) {
-            saveGroupConversationSettings(editGroupId, editSettings, { personaId });
+        saveBtn.setAttribute('disabled', '');
+        try {
+            await saveEditedCharacterSchedule(editAvatar, normalizeEditedSchedule(editedSchedule), { groupId: editGroupId, personaId });
+        } catch (error) {
+            console.error('Schedule save error:', error);
+            toastr.error(error?.message ? `Could not save the schedule. ${error.message}` : 'Could not save the schedule. Try again.');
+            saveBtn.removeAttribute('disabled');
+            return;
         }
-        saveSettings(editAvatar, editSettings, { groupId: editGroupId, personaId });
+        const editSettings = getSettings(editAvatar, { groupId: editGroupId, personaId });
         if (isConversationActiveThread(editAvatar, editGroupId, { personaId })) {
             applySettingsToPanel(editSettings);
             renderScheduleDisplay();

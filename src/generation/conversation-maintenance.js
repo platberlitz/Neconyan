@@ -3,7 +3,7 @@ import {
     MEMORY_SUMMARY_MIN_MESSAGES,
     MEMORY_SUMMARY_RESPONSE_TOKENS,
 } from '../../public/scripts/neconyan-conversation/constants.js';
-import { parseScheduleResponse } from '../../public/scripts/neconyan-conversation/schedule-utils.js';
+import { normalizeEditedSchedule, parseScheduleResponse } from '../../public/scripts/neconyan-conversation/schedule-utils.js';
 import { getConversationAttachmentSummary } from '../../public/scripts/neconyan-conversation/thread-store-utils.js';
 import { runChatProfile, validateActiveGenerationContext } from './service.js';
 import { resolveGenerationProfile } from './profiles.js';
@@ -14,8 +14,16 @@ import { hash } from '../mewmory/core.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { acceptJob, getJob, listJobs, releaseJob, setJobResume, updateJob } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
-import { getCharacterData, getConversationSettings } from '../endpoints/conversation-generation.js';
-import { getConversationThreadKey, saveConversationStore } from '../endpoints/conversation-store.js';
+import { getCharacterData, getConversationSettings, normalizeConversationSettings } from '../endpoints/conversation-generation.js';
+import { ensureConversationStore, getConversationThreadKey, readUserSettingsWithStatus, saveConversationStore } from '../endpoints/conversation-store.js';
+import { getConversationThreadStore } from '../endpoints/conversation-threads.js';
+import {
+    authorizeConversationGroup,
+    getConversationGroupRecord,
+    normalizeConversationGroupRecord,
+    normalizeGroupConversationSettings,
+} from '../endpoints/conversation-groups.js';
+import { getSettingsVersion } from '../settings-version.js';
 import {
     prepareConversationTarget,
     commitConversationMemorySummary,
@@ -319,6 +327,24 @@ async function finalizeScheduleSubmission(request, job, preparedSnapshot) {
     return getJob(request.user.directories, job.id);
 }
 
+/** Save a schedule edited by hand in one version-checked settings write. */
+async function saveEditedConversationSchedule(request, body, avatar) {
+    const schedule = normalizeEditedSchedule(body.schedule);
+    if (!schedule || JSON.stringify(schedule).length > MAX_RESPONSE_BYTES) throw fail('The edited schedule is invalid.');
+    const target = { avatar, groupId: String(body.target?.groupId || ''), personaId: String(body.target?.personaId || '') };
+    const saved = readUserSettingsWithStatus(request);
+    if (!saved.ok) throw fail('The Conversation settings could not be read.', 409);
+    const store = ensureConversationStore(saved.data, group => normalizeConversationGroupRecord(group, normalizeConversationSettings));
+    if (!authorizeConversationGroup(request, store, avatar, target.groupId, target.personaId, normalizeConversationSettings).authorized) {
+        throw fail('The Conversation group is no longer available to this persona.', 409);
+    }
+    if (!getConversationThreadStore(store, avatar, target.groupId, { create: true, personaId: target.personaId })) throw fail('The Conversation target is invalid.');
+    applyConversationSchedule(store, avatar, target, schedule);
+    const result = await saveConversationStore(request, store, getSettingsVersion(saved.data), { trustedConversationEffects: true });
+    if (!result.ok) throw fail('The schedule could not be saved.', result.status || 409);
+    return { created: false, applied: true, schedule };
+}
+
 /** Accept a manual weekly-schedule generation for one character. */
 export async function acceptConversationSchedule(request, body = {}) {
     const owner = request.user?.profile?.handle;
@@ -327,6 +353,7 @@ export async function acceptConversationSchedule(request, body = {}) {
     if (typeof body.submissionKey !== 'string' || !body.submissionKey || body.submissionKey.length > 256) throw fail('A submission key is required.');
     const avatar = String(body.target?.avatar || body.avatar || '');
     if (!avatar) throw fail('A character is required.');
+    if (Object.hasOwn(body, 'schedule')) return saveEditedConversationSchedule(request, body, avatar);
     const requestHash = maintenanceRequestHash(body, 'schedule');
     const recorded = listJobs(directories, { owner, includeDismissed: true }).find(item => item.submissionKey === body.submissionKey);
     if (recorded?.intent?.requestHash) {
@@ -357,6 +384,33 @@ export async function acceptConversationSchedule(request, body = {}) {
     return { created: accepted.created, job };
 }
 
+/**
+ * Save a weekly schedule where both readers look for it. The schedule itself
+ * belongs to the character's solo store; the pacing values follow the thread,
+ * or the owned group record for a group DM. Legacy roleplay groups keep their
+ * own group-level pacing because their file is edited under roleplay locks.
+ */
+export function applyConversationSchedule(store, avatar, target, schedule) {
+    const personaId = target.personaId || '';
+    const threadKey = getConversationThreadKey(avatar, target.groupId || '', personaId);
+    if (!threadKey || !store.characters?.[threadKey]) throw fail('The character no longer has a Conversation store.', 409);
+    const solo = getConversationThreadStore(store, avatar, '', { create: true, personaId });
+    solo.schedule = schedule;
+    const thread = store.characters[threadKey];
+    const generated = { auto_schedule: JSON.stringify(schedule), schedule_generated_at: schedule.generatedAt };
+    const pacing = { talkativeness: schedule.talkativeness, inactivity_threshold: schedule.inactivityThresholdMinutes };
+    if (!target.groupId) {
+        thread.settings = { ...(thread.settings || {}), ...generated, ...pacing };
+        return;
+    }
+    thread.settings = { ...(thread.settings || {}), ...generated };
+    const group = getConversationGroupRecord(store, target.groupId, personaId, normalizeConversationSettings);
+    if (group) {
+        group.conversation_settings = normalizeGroupConversationSettings({ ...group.conversation_settings, ...pacing }, normalizeConversationSettings);
+        group.updatedAt = Date.now();
+    }
+}
+
 async function runConversationScheduleJob(context, dependencies) {
     const snapshot = readArtifact(context.directories, context.job.id, 'request');
     if (!snapshot) throw fail('The schedule request is missing.', 409);
@@ -372,17 +426,7 @@ async function runConversationScheduleJob(context, dependencies) {
     if (!schedule || !schedule.days) throw fail('The schedule model returned unusable output.', 502);
     setJobResume(context.directories, context.job.id, 'apply');
     await commitConversationStoreEffect(context, `schedule:${snapshot.avatar}`, store => {
-        const key = getConversationThreadKey(snapshot.avatar, snapshot.target.groupId || '', snapshot.target.personaId);
-        const characterStore = store.characters?.[key];
-        if (!characterStore) throw fail('The character no longer has a Conversation store.', 409);
-        characterStore.schedule = schedule;
-        characterStore.settings = {
-            ...(characterStore.settings || {}),
-            auto_schedule: JSON.stringify(schedule),
-            talkativeness: schedule.talkativeness,
-            inactivity_threshold: schedule.inactivityThresholdMinutes,
-            schedule_generated_at: schedule.generatedAt,
-        };
+        applyConversationSchedule(store, snapshot.avatar, snapshot.target, schedule);
         return { generatedAt: schedule.generatedAt };
     });
     const result = { schedule };

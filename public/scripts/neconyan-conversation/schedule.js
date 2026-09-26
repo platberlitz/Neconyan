@@ -2,7 +2,6 @@ import {
     DEFAULT_CONVERSATION_REPLY_MAX_TOKENS,
     MAX_CONVERSATION_REPLY_MAX_TOKENS,
     MIN_CONVERSATION_REPLY_MAX_TOKENS,
-    SCHEDULE_GENERATION_RESPONSE_TOKENS,
     SCHEDULE_PREFIX,
 } from './constants.js';
 import {
@@ -13,19 +12,22 @@ import {
     parsePositiveInt,
     persistConversationStore,
 } from './context.js';
-import { generateConversationRaw } from './generation.js';
-import { formatPromptText } from './shared-helpers.js';
-import { getSettings } from './settings-store.js';
+import { getCurrentUserHandle } from '../user.js';
+import { requestConversationBinding } from './bindings.js';
+import { captureConversationTextBinding } from './generation.js';
+import { createConversationSubmissionKey } from './message-identity-utils.js';
+import { waitForNativeConversationJob } from './native-jobs.js';
+import { flushConversationStore, refreshConversationStore } from './store-sync.js';
 import { runtimeStatusOverrides } from './state.js';
 import {
     clamp,
     getCurrentActivityFromSchedule as getCurrentActivityFromScheduleBase,
-    parseScheduleResponse,
 } from './schedule-utils.js';
 
 export {
     clamp,
     inferStatusFromActivity,
+    normalizeEditedSchedule,
     normalizeScheduleBlock,
     parseDurationToMs,
     parsePositiveIntValue,
@@ -73,47 +75,36 @@ export function saveStoredSchedule(avatar, schedule, { personaId = getConversati
     persistConversationStore();
 }
 
+/**
+ * Ask the server to write a new weekly schedule. The job finishes and saves
+ * even if this page closes; the promise only reports what this page saw.
+ */
 export async function generateCharacterSchedule(character, { groupId = getConversationGroupIdForAvatar(character?.avatar), personaId = getConversationPersonaId() } = {}) {
-    if (!character) {
+    if (!character?.avatar) {
         return null;
     }
 
-    const name = character.name || 'The character';
-    const description = formatPromptText(character.description || '', 1800);
-    const personality = formatPromptText(character.personality || '', 1200);
-
-    const systemPrompt = [
-        'You are a schedule generator. Create a realistic weekly schedule for a character based on their personality and description.',
-        'Each time block must include a "status" field indicating availability:',
-        '- "online": awake and available (free time, socializing, casual activities)',
-        '- "idle": semi-available (eating, commuting, showering, cooking)',
-        '- "dnd": busy / do not disturb (working, studying, training, in a meeting, focused tasks)',
-        '- "offline": unavailable (sleeping, passed out, unconscious)',
-        'Also assess the character\'s talkativeness on a scale of 0-100 (how often they initiate contact).',
-        'And estimate how long in minutes this character would wait before messaging someone who has not replied (very patient: 180-360, average: 90-150, eager: 15-60).',
-        'RESPOND IN EXACTLY THIS JSON FORMAT (no markdown, no code blocks, just raw JSON):',
-        '{"talkativeness":50,"inactivityThresholdMinutes":120,"days":{"0":[{"time":"08:00-12:00","activity":"working","status":"dnd"}],"1":[],"2":[],"3":[],"4":[],"5":[],"6":[]}}',
-        'Days are keyed 0=Sunday through 6=Saturday. Cover each day with several blocks spanning a full 24 hours including sleep.',
-    ].join('\n');
-
-    const promptParts = [`Character name: ${name}`];
-    if (description) {
-        promptParts.push(`Description: ${description}`);
+    const { account, scope, bindingRequest } = await captureConversationTextBinding({ avatar: character.avatar, groupId, personaId, messages: [] });
+    const response = await requestConversationBinding('schedule/submit', { ...scope, bindingRequest,
+        submissionKey: createConversationSubmissionKey(), acknowledgement: bindingRequest.acknowledgement }, account);
+    if (!response.job) {
+        return null;
     }
-    if (personality) {
-        promptParts.push(`Personality: ${personality}`);
+    const job = await waitForNativeConversationJob(response.job.id, account);
+    if (job?.state !== 'completed') {
+        throw new Error(job?.error?.message || 'Schedule generation did not finish.');
     }
-    promptParts.push('Generate the weekly schedule JSON now.');
+    return getStoredSchedule(character.avatar, { personaId });
+}
 
-    const settings = getSettings(character.avatar, { groupId, personaId });
-    const response = await generateConversationRaw({
-        prompt: promptParts.join('\n\n'),
-        systemPrompt,
-        responseLength: SCHEDULE_GENERATION_RESPONSE_TOKENS,
-        trimNames: false,
-        cacheScope: 'conversation-mode-schedule',
-        scope: { avatar: character.avatar, groupId, personaId },
-    }, settings);
-
-    return parseScheduleResponse(response);
+/** Save a hand-edited schedule on the server, then read the saved copy back. */
+export async function saveEditedCharacterSchedule(avatar, schedule, { groupId = '', personaId = getConversationPersonaId() } = {}) {
+    const account = getCurrentUserHandle();
+    if (!await flushConversationStore(account)) {
+        throw new Error('Conversation changes could not be saved. Try again.');
+    }
+    const response = await requestConversationBinding('schedule/submit', { target: { avatar, groupId, personaId },
+        submissionKey: createConversationSubmissionKey(), schedule }, account);
+    await refreshConversationStore(account);
+    return response.schedule || null;
 }

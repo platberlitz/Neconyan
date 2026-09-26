@@ -19,7 +19,11 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.
     },
     persistConversationStore: jest.fn(),
 }));
-await jest.unstable_mockModule('../public/scripts/neconyan-conversation/generation.js', () => ({ generateConversationRaw: jest.fn() }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/generation.js', () => ({ captureConversationTextBinding: jest.fn() }));
+await jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => 'tester' }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/bindings.js', () => ({ requestConversationBinding: jest.fn() }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/native-jobs.js', () => ({ waitForNativeConversationJob: jest.fn() }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({ flushConversationStore: jest.fn(), refreshConversationStore: jest.fn() }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/shared-helpers.js', () => ({ formatPromptText: value => String(value || '') }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/settings-store.js', () => ({ getSettings: () => ({}) }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js', () => ({ runtimeStatusOverrides }));

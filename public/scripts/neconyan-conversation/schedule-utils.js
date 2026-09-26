@@ -270,6 +270,29 @@ export function parseScheduleResponse(rawText) {
     };
 }
 
+/**
+ * Tidy a schedule edited by hand. Unlike a generated schedule, a week with
+ * every block removed is kept, because the user chose it.
+ */
+export function normalizeEditedSchedule(edited, generatedAt = Date.now()) {
+    if (!edited || typeof edited !== 'object' || !edited.days || typeof edited.days !== 'object') return null;
+    const days = {};
+    for (let day = 0; day <= 6; day++) {
+        const blocks = Array.isArray(edited.days[String(day)]) ? edited.days[String(day)] : [];
+        days[String(day)] = blocks.slice(0, 96).map(normalizeScheduleBlock).filter(Boolean)
+            .map(block => ({ ...block, time: block.time.slice(0, 40), activity: block.activity.slice(0, 200) }))
+            .sort((left, right) => (parseScheduleTimeRange(left.time)?.startMinutes ?? Number.MAX_SAFE_INTEGER)
+                - (parseScheduleTimeRange(right.time)?.startMinutes ?? Number.MAX_SAFE_INTEGER));
+    }
+    return {
+        days,
+        talkativeness: clamp(parsePositiveIntValue(edited.talkativeness, DEFAULT_TALKATIVENESS, 0), 0, 100),
+        inactivityThresholdMinutes: clamp(parsePositiveIntValue(edited.inactivityThresholdMinutes, DEFAULT_INACTIVITY_THRESHOLD, MIN_INACTIVITY_THRESHOLD),
+            MIN_INACTIVITY_THRESHOLD, MAX_INACTIVITY_THRESHOLD),
+        generatedAt,
+    };
+}
+
 export function parseScheduleTimeRange(range) {
     const match = String(range || '').match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
     if (!match) {

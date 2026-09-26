@@ -116,6 +116,72 @@ test('a schedule runs natively and replaces the character schedule', async () =>
     assert.equal(saved.extension_settings[CONVERSATION_STORE_KEY].settings.auto_schedule, undefined);
 });
 
+function addOwnedGroup(directories) {
+    const file = path.join(directories.root, SETTINGS_FILE);
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const store = saved.extension_settings[CONVERSATION_STORE_KEY];
+    store.groups = [{ id: 'crew', personaId: '', name: 'Crew', members: ['nova.png', 'mira.png'], conversation_settings: { talkativeness: 10 }, createdAt: 1, updatedAt: 1 }];
+    store.characters['group:crew:nova.png'] = { settings: {}, activeBranchId: 'main', branches: { main: { id: 'main', name: 'Main', createdAt: 5, messages: [] } } };
+    fs.writeFileSync(file, JSON.stringify(saved));
+    const png = fs.readFileSync(new URL('../default/content/backgrounds/__transparent.png', import.meta.url));
+    for (const [avatar, name] of [['nova.png', 'Nova'], ['mira.png', 'Mira']]) {
+        fs.writeFileSync(path.join(directories.characters, avatar), writeCard(png, JSON.stringify({ name })));
+    }
+}
+
+function readStore(directories) {
+    return JSON.parse(fs.readFileSync(path.join(directories.root, SETTINGS_FILE), 'utf8')).extension_settings[CONVERSATION_STORE_KEY];
+}
+
+test('a group schedule is saved where the character schedule is read and paces the owned group', async t => {
+    const directories = makeDirectories();
+    t.after(() => fs.rmSync(directories.root, { recursive: true, force: true }));
+    writeSettings(directories);
+    addOwnedGroup(directories);
+    const request = { user: { profile: { handle: 'tester' }, directories } };
+    setDirectoriesResolver(() => directories);
+    const schedule = { talkativeness: 70, inactivityThresholdMinutes: 45, days: { 1: [{ time: '09:00-17:00', activity: 'studying', status: 'away' }] } };
+    registerConversationMaintenanceJobs({ generate: async () => ({ text: JSON.stringify(schedule) }) });
+    const accepted = await acceptConversationSchedule(request, { submissionKey: 'group-schedule', target: { avatar: 'nova.png', groupId: 'crew', branchId: 'main' } });
+    await runJob(getJob(directories, accepted.job.id));
+    assert.equal(getJob(directories, accepted.job.id).state, 'completed');
+    const store = readStore(directories);
+    assert.equal(store.characters['nova.png'].schedule.days['1'][0].activity, 'studying');
+    assert.equal(store.characters['group:crew:nova.png'].schedule, undefined);
+    assert.equal(JSON.parse(store.characters['group:crew:nova.png'].settings.auto_schedule).talkativeness, 70);
+    assert.equal(store.characters['group:crew:nova.png'].settings.talkativeness, undefined);
+    assert.equal(store.groups[0].conversation_settings.talkativeness, 70);
+    assert.equal(store.groups[0].conversation_settings.inactivity_threshold, 45);
+    assert.equal(store.characters['nova.png'].branches.main.messages.length, 3);
+});
+
+test('a hand-edited schedule is normalised and saved without a job or provider request', async t => {
+    const directories = makeDirectories();
+    t.after(() => fs.rmSync(directories.root, { recursive: true, force: true }));
+    writeSettings(directories);
+    addOwnedGroup(directories);
+    const request = { user: { profile: { handle: 'tester' }, directories } };
+    const edited = { talkativeness: 250, inactivityThresholdMinutes: 60, days: { 2: [
+        { time: '18:00-20:00', activity: 'dinner', status: 'away' },
+        { time: '07:00-08:00', activity: 'x'.repeat(400), status: 'online' },
+    ] } };
+    const solo = await acceptConversationSchedule(request, { submissionKey: 'edit-solo', target: { avatar: 'nova.png' }, schedule: edited });
+    assert.equal(solo.applied, true);
+    assert.equal(solo.schedule.talkativeness, 100);
+    assert.deepEqual(solo.schedule.days['2'].map(block => block.time), ['07:00-08:00', '18:00-20:00']);
+    assert.equal(solo.schedule.days['2'][0].activity.length, 200);
+    let store = readStore(directories);
+    assert.equal(store.characters['nova.png'].schedule.days['2'][1].activity, 'dinner');
+    assert.equal(store.characters['nova.png'].settings.talkativeness, 100);
+    await acceptConversationSchedule(request, { submissionKey: 'edit-group', target: { avatar: 'nova.png', groupId: 'crew' }, schedule: { ...edited, talkativeness: 30 } });
+    store = readStore(directories);
+    assert.equal(store.groups[0].conversation_settings.talkativeness, 30);
+    assert.equal(store.characters['nova.png'].schedule.talkativeness, 30);
+    await assert.rejects(acceptConversationSchedule(request, { submissionKey: 'edit-bad', target: { avatar: 'nova.png' }, schedule: { days: 'never' } }), /invalid/);
+    await assert.rejects(acceptConversationSchedule(request, { submissionKey: 'edit-stranger', target: { avatar: 'nova.png', groupId: 'crew', personaId: 'other.png' }, schedule: edited }), /no longer available/);
+    assert.equal(listJobs(directories, { owner: 'tester', includeDismissed: true }).length, 0);
+});
+
 test('automatic summaries require enabled server ownership and forced summaries still require history', async t => {
     const directories = makeDirectories();
     t.after(() => fs.rmSync(directories.root, { recursive: true, force: true }));

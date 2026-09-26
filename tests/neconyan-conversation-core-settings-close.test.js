@@ -71,9 +71,8 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/schedule
     clamp: value => value,
     getCurrentActivityFromSchedule: jest.fn(),
     getStoredSchedule: jest.fn(),
-    normalizeScheduleBlock: value => value,
-    parseScheduleTimeRange: () => null,
-    saveStoredSchedule: jest.fn(),
+    normalizeEditedSchedule: value => value,
+    saveEditedCharacterSchedule: jest.fn(),
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/settings-store.js', () => ({
     clearConversationMemorySummary: jest.fn(),

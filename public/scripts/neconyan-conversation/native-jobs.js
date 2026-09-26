@@ -12,6 +12,7 @@ import { presentPendingConversationClaims } from './presentation.js';
 import { scheduleInterfaceRefresh } from './render-scheduler.js';
 import { refreshConversationStore } from './store-sync.js';
 
+const OBSERVED_ROOT_TYPES = new Set(['conversation.reply', 'conversation.rewrite', 'conversation.selfie', 'conversation.schedule', 'conversation.summary']);
 const observed = new Map();
 const readbacks = new Map();
 function readback(account) {
@@ -59,6 +60,21 @@ export function observeNativeConversationJob(jobId, account = getCurrentUserHand
     observed.set(jobId, { account, stop });
 }
 
+/**
+ * Wait for one native job and read its saved result back. Resolves with the
+ * final job, or null when this page stopped watching before it finished.
+ */
+export function waitForNativeConversationJob(jobId, account = getCurrentUserHandle()) {
+    return new Promise(resolve => {
+        observeJob(jobId, {
+            account,
+            onSnapshot: () => readback(account),
+            onDone: job => resolve(job),
+            onStop: reason => { if (reason !== 'done') resolve(null); },
+        });
+    });
+}
+
 export function stopNativeConversationObservation() {
     for (const { stop } of [...observed.values()]) {
         stop();
@@ -83,7 +99,7 @@ export async function resumeNativeConversationObservation() {
         return;
     }
     for (const job of jobs) {
-        if (job?.type === 'conversation.reply' && !job.parentId && !TERMINAL.has(job.state)) observeNativeConversationJob(job.id, account);
+        if (OBSERVED_ROOT_TYPES.has(job?.type) && !job.parentId && !TERMINAL.has(job.state)) observeNativeConversationJob(job.id, account);
     }
     await readback(account).catch(() => {});
 }
