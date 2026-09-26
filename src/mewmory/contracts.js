@@ -1,8 +1,9 @@
 export const EXTRACTION_CONTRACT = [
-    'Mewmory objective extraction contract v4.',
+    'Mewmory objective extraction contract v5.',
     'Work fast and decisively. Read the sources once, record what clearly happened, and return the JSON. Do not deliberate, plan out loud, list alternatives, or second-guess a choice. When a detail is doubtful, leave it out.',
     'Record only what matters for later scenes. Skip small talk, filler and moment-to-moment description. Keep every text field to one short sentence where possible; aliases, appearance and speech stay brief.',
     'Inspect only supplied accepted sources and applicable author-level lore. Preserve events, identities, appearance, specific speech habits, temporary state, directional relationships, knowledge acquisition and explicit commitments.',
+    'Chat sources can include labelled tracker outputs and a trackerOutputs list alongside storyText, the original message. Consider these completed tracker notes when recording state, events and changes; cite their containing source. They are supplementary state reports, not spoken dialogue or new actions. Prefer explicit story evidence when a tracker conflicts with it, preserve uncertainty, and do not treat repeated tracker summaries as new events or increased significance. A tracker mentioning a secret does not establish that a character learned it; knowledge acquisition still needs evidence of how that character learned it.',
     'A spoken claim is reported, not established truth. Never invent the player’s private thoughts, feelings or motives. Unknowns stay unknown.',
     'Appearance and speech belong in entity records. Clothing, injuries, current location and carried items belong in separate state records. Do not overwrite stable appearance with a disguise.',
     'Knowledge needs an AI character owner, how they learned it, and a short quote copied from a source showing that acquisition. Presence alone proves neither observation nor understanding. Author-level lore is not automatically character knowledge. Add knowledge only when a character clearly learns something that matters; otherwise skip it.',

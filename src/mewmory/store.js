@@ -6,6 +6,8 @@ import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { acquireChatFileLock, withChatFileLocks } from '../chat-file-lock.js';
 import { readChatJsonlStrict } from '../chat-recovery.js';
 import { recoverFileWriteSync } from '../util.js';
+import { agentCollectionDirectory, readAgentCollection } from '../in-chat-agent-storage.js';
+import { getActiveCompanionResults } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { fail, forkState, hash, newState, object, purgeSources, sourceAt, syncSources, text } from './core.js';
 
 export const MAX_ARCHIVE_BYTES = 256 * 1024 * 1024;
@@ -365,7 +367,12 @@ export function synchronize(directories, locator, context = [], source = readCha
     // Native saves take this lock first too; never reconcile a chat snapshot read before it.
     return withChatFileLocks([chatPath(directories, locator)], () => {
         captureBranchMemory(directories, locator, source);
-        return mutateState(directories, locator, state => syncSources(state, source.messages, context));
+        // Older saved results predate the category snapshot; resolve them from the saved Agent library.
+        const legacy = source.messages.some(message => Object.values(getActiveCompanionResults(message))
+            .some(result => result?.status === 'done' && !result.agentCategory));
+        const trackerAgentIds = legacy ? readAgentCollection(agentCollectionDirectory(directories)).records
+            .filter(agent => agent.category === 'tracker').map(agent => agent.id) : [];
+        return mutateState(directories, locator, state => syncSources(state, source.messages, context, { trackerAgentIds }));
     });
 }
 
@@ -392,7 +399,7 @@ export function buildBranchMemoryState(parent, locator, messages) {
     let through = offset - 1;
     for (let index = 0; index < messages.length; index++) {
         const previous = sourceAt(parent, parent.timeline[index + offset]);
-        if (!previous || previous.text !== String(messages[index].mes ?? '')
+        if (!previous || (previous.storyText ?? previous.text) !== String(messages[index].mes ?? '')
             || previous.speaker !== String(messages[index].name ?? '')) break;
         through = index + offset;
     }

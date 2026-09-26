@@ -20,7 +20,7 @@ const { applyExtraction, applyInterview, extractionInput, interviewInput, pendin
 const { forcedMatches, validateSelection, recall, recallInBackground } = await import('../src/mewmory/retrieval.js');
 const { hybridCandidates, lexicalSearch, searchDocuments, updateIndex } = await import('../src/mewmory/search.js');
 const { loadCurrentState } = await import('../src/mewmory/sources.js');
-const { chatPath, listStories, mutateState, normalizeLocator, readState, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
+const { buildBranchMemoryState, chatPath, listStories, mutateState, normalizeLocator, readState, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
 const { ensureMewmoryMessageIds } = await import('../public/scripts/mewmory/message-identity.js');
 const { getCounter, getTokenizerModel } = await import('../src/mewmory/tokens.js');
 const { inspectState, restoreRecords } = await import('../src/endpoints/mewmory.js');
@@ -611,6 +611,150 @@ function disk(t, messages = fixture.messages) {
     writeJson(path.join(root, 'settings.json'), {});
     return { directories, filename, write };
 }
+
+const trackerExtra = results => ({ inChatAgentCompanionResults: results });
+const trackerResult = (content, other = {}) => ({ agentName: 'Inventory', agentCategory: 'tracker', status: 'done', content, ...other });
+
+test('Mewmory extracts and retrieves completed trackers from only the accepted alternative', () => {
+    const message = { mewmory_id: 'tracker-host', name: 'Mara', mes: 'She closes the bag.', swipe_id: 0,
+        extra: trackerExtra({ inventory: trackerResult('Wrong top-level result.') }),
+        swipe_info: [{ extra: trackerExtra({
+            inventory: trackerResult('Mara carries the brass key.', { includeInChatHistory: false, displayMode: 'panel' }),
+            scene: trackerResult('Location: north gate.', { agentName: 'Scene' }),
+            pending: trackerResult('Unfinished state.', { status: 'pending' }),
+            failed: trackerResult('Failed state.', { status: 'error' }),
+            empty: trackerResult('tracker-none'),
+            commentary: trackerResult('Imagined audience reaction.', { agentCategory: 'companion' }),
+        }) }, { extra: trackerExtra({ inventory: trackerResult('Rejected key.') }) }],
+    };
+    const state = newState(locator);
+    syncSources(state, [message]);
+    const input = extractionInput(state, state.timeline, 0, false);
+    assert.equal(input.sources[0].storyText, message.mes);
+    assert.deepEqual(input.sources[0].trackerOutputs.map(output => output.agentId), ['inventory', 'scene']);
+    assert.match(input.sources[0].text, /brass key/);
+    assert.doesNotMatch(input.sources[0].text, /Wrong|Unfinished|Failed|tracker-none|Imagined|Rejected/);
+    applyExtraction(state, { records: [{ id: 'state:inventory', kind: 'state', entityId: 'npc:mara',
+        text: 'Mara carries the brass key.', refs: state.timeline }], activeNpcIds: [] }, input);
+    assert.equal(eligibleRecords(state).length, 1);
+    const hits = lexicalSearch(searchDocuments(state), 'brass key', 10).map(hit => hit.document);
+    assert.ok(hits.some(hit => hit.kind === 'source'));
+    assert.match(assembleContext(state, hits, { counter }).memoryText, /brass key/);
+
+    const initial = structuredClone(state.timeline);
+    message.swipe_info[0].extra.inChatAgentCompanionResults.inventory.updatedAt = 'new timestamp';
+    message.swipe_info[0].extra.inChatAgentCompanionResults.inventory.collapsed = true;
+    syncSources(state, [message]);
+    assert.deepEqual(state.timeline, initial, 'display and run bookkeeping do not invalidate evidence');
+    message.swipe_id = 1;
+    syncSources(state, [message]);
+    assert.equal(eligibleRecords(state).length, 0);
+    assert.doesNotMatch(JSON.stringify(searchDocuments(state)), /brass key|north gate/);
+    assert.match(sourceAt(state, state.timeline[0]).text, /Rejected key/);
+});
+
+test('tracker revisions obey hiding, exclusion, branch boundaries and deletion', () => {
+    const messages = [0, 1].map(index => ({ mewmory_id: 'tracker-' + index, name: 'Mara', mes: 'Saved reply ' + index,
+        extra: trackerExtra({ inventory: trackerResult(index ? 'Future sapphire.' : 'Earlier brass key.') }) }));
+    const state = newState(locator);
+    syncSources(state, messages);
+    const saved = event(state, { refs: [state.timeline[0]], asOf: 0, text: 'Earlier brass key.' });
+    const child = buildBranchMemoryState(state, { ...locator, chat: 'Tracker branch' }, messages.slice(0, 1));
+    assert.equal(eligibleRecords(child).length, 1, 'a copied prefix with tracker text retains its memories');
+    assert.doesNotMatch(JSON.stringify(searchDocuments(child)), /Future sapphire/);
+    assert.doesNotMatch(JSON.stringify(searchDocuments(state, 0)), /Future sapphire/);
+    messages[0].is_system = true;
+    messages[0].extra.mewmoryKeepHidden = true;
+    syncSources(state, messages);
+    assert.match(sourceAt(state, state.timeline[0]).text, /Earlier brass key/);
+    assert.ok(searchDocuments(state).some(document => document.text.includes('Earlier brass key')));
+    delete messages[0].extra.mewmoryKeepHidden;
+    syncSources(state, messages);
+    assert.equal(recordEligible(state, saved), false);
+    assert.doesNotMatch(JSON.stringify(searchDocuments(state)), /Earlier brass key/);
+    messages[0].is_system = false;
+    messages[0].extra.mewmoryExclude = true;
+    syncSources(state, messages);
+    assert.doesNotMatch(JSON.stringify(searchDocuments(state)), /Earlier brass key/);
+    syncSources(state, messages.slice(1));
+    assert.doesNotMatch(JSON.stringify(state), /Earlier brass key/);
+});
+
+test('saved legacy tracker outputs are classified from the Agent library and retained after its removal', async t => {
+    const message = { name: 'Mara', mes: 'Saved story.', extra: trackerExtra({ old: {
+        agentName: 'Custom inventory', status: 'done', content: 'A quartz compass in her pocket.',
+    }, audience: { agentName: 'Audience', status: 'done', content: 'Unrelated commentary.' } }) };
+    const { directories, write } = disk(t, [message]);
+    const library = path.join(directories.root, 'InChatAgents');
+    writeJson(path.join(library, 'old.json'), { id: 'old', category: 'tracker', enabled: false });
+    writeJson(path.join(library, 'audience.json'), { id: 'audience', category: 'companion' });
+    const state = await loadCurrentState(directories, locator);
+    assert.match(sourceAt(state, state.timeline[0]).text, /quartz compass/);
+    assert.doesNotMatch(sourceAt(state, state.timeline[0]).text, /Unrelated/);
+    fs.rmSync(path.join(library, 'old.json'));
+    const again = await loadCurrentState(directories, locator);
+    assert.deepEqual(again.timeline, state.timeline);
+    write([{ ...message, swipe_id: 1, swipe_info: [{ extra: message.extra }, { extra: trackerExtra({}) }] }]);
+    const empty = await loadCurrentState(directories, locator);
+    assert.doesNotMatch(sourceAt(empty, empty.timeline[0]).text, /quartz compass/);
+    write([message]);
+    const restored = await loadCurrentState(directories, locator);
+    assert.match(sourceAt(restored, restored.timeline[0]).text, /quartz compass/);
+});
+
+test('a tracker finishing after extraction schedules fresh memory processing without a new chat message', async t => {
+    const message = { name: 'Mara', mes: 'She waits.', extra: trackerExtra({ inventory: trackerResult('Pending note.', { status: 'pending' }) }) };
+    const { directories, write } = disk(t, [message]);
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    config.roles.pawspective.enabled = false;
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    const seen = [];
+    const call = async (_directories, _config, _role, _contract, input) => {
+        seen.push(input);
+        const refs = input.sources.filter(source => source.type === 'chat');
+        return { value: { records: refs[0].trackerOutputs ? [{ id: 'state:inventory', kind: 'state', entityId: 'npc:mara',
+            text: refs[0].trackerOutputs[0].text, refs }] : [], activeNpcIds: [] }, usage: { role: 'extractor' } };
+    };
+    await scanProcessing(directories, call);
+    let state = await waitForProcessing(directories, locator);
+    assert.equal(pendingSources(state, config).length, 0);
+    message.extra = trackerExtra({ inventory: trackerResult('A silver compass in her pocket.') });
+    write([message]);
+    await scanProcessing(directories, call);
+    state = await waitForProcessing(directories, locator);
+    assert.equal(seen.length, 2);
+    assert.equal(state.timeline.length, 1);
+    assert.match(eligibleRecords(state)[0].text, /silver compass/);
+    assert.equal(pendingSources(state, config, { checkpoint: true }).length, 0);
+    assert.deepEqual(JSON.parse(fs.readFileSync(chatPath(directories, locator), 'utf8').split('\n')[1]), message);
+});
+
+test('a tracker edit during extraction discards stale results and invalidates completed memory', async t => {
+    const message = { name: 'Mara', mes: 'She waits.', extra: trackerExtra({ inventory: trackerResult('Old compass.') }) };
+    const { directories, write } = disk(t, [message]);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    const output = input => ({ value: { records: [{ id: 'state:inventory', kind: 'state', entityId: 'npc:mara',
+        text: input.sources[0].trackerOutputs[0].text, refs: input.sources }], activeNpcIds: [] }, usage: { role: 'extractor' } });
+    await assert.rejects(processBatch(directories, locator, {}, async (_dirs, _config, _role, _contract, input) => {
+        message.extra = trackerExtra({ inventory: trackerResult('New compass.') });
+        write([message]);
+        return output(input);
+    }), { status: 409 });
+    let state = await loadCurrentState(directories, locator);
+    assert.equal(eligibleRecords(state).length, 0);
+    state = await processBatch(directories, locator, {}, async (_dirs, _config, _role, _contract, input) => output(input));
+    assert.equal(eligibleRecords(state)[0].text, 'New compass.');
+    message.extra = trackerExtra({});
+    write([message]);
+    state = await loadCurrentState(directories, locator);
+    assert.equal(eligibleRecords(state).length, 0);
+    assert.doesNotMatch(JSON.stringify(searchDocuments(state)), /compass/);
+    assert.equal(pendingSources(state, readConfig(directories)).length, 1);
+});
 
 test('legacy 60-second timeouts upgrade while custom and subsequently saved values survive', t => {
     const { directories } = disk(t);

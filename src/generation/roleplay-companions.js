@@ -134,7 +134,7 @@ async function worldInfoContext(context, options, agents, identity) {
 }
 
 function baseRecord(agent, model) {
-    return { agentName: agent.name, icon: agent.icon, profileId: model?.profileId ?? '', profileLabel: agent.profileLabel || 'Main model',
+    return { agentName: agent.name, agentCategory: agent.category, icon: agent.icon, profileId: model?.profileId ?? '', profileLabel: agent.profileLabel || 'Main model',
         modelLabel: model?.model ?? agent.modelOverride, format: agent.companion.format, displayMode: agent.companion.displayMode,
         includeInChatHistory: agent.companion.includeInChatHistory, chatHistoryDepth: agent.companion.chatHistoryDepth,
         includeAllChatHistory: agent.companion.includeAllChatHistory, keepInChatHistoryWhenHostHidden: agent.companion.keepInChatHistoryWhenHostHidden };

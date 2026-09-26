@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { getActiveCompanionResults, isEmptyOutputSentinel } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 
 export const POLICY_VERSION = 'mewmory-2';
 export const RECORD_KINDS = ['entity', 'state', 'event', 'relationship', 'knowledge', 'commitment', 'interview', 'overview'];
@@ -182,8 +183,24 @@ function appendSource(state, sourceId, type, value) {
     return { id: sourceId, revision: source.current };
 }
 
-/** Reconcile only accepted, persisted messages. Swipes and interview prose are never inputs. */
-export function syncSources(state, messages, context = []) {
+/** Read completed tracker notes from the accepted alternative, independently of display/history settings. */
+function trackerSource(message, previous, trackerAgentIds) {
+    const known = new Set([...(previous?.revisions || []).flatMap(revision =>
+        (revision.trackerOutputs || []).map(output => output.agentId)), ...trackerAgentIds]);
+    const trackerOutputs = Object.entries(getActiveCompanionResults(message))
+        .filter(([agentId, result]) => result?.status === 'done' && typeof result.content === 'string'
+            && result.content.trim() && !isEmptyOutputSentinel(result.content)
+            && (result.agentCategory ? result.agentCategory === 'tracker' : known.has(agentId)))
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([agentId, result]) => ({ agentId, name: String(result.agentName || agentId), text: result.content.trim() }));
+    if (!trackerOutputs.length) return {};
+    const storyText = String(message.mes ?? '');
+    return { storyText, trackerOutputs, text: [storyText, ...trackerOutputs.map(output =>
+        '[Tracker output: ' + output.name + '; supplementary state, not dialogue]\n' + output.text)].join('\n\n') };
+}
+
+/** Reconcile only accepted, persisted messages and their completed trackers. Rejected alternatives never enter. */
+export function syncSources(state, messages, context = [], { trackerAgentIds = [] } = {}) {
     const previousTimeline = state.timeline;
     const previousContext = state.contextSources.map(refKey).join(',');
     const occurrences = new Map();
@@ -239,6 +256,7 @@ export function syncSources(state, messages, context = []) {
             // Selection identity matters even if two swipes happen to contain the same words.
             acceptedAlternative: Number.isInteger(message.swipe_id) ? message.swipe_id : 0,
             attachments, storyTime: null,
+            ...trackerSource(message, state.sources[sourceId], trackerAgentIds),
         });
         state.sources[sourceId].identity = String(message.send_date ?? 'undated');
         if (message.mewmory_id) state.sources[sourceId].messageId = message.mewmory_id;

@@ -117,7 +117,8 @@ test('native companions see the processed reply, saved lore, original notes and 
 });
 
 test('saved companion batches, waiting dependencies and manual dependants run in deterministic waves', async t => {
-    const f = prepared(t, [companion('a', { batch: true, batchAgentIds: ['b'] }), companion('b'),
+    const tracker = { ...companion('a', { batch: true, batchAgentIds: ['b'] }), category: 'tracker' };
+    const f = prepared(t, [tracker, companion('b'),
         companion('c', { dependencies: ['a'], waitForDependencies: true }), companion('d', { trigger: 'manual', dependencies: ['c'], waitForDependencies: true })]);
     const calls = [];
     await f.run({ generate: paid('main', 'Main reply'), generateAgent: paid('agent', options => {
@@ -131,6 +132,7 @@ test('saved companion batches, waiting dependencies and manual dependants run in
         calls.push('d'); assert.match(text, /TASK_D/); assert.match(text, /Completed companion: C/); return { text: 'D note' };
     }) });
     assert.deepEqual(calls, ['batch', 'c', 'd']);
+    assert.equal(f.rows().at(-1).extra.inChatAgentCompanionResults.a.agentCategory, 'tracker');
     assert.deepEqual(Object.values(f.rows().at(-1).extra.inChatAgentCompanionResults).map(result => result.content), ['A note', 'B note', 'C note', 'D note']);
 });
 

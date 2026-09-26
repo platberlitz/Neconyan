@@ -518,6 +518,7 @@ export function setCompanionResult(message, agent, update = {}) {
             modelLabel: getModelLabel(agent),
             ...existing,
             ...update,
+            agentCategory: agent.category,
             format: update.format ?? companion.format,
             displayMode: update.displayMode ?? companion.displayMode,
             includeInChatHistory: Boolean(companion.includeInChatHistory),

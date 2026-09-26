@@ -69,6 +69,12 @@ export async function createMewmoryProvider(port = 0) {
             const refs = source => [{ id: source.id, revision: source.revision }];
             const records = [];
             const interviews = [];
+            for (const source of scene) {
+                for (const tracker of source.trackerOutputs || []) records.push({
+                    id: 'state:tracker-' + tracker.agentId, kind: 'state', entityId: ownerId,
+                    text: tracker.text, refs: refs(source),
+                });
+            }
             if (introduction) records.push({
                 id: 'entity:' + ownerId, kind: 'entity', entityId: ownerId, name: 'Mara', text: 'Mara, an ink-stained archivist.',
                 isCharacter: true, appearance: 'Silver eyes and ink-stained fingers.', speech: 'Clipped, formal sentences.',
