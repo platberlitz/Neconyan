@@ -1,6 +1,6 @@
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { acceptJob, dismissJob, getJob, listJobs, requestCancellation, retryConversationFamily, updateJob, validateOwner } from '../jobs/store.js';
+import { acceptJob, dismissJob, explicitRetryRecovery, getJob, listJobs, requestCancellation, retryConversationFamily, updateJob, validateOwner } from '../jobs/store.js';
 import { abortJob, capacity, noteOwner, ownerCount } from '../jobs/runner.js';
 import { readArtifact } from '../jobs/artifacts.js';
 import { readAudioArtifact } from '../jobs/audio-artifacts.js';
@@ -194,7 +194,7 @@ router.post('/:id/retry', async (request, response) => {
             });
             return response.json(accepted);
         }
-        return response.json({ job: updateJob(directories, job.id, { state: 'queued', finishedAt: null, error: null, dismissed: false }).job });
+        return response.json({ job: updateJob(directories, job.id, current => ({ state: 'queued', finishedAt: null, error: null, dismissed: false, ...explicitRetryRecovery(current) })).job });
     } catch (error) {
         return fail(response, error);
     }

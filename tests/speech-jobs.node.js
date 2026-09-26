@@ -147,6 +147,26 @@ test('saved audio corruption cannot cause another provider call', async t => {
     await assert.rejects(generateSavedSpeech(f.context(), args, { fetchImpl: () => assert.fail('saved audio must not repeat synthesis') }), { code: 'TTS_RESULT_RECOVERY' });
 });
 
+test('a definite speech refusal fails softly once, and without soft failure leaves no unknown step', async t => {
+    const f = prepared(t);
+    let calls = 0;
+    const refused = async () => { calls++; return new Response('busy', { status: 503 }); };
+    const args = { ...f.request, effectId: 'refused', failSoft: true };
+    const failed = await generateSavedSpeech(f.context(), args, { fetchImpl: refused });
+    assert.equal(failed.status, 'failed');
+    assert.equal(failed.code, 'TTS_PROVIDER');
+    assert.deepEqual(await generateSavedSpeech(f.context(), args, { fetchImpl: () => assert.fail('a failed narration must not ask again') }), failed);
+    const html = await generateSavedSpeech(f.context(), { ...f.request, effectId: 'html', failSoft: true },
+        { fetchImpl: async () => { calls++; return new Response(WAVE, { headers: { 'Content-Type': 'text/html' } }); } });
+    assert.equal(html.status, 'failed');
+    assert.equal(html.code, 'TTS_INVALID_AUDIO');
+    await assert.rejects(generateSavedSpeech(f.context(), { ...f.request, effectId: 'strict' }, { fetchImpl: refused }), { code: 'TTS_PROVIDER' });
+    const job = getJob(f.directories, f.admission.jobId);
+    assert.notEqual(job.recoverability, 'unknown-outcome');
+    assert.equal((await generateSavedSpeech(f.context(), { ...f.request, effectId: 'strict' }, { fetchImpl: async () => { calls++; return audio(); } })).status, 'ready');
+    assert.equal(calls, 4);
+});
+
 test('saved synthesis URL survives a failed download without another AllTalk generation', async t => {
     const f = prepared(t, { provider: 'AllTalk', entry: 'nova.wav', controls: { provider_endpoint: 'http://localhost:7851', rvc_character_voice: 'nova.pth', rvc_character_pitch: 3 } });
     let paid = 0, downloads = 0;

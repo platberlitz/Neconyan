@@ -1198,11 +1198,13 @@ for (const [name, change] of [
         pauseBeforeWrite(f, f.input());
         const journal = writeJournal(f);
         change(f, journal);
-        const stat = fs.lstatSync(journal.filename, { bigint: true });
+        // Reading may refresh the access time under relatime; every other field is evidence.
+        const evidence = () => Object.fromEntries(Object.entries(fs.lstatSync(journal.filename, { bigint: true })).filter(([key]) => !key.startsWith('atime')));
+        const stat = evidence();
         const file = readRoleplayFile(f.filename);
         const state = readRoleplayAccount(f.scope);
         assert.throws(() => reconcileSingleChatWrite(f.scope, 'first', host), { code: 'ROLEPLAY_RECOVERY_REQUIRED' });
-        assert.deepEqual(fs.lstatSync(journal.filename, { bigint: true }), stat);
+        assert.deepEqual(evidence(), stat);
         assert.deepEqual(readRoleplayFile(f.filename), file);
         assert.deepEqual(readRoleplayAccount(f.scope), state);
     });

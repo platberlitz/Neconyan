@@ -198,9 +198,10 @@ function assertConversationCheckpoint(current, target, receipt) {
 }
 
 /** The same source check protects provider work and the final message write. Caller may hold the account lock. */
-export function assertConversationEffectSource(context, target, effectId) {
+export function assertConversationEffectSource(context, target, effectId, { verify } = {}) {
     const state = readConversationEffectState(context, target, effectId);
-    assertConversationCheckpoint(state.current, target, state.receipt);
+    if (verify) verify(state.current);
+    else assertConversationCheckpoint(state.current, target, state.receipt);
     return state.current;
 }
 

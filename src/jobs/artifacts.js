@@ -27,6 +27,21 @@ export function providerNotDispatched(error) {
     return failure;
 }
 
+/**
+ * A provider that answered with a definite refusal produced no result, so its
+ * step settles instead of staying unknown. Only statuses that promise the work
+ * was not done qualify; timeouts and gateway errors stay unknown.
+ */
+export function isDefiniteProviderRefusal(status) {
+    const code = Number(status);
+    return Number.isInteger(code) && ((code >= 400 && code < 500 && code !== 408) || code === 503 || code === 529);
+}
+
+/** Mark a thrown provider refusal as a known outcome without a result. */
+export function providerRefused(error) {
+    return providerNotDispatched(error);
+}
+
 function artifactPath(directories, id, name) {
     if (!getJob(directories, id)) throw Object.assign(new Error('No such job.'), { status: 404 });
     return path.join(directories.root, 'jobs', 'artifacts', jobKey(id), jobKey(name) + '.json');

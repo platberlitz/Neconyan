@@ -60,7 +60,7 @@ function prepared(t, { group = false } = {}) {
         body.bindingRequest = await preflightConversationBindings(request, { ...body, bindingOnly: true });
         return body;
     }
-    return { ...f, directories, request, thread, messages, write, submission };
+    return { ...f, directories, request, thread, read, messages, write, submission };
 }
 
 function textModel(calls) {
@@ -76,7 +76,13 @@ test('a manual selfie renders, captions and posts once without the page, even af
     const f = prepared(t);
     const calls = [];
     let paid = 0;
-    registerConversationSelfieJobs({ generate: textModel(calls), fetchImpl: async () => { paid++; return imageResponse(); } });
+    const narrated = [];
+    const narrate = async (context, snapshot, text, speaker, delivery) => {
+        assert.equal(typeof delivery.verify, 'function');
+        narrated.push({ text, speaker: speaker.avatar, effectId: delivery.effectId });
+        return { status: 'ready', job: context.job.id, artifact: 'provider:narration:selfie', mimeType: 'audio/mpeg' };
+    };
+    registerConversationSelfieJobs({ generate: textModel(calls), fetchImpl: async () => { paid++; return imageResponse(); }, narrate });
     const body = await f.submission();
     const accepted = await acceptConversationSelfie(f.request, body);
     assert.equal(accepted.created, true);
@@ -96,6 +102,10 @@ test('a manual selfie renders, captions and posts once without the page, even af
     assert.equal(messages[2].mes, 'Waiting!');
     assert.equal(paid, 1);
     assert.equal(calls.length, 2);
+    assert.deepEqual(narrated, [{ text: 'Rain suits me, right?', speaker: 'Nova.png', effectId: 'selfie' }]);
+    const branch = f.read().extension_settings.sillybunny_conversation.characters[f.thread].branches.main;
+    assert.equal(branch.pendingPresentations[posted.id].narration.status, 'ready');
+    assert.equal(branch.unread, 1);
 
     await runJob(getJob(f.directories, accepted.job.id));
     assert.equal(f.messages().length, 4);

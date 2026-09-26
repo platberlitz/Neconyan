@@ -14,6 +14,7 @@ test.setTimeout(180000);
 const isChimeCall = call => JSON.stringify(call.messages).includes('chiming in on a private group DM');
 
 const speechCalls = app => app.provider.calls.filter(call => call.url.endsWith('/audio/speech'));
+const SAVED_AUDIO_URL = /\/api\/jobs\/[^/]+\/audio\//;
 const submitPresentationReply = account => account.post('/api/neconyan-conversation/reply/submit', {
     submissionKey: 'presentation-reply', timeZone: 'UTC',
     target: { avatar: account.avatar, personaId: account.personaId, branchId: 'main' },
@@ -163,7 +164,7 @@ for (const phone of [false, true]) {
         const claims = [];
         const audio = [];
         await account.context.route('**/presentation/claim', async route => { claims.push(route.request().postDataJSON()); await gate; await route.continue(); });
-        account.context.on('response', response => { if (response.url().includes('/audio/provider')) audio.push(response); });
+        account.context.on('response', response => { if (SAVED_AUDIO_URL.test(response.url())) audio.push(response); });
         const first = await account.open();
         const second = await account.open();
         release();
@@ -211,7 +212,7 @@ for (const phone of [false, true]) {
             if (route.request().postDataJSON().messageIds.length) { waiting = true; await gate; }
             await route.continue();
         });
-        page.on('request', request => { if (request.url().includes('/audio/provider')) downloads++; });
+        page.on('request', request => { if (SAVED_AUDIO_URL.test(request.url())) downloads++; });
         await submitPresentationReply(account);
         await expect.poll(() => waiting, { timeout: 35000 }).toBe(true);
         await page.evaluate(() => document.querySelector('#ttsExtensionMenuItem').click());

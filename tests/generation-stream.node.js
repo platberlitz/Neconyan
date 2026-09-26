@@ -24,6 +24,17 @@ test('native streaming waits for upstream completion and assembles reasoning', a
     assert.equal(response.choices[0].message.reasoning_content, 'Why not?');
 });
 
+test('a provider refusal keeps its upstream status behind the safe client status', async () => {
+    const refuse = body => async (_request, response) => response.status(502).send(body);
+    const request = { headers: {}, socket: new EventEmitter() };
+    await assert.rejects(runBackendRequest(request, refuse({ error: { message: 'busy' }, provider_status: 503 }), { stream: false }),
+        error => error.status === 502 && error.providerStatus === 503);
+    await assert.rejects(runBackendRequest(request, refuse({ error: true, status: 429, response: 'slow down' }), { stream: false }),
+        error => error.providerStatus === 429);
+    await assert.rejects(runBackendRequest(request, refuse({ error: true, status: 'ECONNRESET' }), { stream: false }),
+        error => error.providerStatus === 502);
+});
+
 test('native streaming preserves a UTF-8 character split across network chunks', async () => {
     const bytes = Buffer.from(event({ choices: [{ delta: { content: 'Café 😺' }, finish_reason: 'stop' }] }) + 'data: [DONE]\n\n');
     const split = bytes.indexOf(Buffer.from('😺')) + 2;

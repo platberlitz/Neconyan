@@ -1,6 +1,7 @@
 import { GEMINI_SAFETY, VERTEX_SAFETY } from '../constants.js';
 import { audioResult, pcmWave, MAX_AUDIO_BYTES } from '../jobs/audio-artifacts.js';
 import { speechError } from './speech-config.js';
+import { isDefiniteProviderRefusal } from '../jobs/artifacts.js';
 import { speechJson } from './speech-voices.js';
 import { localSpeechRequest, speechNumber as n } from './speech-local-requests.js';
 import { prepareGoogleRequestHeaders } from './caption-transports.js';
@@ -128,8 +129,29 @@ async function fetchAudioResponse(descriptor, { signal, fetchImpl }) {
         if (signal?.aborted) throw signal.reason;
         throw speechError('The speech request did not return a complete response.', 'TTS_PROVIDER', 502);
     }
-    if (!response.ok) throw speechError('The speech provider rejected the request.', 'TTS_PROVIDER', 502);
+    if (!response.ok) {
+        response.body?.cancel?.().catch?.(() => {});
+        throw Object.assign(speechError('The speech provider rejected the request.', 'TTS_PROVIDER', 502),
+            { providerStatus: response.status, speechRefused: isDefiniteProviderRefusal(response.status) });
+    }
     return response;
+}
+
+/** A received answer that is not audio is a definite failure, never an unknown outcome. */
+function invalidAudio(message) {
+    return Object.assign(speechError(message, 'TTS_INVALID_AUDIO', 502), { speechRefused: true });
+}
+
+function assertAudioContentType(response) {
+    const type = String(response.headers?.get?.('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (type && !['application/octet-stream', 'binary/octet-stream'].includes(type) && !/^audio\/[a-z0-9.+-]+$/.test(type)) {
+        response.body?.cancel?.().catch?.(() => {});
+        throw invalidAudio(`The speech provider returned ${type} instead of audio.`);
+    }
+}
+
+function receivedAudio(bytes) {
+    try { return audioResult(bytes); } catch (error) { throw invalidAudio(error.message); }
 }
 
 function decodedAudio(value) {
@@ -181,13 +203,14 @@ export async function sendSpeechTransport(config, descriptor, segment, { signal,
         }
         const response = await fetchAudioResponse(descriptor, { signal, fetchImpl });
         if (descriptor.response === 'audio') {
+            assertAudioContentType(response);
             let bytes = Buffer.from(await readResponseArrayBuffer(response, MAX_AUDIO_BYTES, { signal }));
             if (descriptor.pcm) bytes = pcmWave(bytes, { sampleRate: descriptor.sampleRate ?? 24000 });
             if (descriptor.wavStream && bytes.length >= 44 && bytes.toString('ascii', 0, 4) === 'RIFF'
                 && bytes.toString('ascii', 36, 40) === 'data') {
                 bytes.writeUInt32LE(bytes.length - 8, 4); bytes.writeUInt32LE(bytes.length - 44, 40);
             }
-            return audioResult(bytes);
+            return receivedAudio(bytes);
         }
         const text = await readResponseText(response, MAX_AUDIO_BYTES * 2 + 65536, { signal });
         if (descriptor.response === 'volc-audio') {
@@ -240,5 +263,6 @@ export async function downloadSpeechOutput(config, output, { signal, fetchImpl =
     const url = speechOutputUrl(output.url, config);
     const headers = config.provider === 'ElevenLabs' && new URL(url).origin === 'https://api.elevenlabs.io' ? { 'xi-api-key': config.key } : {};
     const response = await fetchAudioResponse({ url, headers }, { signal, fetchImpl });
-    return audioResult(Buffer.from(await readResponseArrayBuffer(response, MAX_AUDIO_BYTES, { signal })));
+    assertAudioContentType(response);
+    return receivedAudio(Buffer.from(await readResponseArrayBuffer(response, MAX_AUDIO_BYTES, { signal })));
 }

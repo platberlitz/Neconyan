@@ -627,6 +627,15 @@ export function dismissJob(directories, id) {
 }
 
 /**
+ * An explicit retry is the owner's deliberate decision to ask the provider
+ * again, so unknown provider steps are released; saved results still replay.
+ */
+export function explicitRetryRecovery(job) {
+    return { recoverability: 'resumable', recoveryStep: null, recoverySteps: [],
+        resume: typeof job.resume === 'string' && job.resume.startsWith('provider:') ? null : job.resume ?? null };
+}
+
+/**
  * Reopen a Conversation family after an explicit retry. Only failed or unknown
  * participants are requeued; completed ones keep their saved output. The root
  * returns to `waiting/children` so the worker aggregates again.
@@ -643,8 +652,7 @@ export function retryConversationFamily(directories, id) {
             child.stage = null;
             child.error = null;
             child.result = null;
-            child.recoverability = 'resumable';
-            child.recoveryStep = null;
+            Object.assign(child, explicitRetryRecovery(child));
             child.attempt += 1;
             child.updatedAt = now();
             changed = true;

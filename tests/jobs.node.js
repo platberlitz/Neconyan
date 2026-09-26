@@ -11,7 +11,7 @@ import { setConfigFilePath } from '../src/util.js';
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 
 const {
-    acceptJob, dismissJob, getJob, listJobs, readJobStore, recordReceipt, recoverJobs,
+    acceptJob, dismissJob, explicitRetryRecovery, getJob, listJobs, readJobStore, recordReceipt, recoverJobs,
     requestCancellation, setJobState, updateJob, markProviderUncertain, markProviderSettled, setJobResume,
 } = await import('../src/jobs/store.js');
 const {
@@ -20,7 +20,7 @@ const {
 } = await import('../src/jobs/runner.js');
 const { registerTool, unregisterTool, invokeTool } = await import('../src/tools/registry.js');
 const { createGenerationContext, resolveCredential } = await import('../src/generation/context.js');
-const { providerNotDispatched, providerStep, readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
+const { isDefiniteProviderRefusal, providerNotDispatched, providerRefused, providerStep, readArtifact, unresolvedProviderStep, writeArtifact } = await import('../src/jobs/artifacts.js');
 
 const roots = [];
 
@@ -154,6 +154,26 @@ test('unknown provider results remain blocked after recovery until a saved recei
     assert.deepEqual(await providerStep(context, 'known', () => { calls++; return { text: 'safe retry' }; }),
         { text: 'safe retry' });
     assert.equal(calls, 3);
+});
+
+test('a definite provider refusal settles its step, and an explicit retry releases unknown steps', async () => {
+    assert.deepEqual([400, 401, 429, 503, 529].map(isDefiniteProviderRefusal), [true, true, true, true, true]);
+    assert.deepEqual([undefined, 0, 408, 500, 502, 504].map(isDefiniteProviderRefusal), [false, false, false, false, false, false]);
+    const directories = tempDirectories('refused-provider');
+    const job = acceptJob(directories, { owner: 'alice', type: 'artifact-test', submissionKey: 'refused', intent: {} }).job;
+    const context = { directories, job, signal: new AbortController().signal };
+    updateJob(directories, job.id, { state: 'running' });
+    await assert.rejects(providerStep(context, 'refused', () => {
+        throw providerRefused(Object.assign(new Error('Service unavailable'), { providerStatus: 503 }));
+    }), /Service unavailable/);
+    assert.notEqual(getJob(directories, job.id).recoverability, 'unknown-outcome');
+    assert.equal(unresolvedProviderStep(directories, job.id), undefined);
+    await assert.rejects(providerStep(context, 'lost', () => { throw new Error('Connection reset'); }), /Connection reset/);
+    assert.equal(getJob(directories, job.id).recoverability, 'unknown-outcome');
+    assert.equal(unresolvedProviderStep(directories, job.id), 'provider:lost');
+    updateJob(directories, job.id, current => explicitRetryRecovery(current));
+    assert.equal(unresolvedProviderStep(directories, job.id), undefined);
+    assert.deepEqual(await providerStep(context, 'lost', () => ({ text: 'asked again on purpose' })), { text: 'asked again on purpose' });
 });
 
 test('finished history makes room for new work and removes only expired artifacts', () => {

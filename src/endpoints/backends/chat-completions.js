@@ -3576,7 +3576,7 @@ export async function handleChatCompletionsGenerate(request, response) {
             console.error('Chat completion request error: ', message, responseText);
 
             if (!response.headersSent) {
-                response.status(getSafeCompletionErrorStatus(fetchResponse.status)).send({ error: { message }, quota_error: quota_error });
+                response.status(getSafeCompletionErrorStatus(fetchResponse.status)).send({ error: { message }, quota_error: quota_error, provider_status: fetchResponse.status });
             } else if (!response.writableEnded) {
                 response.write(responseText);
             } else {

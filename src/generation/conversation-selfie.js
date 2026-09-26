@@ -15,6 +15,7 @@ import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import { appendConversationJobMessage, captureConversationTarget, commitConversationEffect, readConversationTarget } from './conversation-effects.js';
 import { withRoleplayAccount } from '../roleplay-store.js';
+import { createConversationNarrator } from './conversation-narration.js';
 
 const SELFIE_SCENE = 'a casual selfie in the current moment';
 const FALLBACK_CAPTION = 'Here, I took this for you.';
@@ -187,7 +188,7 @@ async function generateOnce(context, snapshot, name, options, assertSource, gene
     return text;
 }
 
-async function runConversationSelfieJob(context, { generate, fetchImpl }) {
+async function runConversationSelfieJob(context, { generate, fetchImpl, narrate }) {
     const { directories, job } = context;
     const snapshot = readArtifact(directories, job.id, 'request');
     if (!snapshot) throw fail('The selfie request is missing.', 409);
@@ -228,13 +229,15 @@ async function runConversationSelfieJob(context, { generate, fetchImpl }) {
         if (error?.name === 'AbortError' || error?.status === 409 || context.signal?.aborted) throw error;
         writeArtifact(directories, job.id, 'caption-reply', { text: '', error: String(error?.message || 'Caption failed.').slice(0, 500) });
     }
+    const text = caption || FALLBACK_CAPTION;
+    const narration = narrate ? await narrate(context, snapshot, text, speaker, { effectId: 'selfie', verify }) : null;
     setJobResume(directories, job.id, 'apply');
     const posted = await appendConversationJobMessage(context, snapshot.target, 'selfie', {
         role: snapshot.role,
         name: snapshot.characterName,
-        mes: caption || FALLBACK_CAPTION,
+        mes: text,
         extra: { ...snapshot.extra, conversation_mode_image: true, image_url: image.url, image_prompt: image.prompt },
-    }, { verify });
+    }, { verify, presentation: { narration } });
     writeArtifact(directories, job.id, 'result', { messageId: posted?.id || '', url: image.url });
     return { artifact: true };
 }
@@ -244,8 +247,8 @@ export function finalizeConversationSelfieSubmission(request, job) {
     return finalizeSelfieSubmission(request, job);
 }
 
-export function registerConversationSelfieJobs({ generate = runChatProfile, fetchImpl } = {}) {
-    registerHandler('conversation.selfie', context => runConversationSelfieJob(context, { generate, fetchImpl }));
+export function registerConversationSelfieJobs({ generate = runChatProfile, fetchImpl, narrate = createConversationNarrator() } = {}) {
+    registerHandler('conversation.selfie', context => runConversationSelfieJob(context, { generate, fetchImpl, narrate }));
 }
 
 registerConversationSelfieJobs();

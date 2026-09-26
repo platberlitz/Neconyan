@@ -622,6 +622,8 @@ export async function runBackendRequest(request, handler, payload, { signal, fet
         const error = new Error('conversation generation failed');
         const reportedStatus = capture.statusCode >= 400 ? capture.statusCode : body?.status;
         error.status = getSafeConversationGenerationStatus(reportedStatus);
+        const upstreamStatus = Number(body?.provider_status ?? body?.status);
+        error.providerStatus = Number.isInteger(upstreamStatus) && upstreamStatus >= 400 ? upstreamStatus : Number(reportedStatus) || null;
         error.body = body;
         throw error;
     }

@@ -11,7 +11,7 @@ import {
 import { handleChatCompletionsBias, handleChatCompletionsStatus } from '../endpoints/backends/chat-completions.js';
 import { readJson } from '../mewmory/store.js';
 import { fail, hash } from '../mewmory/core.js';
-import { providerStep, providerNotDispatched, readArtifact, writeArtifact } from '../jobs/artifacts.js';
+import { isDefiniteProviderRefusal, providerRefused, providerStep, providerNotDispatched, readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { buildChatProfileRequest, resolveGenerationProfile } from './profiles.js';
 import { buildTextProfileRequest } from './text-request.js';
 import { prepareActiveRegex, applyActiveRegex } from './active-regex.js';
@@ -59,7 +59,10 @@ export async function runTextGeneration({ context, backend, payload, signal, ano
     let response;
     try {
         response = await runBackendGeneration(request, resolvedBackend, payload, { signal, fetch: send, anonymousCustom, boundProfile });
-    } catch (error) { throw validationError || error; }
+    } catch (error) {
+        if (validationError) throw validationError;
+        throw isDefiniteProviderRefusal(error?.providerStatus) ? providerRefused(error) : error;
+    }
     const text = resolvedBackend === 'text'
         ? normalizeContentText(typeof response === 'string' ? response : response?.choices?.[0]?.text ?? response?.choices?.[0]?.message?.content ?? response?.content ?? response?.response ?? response?.[0]?.content ?? '', { excludeReasoning: true })
         : extractMessageFromData(response, 'openai', { excludeReasoning: true })

@@ -29,9 +29,9 @@ export function createConversationNarrator(deps = {}) {
             if (!snapshot.speechPolicy) return null;
             if (!delivery.effectId) throw new Error('Narration requires a delivery effect identity.');
             return generateSavedSpeech(context, { effectId: delivery.effectId, policy: snapshot.speechPolicy,
-                account: snapshot.speechAccount, text, displayText: delivery.extra?.display_text || '', speaker, snapshot: { macros: snapshot.macros },
+                account: snapshot.speechAccount, text, displayText: delivery.extra?.display_text || '', speaker, snapshot: { macros: snapshot.macros }, failSoft: true,
                 assertSourceLocked: lease => {
-                    const current = assertConversationEffectSource(context, snapshot.target, delivery.effectId);
+                    const current = assertConversationEffectSource(context, snapshot.target, delivery.effectId, { verify: delivery.verify });
                     if (snapshot.target.groupId && !isConversationGroupSpeakerEligible(current.group, speaker.avatar)) {
                         throw Object.assign(new Error('The narration speaker is no longer available.'), { status: 409 });
                     }

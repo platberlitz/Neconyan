@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { createMacroEnvironment } from '../macros/index.js';
-import { providerNotDispatched, providerStep, readArtifact, unresolvedProviderStep, writeArtifact } from '../jobs/artifacts.js';
+import { providerNotDispatched, providerRefused, providerStep, readArtifact, unresolvedProviderStep, writeArtifact } from '../jobs/artifacts.js';
 import { readAudioArtifact, writeAudioArtifact } from '../jobs/audio-artifacts.js';
 import { registerHandler } from '../jobs/runner.js';
 import { setJobResume } from '../jobs/store.js';
@@ -74,7 +74,7 @@ function verified(value, identity) {
 }
 
 /** Saved automatic and manual speech share this workflow; no network runs with an account lock held. */
-export async function generateSavedSpeech(context, { effectId, policy, account, text, displayText = '', speaker, snapshot = {}, assertSourceLocked }, deps = {}) {
+export async function generateSavedSpeech(context, { effectId, policy, account, text, displayText = '', speaker, snapshot = {}, assertSourceLocked, failSoft = false }, deps = {}) {
     if (!policy) return null;
     if (policy.provider === 'Kokoro') return { status: 'browser', provider: 'Kokoro' };
     if (speaker?.isUser && policy.automatic && policy.options.narrate_user !== true) return null;
@@ -114,83 +114,97 @@ export async function generateSavedSpeech(context, { effectId, policy, account, 
     const data = verified(input, identity);
     if (!Array.isArray(data.segments) || data.segments.length > 256) throw recover();
     const artifacts = [];
-    for (let index = 0; index < data.segments.length; index++) {
-        context.signal.throwIfAborted();
-        const step = `${name}:${index}`;
-        const audioName = `${step}:audio`;
-        let audio = locked(() => readAudioArtifact(context.directories, context.job.id, audioName));
-        if (audio === undefined) {
-            const segmentInput = data.segments[index];
-            const segmentId = roleplayHash([context.job.id, step, input.hash]);
-            let accepted = locked(() => readArtifact(context.directories, context.job.id, `input:${step}:voice`));
-            let config;
-            if (accepted === undefined) {
-                if (unresolvedProviderStep(context.directories, context.job.id)) throw recover();
-                config = check();
-                const signal = AbortSignal.any([context.signal, AbortSignal.timeout(30000)]);
-                const voice = await resolveSpeechVoice(config, segmentInput.entry, { ...deps, signal });
-                const history = await previousElevenLabsAudio(config, { ...segmentInput, voice }, { ...deps, signal });
-                const selection = { identity: segmentId, voice, history };
-                accepted = { ...selection, hash: roleplayHash(selection) };
-                locked(lease => {
-                    assertSourceLocked?.(lease); assertSpeechPolicy(context.directories, policy);
-                    writeArtifact(context.directories, context.job.id, `input:${step}:voice`, accepted);
-                });
-            }
-            const selection = verified(accepted, segmentId);
-            const segment = { ...segmentInput, id: segmentId, voice: selection.voice };
-            const savedProvider = locked(() => readArtifact(context.directories, context.job.id, `provider:${step}`));
-            const resultStore = {
-                readResult: (directories, id, key) => locked(() => {
-                    const saved = readArtifact(directories, id, key);
-                    return saved?.url ? saved : saved === undefined ? undefined : readAudioArtifact(directories, id, key);
-                }),
-                writeResult: (directories, id, key, value) => locked(() => {
-                    if (value?.url) writeArtifact(directories, id, key, value);
-                    else writeAudioArtifact(directories, id, key, value);
-                }),
-            };
-            let result;
-            if (selection.history) {
-                config = check();
-                result = selection.history;
-            } else if (savedProvider !== undefined) result = resultStore.readResult(context.directories, context.job.id, `provider:${step}`);
-            else {
-                if (unresolvedProviderStep(context.directories, context.job.id)) throw recover();
-                config = check();
-                const signal = AbortSignal.any([context.signal, AbortSignal.timeout(180000)]);
-                const descriptor = await prepareSpeechTransport(config, segment, { ...deps, signal });
-                // Expiring OAuth headers are reconstructed from the same bound credential; never save them.
-                const digest = roleplayHash({ ...descriptor, headers: null,
-                    ...(descriptor.settingsRequest ? { settingsRequest: { ...descriptor.settingsRequest, headers: null } } : {}) });
-                locked(lease => {
-                    assertSourceLocked?.(lease); assertSpeechPolicy(context.directories, policy);
-                    const expected = { identity: segmentId, digest };
-                    const saved = readArtifact(context.directories, context.job.id, `input:${step}:request`);
-                    if (saved !== undefined && roleplayHash(saved) !== roleplayHash(expected)) throw recover();
-                    if (saved === undefined) writeArtifact(context.directories, context.job.id, `input:${step}:request`, expected);
-                });
-                const run = async () => {
-                    try { check(); } catch (error) { throw providerNotDispatched(error); }
-                    try { return await sendSpeechTransport(config, descriptor, segment, { ...deps, signal }); } catch (error) {
-                        if (context.signal.aborted) throw context.signal.reason;
-                        throw speechError('The speech request has no verified complete result.', 'TTS_PROVIDER', error.status ?? 502);
-                    }
+    try {
+        await saveSpeechSegments();
+    } catch (error) {
+        // A definite refusal or non-audio answer fails only the narration. The
+        // failure is saved so a replay reports it instead of asking again.
+        if (!failSoft || !error?.speechRefused || context.signal.aborted) throw error;
+        const failed = { status: 'failed', provider: policy.provider, code: error.code || 'TTS_PROVIDER', error: error.message };
+        const final = { identity, result: failed };
+        locked(() => writeArtifact(context.directories, context.job.id, `${name}:result`, { ...final, hash: roleplayHash(final) }));
+        return failed;
+    }
+    async function saveSpeechSegments() {
+        for (let index = 0; index < data.segments.length; index++) {
+            context.signal.throwIfAborted();
+            const step = `${name}:${index}`;
+            const audioName = `${step}:audio`;
+            let audio = locked(() => readAudioArtifact(context.directories, context.job.id, audioName));
+            if (audio === undefined) {
+                const segmentInput = data.segments[index];
+                const segmentId = roleplayHash([context.job.id, step, input.hash]);
+                let accepted = locked(() => readArtifact(context.directories, context.job.id, `input:${step}:voice`));
+                let config;
+                if (accepted === undefined) {
+                    if (unresolvedProviderStep(context.directories, context.job.id)) throw recover();
+                    config = check();
+                    const signal = AbortSignal.any([context.signal, AbortSignal.timeout(30000)]);
+                    const voice = await resolveSpeechVoice(config, segmentInput.entry, { ...deps, signal });
+                    const history = await previousElevenLabsAudio(config, { ...segmentInput, voice }, { ...deps, signal });
+                    const selection = { identity: segmentId, voice, history };
+                    accepted = { ...selection, hash: roleplayHash(selection) };
+                    locked(lease => {
+                        assertSourceLocked?.(lease); assertSpeechPolicy(context.directories, policy);
+                        writeArtifact(context.directories, context.job.id, `input:${step}:voice`, accepted);
+                    });
+                }
+                const selection = verified(accepted, segmentId);
+                const segment = { ...segmentInput, id: segmentId, voice: selection.voice };
+                const savedProvider = locked(() => readArtifact(context.directories, context.job.id, `provider:${step}`));
+                const resultStore = {
+                    readResult: (directories, id, key) => locked(() => {
+                        const saved = readArtifact(directories, id, key);
+                        return saved?.url ? saved : saved === undefined ? undefined : readAudioArtifact(directories, id, key);
+                    }),
+                    writeResult: (directories, id, key, value) => locked(() => {
+                        if (value?.url) writeArtifact(directories, id, key, value);
+                        else writeAudioArtifact(directories, id, key, value);
+                    }),
                 };
-                if (['SpeechT5', 'System'].includes(descriptor.native)) {
-                    // Pure local calculation may restart from its saved input without another paid or mutating request.
-                    setJobResume(context.directories, context.job.id, `input:${step}:request`);
-                    result = await withSpeechEndpoint(`native:${descriptor.native}`, run);
-                    resultStore.writeResult(context.directories, context.job.id, `provider:${step}`, result);
-                } else result = await providerStep(context, step, run, resultStore);
+                let result;
+                if (selection.history) {
+                    config = check();
+                    result = selection.history;
+                } else if (savedProvider !== undefined) result = resultStore.readResult(context.directories, context.job.id, `provider:${step}`);
+                else {
+                    if (unresolvedProviderStep(context.directories, context.job.id)) throw recover();
+                    config = check();
+                    const signal = AbortSignal.any([context.signal, AbortSignal.timeout(180000)]);
+                    const descriptor = await prepareSpeechTransport(config, segment, { ...deps, signal });
+                    // Expiring OAuth headers are reconstructed from the same bound credential; never save them.
+                    const digest = roleplayHash({ ...descriptor, headers: null,
+                        ...(descriptor.settingsRequest ? { settingsRequest: { ...descriptor.settingsRequest, headers: null } } : {}) });
+                    locked(lease => {
+                        assertSourceLocked?.(lease); assertSpeechPolicy(context.directories, policy);
+                        const expected = { identity: segmentId, digest };
+                        const saved = readArtifact(context.directories, context.job.id, `input:${step}:request`);
+                        if (saved !== undefined && roleplayHash(saved) !== roleplayHash(expected)) throw recover();
+                        if (saved === undefined) writeArtifact(context.directories, context.job.id, `input:${step}:request`, expected);
+                    });
+                    const run = async () => {
+                        try { check(); } catch (error) { throw providerNotDispatched(error); }
+                        try { return await sendSpeechTransport(config, descriptor, segment, { ...deps, signal }); } catch (error) {
+                            if (context.signal.aborted) throw context.signal.reason;
+                            if (error?.speechRefused) throw providerRefused(error);
+                            throw speechError('The speech request has no verified complete result.', 'TTS_PROVIDER', error.status ?? 502);
+                        }
+                    };
+                    if (['SpeechT5', 'System'].includes(descriptor.native)) {
+                        // Pure local calculation may restart from its saved input without another paid or mutating request.
+                        setJobResume(context.directories, context.job.id, `input:${step}:request`);
+                        result = await withSpeechEndpoint(`native:${descriptor.native}`, run);
+                        resultStore.writeResult(context.directories, context.job.id, `provider:${step}`, result);
+                    } else result = await providerStep(context, step, run, resultStore);
+                }
+                if (result?.url) {
+                    config ??= check();
+                    audio = await downloadSpeechOutput(config, result, { ...deps, signal: AbortSignal.any([context.signal, AbortSignal.timeout(30000)]) });
+                } else audio = result;
+                locked(() => writeAudioArtifact(context.directories, context.job.id, audioName, audio));
             }
-            if (result?.url) {
-                config ??= check();
-                audio = await downloadSpeechOutput(config, result, { ...deps, signal: AbortSignal.any([context.signal, AbortSignal.timeout(30000)]) });
-            } else audio = result;
-            locked(() => writeAudioArtifact(context.directories, context.job.id, audioName, audio));
+            artifacts.push({ artifact: audioName, mimeType: audio.mimeType });
         }
-        artifacts.push({ artifact: audioName, mimeType: audio.mimeType });
     }
     const result = artifacts.length ? { status: 'ready', provider: policy.provider, job: context.job.id,
         artifact: artifacts[0].artifact, mimeType: artifacts[0].mimeType, artifacts, playbackRate: policy.options.playback_rate ?? 1 } : null;
