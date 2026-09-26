@@ -33,9 +33,11 @@ const pendingFrames = [];
 const paint = () => pendingFrames.splice(0).forEach(callback => callback());
 const sendButton = {
     id: 'send_but',
+    style: {},
     contains: node => node === sendButton,
     closest: selector => (selector.includes('#send_but') ? sendButton : null),
     getBoundingClientRect: () => ({ left: 100, top: 200, width: 40, height: 40 }),
+    append: node => appended.push(node),
 };
 const elsewhere = { contains: () => false, closest: () => null };
 let hitTarget = sendButton;
@@ -86,26 +88,27 @@ describe('paw send button', () => {
         expect(sendNya.SEND_NYA_SELECTOR).toBe('#send_but, #sb_conversation_send');
     });
 
-    test('a press released on the button pops one cat sound at the pointer', () => {
+    test('a press released on the button pops one cat sound above the button', () => {
         press(sendButton, { x: 111, y: 222 });
         expect(appended).toHaveLength(1);
         const [pop] = appended;
         expect(['nya!', 'mrrp?', 'mrrah', 'mew', 'purr']).toContain(pop.textContent);
         expect(pop.className).toBe('neconyan-send-nya');
         expect(pop.attributes['aria-hidden']).toBe('true');
-        expect(pop.style).toMatchObject({ position: 'fixed', left: '111px', top: '222px', pointerEvents: 'none' });
+        expect(pop.style).toMatchObject({ position: 'absolute', bottom: '100%', left: '50%', pointerEvents: 'none' });
+        expect(sendButton.style).toMatchObject({ position: 'relative' });
         paint();
         expect(pop.options.duration).toBe(900);
     });
 
     for (const [index, sound] of ['nya!', 'mrrp?', 'mrrah', 'mew', 'purr'].entries()) {
         test(`random selection can produce ${sound}`, () => {
-            expect(sendNya.popNya(5, 5, { random: () => (index + 0.5) / 5 }).textContent).toBe(sound);
+            expect(sendNya.popNya(sendButton, { random: () => (index + 0.5) / 5 }).textContent).toBe(sound);
         });
     }
 
     test('busy message preparation cannot expire a pop before its first paint', () => {
-        const pop = sendNya.popNya(5, 5);
+        const pop = sendNya.popNya(sendButton);
         jest.advanceTimersByTime(2000);
         expect(pop.removed).toBe(false);
         expect(pop.animate).not.toHaveBeenCalled();
@@ -117,13 +120,13 @@ describe('paw send button', () => {
     });
 
     test('finishing the animation removes the pop and releases its slot only once', () => {
-        const pop = sendNya.popNya(5, 5);
+        const pop = sendNya.popNya(sendButton);
         paint();
         pop.animation().finish();
         expect(pop.removed).toBe(true);
         jest.advanceTimersByTime(1200);
         appended.length = 0;
-        for (let i = 0; i < 9; i++) sendNya.popNya(5, 5);
+        for (let i = 0; i < 9; i++) sendNya.popNya(sendButton);
         expect(appended).toHaveLength(8);
     });
 
@@ -137,10 +140,10 @@ describe('paw send button', () => {
         expect(appended).toHaveLength(0);
     });
 
-    test('a keyboard press pops from the middle of the button', () => {
+    test('a keyboard press pops above the middle of the button', () => {
         listeners.click({ target: sendButton, isTrusted: true, detail: 0 });
         expect(appended).toHaveLength(1);
-        expect(appended[0].style).toMatchObject({ left: '120px', top: '220px' });
+        expect(appended[0].style).toMatchObject({ bottom: '100%', left: '50%' });
     });
 
     test('a cancelled pointer still pops once from the iOS fast-tap touch sequence', () => {
@@ -151,7 +154,7 @@ describe('paw send button', () => {
         listeners.pointercancel({ pointerId: 7 });
         listeners.touchend(event);
         expect(appended).toHaveLength(1);
-        expect(appended[0].style).toMatchObject({ left: '120px', top: '220px' });
+        expect(appended[0].style).toMatchObject({ bottom: '100%', left: '50%' });
     });
 
     test('touch and pointer events from one tap do not duplicate the pop', () => {
@@ -168,9 +171,9 @@ describe('paw send button', () => {
         expect(appended).toHaveLength(1);
     });
 
-    test('a touch pops from the middle of the button whatever point of it was tapped', () => {
-        // Touch coordinates follow the visible area once the keyboard pans the
-        // page, so the pop anchors to the button rect instead of the touch.
+    test('a touch pops above the button whatever point of it was tapped', () => {
+        // Every input path funnels through the button itself, so the touch point
+        // no longer decides where the pop appears.
         const event = {
             target: sendButton, isTrusted: true,
             changedTouches: [{ identifier: 10, clientX: 5, clientY: 900 }],
@@ -178,7 +181,7 @@ describe('paw send button', () => {
         listeners.touchstart(event);
         listeners.touchend(event);
         expect(appended).toHaveLength(1);
-        expect(appended[0].style).toMatchObject({ left: '120px', top: '220px' });
+        expect(appended[0].style).toMatchObject({ position: 'absolute', bottom: '100%', left: '50%' });
     });
 
     test('cancelled, dragged-off and untrusted touches do not pop', () => {
@@ -199,7 +202,7 @@ describe('paw send button', () => {
     });
 
     test('reduced motion fades in place without movement', () => {
-        const pop = sendNya.popNya(0, 0, { reduced: true });
+        const pop = sendNya.popNya(sendButton, { reduced: true });
         paint();
         expect(pop.options.duration).toBe(700);
         expect(pop.frames.every(frame => !('transform' in frame))).toBe(true);

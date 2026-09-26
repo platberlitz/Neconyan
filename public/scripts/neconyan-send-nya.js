@@ -10,16 +10,16 @@ const pressed = new Map();
 const touched = new Map();
 let activePops = 0;
 
-export function popNya(x, y, { reduced = reducedMotion.matches, random = Math.random } = {}) {
+export function popNya(anchor, { reduced = reducedMotion.matches, random = Math.random } = {}) {
     if (activePops >= MAX_ACTIVE_POPS) return null;
     const pop = document.createElement('span');
     pop.className = 'neconyan-send-nya';
     pop.textContent = SOUNDS[Math.floor(random() * SOUNDS.length)];
     pop.setAttribute('aria-hidden', 'true');
     Object.assign(pop.style, {
-        position: 'fixed',
-        left: `${x}px`,
-        top: `${y}px`,
+        position: 'absolute',
+        bottom: '100%',
+        left: '50%',
         zIndex: '2147483000',
         pointerEvents: 'none',
         userSelect: 'none',
@@ -27,10 +27,14 @@ export function popNya(x, y, { reduced = reducedMotion.matches, random = Math.ra
         font: '400 20px/1 var(--sb-font-display, var(--mainFontFamily, sans-serif))',
         color: 'var(--neco-ginger, var(--sb-accent, var(--SmartThemeQuoteColor)))',
         textShadow: '0 0 2px var(--neco-surface, var(--SmartThemeBlurTintColor)), 0 1px 3px var(--neco-surface, var(--SmartThemeBlurTintColor))',
-        transform: 'translate(-50%, -100%)',
+        transform: 'translateX(-50%)',
         opacity: '0',
     });
-    document.body.append(pop);
+    // The pop lives inside the paw itself, so normal layout places it above the
+    // button whatever the keyboard or viewport has done to the page. No touch or
+    // layout coordinates are measured, so no second viewport can disagree.
+    anchor.style.position = 'relative';
+    anchor.append(pop);
     activePops += 1;
 
     const drift = Math.round((random() - 0.5) * 36);
@@ -38,10 +42,10 @@ export function popNya(x, y, { reduced = reducedMotion.matches, random = Math.ra
     const frames = reduced
         ? [{ opacity: 1 }, { opacity: 1, offset: 0.5 }, { opacity: 0 }]
         : [
-            { opacity: 0, transform: 'translate(-50%, -60%) scale(0.6) rotate(0deg)' },
-            { opacity: 1, transform: `translate(-50%, -110%) scale(1.15) rotate(${tilt / 2}deg)`, offset: 0.18 },
-            { opacity: 1, transform: `translate(calc(-50% + ${drift / 2}px), -200%) scale(1) rotate(${tilt}deg)`, offset: 0.6 },
-            { opacity: 0, transform: `translate(calc(-50% + ${drift}px), -320%) scale(0.95) rotate(${tilt}deg)` },
+            { opacity: 0, transform: 'translateX(-50%) translateY(0) scale(0.6) rotate(0deg)' },
+            { opacity: 1, transform: `translateX(-50%) translateY(-6px) scale(1.15) rotate(${tilt / 2}deg)`, offset: 0.18 },
+            { opacity: 1, transform: `translateX(calc(-50% + ${drift / 2}px)) translateY(-20px) scale(1) rotate(${tilt}deg)`, offset: 0.6 },
+            { opacity: 0, transform: `translateX(calc(-50% + ${drift}px)) translateY(-34px) scale(0.95) rotate(${tilt}deg)` },
         ];
     let done = false;
     let cleanupTimer;
@@ -79,15 +83,14 @@ function onPointerUp(event) {
     pressed.delete(event.pointerId);
     if (!button || !event.isTrusted) return;
     const target = document.elementFromPoint(event.clientX, event.clientY);
-    if (target && button.contains(target)) popNya(event.clientX, event.clientY);
+    if (target && button.contains(target)) popNya(button);
 }
 
 function onClick(event) {
     if (!event.isTrusted || event.detail !== 0) return;
     const button = event.target.closest?.(SEND_NYA_SELECTOR);
     if (!button) return;
-    const rect = button.getBoundingClientRect();
-    popNya(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    popNya(button);
 }
 
 function onTouchStart(event) {
@@ -97,22 +100,13 @@ function onTouchStart(event) {
     for (const touch of event.changedTouches) touched.set(touch.identifier, button);
 }
 
-function popAtButtonCenter(button) {
-    // The button rect and a fixed pop share the same viewport coordinates, so
-    // the pop lands on the button whatever the keyboard has done to the page.
-    // Touch coordinates cannot promise that: Safari reports them against the
-    // visible area while layout values sit elsewhere once the keyboard pans.
-    const rect = button.getBoundingClientRect();
-    popNya(rect.left + rect.width / 2, rect.top + rect.height / 2);
-}
-
 function onTouchEnd(event) {
     for (const touch of event.changedTouches) {
         const button = touched.get(touch.identifier);
         touched.delete(touch.identifier);
         if (!button || !event.isTrusted) continue;
         const target = document.elementFromPoint(touch.clientX, touch.clientY);
-        if (target && button.contains(target)) popAtButtonCenter(button);
+        if (target && button.contains(target)) popNya(button);
     }
 }
 

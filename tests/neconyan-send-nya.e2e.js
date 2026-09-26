@@ -33,6 +33,19 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
         await page.evaluate(() => {
             window.pawFrames = [];
             window.pawSounds = [];
+            const clipper = (el) => {
+                for (let node = el.parentElement; node; node = node.parentElement) {
+                    const style = window.getComputedStyle(node);
+                    if (style.overflowX === 'hidden' || style.overflowY === 'hidden'
+                        || style.overflowX === 'clip' || style.overflowY === 'clip') {
+                        const box = node.getBoundingClientRect();
+                        const rect = el.getBoundingClientRect();
+                        if (rect.bottom > box.bottom + 0.5 || rect.top < box.top - 0.5
+                            || rect.right > box.right + 0.5 || rect.left < box.left - 0.5) return true;
+                    }
+                }
+                return false;
+            };
             new window.MutationObserver(records => {
                 for (const record of records) for (const pop of record.addedNodes) {
                     if (pop.className !== 'neconyan-send-nya') continue;
@@ -44,6 +57,7 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
                             elapsed: window.performance.now() - start,
                             opacity: Number(window.getComputedStyle(pop).opacity),
                             connected: pop.isConnected,
+                            clipped: clipper(pop),
                             left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,
                             width: rect.width, height: rect.height,
                             viewportTop: window.visualViewport.offsetTop,
@@ -53,7 +67,7 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
                     };
                     window.requestAnimationFrame(frame);
                 }
-            }).observe(document.body, { childList: true });
+            }).observe(document.body, { childList: true, subtree: true });
         });
         const input = page.locator(conversation ? '#sb_conversation_input' : '#send_textarea');
         const send = page.locator(conversation ? '#sb_conversation_send' : '#send_but');
@@ -72,6 +86,9 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
                     && rect.bottom <= window.visualViewport.offsetTop + window.visualViewport.height;
             })).toBe(true);
         }
+        // Capture the button position before the tap: the pop must sit above the
+        // paw, not merely somewhere on the page.
+        const buttonBox = await send.boundingBox();
         // Message preparation can occupy the main thread longer than the pop's lifetime.
         await send.evaluate((button, phone) => {
             button.addEventListener(phone ? 'touchend' : 'click', () => {
@@ -97,13 +114,13 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
         expect(visible.length).toBeGreaterThan(0);
         const viewport = page.viewportSize();
         expect(visible.some(frame => frame.left >= 0 && frame.top >= frame.viewportTop && frame.right <= viewport.width && frame.bottom <= frame.viewportBottom)).toBe(true);
-        const buttonBox = await send.boundingBox();
-        const buttonCenter = { x: buttonBox.x + buttonBox.width / 2, y: buttonBox.y + buttonBox.height / 2 };
-        const nearButton = visible.some(frame => {
-            const centerX = (frame.left + frame.right) / 2;
-            const centerY = (frame.top + frame.bottom) / 2;
-            return Math.hypot(centerX - buttonCenter.x, centerY - buttonCenter.y) < 80;
-        });
-        expect(nearButton).toBe(true);
+        // The first visible frame is the anchored one: its bottom edge sits at
+        // the button's top edge and it is centred on the button.
+        const first = visible[0];
+        expect(first).toBeTruthy();
+        expect(Math.abs(first.bottom - buttonBox.y)).toBeLessThan(14);
+        expect(Math.abs((first.left + first.right) / 2 - (buttonBox.x + buttonBox.width / 2))).toBeLessThan(20);
+        // Nothing on the ancestor chain may clip the pop away.
+        expect(visible.some(frame => !frame.clipped)).toBe(true);
     });
 }
