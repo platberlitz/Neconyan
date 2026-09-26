@@ -10,7 +10,25 @@ The goal is server ownership of accepted workflows, authoritative state, schedul
 
 Read the repository instructions, product and design documents, the phase checklist and the ownership audit before changing code. Preserve this checkpoint; do not restart the audit or create another competing job system.
 
-## Current checkpoint: Stage 11 Meower (verified)
+## Current checkpoint: Stage 12 Labs (verified)
+
+Stage 12 is accepted locally on top of Stage 11 at `220ba45`. Its single whole-stage self-review, batched corrections and correction-only follow-up are complete. Continue with the full Stage 13 application migration and final audit. Nothing has been pushed or deployed.
+
+- The existing job runner now owns Distiller, LoreStitch, World Info Lab and Prompting Lab workflows. Permanent account-scoped Labs records live outside imported user data. They retain captured inputs, proposals, results and publication evidence after job pruning. Normal records reserve 16 MiB before acceptance; suite transfers reserve 64 MiB, within a shared 512 MiB limit. Exhaustion refuses new work without deleting evidence.
+- Distiller captures saved chat text and produces retained proposals. LoreStitch transformations, World Info scans, health checks, batch previews and saved test replays run on the server. Lorebook and character-test proposals require a separate reviewed apply with source-version checks. Interrupted local publication retains physical write evidence and has an explicit recovery control; it cannot start another provider request.
+- Prompting Lab captures saved cards, personas, templates, connection profiles, lorebooks and read-only Mewmory snapshots. Native suites compile and measure prompts, compare baselines and publish run records. Comparisons, analyses and multi-turn scenes retain each known provider result. Preset publication, suite transfers, embedded character tests and record maintenance have native completion writes. Old scene replies remain visible until replacements are saved. Unknown provider outcomes never repeat automatically.
+- Browser controls submit, observe and read retained results. Closing a page detaches observation; Stop requests durable cancellation. Late cancellation still records a known completed write. Saved-result controls work independently of the submitting page, and recovery requires permanent local publication evidence. The original browser-only WebLLM and Kokoro exceptions remain part of the full migration contract.
+- Non-browser verification passed: 349 Jest suites, 4,620 tests passing, 2 skipped and 1 snapshot; all 1,319 Node tests; root lint, frontend budgets and whitespace. Changed-file comparison found no added production lint errors. Tests-folder lint retains the same 183 existing errors. Budgets remain 17 blocking stylesheets at 1023.8 KiB and 24 startup scripts at 2210.5 KiB.
+- All 18 serial disposable Chromium acceptance cases pass at 1280x900 and touch 393x852. The initial run passed 16; the two World Info review/replay/health cases passed after correcting settings refreshes that detached observation or blocked review of a retained result. Their regression forces a refresh both during observation and after completion. Coverage includes closed-page Distiller proposals and reviewed writes, LoreStitch, World Info scans/batches/saved tests/health, prompt suites, preset publication, suite transfers, reviewed character tests, multi-turn scenes, comparisons, retained readback and Stop after reopening. Providers were controlled local fixtures. WebKit is unavailable, so iOS behaviour is inferred from Chromium.
+
+### Stage 12 continuation entry points
+
+- Admission, permanent records and recovery: `src/endpoints/labs.js`, `src/labs/jobs.js`, `store.js`, `books.js`, `recovery.js` and `public/scripts/labs-client.js`.
+- Native computation and captured sources: `src/labs/compute.js`, `compute-worker.js`, `sources.js`, `distill.js`, `world-info*.js` and `prompting-*.js`. Shared prompt assembly, lore macros and read-only Mewmory helpers remain in their existing generation and memory modules.
+- Browser callers: Distiller, World Info Lab and Prompting Lab under `public/scripts/extensions/third-party/`, plus `public/scripts/neconyan-lorebook-tools.js` and the shared entry defaults in `public/scripts/world-info-entry.js`.
+- Acceptance: `tests/labs-jobs.node.js`, `tests/labs-client.test.js`, `tests/labs-scene-replacement.test.js` and `tests/labs-native.e2e.js`. The disposable browser fixture permits a 60-second initial application boot for Labs; interaction timeouts remain 20 seconds. This accommodates the source-mode module load and is not a production performance claim.
+
+## Historical checkpoint: Stage 11 Meower (verified)
 
 I have completed Stage 11 locally, building on Stage 10 and the subsequent owner changes already present at `4af51fb`. Meower refreshes, character profiles and persona profile drafts now finish on the server after every page closes. Stages 12 and 13 remain authorised and unfinished. Continue with Labs, then the remaining application and final audit. Nothing from this stage has been pushed or deployed.
 
