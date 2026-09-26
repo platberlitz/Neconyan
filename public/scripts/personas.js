@@ -2614,6 +2614,86 @@ export function getCurrentConnectionObj() {
     return null;
 }
 
+async function exportPersonaCard() {
+    const avatar = user_avatar;
+    const name = power_user.personas[avatar];
+    if (!name) {
+        toastr.warning(t`Choose a persona first.`, t`Persona Management`);
+        return;
+    }
+    const descriptor = structuredClone(getPersonaDescriptionEntry(avatar));
+    const result = await Popup.show.confirm(t`Export persona card`, t`Both formats include the image, description, title and Scenario Notes. Linked lorebooks must be shared separately.`, {
+        okButton: t`PNG card`,
+        cancelButton: t`Cancel`,
+        customButtons: [{ text: t`JSON card`, result: POPUP_RESULT.CUSTOM1 }],
+    });
+    if (![POPUP_RESULT.AFFIRMATIVE, POPUP_RESULT.CUSTOM1].includes(result)) return;
+    const format = result === POPUP_RESULT.CUSTOM1 ? 'json' : 'png';
+    const button = $('#persona_card_export').prop('disabled', true);
+    try {
+        const response = await fetch('/api/avatars/export-persona', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ avatar, name, descriptor, format }),
+        });
+        if (!response.ok) throw new Error(`Persona export failed (${response.status})`);
+        const filename = `${name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 100) || 'persona'}.persona.${format}`;
+        download(await response.blob(), filename, format === 'png' ? 'image/png' : 'application/json');
+    } catch (error) {
+        console.error('Could not export persona card', error);
+        toastr.error(t`Could not export this persona. Check that its image is available and try again.`, t`Persona Management`);
+    } finally {
+        button.prop('disabled', false);
+    }
+}
+
+async function importPersonaCard(event) {
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file) return;
+    const button = $('#persona_card_import').prop('disabled', true);
+    try {
+        if (file.size > 20 * 1024 * 1024) {
+            toastr.error(t`Persona cards must be smaller than 20 MiB.`, t`Persona Management`);
+            return;
+        }
+        const formData = new FormData();
+        formData.append('avatar', file);
+        const response = await fetch('/api/avatars/import-persona', {
+            method: 'POST',
+            headers: getRequestHeaders({ omitContentType: true }),
+            body: formData,
+        });
+        if (!response.ok) throw new Error(`Persona import failed (${response.status})`);
+        const { avatar, name, ...descriptor } = await response.json();
+        const missingLorebook = descriptor.lorebook && !world_names?.includes(descriptor.lorebook);
+        if (missingLorebook) descriptor.lorebook = '';
+        power_user.personas[avatar] = name;
+        power_user.persona_descriptions[avatar] = { ...descriptor, connections: [], activeAppendices: {} };
+        const saved = await saveSettings(0, { returnResult: true });
+        $('#persona_search_bar').val('').trigger('input');
+        personasFilter.setFilterData(FILTER_TYPES.PERSONA_SEARCH, '', true);
+        if (!saved) {
+            toastr.error(t`The persona is loaded, but its details could not be saved. Edit the persona to retry saving before reloading.`, t`Persona Management`);
+            await getUserAvatars(true, avatar);
+            return;
+        }
+        await eventSource.emit(event_types.PERSONA_CREATED, { avatarId: avatar, name, description: descriptor.description, title: descriptor.title });
+        await getUserAvatars(true, avatar);
+        if (missingLorebook) {
+            toastr.warning(t`Persona imported. Its linked lorebook is missing; import the lorebook separately and link it again.`, t`Persona Management`);
+        } else {
+            toastr.success(t`Persona card imported. Select it in Browse to use it.`, t`Persona Management`);
+        }
+    } catch (error) {
+        console.error('Could not import persona card', error);
+        toastr.error(t`Could not import this persona card. Choose a PNG or JSON exported from Persona Management.`, t`Persona Management`);
+    } finally {
+        input.value = '';
+        button.prop('disabled', false);
+    }
+}
+
 function onBackupPersonas() {
     const timestamp = new Date().toISOString().split('T')[0].replace(/-/g, '');
     const filename = `personas_${timestamp}.json`;
@@ -3848,6 +3928,9 @@ export async function initPersonas() {
         }
     });
     $('#personas_backup').on('click', onBackupPersonas);
+    $('#persona_card_export').on('click', exportPersonaCard);
+    $('#persona_card_import').on('click', () => $('#persona_card_import_input').trigger('click'));
+    $('#persona_card_import_input').on('change', importPersonaCard);
     $('#personas_restore').on('click', () => $('#personas_restore_input').trigger('click'));
     $('#personas_restore_input').on('change', onPersonasRestoreInput);
     $('#persona_sort_order').val(power_user.persona_sort_order).on('input', function () {

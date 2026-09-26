@@ -6414,6 +6414,13 @@
                     </div>
                     <div id="persona-management-block" class="flex-container wide100p flexGap10" data-persona-workspace-tab="browse">
                         <div id="persona_workspace_panel_browse" class="persona_management_left_column persona-workspace-panel flex1 wide100p" role="tabpanel" aria-labelledby="persona_workspace_tab_browse" data-persona-workspace-panel="browse">
+                            <div class="flex-container marginBot10">
+                                <button id="persona_card_import" type="button" class="menu_button menu_button_icon" title="Import a PNG or JSON persona card" data-i18n="[title]Import a PNG or JSON persona card">
+                                    <i class="fa-solid fa-file-import" aria-hidden="true"></i>
+                                    <span data-i18n="Import persona">Import persona</span>
+                                </button>
+                                <input id="persona_card_import_input" type="file" accept=".png,.json" hidden>
+                            </div>
                             <div class="flex-container marginBot10 alignitemscenter persona-management-browser">
                                 <button id="create_dummy_persona" type="button" class="menu_button menu_button_icon" title="Create a dummy persona" data-i18n="[title]Create a dummy persona">
                                     <i class="fa-solid fa-person-circle-question fa-fw"></i>
@@ -6484,6 +6491,7 @@
                                         <button type="button" id="persona_lore_button" class="menu_button menu_button_icon persona-compatibility-control" title="Open or choose linked lorebook" data-i18n="[title]Open or choose linked lorebook"><i class="fa-solid fa-globe" aria-hidden="true"></i><span data-i18n="Lorebook">Lorebook</span></button>
 
                                         <button type="button" id="persona_set_image_button" class="menu_button menu_button_icon" title="Change persona image" data-i18n="[title]Change persona image"><i class="fa-solid fa-image" aria-hidden="true"></i><span data-i18n="Image">Image</span></button>
+                                        <button type="button" id="persona_card_export" class="menu_button menu_button_icon" title="Export this persona with its image" data-i18n="[title]Export this persona with its image"><i class="fa-solid fa-file-export" aria-hidden="true"></i><span data-i18n="Export">Export</span></button>
 
 
 
