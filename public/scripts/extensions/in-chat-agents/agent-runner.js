@@ -3590,18 +3590,65 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
     }
 }
 
+function substitutePrefillCandidate(value, message) {
+    if (typeof value !== 'string' || !value) {
+        return '';
+    }
+
+    try {
+        return substituteParams(value, { name2Override: String(message?.name ?? '').trim() }) || '';
+    } catch {
+        return value;
+    }
+}
+
 function getProtectedKimiPartialPrefill(message, messageIndex, messageText) {
-    if (message?.is_user !== false || message?.is_system !== false || !Number.isInteger(messageIndex)) {
+    // Stored AI replies usually omit is_system entirely, so only an explicit true marks a system message.
+    if (!message || message.is_user || message.is_system || !Number.isInteger(messageIndex)) {
         return '';
     }
 
     const api = String(message.extra?.api ?? '').trim().toLowerCase();
-    if (!['custom', 'moonshot', 'nanogpt', 'openrouter'].includes(api) || !isKimiK3Model(message.extra?.model)) {
+    const isKimiReply = ['custom', 'moonshot', 'nanogpt', 'openrouter'].includes(api) && isKimiK3Model(message.extra?.model);
+    const context = getContext?.() ?? {};
+    const kimiPartialPrefill = substitutePrefillCandidate(context.chatCompletionSettings?.kimi_partial_prefill, message);
+
+    // Neconyan: the itemized prompt record is browser-local and keyed by message index, so it goes
+    // missing after reloads, deletions or storage clears. Without a fallback the rewrite agent is
+    // handed the unclosed <think> prefill and treats the whole reply as reasoning to delete.
+    const candidates = [];
+    if (isKimiReply) {
+        candidates.push(
+            itemizedPrompts.find(item => Number(item?.mesId) === messageIndex)?.promptBias,
+            kimiPartialPrefill,
+            substitutePrefillCandidate(context.powerUserSettings?.user_prompt_bias, message),
+        );
+    } else if (kimiPartialPrefill.trim()) {
+        // The Kimi-only prefill is specific enough to trust even when the reply metadata is incomplete.
+        candidates.push(kimiPartialPrefill);
+    }
+
+    return candidates
+        .filter(candidate => typeof candidate === 'string' && candidate.trim() && messageText.startsWith(candidate))
+        .reduce((longest, candidate) => candidate.length > longest.length ? candidate : longest, '');
+}
+
+function stripEchoedPartialPrefill(outputText, protectedPartialPrefill) {
+    // A reply that is only a wrapper tag carries no text; accepting it would wipe the message.
+    if (/^\s*<\/?assistant_response>\s*$/i.test(outputText)) {
         return '';
     }
 
-    const promptBias = itemizedPrompts.find(item => Number(item?.mesId) === messageIndex)?.promptBias;
-    return typeof promptBias === 'string' && promptBias && messageText.startsWith(promptBias) ? promptBias : '';
+    if (!protectedPartialPrefill) {
+        return outputText;
+    }
+
+    const trimmedPrefill = protectedPartialPrefill.trim();
+    if (trimmedPrefill && outputText.startsWith(trimmedPrefill)) {
+        return outputText.slice(trimmedPrefill.length).replace(/^\s+/, '');
+    }
+
+    return outputText;
 }
 
 async function runPromptTransformAgent(agent, message, generationType, messageTextOverride = null, messageIndex = null, options = {}) {
@@ -3684,7 +3731,10 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
             maxTokens,
             { allowAssistantPrefillTail: helperRequest.allowAssistantPrefillTail, runtimeAgents: options.runtimeAgents },
         );
-        const promptOutputText = unwrapAssistantResponseWrapper(response.output).trim();
+        const promptOutputText = stripEchoedPartialPrefill(
+            unwrapAssistantResponseWrapper(response.output).trim(),
+            promptTransformMode === 'append' ? '' : protectedPartialPrefill,
+        );
 
         if (!promptOutputText) {
             console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" returned an empty response.`);

@@ -54,6 +54,8 @@ describe('in-chat agent post-processing runner', () => {
     let executeSlashCommandsWithOptions;
     let currentChatId;
     let mainApi;
+    let contextChatCompletionSettings;
+    let contextPowerUserSettings;
     let documentListeners;
     let windowListeners;
     let contextCharacters;
@@ -159,6 +161,8 @@ describe('in-chat agent post-processing runner', () => {
         executeSlashCommandsWithOptions = jest.fn();
         currentChatId = 'chat-a';
         mainApi = 'kobold';
+        contextChatCompletionSettings = {};
+        contextPowerUserSettings = {};
         documentListeners = new Map();
         windowListeners = new Map();
         contextCharacters = [];
@@ -291,6 +295,8 @@ describe('in-chat agent post-processing runner', () => {
                 generateRaw,
                 generateRawData,
                 mainApi,
+                chatCompletionSettings: contextChatCompletionSettings,
+                powerUserSettings: contextPowerUserSettings,
                 characters: contextCharacters,
                 characterId: contextCharacterId,
                 groups: contextGroups,
@@ -7266,6 +7272,126 @@ describe('in-chat agent post-processing runner', () => {
             beforeText: 'Protected prefix: Original continuation',
             afterText: 'Protected prefix: Rewritten continuation',
         })]);
+    });
+
+    test('protects the Kimi K3 partial prefill when its itemized prompt record is missing', async () => {
+        usePromptTransformPostAgent();
+        generateQuietPrompt.mockResolvedValue('Rewritten continuation');
+        contextChatCompletionSettings.kimi_partial_prefill = '<think>\nI am Kimi K3 because ';
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        chat.push({
+            name: 'Assistant',
+            mes: '<think>\nI am Kimi K3 because Original continuation',
+            is_user: false,
+            is_system: false,
+            extra: {
+                api: 'custom',
+                model: 'smol-alibaba/kimi-k3',
+            },
+        });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await waitFor(() => saveChat.mock.calls.length === 1);
+
+        const quietPrompt = generateQuietPrompt.mock.calls[0][0].quietPrompt;
+        expect(quietPrompt).toContain('<assistant_response>\nOriginal continuation\n</assistant_response>');
+        expect(quietPrompt).not.toContain('<think>');
+        expect(chat[0].mes).toBe('<think>\nI am Kimi K3 because Rewritten continuation');
+    });
+
+    test('protects the Kimi K3 partial prefill on stored replies without an is_system field', async () => {
+        usePromptTransformPostAgent();
+        generateQuietPrompt.mockResolvedValue('Rewritten continuation');
+        contextChatCompletionSettings.kimi_partial_prefill = '<think>\nI am Kimi K3 because ';
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        chat.push({
+            name: 'Assistant',
+            mes: '<think>\nI am Kimi K3 because Original continuation',
+            is_user: false,
+            extra: {
+                api: 'custom',
+                model: 'smol-kimi/kimi-k3',
+            },
+        });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await waitFor(() => saveChat.mock.calls.length === 1);
+
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).not.toContain('<think>');
+        expect(chat[0].mes).toBe('<think>\nI am Kimi K3 because Rewritten continuation');
+    });
+
+    test('keeps the original reply when a rewrite returns only a wrapper tag', async () => {
+        usePromptTransformPostAgent();
+        generateQuietPrompt.mockResolvedValue('<assistant_response>');
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, extra: {} });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await waitFor(() => generateQuietPrompt.mock.calls.length === 1);
+        await new Promise(resolve => setTimeout(resolve, 20));
+
+        expect(chat[0].mes).toBe('Original reply');
+    });
+
+    test('drops a Kimi K3 partial prefill the rewrite agent echoes back', async () => {
+        usePromptTransformPostAgent();
+        generateQuietPrompt.mockResolvedValue('<think>\nI am Kimi K3 because Rewritten continuation');
+        itemizedPrompts.push({ mesId: 0, promptBias: '<think>\nI am Kimi K3 because ' });
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        chat.push({
+            name: 'Assistant',
+            mes: '<think>\nI am Kimi K3 because Original continuation',
+            is_user: false,
+            is_system: false,
+            extra: {
+                api: 'custom',
+                model: 'smol-alibaba/kimi-k3',
+            },
+        });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await waitFor(() => saveChat.mock.calls.length === 1);
+
+        expect(chat[0].mes).toBe('<think>\nI am Kimi K3 because Rewritten continuation');
+    });
+
+    test('leaves the global prompt bias rewritable on non-Kimi replies', async () => {
+        usePromptTransformPostAgent();
+        generateQuietPrompt.mockResolvedValue('Rewritten whole reply');
+        contextPowerUserSettings.user_prompt_bias = 'Sure: ';
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        chat.push({
+            name: 'Assistant',
+            mes: 'Sure: Original continuation',
+            is_user: false,
+            is_system: false,
+            extra: {
+                api: 'openai',
+                model: 'gpt-4o',
+            },
+        });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await waitFor(() => saveChat.mock.calls.length === 1);
+
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('<assistant_response>\nSure: Original continuation\n</assistant_response>');
+        expect(chat[0].mes).toBe('Rewritten whole reply');
     });
 
     test('expression requests resolve the current shared profile without changing the independent selection', async () => {
