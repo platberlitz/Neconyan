@@ -72,6 +72,7 @@ import { acceptConversationAside, acceptConversationSubmission, preflightConvers
 import { acceptConversationAsideEvent } from '../generation/conversation-aside-events.js';
 import { acceptConversationSchedule, acceptConversationSummary } from '../generation/conversation-maintenance.js';
 import { claimConversationPresentations } from '../generation/conversation-effects.js';
+import { acceptConversationRewrite } from '../generation/conversation-rewrite.js';
 
 const PREFER_REAL_IP_HEADER = getConfigValue('rateLimiting.preferRealIpHeader', false, 'boolean');
 const MESSAGE_SEND_RATE_LIMIT = getConfigValue('rateLimiting.conversationMessageSendPoints', 20, 'number');
@@ -733,6 +734,18 @@ router.post('/summary/submit', asyncRoute(async (request, response) => {
 router.post('/schedule/submit', asyncRoute(async (request, response) => {
     const accepted = await acceptConversationSchedule(request, request.body || {});
     return response.status(accepted.created ? 202 : 200).send(accepted);
+}));
+
+router.post('/rewrite/submit', asyncRoute(async (request, response) => {
+    if (!await consumeMessageSendLimit(response, messageSendIpLimiter, getIpAddress(request, PREFER_REAL_IP_HEADER))) return;
+    if (!await consumeMessageSendLimit(response, messageSendUserLimiter, request.user.profile.handle)) return;
+    try {
+        const accepted = await acceptConversationRewrite(request, request.body || {});
+        return response.status(accepted.created ? 202 : 200).send(accepted);
+    } catch (error) {
+        if (error?.status >= 400 && error.status < 500) return response.status(error.status).send({ error: error.apiError || 'rewrite_rejected', message: error.message });
+        throw error;
+    }
 }));
 
 router.post('/message/send', asyncRoute(async (request, response) => {

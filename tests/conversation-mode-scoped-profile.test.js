@@ -98,9 +98,11 @@ describe('conversation mode scoped connection profile', () => {
         const consumers = ['generation.js', 'interface.js', 'schedule.js', 'timeline-render.js'];
         for (const file of consumers) {
             const source = readConversationSource(file);
-            expect(source).toContain('generateConversationRaw');
+            expect(source).toMatch(/generateConversationRaw|submitConversationRewrite|captureConversationTextBinding/);
             expect(source).not.toContain('withConversationConnectionProfile');
         }
+        expect(readConversationSource('interface.js')).toContain('submitConversationRewrite(\'polish\'');
+        expect(timelineSource).toContain('submitConversationRewrite(\'regenerate\'');
         expect(promptSource).toContain('captureConversationTextBinding');
         expect(promptSource).toContain('requestConversationBinding(\'summary/submit\'');
         expect(promptSource).not.toContain('generateConversationRaw');

@@ -112,7 +112,8 @@ test('Mewmory uses the unchanged shared ranking implementation', () => {
 
 test('browser Conversation captures its binding before request-local help and never falls back', async () => {
     const source = readFileSync(new URL('public/scripts/neconyan-conversation/generation.js', root), 'utf8');
-    const declaration = source.match(/export (async function generateConversationRaw\([\s\S]*?^})/m)[1];
+    const helper = source.match(/^(async function addAssistantKnowledge\([\s\S]*?^})/m)[1];
+    const declaration = `${helper}\n${source.match(/export (async function generateConversationRaw\([\s\S]*?^})/m)[1]}`;
     const requests = [];
     let captureError;
     const runtime = vm.createContext({

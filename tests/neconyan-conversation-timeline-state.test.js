@@ -6,7 +6,7 @@ let currentAvatar = 'char.png';
 let currentPersonaId = 'persona-a.png';
 const stores = new Map();
 const extractCharacterReplyCommands = jest.fn(rawText => ({ text: String(rawText || '').trim(), selfieRequests: [] }));
-const generateConversationRaw = jest.fn();
+const submitConversationRewrite = jest.fn();
 const captureConversationTextBinding = jest.fn(async () => ({}));
 const buildConversationPromptMessages = jest.fn(async () => []);
 const saveConversationThread = jest.fn();
@@ -49,11 +49,11 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/generati
     captureConversationTextBinding,
     commitCharacterReplyCommands,
     extractCharacterReplyCommands,
-    generateConversationRaw,
     generateSelfieFromContext: jest.fn(),
     getCharacterReplyCommandMetadata: parts => parts?.selfieRequests?.length ? { selfieRequests: parts.selfieRequests } : null,
     normalizeConversationOutputText: value => String(value || '').trim(),
     reportConversationGenerationError: jest.fn(),
+    submitConversationRewrite,
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/media.js', () => ({
     getCharacterForAvatar: avatar => ({ avatar, name: 'Aster' }),
@@ -176,7 +176,7 @@ describe('conversation timeline operation identity', () => {
             activeBranchId: 'branch-b',
             branches: { 'branch-b': { id: 'branch-b', messages: [makeMessage('persona-b-message')] } },
         });
-        generateConversationRaw.mockReset();
+        submitConversationRewrite.mockReset();
         captureConversationTextBinding.mockReset().mockResolvedValue({});
         buildConversationPromptMessages.mockClear();
         extractCharacterReplyCommands.mockReset().mockImplementation(rawText => ({ text: String(rawText || '').trim(), selfieRequests: [] }));
@@ -189,7 +189,7 @@ describe('conversation timeline operation identity', () => {
         stateModule.conversationState.conversationReplyBusy = false;
         stateModule.conversationState.generationActive = false;
         stateModule.conversationState.conversationReplyTarget = null;
-        globalThis.toastr = { success: jest.fn(), warning: jest.fn() };
+        globalThis.toastr = { info: jest.fn(), success: jest.fn(), warning: jest.fn() };
     });
 
     test('isolates and clears reply targets when persona or branch changes', () => {
@@ -223,7 +223,7 @@ describe('conversation timeline operation identity', () => {
         const first = deferred();
         const second = deferred();
         const started = deferred();
-        generateConversationRaw
+        submitConversationRewrite
             .mockImplementationOnce(() => first.promise)
             .mockImplementationOnce(() => { started.resolve(); return second.promise; });
 
@@ -231,16 +231,16 @@ describe('conversation timeline operation identity', () => {
         const duplicateRun = regenerateConversationMessage('message-1');
         const secondRun = regenerateConversationMessage('message-2');
         await started.promise;
-        expect(generateConversationRaw).toHaveBeenCalledTimes(2);
+        expect(submitConversationRewrite).toHaveBeenCalledTimes(2);
         expect(captureConversationTextBinding.mock.invocationCallOrder[0]).toBeLessThan(buildConversationPromptMessages.mock.invocationCallOrder[0]);
         expect(stateModule.conversationState.conversationReplyBusy).toBe(true);
 
-        first.resolve('first replacement');
+        first.resolve({ messageId: 'message-1' });
         await firstRun;
         await duplicateRun;
         expect(stateModule.conversationState.conversationReplyBusy).toBe(true);
 
-        second.resolve('second replacement');
+        second.resolve({ messageId: 'message-2' });
         await secondRun;
         expect(stateModule.conversationState.conversationReplyBusy).toBe(false);
     });
@@ -250,79 +250,42 @@ describe('conversation timeline operation identity', () => {
         captureConversationTextBinding.mockRejectedValueOnce(new Error('Connection changed'));
         await regenerateConversationMessage('message-1');
         expect(buildConversationPromptMessages).not.toHaveBeenCalled();
-        expect(generateConversationRaw).not.toHaveBeenCalled();
+        expect(submitConversationRewrite).not.toHaveBeenCalled();
         expect(saveConversationThread).not.toHaveBeenCalled();
         expect(stores.get(storeKey('persona-a.png', 'char.png'))).toEqual(before);
     });
 
-    test('applies completion only to its captured persona and branch', async () => {
-        const generation = deferred();
-        generateConversationRaw.mockImplementationOnce(() => generation.promise);
-        const oldMessage = stores.get(storeKey('persona-a.png', 'char.png')).branches['branch-a'].messages[0];
-        const newPersonaMessage = stores.get(storeKey('persona-b.png', 'char.png')).branches['branch-b'].messages[0];
-
-        const run = regenerateConversationMessage('message-1');
-        currentPersonaId = 'persona-b.png';
-        generation.resolve('captured replacement');
-        await run;
-
-        expect(oldMessage.mes).toBe('captured replacement');
-        expect(newPersonaMessage.mes).toBe('message persona-b-message');
-    });
-
-    test('drops a stale regeneration completion after the source message is revised', async () => {
-        const generation = deferred();
-        generateConversationRaw.mockImplementationOnce(() => generation.promise);
-        const message = stores.get(storeKey('persona-a.png', 'char.png')).branches['branch-a'].messages[0];
-
-        const run = regenerateConversationMessage('message-1');
-        message.mes = 'edited while generating';
-        generation.resolve('stale replacement');
-        await run;
-
-        expect(message.mes).toBe('edited while generating');
-        expect(saveConversationThread).not.toHaveBeenCalled();
-    });
-
-    test('drops a regeneration completion after preceding prompt context changes', async () => {
-        const generation = deferred();
-        generateConversationRaw.mockImplementationOnce(() => generation.promise);
-        const messages = stores.get(storeKey('persona-a.png', 'char.png')).branches['branch-a'].messages;
+    test('submits the captured persona, branch and prefix to the server without writing in the page', async () => {
+        const job = deferred();
+        submitConversationRewrite.mockImplementationOnce(() => job.promise);
+        const before = structuredClone(stores.get(storeKey('persona-a.png', 'char.png')));
 
         const run = regenerateConversationMessage('message-2');
-        messages[0].mes = 'preceding context edited';
-        generation.resolve('stale replacement');
+        await Promise.resolve();
+        currentPersonaId = 'persona-b.png';
+        job.resolve({ messageId: 'message-2' });
         await run;
 
-        expect(messages[1].mes).toBe('message message-2');
+        expect(captureConversationTextBinding).toHaveBeenCalledWith(expect.objectContaining({ avatar: 'char.png', branchId: 'branch-a',
+            personaId: 'persona-a.png', messages: before.branches['branch-a'].messages }));
+        expect(submitConversationRewrite).toHaveBeenCalledWith('regenerate', 'message-2', expect.objectContaining({
+            scope: expect.objectContaining({ avatar: 'char.png', branchId: 'branch-a', personaId: 'persona-a.png' }),
+            bindingContext: {},
+        }), expect.anything());
+        expect(stores.get(storeKey('persona-a.png', 'char.png'))).toEqual(before);
         expect(saveConversationThread).not.toHaveBeenCalled();
+        expect(commitCharacterReplyCommands).not.toHaveBeenCalled();
         expect(extractCharacterReplyCommands).not.toHaveBeenCalled();
+        expect(globalThis.toastr.success).toHaveBeenCalledWith('Message regenerated.');
     });
 
-    test('parses regeneration commands once and replaces stale command metadata', async () => {
-        extractCharacterReplyCommands.mockReturnValueOnce({
-            text: 'clean replacement',
-            selfieRequests: ['at the park'],
-        });
-        generateConversationRaw.mockResolvedValueOnce('clean replacement [selfie: context="at the park"]');
-        const message = stores.get(storeKey('persona-a.png', 'char.png')).branches['branch-a'].messages[0];
-        message.extra.conversation_commands = { selfieRequests: ['stale request'], stale: true };
+    test('says the server is still writing when the page stops watching', async () => {
+        submitConversationRewrite.mockResolvedValueOnce(null);
 
         await regenerateConversationMessage('message-1');
 
-        expect(extractCharacterReplyCommands).toHaveBeenCalledTimes(1);
-        expect(message.mes).toBe('clean replacement');
-        expect(message.extra.conversation_commands).toEqual({ selfieRequests: ['at the park'] });
-    });
-
-    test('removes stale command metadata when regenerated output has no commands', async () => {
-        generateConversationRaw.mockResolvedValueOnce('plain replacement');
-        const message = stores.get(storeKey('persona-a.png', 'char.png')).branches['branch-a'].messages[0];
-        message.extra.conversation_commands = { selfieRequests: ['stale request'] };
-
-        await regenerateConversationMessage('message-1');
-
-        expect(message.extra.conversation_commands).toBeUndefined();
+        expect(globalThis.toastr.info).toHaveBeenCalledWith(expect.stringContaining('still being written on the server'));
+        expect(globalThis.toastr.success).not.toHaveBeenCalled();
     });
 
     test('changes the rendered thread identity when only the persona changes', () => {

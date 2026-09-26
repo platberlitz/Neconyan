@@ -14,8 +14,7 @@ import {
     parsePositiveInt,
     saveGroupConversationSettings,
 } from './context.js';
-import { generateConversationRaw, normalizeConversationOutputText } from './generation.js';
-import { getConversationMessageRevision } from './message-identity-utils.js';
+import { submitConversationRewrite } from './generation.js';
 import { getConversationDisplayName, getConversationParticipants, getEffectiveConversationStatus, renderConversationParticipantStack } from './media.js';
 import {
     clearUnreadCount,
@@ -31,7 +30,7 @@ import { readChimingPartnersFromList, readWeeklyScheduleFromEditor, updateUserFo
 import { clamp, getConversationReplyMaxTokens, getCurrentActivityFromSchedule, getStoredSchedule } from './schedule.js';
 import { getSettings, saveSettings } from './settings-store.js';
 import { conversationState } from './state.js';
-import { getConversationThread, saveConversationThread } from './thread-store.js';
+import { getConversationThread } from './thread-store.js';
 import { renderConversationTimeline, updateConversationNotificationSettingsVisibility } from './timeline-render.js';
 import { getActiveTypingParticipants, getLastConversationPreview, updateLastPreviewFromConversation } from './typing.js';
 import { registerConversationRenderer, scheduleInterfaceRefresh, scheduleTimelineRender } from './render-scheduler.js';
@@ -599,8 +598,6 @@ export async function handleCharacterMessagePolish(messageId, buttonElement) {
     if (!msg || !msg.mes) {
         return;
     }
-    const sourceRevision = getConversationMessageRevision(msg);
-
     if (buttonElement instanceof HTMLElement) {
         buttonElement.classList.remove('fa-wand-magic-sparkles');
         buttonElement.classList.add('fa-spinner', 'fa-spin');
@@ -610,34 +607,25 @@ export async function handleCharacterMessagePolish(messageId, buttonElement) {
         const charName = msg.name || getCurrentCharName();
         const systemPrompt = `You are an editor for ${charName}'s messages. Polish ${charName}'s reply in this instant messaging chatroom to make it more expressive, fitting for their personality, and natural. Correct any structural awkwardness while preserving the exact meaning, spelling quirks, and intent of the original text. Output only the polished reply without formatting prefixes or labels.`;
         const prompt = `Polish this message text:\n"${msg.mes}"`;
-        const settings = getSettings(avatar, { groupId, personaId });
-        const response = await generateConversationRaw({
+        const outcome = await submitConversationRewrite('polish', String(msg.id), {
             prompt,
             systemPrompt,
             responseLength: 300,
             trimNames: true,
             scope: { avatar, branchId, groupId, personaId, messages: [msg] },
-        }, settings);
-
-        if (response?.trim()) {
-            const targetThread = getConversationThread(avatar, { branchId, create: false, groupId, personaId });
-            const targetMessage = targetThread.find(message => String(message.id) === String(messageId));
-            if (!targetMessage || getConversationMessageRevision(targetMessage) !== sourceRevision) {
-                return;
-            }
-            targetMessage.mes = normalizeConversationOutputText(response.trim());
-            saveConversationThread(avatar, targetThread, { branchId, create: false, groupId, personaId });
-            updateLastPreviewFromConversation(avatar, { branchId, groupId, personaId });
-            if (isConversationActiveThread(avatar, groupId, { branchId, personaId })) {
-                scheduleTimelineRender();
-            }
-            globalThis.toastr?.success?.('Reply rewritten.');
-        } else {
-            globalThis.toastr?.error?.('Could not rewrite the reply. The model returned no text.');
+        });
+        if (!outcome) {
+            globalThis.toastr?.info?.('The polished reply is still being written on the server. It appears here when it is saved.');
+            return;
         }
+        if (isConversationActiveThread(avatar, groupId, { branchId, personaId })) {
+            scheduleTimelineRender();
+        }
+        globalThis.toastr?.success?.('Reply rewritten.');
     } catch (error) {
         console.error('Character prose polishing error:', error);
-        globalThis.toastr?.error?.('Could not rewrite the reply. Try again.');
+        const detail = String(error?.message || '').trim();
+        globalThis.toastr?.error?.(detail.startsWith('Could not') ? detail : `Could not rewrite the reply. ${detail || 'Try again.'}`);
     } finally {
         if (buttonElement instanceof HTMLElement) {
             buttonElement.classList.remove('fa-spinner', 'fa-spin');

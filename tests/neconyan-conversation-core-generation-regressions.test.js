@@ -53,6 +53,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/schedule
     parseDurationToMs: () => 60_000,
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js', () => ({ runtimeStatusOverrides }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/native-jobs.js', () => ({ waitForNativeConversationJob: jest.fn() }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/thread-store.js', () => ({
     addConversationReminder,
     buildConversationMessageReplyReference: message => message ? { messageId: message.id, name: message.name, role: message.role, text: message.mes } : null,

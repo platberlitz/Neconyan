@@ -152,7 +152,7 @@ function resolveManualSpeaker(current, target, anchors, speakerAvatar) {
     return explicitSpeaker;
 }
 
-/** Manual helpers still write their result in the browser, but never choose another connection on failure. */
+/** Manual helper prompts are built by the page, but never choose another connection on failure. */
 function validateManualOptions(options) {
     if (!options || typeof options !== 'object' || Array.isArray(options) || !validateConversationPayload(options).valid) fail('The generation input is invalid.', 400);
     const { prompt, responseLength, ...other } = options;
@@ -218,7 +218,7 @@ export async function generateBoundConversationText(request, body, signal) {
 }
 
 /** Re-check every captured identity against the fresh branch. Appends are fine; edits and deletions are not. */
-function verifyConversationAnchors(current, target, anchors) {
+export function verifyConversationAnchors(current, target, anchors) {
     if (!anchors) return;
     if (anchors.branchCreatedAt && String(target.createdAt) !== String(anchors.branchCreatedAt)) {
         fail('The Conversation branch was replaced. Try again.', 409);

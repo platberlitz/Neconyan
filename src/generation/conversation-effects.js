@@ -204,11 +204,16 @@ export function assertConversationEffectSource(context, target, effectId) {
     return state.current;
 }
 
-/** Write a native effect and its receipt in the same settings-file replacement. */
-export async function commitConversationEffect(context, target, effectId, mutate) {
+/**
+ * Write a native effect and its receipt in the same settings-file replacement.
+ * `verify` replaces the whole-branch checkpoint for a write that depends only on
+ * the messages it names, such as rewriting one reply.
+ */
+export async function commitConversationEffect(context, target, effectId, mutate, { verify } = {}) {
     const { request, current, jobKey, effectKey, receipt } = readConversationEffectState(context, target, effectId);
     if (receipt && Object.hasOwn(receipt.effects, effectKey)) return receipt.effects[effectKey];
-    assertConversationCheckpoint(current, target, receipt);
+    if (verify) verify(current);
+    else assertConversationCheckpoint(current, target, receipt);
     const result = mutate(current.branch, current.store, current.settings);
     if (result?.then) throw new TypeError('A Conversation effect must finish before releasing its settings write.');
     current.branch.serverOperations ??= {};
@@ -350,24 +355,28 @@ export function commitConversationReplyNotice(context, target, speaker, activity
 }
 
 export function commitConversationJobCommands(context, target, effectId, parts, speakerAvatar, timeZone, now = Date.now()) {
-    return commitConversationEffect(context, target, effectId, (_branch, store) => {
-        const reminders = [];
-        for (const [index, reminder] of parts.reminders.entries()) {
-            const delay = parseReminderDelayToMs(reminder.delay, now, timeZone);
-            if (delay <= 0 || now + delay > 8640000000000000) continue;
-            const id = `rem_${digest([context.job.id, effectId, index]).slice(0, 32)}`;
-            store.reminders.push({ id, avatar: target.avatar, groupId: target.groupId, personaId: target.personaId,
-                branchId: target.branchId, triggerAt: now + delay, text: reminder.memo, fired: false, createdAt: now });
-            reminders.push(id);
-        }
-        for (const raw of parts.scheduleUpdates) {
-            const update = resolveConversationScheduleUpdate(raw, now);
-            if (!update) continue;
-            store.runtimeStatusOverrides ??= {};
-            store.runtimeStatusOverrides[`${target.personaId}\u001f${speakerAvatar}`] = update;
-        }
-        return { reminders };
-    });
+    return commitConversationEffect(context, target, effectId, (_branch, store) => applyConversationJobCommands(store, target, parts, speakerAvatar,
+        { timeZone, now, idSeed: [context.job.id, effectId] }));
+}
+
+/** Apply reply commands inside a caller's effect so a rewrite saves its text and commands together. */
+export function applyConversationJobCommands(store, target, parts, speakerAvatar, { timeZone, now, idSeed }) {
+    const reminders = [];
+    for (const [index, reminder] of parts.reminders.entries()) {
+        const delay = parseReminderDelayToMs(reminder.delay, now, timeZone);
+        if (delay <= 0 || now + delay > 8640000000000000) continue;
+        const id = `rem_${digest([...idSeed, index]).slice(0, 32)}`;
+        store.reminders.push({ id, avatar: target.avatar, groupId: target.groupId, personaId: target.personaId,
+            branchId: target.branchId, triggerAt: now + delay, text: reminder.memo, fired: false, createdAt: now });
+        reminders.push(id);
+    }
+    for (const raw of parts.scheduleUpdates) {
+        const update = resolveConversationScheduleUpdate(raw, now);
+        if (!update) continue;
+        store.runtimeStatusOverrides ??= {};
+        store.runtimeStatusOverrides[`${target.personaId}\u001f${speakerAvatar}`] = update;
+    }
+    return { reminders };
 }
 
 export function getConversationMemoryFingerprint(branch) {

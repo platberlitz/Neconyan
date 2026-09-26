@@ -30,8 +30,8 @@ import {
     getCurrentCharName,
     persistConversationStore,
 } from './context.js';
-import { captureConversationTextBinding, commitCharacterReplyCommands, extractCharacterReplyCommands, generateConversationRaw, generateSelfieFromContext, getCharacterReplyCommandMetadata, reportConversationGenerationError } from './generation.js';
-import { createConversationSubmissionKey, getConversationMessagesRevision } from './message-identity-utils.js';
+import { captureConversationTextBinding, generateSelfieFromContext, reportConversationGenerationError, submitConversationRewrite } from './generation.js';
+import { createConversationSubmissionKey } from './message-identity-utils.js';
 import { getCharacterForAvatar, getConversationParticipants, getEffectiveConversationStatus } from './media.js';
 import { getConversationMessageAvatar, getConversationMessageReceipt } from './pals-rail.js';
 import { escapeRegExp, getCharacterMentionHandles, parseAvatarList } from './partners.js';
@@ -1064,7 +1064,6 @@ export async function regenerateConversationMessage(messageId) {
 
     const sourceMessages = context.messages.slice(0, index + 1);
     const assistantContext = { character: getCharacterForAvatar(speakerAvatar), messages: sourceMessages.slice(0, -1).map(message => ({ role: message.role, mes: message.mes })) };
-    const sourceRevision = getConversationMessagesRevision(sourceMessages);
     regenerationBusyKeys.add(operationKey);
     const operation = beginConversationGenerationOperation();
     scheduleInterfaceRefresh({ syncControls: false });
@@ -1078,9 +1077,9 @@ export async function regenerateConversationMessage(messageId) {
             speakerName,
             { groupId: context.groupId, personaId: context.personaId },
         );
-        const response = await withTypingParticipant(
+        const outcome = await withTypingParticipant(
             { avatar: speakerAvatar, name: speakerName },
-            () => generateConversationRaw({
+            () => submitConversationRewrite('regenerate', messageId, {
                 prompt,
                 systemPrompt: buildConversationSystemPrompt(settings, speakerAvatar, {
                     threadAvatar: context.avatar,
@@ -1093,47 +1092,14 @@ export async function regenerateConversationMessage(messageId) {
                 cacheScope: 'conversation-mode',
                 scope: { avatar: context.avatar, speakerAvatar, branchId: context.branchId, groupId: context.groupId, personaId: context.personaId },
                 bindingContext,
-            }, settings, assistantContext),
+            }, assistantContext),
             context.avatar,
             { branchId: context.branchId, groupId: context.groupId, personaId: context.personaId },
         );
-
-        if (!String(response || '').trim()) {
-            globalThis.toastr?.warning?.('Regenerate returned no message.');
+        if (!outcome) {
+            globalThis.toastr?.info?.('The new reply is still being written on the server. It appears here when it is saved.');
             return;
         }
-
-        const targetContext = getConversationMessageById(messageId, {
-            avatar: context.avatar,
-            branchId: context.branchId,
-            groupId: context.groupId,
-            personaId: context.personaId,
-        });
-        const targetIndex = targetContext?.messages.findIndex(message => message.id === messageId) ?? -1;
-        if (!targetContext || targetIndex < 0 || getConversationMessagesRevision(targetContext.messages.slice(0, targetIndex + 1)) !== sourceRevision) {
-            return;
-        }
-
-        const commandParts = extractCharacterReplyCommands(response, settings);
-        if (!commandParts.text) {
-            globalThis.toastr?.warning?.('Regenerate returned no message.');
-            return;
-        }
-        const extra = { ...targetContext.message.extra };
-        delete extra.conversation_commands;
-        const commandMetadata = getCharacterReplyCommandMetadata(commandParts);
-        if (commandMetadata) {
-            extra.conversation_commands = commandMetadata;
-        }
-        targetContext.message.mes = commandParts.text;
-        targetContext.message.extra = { ...extra, regenerated_at: Date.now() };
-        saveConversationMessageThread(targetContext);
-        commitCharacterReplyCommands(commandParts, speakerAvatar, {
-            branchId: context.branchId,
-            groupId: context.groupId,
-            personaId: context.personaId,
-            reminderAvatar: context.avatar,
-        });
         globalThis.toastr?.success?.('Message regenerated.');
     } catch (error) {
         reportConversationGenerationError('regenerate', error, { level: 'warning' });

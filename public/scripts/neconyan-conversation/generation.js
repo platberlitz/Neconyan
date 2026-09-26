@@ -33,7 +33,8 @@ import {
     updateConversationThreadMessage,
 } from './thread-store.js';
 import { waitForReplyDelay, withTypingParticipant } from './typing.js';
-import { createConversationMessageAnchors } from './message-identity-utils.js';
+import { createConversationMessageAnchors, createConversationSubmissionKey } from './message-identity-utils.js';
+import { waitForNativeConversationJob } from './native-jobs.js';
 
 let activeConversationEditor = null;
 
@@ -60,18 +61,50 @@ export async function captureConversationTextBinding(providedScope = {}, options
     return { account, scope, bindingRequest: await preflightConversationBinding({ ...scope, bindingOnly: !options, ...(options ? { options } : {}) }, account) };
 }
 
+async function addAssistantKnowledge(requestOptions, scope, bindingRequest, assistantContext) {
+    if (!isNeconyanAssistant(assistantContext?.character)) return;
+    const limit = bindingRequest.contextLimits?.[scope.target.avatar];
+    const knowledge = await buildAssistantKnowledge({ ...assistantContext,
+        maxTokens: limit ? getAssistantKnowledgeBudget(limit - Number(requestOptions.responseLength || 0)) : 2048 });
+    requestOptions.systemPrompt = [requestOptions.systemPrompt, knowledge.text].filter(Boolean).join('\n\n');
+}
+
 export async function generateConversationRaw(options, settings, assistantContext = null) {
     const { signal, scope: providedScope, bindingContext, ...requestOptions } = options;
     const { account, scope, bindingRequest } = bindingContext || await captureConversationTextBinding(providedScope, requestOptions);
-    if (isNeconyanAssistant(assistantContext?.character)) {
-        const limit = bindingRequest.contextLimits?.[scope.target.avatar];
-        const knowledge = await buildAssistantKnowledge({ ...assistantContext,
-            maxTokens: limit ? getAssistantKnowledgeBudget(limit - Number(requestOptions.responseLength || 0)) : 2048 });
-        requestOptions.systemPrompt = [requestOptions.systemPrompt, knowledge.text].filter(Boolean).join('\n\n');
-    }
+    await addAssistantKnowledge(requestOptions, scope, bindingRequest, assistantContext);
     const result = await requestConversationBinding('binding/generate', { ...scope, bindingRequest,
         options: requestOptions }, account, signal);
     return result.text;
+}
+
+function getDeviceTimeZone() {
+    try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    } catch {
+        return 'UTC';
+    }
+}
+
+/**
+ * Submit a regeneration or polish as a server job. The server keeps the paid
+ * text, writes it into the message and applies any commands in one save, and
+ * leaves the original reply untouched when the message changed meanwhile.
+ * The saved store is read back before this resolves.
+ * @returns {Promise<{ messageId: string, job: object } | null>} null when the page stopped watching.
+ */
+export async function submitConversationRewrite(mode, messageId, options, assistantContext = null) {
+    const { scope: providedScope, bindingContext, ...requestOptions } = options;
+    const { account, scope, bindingRequest } = bindingContext || await captureConversationTextBinding(providedScope, requestOptions);
+    await addAssistantKnowledge(requestOptions, scope, bindingRequest, assistantContext);
+    const response = await requestConversationBinding('rewrite/submit', { ...scope, bindingRequest, options: requestOptions,
+        mode, messageId, submissionKey: createConversationSubmissionKey(mode), acknowledgement: bindingRequest.acknowledgement,
+        timeZone: getDeviceTimeZone() }, account);
+    if (!response?.job?.id) throw new Error('The server did not accept the rewrite.');
+    const job = await waitForNativeConversationJob(response.job.id, account);
+    if (!job) return null;
+    if (job.state !== 'completed') throw new Error(job.error?.message || 'The rewrite did not finish.');
+    return { messageId, job };
 }
 
 export async function generateConversationReply(directive, settings, { responseLength = null, speakerName = getCurrentCharName(), trimNames = true, avatar = getCurrentCharAvatar(), threadAvatar = avatar, speakerAvatar = avatar, branchId = '', groupId = getConversationGroupIdForAvatar(threadAvatar), personaId = getConversationPersonaId() } = {}) {

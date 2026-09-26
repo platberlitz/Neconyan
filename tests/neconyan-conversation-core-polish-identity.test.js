@@ -5,7 +5,7 @@ globalThis.HTMLElement = class HTMLElement {};
 
 let currentPersonaId = 'persona-a.png';
 const stores = new Map();
-const generateConversationRaw = jest.fn();
+const submitConversationRewrite = jest.fn();
 const saveConversationThread = jest.fn();
 const scheduleTimelineRender = jest.fn();
 
@@ -35,8 +35,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.
     saveGroupConversationSettings: jest.fn(),
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/generation.js', () => ({
-    generateConversationRaw,
-    normalizeConversationOutputText: value => String(value || '').trim(),
+    submitConversationRewrite,
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/media.js', () => ({
     getConversationDisplayName: () => 'Aster',
@@ -127,45 +126,49 @@ describe('Conversation prose polish identity', () => {
             activeBranchId: 'branch-b',
             branches: { 'branch-b': { messages: [message('other persona')] } },
         });
-        generateConversationRaw.mockReset();
+        submitConversationRewrite.mockReset();
         saveConversationThread.mockClear();
         scheduleTimelineRender.mockClear();
-        globalThis.toastr = { error: jest.fn(), success: jest.fn() };
+        globalThis.toastr = { error: jest.fn(), info: jest.fn(), success: jest.fn() };
     });
 
-    test('re-resolves and saves only the captured persona branch after a switch', async () => {
-        const generation = deferred();
-        generateConversationRaw.mockReturnValueOnce(generation.promise);
+    test('submits the captured persona branch to the server and never writes the reply itself', async () => {
+        const job = deferred();
+        submitConversationRewrite.mockReturnValueOnce(job.promise);
 
         const run = handleCharacterMessagePolish('message-1');
         stores.get(key('persona-a.png', 'char.png')).activeBranchId = 'branch-b';
         currentPersonaId = 'persona-b.png';
-        generation.resolve('polished original');
+        job.resolve({ messageId: 'message-1', job: { state: 'completed' } });
         await run;
 
-        expect(stores.get(key('persona-a.png', 'char.png')).branches['branch-a'].messages[0].mes).toBe('polished original');
-        expect(stores.get(key('persona-a.png', 'char.png')).branches['branch-b'].messages[0].mes).toBe('other branch');
-        expect(stores.get(key('persona-b.png', 'char.png')).branches['branch-b'].messages[0].mes).toBe('other persona');
-        expect(saveConversationThread).toHaveBeenCalledWith('char.png', expect.any(Array), {
-            branchId: 'branch-a',
-            create: false,
-            groupId: '',
-            personaId: 'persona-a.png',
-        });
+        expect(submitConversationRewrite).toHaveBeenCalledWith('polish', 'message-1', expect.objectContaining({
+            prompt: 'Polish this message text:\n"original"',
+            responseLength: 300,
+            scope: expect.objectContaining({ avatar: 'char.png', branchId: 'branch-a', groupId: '', personaId: 'persona-a.png',
+                messages: [expect.objectContaining({ id: 'message-1', mes: 'original' })] }),
+        }));
+        expect(saveConversationThread).not.toHaveBeenCalled();
+        expect(stores.get(key('persona-a.png', 'char.png')).branches['branch-a'].messages[0].mes).toBe('original');
         expect(scheduleTimelineRender).not.toHaveBeenCalled();
+        expect(globalThis.toastr.success).toHaveBeenCalledWith('Reply rewritten.');
     });
 
-    test('drops a polish completion when the captured source message changed', async () => {
-        const generation = deferred();
-        generateConversationRaw.mockReturnValueOnce(generation.promise);
-        const sourceMessage = stores.get(key('persona-a.png', 'char.png')).branches['branch-a'].messages[0];
+    test('reports the server refusal and keeps the original reply', async () => {
+        submitConversationRewrite.mockRejectedValueOnce(new Error('The message changed before it could be rewritten. The original reply was kept.'));
 
-        const run = handleCharacterMessagePolish('message-1');
-        sourceMessage.mes = 'edited while polishing';
-        generation.resolve('stale polish');
-        await run;
+        await handleCharacterMessagePolish('message-1');
 
-        expect(sourceMessage.mes).toBe('edited while polishing');
         expect(saveConversationThread).not.toHaveBeenCalled();
+        expect(globalThis.toastr.error).toHaveBeenCalledWith('Could not rewrite the reply. The message changed before it could be rewritten. The original reply was kept.');
+    });
+
+    test('tells the user the server is still working when the page stops watching', async () => {
+        submitConversationRewrite.mockResolvedValueOnce(null);
+
+        await handleCharacterMessagePolish('message-1');
+
+        expect(globalThis.toastr.info).toHaveBeenCalledWith(expect.stringContaining('still being written on the server'));
+        expect(globalThis.toastr.success).not.toHaveBeenCalled();
     });
 });
