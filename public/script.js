@@ -16,6 +16,7 @@ import {
 import { favsToHotswap, getMessageTimeStamp, dragElement, isMobile, initRossMods } from './scripts/RossAscends-mods.js';
 import { readMessageExpression, writeMessageExpression, renderMessageExpression } from './scripts/expression-history.js';
 import './scripts/neconyan-message-sleepers.js';
+import './scripts/neconyan-send-nya.js';
 import { userStatsHandler, statMesProcess, initStats } from './scripts/stats.js';
 import {
     generateKoboldWithStreaming,

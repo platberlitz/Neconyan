@@ -1,0 +1,130 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, jest, test } from '@jest/globals';
+import { readFileSync } from 'node:fs';
+
+const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
+
+function createElement(tag) {
+    const listeners = new Map();
+    const element = {
+        tagName: tag.toUpperCase(),
+        style: {},
+        attributes: {},
+        className: '',
+        textContent: '',
+        removed: false,
+        setAttribute(name, value) { this.attributes[name] = value; },
+        remove() { this.removed = true; },
+        animate: jest.fn((frames, options) => {
+            element.frames = frames;
+            element.options = options;
+            return {
+                addEventListener: (type, handler) => listeners.set(type, handler),
+                finish: () => listeners.get('finish')?.(),
+            };
+        }),
+    };
+    element.animation = () => ({ finish: () => listeners.get('finish')?.() });
+    return element;
+}
+
+const listeners = {};
+const appended = [];
+const sendButton = {
+    id: 'send_but',
+    contains: node => node === sendButton,
+    closest: selector => (selector.includes('#send_but') ? sendButton : null),
+    getBoundingClientRect: () => ({ left: 100, top: 200, width: 40, height: 40 }),
+};
+const elsewhere = { contains: () => false, closest: () => null };
+let hitTarget = sendButton;
+let sendNya;
+
+beforeAll(async () => {
+    jest.useFakeTimers();
+    global.window = { matchMedia: () => ({ matches: false }) };
+    global.document = {
+        addEventListener: (type, handler) => { listeners[type] = handler; },
+        createElement,
+        elementFromPoint: () => hitTarget,
+        body: { append: node => appended.push(node) },
+    };
+    sendNya = await import('../public/scripts/neconyan-send-nya.js');
+});
+
+afterAll(() => {
+    jest.useRealTimers();
+    delete global.window;
+    delete global.document;
+});
+
+beforeEach(() => {
+    jest.runAllTimers();
+    appended.length = 0;
+    hitTarget = sendButton;
+});
+
+function press(target, { trusted = true, x = 110, y = 210, pointerId = 1 } = {}) {
+    listeners.pointerdown({ target, isTrusted: trusted, button: 0, pointerId });
+    listeners.pointerup({ target, isTrusted: trusted, clientX: x, clientY: y, pointerId });
+}
+
+describe('paw send button', () => {
+    test('both send buttons use the paw icon instead of the paper plane', () => {
+        const index = read('../public/index.html');
+        const sendBut = index.match(/<div id="send_but"[^>]*>/)[0];
+        expect(sendBut).toContain('fa-paw');
+        expect(sendBut).not.toContain('fa-paper-plane');
+
+        const timeline = read('../public/scripts/neconyan-conversation/timeline-render.js');
+        expect(timeline).toMatch(/id="\$\{CHROME_IDS\.send\}"[^>]*>\s*<i class="fa-solid fa-paw"/);
+        expect(read('../public/scripts/neconyan-conversation/constants.js')).toContain('send: \'sb_conversation_send\',');
+
+        expect(read('../public/script.js')).toContain('import \'./scripts/neconyan-send-nya.js\';');
+        expect(sendNya.SEND_NYA_SELECTOR).toBe('#send_but, #sb_conversation_send');
+    });
+
+    test('a press released on the button pops one nya! at the pointer', () => {
+        press(sendButton, { x: 111, y: 222 });
+        expect(appended).toHaveLength(1);
+        const [pop] = appended;
+        expect(pop.textContent).toBe('nya!');
+        expect(pop.className).toBe('neconyan-send-nya');
+        expect(pop.attributes['aria-hidden']).toBe('true');
+        expect(pop.style).toMatchObject({ position: 'fixed', left: '111px', top: '222px', pointerEvents: 'none' });
+        expect(pop.options.duration).toBe(900);
+    });
+
+    test('the pop removes itself when the animation ends, or after a fallback timeout', () => {
+        const pop = sendNya.popNya(5, 5);
+        expect(pop.removed).toBe(false);
+        jest.advanceTimersByTime(1200);
+        expect(pop.removed).toBe(true);
+    });
+
+    test('script clicks, other buttons and presses dragged off the button do not pop', () => {
+        press(sendButton, { trusted: false });
+        press(elsewhere);
+        hitTarget = elsewhere;
+        press(sendButton);
+        listeners.click({ target: sendButton, isTrusted: false, detail: 0 });
+        listeners.click({ target: sendButton, isTrusted: true, detail: 1 });
+        expect(appended).toHaveLength(0);
+    });
+
+    test('a keyboard press pops from the middle of the button', () => {
+        listeners.click({ target: sendButton, isTrusted: true, detail: 0 });
+        expect(appended).toHaveLength(1);
+        expect(appended[0].style).toMatchObject({ left: '120px', top: '220px' });
+    });
+
+    test('reduced motion fades in place without movement', () => {
+        const pop = sendNya.popNya(0, 0, { reduced: true });
+        expect(pop.options.duration).toBe(700);
+        expect(pop.frames.every(frame => !('transform' in frame))).toBe(true);
+    });
+
+    test('rapid presses are capped so the screen never fills with pops', () => {
+        for (let i = 0; i < 20; i++) press(sendButton, { pointerId: i });
+        expect(appended).toHaveLength(8);
+    });
+});

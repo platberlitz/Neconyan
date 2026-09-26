@@ -1792,7 +1792,7 @@ export function ensureConversationChrome() {
                     </button>
                     <input id="${CHROME_IDS.fileInput}" class="displayNone" type="file" accept="${CONVERSATION_ATTACHMENT_ACCEPT}" multiple aria-label="Conversation attachments" />
                     <button id="${CHROME_IDS.send}" type="submit" class="menu_button menu_button_icon" title="Send" aria-label="Send">
-                        <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
+                        <i class="fa-solid fa-paw" aria-hidden="true"></i>
                         <span>Send</span>
                     </button>
                 </div>
