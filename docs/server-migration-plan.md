@@ -69,7 +69,7 @@ acceptance case is unproven), `pending` (not started).
 - Unfinished at this historical checkpoint: browser callers for paused-job admission and accepted Roleplay workflows arrive with Stages 8 and 9. Details and limits are in `server-migration-handover.md`.
 - Next action: implement Stage 3 bound Roleplay execution. Do not push or deploy.
 
-Small, coherent local checkpoints are authorised within stages. They record implementation progress, not reviewed stage completion. No push or deployment is authorised. The session model plans and implements the whole stage; one independent stage-end review covers all of its checkpoints, with batched corrections and correction-only follow-up review. Full final verification standards remain unchanged. The detailed current record is in `server-migration-handover.md`; historical counts below are not current approval.
+Small, coherent local checkpoints are authorised within stages. They record implementation progress, not reviewed stage completion. No push or deployment is authorised. The session model plans, implements and reviews the whole stage itself; one stage-end self-review covers all checkpoints, with batched corrections and correction-only follow-up review. Separate reviewer agents require an explicit user request for that task. Full final verification standards remain unchanged. The detailed current record is in `server-migration-handover.md`; historical counts below are not current approval.
 
 ## Historical committed Stage 1: Roleplay storage preparation
 
@@ -106,7 +106,7 @@ Small, coherent local checkpoints are authorised within stages. They record impl
 
 These stages implement the accepted full migration, not a reduced single-provider
 request design. The owner-selected session model plans and implements each stage,
-then requests one independent stage-end review of the complete stage. Complete
+then performs one stage-end self-review of the complete stage. Complete
 coherent checkpoints with required checks, canonical status updates and authorised
 local commits; earlier planner/implementer/reviewer lineups are historical. Once the
 owner resumes this paused migration, continue automatically between verified checkpoints.
