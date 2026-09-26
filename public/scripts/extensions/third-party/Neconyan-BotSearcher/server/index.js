@@ -15,6 +15,7 @@ import { createRouter } from './router.js';
 import { LOG_TAG } from './guards.js';
 import { createBotbooruAccounts, createSaucepanAccounts } from './accounts.js';
 import { createJannyBrowser } from './janny-browser.js';
+import { startBeauBridge } from './beau-bridge.js';
 
 export const info = {
     id: PLUGIN_ID,
@@ -29,13 +30,19 @@ const state = {
     accounts: createBotbooruAccounts(),
     saucepan: createSaucepanAccounts(),
     jannyBrowser: createJannyBrowser(),
+    beauBridge: null,
 };
 
 /**
  * @param {import('express').Router} router
  */
-export function init(router) {
+export async function init(router) {
     createRouter(router, state);
+    try {
+        state.beauBridge = await startBeauBridge(state.jannyBrowser);
+    } catch {
+        console.warn(`[${LOG_TAG}] the optional private JanitorAI socket could not start`);
+    }
     console.log(`[${LOG_TAG}] mounted at /api/plugins/${PLUGIN_ID}`);
 }
 
@@ -50,6 +57,7 @@ export async function exit() {
         state.timers.clear();
         state.accounts.clear();
         state.saucepan.clear();
+        await state.beauBridge?.close();
         await state.jannyBrowser.close();
     } catch {
         // Nothing actionable during shutdown.

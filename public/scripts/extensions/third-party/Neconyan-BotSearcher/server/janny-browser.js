@@ -1004,6 +1004,21 @@ export function createJannyBrowser({
             });
         },
 
+        async frontpage(section = 'popular', mode = 'all') {
+            if (!['popular', 'trending24', 'trending', 'latest'].includes(section) || !['all', 'sfw'].includes(mode)) {
+                throw new Error('Unsupported public JanitorAI filter.');
+            }
+            return exclusive(async () => {
+                const page = await pageFor(await ensureContext());
+                if (new URL(page.url()).origin !== ORIGIN) {
+                    await page.goto(ORIGIN, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                }
+                const query = new URLSearchParams({ page: '1', language: 'en', mode, count_mode: 'bounded', include_top_custom_tags: 'false' });
+                query.set(section.startsWith('trending') ? 'special_mode' : 'sort', section);
+                return jsonFromPage(page, `${ORIGIN}/hampter/characters?${query}`);
+            });
+        },
+
         async close() {
             if (!closing) {
                 stopped = true;
