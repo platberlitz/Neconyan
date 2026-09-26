@@ -14,6 +14,35 @@ import { getSettings, EXTENSION_NAME, DEFAULT_ASSISTANT_PROMPT } from './config.
 import { syncReasoningFromSwipeInfo, error, isValidMessageId } from './utils.js';
 import { updateMessageSwipeUI } from './ui.js';
 
+/**
+ * Ask the server to add one unselected swipe to the chosen message, if a
+ * migrated Roleplay workflow owns this chat. Returns true when the server owns
+ * the swipe, including when it refuses: a refusal is final, so the browser path
+ * must not then make a second paid call. Only a chat with no migrated workflow
+ * falls through to the browser path below.
+ */
+async function submitDeepSwipeWorkflow(name, { instruction, messageId }) {
+    let workflows;
+    try {
+        workflows = await import('../../../neconyan-conversation/roleplay-workflows.js');
+    } catch (loadError) {
+        console.warn('[DeepSwipe] Server workflow module unavailable, using the browser path.', loadError);
+        return false;
+    }
+    if (!workflows.isNativeRoleplayWorkflowReady()) return false;
+    // Macros resolve in the page as the temporary message would have, and a page
+    // prompt addition the server cannot carry keeps the browser path.
+    const text = workflows.resolvePageText(instruction);
+    const page = await workflows.capturePagePrompts(name);
+    if (!text || !page) return false;
+    try {
+        await workflows.submitRoleplayWorkflow({ name, intent: { instruction: text }, page, messageIndex: messageId });
+    } catch (submitError) {
+        toastr.error(String(submitError?.message || submitError), 'Deep Swipe');
+    }
+    return true;
+}
+
 // Module-level variable to store complete chat backup before generation
 // This ensures we have a clean state to restore from if corruption occurs
 let chatBackupBeforeGeneration = null;
@@ -242,6 +271,16 @@ export async function generateMessageSwipe(message, messageId, context, isUserMe
             .replace(/\{\{input\}\}/g, currentText);
     }
     // Note: Assistant swipes don't need a fullPrompt - they truncate and regenerate naturally
+
+    // The server workflow answers the chosen message from a window that excludes
+    // it, and adds one more unselected swipe. The live chat is never truncated,
+    // so nothing here can be lost by a save landing mid-swipe.
+    if (await submitDeepSwipeWorkflow(isUserMessage ? 'deep-swipe.user' : 'deep-swipe.reply', {
+        instruction: isUserMessage
+            ? fullPrompt
+            : (settings?.assistantPrompt || DEFAULT_ASSISTANT_PROMPT),
+        messageId,
+    })) return;
 
     // Get the message element to show ellipsis (or not if keepSwipeVisible is enabled)
     const messageElement = document.querySelector(`.mes[mesid="${messageId}"] .mes_text`);

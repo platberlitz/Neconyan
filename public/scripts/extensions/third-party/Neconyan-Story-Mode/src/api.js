@@ -758,24 +758,103 @@ async function continueUnlocked({ hasText: hasTextHint = false, direction = '', 
         }
         started = true;
         hooks.beforeGeneration?.();
-        await context.generate('continue', {
+        const outcome = await context.generate('continue', {
             suppressAutoContinue: true,
             suppressUserMessage: Boolean(target),
             maxOutputTokens: getSettings().maxTokens,
         });
+        if (outcome?.native) {
+            action.native = true;
+            await finalizeNative(action, outcome);
+        }
     } catch (error) {
         if (error?.name !== 'AbortError') {
             action.error = error;
             console.error('[Story Mode] continue failed', error);
         }
     } finally {
-        if (started) {
+        if (started && !action.native) {
             await finalize(action);
         } else if (inflight === action) {
             inflight = null;
         }
     }
     return action.success;
+}
+
+/**
+ * The durable server path. The passage is already saved: the server proved where it
+ * joined the block it continued and reloaded the chat, so the cut comes from the
+ * saved result instead of a local guess. Only Story Mode's own undo bookkeeping is
+ * left to record, and it is written after the durable passage, never before it.
+ */
+async function finalizeNative(action, outcome) {
+    mutating++;
+    try {
+        const { context } = action;
+        const cut = Number(outcome?.result?.named?.cut);
+        action.chat = context.chat;
+        const message = action.chat[action.mesid];
+        if (!message) {
+            action.error = new Error('The saved passage is no longer in this chat.');
+            return;
+        }
+        if (action.recovery) action.recovery.finalized = true;
+        if (!Number.isSafeInteger(cut) || cut <= 0 || cut > String(message.mes ?? '').length) {
+            action.error = new Error('The saved passage did not report where it was added.');
+            return;
+        }
+        const prefix = String(action.before?.mes ?? '');
+        if (prefix && !String(message.mes ?? '').startsWith(prefix)) {
+            action.error = new Error('The saved passage does not continue the block it answered.');
+        }
+        if (!action.error) {
+            recordContinuationReasoning(message, {
+                cut,
+                prevReasoning: action.before?.extra?.reasoning,
+                prevDuration: action.before?.extra?.reasoning_duration,
+            });
+            setCuts(message, [...getCuts(action.before ?? {}).filter(entry => entry < cut), cut]);
+            syncSwipe(message);
+            const state = {
+                cut, revision: textRevision(String(message.mes).slice(0, cut)), message: metadataUndo(action.before, message),
+                swipeId: message.swipe_id ?? null,
+                swipe: metadataUndo(action.before?.swipes?.[action.before?.swipe_id], message.swipe_info?.[message.swipe_id]),
+                hadSwipes: Array.isArray(action.before?.swipes), hadSwipeInfo: Array.isArray(action.before?.swipe_info),
+            };
+            storyExtra(message).continuations = [...(action.before?.extra?.[EXTRA_KEY]?.continuations ?? []), state];
+            syncSwipe(message);
+        }
+        const recovery = Object.assign(action.recovery ?? {}, {
+            kind: 'snapshot', chat: action.chat, chatKey: action.key, index: action.mesid,
+            message, before: action.rollback ?? action.before, after: structuredClone(message),
+        });
+        const stack = redoStack(action.key);
+        if (!stack.includes(recovery)) stack.push(recovery);
+        try {
+            await saveChat(action);
+            action.success = !action.error;
+            dropRecovery(recovery);
+        } catch (error) {
+            action.error = error;
+            retainRecovery(recovery, structuredClone(message));
+        }
+        await renderMessage(action, action.mesid, message);
+    } catch (error) {
+        action.error = error;
+    } finally {
+        mutating--;
+        if (inflight === action) {
+            inflight = null;
+            if (action.success && chatIdentity(ctx()) === action.key) clearDirection();
+        }
+        if (chatIdentity(ctx()) === action.key && !action.success) {
+            toast(action.error ? 'error' : 'info', action.error
+                ? 'Story Mode could not complete the change. Check the story before trying again.'
+                : 'No passage was added. Your direction is unchanged.');
+        }
+        hooks.afterGeneration?.(action);
+    }
 }
 
 export function continueStory(options) {

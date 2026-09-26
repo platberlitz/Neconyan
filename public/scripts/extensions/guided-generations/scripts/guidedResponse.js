@@ -7,6 +7,7 @@ import {
     guidedResponseInjectId,
     isGroupChat,
     setPreviousImpersonateInput,
+    submitGuidedWorkflow,
 } from './shared.js';
 import { pickGroupMember } from './groupSelection.js';
 
@@ -34,6 +35,11 @@ async function guidedResponse() {
     isGenerating = true;
 
     try {
+        // Neconyan Stage 9: the server owns the turn, so nothing is injected and
+        // the composer keeps the text the user typed.
+        if (await submitGuidedWorkflow('guided.response', { text: filledPrompt, depth, role: injectionRole, scan: true })) {
+            return;
+        }
         let triggerArgument = '';
         if (isGroupChat()) {
             const selectedMember = await pickGroupMember();

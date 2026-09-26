@@ -236,6 +236,37 @@ function readAsideSource(directories, locator, groupId, accountLease = null) {
     }
 }
 
+/**
+ * Read the saved source an aside EVENT names, so the server can choose the
+ * recipient from the saved chat and the saved group rather than trusting the
+ * browser's pick. The message and group revisions are proved here, before any
+ * candidate is considered, so a stale event costs nothing.
+ */
+export function readConversationAsideEventSource(request, event) {
+    const directories = request?.user?.directories || {};
+    const locator = normalizeLocator({
+        chat: event.source.locator.chat,
+        avatar: event.source.locator.avatar,
+        group: event.source.locator.group,
+    });
+    const saved = readAsideSource(directories, locator, locator.group ? event.source.groupId : '');
+    const messages = saved.records.slice(1);
+    const source = messages[event.messageIndex];
+    if (!source) throw fail('The saved Roleplay message no longer exists.', 409, 'roleplay_message_out_of_range');
+    if (getRoleplaySourceMessageRevision(source) !== event.messageRevision) {
+        throw fail('The saved Roleplay message changed after this aside was captured.', 409, 'roleplay_message_revision_mismatch');
+    }
+    if (event.kind === 'mention' && !(source?.is_user === true || source?.role === 'user')) {
+        throw fail('A mention aside requires a user-authored Roleplay message.', 409, 'roleplay_mention_not_user');
+    }
+    if (!locator.group) return { locator, messages, instanceId: saved.instanceId, group: null, source };
+    const group = saved.group ?? readRoleplayGroup(directories, event.source.groupId);
+    if (getRoleplayGroupRevision(group) !== event.groupRevision) {
+        throw fail('The source Roleplay group changed after this aside was captured.', 409, 'roleplay_group_revision_mismatch');
+    }
+    return { locator, messages, instanceId: saved.instanceId, group, source };
+}
+
 export function captureConversationRoleplaySource(request, submission, { characterName = 'Character', userName = 'User', accountLease = null } = {}) {
     const directories = request?.user?.directories || {};
     let locator;

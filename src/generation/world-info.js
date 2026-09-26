@@ -3,7 +3,7 @@ import { imageSize } from 'image-size';
 import { getExistingWorldInfoFilename, isValidWorldInfoData } from '../endpoints/worldinfo.js';
 import { readJson } from '../mewmory/store.js';
 import { getCounter } from '../mewmory/tokens.js';
-import { readRoleplayFile, roleplayError, roleplayHash, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
+import { readRoleplayFile, roleplayError, roleplayHash, roleplaySettingsHash, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
 import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay-source.js';
 import { prepareWorldInfoEntries } from '../../public/scripts/world-info-scan-core.js';
 import { createMacroEnvironment } from '../macros/index.js';
@@ -162,7 +162,7 @@ export function readBoundPathfinderBooks(base, snapshot) {
     assertRoleplayWorldInfoCurrent(base, snapshot);
     return withRoleplayAccount(base, snapshot.account, lease => {
         assertRoleplaySourceLocked(lease, snapshot.source);
-        if (roleplayHash(readJson(path.join(base.directories.root, 'settings.json'), {})) !== snapshot.settingsHash) {
+        if (roleplaySettingsHash(readJson(path.join(base.directories.root, 'settings.json'), {})) !== snapshot.settingsHash) {
             throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved Pathfinder settings changed after admission.');
         }
         const current = boundBooks(base.directories, snapshot);
@@ -420,7 +420,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                 separator: settings.power_user?.reasoning?.separator ?? '\n',
                 max_additions: settings.power_user?.reasoning?.max_additions ?? 1,
             },
-            settingsHash: roleplayHash(savedSettings),
+            settingsHash: roleplaySettingsHash(savedSettings),
             ...(agents ? { agents } : {}),
             ...(companionCapacity ? { companionCapacity } : {}),
             ...(tools ? { tools } : {}),
@@ -484,7 +484,7 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
             throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The World Info character changed after admission.');
         }
         if (character.changed) saveRoleplayAccount(lease);
-        if (roleplayHash(readJson(path.join(base.directories.root, 'settings.json'), {})) !== snapshot.settingsHash) {
+        if (roleplaySettingsHash(readJson(path.join(base.directories.root, 'settings.json'), {})) !== snapshot.settingsHash) {
             throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info settings changed after admission.');
         }
         return boundBooks(base.directories, snapshot);

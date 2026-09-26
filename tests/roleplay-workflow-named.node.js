@@ -23,7 +23,7 @@ prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: tr
 function_calling: true };
 
 /** Every named workflow here uses a saved active connection, because that is what a browser names. */
-function saved(t, { settingsRevision = 7 } = {}) {
+function saved(t, { settingsRevision = 7, powerUser = null } = {}) {
     const f = fixture(t);
     const dirs = f.scope.directories;
     f.records[1].extra = {};
@@ -33,6 +33,7 @@ function saved(t, { settingsRevision = 7 } = {}) {
     fs.writeFileSync(path.join(dirs.openAI_Settings, 'Main.json'), JSON.stringify({ openai_max_context: 4096 }));
     fs.writeFileSync(path.join(dirs.root, 'settings.json'), JSON.stringify({
         _settingsRevision: settingsRevision,
+        ...(powerUser ? { power_user: powerUser } : {}),
         world_info_settings: { world_info: { globalSelect: [] } },
         main_api: 'openai',
         active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
@@ -51,9 +52,10 @@ function saved(t, { settingsRevision = 7 } = {}) {
     const anchorFor = (name, anchor = {}) => {
         const list = messages();
         const kind = ROLEPLAY_WORKFLOW_NAMES[name].anchor;
-        return { messageIndex: anchor.messageIndex ?? (kind === 'end' ? list.length - 1
-            : list.findLastIndex(message => message.is_user !== true && message.is_system !== true)),
-            chosen: anchor.chosen ?? kind === 'chosen' };
+        const index = anchor.messageIndex ?? (kind === 'end' ? list.length - 1
+            : kind === 'block' ? list.findLastIndex(message => message.is_system !== true)
+                : list.findLastIndex(message => message.is_user !== true && message.is_system !== true));
+        return { messageIndex: index, chosen: anchor.chosen ?? kind === 'chosen' };
     };
     /** The browser's own message revision, proved again server-side. */
     const revision = (name, anchor = {}) => getRoleplaySourceMessageRevision(messages()[anchorFor(name, anchor).messageIndex]);
@@ -73,9 +75,9 @@ function saved(t, { settingsRevision = 7 } = {}) {
         } });
     const context = jobId => ({ owner: f.scope.owner, directories: dirs, job: getJob(dirs, jobId), signal: new AbortController().signal });
     /** Admit one named workflow and take its single model turn to a durable write. */
-    async function run(name, { text = 'A named passage.', maxTokens = 64, ...submission } = {}) {
+    async function run(name, { text = 'A named passage.', maxTokens = 64, beforeTurn = null,
+        calls = { count: 0, prompts: [] }, ...submission } = {}) {
         const accepted = await acceptRoleplayNamedWorkflow(request(), body(name, { ...submission, maxTokens }));
-        const calls = { count: 0, prompts: [] };
         let childId = null;
         if (accepted.created) {
             setJobState(dirs, accepted.jobId, 'running');
@@ -84,6 +86,7 @@ function saved(t, { settingsRevision = 7 } = {}) {
             const pointer = readArtifact(dirs, accepted.jobId, 'roleplay-workflow-child');
             childId = pointer.jobId;
             setJobState(dirs, childId, 'running');
+            beforeTurn?.();
             await turn(getJob(dirs, childId), calls, text);
             setJobState(dirs, childId, 'completed');
             recoverWaitingRoleplayWorkflow({ directories: dirs, owner: f.scope.owner, job: getJob(dirs, accepted.jobId) });
@@ -216,9 +219,11 @@ test('a named workflow refuses a changed anchor, an unknown name, a missing inst
 test('a named workflow record is the server own, and a tampered one is refused', () => {
     const guided = captureRoleplayNamedWorkflow('guided.swipe', { prompt: { text: 'Guided.', depth: 1, role: 'system', scan: true } });
     assert.equal(guided.effect, 'swipe');
-    assert.equal(guided.anchor, 'last');
+    assert.equal(guided.anchor, 'assistant');
     assert.equal(guided.instruction, '');
     assert.equal(captureRoleplayNamedWorkflow('roleplay.reply').effect, 'append');
+    assert.equal(captureRoleplayNamedWorkflow('story.passage',
+        { prompt: { rules: 'Rules.', rulesDepth: 1, direction: '', directionDepth: 0 } }).anchor, 'block');
     assert.equal(captureRoleplayNamedWorkflow('roleplay.correct').effect, 'replace');
     assert.equal(captureRoleplayNamedWorkflow('deep-swipe.user', { instruction: 'Answer as them.' }).effect, 'alternative');
     assert.throws(() => assertRoleplayNamedWorkflow({ ...guided, effect: 'append' }), error => error.status === 409);
@@ -289,5 +294,73 @@ test('a named workflow with no stated token limit takes one the saved context ca
     assert.equal(getJob(f.dirs, accepted.jobId).intent.request.worldInfo.maxContext, 4096 - 512);
     await assert.rejects(acceptRoleplayNamedWorkflow(f.request(),
         f.body('roleplay.reply', { key: 'named-stale-ack', acknowledgement: { account: f.owner, settingsRevision: 8 } })),
-        error => error.status === 409 && error.apiError === 'roleplay_settings_ack_required');
+    error => error.status === 409 && error.apiError === 'roleplay_settings_ack_required');
+});
+
+test('page prompt additions travel with the named record, reach the provider and are refused when malformed', async t => {
+    const f = saved(t);
+    const page = [
+        { key: '1_memory', content: 'Summary so far.', position: 0, depth: 0, role: 'system' },
+        { key: 'dialogue-colors', content: 'Colour Nova in teal.', position: 1, depth: 0, role: 'system' },
+    ];
+    const { accepted, calls, result } = await f.run('roleplay.reply', { intent: { page }, text: 'A coloured reply.' });
+    assert.equal(result.status, 'completed');
+    assert.deepEqual(getJob(f.dirs, accepted.jobId).intent.request.named.page, page);
+    const sent = calls.prompts[0].map(message => message.content).join('\n');
+    assert.match(sent, /Summary so far\./);
+    assert.match(sent, /Colour Nova in teal\./);
+    // Page prompts are published on every turn under their own prefix, after the named slots.
+    const contributions = roleplayWorkflowContributions(captureRoleplayNamedWorkflow('guided.response',
+        { prompt: { text: 'Guide.', depth: 1, role: 'system', scan: true }, page }));
+    assert.deepEqual(contributions.extensions.map(prompt => [prompt.key, prompt.scan]),
+        [['guided_prompt', true], ['page_1_memory', false], ['page_dialogue-colors', false]]);
+    const refuse = (intent, label) => assert.throws(() => captureRoleplayNamedWorkflow('roleplay.reply', intent),
+        error => error.status === 400, label);
+    refuse({ page: [page[1], page[0]] }, 'unsorted');
+    refuse({ page: [page[0], page[0]] }, 'duplicate');
+    refuse({ page: [{ ...page[0], content: 'Roll {{roll:d6}}' }] }, 'macro');
+    refuse({ page: [{ ...page[0], role: 'narrator' }] }, 'role');
+    refuse({ page: [{ ...page[0], position: 3 }] }, 'position');
+    refuse({ page: [{ ...page[0], key: 'a b' }] }, 'key');
+    refuse({ page: [{ ...page[0], scan: true }] }, 'extra field');
+    refuse({ page: Array.from({ length: 33 }, (_, index) => ({ ...page[0], key: `k${String(index).padStart(2, '0')}` })) }, 'count');
+    const tampered = captureRoleplayNamedWorkflow('roleplay.reply', { page });
+    assert.throws(() => assertRoleplayNamedWorkflow({ ...tampered, page: [page[0]] }), error => error.status === 409);
+    assert.throws(() => assertRoleplayNamedWorkflow({ ...captureRoleplayNamedWorkflow('roleplay.reply'), page: [] }), error => error.status === 409);
+});
+
+test('plain Roleplay controls keep saved automatic continuations, and bounded named workflows never capture them', async t => {
+    const f = saved(t, { powerUser: { auto_continue: { enabled: true, allow_chat_completions: true, target_length: 400 } } });
+    const plain = await acceptRoleplayNamedWorkflow(f.request(), f.body('roleplay.reply', { key: 'named-auto', maxTokens: 64 }));
+    assert.ok(getJob(f.dirs, plain.jobId).intent.request.automatic);
+    // A busy chat never absorbs a second intent, so the bounded workflow uses its own chat.
+    const g = saved(t, { powerUser: { auto_continue: { enabled: true, allow_chat_completions: true, target_length: 400 } } });
+    const guided = await acceptRoleplayNamedWorkflow(g.request(), g.body('guided.swipe', { key: 'named-guided-auto', maxTokens: 64,
+        intent: { prompt: { text: 'Guide.', depth: 1, role: 'system', scan: true } } }));
+    assert.equal(getJob(g.dirs, guided.jobId).intent.request.automatic, undefined);
+});
+
+test('a routine page save after acceptance keeps the reply, and a real settings change still stops it before paying', async t => {
+    const f = saved(t);
+    const file = path.join(f.dirs.root, 'settings.json');
+    const edit = change => fs.writeFileSync(file, JSON.stringify(change(JSON.parse(fs.readFileSync(file, 'utf8')))));
+    // Input history, the save counters and the Conversation store change on ordinary page saves.
+    const { result } = await f.run('roleplay.reply', { text: 'Kept through a page save.', beforeTurn: () => edit(settings => ({
+        ...settings, _version: 11, _settingsRevision: settings._settingsRevision + 1,
+        accountStorage: { 'st--inputHistory': '["Where are you?"]' },
+        extension_settings: { ...settings.extension_settings, sillybunny_conversation: { characters: { nova: { branches: {} } } } },
+    })) });
+    assert.equal(result.status, 'completed');
+    assert.equal(f.records().at(-1).mes, 'Kept through a page save.');
+
+    const g = saved(t);
+    const other = path.join(g.dirs.root, 'settings.json');
+    const calls = { count: 0, prompts: [] };
+    await assert.rejects(g.run('roleplay.reply', { calls, beforeTurn: () => {
+        const settings = JSON.parse(fs.readFileSync(other, 'utf8'));
+        settings.oai_settings.openai_max_context = 2048;
+        fs.writeFileSync(other, JSON.stringify(settings));
+    } }), error => error.code === 'ROLEPLAY_SOURCE_CHANGED');
+    assert.equal(calls.count, 0);
+    assert.equal(g.records().length, 3);
 });

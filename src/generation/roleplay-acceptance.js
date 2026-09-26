@@ -101,11 +101,12 @@ export function normalizeRoleplayWorkflowSubmission(body = {}) {
     if (!Number.isSafeInteger(messageIndex) || messageIndex < 0) throw invalid('Invalid workflow message index.');
     const maxTokens = body.maxTokens === undefined || body.maxTokens === null ? null : body.maxTokens;
     if (maxTokens !== null && (!Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > MAX_TOKENS)) throw invalid('Invalid workflow token limit.');
+    const settingsRevision = body.acknowledgement?.settingsRevision;
+    if (!Number.isSafeInteger(settingsRevision) || settingsRevision < 0) throw invalid('Invalid settings revision.');
     return { key, name, named, locator: { chat: chatName(body.source.locator.chat), avatar, group: false },
         messageIndex, chosen: body.anchor.chosen === true, messageRevision: revision(body.messageRevision, 'message revision'),
         maxTokens, account: accountStamp(body.account),
-        acknowledgement: { account: identifier(body.acknowledgement?.account, 'account handle'),
-            settingsRevision: body.acknowledgement?.settingsRevision } };
+        acknowledgement: { account: identifier(body.acknowledgement?.account, 'account handle'), settingsRevision } };
 }
 
 /**
@@ -138,6 +139,15 @@ function lastModelIndex(records) {
     return null;
 }
 
+/** The last block the host would continue, whoever wrote it. A hidden system block is never a target. */
+function lastBlockIndex(records) {
+    const messages = records.slice(1);
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+        if (messages[index]?.is_system !== true) return index;
+    }
+    return null;
+}
+
 /**
  * Resolve the anchor and capture the protected source under one account lock, so
  * the message the named effect writes is the message the saved chat had when the
@@ -148,12 +158,16 @@ function captureWorkflowSource(base, account, submission) {
         const locator = normalizeLocator(submission.locator);
         const saved = readRoleplayChatLocked(lease, locator);
         const messages = saved.records.slice(1);
+        const anchor = submission.named.anchor;
         let index = null;
-        if (submission.named.anchor === 'chosen') {
+        if (anchor === 'chosen') {
             index = submission.messageIndex;
-        } else if (submission.named.anchor === 'end') {
+        } else if (anchor === 'end') {
             if (!messages.length) throw changed('The saved Roleplay chat has no message to answer.', 'roleplay_workflow_anchor');
             index = messages.length - 1;
+        } else if (anchor === 'block') {
+            index = lastBlockIndex(saved.records);
+            if (index === null) throw changed('The saved Roleplay chat has no block to continue.', 'roleplay_workflow_anchor');
         } else {
             index = lastModelIndex(saved.records);
             if (index === null) throw changed('The saved Roleplay chat has no model message to answer.', 'roleplay_workflow_anchor');

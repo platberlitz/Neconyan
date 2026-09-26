@@ -707,7 +707,9 @@ export async function acceptConversationAside(request, body = {}) {
     const fresh = readConversationTarget(request, target);
     const isGroup = submission.source.locator.group === true;
     const settings = getConversationSettings(request, fresh.store, target.avatar, isGroup ? submission.source.groupId : '', {}, { personaId: target.personaId });
-    if (settings.enabled === false || (isGroup && settings.roleplay_reactions !== true)) {
+    // Roleplay reactions are opt-in for solo chats and groups alike, as the page's
+    // own sampling required before it moved here.
+    if (settings.enabled === false || settings.roleplay_reactions !== true) {
         return { job: null, created: false, skipped: 'disabled' };
     }
     if (isGroup) {

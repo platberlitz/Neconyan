@@ -69,6 +69,7 @@ import {
     getSafeConversationGenerationStatus,
 } from './conversation-generation.js';
 import { acceptConversationAside, acceptConversationSubmission, preflightConversationBindings, generateBoundConversationText } from '../generation/conversation-jobs.js';
+import { acceptConversationAsideEvent } from '../generation/conversation-aside-events.js';
 import { acceptConversationSchedule, acceptConversationSummary } from '../generation/conversation-maintenance.js';
 import { claimConversationPresentations } from '../generation/conversation-effects.js';
 
@@ -150,11 +151,12 @@ const CONVERSATION_API_INFO = {
             { method: 'POST', path: '/message/send', purpose: 'Append a user message, generate a reply, and persist both.' },
             { method: 'POST', path: '/reply/submit', purpose: 'Accept a composer send or forced reply, append the user messages durably, and generate server-side.' },
             { method: 'POST', path: '/aside/submit', purpose: 'Accept a Roleplay group aside or solo side DM from a saved source locator and revisions.' },
+            { method: 'POST', path: '/aside/event', purpose: 'Report one rendered Roleplay message or one user message that may name a member. The server samples it and chooses the recipient.' },
         ],
     },
     caveats: [
         'Accepted replies, composer sends and automatic messages run server-side after the app persists server ownership. The browser observes job status and reads the authoritative store. WebLLM and browser Kokoro require the page open.',
-        'The server worker checks reminders, schedules, idle follow-ups, proactive messages, partner chimes and character chat using saved settings and timezone. Roleplay aside sampling stays in the browser, but /aside/submit accepts and generates the message server-side.',
+        'The server worker checks reminders, schedules, idle follow-ups, proactive messages, partner chimes and character chat using saved settings and timezone. Roleplay asides are sampled server-side: /aside/event takes one rendered message and returns the decision, while /aside/submit still accepts a caller that already knows its recipient.',
         'Bracket commands are extracted into reply metadata by accepted replies, which also run image generation, schedule edits, and reminder side effects server-side.',
         'REST callers must provide the backend generation payload shape used by the existing completion endpoints.',
     ],
@@ -708,6 +710,19 @@ router.post('/aside/submit', asyncRoute(async (request, response) => {
     if (!await consumeMessageSendLimit(response, messageSendUserLimiter, request.user.profile.handle)) return;
     const accepted = await acceptConversationAside(request, request.body || {});
     return response.status(accepted.created ? 202 : 200).send(accepted);
+}));
+
+/**
+ * One rendered Roleplay message, or one user message that may name a member. The
+ * server samples it and chooses the recipient; the page is told the decision so
+ * it never repeats the event. The recipient-shaped submission above stays for a
+ * caller that already knows who it is asking.
+ */
+router.post('/aside/event', asyncRoute(async (request, response) => {
+    if (!await consumeMessageSendLimit(response, messageSendIpLimiter, getIpAddress(request, PREFER_REAL_IP_HEADER))) return;
+    if (!await consumeMessageSendLimit(response, messageSendUserLimiter, request.user.profile.handle)) return;
+    const decided = await acceptConversationAsideEvent(request, request.body || {});
+    return response.status(decided.accepted ? 202 : 200).send(decided);
 }));
 
 router.post('/summary/submit', asyncRoute(async (request, response) => {

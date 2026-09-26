@@ -2,23 +2,17 @@ import { chat, getCurrentChatId, getRequestHeaders, saveChatConditional } from '
 import { getCurrentUserHandle } from '../user.js';
 import { assertConversationAccount } from './store-sync.js';
 import { selected_group } from '../group-chats.js';
-import { getConversationPersonaId, getConversationThreadStore, getCurrentCharAvatar, getRoleplayCurrentCharacter, getRoleplayGroupById } from './context.js';
+import { getConversationPersonaId, getCurrentCharAvatar, getRoleplayGroupById } from './context.js';
 import { reportConversationGenerationError } from './generation.js';
 import { loadCurrentPanelSettings } from './interface.js';
-import { getCharacterForAvatar } from './media.js';
-import { buildGroupChatContext, getCurrentGroupConversationMembers } from './pals-rail.js';
-import { isCharacterMentionedInText } from './partners.js';
 import { getRoleplayGroupRevision, getRoleplaySourceMessageRevision } from './roleplay-source.js';
-import { buildConversationRoleplayContext } from './shared-helpers.js';
-import { getSettings } from './settings-store.js';
 import { groupAsideBusyKeys } from './state.js';
-import { getConversationActivityContext } from './typing.js';
 
 export { getRoleplaySourceMessageRevision };
 
-async function submitConversationAside(body, account) {
+async function submitConversationAsideEventRequest(body, account) {
     assertConversationAccount(account);
-    const response = await fetch('/api/neconyan-conversation/aside/submit', {
+    const response = await fetch('/api/neconyan-conversation/aside/event', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { ...getRequestHeaders(), 'X-Neconyan-Account': account },
@@ -27,191 +21,82 @@ async function submitConversationAside(body, account) {
     const payload = await response.json().catch(() => null);
     assertConversationAccount(account);
     if (!response.ok) {
-        throw Object.assign(new Error(payload?.error || `Aside request failed (${response.status}).`), { status: response.status });
+        throw Object.assign(new Error(payload?.error || `Aside event failed (${response.status}).`), { status: response.status });
     }
     return payload;
 }
 
-function isCapturedRoleplaySourceValid({ account, avatar = '', sourceGroupId = '', sourceGroupRevision = '', sourceMessageId = null, sourceMessageRevision = '' } = {}) {
-    if (account !== getCurrentUserHandle()) return false;
-    try { assertConversationAccount(account); } catch { return false; }
-    if (sourceMessageId !== null && typeof sourceMessageId !== 'undefined') {
-        const currentMessage = chat[sourceMessageId];
-        if (!currentMessage || getRoleplaySourceMessageRevision(currentMessage) !== sourceMessageRevision) {
-            return false;
-        }
+/**
+ * A short, stable identity for one saved source. The server caps an event key, and
+ * a message revision is a JSON copy of the whole message, so the key carries a hash
+ * of it rather than the text. The server still proves the real revision.
+ */
+function sourceFingerprint(value) {
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < value.length; index += 1) {
+        hash ^= value.charCodeAt(index);
+        hash = Math.imul(hash, 0x01000193) >>> 0;
     }
-    if (sourceGroupId) {
-        const currentGroup = getRoleplayGroupById(sourceGroupId);
-        return String(selected_group || '') === sourceGroupId
-            && Boolean(currentGroup)
-            && getRoleplayGroupRevision(currentGroup) === sourceGroupRevision;
-    }
-
-    return !selected_group && (!avatar || getRoleplayCurrentCharacter()?.avatar === avatar);
+    return `${hash.toString(16).padStart(8, '0')}-${value.length.toString(36)}`;
 }
 
-export function captureGroupAsideRequest(character, { personaId = getConversationPersonaId(), reason = 'random', sourceGroup = null, sourceGroupId = String(selected_group || ''), sourceMessageId = null } = {}) {
-    const group = sourceGroup || getRoleplayGroupById(sourceGroupId);
-    const sourceMessage = sourceMessageId !== null && typeof sourceMessageId !== 'undefined' ? chat[sourceMessageId] : null;
-    const branchId = getConversationThreadStore(character?.avatar, { create: false, groupId: '', personaId })?.activeBranchId || '';
-    const groupContext = buildGroupChatContext();
-    if (!group || !character?.avatar || !branchId || !groupContext || (sourceMessageId !== null && !sourceMessage)) {
-        return null;
-    }
-
-    return {
-        branchId,
-        groupContext,
-        account: getCurrentUserHandle(),
-        personaId,
-        reason,
-        sourceGroupId: String(group.id || sourceGroupId || ''),
-        sourceGroupRevision: getRoleplayGroupRevision(group),
-        sourceMessageId,
-        sourceMessageRevision: sourceMessage ? getRoleplaySourceMessageRevision(sourceMessage) : '',
-    };
-}
-
-export function captureRoleplayDMRequest({ avatar = getCurrentCharAvatar(), personaId = getConversationPersonaId(), roleplayContext = '', sourceMessageId = null } = {}) {
-    const sourceMessage = sourceMessageId !== null && typeof sourceMessageId !== 'undefined' ? chat[sourceMessageId] : null;
-    const branchId = getConversationThreadStore(avatar, { create: false, groupId: '', personaId })?.activeBranchId || '';
-    const capturedContext = String(roleplayContext || buildConversationRoleplayContext(chat, sourceMessageId)).trim();
-    if (!avatar || !branchId || !capturedContext || (sourceMessageId !== null && !sourceMessage)) {
-        return null;
-    }
-
-    return {
-        avatar,
-        branchId,
-        personaId,
-        account: getCurrentUserHandle(),
-        roleplayContext: capturedContext,
-        sourceMessageId,
-        sourceMessageRevision: sourceMessage ? getRoleplaySourceMessageRevision(sourceMessage) : '',
-    };
-}
-
-export async function checkGroupChatMention(messageId) {
-    if (!selected_group) {
-        return;
-    }
-
+/**
+ * One native aside event: a Roleplay message was rendered, or a user message may
+ * name a group member. The page states only the fact and the saved source it can
+ * prove; the server samples the event and chooses the recipient, so a reopened
+ * page cannot sample the same message again and no page decides who speaks.
+ *
+ * The event key is derived from the saved source, so a second render of the same
+ * message is the same event rather than a second request. A refused or lost event
+ * is never retried automatically: the decision is the server's and the accepted
+ * aside already has its permanent occurrence key.
+ */
+export async function submitConversationAsideEvent(kind, messageId, { account = getCurrentUserHandle() } = {}) {
+    if (kind !== 'mention' && kind !== 'rendered') return null;
     const message = chat[messageId];
-    if (!message || !(message.is_user === true || message.role === 'user') || !message.mes) {
-        return;
-    }
+    if (!message) return null;
+    const chatName = String(getCurrentChatId() || '').replace(/\.jsonl$/i, '');
+    if (!chatName) return null;
+    const groupId = String(selected_group || '');
+    const group = groupId ? getRoleplayGroupById(groupId) : null;
+    if (kind === 'mention' && (!group || groupId !== String(group.id || groupId))) return null;
+    const isGroup = Boolean(groupId);
+    if (isGroup && !group) return null;
+    const avatar = isGroup ? '' : String(getCurrentCharAvatar() || '');
+    if (!isGroup && !avatar) return null;
+    // The Conversation sheld is the page's own presentation, so the page keeps it.
+    const sheld = globalThis.document?.getElementById?.('sheld');
+    if (!isGroup && sheld?.dataset?.sbConversationMode === 'on') return null;
 
-    const personaId = getConversationPersonaId();
-    const sourceGroupId = String(selected_group || '');
-    const roleplayGroup = getRoleplayGroupById(sourceGroupId);
-    const members = getCurrentGroupConversationMembers({ group: roleplayGroup, requireRoleplayReactions: true });
-    const memberCharacters = members.map(item => item.character).filter(Boolean);
-    const mentionedMembers = members.filter(({ character }) => isCharacterMentionedInText(character, message.mes, memberCharacters));
-    if (!mentionedMembers.length) {
-        return;
-    }
-
-    const requests = mentionedMembers
-        .map(({ character }) => ({
-            character,
-            request: captureGroupAsideRequest(character, { personaId, reason: 'mention', sourceGroup: roleplayGroup, sourceGroupId, sourceMessageId: messageId }),
-        }))
-        .filter(item => item.request);
-    for (const { character, request } of requests) {
-        void triggerGroupAsideDM(character, request);
-    }
-}
-
-export async function triggerGroupAsideDM(character, options = {}) {
-    const captured = options.branchId ? options : captureGroupAsideRequest(character, options);
-    if (!captured || !isCapturedRoleplaySourceValid({ ...captured, avatar: character?.avatar })) {
-        return false;
-    }
-    const { branchId, personaId, reason, sourceGroupId, sourceMessageId, sourceGroupRevision, sourceMessageRevision } = captured;
-    const groupId = String(sourceGroupId || '');
-    const group = getRoleplayGroupById(groupId);
-    if (!group || !character?.avatar || !group.members?.includes(character.avatar) || group.disabled_members?.includes(character.avatar)) {
-        return false;
-    }
-
-    const settings = getSettings(character.avatar, { groupId, personaId });
-    if (!settings.enabled || !settings.roleplay_reactions) {
-        return false;
-    }
-
-    const current = getConversationActivityContext(settings, character.avatar, new Date(), { personaId });
-    if (current.status === 'offline') {
-        return false;
-    }
-
-    const key = `${personaId || 'persona'}:${group.id || 'group'}:${character.avatar || 'unknown'}`;
-    if (groupAsideBusyKeys.has(key)) {
-        return false;
-    }
-
-    const threadStore = getConversationThreadStore(character.avatar, { create: false, groupId: '', personaId });
-    if (!threadStore?.branches?.[branchId]) {
-        return false;
-    }
+    const speaker = String(message.original_avatar || message.avatar || '');
+    const messageRevision = getRoleplaySourceMessageRevision(message);
+    const body = {
+        eventKey: `aside-event:${kind}:${isGroup ? group.id : avatar}:${chatName}:${messageId}:${sourceFingerprint(messageRevision)}`,
+        personaId: getConversationPersonaId(),
+        kind,
+        source: {
+            locator: { chat: chatName, avatar, group: isGroup },
+            groupId: isGroup ? group.id : '',
+        },
+        messageIndex: messageId,
+        messageRevision,
+        groupRevision: isGroup ? getRoleplayGroupRevision(group) : '',
+        speakerAvatar: isGroup ? speaker : '',
+    };
+    const key = `${body.personaId || 'persona'}:${isGroup ? group.id : 'solo'}:${speaker || avatar || 'unknown'}`;
+    if (groupAsideBusyKeys.has(key)) return null;
     groupAsideBusyKeys.add(key);
     try {
-        await saveChatConditional({ throwOnError: true, account: captured.account });
-        if (!isCapturedRoleplaySourceValid({ ...captured, avatar: character.avatar })) {
-            return false;
-        }
-        const result = await submitConversationAside({
-            target: { avatar: character.avatar, personaId, branchId },
-            source: {
-                locator: { chat: String(getCurrentChatId() || ''), avatar: '', group: true },
-                groupId: group.id,
-            },
-            messageIndex: sourceMessageId,
-            messageRevision: sourceMessageRevision,
-            groupRevision: sourceGroupRevision,
-            reason,
-        }, captured.account);
-        return Boolean(result?.created);
+        // A refreshed account is refused before anything is saved, so a stale
+        // page can never write a chat that belongs to someone else.
+        assertConversationAccount(account);
+        await saveChatConditional({ throwOnError: true, account });
+        return await submitConversationAsideEventRequest(body, account);
     } catch (err) {
-        reportConversationGenerationError('group aside DM', err, { toast: false });
-        return false;
+        reportConversationGenerationError('roleplay aside event', err, { toast: false });
+        return null;
     } finally {
         groupAsideBusyKeys.delete(key);
-    }
-}
-
-export async function triggerRoleplayDM(options = {}) {
-    const captured = options.branchId ? options : captureRoleplayDMRequest(options);
-    if (!captured || !isCapturedRoleplaySourceValid(captured)) return false;
-    const { avatar, branchId, personaId, sourceMessageId, sourceMessageRevision } = captured;
-    const character = getCharacterForAvatar(avatar);
-    if (!character || !avatar) return false;
-
-    const threadStore = getConversationThreadStore(avatar, { create: false, groupId: '', personaId });
-    if (!threadStore?.branches?.[branchId]) return false;
-
-    const settings = getSettings(avatar, { groupId: '', personaId });
-    const sheld = document.getElementById('sheld');
-    if (!settings.enabled || (sheld instanceof HTMLElement && sheld.dataset.sbConversationMode === 'on')) {
-        return false;
-    }
-
-    try {
-        await saveChatConditional({ throwOnError: true, account: captured.account });
-        if (!isCapturedRoleplaySourceValid(captured)) {
-            return false;
-        }
-        const result = await submitConversationAside({
-            target: { avatar, personaId, branchId },
-            source: { locator: { chat: String(getCurrentChatId() || ''), avatar, group: false } },
-            messageIndex: sourceMessageId,
-            messageRevision: sourceMessageRevision,
-            reason: 'reaction',
-        }, captured.account);
-        return Boolean(result?.created);
-    } catch (err) {
-        reportConversationGenerationError('roleplay side DM', err, { toast: false });
-        return false;
     }
 }
 

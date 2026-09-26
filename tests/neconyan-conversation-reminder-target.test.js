@@ -23,7 +23,7 @@ const reminder = {
 };
 
 const saveChatConditional = jest.fn(async () => true);
-await jest.unstable_mockModule('../public/script.js', () => ({ chat: [], getCurrentChatId: () => 'chat', getRequestHeaders: () => ({}), is_send_press: false, name1: 'User', saveChatConditional }));
+await jest.unstable_mockModule('../public/script.js', () => ({ chat: [{ mes: 'first' }, { mes: 'second', name: 'Aster', avatar: 'char.png' }], getCurrentChatId: () => 'chat', getRequestHeaders: () => ({}), is_send_press: false, name1: 'User', saveChatConditional }));
 await jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ selected_group: null }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.js', () => ({
     getActiveConversationBranch: () => null,
@@ -109,15 +109,12 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/typing.j
     withTypingParticipant: (_participant, task) => task(),
 }));
 
-const { triggerRoleplayDM, triggerGroupAsideDM } = await import('../public/scripts/neconyan-conversation/auto-engine.js');
+const { submitConversationAsideEvent } = await import('../public/scripts/neconyan-conversation/auto-engine.js');
 
 describe('conversation reminder target identity', () => {
-    test('both native aside paths refuse a refreshed identity before saving the old chat', async () => {
+    test('the native aside event refuses a refreshed identity before saving the old chat', async () => {
         assertConversationAccount.mockImplementation(() => { throw new Error('account_changed'); });
-        const captured = { account: 'tester', avatar: 'char.png', branchId: 'main', personaId: 'persona-a.png' };
-        await expect(triggerRoleplayDM(captured)).resolves.toBe(false);
-        await expect(triggerGroupAsideDM({ avatar: 'char.png' }, captured)).resolves.toBe(false);
-        expect(assertConversationAccount).toHaveBeenCalledTimes(2);
+        await expect(submitConversationAsideEvent('rendered', 1, { account: 'tester' })).resolves.toBeNull();
         expect(assertConversationAccount).toHaveBeenCalledWith('tester');
         expect(saveChatConditional).not.toHaveBeenCalled();
         assertConversationAccount.mockReset();

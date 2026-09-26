@@ -325,7 +325,9 @@ function addGeneration(prompt) {
     if (prompt && prompt.length > 0) {
         createSwipe(messageId, prompt);
         $('.swipe_right:last').trigger('click');
-        void Generate('continue');
+        // Neconyan: the logprobs viewer compares a browser continuation with the
+        // stored one, so this call site keeps the browser generation.
+        void Generate('continue', { skipNativeRoleplay: true });
     } else {
         $('.swipe_right:last').trigger('click');
     }

@@ -2,7 +2,7 @@ import path from 'node:path';
 import { normalizeBatchCount } from '../../public/scripts/extensions/quick-image-gen/lib/generation.js';
 import { resolveCharacterImageSettings } from '../../public/scripts/extensions/quick-image-gen/lib/character-settings.js';
 import { createMacroEnvironment } from '../macros/index.js';
-import { readRoleplayFile, roleplayError, roleplayHash, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
+import { readRoleplayFile, roleplayError, roleplayHash, roleplaySettingsHash, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
 import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay-source.js';
 import { captureGenerationBinding, getChatProfileContextLimit } from './profiles.js';
 import { captureRoleplayWorldInfo, selectSavedRoleplayPersona } from './world-info.js';
@@ -129,7 +129,7 @@ export function captureQuickImageRequest(base, account, source, { avatar, mode, 
         snapshot.quickImageGenReferenceSources = captureQuickImageReferenceSources(base.directories, qig, proxyReferences);
         const options = Object.fromEntries(PROMPT_OPTIONS.filter(key => qig[key] !== undefined).map(key => [key, qig[key]]));
         return { version: 1, avatar, mode, scene, provider: qig.provider || '', selected: selected.map(({ index, record }) => ({ index, hash: roleplayHash(record) })),
-            isMultiMessage: selected.length > 1, snapshot, profile, settingsHash: roleplayHash(settings), options,
+            isMultiMessage: selected.length > 1, snapshot, profile, settingsHash: roleplaySettingsHash(settings), options,
             negative: evaluate(copyText(qig.negativePrompt)), batchCount: normalizeBatchCount(qig.batchCount),
             reviewed: reviewed ? { positive: reviewed.positive.trim(), negative: reviewed.negative } : null,
             seed: qig.provider === 'proxy' ? qig.proxySeed ?? -1 : qig.seed ?? -1, proxyReferences,

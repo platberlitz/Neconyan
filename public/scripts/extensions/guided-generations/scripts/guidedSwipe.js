@@ -8,6 +8,7 @@ import {
     getPreviousImpersonateInput,
     guidedSwipeInjectId,
     setPreviousImpersonateInput,
+    submitGuidedWorkflow,
 } from './shared.js';
 
 let isSwiping = false;
@@ -112,6 +113,12 @@ async function guidedSwipe() {
         const depth = settings.depthPromptGuidedSwipe ?? 0;
         const promptTemplate = settings.promptGuidedSwipe ?? '';
         const filledPrompt = applyPromptTemplate(promptTemplate, originalInput);
+
+        // Neconyan Stage 9: the server owns the guided swipe, so nothing is
+        // injected and the composer keeps the text the user typed.
+        if (await submitGuidedWorkflow('guided.swipe', { text: filledPrompt, depth, role: injectionRole, scan: true })) {
+            return;
+        }
 
         try {
             setPreviousImpersonateInput(originalInput);

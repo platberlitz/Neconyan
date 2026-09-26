@@ -1232,15 +1232,11 @@ for (const boundary of ['solo chat', 'group chat', 'group metadata']) {
             window.SillyTavern.getContext().chat.push({ is_user: true, name: 'User', mes: 'Private aside source.', send_date: Date.now() });
             chrome.setConversationInterfaceActive(false);
             await (await import('/script.js')).saveChatConditional({ throwOnError: true });
-            const aside = await import('/scripts/neconyan-conversation/auto-engine.js');
-            const current = window.SillyTavern.getContext();
-            const options = { sourceMessageId: current.chat.length - 1 };
-            return { captured: group
-                ? aside.captureGroupAsideRequest(current.characters.find(character => character.avatar === avatar), options)
-                : aside.captureRoleplayDMRequest({ ...options, avatar }),
-            settings: (await import('/scripts/neconyan-conversation/settings-store.js')).getSettings(avatar, { groupId: group?.id || '' }) };
+            return {
+                messageIndex: window.SillyTavern.getContext().chat.length - 1,
+                settings: (await import('/scripts/neconyan-conversation/settings-store.js')).getSettings(avatar, { groupId: group?.id || '' }),
+            };
         }, { avatar: first.avatar, group });
-        expect(source.captured).not.toBeNull();
         expect(source.settings.enabled).toBe(true);
         expect(source.settings.roleplay_reactions).toBe(true);
         const destination = path.join(app.directory, 'data', 'second-user');
@@ -1253,19 +1249,17 @@ for (const boundary of ['solo chat', 'group chat', 'group metadata']) {
             await route.continue();
         });
         const response = page.waitForResponse(response => response.url().endsWith(endpoint));
-        const triggered = page.evaluate(async ({ avatar, group }) => {
+        // The page reports the rendered message; the save it insists on first is
+        // the boundary a shared browser can cross, so the event must die there.
+        const triggered = page.evaluate(async ({ kind, messageIndex }) => {
             const aside = await import('/scripts/neconyan-conversation/auto-engine.js');
-            const context = window.SillyTavern.getContext();
-            const options = { sourceMessageId: context.chat.length - 1 };
-            return group
-                ? aside.triggerGroupAsideDM(context.characters.find(character => character.avatar === avatar), options)
-                : aside.triggerRoleplayDM({ ...options, avatar });
-        }, { avatar: first.avatar, group });
+            return aside.submitConversationAsideEvent(kind, messageIndex);
+        }, { kind: group ? 'mention' : 'rendered', messageIndex: source.messageIndex });
         const rejected = await response;
         expect(rejected.status()).toBe(409);
         expect(await rejected.json()).toEqual(boundary === 'group metadata'
             ? { error: 'account_changed' } : { error: 'account_changed', code: 'ROLEPLAY_ACCOUNT_CHANGED' });
-        expect(await triggered).toBe(false);
+        expect(await triggered).toBeNull();
         expect((await fs.readdir(destination, { recursive: true })).sort()).toEqual(before);
         expect(await second.effects()).toEqual(effects);
         expect(app.provider.calls).toHaveLength(0);

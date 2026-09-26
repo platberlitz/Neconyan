@@ -11,17 +11,15 @@
  * instead of paying twice, and a reopened page reattaches to the accepted job and
  * reads its permanent receipt back rather than submitting anything again.
  */
-import { activateSendButtons, chat, deactivateSendButtons, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, reloadCurrentChat, saveChatConditional, saveSettings } from '../../script.js';
-import { hasPendingFileAttachment } from '../chats.js';
-import { selected_group } from '../group-chats.js';
-import { listJobs, observeJob, TERMINAL } from '../jobs.js';
+import { activateSendButtons, chat, deactivateSendButtons, extension_prompts, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, reloadCurrentChat, saveChatConditional, saveSettings, substituteParams, willRunNativeRoleplayWorkflow } from '../../script.js';
+import { activeGenerationInterceptors, extension_settings } from '../extensions.js';
+import { cancelJob, listJobs, observeJob, TERMINAL } from '../jobs.js';
 import { roleplayAccountStamp } from '../roleplay-save-chain.js';
 import { getCurrentUserHandle } from '../user.js';
 import { getCurrentCharAvatar } from './context.js';
 import { getRoleplaySourceMessageRevision } from './roleplay-source.js';
 
 const WORKFLOW_EVENT = 'neconyan:roleplay-workflow-finished';
-const NATIVE_TYPES = new Set(['normal', 'continue', 'swipe', 'regenerate']);
 const STORY_RULES_KEY = 'sbstory_rules';
 const STORY_DIRECTION_KEY = 'sbstory_direction';
 const STORY_RULES_DEPTH = 1;
@@ -29,7 +27,31 @@ const STORY_DIRECTION_DEPTH = 0;
 
 const observed = new Map();
 const pending = new Map();
+const waiters = new Map();
 let busyName = null;
+let currentJobId = null;
+
+/**
+ * One promise per accepted key, resolved by whichever path reaches the durable
+ * write first: the job observer or the receipt readback. A caller that must not
+ * continue until the write is durable (Story Mode records its cut from the saved
+ * result) waits on this, so the host generation call resolves after the reload.
+ */
+function awaitFinished(key) {
+    let settled = null;
+    const promise = new Promise(resolve => { settled = resolve; });
+    const set = waiters.get(key) ?? new Set();
+    set.add(settled);
+    waiters.set(key, set);
+    return promise;
+}
+
+function settleFinished(key, receipt) {
+    const set = waiters.get(key);
+    if (!set) return;
+    waiters.delete(key);
+    for (const resolve of set) resolve(receipt);
+}
 
 /** The named vocabulary a control may ask for. The server owns the mapping. */
 export const ROLEPLAY_WORKFLOW_NAMES = Object.freeze([
@@ -37,6 +59,21 @@ export const ROLEPLAY_WORKFLOW_NAMES = Object.freeze([
     'story.passage', 'guided.response', 'guided.swipe', 'guided.correction',
     'deep-swipe.reply', 'deep-swipe.user',
 ]);
+
+/**
+ * Which message each named workflow answers, mirroring the server's own anchor.
+ * The browser resolves the index so the server's independent derivation agrees:
+ * a reply answers the whole chat including the user message just written, a
+ * continuation answers the last block whoever wrote it (the host continues the
+ * composer text it just added), a swipe or a correction answers the last model
+ * message, and a Deep Swipe answers the message the user chose.
+ */
+export const ROLEPLAY_WORKFLOW_ANCHORS = Object.freeze({
+    'roleplay.reply': 'end', 'roleplay.continue': 'block', 'roleplay.swipe': 'assistant',
+    'roleplay.correct': 'assistant', 'story.passage': 'block',
+    'guided.response': 'end', 'guided.swipe': 'assistant', 'guided.correction': 'assistant',
+    'deep-swipe.reply': 'chosen', 'deep-swipe.user': 'chosen',
+});
 
 /**
  * A named workflow is only possible for one protected solo chat with a saved
@@ -60,7 +97,15 @@ function currentLocator() {
     return { chat: chatName, avatar, group: false };
 }
 
-/** The saved chat's own final model message, which is what a swipe or continuation answers. */
+/** The last block the host would continue, whoever wrote it, skipping hidden system blocks. */
+export function finalBlockMessageIndex() {
+    for (let index = chat.length - 1; index >= 0; index -= 1) {
+        if (chat[index]?.is_system !== true) return index;
+    }
+    return null;
+}
+
+/** The saved chat's own final model message, which is what a swipe or correction answers. */
 export function finalModelMessageIndex() {
     for (let index = chat.length - 1; index >= 0; index -= 1) {
         const message = chat[index];
@@ -69,26 +114,97 @@ export function finalModelMessageIndex() {
     return null;
 }
 
-/** Unsent composer text, which a server reply cannot answer. */
-function composerText() {
-    return String(document.querySelector('#send_textarea')?.value ?? '').trim();
-}
-
 function messageRevisionAt(index) {
     const message = chat[index];
     if (!message) throw new Error('The message this workflow answers is no longer in the chat.');
     return getRoleplaySourceMessageRevision(message);
 }
 
-/** The Story Mode prompt this chat already carries, if Story Mode is shaping it. */
+/**
+ * Resolve the page's macros in text a control hands over, as the browser prompt
+ * would have. Returns null when a macro survives, so the caller keeps its own path.
+ */
+export function resolvePageText(value) {
+    const text = String(substituteParams(String(value ?? '')) ?? '').trim();
+    return text.includes('{{') ? null : text;
+}
+
+function pagePromptText(key) {
+    const value = extension_prompts[key]?.value;
+    if (typeof value !== 'string' || !value.trim()) return '';
+    return String(substituteParams(value) ?? '').trim();
+}
+
+/** The Story Mode prompt the page carries right now, if Story Mode is shaping this chat. */
 function storyPrompt() {
-    const injects = globalThis.chat_metadata?.script_injects ?? {};
-    const rules = injects[STORY_RULES_KEY]?.content;
-    if (typeof rules !== 'string' || !rules.trim()) return null;
-    const direction = injects[STORY_DIRECTION_KEY]?.content;
+    const rules = pagePromptText(STORY_RULES_KEY);
+    if (!rules || rules.includes('{{')) return null;
+    const direction = pagePromptText(STORY_DIRECTION_KEY);
     return { rules, rulesDepth: STORY_RULES_DEPTH,
-        direction: typeof direction === 'string' && direction.trim() ? direction : '',
+        direction: direction.includes('{{') ? '' : direction,
         directionDepth: STORY_DIRECTION_DEPTH };
+}
+
+/** Prompts the server rebuilds itself from the saved chat, card, persona and lorebooks. */
+const SERVER_PROMPT_KEYS = new Set(['2_floating_prompt', 'PERSONA_DESCRIPTION', '__STORY_STRING__', 'QUIET_PROMPT']);
+const SERVER_PROMPT_PREFIXES = ['DEPTH_PROMPT', 'customDepthWI', 'customWIOutlet_'];
+/** Prompts written by work the server decides itself; text from them has no faithful page copy. */
+const POLICY_PROMPT_PREFIXES = ['inchat_agent_', 'pathfinder_', '3_vectors', '4_vectors_data_bank'];
+const PAGE_KEY = /^[a-zA-Z0-9_-]{1,120}$/;
+const PAGE_ROLES = ['system', 'user', 'assistant'];
+const MAX_PAGE_PROMPTS = 32;
+const MAX_PAGE_BYTES = 120 * 1024;
+const SETTINGS_PROOF_ATTEMPTS = 10;
+
+/**
+ * The prompt additions only this page knows about (a Dialogue Colours instruction,
+ * a /inject note, a summary), resolved exactly as the browser prompt would have
+ * used them. The server rebuilds everything else itself. Returns null when any
+ * addition cannot be carried faithfully, so the caller keeps the browser path
+ * instead of silently generating without it.
+ */
+export async function capturePagePrompts(name) {
+    for (const interceptor of activeGenerationInterceptors()) {
+        if (interceptor.key === 'DialogueColorsInterceptor') {
+            await globalThis[interceptor.key]([], 0, () => {}, 'normal');
+            continue;
+        }
+        if (interceptor.key === 'vectors_rearrangeChat') {
+            const vectors = extension_settings.vectors ?? {};
+            if (vectors.enabled_chats || vectors.enabled_files) return null;
+            continue;
+        }
+        return null;
+    }
+    const page = [];
+    let bytes = 0;
+    for (const key of Object.keys(extension_prompts).sort()) {
+        const entry = extension_prompts[key];
+        if (!entry || typeof entry.value !== 'string' || !entry.value.trim()) continue;
+        if (Number(entry.position) === -1) continue;
+        if (SERVER_PROMPT_KEYS.has(key) || SERVER_PROMPT_PREFIXES.some(prefix => key.startsWith(prefix))) continue;
+        if (name === 'story.passage' && (key === STORY_RULES_KEY || key === STORY_DIRECTION_KEY)) continue;
+        if (POLICY_PROMPT_PREFIXES.some(prefix => key.startsWith(prefix))) return null;
+        if (entry.scan) return null;
+        if (typeof entry.filter === 'function') {
+            try {
+                if (!await entry.filter()) continue;
+            } catch {
+                return null;
+            }
+        }
+        const content = pagePromptText(key);
+        if (!content) continue;
+        const position = Number(entry.position);
+        const depth = Number(entry.depth ?? 0);
+        const role = PAGE_ROLES[Number(entry.role ?? 0)];
+        if (content.includes('{{') || !PAGE_KEY.test(key) || ![0, 1, 2].includes(position)
+            || !Number.isSafeInteger(depth) || depth < 0 || depth > 10000 || !role) return null;
+        bytes += new TextEncoder().encode(content).length;
+        page.push({ key, content, position, depth, role });
+        if (page.length > MAX_PAGE_PROMPTS || bytes > MAX_PAGE_BYTES) return null;
+    }
+    return page;
 }
 
 /** The one place that turns a generation type into the named workflow the server owns. */
@@ -150,14 +266,19 @@ async function readback(key, name, { locator, account }) {
             await new Promise(resolve => setTimeout(resolve, Math.min(2000, 250 * (attempt + 1))));
             continue;
         }
-        if (!receipt.accepted) return null;
+        if (!receipt.accepted) {
+            settleFinished(key, null);
+            return null;
+        }
         const current = currentLocator();
         if (current && locator && current.chat === locator.chat && current.avatar === locator.avatar) {
             await reloadCurrentChat();
         }
         announce({ key, name, state: receipt.state, result: receipt.result ?? null, jobId: receipt.jobId });
+        settleFinished(key, receipt);
         return receipt;
     }
+    settleFinished(key, null);
     return null;
 }
 
@@ -171,12 +292,16 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, account 
             observed.delete(jobId);
             if (reason !== 'done' && reason !== 'stopped') {
                 announce({ key, name, state: reason, result: null, jobId });
+                // A refused or lost job must not leave a caller waiting for a write
+                // that will never arrive.
+                settleFinished(key, null);
                 return;
             }
             try {
                 await readback(key, name, { locator, account });
             } catch {
                 // The receipt is permanent; the next resume reads it back.
+                settleFinished(key, null);
             }
         },
     });
@@ -184,15 +309,42 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, account 
 }
 
 /**
+ * Settings the page has changed but not yet saved (a delayed save is still waiting)
+ * are saved now, so the server reads the settings the user sees and a delayed save
+ * landing after acceptance cannot change what the accepted reply was bound to.
+ * While the page is still loading its settings, or another save is in flight, the
+ * proof is unreadable, so the save is tried again for a bounded time before refusing.
+ */
+async function acknowledgedSettingsRevision() {
+    let failure = null;
+    for (let attempt = 1; attempt <= SETTINGS_PROOF_ATTEMPTS; attempt++) {
+        try {
+            if (await saveSettings(0, { returnResult: true })) {
+                return getActiveGenerationAcknowledgement().settingsRevision;
+            }
+        } catch (error) {
+            failure = error;
+        }
+        await new Promise(resolve => setTimeout(resolve, Math.min(1500, 250 * attempt)));
+    }
+    throw failure ?? new Error('Save the active connection settings before generating a reply.');
+}
+
+/**
  * Submit one named workflow. The chat is saved first, so the message the user is
  * looking at is the message the server anchors its write to, and an uncertain
  * response keeps the whole payload so an identical retry cannot duplicate it.
  */
-export async function submitRoleplayWorkflow({ name, intent = {}, messageIndex = null, chosen = false, maxTokens = 0, account = getCurrentUserHandle() }) {
-    if (!ROLEPLAY_WORKFLOW_NAMES.includes(name)) throw new Error(`Unknown named Roleplay workflow: ${name}`);
+export async function submitRoleplayWorkflow({ name, intent: named = {}, page = [], messageIndex = null, maxTokens = 0, account = getCurrentUserHandle() }) {
+    const intent = Array.isArray(page) && page.length ? { ...named, page } : named;
+    const anchorKind = ROLEPLAY_WORKFLOW_ANCHORS[name];
+    if (!anchorKind) throw new Error(`Unknown named Roleplay workflow: ${name}`);
     const locator = currentLocator();
     if (!locator) throw new Error('Open a saved Roleplay chat before generating.');
-    const anchorIndex = messageIndex === null ? finalModelMessageIndex() : messageIndex;
+    const chosen = anchorKind === 'chosen';
+    const anchorIndex = messageIndex !== null ? messageIndex
+        : anchorKind === 'end' ? chat.length - 1
+            : anchorKind === 'block' ? finalBlockMessageIndex() : finalModelMessageIndex();
     if (!Number.isSafeInteger(anchorIndex) || anchorIndex < 0) throw new Error('The saved Roleplay chat has no message to answer.');
     const stamp = roleplayAccountStamp().account;
     const signature = JSON.stringify([account, name, intent, anchorIndex, chosen, maxTokens, locator, stamp]);
@@ -205,10 +357,13 @@ export async function submitRoleplayWorkflow({ name, intent = {}, messageIndex =
         anchor: { messageIndex: anchorIndex, chosen },
         messageRevision: messageRevisionAt(anchorIndex),
         account: stamp,
-        acknowledgement: { account, settingsRevision: getActiveGenerationAcknowledgement().settingsRevision },
-        ...(maxTokens > 0 ? { maxTokens } : {}),
+        acknowledgement: { account, settingsRevision: await acknowledgedSettingsRevision() },
+        ...(Number(maxTokens) > 0 ? { maxTokens: Number(maxTokens) } : {}),
     };
     pending.set(account, { signature, payload });
+    // Registered before the request, so a workflow that finishes before the
+    // response is read still resolves the caller's wait.
+    const finished = awaitFinished(payload.key);
     await saveChatConditional({ throwOnError: true, account });
     let accepted;
     try {
@@ -219,8 +374,8 @@ export async function submitRoleplayWorkflow({ name, intent = {}, messageIndex =
         if (error.status >= 400 && error.status < 500) {
             if (error.body?.code !== 'roleplay_settings_ack_required') pending.delete(account);
         }
-        if (error.body?.code === 'roleplay_settings_ack_required' && await saveSettings(0, { returnResult: true })) {
-            const retry = { ...payload, acknowledgement: { account, settingsRevision: getActiveGenerationAcknowledgement().settingsRevision } };
+        if (error.body?.code === 'roleplay_settings_ack_required') {
+            const retry = { ...payload, acknowledgement: { account, settingsRevision: await acknowledgedSettingsRevision() } };
             pending.set(account, { signature, payload: retry });
             accepted = await postSubmission(retry, account);
         } else {
@@ -230,39 +385,68 @@ export async function submitRoleplayWorkflow({ name, intent = {}, messageIndex =
     pending.delete(account);
     if (accepted?.jobId) observeRoleplayWorkflowJob(accepted.jobId, { key: payload.key, name, locator, account });
     if (accepted?.result) void readback(payload.key, name, { locator, account });
-    return accepted;
+    return { ...accepted, key: payload.key, finished };
 }
 
 /**
- * The generation funnel for a migrated Roleplay control. It refuses the call sites
- * the server cannot serve faithfully (a group turn, structured output, an explicit
- * character override, unsent composer text or attachments, a caller that reads the
- * provider response) and submits the named workflow for the ones it owns. The host
- * is marked busy exactly as a browser generation would be, and the result arrives
- * through the finished event rather than as a streamed response.
+ * The generation funnel for a migrated Roleplay control. The host has already
+ * decided that this call site can be served faithfully and has saved the user's own
+ * message, so this submits the named workflow, marks the host busy exactly as a
+ * browser generation would be, and stops the accepted job when the user stops. The
+ * call resolves once the durable write has been read back, so a caller that records
+ * facts from the saved result sees them already.
+ *
+ * A refusal is final: falling through to the browser path would be the duplicate
+ * paid call this migration must never make, so a refused call still returns a
+ * result and the host never generates a second time.
  */
-export async function runNativeRoleplayGeneration(type, { maxOutputTokens = 0, jsonSchema = null, force_chid = null,
-    force_name2 = false, quiet_prompt = null, depth = 0, cacheScope = null, suppressUserMessage = false,
-    preserveLastMessage = false, signal = null, skipNativeRoleplay = false } = {}) {
-    if (skipNativeRoleplay || !NATIVE_TYPES.has(type) || busyName) return null;
-    if (jsonSchema || force_chid || force_name2 || quiet_prompt || depth > 0 || cacheScope || signal?.aborted) return null;
-    if (selected_group || !isNativeRoleplayWorkflowReady()) return null;
-    // A reply must answer what the user actually sent, so unsent composer text or
-    // a pending attachment keeps the browser path that saves them first.
-    if (type === 'normal' && !suppressUserMessage && (composerText() || hasPendingFileAttachment())) return null;
+export async function runNativeRoleplayGeneration(type, { committed = false, page = null, maxOutputTokens = 0, signal = null, skipNativeRoleplay = false } = {}) {
+    const refuse = () => {
+        globalThis.toastr?.error?.('A Roleplay workflow is already running.', 'Nothing was generated');
+        return { native: true, name: null, key: null, jobId: null, state: 'refused', result: null, refused: true };
+    };
+    if (skipNativeRoleplay || !willRunNativeRoleplayWorkflow(type, { skipNativeRoleplay })) return null;
+    if (busyName) return committed ? refuse() : null;
     const name = roleplayWorkflowNameFor(type);
     if (!name) return null;
+    if (!isNativeRoleplayWorkflowReady()) {
+        if (!committed) return null;
+        globalThis.toastr?.error?.('Open a saved Roleplay chat before generating.', 'Nothing was generated');
+        return { native: true, name, key: null, jobId: null, state: 'refused', result: null, refused: true };
+    }
+    // The host captured the page prompts before it committed to this path; a call
+    // without them captures now and keeps the browser path when one cannot travel.
+    const prompts = Array.isArray(page) ? page : await capturePagePrompts(name);
+    if (!prompts) {
+        if (!committed) return null;
+        globalThis.toastr?.error?.('A page prompt addition cannot run on the server.', 'Nothing was generated');
+        return { native: true, name, key: null, jobId: null, state: 'refused', result: null, refused: true };
+    }
     busyName = name;
     deactivateSendButtons();
+    const onStop = () => {
+        const jobId = currentJobId;
+        currentJobId = null;
+        if (jobId) void cancelJob(jobId, { reason: 'user_cancelled' }).catch(() => {});
+    };
     try {
-        const accepted = await submitRoleplayWorkflow({ name, intent: workflowIntent(name),
+        const accepted = await submitRoleplayWorkflow({ name, intent: workflowIntent(name), page: prompts,
             maxTokens: Number(maxOutputTokens) > 0 ? Number(maxOutputTokens) : 0 });
-        return { native: true, name, key: accepted?.key ?? null, jobId: accepted?.jobId ?? null, created: accepted?.created !== false };
+        currentJobId = accepted.jobId ?? null;
+        if (signal && currentJobId) {
+            if (signal.aborted) onStop();
+            else signal.addEventListener('abort', onStop, { once: true });
+        }
+        const receipt = await accepted.finished;
+        return { native: true, name, key: accepted.key ?? null, jobId: accepted.jobId ?? null,
+            state: receipt?.state ?? null, result: receipt?.result ?? null, created: accepted.created !== false };
     } catch (error) {
         globalThis.toastr?.error?.(error?.message || 'The Roleplay workflow could not be started.', 'Nothing was generated');
-        return null;
+        return { native: true, name, key: null, jobId: null, state: 'refused', result: null, refused: true };
     } finally {
         busyName = null;
+        currentJobId = null;
+        signal?.removeEventListener?.('abort', onStop);
         activateSendButtons();
     }
 }
@@ -295,4 +479,24 @@ export async function resumeNativeRoleplayWorkflowObservation() {
         }
     }
     if (finished) await readback(finished.key, finished.name, { locator, account }).catch(() => {});
+}
+
+let initialised = false;
+
+/**
+ * Reopen without replay. The page that reopens a chat finds the accepted workflows
+ * already in the job ledger, so it reattaches to the ones still running and reads
+ * the finished receipt back exactly once. It never submits anything again, and a
+ * receipt outlives the job that produced it.
+ */
+export function initNativeRoleplayWorkflows() {
+    if (initialised) return;
+    initialised = true;
+    const resume = () => {
+        if (document.visibilityState === 'visible') void resumeNativeRoleplayWorkflowObservation();
+    };
+    resume();
+    document.addEventListener('visibilitychange', resume);
+    // The account binding arrives after the first paint, so discovery retries then.
+    globalThis.addEventListener?.('sb:roleplay-account-bound', resume);
 }

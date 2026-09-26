@@ -36,6 +36,9 @@ function deferred() {
 function createHost() {
     const events = new EventEmitter();
     const context = vm.createContext({
+        // This harness runs the real host generation flow without the Neconyan
+        // server lane, so the Stage 9 funnel reports that it has no named workflow.
+        nativeRoleplayWorkflowFor: async () => null,
         AbortController, AbortSignal, structuredClone, console,
         eventSource: events, event_types,
         resolveGenerationUiLockState, resolveGenerationUnblockState, resolveStopGenerationState,

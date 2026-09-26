@@ -17,7 +17,7 @@ import { captureRoleplayWorkflowPolicy, decideRoleplayWorkflowCandidate } from '
 import { captureRoleplayGroupSpeakers } from './roleplay-workflow-groups.js';
 import { addWorkflowAlternatives, collectWorkflowAlternatives } from './roleplay-workflow-alternatives.js';
 import { captureRoleplayWorkflowCapacity, MAX_WORKFLOW_CHAT_BYTES } from './roleplay-workflow-capacity.js';
-import { assertRoleplayNamedWorkflow, roleplayWorkflowContributions, roleplayWorkflowResultFacts } from './roleplay-workflow-named.js';
+import { assertRoleplayNamedWorkflow, ROLEPLAY_WORKFLOW_NAMES, roleplayWorkflowContributions, roleplayWorkflowResultFacts } from './roleplay-workflow-named.js';
 import { roleplayEffectTrigger } from './roleplay-prompt.js';
 import { registerHandler } from '../jobs/runner.js';
 
@@ -57,10 +57,10 @@ export function captureRoleplayWorkflowRequest(base, account, source, { avatar, 
     const speakers = group?.speakers.map(speaker => ({ ...speaker,
         worldInfo: captureRoleplayWorldInfo(base, account, source, { ...options, avatar: speaker.avatar }) }));
     const worldInfo = speakers?.[0]?.worldInfo ?? captureRoleplayWorldInfo(base, account, source, { ...options, avatar: selectedAvatar });
-    // A named workflow asks for one specific generation, so it never captures the
-    // automatic policy that would keep a whole turn running.
-    const automatic = named ? null : captureRoleplayWorkflowPolicy(base, account, source, worldInfo,
-        { backend: binding.backend === 'text' ? 'text' : 'chat' });
+    // Story, Guided and Deep Swipe ask for one specific generation, so only the plain
+    // controls capture the automatic policy that keeps a whole turn running.
+    const automatic = named && !ROLEPLAY_WORKFLOW_NAMES[named.name].automatic ? null
+        : captureRoleplayWorkflowPolicy(base, account, source, worldInfo, { backend: binding.backend === 'text' ? 'text' : 'chat' });
     const companionBytes = Math.max(worldInfo.companionCapacity?.requiredBytes ?? 0,
         ...(speakers?.map(speaker => speaker.worldInfo.companionCapacity?.requiredBytes ?? 0) ?? []));
     const capacity = captureRoleplayWorkflowCapacity(base, account, source, { companionBytes });
@@ -99,7 +99,9 @@ export function admitRoleplayWorkflowJob(base, account, { operationKey, source, 
     if (request.named !== undefined) {
         if (request.group) throw error('A named workflow answers one speaker, not a group turn.', 'ROLEPLAY_WORKFLOW_INVALID');
         assertRoleplayNamedWorkflow(request.named, { effect: request.effect });
-        if (request.automatic) throw error('A named workflow runs one bounded model turn.', 'ROLEPLAY_WORKFLOW_INVALID');
+        if (request.automatic && !ROLEPLAY_WORKFLOW_NAMES[request.named.name].automatic) {
+            throw error('This named workflow runs one bounded model turn.', 'ROLEPLAY_WORKFLOW_INVALID');
+        }
     }
     return admitNativeMediaJob(base, account, { operationKey, source, kind: 'roleplay-workflow', request,
         target: { kind: 'chat', id: source.instanceId } });
@@ -152,8 +154,8 @@ function acceptedChild(context, job, turn = 0, history = [], lineage = null, dec
     if (turn) validateRoleplayToolHistory(history, { allowMedia: false, maxMessages: 8192 });
     const request = childRequest(job, turn, history, lineage, decision, speakerIndex);
     const speaker = job.intent.request.group?.speakers[speakerIndex];
-    // A named workflow publishes its own saved prompt on its only model turn.
-    const named = turn === 0 ? (job.intent.request.named ?? null) : null;
+    // A named workflow publishes its saved prompts on every model turn it runs.
+    const named = job.intent.request.named ?? null;
     const contributions = roleplayWorkflowContributions(named, { speaker, speakerIndex, history });
     const published = Boolean(turn) || Boolean(speaker) || Boolean(named);
     const source = lineage?.source ?? job.intent.source;

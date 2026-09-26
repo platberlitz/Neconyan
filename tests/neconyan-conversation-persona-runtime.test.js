@@ -8,7 +8,7 @@ const ensureConversationAutomationOwnership = jest.fn(async ({ acknowledgement }
     store.automation = { mode: 'server', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', acknowledgement };
     return store.automation;
 });
-const triggerRoleplayDM = jest.fn();
+const submitConversationAsideEvent = jest.fn();
 const roleplayChat = [];
 const personaChangeOrder = [];
 const handleChatChanged = jest.fn(() => personaChangeOrder.push('handle'));
@@ -55,12 +55,8 @@ await jest.unstable_mockModule('../public/scripts/events.js', () => ({
 }));
 await jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ selected_group: null }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/auto-engine.js', () => ({
-    captureGroupAsideRequest: jest.fn(),
-    captureRoleplayDMRequest: options => ({ ...options, branchId: 'branch-a', roleplayContext: 'captured roleplay' }),
-    checkGroupChatMention: jest.fn(),
     handleChatChanged,
-    triggerGroupAsideDM: jest.fn(),
-    triggerRoleplayDM,
+    submitConversationAsideEvent,
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/chrome.js', () => ({
     disableConversationModeForCurrentCharacter: jest.fn(),
@@ -128,22 +124,19 @@ describe('conversation persona runtime', () => {
         expect(personaChangeOrder).toEqual(['close', 'handle', 'load']);
     });
 
-    test('targets the originating roleplay character instead of Conversation selection', () => {
+    test('reports a rendered Roleplay message as a native event instead of choosing the recipient', () => {
         init();
         hasUsage = true;
         conversationState.conversationWorkspaceOpen = true;
         conversationState.conversationSelectedAvatar = 'conversation.png';
         roleplayChat[0] = { id: 0, role: 'character', mes: 'roleplay reply' };
-        triggerRoleplayDM.mockClear();
-        const random = jest.spyOn(Math, 'random').mockReturnValue(0);
+        submitConversationAsideEvent.mockClear();
 
         handlers.get('character-message-rendered')(0);
 
-        expect(triggerRoleplayDM).toHaveBeenCalledWith(expect.objectContaining({
-            avatar: 'roleplay.png',
-            personaId: 'persona-b.png',
-        }));
-        random.mockRestore();
+        // The page states the fact only. Who answers, whether anybody answers and
+        // which branch it lands in are the server's decision.
+        expect(submitConversationAsideEvent).toHaveBeenCalledWith('rendered', 0);
     });
 
     test('captures a successful save during configure and ignores already acknowledged revisions', async () => {

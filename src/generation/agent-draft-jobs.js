@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { registerHandler } from '../jobs/runner.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
-import { readRoleplayFile, roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
+import { readRoleplayFile, roleplayError, roleplayHash, roleplaySettingsHash, withRoleplayAccount } from '../roleplay-store.js';
 import { readAgentRecordLocked } from '../in-chat-agent-storage.js';
 import { assertRoleplaySourceLocked } from './roleplay-source.js';
 import { captureRoleplayWorldInfo, assertRoleplayWorldInfoCurrent } from './world-info.js';
@@ -63,7 +63,7 @@ export async function runAgentDraftJob(context, { generate, beforePublication } 
         const settings = readRoleplayFile(path.join(directories.root, 'settings.json'), 8 * 1024 * 1024);
         let value;
         try { value = JSON.parse(settings.bytes.toString('utf8')); } catch { throw fail('The saved draft settings are unavailable.'); }
-        if (roleplayHash(value) !== request.worldInfo.settingsHash) throw fail('The saved draft settings changed.');
+        if (roleplaySettingsHash(value) !== request.worldInfo.settingsHash) throw fail('The saved draft settings changed.');
         readRoleplayAgentsLocked(lease, request.worldInfo.agents);
         return saved;
     };

@@ -295,5 +295,6 @@ exports[`public/script.js named export surface matches the parser-derived export
   "updateSwipeCounter",
   "updateViewMessageIds",
   "user_avatar",
+  "willRunNativeRoleplayWorkflow",
 ]
 `;

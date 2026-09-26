@@ -4812,7 +4812,9 @@ async function askCharacter(args, text) {
     try {
         eventSource.once(event_types.MESSAGE_RECEIVED, restoreCharacter);
         toastr.info(t`Asking ${name} something...`);
-        askResult = await Generate('normal');
+        // Neconyan: /ask reads the provider's own reply as its answer, so it keeps the
+        // browser generation instead of a durable Roleplay workflow.
+        askResult = await Generate('normal', { skipNativeRoleplay: true });
     } catch (error) {
         restoreCharacter();
         console.error('Error running /ask command', error);

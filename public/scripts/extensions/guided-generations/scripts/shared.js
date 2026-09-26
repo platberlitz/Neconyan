@@ -58,6 +58,39 @@ function isGroupChat() {
     return Boolean(context?.groupId && context?.groups);
 }
 
+/**
+ * Neconyan Stage 9: a guided generation is one named server workflow, so the
+ * browser no longer injects a prompt and triggers a browser generation. Returns
+ * false when the server cannot own this call (a group turn, or no protected
+ * Roleplay account), and the caller then keeps its own path.
+ */
+async function submitGuidedWorkflow(name, prompt) {
+    if (isGroupChat()) {
+        return false;
+    }
+    const workflows = await import('../../../neconyan-conversation/roleplay-workflows.js').catch(() => null);
+    if (!workflows?.isNativeRoleplayWorkflowReady?.()) {
+        return false;
+    }
+    // Macros resolve in the page exactly as the injected guide would have, and a
+    // page prompt addition the server cannot carry keeps the browser path.
+    const text = workflows.resolvePageText(prompt?.text);
+    const page = await workflows.capturePagePrompts(name);
+    if (!text || !page) {
+        return false;
+    }
+    debugLog('[Guided] Submitting named workflow', name);
+    try {
+        await workflows.submitRoleplayWorkflow({ name, intent: { prompt: { ...prompt, text } }, page });
+    } catch (error) {
+        // A refusal is final. Falling back here would inject the guide and pay for
+        // a second generation the server already accounted for.
+        console.error('[GuidedGenerations] The named workflow was refused:', error);
+        globalThis.toastr?.error?.(error?.message || 'The guided workflow could not be started.', 'Nothing was generated');
+    }
+    return true;
+}
+
 function getLastAiMessage() {
     const context = getContext();
     const chat = context?.chat;
@@ -132,6 +165,7 @@ export {
     handleSwitching,
     isGroupChat,
     resolveStoredProfile,
+    submitGuidedWorkflow,
     setLastImpersonateResult,
     setPreviousImpersonateInput,
 };

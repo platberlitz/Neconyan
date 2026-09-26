@@ -1,25 +1,21 @@
-import { chat, main_api, settings } from '../../script.js';
+import { main_api, settings } from '../../script.js';
 import { getCurrentUserHandle } from '../user.js';
 import { event_types, eventSource } from '../events.js';
 import { selected_group } from '../group-chats.js';
 import {
-    captureGroupAsideRequest,
-    captureRoleplayDMRequest,
-    checkGroupChatMention,
     handleChatChanged,
-    triggerGroupAsideDM,
-    triggerRoleplayDM,
+    submitConversationAsideEvent,
 } from './auto-engine.js';
 import { disableConversationModeForCurrentCharacter, ensureConversationStylesheet, getDefaultConversationAvatar, selectConversationThread } from './chrome.js';
-import { GROUP_ASIDE_RANDOM_CHANCE, NATIVE_DISCOVERY_INTERVAL_MS } from './constants.js';
-import { getConversationGroupById, getConversationPersonaId, getConversationStore, getRoleplayCurrentCharacter, getRoleplayGroupById, migrateConversationLocalStorage } from './context.js';
+import { NATIVE_DISCOVERY_INTERVAL_MS } from './constants.js';
+import { getConversationGroupById, getConversationPersonaId, getConversationStore, migrateConversationLocalStorage } from './context.js';
 import { loadCurrentPanelSettings } from './interface.js';
 import { resumeNativeConversationObservation } from './native-jobs.js';
 import { sanitizeConversationUnreadCounts, updateConversationNotificationIndicators } from './notifications.js';
-import { getCharacterForGroupChatMessage, getConversationRailItems, getCurrentGroupConversationMembers } from './pals-rail.js';
+import { getConversationRailItems } from './pals-rail.js';
 import { scheduleInterfaceRefresh } from './render-scheduler.js';
 import { closeConversationSettings } from './settings-panel.js';
-import { getSettings, hasAnyConversationModeUsage } from './settings-store.js';
+import { hasAnyConversationModeUsage } from './settings-store.js';
 import { ensureConversationAutomationOwnership, initConversationStoreSync } from './store-sync.js';
 import { conversationState, setExternalConversationGenerationActive } from './state.js';
 
@@ -94,6 +90,12 @@ export function init() {
     // Reattach to native roots accepted before this page loaded, so a reload
     // during generation still shows the remaining saved bubbles.
     void resumeNativeConversationObservation();
+    // The same for accepted Roleplay workflows: a reopened chat reads its finished
+    // receipt back instead of submitting the turn again. The module is loaded on
+    // demand so this shell keeps no import cycle with the submission funnel.
+    void import('./roleplay-workflows.js')
+        .then(module => module.initNativeRoleplayWorkflows())
+        .catch(() => { /* The named workflow module is optional until a Roleplay turn runs. */ });
     // ponytail: readback polling also retries failed claims; use push if traffic warrants it.
     window.setInterval(() => {
         if (globalThis.document?.visibilityState === 'visible' && hasConversationRuntimeUsage()) {
@@ -117,7 +119,9 @@ export function init() {
 
         scheduleInterfaceRefreshIfOpen();
         if (selected_group) {
-            checkGroupChatMention(messageId);
+            // A mention is a native event now: the server reads the saved message,
+            // finds the members it names and answers for one of them.
+            void submitConversationAsideEvent('mention', messageId);
         }
     });
     eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, (messageId) => {
@@ -126,47 +130,10 @@ export function init() {
         }
 
         scheduleInterfaceRefreshIfOpen();
-
         // Occasional private asides keep Conversation Mode feeling connected
-        // without forcing a public group-chat reply.
-        const roll = Math.random();
-        if (roll < GROUP_ASIDE_RANDOM_CHANCE) {
-            if (selected_group) {
-                const sourceGroupId = String(selected_group || '');
-                const roleplayGroup = getRoleplayGroupById(sourceGroupId);
-                const members = getCurrentGroupConversationMembers({ group: roleplayGroup, requireRoleplayReactions: true });
-                const speaker = getCharacterForGroupChatMessage(chat[messageId]);
-                const speakerMember = speaker?.avatar ? members.find(item => item.character?.avatar === speaker.avatar) : null;
-                const chosenMember = speakerMember && Math.random() < 0.65
-                    ? speakerMember
-                    : members[Math.floor(Math.random() * members.length)];
-                if (chosenMember?.character) {
-                    const reason = speakerMember?.character?.avatar === chosenMember.character.avatar ? 'reaction' : 'random';
-                    const personaId = getConversationPersonaId();
-                    const request = captureGroupAsideRequest(chosenMember.character, {
-                        personaId,
-                        reason,
-                        sourceGroup: roleplayGroup,
-                        sourceGroupId,
-                        sourceMessageId: messageId,
-                    });
-                    if (request) {
-                        void triggerGroupAsideDM(chosenMember.character, request);
-                    }
-                }
-            } else {
-                const roleplayCharacter = getCharacterForGroupChatMessage(chat[messageId]) || getRoleplayCurrentCharacter();
-                const avatar = roleplayCharacter?.avatar || '';
-                const personaId = getConversationPersonaId();
-                if (!avatar || !getSettings(avatar, { groupId: '', personaId }).roleplay_reactions) {
-                    return;
-                }
-                const request = captureRoleplayDMRequest({ avatar, personaId, sourceMessageId: messageId });
-                if (request) {
-                    void triggerRoleplayDM(request);
-                }
-            }
-        }
+        // without forcing a public group-chat reply. The sampling, the recipient
+        // and the reason are the server's decision, not this page's.
+        void submitConversationAsideEvent('rendered', messageId);
     });
     eventSource.on(event_types.GENERATION_STARTED, (_type, _params, isDryRun) => {
         if (isDryRun) {

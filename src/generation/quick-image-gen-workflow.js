@@ -4,7 +4,7 @@ import { buildImagePromptInstruction, buildSceneDescriptionInstruction, cleanIma
     QIG_ARTISTS } from '../../public/scripts/extensions/quick-image-gen/lib/prompt-instructions.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { registerHandler } from '../jobs/runner.js';
-import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
+import { roleplayError, roleplayHash, roleplaySettingsHash, withRoleplayAccount } from '../roleplay-store.js';
 import { assertRoleplaySourceLocked } from './roleplay-source.js';
 import { admitNativeMediaJob, ensureNativeMediaDirectory, finishNativeMediaJob, mediaDirectoryEvidence,
     publishNativeMediaFile, withNativeMediaReceipt } from './media-jobs.js';
@@ -62,7 +62,7 @@ export async function runQuickImageJob(context, { generateText, fetchImpl = fetc
     const checkSource = lease => {
         context.signal.throwIfAborted();
         assertRoleplaySourceLocked(lease, context.job.intent.source);
-        if (roleplayHash(readSavedImageSettings(context.directories)) !== request.settingsHash) throw fail('The saved image settings changed.', 'QIG_SETTINGS_CHANGED');
+        if (roleplaySettingsHash(readSavedImageSettings(context.directories)) !== request.settingsHash) throw fail('The saved image settings changed.', 'QIG_SETTINGS_CHANGED');
         freezeQuickImageReferenceSources({ ...context, referenceSources: request.snapshot.quickImageGenReferenceSources });
         for (const parent of parents) if (roleplayHash(mediaDirectoryEvidence(path.join(context.directories.root, parent.relative))) !== roleplayHash(parent.after)) {
             throw fail('The accepted image destination changed.', 'QIG_SOURCE_CHANGED');

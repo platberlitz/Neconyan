@@ -2,7 +2,7 @@ import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { readJson } from '../mewmory/store.js';
 import { getCounter } from '../mewmory/tokens.js';
-import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
+import { roleplayError, roleplayHash, roleplaySettingsHash, withRoleplayAccount } from '../roleplay-store.js';
 import { assertRoleplaySourceLocked } from './roleplay-source.js';
 
 const invalid = message => { throw roleplayError('ROLEPLAY_WORKFLOW_INVALID', message, 409); };
@@ -60,7 +60,7 @@ export function captureRoleplayWorkflowPolicy(base, account, source, worldInfo, 
     return withRoleplayAccount(base, account, lease => {
         assertRoleplaySourceLocked(lease, source);
         const settings = readJson(path.join(base.directories.root, 'settings.json'), {});
-        if (roleplayHash(settings) !== worldInfo.settingsHash) invalid('The saved automatic reply settings changed before admission.');
+        if (roleplaySettingsHash(settings) !== worldInfo.settingsHash) invalid('The saved automatic reply settings changed before admission.');
         const power = settings.power_user ?? {};
         const swipe = power.auto_swipe === true;
         const continuation = power.auto_continue?.enabled === true

@@ -2412,6 +2412,19 @@ async function autoUpdateExtensions(forceAll) {
 }
 
 /**
+ * The generate interceptors that would run for the next generation, in run order.
+ * @returns {{ name: string, key: string }[]} Extension names and interceptor keys
+ */
+export function activeGenerationInterceptors() {
+    return Object.entries(manifests)
+        .filter(([, x]) => x.generate_interceptor)
+        .sort((a, b) => sortManifestsByOrder(a[1], b[1]))
+        .filter(([name, manifest]) => !isExtensionDisabled(name) && activeExtensions.has(name)
+            && typeof globalThis[manifest.generate_interceptor] === 'function')
+        .map(([name, manifest]) => ({ name, key: manifest.generate_interceptor }));
+}
+
+/**
  * Runs the generate interceptors for all extensions.
  * @param {any[]} chat Chat array
  * @param {number} contextSize Context size

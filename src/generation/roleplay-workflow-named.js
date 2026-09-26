@@ -6,9 +6,14 @@
  * prompt window, the anchor and the prompt contributions, so a named workflow
  * is one bounded model turn whose durable write is the only result.
  *
- * Named workflows never capture an automatic policy: Story, Guided and Deep
- * Swipe each ask for one specific generation, and the absence of a policy is
- * what ends the workflow after its first turn.
+ * The four plain controls keep the user's saved automatic swipes and
+ * continuations, exactly as the browser applied them. Story, Guided and Deep
+ * Swipe each ask for one specific generation, so they never capture that policy,
+ * and its absence is what ends their workflow after the first turn.
+ *
+ * Prompt text that only the page can resolve (Dialogue Colours, `/inject` and
+ * other extension prompts the server does not rebuild) travels as `page`
+ * prompts: already resolved, bounded, sorted by key and published on every turn.
  */
 import { roleplayError, roleplayHash } from '../roleplay-store.js';
 
@@ -16,25 +21,29 @@ const ROLES = ['system', 'user', 'assistant'];
 const MAX_INSTRUCTION_BYTES = 20 * 1024;
 const MAX_PROMPT_BYTES = 64 * 1024;
 const MAX_DEPTH = 10000;
+const MAX_PAGE_PROMPTS = 32;
+const MAX_PAGE_BYTES = 128 * 1024;
+const PAGE_KEY = /^[a-zA-Z0-9_-]{1,120}$/;
 
 const invalid = (message, status = 409) => roleplayError('ROLEPLAY_WORKFLOW_INVALID', message, status);
 
 /**
  * The complete named vocabulary. `anchor` names how the server resolves the one
- * message the effect writes, and `prompt` names the saved contribution the
- * server adds to the assembled prompt.
+ * message the effect writes, `prompt` names the saved contribution the server
+ * adds to the assembled prompt, and `automatic` says whether the user's saved
+ * automatic swipes and continuations apply.
  */
 export const ROLEPLAY_WORKFLOW_NAMES = Object.freeze({
-    'roleplay.reply': { effect: 'append', anchor: 'end', prompt: 'none', instruction: 'none' },
-    'roleplay.continue': { effect: 'continue', anchor: 'last', prompt: 'none', instruction: 'optional' },
-    'roleplay.swipe': { effect: 'swipe', anchor: 'last', prompt: 'none', instruction: 'none' },
-    'roleplay.correct': { effect: 'replace', anchor: 'assistant', prompt: 'none', instruction: 'none' },
-    'story.passage': { effect: 'continue', anchor: 'last', prompt: 'story', instruction: 'none' },
-    'guided.response': { effect: 'append', anchor: 'end', prompt: 'guided', instruction: 'none' },
-    'guided.swipe': { effect: 'swipe', anchor: 'last', prompt: 'guided', instruction: 'none' },
-    'guided.correction': { effect: 'replace', anchor: 'assistant', prompt: 'guided', instruction: 'none' },
-    'deep-swipe.reply': { effect: 'alternative', anchor: 'chosen', prompt: 'none', instruction: 'required' },
-    'deep-swipe.user': { effect: 'alternative', anchor: 'chosen', prompt: 'none', instruction: 'required' },
+    'roleplay.reply': { effect: 'append', anchor: 'end', prompt: 'none', instruction: 'none', automatic: true },
+    'roleplay.continue': { effect: 'continue', anchor: 'block', prompt: 'none', instruction: 'optional', automatic: true },
+    'roleplay.swipe': { effect: 'swipe', anchor: 'assistant', prompt: 'none', instruction: 'none', automatic: true },
+    'roleplay.correct': { effect: 'replace', anchor: 'assistant', prompt: 'none', instruction: 'none', automatic: true },
+    'story.passage': { effect: 'continue', anchor: 'block', prompt: 'story', instruction: 'none', automatic: false },
+    'guided.response': { effect: 'append', anchor: 'end', prompt: 'guided', instruction: 'none', automatic: false },
+    'guided.swipe': { effect: 'swipe', anchor: 'assistant', prompt: 'guided', instruction: 'none', automatic: false },
+    'guided.correction': { effect: 'replace', anchor: 'assistant', prompt: 'guided', instruction: 'none', automatic: false },
+    'deep-swipe.reply': { effect: 'alternative', anchor: 'chosen', prompt: 'none', instruction: 'required', automatic: false },
+    'deep-swipe.user': { effect: 'alternative', anchor: 'chosen', prompt: 'none', instruction: 'required', automatic: false },
 });
 
 export function roleplayWorkflowName(name) {
@@ -88,6 +97,32 @@ function normalizeStory(prompt) {
 }
 
 /**
+ * Prompt text the page resolved from extensions the server does not rebuild. Each
+ * entry is final text at a saved position, depth and role; it is never scanned by
+ * World Info, because the server's scan was captured from the saved chat alone.
+ */
+function normalizePage(page) {
+    if (!Array.isArray(page) || page.length > MAX_PAGE_PROMPTS) throw invalid('The page prompts are invalid.', 400);
+    let bytes = 0;
+    let previous = '';
+    return page.map(prompt => {
+        if (!prompt || typeof prompt !== 'object' || Array.isArray(prompt)
+            || Object.keys(prompt).some(key => !['key', 'content', 'position', 'depth', 'role'].includes(key))
+            || typeof prompt.key !== 'string' || !PAGE_KEY.test(prompt.key) || prompt.key <= previous
+            || ![0, 1, 2].includes(prompt.position) || !Number.isSafeInteger(prompt.depth)
+            || prompt.depth < 0 || prompt.depth > MAX_DEPTH || !ROLES.includes(prompt.role)) {
+            throw invalid('The page prompts are invalid.', 400);
+        }
+        const content = text(prompt.content, 'page prompt', MAX_PROMPT_BYTES);
+        if (content.includes('{{')) throw invalid('A page prompt still needs macro handling.', 400);
+        bytes += Buffer.byteLength(content, 'utf8');
+        if (bytes > MAX_PAGE_BYTES) throw invalid('The page prompts are too large.', 400);
+        previous = prompt.key;
+        return { key: prompt.key, content, position: prompt.position, depth: prompt.depth, role: prompt.role };
+    });
+}
+
+/**
  * Turn a browser's named intent into the server's own workflow record. The
  * record is hashed and travels inside the admitted request, so a changed
  * instruction, prompt or name is a different intent under the same key.
@@ -95,7 +130,7 @@ function normalizeStory(prompt) {
 export function captureRoleplayNamedWorkflow(name, intent = {}) {
     const named = roleplayWorkflowName(name);
     if (!intent || typeof intent !== 'object' || Array.isArray(intent)
-        || Object.keys(intent).some(key => !['instruction', 'prompt'].includes(key))) {
+        || Object.keys(intent).some(key => !['instruction', 'prompt', 'page'].includes(key))) {
         throw invalid('The named workflow intent is invalid.', 400);
     }
     const instruction = intent.instruction === undefined || intent.instruction === null || intent.instruction === ''
@@ -105,9 +140,11 @@ export function captureRoleplayNamedWorkflow(name, intent = {}) {
     if ((named.prompt === 'guided' || named.prompt === 'story') !== (intent.prompt !== undefined)) {
         throw invalid('The named workflow takes a prompt it was not given, or one it cannot use.', 400);
     }
+    const page = intent.page === undefined ? [] : normalizePage(intent.page);
     const record = { version: 1, name, effect: named.effect, anchor: named.anchor, instruction,
         prompt: named.prompt === 'guided' ? normalizeGuided(intent.prompt)
-            : named.prompt === 'story' ? normalizeStory(intent.prompt) : null };
+            : named.prompt === 'story' ? normalizeStory(intent.prompt) : null,
+        ...(page.length ? { page } : {}) };
     return { ...record, hash: roleplayHash(record) };
 }
 
@@ -119,8 +156,14 @@ export function assertRoleplayNamedWorkflow(workflow, { effect } = {}) {
         throw invalid('The saved named workflow changed.');
     }
     const record = { version: workflow.version, name: workflow.name, effect: workflow.effect,
-        anchor: workflow.anchor, instruction: workflow.instruction, prompt: workflow.prompt };
+        anchor: workflow.anchor, instruction: workflow.instruction, prompt: workflow.prompt,
+        ...(workflow.page !== undefined ? { page: workflow.page } : {}) };
     if (workflow.hash !== roleplayHash(record)) throw invalid('The saved named workflow changed.');
+    if (workflow.page !== undefined) {
+        let page;
+        try { page = normalizePage(workflow.page); } catch { throw invalid('The saved named workflow changed.'); }
+        if (!page.length) throw invalid('The saved named workflow changed.');
+    }
     if (named.prompt === 'guided') normalizeGuided(workflow.prompt);
     else if (named.prompt === 'story') normalizeStory(workflow.prompt);
     else if (workflow.prompt !== null) throw invalid('The saved named workflow changed.');
@@ -134,7 +177,9 @@ export function assertRoleplayNamedWorkflow(workflow, { effect } = {}) {
 /**
  * The prompt contributions one named workflow turn publishes. Group speaker
  * context keeps its own protected slot; a named workflow never carries a group
- * speaker, so the two cannot collide.
+ * speaker, so the two cannot collide. Saved prompts shape every turn of the
+ * workflow, and a user instruction comes before the saved history of later turns,
+ * because the partial text and tool calls in that history answered it.
  */
 export function roleplayWorkflowContributions(workflow, { speaker = null, speakerIndex = 0, history = [] } = {}) {
     const extensions = [];
@@ -159,11 +204,17 @@ export function roleplayWorkflowContributions(workflow, { speaker = null, speake
         } else if (named.instruction !== 'none' && workflow.instruction) {
             instructions.push({ role: 'user', content: workflow.instruction });
         }
+        // Page prompts keep their own prefixed slots, so they can never replace a
+        // protected server slot or a named workflow's prompt.
+        for (const prompt of workflow.page ?? []) {
+            extensions.push({ key: `page_${prompt.key}`, content: prompt.content, position: prompt.position,
+                depth: prompt.depth, role: prompt.role, scan: false });
+        }
     }
     if (new Set(extensions.map(prompt => prompt.key)).size !== extensions.length) {
         throw invalid('The named workflow needs a unique prompt slot.');
     }
-    return { extensions, history: [...history, ...instructions], tools: [] };
+    return { extensions, history: [...instructions, ...history], tools: [] };
 }
 
 /**

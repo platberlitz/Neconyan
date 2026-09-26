@@ -8,6 +8,7 @@ import {
     getContext,
     guidedCorrectionInjectId,
     getLastAiMessage,
+    submitGuidedWorkflow,
 } from './shared.js';
 
 async function executeSTScriptCommand(command) {
@@ -187,6 +188,7 @@ async function guidedCorrection() {
         const depth = settings.depthPromptGuidedCorrection ?? 0;
         const promptTemplate = settings.promptGuidedCorrection ?? '';
         const filledPrompt = applyPromptTemplate(promptTemplate, originalInput);
+        if (await submitGuidedWorkflow('guided.correction', { text: filledPrompt, depth, role: injectionRole, scan: true })) return;
         const stscriptCommand = `/inject id=${guidedCorrectionInjectId} position=chat ephemeral=true scan=true depth=${depth} role=${injectionRole} ${filledPrompt} |`;
 
         await executeSTScriptCommand(stscriptCommand);

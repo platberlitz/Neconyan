@@ -8,6 +8,7 @@ describe('Guided Correction', () => {
     let extensionSettings;
     let generate;
     let textarea;
+    let workflows;
 
     beforeEach(async () => {
         jest.resetModules();
@@ -81,6 +82,21 @@ describe('Guided Correction', () => {
         await jest.unstable_mockModule('../public/scripts/extensions.js', () => ({
             extension_settings: extensionSettings,
             getContext: jest.fn(() => context),
+        }));
+        // The shell's named-workflow module is replaced so the browser path stays
+        // deterministic and no real import outlives the test environment.
+        workflows = {
+            ready: false,
+            capturePagePrompts: jest.fn(async () => []),
+            isNativeRoleplayWorkflowReady: jest.fn(() => workflows.ready),
+            resolvePageText: jest.fn(text => String(text ?? '').trim() || null),
+            submitRoleplayWorkflow: jest.fn(async () => ({ key: 'guided-key', jobId: 'job-1' })),
+        };
+        await jest.unstable_mockModule('../public/scripts/neconyan-conversation/roleplay-workflows.js', () => ({
+            capturePagePrompts: (...args) => workflows.capturePagePrompts(...args),
+            isNativeRoleplayWorkflowReady: (...args) => workflows.isNativeRoleplayWorkflowReady(...args),
+            resolvePageText: (...args) => workflows.resolvePageText(...args),
+            submitRoleplayWorkflow: (...args) => workflows.submitRoleplayWorkflow(...args),
         }));
         await jest.unstable_mockModule('../public/scripts/extensions/guided-generations/scripts/presetUtils.js', () => ({
             getCurrentProfile: jest.fn(async () => ''),
@@ -170,5 +186,59 @@ describe('Guided Correction', () => {
         expect(target.mes).toBe('Corrected group reply');
         expect(textarea.value).toBe('make the reply more suspicious');
         expect(textarea.dispatchEvent).toHaveBeenCalledTimes(2);
+    });
+
+    test('a server-owned chat submits the named correction without touching the saved messages', async () => {
+        const target = { name: 'Bot', mes: 'Original reply', swipes: ['Original reply'] };
+        context.chat.push({ is_user: true, mes: 'Prompt' }, target);
+        workflows.ready = true;
+
+        const { guidedCorrection } = await import('../public/scripts/extensions/guided-generations/scripts/guidedCorrection.js');
+        await guidedCorrection();
+
+        expect(workflows.submitRoleplayWorkflow).toHaveBeenCalledTimes(1);
+        expect(workflows.submitRoleplayWorkflow).toHaveBeenCalledWith({
+            name: 'guided.correction',
+            intent: { prompt: { text: 'CORRECT: make the reply more suspicious', depth: 2, role: 'system', scan: true } },
+            page: [],
+        });
+        expect(generate).not.toHaveBeenCalled();
+        // Only the routine cleanup of an inject that was never written runs.
+        expect(context.executeSlashCommandsWithOptions.mock.calls.map(call => call[0])).toEqual(['/flushinject gg-guided-correction']);
+        expect(context.deleteMessage).not.toHaveBeenCalled();
+        expect(context.chat).toEqual([expect.objectContaining({ mes: 'Prompt' }), target]);
+        expect(target.mes).toBe('Original reply');
+    });
+
+    test('a refused named correction is final and never falls back to a browser generation', async () => {
+        context.chat.push({ is_user: true, mes: 'Prompt' }, { name: 'Bot', mes: 'Original reply' });
+        workflows.ready = true;
+        workflows.submitRoleplayWorkflow.mockRejectedValueOnce(new Error('The chat changed.'));
+        const quiet = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+        const { guidedCorrection } = await import('../public/scripts/extensions/guided-generations/scripts/guidedCorrection.js');
+        await guidedCorrection();
+        quiet.mockRestore();
+
+        expect(workflows.submitRoleplayWorkflow).toHaveBeenCalledTimes(1);
+        expect(generate).not.toHaveBeenCalled();
+        expect(context.executeSlashCommandsWithOptions.mock.calls.map(call => call[0])).toEqual(['/flushinject gg-guided-correction']);
+        expect(globalThis.toastr.error).toHaveBeenCalledWith('The chat changed.', 'Nothing was generated');
+    });
+
+    test('a page prompt addition the server cannot carry keeps the browser correction', async () => {
+        context.chat.push({ is_user: true, mes: 'Prompt' }, { name: 'Bot', mes: 'Original reply' });
+        workflows.ready = true;
+        workflows.capturePagePrompts.mockResolvedValueOnce(null);
+        generate.mockImplementation(async () => {
+            context.chat.push({ name: 'Bot', mes: 'Browser correction' });
+        });
+
+        const { guidedCorrection } = await import('../public/scripts/extensions/guided-generations/scripts/guidedCorrection.js');
+        await guidedCorrection();
+
+        expect(workflows.submitRoleplayWorkflow).not.toHaveBeenCalled();
+        expect(generate).toHaveBeenCalledTimes(1);
+        expect(context.chat[1].mes).toBe('Browser correction');
     });
 });

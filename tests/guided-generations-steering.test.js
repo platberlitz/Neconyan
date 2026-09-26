@@ -141,6 +141,14 @@ describe('Guided Generations steering commands', () => {
             extension_settings: extensionSettings,
             getContext: jest.fn(() => context),
         }));
+        // The shell's named-workflow module is replaced so these browser-path cases
+        // stay deterministic and no real import outlives the test environment.
+        await jest.unstable_mockModule('../public/scripts/neconyan-conversation/roleplay-workflows.js', () => ({
+            capturePagePrompts: jest.fn(async () => []),
+            isNativeRoleplayWorkflowReady: jest.fn(() => false),
+            resolvePageText: jest.fn(text => text),
+            submitRoleplayWorkflow: jest.fn(),
+        }));
         await jest.unstable_mockModule('../public/scripts/extensions/guided-generations/scripts/presetUtils.js', () => ({
             getCurrentProfile: jest.fn(async () => ''),
             getCurrentProfileId: jest.fn(async () => ''),
@@ -286,6 +294,15 @@ describe('Guided Generations steering commands', () => {
         errorSpy.mockRestore();
     });
 
+    /** Wait for a call the extension makes, instead of counting microtask ticks. */
+    async function untilStarted(predicate, label) {
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+            if (predicate()) return;
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+        throw new Error(`The extension never started ${label}.`);
+    }
+
     test.each([false, true])('overlapping swipe cannot replace or flush a pending guide (plain=%s)', async plain => {
         if (plain) textarea.value = '';
         let finish;
@@ -293,8 +310,7 @@ describe('Guided Generations steering commands', () => {
         context.swipe.right.mockImplementationOnce(() => pendingSwipe);
         const { guidedSwipe } = await import('../public/scripts/extensions/guided-generations/scripts/guidedSwipe.js');
         const first = guidedSwipe();
-        await Promise.resolve();
-        await Promise.resolve();
+        await untilStarted(() => context.swipe.right.mock.calls.length === 1, 'the first swipe');
         textarea.value = 'Second guide';
         await guidedSwipe();
         expect(context.swipe.right).toHaveBeenCalledTimes(1);
@@ -316,6 +332,7 @@ describe('Guided Generations steering commands', () => {
         });
         const { guidedSwipe } = await import('../public/scripts/extensions/guided-generations/scripts/guidedSwipe.js');
         const first = guidedSwipe();
+        await untilStarted(() => context.executeSlashCommandsWithOptions.mock.calls.length === 1, 'the injection');
         await guidedSwipe();
         expect(context.executeSlashCommandsWithOptions).toHaveBeenCalledTimes(1);
         expect(context.swipe.right).not.toHaveBeenCalled();

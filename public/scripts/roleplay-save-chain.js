@@ -46,6 +46,9 @@ export function bindRoleplayAccount(owner, account) {
     }
     const valid = validAccount(account);
     binding = { stamp: Object.freeze({ owner, account: Object.freeze(valid ? { ...account } : {}) }), available: valid, chains: new Map() };
+    // Neconyan Stage 9: a bound account is what makes saved Roleplay work readable,
+    // so discovery of accepted workflows and receipts may start now.
+    if (valid) globalThis.dispatchEvent?.(new CustomEvent('sb:roleplay-account-bound', { detail: { owner } }));
     return valid;
 }
 

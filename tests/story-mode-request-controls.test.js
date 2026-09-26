@@ -53,6 +53,9 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
     };
     const context = vm.createContext({
         combineRoleplayTextPrompt, formatPromptReasoning,
+        // This harness runs the host generation flow without the Neconyan server
+        // lane, so the Stage 9 funnel reports that it has no named workflow.
+        nativeRoleplayWorkflowFor: async () => null,
         AbortController, AbortSignal, Event, MessageEvent, TextDecoderStream, TransformStream, structuredClone,
         console: { log: jest.fn(), info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn(), trace: jest.fn() },
         main_api: api,

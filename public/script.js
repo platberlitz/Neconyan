@@ -328,7 +328,7 @@ import { initWelcomeScreen, openPermanentAssistantChat, openPermanentAssistantCa
 import { initDataMaid } from './scripts/data-maid.js';
 import { initMewmory, prepareMewmoryGeneration, validateMewmoryGeneration } from './scripts/mewmory/index.js';
 import { ensureMewmoryMessageIds } from './scripts/mewmory/message-identity.js';
-import { buildAssistantKnowledge, getAssistantKnowledgeBudget } from './scripts/neconyan-assistant-knowledge.js';
+import { buildAssistantKnowledge, getAssistantKnowledgeBudget, isNeconyanAssistant } from './scripts/neconyan-assistant-knowledge.js';
 import { clearItemizedPrompts, deleteItemizedPromptForMessage, deleteItemizedPrompts, findItemizedPromptSet, restoreItemizedPrompts, initItemizedPrompts, itemizedParams, itemizedPrompts, loadItemizedPrompts, promptItemize, replaceItemizedPromptText, saveItemizedPrompts, swapItemizedPrompts } from './scripts/itemized-prompts.js';
 import { getSystemMessageByType, initSystemMessages, SAFETY_CHAT, sendSystemMessage, system_message_types, system_messages } from './scripts/system-messages.js';
 import { event_types, eventSource } from './scripts/events.js';
@@ -7964,14 +7964,60 @@ export function setPendingUserMessageExtra(extra) {
 
 // Neconyan: the named Roleplay workflow module is loaded on demand, so the host
 // keeps no import cycle with the shell that submits work on its behalf.
-let nativeRoleplayWorkflows = null;
+let nativeRoleplayWorkflowsLoaded = null;
 
 async function loadNativeRoleplayWorkflows() {
-    if (!nativeRoleplayWorkflows) {
-        nativeRoleplayWorkflows = import('./scripts/neconyan-conversation/roleplay-workflows.js')
-            .catch(() => { nativeRoleplayWorkflows = null; return null; });
+    if (!nativeRoleplayWorkflowsLoaded) {
+        nativeRoleplayWorkflowsLoaded = import('./scripts/neconyan-conversation/roleplay-workflows.js')
+            .catch(() => { nativeRoleplayWorkflowsLoaded = null; return null; });
     }
-    return nativeRoleplayWorkflows;
+    return nativeRoleplayWorkflowsLoaded;
+}
+
+/**
+ * Neconyan Stage 9: can this generation call site be served by one accepted server
+ * workflow? The answer is taken once, before the host touches the chat, so the
+ * destructive browser steps and the server workflow can never disagree. A call site
+ * that is refused here keeps the browser's own path in full, options and all.
+ *
+ * @param {string} type Generation type.
+ * @param {object} options The generation options this call site passed.
+ * @returns {boolean} True when the named workflow may own this generation.
+ */
+export function willRunNativeRoleplayWorkflow(type, options = {}) {
+    if (!['normal', 'continue', 'swipe', 'regenerate'].includes(type)) return false;
+    if (options.skipNativeRoleplay || options.automatic_trigger) return false;
+    if (options.jsonSchema || options.force_chid || options.force_name2 || options.quiet_prompt) return false;
+    if (options.depth > 0 || options.cacheScope || options.suppressUserMessage || options.preserveLastMessage) return false;
+    if (options.signal?.aborted) return false;
+    // A group turn is a family of speakers and stays on the browser path until the
+    // server owns the whole group workflow.
+    if (selected_group) return false;
+    // The built-in helper adds its help reference and its own tools in the page, and
+    // the server prompt has neither, so its chats stay on the browser path.
+    if (isNeconyanAssistant(characters[this_chid])) return false;
+    // Only a protected solo chat is server-owned, and the stamp proves the account
+    // that owns it is the one making the request.
+    try {
+        roleplayAccountStamp();
+    } catch {
+        return false;
+    }
+    // Composer text and a pending attachment stay with the host: Generate saves them
+    // as the user's own message before the workflow is submitted.
+    return true;
+}
+
+/** The one decision for this call site, taken before any browser generation state changes. */
+async function nativeRoleplayWorkflowFor(type, options) {
+    if (!willRunNativeRoleplayWorkflow(type, options)) return null;
+    const workflows = await loadNativeRoleplayWorkflows();
+    const name = workflows?.roleplayWorkflowNameFor?.(type) ?? null;
+    if (!name) return null;
+    // A page prompt addition the server cannot carry faithfully keeps this call on
+    // the browser path rather than generating without it. The workflow captures the
+    // additions again after the composer's commands have run.
+    return await workflows.capturePagePrompts(name) ? { name, workflows } : null;
 }
 
 function consumePendingGeneratedMessageExtra(message) {
@@ -7994,19 +8040,6 @@ function consumePendingUserMessageExtra(message) {
 
 export async function Generate(type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, jsonSchema = null, depth = 0, suppressUserMessage = false, cacheScope = null, preserveLastMessage = false, companionHistoryTarget = null, suppressAutoContinue = false, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, skipNativeRoleplay = false } = {}, dryRun = false) {
     if (!dryRun && signal?.aborted) return;
-
-    // Neconyan Stage 9: a migrated Roleplay control is one accepted server
-    // workflow, submitted before any browser generation state is touched. The
-    // module refuses the call sites it cannot serve faithfully, so those keep the
-    // browser path instead of silently losing their own options.
-    if (!dryRun) {
-        const workflows = await loadNativeRoleplayWorkflows();
-        const native = workflows
-            ? await workflows.runNativeRoleplayGeneration(type, { maxOutputTokens, jsonSchema, force_chid, force_name2,
-                quiet_prompt, depth, cacheScope, suppressUserMessage, preserveLastMessage, signal, skipNativeRoleplay })
-            : null;
-        if (native) return native;
-    }
 
     // Neconyan: keep cancellation and terminal cleanup attached to this invocation,
     // not to a successor group member, tool pass, or a newly selected chat.
@@ -8070,6 +8103,14 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
 
     try {
         console.log('Generate entered');
+        // Neconyan Stage 9: one decision for this call site, taken before the host
+        // touches the chat, so the destructive browser steps and the server workflow
+        // cannot disagree about who owns this generation.
+        const nativeRoleplay = dryRun ? null : await nativeRoleplayWorkflowFor(type, { automatic_trigger, force_name2,
+            quiet_prompt, force_chid, jsonSchema, depth, suppressUserMessage, preserveLastMessage, cacheScope, signal, skipNativeRoleplay });
+        // A replacement the server owns is durable before the browser forgets the old
+        // text, so the host must not delete the message it is about to replace.
+        const nativeReplacement = Boolean(nativeRoleplay) && (type === 'regenerate' || type === 'swipe');
         if (!dryRun && !isAuxiliaryGeneration) {
             setGenerationProgress(0);
             generation_started = new Date();
@@ -8117,7 +8158,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 if (chat.length && lastMessage.is_user) {
                 //do nothing? why does this check exist?
                     // Neconyan: retain continuation targets and Guided Correction regeneration context.
-                } else if (type !== 'quiet' && type !== 'swipe' && type !== 'continue' && !isImpersonate && !dryRun && !depth && chat.length && !(type === 'regenerate' && preserveLastMessage) && (!suppressUserMessage || type === 'regenerate')) {
+                } else if (type !== 'quiet' && type !== 'swipe' && type !== 'continue' && !isImpersonate && !dryRun && !depth && !nativeReplacement && chat.length && !(type === 'regenerate' && preserveLastMessage) && (!suppressUserMessage || type === 'regenerate')) {
                     if (type === 'regenerate') {
                         requestMobileChatBottomPin();
                     }
@@ -8170,6 +8211,22 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         ?? (type === 'continue' || type === 'swipe' || type === 'regenerate' ? lastMessage : null);
         await eventSource.emit(event_types.GENERATION_AFTER_COMMANDS, type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, cacheScope: resolvedCacheScope, preserveLastMessage, companionHistoryTarget: companionFeedbackTarget, isAuxiliaryGeneration, depth, ...requestControls }, dryRun);
         if (!isCurrent()) return;
+
+        // Neconyan Stage 9: every host step above has already happened, so the user's
+        // own message is saved and the composer is consumed exactly as a browser
+        // generation would consume them. From here a migrated Roleplay control is one
+        // accepted server workflow, and the host's own cleanup in the finally block
+        // ends the generation it announced.
+        if (nativeRoleplay) {
+            const native = await nativeRoleplay.workflows.runNativeRoleplayGeneration(type, { committed: nativeReplacement,
+                maxOutputTokens, jsonSchema, force_chid, force_name2, quiet_prompt, depth, cacheScope, suppressUserMessage,
+                preserveLastMessage, signal, skipNativeRoleplay });
+            if (native) return native;
+            // A committed replacement never falls back: the message the host would
+            // have deleted is still there, so the browser path would generate twice.
+            globalThis.toastr?.error?.('The saved Roleplay workflow could not be started. Nothing was generated.', 'Nothing was generated');
+            return { native: true, name: null, key: null, jobId: null, state: 'refused', result: null, refused: true };
+        }
 
         if (main_api == 'kobold' && kai_settings.streaming_kobold && !kai_flags.can_use_streaming) {
             toastr.error(t`Streaming is enabled, but the version of Kobold used does not support token streaming.`, undefined, { timeOut: 10000, preventDuplicates: true });

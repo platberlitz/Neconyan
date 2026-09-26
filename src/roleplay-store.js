@@ -34,6 +34,25 @@ export function roleplayHash(value) {
     return crypto.createHash('sha256').update(canonical(value)).digest('hex');
 }
 
+/**
+ * Bind saved settings without the page's own bookkeeping. The save counters, the
+ * page's mirrored browser storage and the Conversation store change on routine page
+ * saves (input history, Conversation sync), and no server generation reads them, so
+ * a reply accepted a moment earlier must not be refused because of them.
+ */
+export function roleplaySettingsHash(settings) {
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return roleplayHash(settings ?? null);
+    const bound = { ...settings };
+    for (const key of ['_version', '_settingsRevision', 'accountStorage']) delete bound[key];
+    const extensions = bound.extension_settings;
+    if (extensions && typeof extensions === 'object' && !Array.isArray(extensions)
+        && Object.hasOwn(extensions, 'sillybunny_conversation')) {
+        bound.extension_settings = { ...extensions };
+        delete bound.extension_settings.sillybunny_conversation;
+    }
+    return roleplayHash(bound);
+}
+
 export function roleplayPathKey(stamp, kind, locator) {
     return roleplayHash([stamp.accountId, stamp.dataEpoch, kind, locator]);
 }
