@@ -82,7 +82,7 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     await expect(workspace.getByRole('tab', { name: 'Now', exact: true })).toBeVisible();
     await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
     for (const name of ['extractor', 'pawspective', 'embedding', 'selector', 'fallback']) {
-        await workspace.getByLabel('Configure role').selectOption(name);
+        await workspace.getByRole('group', { name: 'Model role to set up' }).locator('#mewmory-role-' + name).click();
         await workspace.getByLabel('Enable this role', { exact: true }).check();
         await workspace.getByLabel('Connection profile', { exact: true }).selectOption('mewmory-test-' + name);
         await expect(workspace.getByLabel('Tokenizer for this role')).toHaveValue('auto');
@@ -100,7 +100,7 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     await workspace.getByRole('tab', { name: 'Now', exact: true }).click();
     await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
     await expect(settingsStatus).toContainText('Not saved: Embeddings:');
-    await workspace.getByLabel('Configure role').selectOption('embedding');
+    await workspace.getByRole('group', { name: 'Model role to set up' }).locator('#mewmory-role-embedding').click();
     await expect(workspace.getByLabel('Enable this role', { exact: true })).toBeChecked();
     await workspace.getByLabel('Model', { exact: true }).fill('text-embedding-3-small');
     await workspace.getByRole('button', { name: 'Save configuration', exact: true }).click();
@@ -117,7 +117,7 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
         window.NeconyanShell.openTab('left', 'mewmory');
     }, { avatar, chatName });
     await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
-    await workspace.getByLabel('Configure role').selectOption('embedding');
+    await workspace.getByRole('group', { name: 'Model role to set up' }).locator('#mewmory-role-embedding').click();
     await expect(workspace.getByLabel('Model', { exact: true })).toHaveValue('text-embedding-3-small');
     await expect(workspace.getByLabel('Enable this role', { exact: true })).toBeChecked();
     await expect(settingsStatus).toHaveText('Configuration saved.');
@@ -176,7 +176,7 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
         await page.setViewportSize({ width, height: 852 });
         await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
         await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
-        await workspace.getByLabel('Configure role').selectOption('extractor');
+        await workspace.getByRole('group', { name: 'Model role to set up' }).locator('#mewmory-role-extractor').click();
         await expect(workspace.getByLabel('Connection profile', { exact: true })).toHaveValue('mewmory-test-extractor');
         await workspace.getByLabel('Tokenizer for this role').selectOption('cl100k_base');
         await expect(settingsStatus).toContainText('Unsaved changes');

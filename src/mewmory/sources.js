@@ -61,7 +61,7 @@ export function readContextSourcesSync(directories, locator, state, source = rea
     }
     const sources = [];
     for (const avatar of avatars) {
-        if (!safeFilename(avatar)) fail('Invalid character source.');
+        if (!safeFilename(avatar)) fail('Mewmory could not identify that character card.');
         const filename = path.join(directories.characters, avatar);
         if (!fs.existsSync(filename)) continue;
         let card;
@@ -69,7 +69,7 @@ export function readContextSourcesSync(directories, locator, state, source = rea
             const parsed = JSON.parse(readCharacterCardTextSync(filename));
             card = parsed.data || parsed;
         } catch {
-            fail('A character card could not be read. Reload it before updating Mewmory.', 409);
+            fail('A character card could not be read. Reload the character, then try again.', 409);
         }
         const canonicalAvatar = aliases[avatar] || avatar;
         const entityId = 'npc:' + hash(canonicalAvatar).slice(0, 20);

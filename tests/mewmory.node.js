@@ -266,7 +266,7 @@ test('connection profiles resolve server-side and retain local-only permissions'
         assert.equal(config.localOnly, false, 'remote model requests are allowed by default');
         assert.ok(ROLE_NAMES.every(name => config.roles[name].allowRemote));
         assert.ok(ROLE_NAMES.every(name => config.roles[name].contextTokens === 200000));
-        assert.ok(ROLE_NAMES.every(name => config.roles[name].maxOutputTokens === (name === 'embedding' ? 0 : 16000)));
+        assert.ok(ROLE_NAMES.every(name => config.roles[name].maxOutputTokens === (name === 'embedding' ? 0 : 32000)));
         assert.ok(ROLE_NAMES.every(name => config.roles[name].timeoutMs === 300000));
         Object.assign(config.roles.extractor, { enabled: true, profileId: 'local' });
         saveConfig(directories, config);
@@ -631,6 +631,44 @@ test('legacy 60-second timeouts upgrade while custom and subsequently saved valu
     assert.equal(publicConfig(directories).roles.extractor.timeoutMs, 300000);
 });
 
+test('the old 16,000-token output default upgrades once to 32,000 while chosen limits survive', t => {
+    const { directories } = disk(t);
+    const legacy = defaultConfig();
+    legacy.defaultsVersion = 1;
+    for (const name of ROLE_NAMES) if (name !== 'embedding') legacy.roles[name].maxOutputTokens = 16000;
+    legacy.roles.selector.maxOutputTokens = 4000;
+    legacy.roles.fallback.contextTokens = 24000;
+    writeJson(path.join(directories.root, 'mewmory', 'config.json'), legacy);
+    for (const read of [readConfig, publicConfig]) {
+        const config = read(directories);
+        assert.equal(config.roles.extractor.maxOutputTokens, 32000);
+        assert.equal(config.roles.pawspective.maxOutputTokens, 32000);
+        assert.equal(config.roles.selector.maxOutputTokens, 4000);
+        assert.equal(config.roles.fallback.maxOutputTokens, 16000, 'a context too small for 32,000 keeps its limit');
+        assert.equal(config.roles.embedding.maxOutputTokens, 0);
+    }
+    const saved = saveConfig(directories, publicConfig(directories));
+    saved.roles.extractor.maxOutputTokens = 16000;
+    saveConfig(directories, saved);
+    assert.equal(readConfig(directories).roles.extractor.maxOutputTokens, 16000, 'a deliberate 16,000 after the upgrade stays');
+});
+
+test('automatic importance without a cited chat message quietly becomes low', () => {
+    const state = base();
+    const input = { asOf: 2, sources: [{ ...state.timeline[2], type: 'chat' }] };
+    applyExtraction(state, { records: [
+        { id: 'event:uncited', kind: 'event', text: 'An uncited turning point.', subjectIds: ['gift'], refs: [state.timeline[2]], significance: 'high' },
+        { id: 'event:cited', kind: 'event', text: 'A cited turning point.', subjectIds: ['gift'], refs: [state.timeline[2]], significance: 'medium', evidenceRefs: [state.timeline[2]] },
+    ], interviews: [], activeNpcIds: [] }, input);
+    const uncited = state.records.find(record => record.id === 'event:uncited');
+    const cited = state.records.find(record => record.id === 'event:cited');
+    assert.equal(uncited.significance, 'low');
+    assert.deepEqual(uncited.evidenceRefs, []);
+    assert.equal(cited.significance, 'medium');
+    assert.throws(() => validateRecord(state, { id: 'event:author', kind: 'event', text: 'Author claim.', subjectIds: ['gift'],
+        refs: [state.timeline[2]], significance: 'high' }), /Medium or high importance needs at least one chat message/);
+});
+
 test('accepted revisions stay stable; editing and replacing even an identical swipe invalidate dependants', () => {
     const state = base();
     const memory = event(state);
@@ -904,7 +942,7 @@ for (const operation of ['rename', 'delete']) test('finishing work cannot recrea
             removeChatMemory(directories, locator);
         }
         return { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role: 'extractor', input: 1, output: 1 } };
-    }), /source file is unavailable/);
+    }), /cannot find the saved file for this chat/);
     assert.equal(fs.existsSync(statePath(directories, locator)), false);
     if (operation === 'rename') assert.doesNotThrow(() => renameChatMemory(directories, renamed, locator));
 });
@@ -919,7 +957,7 @@ test('claims stay reported; a temporary disguise never replaces stable appearanc
     assert.equal(state.records.find(record => record.id === 'event:claim').evidenceStatus, 'reported');
     assert.equal(state.records.find(record => record.id === 'entity:mara').appearance, fixture.expectations.appearance);
     assert.throws(() => applyExtraction(state, { records: [{ id: 'bad', kind: 'interview' }], interviews: [], activeNpcIds: [] },
-        { asOf: 2, sources: [] }), /invalid or duplicate/);
+        { asOf: 2, sources: [] }), /unknown type, or the same memory twice/);
 });
 
 test('character interviews receive acquired knowledge, not source-wide or future secrets; player owners are rejected', () => {
@@ -929,7 +967,7 @@ test('character interviews receive acquired knowledge, not source-wide or future
     assert.equal(serialized.includes('SECRET:'), false);
     assert.equal(serialized.includes('purchase date'), false);
     assert.equal(serialized.includes('knowledge:receipt'), false);
-    assert.throws(() => interviewInput(state, { ownerId: 'player', subjectIds: ['gift'], knowledgeIds: ['knowledge:gift'] }, 2), /owner/);
+    assert.throws(() => interviewInput(state, { ownerId: 'player', subjectIds: ['gift'], knowledgeIds: ['knowledge:gift'] }, 2), /not a known AI character/);
     assert.throws(() => interviewInput(state, { ownerId: 'npc:mara', subjectIds: ['gift'], knowledgeIds: ['knowledge:receipt'] }, 2), /actually learned/);
 });
 
@@ -939,7 +977,7 @@ test('synthetic gestures remain subjective, and old matches bring the present ov
     assert.throws(() => validateRecord(state, {
         id: 'event:synthetic', kind: 'event', text: 'Mara gripped an armchair in the scene.', refs: original.refs,
         dependencies: [{ id: original.id, version: original.version }], subjectIds: ['gift'],
-    }, { asOf: 2, origin: 'objective_extractor' }), /characterization/);
+    }, { asOf: 2, origin: 'objective_extractor' }), /own opinion from a Pawspective interview/);
     const document = searchDocuments(state).find(document => document.id === original.id);
     const before = hash(state);
     const result = assembleContext(state, [document], { counter, memoryTokens: 6000 });
@@ -963,7 +1001,7 @@ test('enabled but untriggered lore and rare source details are searchable; disab
     assert.throws(() => validateRecord(state, {
         id: 'event:disabled', kind: 'event', text: 'Not eligible.', subjectIds: ['magic'],
         refs: [state.contextSources.find(ref => ref.id === 'lore:disabled')],
-    }), /no longer eligible/);
+    }), /can no longer be used/);
     const changed = fixture.lore.map(item => ({ ...item, enabled: false }));
     const chatMemory = event(state);
     syncSources(state, fixture.messages, changed);
@@ -1118,7 +1156,7 @@ test('same-time interviews with different knowledge stay eligible and preservati
     assert.equal(Object.keys(state.checkpoints).length, 3);
     const request = { ownerId: 'npc:mara', subjectIds: ['gift'], knowledgeIds: ['knowledge:second'], refs: [state.timeline[2]] };
     const input = interviewInput(state, request, 2);
-    assert.throws(() => applyInterview(state, request, output('Invalid self-dependent replacement'), input, state.jobs.at(-1).id), /Preservation has not advanced/);
+    assert.throws(() => applyInterview(state, request, output('Invalid self-dependent replacement'), input, state.jobs.at(-1).id), /relies on changed/);
     assert.ok(readState(directories, locator).records.filter(record => record.kind === 'interview').every(record => recordEligible(readState(directories, locator), record)));
 });
 
@@ -1609,7 +1647,7 @@ test('recall uses its completed snapshot when automatic memory finishes, but rej
             putRecord(state, { ...state.records[0], excluded: true, authorOverride: true, origin: 'author' });
         });
         return { value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: { role } };
-    } }), /author correction changed during recall/);
+    } }), /changed while memories were being picked/);
 });
 
 test('local recall overlaps embeddings and selection, reuses completed IDs and rejects stale background work', async t => {
@@ -1674,7 +1712,7 @@ test('local recall overlaps embeddings and selection, reuses completed IDs and r
             mutateState(directories, locator, state => { putRecord(state, { ...state.records[0], excluded: true, authorOverride: true, origin: 'author' }); });
             return { value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: {} };
         },
-    }), /author correction changed during recall/);
+    }), /changed while memories were being picked/);
 });
 
 test('HTTP preparation uses only completed preservation and accepts automatic progress before final validation', async t => {

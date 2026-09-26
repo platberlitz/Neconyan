@@ -30,27 +30,27 @@ function recallFingerprint(state, config, sourceCount) {
 
 function onlyKeys(value, keys, label) {
     object(value, label);
-    if (Object.keys(value).some(key => !keys.includes(key))) fail('Unexpected fields in ' + label + '.');
+    if (Object.keys(value).some(key => !keys.includes(key))) fail('Unexpected fields in ' + label + ' from the Recall selector.');
 }
 
 export function validateSelection(output, candidates, scene) {
     onlyKeys(output, ['status', 'selections', 'rejections', 'needsEvidence'], 'selector output');
-    if (!['complete', 'needs_evidence', 'uncertain'].includes(output.status)) fail('Invalid selector status.');
+    if (!['complete', 'needs_evidence', 'uncertain'].includes(output.status)) fail('The Recall selector sent back a status Mewmory does not recognise.');
     const allowed = new Map(candidates.map(candidate => [candidate.recordId, candidate]));
     const cueIds = new Set(scene.map(cue => cue.id));
     const selected = new Set();
     const selections = list(output.selections, 'Selections', candidates.length).map(selection => {
         onlyKeys(selection, ['recordId', 'relevanceType', 'currentCueRefs', 'memoryEvidenceRefs', 'justification'], 'selection');
         const candidate = allowed.get(selection.recordId);
-        if (!candidate || selected.has(selection.recordId)) fail('The selector returned an invalid or duplicate ID.');
+        if (!candidate || selected.has(selection.recordId)) fail('The Recall selector picked a memory that was not on offer, or the same one twice (invalid or duplicate ID).');
         selected.add(selection.recordId);
-        if (!['direct', 'associative'].includes(selection.relevanceType)) fail('Invalid relevance type.');
+        if (!['direct', 'associative'].includes(selection.relevanceType)) fail('The Recall selector marked a memory with a relevance type Mewmory does not recognise.');
         const currentCueRefs = list(selection.currentCueRefs, 'Current cues', 12);
         const memoryEvidenceRefs = list(selection.memoryEvidenceRefs, 'Memory evidence', 24);
         const evidence = new Set([...candidate.sourceRefs, ...candidate.linkedRecordIds, candidate.recordId]);
         if (!currentCueRefs.length || currentCueRefs.some(cue => !cueIds.has(cue))
             || !memoryEvidenceRefs.length || memoryEvidenceRefs.some(ref => !evidence.has(ref))) {
-            fail('The selector returned an unsupported evidence reference.');
+            fail('The Recall selector backed a pick with messages it was not shown (unsupported evidence reference).');
         }
         return {
             recordId: candidate.recordId, relevanceType: selection.relevanceType,
@@ -60,12 +60,12 @@ export function validateSelection(output, candidates, scene) {
     const rejected = new Set();
     const rejections = list(output.rejections, 'Rejections', candidates.length).map(rejection => {
         onlyKeys(rejection, ['recordId', 'justification'], 'rejection');
-        if (!allowed.has(rejection.recordId) || selected.has(rejection.recordId) || rejected.has(rejection.recordId)) fail('Invalid rejected ID.');
+        if (!allowed.has(rejection.recordId) || selected.has(rejection.recordId) || rejected.has(rejection.recordId)) fail('The Recall selector turned down a memory that was not on offer, or listed it twice.');
         rejected.add(rejection.recordId);
         return { recordId: rejection.recordId, justification: text(rejection.justification, 'Rejection', 1600) };
     });
     const needsEvidence = list(output.needsEvidence, 'Evidence requests', 6);
-    if (needsEvidence.some(key => !allowed.has(key)) || (output.status === 'complete' && needsEvidence.length)) fail('Invalid evidence request.');
+    if (needsEvidence.some(key => !allowed.has(key)) || (output.status === 'complete' && needsEvidence.length)) fail('The Recall selector asked for more detail on a memory that was not on offer.');
     return { status: output.status, selections, rejections, needsEvidence };
 }
 
@@ -218,7 +218,7 @@ export async function recall(directories, locator, {
         signal?.throwIfAborted();
         const currentConfig = readConfig(directories);
         if ((background ? recallFingerprint(current, currentConfig, sourceCount) : generationFingerprint(current, currentConfig)) !== validationFingerprint) {
-            fail('The story, settings or an author correction changed during recall. Generate again to use its current version.', 409);
+            fail('The chat, Mewmory settings, or a memory you edited changed while memories were being picked. Send or regenerate again.', 409);
         }
         const indexState = background ? { ...current, timeline: current.timeline.slice(0, sourceCount) } : current;
         if (!local && assemblyFingerprint(indexState, config) === fingerprint && hash(current.index) === indexSnapshot) {

@@ -37,10 +37,13 @@
 .mewmory-status[data-error="true"] { color: var(--color-danger, var(--SmartThemeQuoteColor)); }
 .mewmory-tabs { display: flex; flex-wrap: wrap; gap: .3rem; border-bottom: 1px solid var(--SmartThemeBorderColor); padding-bottom: .5rem; }
 .mewmory-tabs button { flex: 1 1 auto; margin: 0; }
-.mewmory-tab { border: 1px solid var(--SmartThemeBorderColor); border-radius: var(--radius-md, 14px); padding: .5rem .8rem; background: var(--SmartThemeBlurTintColor); color: var(--SmartThemeBodyColor); cursor: pointer; }
-.mewmory-tab:hover { background: color-mix(in srgb, var(--SmartThemeQuoteColor) 15%, var(--SmartThemeBlurTintColor)); }
-.mewmory-tab:disabled { cursor: wait; opacity: .65; }
+.mewmory-role-picker { display: flex; flex-wrap: wrap; gap: .4rem; }
+.mewmory-role-button { flex: 1 1 auto; min-height: 2.5rem; margin: 0; font: inherit; }
+.mewmory-tab, .mewmory-role-button { border: 1px solid var(--SmartThemeBorderColor); border-radius: var(--radius-md, 14px); padding: .5rem .8rem; background: var(--SmartThemeBlurTintColor); color: var(--SmartThemeBodyColor); cursor: pointer; }
+.mewmory-tab:hover, .mewmory-role-button:hover { background: color-mix(in srgb, var(--SmartThemeQuoteColor) 15%, var(--SmartThemeBlurTintColor)); }
+.mewmory-tab:disabled, .mewmory-role-button:disabled { cursor: wait; opacity: .65; }
 .mewmory-tabs [aria-selected="true"] { background: var(--SmartThemeQuoteColor); color: var(--SmartThemeBlurTintColor); }
+.mewmory-role-button[aria-pressed="true"] { background: color-mix(in srgb, var(--SmartThemeQuoteColor) 22%, var(--SmartThemeBlurTintColor)); border-color: var(--SmartThemeQuoteColor); color: var(--SmartThemeBodyColor); font-weight: 600; }
 .mewmory-page { display: flex; flex-direction: column; gap: 1.2rem; min-width: 0; }
 .mewmory-section { display: flex; flex-direction: column; gap: .7rem; }
 .mewmory-section > h4 { font-size: 1.12em; font-weight: 700; }
@@ -77,5 +80,6 @@
 @media (max-width: 600px) {
     .mewmory-fields { grid-template-columns: minmax(0, 1fr); }
     .mewmory-tabs button { flex-basis: 28%; padding-inline: .5rem; }
+    .mewmory-role-button { flex-basis: 40%; min-height: 2.75rem; padding-inline: .5rem; }
     .mewmory-editor { padding: .7rem; }
 }

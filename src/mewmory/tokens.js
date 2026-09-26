@@ -14,7 +14,7 @@ export async function getCounter(choice = 'o200k_base', hint = {}) {
             choice = getTokenizerModel(String(hint.tokenizerName || ''));
         }
         if (!choice || ['none', 'api_current', 'api_kobold', 'api_textgenerationwebui', 'best_match'].includes(choice)) {
-            fail('Choose a local writer tokenizer in Mewmory settings. Automatic history exclusion cannot use a character estimate.', 409);
+            fail('Choose a local writer tokenizer (the tool that counts tokens, the units models measure text in) in Mewmory settings. Mewmory will not trim older chat using a rough character-count estimate.', 409);
         }
     }
     if (['o200k_base', 'cl100k_base', 'gpt2'].includes(choice)) {
@@ -26,20 +26,20 @@ export async function getCounter(choice = 'o200k_base', hint = {}) {
     if (tokenizers.sentencepieceTokenizers.includes(choice)) {
         const tokenizer = tokenizers.getSentencepiceTokenizer(choice);
         const encoder = await tokenizer?.get();
-        if (!encoder) fail('The selected tokenizer is unavailable. History has been kept.', 503);
-        if (tokenizer.fallback) fail('The ' + choice + ' tokenizer is unavailable; the loaded ' + tokenizer.loadedModel + ' substitute cannot be used for Mewmory. History has been kept.', 503);
+        if (!encoder) fail('The chosen token counter is not available on the server right now, so no chat history was trimmed. Choose another one in Mewmory settings.', 503);
+        if (tokenizer.fallback) fail('The ' + choice + ' token counter is not available; the server offered ' + tokenizer.loadedModel + ' instead, which Mewmory will not use because its counts differ. No chat history was trimmed.', 503);
         return { name: choice, count: value => encoder.encodeIds(String(value)).length };
     }
     if (tokenizers.webTokenizers.includes(choice)) {
         const tokenizer = tokenizers.getWebTokenizer(choice);
         const encoder = await tokenizer?.get();
-        if (!encoder) fail('The selected tokenizer is unavailable. History has been kept.', 503);
-        if (tokenizer.fallback) fail('The ' + choice + ' tokenizer is unavailable; the loaded ' + tokenizer.loadedModel + ' substitute cannot be used for Mewmory. History has been kept.', 503);
+        if (!encoder) fail('The chosen token counter is not available on the server right now, so no chat history was trimmed. Choose another one in Mewmory settings.', 503);
+        if (tokenizer.fallback) fail('The ' + choice + ' token counter is not available; the server offered ' + tokenizer.loadedModel + ' instead, which Mewmory will not use because its counts differ. No chat history was trimmed.', 503);
         return { name: choice, count: value => encoder.encode(String(value)).length };
     }
     if (/^(gpt-|o[134]|text-|code-)/.test(choice)) {
         const encoder = tokenizers.getTiktokenTokenizer(choice);
         return { name: choice, count: value => encoder.encode(String(value), [], []).length };
     }
-    fail('Unsupported tokenizer. Choose a tokenizer in Mewmory settings.', 400);
+    fail('Mewmory does not support that token counter. Choose another one in Mewmory settings.', 400);
 }

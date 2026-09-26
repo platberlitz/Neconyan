@@ -19,19 +19,19 @@ export async function startProcessing(directories, locator, { all = false, check
     let state = await loadCurrentState(directories, locator);
     if (running.has(key)) {
         if ((all && !state.processing?.all) || (checkpoint && !state.processing?.checkpoint)) {
-            fail('Mewmory is already processing this chat. Stop or finish that job before changing its scope.', 409);
+            fail('Mewmory is already updating memories for this chat. Wait for it to finish, or stop it first.', 409);
         }
         return state;
     }
     if (!state.enabled) return state;
-    if (atCapacity(directories, automatic)) fail('Mewmory is processing other stories. Try again shortly.', 429);
+    if (atCapacity(directories, automatic)) fail('Mewmory is busy updating other chats. Try again in a moment.', 429);
     const config = readConfig(directories);
     const job = { id: randomUUID(), status: 'running', all, checkpoint, automatic,
         fingerprint: fingerprint(state, config), startedAt: Date.now() };
     state = mutateState(directories, locator, current => {
         current.processing = job;
         for (const batch of current.jobs) {
-            if (batch.status === 'processing') Object.assign(batch, { status: 'failed', error: 'Server restarted before this batch finished.', finishedAt: Date.now() });
+            if (batch.status === 'processing') Object.assign(batch, { status: 'failed', error: 'The server restarted before this finished. It will be tried again.', finishedAt: Date.now() });
         }
     }, state.revision);
     const controller = new AbortController();

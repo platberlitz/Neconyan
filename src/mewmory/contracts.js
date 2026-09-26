@@ -1,5 +1,7 @@
 export const EXTRACTION_CONTRACT = [
-    'Mewmory objective extraction contract v2.',
+    'Mewmory objective extraction contract v3.',
+    'Work fast and decisively. Read the sources once, record what clearly happened, and return the JSON. Do not deliberate, plan out loud, list alternatives, or second-guess a choice. When a detail is doubtful, leave it out.',
+    'Record only what matters for later scenes. Skip small talk, filler and moment-to-moment description. Keep every text field to one short sentence where possible; aliases, appearance and speech stay brief.',
     'Inspect only supplied accepted sources and applicable author-level lore. Preserve events, identities, appearance, specific speech habits, temporary state, directional relationships, knowledge acquisition and explicit commitments.',
     'A spoken claim is reported, not established truth. Never invent the player’s private thoughts, feelings or motives. Unknowns stay unknown.',
     'Appearance and speech belong in entity records. Clothing, injuries, current location and carried items belong in separate state records. Do not overwrite stable appearance with a disguise.',
@@ -10,14 +12,14 @@ export const EXTRACTION_CONTRACT = [
     'An empty result is valid. Return exactly: {"records":[],"interviews":[],"activeNpcIds":[]}.',
     'records may contain only entity, state, event, relationship, knowledge or commitment objects.',
     'Every record has: id (stable short identifier), kind, text, refs:[{id,revision}], subjectIds:[], dependencies:[], significance:"low"|"medium"|"high", evidenceRefs:[], status:"active"|"background"|"resolved"|"uncertain".',
-    'Only supplied source reference IDs and revisions are allowed. Significance above low needs distinct accepted chat evidence. Reprocessing, retrieving, copying a summary and repeated phrasing are not new significance evidence.',
+    'Only supplied source reference IDs and revisions are allowed. Default significance to low. Use medium or high only when a supplied chat message plainly shows why it matters, and put that message in evidenceRefs; otherwise use low with empty evidenceRefs. Reprocessing, retrieving, copying a summary and repeated phrasing are not new significance evidence.',
     'entity adds: entityId, name, aliases:[], isCharacter:boolean, appearance:string, speech:string. Preserve existing stable details when updating it.',
     'state adds: entityId. Keep one complete current state per entity, separate from its stable sheet. Retain every ongoing injury, item, location and clothing detail when updating that state; reuse its existing ID.',
     'event and relationship add: evidenceStatus:"established"|"reported"|"disputed"|"uncertain". Relationships are directional; beliefs and affection are subjective and belong in interviews or overviews.',
     'knowledge adds: ownerId, method:"witnessed"|"told"|"read"|"inferred"|"author", evidenceText (an exact substring of a supplied source). Its text contains only what this character knows, including uncertainty.',
     'commitment adds: triggerTerms:[] (specific situation cues, such as harbour or return the book). A resolved commitment has status resolved.',
     'dependencies contain {id,version} for existing objective records only. Never depend on interviews or overviews.',
-    'interviews is a bounded list, at most four grounded requests: {ownerId,subjectIds,knowledgeIds,refs,significance,evidenceRefs,reason}.',
+    'interviews is a bounded list, at most four grounded requests: {ownerId,subjectIds,knowledgeIds,refs,significance,evidenceRefs,reason}. Most batches need none; request one only for a clear shift in how a character sees someone or something. reason is one short sentence.',
     'An interview’s knowledge boundary is the latest message in its refs. For historical backfill, give separate knowledge records and requests for earlier interpretations and later changes; do not attach later knowledge to an earlier request.',
     'knowledgeIds must identify this owner’s existing or newly proposed knowledge records. Request an interview only when these facts support a meaningful subject interpretation or change.',
     'activeNpcIds lists characters actually involved at the end of this source range, not merely mentioned absent people. It may be empty.',
@@ -25,7 +27,8 @@ export const EXTRACTION_CONTRACT = [
 ].join('\n');
 
 export const PAWSPECTIVE_CONTRACT = [
-    'Pawspective interview contract v1.',
+    'Pawspective interview contract v2.',
+    'Work fast and decisively. Decide once whether the supplied knowledge supports a new interpretation. If it does not, return {"changed":false} immediately. If it does, write the interview in one pass without drafting, planning out loud or revising.',
     'Write a bounded imaginary interview for the specified AI-controlled character and subjects, using only supplied character knowledge as of the stated sequence.',
     'The interviewer is outside the story, has no biography or relationship, and is not an in-world participant. The interview did not happen in the world.',
     'Answer directly in the character’s voice, aiming for 1-3 short sentences per answer. Make each answer contribute a distinct, supported detail and finish once it is expressed.',
@@ -36,13 +39,14 @@ export const PAWSPECTIVE_CONTRACT = [
     'New interview gestures are generated characterization, not evidence of actions in the RP. They cannot independently increase significance.',
     'Return {"changed":false} if there is no supported new interpretation.',
     'Otherwise return exactly: {"changed":true,"interview":[{"question":"...","answer":"..."}],"searchDescription":"...","changeExplanation":"...","overviews":[{"subjectId":"...","text":"...","status":"active"}]}.',
-    'Use at most eight question/answer pairs. overviews has one brief third-person current interpretation for each requested subject. Status may be active, background, resolved or uncertain.',
+    'Use two to four question/answer pairs; never more than eight. overviews has one brief third-person current interpretation for each requested subject. Status may be active, background, resolved or uncertain.',
     'The search description is short and cautious: verbally dismisses the gift and suppresses a smile, not secretly in love unless the fiction establishes it.',
     'Resolved experiences retain their history and the reason for moving on. The overview must not reset an old grievance or prescribe the next response.',
 ].join('\n');
 
 export const SELECTION_CONTRACT = [
-    'Mewmory read-only retrieval selector contract v1.',
+    'Mewmory read-only retrieval selector contract v2.',
+    'Work fast and decisively. Scan the candidates once, pick the few that clearly help the next reply, and return the JSON. Do not deliberate, rank out loud or reconsider. When unsure about a candidate, leave it out.',
     'Select only existing candidate IDs whose evidence helps the next reply. You cannot edit memory, write new interviews, change significance, infer player motives, invent events or prescribe a response.',
     'Connect concrete current-scene cues to actual historical evidence. Similar emotional wording alone is insufficient. An empty selection is valid and does not need escalation.',
     'Associations require a present cue and a past anchor. Different people or objects may share a concrete situation such as public attention or a broken promise. Do not jump from praise to trauma without evidence.',
@@ -52,6 +56,6 @@ export const SELECTION_CONTRACT = [
     'status is complete, needs_evidence or uncertain.',
     'Every selection is {recordId,relevanceType:"direct"|"associative",currentCueRefs:[],memoryEvidenceRefs:[],justification:"brief evidence-based explanation"}.',
     'currentCueRefs must use IDs in scene. memoryEvidenceRefs must use source-reference IDs or linked record IDs supplied for that candidate.',
-    'Every rejection is {recordId,justification}. needsEvidence is at most six candidate IDs whose linked existing sources should be expanded. No free-text search commands.',
+    'Every justification is one short sentence. Every rejection is {recordId,justification}; reject only close calls worth explaining, not every unused candidate. needsEvidence is at most six candidate IDs whose linked existing sources should be expanded. No free-text search commands.',
     'No additional fields, replacement text, confidence scores or writing instructions. Explanations are for inspection only and never enter the writing prompt.',
 ].join('\n');

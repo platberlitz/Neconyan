@@ -13,24 +13,24 @@ export function fail(message, status = 400) {
 }
 
 export function object(value, label = 'Value') {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) fail(label + ' must be an object.');
+    if (!value || typeof value !== 'object' || Array.isArray(value)) fail(label + ' is in the wrong format.');
     return value;
 }
 
 export function text(value, label, max = 32000, optional = false) {
     if (optional && (value === undefined || value === '')) return '';
-    if (typeof value !== 'string' || !value.trim() || value.length > max) fail(label + ' is missing or too long.');
+    if (typeof value !== 'string' || !value.trim() || value.length > max) fail(label + ' is empty or too long.');
     return value.trim();
 }
 
 export function list(value, label, max = 100) {
-    if (!Array.isArray(value) || value.length > max) fail(label + ' must be a bounded list.');
+    if (!Array.isArray(value) || value.length > max) fail(label + ' is not a list, or has too many items.');
     return value;
 }
 
 export function id(value, label = 'ID') {
     const result = text(value, label, 160);
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$/.test(result)) fail(label + ' contains unsupported characters.');
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$/.test(result)) fail(label + ' may only use letters, numbers, and the symbols _ . : -');
     return result;
 }
 
@@ -188,7 +188,7 @@ export function syncSources(state, messages, context = []) {
                 && state.sources[ref.id]?.active && dates.has(state.sources[ref.id]?.identity))?.id;
         }
         sourceId ||= 'chat:' + hash([message.mewmory_id || identity, occurrence, ...(inherited.length ? [state.sourceNamespace] : [])]).slice(0, 32);
-        if (assigned.has(sourceId)) fail('This chat contains duplicate message identities. Reload and save it before using Mewmory.', 409);
+        if (assigned.has(sourceId)) fail('Some messages in this chat share the same ID, so Mewmory cannot tell them apart. Reload the page and save the chat, then try again.', 409);
         assigned.add(sourceId);
         const attachments = (message.extra?.media || []).map(item => item.title).filter(item => typeof item === 'string');
         const ref = appendSource(state, sourceId, 'chat', {
@@ -351,10 +351,10 @@ export function validateRefs(state, refs, { asOf = Infinity, allowedRefs = null 
         object(ref, 'Source reference');
         const normalized = { id: id(ref.id), revision: ref.revision };
         if (!Number.isSafeInteger(ref.revision) || ref.revision < 1 || !sourceEligible(state, normalized, asOf)
-            || (allowedRefs && !allowedRefs.has(refKey(normalized)))) fail('A source reference is no longer eligible.', 409);
+            || (allowedRefs && !allowedRefs.has(refKey(normalized)))) fail('A message or lore entry this memory is based on was edited, deleted, or switched off, so it can no longer be used. Reload Mewmory and try again.', 409);
         return normalized;
     }));
-    if (!result.length) fail('A memory needs at least one accepted source.');
+    if (!result.length) fail('A memory must be based on at least one chat message or lore entry. Tick one under the sources it is based on.');
     return result;
 }
 
@@ -371,9 +371,9 @@ function correctionSignatures(state, recordId) {
 
 export function validateRecord(state, input, { asOf, origin = 'author', allowedRefs = null, allowedDependencies = null } = {}) {
     object(input, 'Memory');
-    if (!RECORD_KINDS.includes(input.kind)) fail('Unknown memory type.');
+    if (!RECORD_KINDS.includes(input.kind)) fail('Choose a memory type from the list.');
     const previousRecord = state.records.find(record => record.id === input.id);
-    if (previousRecord && previousRecord.kind !== input.kind) fail('A memory ID cannot change record type.');
+    if (previousRecord && previousRecord.kind !== input.kind) fail('An existing memory cannot be switched to a different type. Make a new memory instead.');
     const record = {
         id: id(input.id), kind: input.kind, storyId: state.storyId, branchId: state.branchId,
         version: 1, createdAt: Date.now(), asOf: asOf ?? Math.max(0, state.timeline.length - 1),
@@ -385,7 +385,7 @@ export function validateRecord(state, input, { asOf, origin = 'author', allowedR
         dependencies: list(input.dependencies || [], 'Dependencies', 100).map(dependency => {
             const parent = recordRevision(state, dependency.id, dependency.version);
             if (!recordEligible(state, parent, { asOf })
-                || (allowedDependencies && !allowedDependencies.has(dependency.id))) fail('A linked memory is no longer eligible.', 409);
+                || (allowedDependencies && !allowedDependencies.has(dependency.id))) fail('A memory this one builds on was changed, rejected, or switched off. Reload Mewmory and try again.', 409);
             return { id: parent.id, version: parent.version };
         }),
         significance: input.significance || 'low',
@@ -395,16 +395,16 @@ export function validateRecord(state, input, { asOf, origin = 'author', allowedR
     };
     record.subjectNames = Object.fromEntries(record.subjectIds.filter(subject => input.subjectNames?.[subject])
         .map(subject => [subject, text(input.subjectNames[subject], 'Subject name', 200)]));
-    if (!['active', 'background', 'resolved', 'uncertain', 'invalidated'].includes(record.status)) fail('Unknown memory status.');
-    if (!['low', 'medium', 'high'].includes(record.significance)) fail('Unknown significance.');
+    if (!['active', 'background', 'resolved', 'uncertain', 'invalidated'].includes(record.status)) fail('Choose a status from the list.');
+    if (!['low', 'medium', 'high'].includes(record.significance)) fail('Choose low, medium, or high importance.');
     if (record.significance !== 'low' && !record.evidenceRefs.some(ref => state.sources[ref.id]?.type === 'chat')) {
-        fail('Significance needs evidence from accepted play.');
+        fail('Medium or high importance needs at least one chat message that shows why it matters. Tick a chat message under the sources it is based on, or set importance to low.');
     }
     if (['interview', 'overview', 'knowledge'].includes(record.kind)) {
         const owner = state.records.find(item => item.kind === 'entity' && item.entityId === record.ownerId
             && item.isCharacter && recordEligible(state, item, { asOf }));
-        if (!owner || record.ownerId === 'player') fail('Pawspective and knowledge records require an AI-controlled character.');
-        if (!record.subjectIds.length) fail('Choose a subject.');
+        if (!owner || record.ownerId === 'player') fail('Pawspective and \'what a character knows\' memories must belong to a character played by the AI, not to you.');
+        if (!record.subjectIds.length) fail('Choose who or what this memory is about.');
     }
     if (['entity', 'state'].includes(record.kind)) {
         record.entityId = id(input.entityId, 'Entity ID');
@@ -418,14 +418,14 @@ export function validateRecord(state, input, { asOf, origin = 'author', allowedR
     }
     if (['event', 'relationship'].includes(record.kind)) {
         record.evidenceStatus = input.evidenceStatus || 'uncertain';
-        if (!['established', 'reported', 'disputed', 'uncertain'].includes(record.evidenceStatus)) fail('Unknown evidence status.');
+        if (!['established', 'reported', 'disputed', 'uncertain'].includes(record.evidenceStatus)) fail('Choose how certain this is from the list.');
     }
     if (record.kind === 'knowledge') {
         record.method = input.method;
-        if (!['witnessed', 'told', 'read', 'inferred', 'author'].includes(record.method)) fail('State how the character learned this.');
+        if (!['witnessed', 'told', 'read', 'inferred', 'author'].includes(record.method)) fail('Choose how the character found this out: saw it, was told, read it, worked it out, or author note.');
         record.evidenceText = text(input.evidenceText, 'Knowledge evidence', 4000);
         if (!record.refs.some(ref => sourceAt(state, ref).text.includes(record.evidenceText))) {
-            fail('Knowledge evidence must quote an accepted source.');
+            fail('The quote showing how the character learned this must be copied word for word from one of the chosen messages or lore entries.');
         }
     }
     if (record.kind === 'commitment') {
@@ -435,18 +435,18 @@ export function validateRecord(state, input, { asOf, origin = 'author', allowedR
         record.interview = list(input.interview, 'Interview', 8).map(turn => ({
             question: text(turn.question, 'Question', 2000), answer: text(turn.answer, 'Answer', 8000),
         }));
-        if (!record.interview.length) fail('The interview is empty.');
+        if (!record.interview.length) fail('The Pawspective interview has no questions and answers.');
         record.searchDescription = text(input.searchDescription, 'Search description', 1500);
         record.previousId = input.previousId ? id(input.previousId) : '';
         record.changeExplanation = text(input.changeExplanation, 'Change explanation', 4000, true);
         record.isInWorldEvent = false;
         if (record.previousId && !state.records.some(item => item.id === record.previousId && item.kind === 'interview'
             && item.ownerId === record.ownerId && item.subjectIds.some(subject => record.subjectIds.includes(subject))
-            && recordEligible(state, item, { asOf }))) fail('The previous interpretation is not available.');
+            && recordEligible(state, item, { asOf }))) fail('The earlier Pawspective interview this one replaces was changed or removed. Reload Mewmory and try again.');
     }
     if (origin !== 'author' && !['interview', 'overview'].includes(record.kind)
         && record.dependencies.some(dependency => ['interview', 'overview'].includes(state.records.find(item => item.id === dependency.id)?.kind))) {
-        fail('Generated characterization cannot establish an objective fact.');
+        fail('A fact cannot be based only on a character\'s own opinion from a Pawspective interview. Base it on a chat message or lore entry instead.');
     }
     return record;
 }
@@ -488,9 +488,9 @@ export function undoRecord(state, recordId) {
     const last = state.audit.findLast(item => item.recordId === recordId && item.afterVersion === record?.version);
     const targetVersion = last?.action === 'undo' ? last.restoredFromVersion : record?.version;
     const entry = state.audit.findLast(item => item.recordId === recordId && item.afterVersion === targetVersion && item.action !== 'undo');
-    if (!entry) fail('No earlier version is available.');
+    if (!entry) fail('There is no earlier version of this memory to go back to.');
     if (entry.before && !recordEligible(state, entry.before, { includeExcluded: true })) {
-        fail('The earlier version depends on an edited, rejected, or excluded source.', 409);
+        fail('The earlier version cannot be restored because a message it was based on has since been edited, rejected, or left out of memory.', 409);
     }
     if (entry.before) putRecord(state, { ...entry.before, authorOverride: true, origin: 'author', createdAt: Date.now() }, { force: true });
     else putRecord(state, { ...record, status: 'invalidated', authorOverride: true, origin: 'author' }, { force: true });

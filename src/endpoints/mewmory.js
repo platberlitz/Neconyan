@@ -25,12 +25,12 @@ function route(url, handler) {
         const cancellation = abortOnRequestClose(request, controller, response);
         try {
             if (!request.user?.directories?.root) return response.sendStatus(401);
-            if (Buffer.byteLength(JSON.stringify(request.body || {})) > MAX_ARCHIVE_BYTES + 1024 * 1024) fail('Mewmory request is too large.', 413);
+            if (Buffer.byteLength(JSON.stringify(request.body || {})) > MAX_ARCHIVE_BYTES + 1024 * 1024) fail('This request to Mewmory is too large to accept.', 413);
             const result = await handler(request.user.directories, request.body || {}, controller.signal, request.user.profile?.handle);
             if (!response.destroyed) response.json(result);
         } catch (error) {
             if (!response.destroyed) response.status(error.status || 500).json({
-                error: error.status ? error.message : 'Mewmory could not complete this operation. Its previous saved state has been kept.',
+                error: error.status ? error.message : 'Mewmory hit an unexpected problem and did not finish. Nothing was lost; your memories are as they were before. Try again.',
             });
             if (!error.status) console.error('[Mewmory]', error);
         } finally {
@@ -41,7 +41,7 @@ function route(url, handler) {
 
 function expectedRevision(body, state) {
     if (!Number.isSafeInteger(body.revision) || body.revision !== state.revision) {
-        fail('Mewmory changed in another operation. Refresh before applying this change.', 409);
+        fail('Mewmory changed somewhere else, for example in another tab, while you were making this change. Reload Mewmory and try again.', 409);
     }
 }
 
@@ -125,7 +125,7 @@ route('/scene', async (directories, body) => {
     expectedRevision(body, current);
     const active = body.activeNpcIds === null ? null : strings(body.activeNpcIds);
     if (active?.some(entityId => !current.records.some(record => record.kind === 'entity' && record.isCharacter
-        && record.entityId === entityId && recordEligible(current, record)))) fail('Choose eligible AI-controlled characters.');
+        && record.entityId === entityId && recordEligible(current, record)))) fail('Choose characters played by the AI in this chat.');
     const state = mutateState(directories, locator, state => { state.activeNpcIds = active; }, current.revision);
     return inspectState(state, readConfig(directories));
 });
@@ -147,7 +147,7 @@ route('/record/action', async (directories, body) => {
     expectedRevision(body, state);
     const saved = mutateState(directories, locator, state => {
         const record = state.records.find(item => item.id === body.id);
-        if (!record) fail('Memory not found.', 404);
+        if (!record) fail('That memory no longer exists. Reload Mewmory.', 404);
         if (body.action === 'undo') return void undoRecord(state, record.id);
         const changes = {
             suspicion: { status: 'uncertain', ...(['event', 'relationship'].includes(record.kind) ? { evidenceStatus: 'reported' } : {}) },
@@ -156,7 +156,7 @@ route('/record/action', async (directories, body) => {
             resolved: { status: 'resolved' }, background: { status: 'background' }, active: { status: 'active' },
             pin: { pinned: !record.pinned }, exclude: { excluded: !record.excluded },
         }[body.action];
-        if (!changes) fail('Unknown correction.');
+        if (!changes) fail('Mewmory does not recognise that correction.');
         putRecord(state, { ...record, ...changes, origin: 'author', authorOverride: true, createdAt: Date.now() });
     }, state.revision);
     return inspectState(saved, readConfig(directories));
@@ -166,7 +166,7 @@ route('/source/get', async (directories, body) => {
     const state = await loadCurrentState(directories, normalizeLocator(body.locator));
     object(body.ref, 'Source reference');
     const source = sourceAt(state, body.ref);
-    if (!source) fail('That source revision is no longer available.', 404);
+    if (!source) fail('That version of the message is no longer available. It may have been edited or deleted.', 404);
     return { ...source, id: body.ref.id, type: state.sources[body.ref.id].type, eligible: sourceEligible(state, body.ref) };
 });
 
@@ -174,7 +174,7 @@ route('/source/exclude', async (directories, body) => {
     const locator = normalizeLocator(body.locator);
     const current = await loadCurrentState(directories, locator);
     expectedRevision(body, current);
-    if (!current.sources[body.id]) fail('Source not found.', 404);
+    if (!current.sources[body.id]) fail('That message or lore entry no longer exists. Reload Mewmory.', 404);
     const state = mutateState(directories, locator, state => {
         state.excludedSources = state.excludedSources.filter(id => id !== body.id);
         if (body.exclude === true) state.excludedSources.push(body.id);
@@ -213,7 +213,7 @@ route('/recall', (directories, body, signal, owner) => body.background === true
 route('/validate', async (directories, body) => {
     const state = await loadCurrentState(directories, normalizeLocator(body.locator));
     if (body.fingerprint !== generationFingerprint(state, readConfig(directories))) {
-        fail('The story or Mewmory changed while the prompt was being built. Generate again.', 409);
+        fail('The chat or its memories changed while the reply was being prepared. Send or regenerate again.', 409);
     }
     return { ok: true };
 });
@@ -243,10 +243,10 @@ route('/export', async (directories, body) => {
 route('/associate', async (directories, body) => {
     const locator = normalizeLocator(body.locator);
     const parentLocator = normalizeLocator(body.parent);
-    if (hash(locator) === hash(parentLocator)) fail('Choose another chat.');
+    if (hash(locator) === hash(parentLocator)) fail('A chat cannot continue from itself. Choose a different chat.');
     const current = await loadCurrentState(directories, locator);
     expectedRevision(body, current);
-    if (current.records.length || current.parent) fail('Start with a chat that has no Mewmory records before linking a continuation.');
+    if (current.records.length || current.parent) fail('This chat already has memories, so it cannot be linked as a continuation. Start from a chat with no memories yet.');
     const parent = await loadCurrentState(directories, parentLocator);
     const state = mutateState(directories, locator, () => continueState(parent, locator, readChat(directories, locator).messages), current.revision);
     return inspectState(state, readConfig(directories));
@@ -256,11 +256,11 @@ route('/prepare', prepareMewmoryPrompt);
 
 export function restoreRecords(state, backup) {
     if (backup?.format !== 'mewmory-export-1' || backup.state?.storyId !== state.storyId || backup.state?.branchId !== state.branchId) {
-        fail('This export belongs to another story or branch.');
+        fail('This export belongs to another story or chat branch, so it cannot be restored here.');
     }
     const current = list(backup.state.records, 'Export records', 100000);
-    if (!Array.isArray(backup.state.audit) || current.some(record => !Number.isSafeInteger(record.version) || record.version < 1)) fail('The export has invalid record versions.');
-    if (new Set(current.map(record => record.id)).size !== current.length) fail('The export contains duplicate record IDs.');
+    if (!Array.isArray(backup.state.audit) || current.some(record => !Number.isSafeInteger(record.version) || record.version < 1)) fail('This export file is damaged: some memory versions are not valid.');
+    if (new Set(current.map(record => record.id)).size !== current.length) fail('This export file is damaged: the same memory appears more than once.');
     const versionKey = record => record.id + '@' + record.version;
     const revisions = new Map(current.map(record => [versionKey(record), record]));
     for (const record of revisions.values()) {
@@ -270,7 +270,7 @@ export function restoreRecords(state, backup) {
             const historical = recordRevision(backup.state, dependency.id, dependency.version);
             if (historical) revisions.set(key, historical);
         }
-        if (revisions.size > 100000) fail('Too many exported record revisions.');
+        if (revisions.size > 100000) fail('This export has too many saved memory versions to restore.');
     }
     const targets = new Map([...revisions].map(([key, record]) => [key, current.some(item => item.id === record.id && item.version === record.version)
         ? record.id : 'restored:' + hash(key).slice(0, 32)]));
@@ -293,11 +293,11 @@ export function restoreRecords(state, backup) {
             try {
                 if (!Number.isInteger(item.asOf) || item.asOf < -1 || item.asOf >= state.timeline.length
                     || (item.inputRefs || []).some(ref => !sourceEligible(state, ref))) {
-                    fail('The record’s source boundary is no longer available.');
+                    fail('A memory in this export is based on messages that no longer exist in this chat.');
                 }
                 const dependencies = (item.dependencies || []).map(dependency => {
                     const restored = imported.get(versionKey(dependency));
-                    if (!restored) fail('A required historical memory could not be restored.');
+                    if (!restored) fail('An older memory that others depend on could not be restored from this export.');
                     return { id: restored.id, version: restored.version };
                 });
                 const target = targets.get(versionKey(item));
@@ -336,7 +336,7 @@ route('/restore', async (directories, body) => {
         const recoveryToken = hash([token, source.metadata, source.messages, context]);
         const result = restoreRecords(state, body.backup);
         if (body.apply === true) {
-            if (body.recoveryToken !== recoveryToken) fail('The chat or its memory changed. Review recovery again.', 409);
+            if (body.recoveryToken !== recoveryToken) fail('The chat or its memories changed after you reviewed the restore. Review it again before restoring.', 409);
             commitRecovery(directories, locator, body.backup.state, state, token, hash([source.metadata, source.messages]));
         }
         return { ...result, recoveryToken, revision: state.revision, applied: body.apply === true };

@@ -17,13 +17,13 @@ export async function prepareMewmoryPrompt(directories, body, signal, {
     const snapshot = generationFingerprint(state, config);
     const source = readSource(directories, locator);
     if (body.integrity && source.metadata.integrity !== body.integrity) {
-        fail('This chat changed in another tab. Reload before generating.', 409);
+        fail('This chat changed in another tab. Reload the chat, then send again.', 409);
     }
     const offset = state.inheritedTimeline?.length || 0;
     const counter = await getCounter(config.writerTokenizer, body.tokenizer || {});
     let previous = -1;
     const history = list(body.history, 'Prompt history', 100000).map(item => {
-        if (!Number.isInteger(item.index) || item.index <= previous || item.index >= source.messages.length) fail('Invalid prompt history order.');
+        if (!Number.isInteger(item.index) || item.index <= previous || item.index >= source.messages.length) fail('The chat history arrived in the wrong order. Reload the chat and send again.');
         previous = item.index;
         return { index: item.index, tokens: counter.count(text(item.text, 'History text', 2000000, true)) + 4 };
     });
@@ -49,7 +49,7 @@ export async function prepareMewmoryPrompt(directories, body, signal, {
     }
     const context = await recall(directories, locator, { asOf, tokenizer: body.tokenizer || {}, signal, local: true }, { loadState, mutate, scheduleBackground });
     if (generationFingerprint(await loadState(directories, locator), readConfig(directories)) !== snapshot) {
-        fail('The accepted sources, settings or author corrections changed during preparation. Reload and generate again.', 409);
+        fail('The chat, Mewmory settings, or a memory you edited changed while the reply was being prepared. Reload and send again.', 409);
     }
     const excluded = new Set(excludedIndices);
     const historyUsage = {

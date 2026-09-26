@@ -113,7 +113,7 @@ export function assembleContext(state, documents, { asOf = Infinity, counter, me
         if (!block) continue;
         const tokens = counter.count('\n\n' + block);
         if (used + tokens > memoryTokens) {
-            if (forcedIds.includes(document.id)) fail('Pinned memories exceed the memory budget. Unpin a record or raise the budget.', 409);
+            if (forcedIds.includes(document.id)) fail('Pinned memories take up more space than the memory budget allows. Unpin a memory or raise Selected memory budget, tokens in Mewmory settings.', 409);
             omitted.push(document.id);
             continue;
         }

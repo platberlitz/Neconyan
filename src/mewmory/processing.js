@@ -4,7 +4,7 @@ import {
     strings, uniqueRefs, validateRecord, validateRefs,
 } from './core.js';
 import { EXTRACTION_CONTRACT, PAWSPECTIVE_CONTRACT } from './contracts.js';
-import { callJsonRole, readConfig, roleVersion } from './models.js';
+import { callJsonRole, readConfig, ROLE_LABELS, roleVersion } from './models.js';
 import { loadCurrentState } from './sources.js';
 import { mutateState, statePath } from './store.js';
 
@@ -81,17 +81,35 @@ export function extractionInput(state, refs, asOf, checkpoint) {
     };
 }
 
+/** Model-proposed importance stands only on a cited chat message from this batch; otherwise it quietly becomes low. */
+function settleSignificance(state, proposed, refs) {
+    const evidenceRefs = (Array.isArray(proposed.evidenceRefs) ? proposed.evidenceRefs : [])
+        .filter(ref => ref && typeof ref === 'object' && refs.has(refKey(ref)) && state.sources[ref.id]?.type === 'chat');
+    if (!['medium', 'high'].includes(proposed.significance) || !evidenceRefs.length) return { significance: 'low', evidenceRefs: [] };
+    return { significance: proposed.significance, evidenceRefs };
+}
+
+function modelOutput(name, action) {
+    try {
+        return action();
+    } catch (error) {
+        if (error.status && error.status !== 400) throw error;
+        fail('The ' + ROLE_LABELS[name] + ' model sent back something Mewmory could not save: ' + error.message
+            + ' Nothing from these messages was kept. Try again, or choose a different model for ' + ROLE_LABELS[name] + ' in Mewmory settings.', 502);
+    }
+}
+
 export function applyExtraction(state, output, input) {
     object(output, 'Extraction');
-    if (Object.keys(output).some(key => !['records', 'interviews', 'activeNpcIds'].includes(key))) fail('Unexpected extraction output.');
+    if (Object.keys(output).some(key => !['records', 'interviews', 'activeNpcIds'].includes(key))) fail('The reply contained sections Mewmory does not expect.');
     const refs = new Set(input.sources.map(refKey));
     const records = list(output.records, 'Extracted records', 80);
     const order = { entity: 0, state: 1, event: 2, relationship: 3, knowledge: 4, commitment: 5 };
     const seen = new Set();
     for (const proposed of records.slice().sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9))) {
-        if (!objectiveKinds.includes(proposed.kind) || seen.has(proposed.id)) fail('Extraction returned an invalid or duplicate record type.');
+        if (!objectiveKinds.includes(proposed.kind) || seen.has(proposed.id)) fail('The reply listed a memory of an unknown type, or the same memory twice.');
         seen.add(proposed.id);
-        let candidate = proposed;
+        let candidate = { ...proposed, ...settleSignificance(state, proposed, refs) };
         if (candidate.kind === 'entity') {
             const previous = state.records.find(record => record.id === candidate.id && recordEligible(state, record, { asOf: input.asOf }));
             if (previous) {
@@ -113,7 +131,7 @@ export function applyExtraction(state, output, input) {
     }
     const active = strings(output.activeNpcIds, 'Active characters');
     if (active.some(entityId => !state.records.some(record => record.kind === 'entity' && record.entityId === entityId
-        && record.isCharacter && recordEligible(state, record, { asOf: input.asOf })))) fail('An active participant is not an eligible AI character.');
+        && record.isCharacter && recordEligible(state, record, { asOf: input.asOf })))) fail('The reply named someone in the scene who is not a known character played by the AI.');
     state.castHistory = [...(state.castHistory || []).filter(entry => entry.asOf !== input.asOf), {
         asOf: input.asOf, ids: active, refs: input.sources.map(({ id, revision }) => ({ id, revision })),
     }].sort((a, b) => a.asOf - b.asOf);
@@ -124,8 +142,7 @@ export function applyExtraction(state, output, input) {
             ownerId: id(request.ownerId), subjectIds: strings(request.subjectIds),
             knowledgeIds: strings(request.knowledgeIds, 'Knowledge IDs', 24),
             refs: validateRefs(state, request.refs, { asOf: input.asOf, allowedRefs: refs }),
-            evidenceRefs: request.evidenceRefs?.length ? validateRefs(state, request.evidenceRefs, { asOf: input.asOf, allowedRefs: refs }) : [],
-            significance: request.significance || 'low', reason: String(request.reason || '').slice(0, 2000),
+            ...settleSignificance(state, request, refs), reason: String(request.reason || '').slice(0, 2000),
         };
     });
 }
@@ -134,10 +151,10 @@ export function applyExtraction(state, output, input) {
 export function interviewInput(state, request, asOf) {
     const eligible = eligibleRecords(state, { asOf });
     const owner = eligible.find(record => record.kind === 'entity' && record.entityId === request.ownerId && record.isCharacter);
-    if (!owner || request.ownerId === 'player' || !request.subjectIds.length) fail('Invalid interview owner or subject.');
+    if (!owner || request.ownerId === 'player' || !request.subjectIds.length) fail('A Pawspective interview was requested for someone who is not a known AI character, or without saying who it is about.');
     const knowledge = request.knowledgeIds.map(key => knowledgeForTime(state, key, asOf))
         .map(record => record?.ownerId === request.ownerId ? record : null);
-    if (!knowledge.length || knowledge.some(record => !record)) fail('An interview needs evidence this character actually learned.');
+    if (!knowledge.length || knowledge.some(record => !record)) fail('A Pawspective interview can only use things this character actually learned in the story, and none were given.');
     const history = eligible.filter(record => record.kind === 'interview' && record.ownerId === request.ownerId
         && record.subjectIds.some(subject => request.subjectIds.includes(subject)))
         .sort((a, b) => b.asOf - a.asOf || b.createdAt - a.createdAt).slice(0, 3).reverse();
@@ -164,11 +181,11 @@ export function interviewEvidenceKey(state, request, asOf = Infinity) {
 export function applyInterview(state, request, output, input, jobId) {
     object(output, 'Pawspective');
     if (output.changed === false) {
-        if (Object.keys(output).some(key => key !== 'changed')) fail('An unchanged interview cannot contain new records.');
+        if (Object.keys(output).some(key => key !== 'changed')) fail('The reply said nothing changed but still included new interview content.');
         return;
     }
     if (output.changed !== true || Object.keys(output).some(key => !['changed', 'interview', 'searchDescription', 'changeExplanation', 'overviews'].includes(key))) {
-        fail('Unexpected Pawspective output.');
+        fail('The reply was not a Pawspective interview in the expected format.');
     }
     const knowledge = request.knowledgeIds.map(key => knowledgeForTime(state, key, input.asOf));
     const evidenceKey = interviewEvidenceKey(state, request, input.asOf);
@@ -191,13 +208,13 @@ export function applyInterview(state, request, output, input, jobId) {
     record.evidenceKey = evidenceKey;
     const saved = putRecord(state, record, { automatic: true });
     if (saved.authorOverride) return;
-    if (!recordEligible(state, saved, { asOf: input.asOf })) fail('The generated interview is no longer eligible. Preservation has not advanced.', 409);
+    if (!recordEligible(state, saved, { asOf: input.asOf })) fail('The new Pawspective interview could not be saved because something it relies on changed. These messages will be tried again.', 409);
     const overviews = list(output.overviews, 'Subject overviews', request.subjectIds.length);
     if (overviews.length !== request.subjectIds.length || new Set(overviews.map(item => item.subjectId)).size !== request.subjectIds.length) {
-        fail('Pawspective must supply one current overview for each requested subject.');
+        fail('The reply must include one short summary for each person or thing the interview is about.');
     }
     for (const overview of overviews) {
-        if (!request.subjectIds.includes(overview.subjectId)) fail('Unexpected interview subject.');
+        if (!request.subjectIds.includes(overview.subjectId)) fail('The reply summarised someone or something the interview was not about.');
         const current = validateRecord(state, {
             id: 'overview:' + hash([record.id, overview.subjectId]).slice(0, 32),
             kind: 'overview', ownerId: request.ownerId, subjectIds: [overview.subjectId],
@@ -237,23 +254,23 @@ async function runBatch(directories, locator, options, call) {
         const extraction = await call(directories, config, 'extractor', EXTRACTION_CONTRACT, input, { dataTypes, signal: options.signal });
         usage.push(extraction.usage);
         const requestAsOf = request => Math.max(-1, ...request.refs.map(ref => sourceAt(state, ref).sequence));
-        const requests = applyExtraction(state, extraction.value, input).sort((a, b) => requestAsOf(a) - requestAsOf(b));
+        const requests = modelOutput('extractor', () => applyExtraction(state, extraction.value, input)).sort((a, b) => requestAsOf(a) - requestAsOf(b));
         for (const request of requests) {
             const interviewAsOf = requestAsOf(request);
-            const interview = interviewInput(state, request, interviewAsOf);
+            const interview = modelOutput('extractor', () => interviewInput(state, request, interviewAsOf));
             const evidenceKey = interviewEvidenceKey(state, request, interviewAsOf);
             if (state.records.some(record => record.kind === 'interview' && record.evidenceKey === evidenceKey && recordEligible(state, record, { asOf: interviewAsOf }))) continue;
             interview.provenance = { policy: POLICY_VERSION, jobId, role: 'pawspective',
                 model: config.roles.pawspective.model, modelRevision: config.roles.pawspective.modelRevision };
             const generated = await call(directories, config, 'pawspective', PAWSPECTIVE_CONTRACT, interview, { dataTypes: ['memory'], signal: options.signal });
             usage.push(generated.usage);
-            applyInterview(state, request, generated.value, interview, jobId);
+            modelOutput('pawspective', () => applyInterview(state, request, generated.value, interview, jobId));
         }
         await loadCurrentState(directories, locator);
         if (options.signal?.aborted) fail('Mewmory request cancelled.', 499);
         return mutateState(directories, locator, current => {
             if (processingFingerprint(current, sourceCount) !== snapshotFingerprint || processingVersion(readConfig(directories)) !== policy) {
-                fail('The story, settings, or an author correction changed during processing. This result was discarded.', 409);
+                fail('The chat, Mewmory settings, or a memory you edited changed while this was running, so this result was discarded. It will be tried again.', 409);
             }
             // Keep appended sources, concurrent recall, indexing and usage; this batch owns only its memory changes.
             current.records = state.records;

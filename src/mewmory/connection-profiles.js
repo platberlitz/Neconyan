@@ -25,10 +25,10 @@ export function listModelProfiles(directories) {
 export function resolveModelProfile(directories, id, embedding = false, modelOverride = '') {
     const settings = readJsonShared(path.join(directories.root, 'settings.json'), {});
     const profile = settings.extension_settings?.connectionManager?.profiles?.find(profile => profile.id === id);
-    if (!profile) fail('The selected connection profile no longer exists. Choose another profile.', 409);
+    if (!profile) fail('The chosen connection profile no longer exists. Choose another one in Mewmory settings.', 409);
     const api = aliases[profile.api] || profile.api;
-    if (!sources.has(api)) fail('Mewmory requires a Chat Completion connection profile.', 400);
-    if (embedding && !['custom', 'openai'].includes(api)) fail('Embeddings require an OpenAI or OpenAI-compatible connection profile.', 400);
+    if (!sources.has(api)) fail('Mewmory can only use Chat Completion connection profiles. Choose one of those.', 400);
+    if (embedding && !['custom', 'openai'].includes(api)) fail('Embeddings need an OpenAI or OpenAI-compatible connection profile.', 400);
     const preset = settings.custom_endpoint_presets?.find(preset => preset.name === profile['custom-endpoint-profile']);
     let endpoint = api === 'custom' ? String(profile['api-url'] || preset?.url || '') : '';
     const model = String(modelOverride || profile.model || (api === 'custom' ? preset?.model : '') || '').trim();
@@ -44,20 +44,20 @@ export function resolveModelProfile(directories, id, embedding = false, modelOve
     for (const field of fields) {
         const value = String(profile[field] ?? saved[field] ?? '').trim();
         if (value) payload[field] = value;
-        else if (api !== 'vertexai') fail('The selected profile needs ' + field.replaceAll('_', ' ') + ' saved in its connection preset.', 409);
+        else if (api !== 'vertexai') fail('The chosen connection profile needs ' + field.replaceAll('_', ' ') + ' saved in it before Mewmory can use it.', 409);
     }
     if (api === 'azure_openai') endpoint = payload.azure_base_url;
     if (profile.proxy && profile.proxy !== 'None') {
         const proxy = settings.proxies?.find(proxy => proxy.name === profile.proxy);
-        if (!proxy?.url) fail('The profile’s selected proxy no longer exists. Save a valid proxy selection.', 409);
-        if (!proxySources.has(api)) fail('This provider cannot use the profile’s selected proxy. Choose a supported connection.', 409);
+        if (!proxy?.url) fail('The proxy chosen in this connection profile no longer exists. Pick a proxy in the profile and save it.', 409);
+        if (!proxySources.has(api)) fail('This provider cannot use the proxy chosen in the profile. Remove the proxy or pick another provider.', 409);
         endpoint = String(proxy.url);
         Object.assign(payload, { reverse_proxy: endpoint, proxy_password: String(proxy.password || '') });
     }
     const secretType = api === 'openai_responses' ? SECRET_KEYS.OPENAI
         : api === 'vertexai' && payload.vertexai_auth_mode === 'full' ? SECRET_KEYS.VERTEXAI_SERVICE_ACCOUNT : SECRET_KEYS[api.toUpperCase()];
     if (!payload.reverse_proxy && (secretId || api !== 'custom') && (!secretId || !readSecret(directories, secretType, secretId))) {
-        fail('The selected profile needs its own saved API key. Select a key in that profile and save it again.', 409);
+        fail('The chosen connection profile needs its own saved API key. Pick a key in that profile and save it again.', 409);
     }
     return { api, endpoint, model, secretId, secretType, payload };
 }

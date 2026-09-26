@@ -53,7 +53,7 @@ export async function requestMewmory(route, data = {}, { signal, scope = getMewm
     });
     const result = await response.json().catch(() => ({}));
     if (scope !== getMewmoryScope()) throw new Error('The active chat changed.');
-    if (!response.ok) throw Object.assign(new Error(result.error || 'Mewmory could not reach the server.'), { status: response.status });
+    if (!response.ok) throw Object.assign(new Error(result.error || 'Mewmory could not reach the server. Check your connection and try again.'), { status: response.status });
     if (result.job) scheduleUpdate();
     return result;
 }
@@ -142,7 +142,7 @@ export async function processMewmory({ all = false, checkpoint = false } = {}) {
     mewmory.backfilling = all;
     notifyMewmory();
     try {
-        if (!await flushPendingChatSaves({ silent: true })) throw new Error('Save this chat before updating Mewmory.');
+        if (!await flushPendingChatSaves({ silent: true })) throw new Error('This chat has unsaved changes. Save it, then update Mewmory.');
         if (getMewmoryScope() !== currentKey) return;
         const view = await requestMewmory('process', { locator, checkpoint, all, background: true });
         if (getMewmoryScope() === currentKey) {
@@ -211,7 +211,7 @@ export async function prepareMewmoryGeneration(messages, { signal } = {}) {
     mewmory.preparing = true;
     notifyMewmory();
     try {
-        if (!await flushPendingChatSaves({ silent: true })) throw new Error('Mewmory needs a saved source before preparing memory.');
+        if (!await flushPendingChatSaves({ silent: true })) throw new Error('This chat has unsaved changes. Save it, then send again so Mewmory can add memories.');
         if (getChatGeneration() !== generation || getMewmoryScope() !== currentKey) throw new Error('The active chat changed.');
         const view = await refreshMewmory(undefined, { signal });
         if (getMewmoryScope() !== currentKey) throw new Error('The active chat changed.');
@@ -224,7 +224,7 @@ export async function prepareMewmoryGeneration(messages, { signal } = {}) {
                 index: message.mewmorySourceIndex, text: String(message.name || '') + ': ' + String(message.mes || ''),
             })),
         }, { signal });
-        if (getChatGeneration() !== generation || getMewmoryScope() !== currentKey) throw new Error('The active chat changed during recall.');
+        if (getChatGeneration() !== generation || getMewmoryScope() !== currentKey) throw new Error('The active chat changed while memories were being picked. Send again.');
         const excluded = new Set(result.excludedIndices);
         mewmory.error = result.inspection?.error || result.inspection?.indexError || '';
         mewmory.view.preview = result;
@@ -244,12 +244,12 @@ export async function validateMewmoryGeneration(context, prompt, tokenBudget, { 
     const plainText = typeof prompt === 'string' ? prompt : prompt.map(message => typeof message.content === 'string'
         ? message.content : JSON.stringify(message.content)).join('\n');
     for (const block of [context.npcText, context.memoryText].filter(Boolean)) {
-        if (!plainText.replace(/\r/g, '').includes(block.replace(/\r/g, ''))) throw new Error('Mewmory reference context was removed by prompt formatting. Check your prompt settings.');
+        if (!plainText.replace(/\r/g, '').includes(block.replace(/\r/g, ''))) throw new Error('Your prompt settings removed the memories Mewmory added, so nothing was sent. Check that your prompt template keeps the Mewmory block.');
     }
     const serialized = typeof prompt === 'string' ? prompt : JSON.stringify(prompt);
     const counted = await requestMewmory('tokens', { texts: [serialized], tokenizer: context.tokenizer }, { signal });
     if (counted.counts[0] > tokenBudget) {
-        throw new Error('Mewmory and the retained chat exceed this model’s input limit. Raise the context size, reduce the memory budget, or finish backfill in Mewmory.');
+        throw new Error('The memories plus the recent chat are too long for this model. Raise the context size, lower Selected memory budget, tokens, or use Catch up on this whole chat in Mewmory so older messages can be left out safely.');
     }
     await requestMewmory('validate', { locator: context.locator, fingerprint: context.validationFingerprint }, { signal });
 }

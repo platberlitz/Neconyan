@@ -14,7 +14,7 @@ export function normalizeLocator(value) {
     object(value, 'Chat');
     const chat = text(value.chat, 'Chat name', 255).replace(/\.jsonl$/, '');
     const avatar = value.group ? '' : text(value.avatar, 'Character file', 255);
-    if (!chat || sanitize(chat) !== chat || (avatar && sanitize(avatar) !== avatar)) fail('Invalid chat path.');
+    if (!chat || sanitize(chat) !== chat || (avatar && sanitize(avatar) !== avatar)) fail('Invalid chat path: Mewmory could not work out which chat this is.');
     return { chat, avatar, group: value.group === true };
 }
 
@@ -48,7 +48,7 @@ export function buildMemoryRecoveryGuard(state) {
 
 function writeState(directories, state) {
     state.locator = normalizeLocator(state.locator);
-    if (Buffer.byteLength(JSON.stringify(state)) > MAX_ARCHIVE_BYTES) fail('This Mewmory archive reached 256 MiB.', 413);
+    if (Buffer.byteLength(JSON.stringify(state)) > MAX_ARCHIVE_BYTES) fail('This chat’s memory file has reached the 256 MiB size limit.', 413);
     const guard = buildMemoryRecoveryGuard(state);
     // Persist rejection counters before prose. A failed archive write can only make recovery stricter.
     const filename = recoveryPath(directories, state.locator);
@@ -67,10 +67,10 @@ function writeState(directories, state) {
 export function recoveryState(directories, locator, backup) {
     const guard = readJson(recoveryPath(directories, locator), null);
     if (!guard || guard.format !== 1 || hash(guard.locator) !== hash(normalizeLocator(locator))) {
-        fail('No verified recovery identity is available for this chat. Keep the export and restore the original archive from a server backup.', 409);
+        fail('Mewmory cannot confirm this export belongs to this chat. Keep the export file and restore the original memory file from a server backup.', 409);
     }
     if (backup?.format !== 1 || backup.storyId !== guard.storyId || backup.branchId !== guard.branchId) {
-        fail('This export belongs to a different story or branch.', 409);
+        fail('This export belongs to another story or chat branch, so it cannot be restored here.', 409);
     }
     const filename = statePath(directories, locator);
     const token = hash([guard, fs.existsSync(filename) ? hash(fs.readFileSync(filename, 'utf8')) : null]);
@@ -84,7 +84,7 @@ export function recoveryState(directories, locator, backup) {
         delete state.sources[source.id].hash;
     }
     if (state.inheritedTimeline.some(ref => !sourceAt(state, ref))) {
-        fail('This export lacks verified inherited passages. Choose a newer export to recover this continuation.', 409);
+        fail('This export is missing the earlier chat this one continues from. Choose a newer export.', 409);
     }
     state.timeline = state.timeline.filter(ref => sourceAt(state, ref));
     state.contextSources = state.contextSources.filter(ref => sourceAt(state, ref));
@@ -98,7 +98,7 @@ export function commitRecovery(directories, locator, backup, state, token, sourc
         try {
             const source = readChat(directories, locator);
             if (hash([source.metadata, source.messages]) !== sourceFingerprint
-                || recoveryState(directories, locator, backup).token !== token) fail('Saved memory changed after recovery was reviewed. Review the export again.', 409);
+                || recoveryState(directories, locator, backup).token !== token) fail('Saved memories changed after you reviewed the restore. Review the export again.', 409);
             state.revision++;
             state.updatedAt = Date.now();
             writeState(directories, state);
@@ -114,12 +114,12 @@ export function commitRecovery(directories, locator, backup, state, token, sourc
 export function readJson(filename, fallback) {
     try {
         const stat = fs.statSync(filename);
-        if (!stat.isFile() || stat.size > MAX_ARCHIVE_BYTES) fail('The Mewmory file is too large or is not a regular file.', 409);
+        if (!stat.isFile() || stat.size > MAX_ARCHIVE_BYTES) fail('The memory file for this chat is too large or damaged. Restore a valid export.', 409);
         return JSON.parse(fs.readFileSync(filename, 'utf8'));
     } catch (error) {
         if (error.code === 'ENOENT') return fallback;
         if (error.status) throw error;
-        fail('Mewmory could not read its saved data. Restore a valid export before making changes.', 409);
+        fail('Mewmory could not read the saved memories for this chat. Restore a valid export before making changes.', 409);
     }
 }
 
@@ -156,11 +156,11 @@ export function readJsonShared(filename, fallback) {
         removeCachedJson(key);
         if (error.code === 'ENOENT') return fallback;
         if (error.status) throw error;
-        fail('Mewmory could not read its saved data. Restore a valid export before making changes.', 409);
+        fail('Mewmory could not read the saved memories for this chat. Restore a valid export before making changes.', 409);
     }
     if (!stat.isFile() || stat.size > MAX_ARCHIVE_BYTES) {
         removeCachedJson(key);
-        fail('The Mewmory file is too large or is not a regular file.', 409);
+        fail('The memory file for this chat is too large or damaged. Restore a valid export.', 409);
     }
     const cached = sharedJsonCache.get(key);
     if (cached && sameCachedFileStat(cached, stat)) {
@@ -176,7 +176,7 @@ export function readJsonShared(filename, fallback) {
     } catch (error) {
         removeCachedJson(key);
         if (error.code === 'ENOENT') return fallback;
-        fail('Mewmory could not read its saved data. Restore a valid export before making changes.', 409);
+        fail('Mewmory could not read the saved memories for this chat. Restore a valid export before making changes.', 409);
     }
     const entry = { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, bytes: stat.size, data };
     sharedJsonCache.set(key, entry);
@@ -199,7 +199,7 @@ function removeCachedChat(key) {
 }
 
 function chatSourceFromResult(result, filename) {
-    if (result.status !== 'ok') fail('Save or reload this chat before using Mewmory. Its source file is unavailable.', 409);
+    if (result.status !== 'ok') fail('Mewmory cannot find the saved file for this chat. Save or reload the chat, then try again.', 409);
     return { metadata: result.records[0].chat_metadata || {}, messages: result.records.slice(1), filename };
 }
 
@@ -297,7 +297,7 @@ function readStorySummary(directories, filename) {
 
 export function writeJson(filename, value) {
     const serialized = JSON.stringify(value);
-    if (Buffer.byteLength(serialized) > MAX_ARCHIVE_BYTES) fail('This Mewmory archive reached 256 MiB. Export it and start a new story before adding more memory.', 413);
+    if (Buffer.byteLength(serialized) > MAX_ARCHIVE_BYTES) fail('This chat’s memory file has reached the 256 MiB size limit. Export it and start a new chat before adding more memories.', 413);
     fs.mkdirSync(path.dirname(filename), { recursive: true });
     writeFileAtomicSync(filename, serialized, { encoding: 'utf8', mode: 0o600 });
 }
@@ -305,13 +305,13 @@ export function writeJson(filename, value) {
 export function readChat(directories, locator) {
     const filename = chatPath(directories, locator);
     const result = readChatJsonlStrict(filename);
-    if (result.status !== 'ok') fail('Save or reload this chat before using Mewmory. Its source file is unavailable.', 409);
+    if (result.status !== 'ok') fail('Mewmory cannot find the saved file for this chat. Save or reload the chat, then try again.', 409);
     return { metadata: result.records[0].chat_metadata || {}, messages: result.records.slice(1), filename };
 }
 
 function validateState(locator, state, expectedHash = hash(locator)) {
     if (state.format !== 1 || hash(normalizeLocator(state.locator)) !== expectedHash || hash(locator) !== expectedHash || !Array.isArray(state.records)) {
-        fail('This Mewmory archive has an unsupported format or chat identity.', 409);
+        fail('This memory file is from an unsupported version or belongs to a different chat.', 409);
     }
     return state;
 }
@@ -324,7 +324,7 @@ export function readStateShared(directories, locator) {
     locator = normalizeLocator(locator);
     const state = readJsonShared(statePath(directories, locator), null);
     if (!state) {
-        if (fs.existsSync(recoveryPath(directories, locator))) fail('The Mewmory archive is missing. Recover it from an export before making changes.', 409);
+        if (fs.existsSync(recoveryPath(directories, locator))) fail('The Mewmory archive is missing for this chat. Restore it from an export before making changes.', 409);
         return newState(locator);
     }
     return validateState(locator, state);
@@ -343,7 +343,7 @@ export function mutateState(directories, locator, mutate, expectedRevision, { ex
         if (existingOnly && !fs.existsSync(filename)) return null;
         const state = readState(directories, locator);
         if (expectedRevision !== undefined && state.revision !== expectedRevision) {
-            fail('Mewmory changed while this work was running. Refresh and try again.', 409);
+            fail('Mewmory changed while this was running. Reload Mewmory and try again.', 409);
         }
         const before = hash(state);
         const result = mutate(state) || state;
@@ -462,11 +462,11 @@ export function renameChatMemory(directories, oldLocator, newLocator, { resume =
             }
         }
         if (resume && !fs.existsSync(after) && fs.existsSync(before)) fs.rmSync(recoveryPath(directories, newLocator), { force: true });
-        if (fs.existsSync(after) || fs.existsSync(recoveryPath(directories, newLocator))) fail('A Mewmory archive already exists for that chat name.', 409);
+        if (fs.existsSync(after) || fs.existsSync(recoveryPath(directories, newLocator))) fail('Memories already exist for a chat with that name. Choose a different name.', 409);
         const state = readState(directories, oldLocator);
         state.locator = normalizeLocator(newLocator);
         for (const job of state.jobs.filter(job => job.status === 'processing')) {
-            Object.assign(job, { status: 'failed', error: 'The chat was renamed. Retry this update in the renamed chat.', finishedAt: Date.now() });
+            Object.assign(job, { status: 'failed', error: 'The chat was renamed while this was running. Open the renamed chat and try again.', finishedAt: Date.now() });
         }
         state.revision++;
         writeState(directories, state);

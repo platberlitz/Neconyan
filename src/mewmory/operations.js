@@ -15,7 +15,7 @@ const targetFor = (locator, branchId) => ({ kind: 'mewmory', id: hash(locator), 
 
 export async function startOperation(directories, owner, operation, body) {
     validateOwner(owner);
-    if (!types.has(operation)) fail('Unknown Mewmory operation.');
+    if (!types.has(operation)) fail('Mewmory does not recognise that action.');
     const locator = normalizeLocator(body.locator);
     const intent = operation === 'index' ? { locator, reset: body.reset === true }
         : { locator, query: text(body.query || '', 'Search', 6000, true), tokenizer: body.tokenizer || {} };
@@ -23,7 +23,7 @@ export async function startOperation(directories, owner, operation, body) {
     const key = text(body.submissionKey, 'Submission key', 256);
     const previous = listJobs(directories, { owner, includeDismissed: true }).find(job => job.submissionKey === key);
     if (previous) {
-        if (previous.type !== 'mewmory.' + operation || hash(previous.intent) !== hash(intent)) fail('This submission key was already used for different work.', 409);
+        if (previous.type !== 'mewmory.' + operation || hash(previous.intent) !== hash(intent)) fail('This request was already sent for a different task. Reload Mewmory and try again.', 409);
         return { job: previous, created: false };
     }
     const state = await loadCurrentState(directories, locator);
@@ -41,7 +41,7 @@ function assertCurrent(state, config, job) {
     if (hash(job.target) !== hash(targetFor(state.locator, state.branchId))
         || !state.enabled || job.config?.revision !== config.revision
         || (job.type !== 'mewmory.index' && job.config?.fingerprint !== generationFingerprint(state, config))) {
-        fail('The story or memory settings changed. Start a new operation for the current version.', 409);
+        fail('The chat or Mewmory settings changed before this could start. Try again.', 409);
     }
 }
 
@@ -89,7 +89,7 @@ export function registerMewmoryOperations({ call = callJsonRole, embedFn = embed
                 await loadCurrentState(directories, locator);
                 mutateState(directories, locator, current => {
                     assertCurrent(current, readConfig(directories), job);
-                    if (current.indexOperation !== job.id) fail('The search index changed during this operation. Start a new rebuild.', 409);
+                    if (current.indexOperation !== job.id) fail('Memory search changed while it was being rebuilt. Start the rebuild again.', 409);
                     // Keep paid vectors for unchanged documents, even when new messages arrive.
                     const version = roleVersion(config, 'embedding');
                     const vectors = index => index.version === version ? index.vectors : index.build?.version === version ? index.build.vectors : {};
@@ -104,7 +104,7 @@ export function registerMewmoryOperations({ call = callJsonRole, embedFn = embed
                 await progress({ stage: 'index', completed: 0, total: result.remaining });
             } while (result.remaining > 0);
             result = { remaining: 0 };
-        } else fail('Unknown Mewmory operation.');
+        } else fail('Mewmory does not recognise that action.');
         writeArtifact(directories, job.id, 'result', result);
         return { artifact: true, warning: result.inspection?.error || result.inspection?.indexError || null };
     };
