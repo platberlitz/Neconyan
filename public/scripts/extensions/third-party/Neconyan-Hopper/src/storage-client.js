@@ -212,6 +212,13 @@ export function createStorageClient({ request, recovery = browserRecovery(), dra
     function withFeed(store, sessionId, feed) {
         return { ...store, feeds: { ...store.feeds, [sessionId]: feed } };
     }
+    async function syncRemote() {
+        const remote = await readRemote(base.revision);
+        try { local = mergeStore(base, local, remote); }
+        catch (error) { blocked = true; throw error; }
+        base = remote;
+        if (!equal(base, local)) await checkpoint();
+    }
     const client = {
         get initialised() { return Boolean(local); },
         get settings() { ready(); return clone(local.settings); },
@@ -382,6 +389,13 @@ export function createStorageClient({ request, recovery = browserRecovery(), dra
                 return client.feed(sessionId);
             });
         },
+        syncStore() {
+            return serial(async () => {
+                ready();
+                await syncRemote();
+                return clone(local.settings);
+            });
+        },
         async sync(feed, sessionId) {
             return serial(async () => {
                 ready();
@@ -395,11 +409,7 @@ export function createStorageClient({ request, recovery = browserRecovery(), dra
                     throw error;
                 }
                 if (!equal(base, local)) await checkpoint();
-                const remote = await readRemote(base.revision);
-                try { local = mergeStore(base, local, remote); }
-                catch (error) { blocked = true; throw error; }
-                base = remote;
-                if (!equal(base, local)) await checkpoint();
+                await syncRemote();
                 const next = client.feed(sessionId);
                 for (const key of Object.keys(feed)) delete feed[key];
                 Object.assign(feed, next);

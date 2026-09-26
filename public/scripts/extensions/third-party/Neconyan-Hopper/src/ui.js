@@ -118,7 +118,7 @@ function stopWork() {
         void closeFeed().catch(error => toast(error.message, 'error'));
         return;
     }
-    workController?.abort();
+    workController?.abort('user-stop');
     state.status = 'Stopping...';
     patchStatus();
 }
@@ -1936,7 +1936,7 @@ async function writePersonaProfile() {
         if (!isLive(epoch) || state.session?.id !== sessionId) {
             return;
         }
-        if (signal.aborted || error?.name === 'AbortError') {
+        if (error?.code !== 'MEOWER_STOP_FAILED' && (signal.aborted || error?.name === 'AbortError')) {
             report('Profile writing stopped.');
             return;
         }
@@ -1980,7 +1980,7 @@ async function rewriteAllProfiles() {
         if (!isLive(epoch)) {
             return;
         }
-        if (signal.aborted) {
+        if (signal.aborted && error?.code !== 'MEOWER_STOP_FAILED') {
             report('Profile writing stopped.');
             return;
         }
@@ -2024,7 +2024,7 @@ async function rewriteProfile(accountKey) {
         if (!isLive(epoch)) {
             return;
         }
-        if (signal.aborted) {
+        if (signal.aborted && error?.code !== 'MEOWER_STOP_FAILED') {
             report('Profile writing stopped.');
             return;
         }
@@ -3438,9 +3438,8 @@ async function openImage(url, description = '') {
 }
 
 /**
- * A refresh belongs to its session: closing the workspace, resetting the timeline or a newer
- * run aborts it through its signal, and every await is followed by a staleness check so
- * stale work can never render, toast, or clear a live run's state.
+ * A refresh belongs to its server job. Closing the workspace stops observation; only Stop
+ * cancels the job. Staleness checks keep detached observers out of the current view.
  */
 async function refresh({ topic = '' } = {}) {
     if (state.busy || state.opening || mutationTask || !state.feed || !state.session) {
@@ -3523,7 +3522,7 @@ async function refresh({ topic = '' } = {}) {
             console.warn('[Meower] refresh cancelled', error);
             return;
         }
-        if (signal.aborted) {
+        if (signal.aborted && error?.code !== 'MEOWER_STOP_FAILED') {
             // Stopped by the user. Everything committed before the stop is already durable and stays.
             state.feedEpoch += 1;
             state.session = api.getSession(sessionId);
@@ -3891,7 +3890,15 @@ async function startFeed() {
         console.error(`[Meower] the timeline ${failure.kind} could not be loaded`, failure.error);
         return false;
     } else {
-        if (needsCatchUp(api.getSettings(), Date.now(), state.session)) {
+        let running;
+        try { running = await api.hasRunningRefresh(session.id); } catch (error) {
+            if (isLive(openingEpoch)) report(error.message || 'Running Meower jobs could not be checked. Reopen Meower to try again.', 'warning');
+            return true;
+        }
+        if (!isLive(openingEpoch)) return false;
+        if (running) {
+            void refresh();
+        } else if (needsCatchUp(api.getSettings(), Date.now(), state.session)) {
             const last = state.session?.lastRefreshAt ?? 0;
             const hours = Math.round((Date.now() - last) / 3600000);
             toast(last ? `Catching up: it has been ${hours} hours since the last refresh.` : 'Catching up with a first refresh.', 'info');
