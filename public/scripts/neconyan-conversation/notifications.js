@@ -257,7 +257,22 @@ export function updateCharactersDrawerBadge(totalUnread = getTotalUnreadCount())
     }
 }
 
+// The unread total walks every thread, and callers such as the per-thread
+// presentation tasks fire this in bursts. Collapse each burst into one pass.
+let indicatorUpdateQueued = false;
+
 export function updateConversationNotificationIndicators() {
+    if (indicatorUpdateQueued) {
+        return;
+    }
+    indicatorUpdateQueued = true;
+    setTimeout(() => {
+        indicatorUpdateQueued = false;
+        applyConversationNotificationIndicators();
+    }, 0);
+}
+
+function applyConversationNotificationIndicators() {
     const totalUnread = getTotalUnreadCount();
     updatePalsToggleBadge(totalUnread);
     updateConversationTitleBadge(totalUnread);

@@ -762,7 +762,55 @@ export function migrateLegacyConversationStoreToPersona(store, personaId = getCo
     return changed;
 }
 
+// getConversationStore runs once per thread in hot loops such as the unread
+// count, so re-running the full legacy migration on every call is quadratic.
+// Skip it while the store shape it depends on is unchanged.
+let migratedStoreFingerprint = null;
+
+function readStoreFingerprint(store) {
+    return {
+        store,
+        persona: getConversationPersonaId(),
+        characters: store.characters,
+        characterCount: Object.keys(store.characters).length,
+        groupCount: store.groups.length,
+        groupsScoped: store.groups.every(group => group && getExplicitConversationPersonaId(group.personaId)),
+        reminders: store.reminders,
+        reminderCount: store.reminders.length,
+        assignments: store.legacyThreadPersonaAssignments,
+    };
+}
+
+// Counting the thread keys is itself costly inside those loops, so the full
+// comparison runs at most once per synchronous task; later calls in the same
+// task only confirm the store, persona and thread map are the same objects.
+let fingerprintVerifiedThisTask = false;
+
+function isStoreFingerprintCurrent(store) {
+    const last = migratedStoreFingerprint;
+    if (!last || !Array.isArray(store.groups) || !Array.isArray(store.reminders)
+        || !store.characters || typeof store.characters !== 'object') {
+        return false;
+    }
+    if (fingerprintVerifiedThisTask) {
+        return last.store === store && last.characters === store.characters
+            && last.persona === getConversationPersonaId();
+    }
+    const now = readStoreFingerprint(store);
+    const current = Object.keys(now).every(key => now[key] === last[key]);
+    if (current) {
+        fingerprintVerifiedThisTask = true;
+        queueMicrotask(() => { fingerprintVerifiedThisTask = false; });
+    }
+    return current;
+}
+
 export function getConversationStore() {
+    const cached = extension_settings[CONVERSATION_STORE_KEY];
+    if (cached && typeof cached === 'object' && isStoreFingerprintCurrent(cached)) {
+        return cached;
+    }
+
     const store = extension_settings[CONVERSATION_STORE_KEY];
     if (!store || typeof store !== 'object') {
         extension_settings[CONVERSATION_STORE_KEY] = {
@@ -788,6 +836,7 @@ export function getConversationStore() {
     if (migrateLegacyConversationStoreToPersona(current)) {
         persistConversationStore();
     }
+    migratedStoreFingerprint = readStoreFingerprint(current);
     return current;
 }
 
