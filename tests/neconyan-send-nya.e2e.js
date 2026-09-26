@@ -97,5 +97,13 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
         expect(visible.length).toBeGreaterThan(0);
         const viewport = page.viewportSize();
         expect(visible.some(frame => frame.left >= 0 && frame.top >= frame.viewportTop && frame.right <= viewport.width && frame.bottom <= frame.viewportBottom)).toBe(true);
+        const buttonBox = await send.boundingBox();
+        const buttonCenter = { x: buttonBox.x + buttonBox.width / 2, y: buttonBox.y + buttonBox.height / 2 };
+        const nearButton = visible.some(frame => {
+            const centerX = (frame.left + frame.right) / 2;
+            const centerY = (frame.top + frame.bottom) / 2;
+            return Math.hypot(centerX - buttonCenter.x, centerY - buttonCenter.y) < 80;
+        });
+        expect(nearButton).toBe(true);
     });
 }

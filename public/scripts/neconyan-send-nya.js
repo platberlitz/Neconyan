@@ -1,5 +1,3 @@
-import { isIOSWebKitPlatform } from './mobile-send-button.js';
-
 // A random cat sound pops out of the paw Send button, then floats up and fades.
 // Observe touches before the iOS fast-tap handler consumes them. Do not depend on
 // a pointerup or compatibility click surviving that handler's preventDefault().
@@ -15,18 +13,13 @@ let activePops = 0;
 export function popNya(x, y, { reduced = reducedMotion.matches, random = Math.random } = {}) {
     if (activePops >= MAX_ACTIVE_POPS) return null;
     const pop = document.createElement('span');
-    // Safari touch/client coordinates follow the visible viewport, while a
-    // body-level fixed element uses the layout viewport behind the keyboard.
-    const viewport = isIOSWebKitPlatform(window.navigator) ? window.visualViewport : null;
-    const position = () => {
-        pop.style.left = `${x + (viewport?.offsetLeft || 0)}px`;
-        pop.style.top = `${y + (viewport?.offsetTop || 0)}px`;
-    };
     pop.className = 'neconyan-send-nya';
     pop.textContent = SOUNDS[Math.floor(random() * SOUNDS.length)];
     pop.setAttribute('aria-hidden', 'true');
     Object.assign(pop.style, {
         position: 'fixed',
+        left: `${x}px`,
+        top: `${y}px`,
         zIndex: '2147483000',
         pointerEvents: 'none',
         userSelect: 'none',
@@ -37,9 +30,6 @@ export function popNya(x, y, { reduced = reducedMotion.matches, random = Math.ra
         transform: 'translate(-50%, -100%)',
         opacity: '0',
     });
-    position();
-    viewport?.addEventListener('scroll', position);
-    viewport?.addEventListener('resize', position);
     document.body.append(pop);
     activePops += 1;
 
@@ -59,15 +49,12 @@ export function popNya(x, y, { reduced = reducedMotion.matches, random = Math.ra
         if (done) return;
         done = true;
         clearTimeout(cleanupTimer);
-        viewport?.removeEventListener('scroll', position);
-        viewport?.removeEventListener('resize', position);
         activePops -= 1;
         pop.remove();
     };
     // Sending can occupy the main thread. Start both clocks at the next paint so
     // the fallback cannot remove the pop before its animation becomes visible.
     window.requestAnimationFrame(() => {
-        position();
         if (typeof pop.animate === 'function') {
             const animation = pop.animate(frames, { duration: reduced ? 700 : 900, easing: 'ease-out', fill: 'forwards' });
             animation.addEventListener('finish', finish);
@@ -110,13 +97,22 @@ function onTouchStart(event) {
     for (const touch of event.changedTouches) touched.set(touch.identifier, button);
 }
 
+function popAtButtonCenter(button) {
+    // The button rect and a fixed pop share the same viewport coordinates, so
+    // the pop lands on the button whatever the keyboard has done to the page.
+    // Touch coordinates cannot promise that: Safari reports them against the
+    // visible area while layout values sit elsewhere once the keyboard pans.
+    const rect = button.getBoundingClientRect();
+    popNya(rect.left + rect.width / 2, rect.top + rect.height / 2);
+}
+
 function onTouchEnd(event) {
     for (const touch of event.changedTouches) {
         const button = touched.get(touch.identifier);
         touched.delete(touch.identifier);
         if (!button || !event.isTrusted) continue;
         const target = document.elementFromPoint(touch.clientX, touch.clientY);
-        if (target && button.contains(target)) popNya(touch.clientX, touch.clientY);
+        if (target && button.contains(target)) popAtButtonCenter(button);
     }
 }
 
