@@ -561,7 +561,7 @@ describe('owned host generation flow', () => {
         context.preparePromptsForChatCompletion = async () => [];
         context.populateChatCompletion = async () => {};
         context.shouldCheckPostInterceptChatBudget = () => false;
-        load(context, 'scripts/openai.js', ['prepareOpenAIMessages']);
+        load(context, 'scripts/openai.js', ['keepPromptBiasLast', 'prepareOpenAIMessages']);
         await context.prepareOpenAIMessages({ messages: [], responseLength: 1024 }, false);
         expect(setTokenBudget).toHaveBeenCalledWith(32768, 1024);
         expect(context.promptManager.serviceSettings.openai_max_tokens).toBe(8192);

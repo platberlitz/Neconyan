@@ -1,0 +1,166 @@
+/* Chat tools menu (#options) and wand menu (#extensionsMenu) dressed as Neconyan cards.
+   Loaded as a deferred sheet after the core ones, so the ids plus body.neconyan beat
+   the upstream rules in style.css without !important. Terminal UI keeps its own look. */
+
+body.neconyan:not(.sbterm) #options {
+    padding: 0;
+    background: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+    border-radius: 10px;
+    overflow: visible;
+}
+
+body.neconyan:not(.sbterm) :is(#options > .options-content, #extensionsMenu) {
+    min-width: 220px;
+    padding: 6px;
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    box-shadow: 0 10px 28px color-mix(in srgb, var(--neco-canvas) 70%, transparent);
+    font-size: 15px;
+    scrollbar-width: thin;
+}
+
+body.neconyan:not(.sbterm) #extensionsMenu {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+body.neconyan:not(.sbterm) :is(#options .options-content > a, #extensionsMenu > .extension_container > div, #extensionsMenu > :not(.extension_container)) {
+    position: relative;
+    align-items: center;
+    column-gap: 12px;
+    min-height: 40px;
+    padding: 4px 10px 4px 6px;
+    border-radius: 8px;
+    color: var(--neco-ink);
+    font-weight: 600;
+    line-height: 1.25;
+    opacity: 1;
+    transition: background-color 140ms ease-out;
+}
+
+body.neconyan:not(.sbterm) :is(#options .options-content > a, #extensionsMenu > .extension_container > div, #extensionsMenu > :not(.extension_container)):is(:hover, :focus-visible) {
+    background-color: color-mix(in srgb, var(--neco-ginger) 16%, transparent);
+    color: var(--neco-ink);
+}
+
+body.neconyan:not(.sbterm) :is(#options .options-content > a, #extensionsMenu > .extension_container > div, #extensionsMenu > :not(.extension_container)):focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: -2px;
+}
+
+body.neconyan:not(.sbterm) :is(#options .options-content > a > i:first-child, #extensionsMenu .extensionsMenuExtensionButton, #extensionsMenu > .extension_container > div > i:first-child, #extensionsMenu > :not(.extension_container) > i:first-child) {
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
+    border-radius: 50% 50% 46% 46% / 56% 56% 44% 44%;
+    background: color-mix(in srgb, var(--neco-ginger) 18%, var(--neco-raised));
+    color: var(--neco-ginger);
+    font-size: 14px;
+    line-height: 1;
+}
+
+body.neconyan:not(.sbterm) #options .options-content > hr {
+    height: 12px;
+    margin: 2px 10px;
+    border: 0;
+    background: radial-gradient(circle, var(--neco-border) 0 2px, transparent 2.5px) center / 12px 12px space no-repeat;
+    opacity: 0.8;
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+    body.neconyan:not(.sbterm) :is(#options .options-content > a, #extensionsMenu > .extension_container > div, #extensionsMenu > :not(.extension_container)) {
+        min-height: 44px;
+    }
+}
+
+/* Calico dressing: see-through paw prints behind the rows, a paw-print trail for the
+   dividers, a paw that stamps in on the row under the pointer, and the composer's ears
+   on the chat tools menu. The wand menu is its own scroll box, which would clip ears. */
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) :is(#options > .options-content, #extensionsMenu) {
+    background:
+        linear-gradient(color-mix(in srgb, var(--neco-surface) 80%, transparent), color-mix(in srgb, var(--neco-surface) 80%, transparent)),
+        url('../img/neconyan/paw-cream.webp') right -16px top -12px / 76px auto no-repeat,
+        url('../img/neconyan/paw-pink.webp') right 30px top 58px / 30px auto no-repeat,
+        url('../img/neconyan/paw-peach.webp') left -18px bottom -14px / 74px auto no-repeat,
+        url('../img/neconyan/paw-ink.webp') right 18px bottom 34% / 40px auto no-repeat,
+        var(--neco-surface);
+}
+
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) #options .options-content > hr {
+    background:
+        url('../img/neconyan/paw-peach.webp') center / 11px auto no-repeat,
+        url('../img/neconyan/paw-peach.webp') calc(50% - 20px) 50% / 9px auto no-repeat,
+        url('../img/neconyan/paw-peach.webp') calc(50% + 20px) 50% / 9px auto no-repeat,
+        linear-gradient(var(--neco-border), var(--neco-border)) left center / calc(50% - 34px) 1px no-repeat,
+        linear-gradient(var(--neco-border), var(--neco-border)) right center / calc(50% - 34px) 1px no-repeat;
+    opacity: 0.85;
+}
+
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) :is(#options .options-content > a, #extensionsMenu > .extension_container > div, #extensionsMenu > :not(.extension_container))::after {
+    content: '';
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    margin-left: auto;
+    background: url('../img/neconyan/paw-pink.webp') center / contain no-repeat;
+    opacity: 0;
+    transform: scale(0.6) rotate(-14deg);
+    transition: opacity 140ms ease-out, transform 180ms ease-out;
+    pointer-events: none;
+}
+
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) :is(#options .options-content > a, #extensionsMenu > .extension_container > div, #extensionsMenu > :not(.extension_container)):is(:hover, :focus-visible)::after {
+    opacity: 0.95;
+    transform: scale(1) rotate(-14deg);
+}
+
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) #options::before,
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) #options::after {
+    content: '';
+    position: absolute;
+    top: 1px;
+    width: 28px;
+    height: 22px;
+    pointer-events: none;
+    transform-origin: center bottom;
+}
+
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) #options::before {
+    left: 14%;
+    background: url('../img/neconyan/ear-left.webp') center / 100% 100% no-repeat;
+    transform: translateY(-100%) skewX(-7deg);
+}
+
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) #options::after {
+    right: 14%;
+    background: url('../img/neconyan/ear-right.webp') center / 100% 100% no-repeat;
+    transform: translateY(-100%) skewX(7deg);
+}
+
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) #options:hover::before { animation: neconyan-ear-twitch-left 320ms ease-in-out; }
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) #options:hover::after { animation: neconyan-ear-twitch-right 320ms ease-in-out; }
+
+:root[data-neconyan-palette] body.neconyan.reduced-motion:not(.sbterm) :is(#options .options-content > a, #extensionsMenu > .extension_container > div, #extensionsMenu > :not(.extension_container)),
+:root[data-neconyan-palette] body.neconyan.reduced-motion:not(.sbterm) :is(#options .options-content > a, #extensionsMenu > .extension_container > div, #extensionsMenu > :not(.extension_container))::after,
+:root[data-neconyan-palette] body.neconyan.reduced-motion:not(.sbterm) #options::before,
+:root[data-neconyan-palette] body.neconyan.reduced-motion:not(.sbterm) #options::after,
+:root[data-neconyan-palette] body.neconyan.reduced-motion:not(.sbterm) #options:hover::before,
+:root[data-neconyan-palette] body.neconyan.reduced-motion:not(.sbterm) #options:hover::after {
+    animation: none;
+    transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.neconyan:not(.sbterm) :is(#options .options-content > a, #extensionsMenu > .extension_container > div, #extensionsMenu > :not(.extension_container)),
+    :root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) :is(#options .options-content > a, #extensionsMenu > .extension_container > div, #extensionsMenu > :not(.extension_container))::after,
+    :root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) #options:hover::before,
+    :root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) #options:hover::after {
+        animation: none;
+        transition: none;
+    }
+}

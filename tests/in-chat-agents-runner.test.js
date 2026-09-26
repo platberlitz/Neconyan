@@ -6650,6 +6650,62 @@ describe('in-chat agent post-processing runner', () => {
         await new Promise(resolve => setTimeout(resolve, 5));
     });
 
+    test('Dialogue Colors tags do not hide the agent history', async () => {
+        useRegexOnlyAgent();
+
+        const { initAgentRunner, getPromptTransformHistoryForMessage, undoPromptTransform } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        chat.push({
+            name: 'Assistant',
+            mes: 'She said <font color="#ff8800">"hello"</font> softly.',
+            is_user: false,
+            is_system: false,
+            extra: {
+                inChatAgentTransformHistory: [{ beforeText: 'Draft', afterText: 'She said "hello" softly.' }],
+            },
+        });
+
+        expect(getPromptTransformHistoryForMessage(chat[0])).toHaveLength(1);
+        await expect(undoPromptTransform(0)).resolves.toBe(true);
+        expect(chat[0].mes).toBe('Draft');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('an edit after the agents keeps their history and becomes its own undo step', async () => {
+        useRegexOnlyAgent();
+
+        const { initAgentRunner, getPromptTransformHistoryForMessage, undoPromptTransform } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        chat.push({
+            name: 'Assistant',
+            mes: 'Rewritten text',
+            is_user: false,
+            is_system: false,
+            extra: {
+                inChatAgentTransformHistory: [{ agentName: 'Prose Polisher', beforeText: 'Original text', afterText: 'Rewritten text' }],
+            },
+        });
+
+        chat[0].mes = 'Rewritten text, then edited by hand';
+        await eventSource.emit(eventTypes.MESSAGE_EDITED, 0);
+
+        const history = getPromptTransformHistoryForMessage(chat[0]);
+        expect(history.map(entry => entry.agentName)).toEqual(['Prose Polisher', 'Edited']);
+        expect(history[1]).toEqual(expect.objectContaining({ beforeText: 'Rewritten text', afterText: 'Rewritten text, then edited by hand', mode: 'edit' }));
+
+        await expect(undoPromptTransform(0)).resolves.toBe(true);
+        expect(chat[0].mes).toBe('Rewritten text');
+        await expect(undoPromptTransform(0)).resolves.toBe(true);
+        expect(chat[0].mes).toBe('Original text');
+
+        // Editing back to an earlier version is not recorded as a new step.
+        await eventSource.emit(eventTypes.MESSAGE_EDITED, 0);
+        expect(chat[0].extra.inChatAgentTransformHistory).toHaveLength(2);
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
     test('saves off-screen text mutations without reloading over newer edits', async () => {
         useRegexOnlyAgent();
 

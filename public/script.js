@@ -130,6 +130,7 @@ import {
     getChatCompletionModel,
     getCurrentReasoningEffort,
     getEffectivePromptBias,
+    getPromptBiasReplyText,
     isKimiK3PrefillEcho,
     proxies,
     loadProxyPresets,
@@ -4503,8 +4504,11 @@ function prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, is
     // Neconyan: read the prefill actually in effect, which is Kimi K3's own field on K3.
     const promptBiasSource = getEffectivePromptBias();
     const replacedPromptBias = promptBiasSource && substituteParams(promptBiasSource);
-    if (!power_user.show_user_prompt_bias && ch_name && !isUser && !isSystem && replacedPromptBias && mes.startsWith(replacedPromptBias)) {
-        mes = mes.slice(replacedPromptBias.length);
+    if (!power_user.show_user_prompt_bias && ch_name && !isUser && !isSystem && replacedPromptBias) {
+        // Older replies carry the whole K3 <think> prefill; newer ones only its reply part.
+        const shownPrefix = [replacedPromptBias, getPromptBiasReplyText(replacedPromptBias)]
+            .find(prefix => prefix && mes.startsWith(prefix));
+        if (shownPrefix) mes = mes.slice(shownPrefix.length);
     }
 
     if (!isSystem) {
@@ -4881,7 +4885,8 @@ function getMessageIconLabel(extra) {
     const parts = [];
 
     if (power_user.timestamp_model_name) {
-        parts.push(String(extra?.model ?? '').trim());
+        const model = String(extra?.model ?? '').trim();
+        parts.push(power_user.timestamp_model_name_short ? getShortModelName(model) : model);
     }
 
     if (power_user.timestamp_reasoning_effort && extra?.reasoning_effort) {
@@ -4889,6 +4894,18 @@ function getMessageIconLabel(extra) {
     }
 
     return parts.filter(Boolean).join(' ');
+}
+
+/**
+ * Drops routing prefixes from a model id, so `kimi/kimi-k3` or `[free] org/model` reads as the bare model.
+ *
+ * @param {string} model - Model id as stored on the message.
+ * @returns {string} The last path segment without leading bracket tags, or the original id when that would be empty
+ */
+function getShortModelName(model) {
+    const lastSegment = String(model ?? '').trim().split('/').filter(Boolean).pop() ?? '';
+    const short = lastSegment.replace(/^(?:\s*\[[^\]]*\]\s*)+/, '').trim();
+    return short || String(model ?? '').trim();
 }
 
 function getMessageIconName(extra) {
@@ -5893,7 +5910,7 @@ function hasPromptTransformHistoryForActiveSwipe(message) {
             return false;
         }
 
-        return normalizeContentText(entry.afterText) === normalizeContentText(message?.mes);
+        return getTransformChainText(entry.afterText) === getTransformChainText(message?.mes);
     });
 
     if (hasPostGenerationHistory) {
@@ -5902,6 +5919,11 @@ function hasPromptTransformHistoryForActiveSwipe(message) {
 
     const preGenerationHistory = getActiveSwipeExtraValue(message, IN_CHAT_AGENT_PRE_GENERATION_INTERCEPT_HISTORY_KEY);
     return Array.isArray(preGenerationHistory) && preGenerationHistory.some(entry => entry && typeof entry === 'object');
+}
+
+// Mirrors the agent runner: Dialogue Colors <font> tags do not count as a text change.
+function getTransformChainText(value) {
+    return normalizeContentText(value).replace(/<\/?font\b[^>]*>/gi, '');
 }
 
 function getActiveSwipeExtraValue(message, key) {
@@ -10844,16 +10866,17 @@ export function cleanUpMessage({ getMessage, isImpersonate, isContinue, displayI
     // Add the prompt bias before anything else
     // Neconyan: a partial-mode model returns only the continuation, so this has to prepend
     // the same prefill that was sent -- Kimi K3's own field on K3, the global one elsewhere.
+    // A Kimi K3 <think> prefill seeds the reasoning slot, so only the text after it is prepended.
     const userPromptBias = getEffectivePromptBias();
+    const replyPromptBias = userPromptBias ? getPromptBiasReplyText(substituteParams(userPromptBias)) : '';
     if (
         includeUserPromptBias &&
-        userPromptBias &&
+        replyPromptBias &&
         !isImpersonate &&
         !isContinue &&
-        userPromptBias.length !== 0 &&
-        !isKimiK3PrefillEcho(getMessage, substituteParams(userPromptBias))
+        !isKimiK3PrefillEcho(getMessage, replyPromptBias)
     ) {
-        getMessage = substituteParams(userPromptBias) + getMessage;
+        getMessage = replyPromptBias + getMessage;
     }
 
     // Allow for caching of stopping strings. getStoppingStrings is an expensive function, especially with macros

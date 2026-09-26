@@ -666,7 +666,7 @@ function setOpenAIMessages(chat) {
 
     for (let i = chat.length - 1; i >= 0; i--) {
         let role = chat[j].is_user ? 'user' : 'assistant';
-        let content = chat[j].mes;
+        let content = role === 'assistant' ? stripStoredKimiK3ThinkPrefill(chat[j].mes) : chat[j].mes;
 
         // If this symbol flag is set, completely ignore the message.
         // This can be used to hide messages without affecting the number of messages in the chat.
@@ -1806,9 +1806,38 @@ export async function prepareOpenAIMessages({
         }
     }
 
+    if (!['quiet', 'impersonate', 'continue'].includes(type)) {
+        chat = keepPromptBiasLast(chat, bias);
+    }
+
     openai_messages_count = chat.filter(x => !x?.tool_calls && ['user', 'assistant', 'tool'].includes(x?.role)).length || 0;
 
     return [chat, promptManager.tokenHandler.counts];
+}
+
+/**
+ * Moves the reply prefill back to the end when system context was appended after it.
+ * Neconyan divergence: Mewmory, assistant help and agent context are added after the prompt
+ * manager's prefill. A prefill that is not the last message is sent as a finished assistant
+ * turn, so Kimi K3's partial mode never engages and other backends lose their prefill too.
+ * @param {object[]} chat Finalised chat messages
+ * @param {string} bias Substituted prefill sent as the assistant message
+ * @returns {object[]} Chat with the prefill last
+ */
+export function keepPromptBiasLast(chat, bias) {
+    if (!Array.isArray(chat) || typeof bias !== 'string' || !bias.trim()) {
+        return chat;
+    }
+    let index = chat.length - 1;
+    while (index >= 0 && chat[index]?.role === 'system') index--;
+    if (index < 0 || index === chat.length - 1) {
+        return chat;
+    }
+    const prefill = chat[index];
+    if (prefill?.role !== 'assistant' || prefill.tool_calls || prefill.content !== bias) {
+        return chat;
+    }
+    return [...chat.slice(0, index), ...chat.slice(index + 1), prefill];
 }
 
 /**
@@ -3678,6 +3707,56 @@ export function getEffectivePromptBias() {
     }
 
     return power_user.user_prompt_bias;
+}
+
+/**
+ * Splits a prefill into the reasoning it seeds and the reply text it starts.
+ * Neconyan divergence: mirrors seedKimiK3PartialReasoning on the server, which moves a leading
+ * <think> block into the reasoning slot. Only the text after that block comes back as reply text,
+ * so only that part may be glued onto the reply; gluing the unclosed <think> on makes reasoning
+ * auto-parse swallow the whole reply and pollutes every later prompt with an open think block.
+ * @param {string} prefill Substituted prefill
+ * @returns {{ reasoning: string, reply: string }} Reasoning seed and reply start
+ */
+export function splitKimiK3Prefill(prefill) {
+    const text = String(prefill ?? '');
+    const match = text.match(/^\s*<think>(.*?)(?:<\/think>|$)/s);
+    if (!match) {
+        return { reasoning: '', reply: text };
+    }
+    return { reasoning: match[1].trim(), reply: text.slice(match[0].length).trimStart() };
+}
+
+/**
+ * Gets the part of a substituted prefill that the reply text starts with.
+ * @param {string} prefill Substituted prefill in effect
+ * @returns {string} Text to prepend to the reply
+ */
+export function getPromptBiasReplyText(prefill) {
+    if (main_api === 'openai' && isKimiK3PartialPrefillActive()) {
+        return splitKimiK3Prefill(prefill).reply;
+    }
+    return prefill;
+}
+
+/**
+ * Removes a Kimi K3 <think> prefill that older builds glued onto stored replies.
+ * @param {string} content Stored assistant reply
+ * @returns {string} Reply without the reasoning part of the prefill
+ */
+export function stripStoredKimiK3ThinkPrefill(content) {
+    if (typeof content !== 'string' || !content.trimStart().startsWith('<think>')) {
+        return content;
+    }
+    for (const candidate of [oai_settings.kimi_partial_prefill, power_user.user_prompt_bias]) {
+        if (typeof candidate !== 'string' || !candidate.trim()) continue;
+        const prefill = substituteParams(candidate);
+        const { reasoning, reply } = splitKimiK3Prefill(prefill);
+        if (reasoning && prefill.trim() && content.startsWith(prefill)) {
+            return reply + content.slice(prefill.length);
+        }
+    }
+    return content;
 }
 
 function updateServerChatCompletionConfigSourceVisibility() {

@@ -4332,6 +4332,8 @@
   "Horizontal padding around chat messages": "Horizontal padding around chat messages",
   "Write the exact model name after the message icon": "Write the exact model name after the message icon.",
   "Model Name After Icon": "Model Name After Icon",
+  "Drop the provider prefix from the model name, so kimi/kimi-k3 shows as kimi-k3": "Drop the provider prefix from the model name, so kimi/kimi-k3 shows as kimi-k3.",
+  "Short Model Name": "Short Model Name",
   "Write the reasoning effort used after the model name": "Write the reasoning effort used after the model name.",
   "Reasoning Effort After Model": "Reasoning Effort After Model",
   "Chat & Characters": "Chat & Characters",

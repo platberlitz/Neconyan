@@ -482,6 +482,7 @@ export const power_user = {
     timestamps_enabled: true,
     timestamp_model_icon: true,
     timestamp_model_name: true,
+    timestamp_model_name_short: false,
     timestamp_reasoning_effort: true,
     mesIDDisplay_enabled: true,
     hideChatAvatars_enabled: false,
@@ -2736,6 +2737,7 @@ export async function loadPowerUserSettings(settings, data) {
     $('#messageTimestampsEnabled').prop('checked', power_user.timestamps_enabled);
     $('#messageModelIconEnabled').prop('checked', power_user.timestamp_model_icon);
     $('#messageModelNameEnabled').prop('checked', power_user.timestamp_model_name);
+    $('#messageModelNameShortEnabled').prop('checked', power_user.timestamp_model_name_short);
     $('#messageReasoningEffortEnabled').prop('checked', power_user.timestamp_reasoning_effort);
     $('#mesIDDisplayEnabled').prop('checked', power_user.mesIDDisplay_enabled);
     $('#hideChatAvatarsEnabled').prop('checked', power_user.hideChatAvatars_enabled);
@@ -4895,6 +4897,12 @@ jQuery(async () => {
 
     $('#messageModelNameEnabled').on('input', function () {
         power_user.timestamp_model_name = !!$(this).prop('checked');
+        refreshMessageModelIcons();
+        saveSettingsDebounced();
+    });
+
+    $('#messageModelNameShortEnabled').on('input', function () {
+        power_user.timestamp_model_name_short = !!$(this).prop('checked');
         refreshMessageModelIcons();
         saveSettingsDebounced();
     });

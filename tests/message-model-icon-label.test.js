@@ -47,7 +47,42 @@ describe('message model icon label', () => {
             expect(indexHtml.indexOf(id)).toBeGreaterThan(themeToggles);
         }
 
-        expect(indexHtml).toMatch(/messageModelIconEnabled[\s\S]{0,500}?messageModelNameEnabled[\s\S]{0,500}?messageReasoningEffortEnabled/);
+        expect(indexHtml).toMatch(/messageModelIconEnabled[\s\S]{0,500}?messageModelNameEnabled[\s\S]{0,500}?messageModelNameShortEnabled[\s\S]{0,500}?messageReasoningEffortEnabled/);
+    });
+
+    test('the short model name toggle is off by default and repaints messages', () => {
+        expect(indexHtml).toContain('<input id="messageModelNameShortEnabled" type="checkbox" />');
+        expect(powerUserJs).toContain('timestamp_model_name_short: false,');
+        expect(powerUserJs).toContain('$(\'#messageModelNameShortEnabled\').prop(\'checked\', power_user.timestamp_model_name_short);');
+
+        const handler = powerUserJs.match(/\$\('#messageModelNameShortEnabled'\)\.on\('input', function \(\) \{([\s\S]*?)\n {4}\}\);/);
+        expect(handler?.[1]).toContain('power_user.timestamp_model_name_short = !!$(this).prop(\'checked\');');
+        expect(handler?.[1]).toContain('refreshMessageModelIcons();');
+    });
+
+    test('the short model name drops provider prefixes and bracket tags', () => {
+        const getShortModelName = new Function(`${getFunctionSource('getShortModelName')}
+return getShortModelName;`)();
+
+        expect(getShortModelName('kimi/kimi-k3')).toBe('kimi-k3');
+        expect(getShortModelName('smol-kimi/kimi-k3')).toBe('kimi-k3');
+        expect(getShortModelName('openrouter/moonshotai/kimi-k3')).toBe('kimi-k3');
+        expect(getShortModelName('[free] deepseek-v4-pro')).toBe('deepseek-v4-pro');
+        expect(getShortModelName('[SP]claude-sonnet-4-5')).toBe('claude-sonnet-4-5');
+        expect(getShortModelName('deepseek-v4-pro')).toBe('deepseek-v4-pro');
+        expect(getShortModelName('model/')).toBe('model');
+        expect(getShortModelName('')).toBe('');
+    });
+
+    test('the label uses the short name only when the toggle is on', () => {
+        const build = settings => new Function('power_user', `${getFunctionSource('getShortModelName')}
+${getFunctionSource('getMessageIconLabel')}
+return getMessageIconLabel;`)(settings);
+        const extra = { model: 'kimi/kimi-k3', reasoning_effort: 'high' };
+
+        expect(build({ timestamp_model_name: true, timestamp_reasoning_effort: true })(extra)).toBe('kimi/kimi-k3 (high)');
+        expect(build({ timestamp_model_name: true, timestamp_model_name_short: true, timestamp_reasoning_effort: true })(extra)).toBe('kimi-k3 (high)');
+        expect(build({ timestamp_model_name: false, timestamp_model_name_short: true })(extra)).toBe('');
     });
 
     test('both toggles are wired to the power user settings', () => {

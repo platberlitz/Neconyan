@@ -13,6 +13,10 @@ const stylesheets = [
         url: new URL('../public/css/neconyan-mobile-shell.css', import.meta.url),
     },
     {
+        name: 'chat menus',
+        url: new URL('../public/css/neconyan-menus.css', import.meta.url),
+    },
+    {
         name: 'input history',
         url: new URL('../public/scripts/extensions/input-history/style.css', import.meta.url),
     },

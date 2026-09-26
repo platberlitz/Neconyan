@@ -2873,10 +2873,16 @@ function shouldRefreshTransformHistoryUi(messageIndex, message) {
     return Boolean(messageElement && hasAgentDocumentHistory(message) && !messageElement.querySelector('.agent-transform-badge'));
 }
 
+// Dialogue Colors rewrites message text with <font> tags, often without an edit event,
+// so colouring alone must not break the chain back to the agent rewrites.
+function getTransformChainText(value) {
+    return normalizeContentText(value).replace(/<\/?font\b[^>]*>/gi, '');
+}
+
 function getPromptTransformHistoryForText(history, currentText) {
     const entries = Array.isArray(history) ? history : [];
     const scopedHistory = [];
-    let expectedAfterText = normalizeContentText(currentText);
+    let expectedAfterText = getTransformChainText(currentText);
 
     // Keep only the contiguous edit chain that produced the active message text.
     for (let i = entries.length - 1; i >= 0; i--) {
@@ -2885,16 +2891,58 @@ function getPromptTransformHistoryForText(history, currentText) {
             continue;
         }
 
-        const afterText = normalizeContentText(entry.afterText);
+        const afterText = getTransformChainText(entry.afterText);
         if (afterText !== expectedAfterText) {
             continue;
         }
 
         scopedHistory.unshift(entry);
-        expectedAfterText = normalizeContentText(entry.beforeText);
+        expectedAfterText = getTransformChainText(entry.beforeText);
     }
 
     return scopedHistory;
+}
+
+/**
+ * Records an edit made outside the agents as its own history step, so the agent
+ * rewrites before it stay attached to the message instead of disappearing.
+ *
+ * @param {object} message - Chat message that was just edited.
+ * @returns {boolean} True when a step was added
+ */
+function linkExternalEditToTransformHistory(message) {
+    if (!message || message.is_user || message.is_system) {
+        return false;
+    }
+
+    const storedHistory = getAgentExtraValue(message, PROMPT_TRANSFORM_HISTORY_KEY);
+    const entries = Array.isArray(storedHistory) ? storedHistory.filter(entry => entry && typeof entry === 'object') : [];
+    const lastEntry = entries.at(-1);
+    if (!lastEntry || getPromptTransformHistoryForText(entries, message.mes).length > 0) {
+        return false;
+    }
+
+    // Editing back to an earlier version reads as an undo, not a new step.
+    const currentText = getTransformChainText(message.mes);
+    if (entries.some(entry => getTransformChainText(entry.beforeText) === currentText)) {
+        return false;
+    }
+
+    const history = getPromptTransformHistoryForText(entries, lastEntry.afterText);
+    history.push({
+        agentName: 'Edited',
+        mode: 'edit',
+        beforeText: normalizeContentText(lastEntry.afterText),
+        afterText: normalizeContentText(message.mes),
+        timestamp: new Date().toISOString(),
+    });
+
+    while (history.length > MAX_TRANSFORM_HISTORY) {
+        history.shift();
+    }
+
+    setAgentExtraValue(message, PROMPT_TRANSFORM_HISTORY_KEY, history);
+    return true;
 }
 
 export function getPromptTransformHistoryForMessage(message) {
@@ -4775,7 +4823,10 @@ async function onMessageEdited(messageIndex) {
     if (!message) return;
     invalidateMessageTarget(message);
     deleteAgentExtraValue(message, PROMPT_TRANSFORM_REDO_KEY);
-    if (!areAgentsGloballyEnabled()) return;
+    if (!areAgentsGloballyEnabled()) {
+        if (linkExternalEditToTransformHistory(message)) saveChatDebouncedForAgent();
+        return;
+    }
 
     const snapshot = getAgentExtraValue(message, MESSAGE_EXTRA_KEY);
     let changed = false;
@@ -4787,10 +4838,11 @@ async function onMessageEdited(messageIndex) {
         snapshot.edited = true;
         setAgentExtraValue(message, MESSAGE_EXTRA_KEY, snapshot);
     }
+    const historyLinked = linkExternalEditToTransformHistory(message);
     const metadataChanged = reconcileTrackerMetadata();
     if (changed && !await syncPromptTransformMessageStateAsync(message, messageIndex)) return;
-    if (snapshot || metadataChanged) saveChatDebouncedForAgent();
-    if (changed) scheduleMessageRefresh(messageIndex, message);
+    if (snapshot || metadataChanged || historyLinked) saveChatDebouncedForAgent();
+    if (changed || historyLinked) scheduleMessageRefresh(messageIndex, message);
 }
 
 async function runPromptTransformAgentsForText(promptTransformAgents, initialText, generationType, { messageContext = {}, cancelRevision = null, stopOnFailure = false, runtimeAgents = [] } = {}) {
@@ -5803,7 +5855,7 @@ export async function redoPromptTransform(messageIndex) {
     const redo = getAgentExtraValue(message, PROMPT_TRANSFORM_REDO_KEY);
     const redoEntry = Array.isArray(redo) ? redo.at(-1) : null;
 
-    if (!redoEntry || normalizeContentText(redoEntry.beforeText) !== normalizeContentText(message.mes)) {
+    if (!redoEntry || getTransformChainText(redoEntry.beforeText) !== getTransformChainText(message.mes)) {
         return false;
     }
 
