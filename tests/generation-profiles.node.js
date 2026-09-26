@@ -216,6 +216,21 @@ test('Horde GUI mode uses worker defaults and malformed Kobold samplers refuse b
         /complete Kobold sampler controls/);
 });
 
+test('saved text Meower requests omit sampler and instruct formatting together', async t => {
+    const fixture = textFixture(t);
+    fixture.settings.power_user.instruct = { ...instructSettings, enabled: true };
+    fixture.settings.power_user.custom_stopping_strings = '["<stop>"]';
+    const material = fixture.material();
+    const request = await buildTextProfileRequest({ owner: 'tester', directories: fixture.directories }, material,
+        [{ role: 'system', content: 'Rules' }, { role: 'user', content: 'Write posts' }], 100,
+        { rawOptions: { includePreset: false, includeInstruct: false } });
+    assert.equal(request.prompt, 'Rules\n\nWrite posts');
+    assert.equal(request.temperature, undefined);
+    assert.equal(request.stop, undefined);
+    assert.equal(request.max_new_tokens, 100);
+    assert.equal(request.api_server, 'http://127.0.0.1:5000');
+});
+
 function textFixture(t) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-text-controls-'));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -904,6 +919,11 @@ test('saved chat profiles bind preset controls without storing credentials or fo
     assert.equal(request.include_reasoning, false);
     assert.equal(request.reasoning_effort, 'high');
     assert.equal(request.proxy_password, 'private-credential');
+    const meower = await buildChatProfileRequest(directories, binding, [{ role: 'user', content: 'Meower' }], 120,
+        () => assert.fail('Meower must omit the sampler preset'), { rawOptions: { includePreset: false } });
+    assert.equal(meower.temperature, undefined);
+    assert.equal(meower.reasoning_effort, 'high');
+    assert.equal(meower.include_reasoning, false);
     settings.proxies[0].password = 'rotated-credential';
     settings.unrelatedSetting = true;
     save();

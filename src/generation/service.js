@@ -159,16 +159,17 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     if (['kobold', 'novel', 'horde'].includes(binding?.backend)) return runLegacyProfile({ context, binding, messages, maxTokens, macroEnvironment,
         ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, jobContext,
         modelOverride, overridePayload, rawOptions, beforeDispatch, validatePrompt, stream, preparedText, cfgValues, onProviderStep, stepNamespace });
-    if (!raw && Object.keys(rawOptions).some(option => !['jsonSchema', 'cacheScope'].includes(option))) {
+    if (!raw && Object.keys(rawOptions).some(option => !['jsonSchema', 'cacheScope', 'includePreset', 'includeInstruct'].includes(option))) {
         fail('This request option requires the acknowledged active connection.', 409);
     }
-    if (!raw && binding?.backend === 'text' && Object.keys(rawOptions).length) {
+    if (['includePreset', 'includeInstruct'].some(key => rawOptions[key] !== undefined && typeof rawOptions[key] !== 'boolean')) fail('Preset request controls must be boolean.', 400);
+    if (!raw && binding?.backend === 'text' && Object.keys(rawOptions).some(key => !['includePreset', 'includeInstruct'].includes(key))) {
         fail('Structured request controls require a Chat Completion connection.', 409);
     }
     if (binding?.backend === 'text' || raw) {
         const options = { context, binding, macroEnvironment, ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions, maxTokens, preparedText, cfgValues, functionTools, generationType };
         const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames, modelOverride, overridePayload, ...(generationType !== 'quiet' ? { generationType } : {}),
-            ...(stream ? { stream: true } : {}), ...(raw ? { rawOptions } : {}), ...(preparedText !== undefined ? { preparedText } : {}), ...(cfgValues ? { cfgValues } : {}),
+            ...(stream ? { stream: true } : {}), ...(raw || Object.keys(rawOptions).length ? { rawOptions } : {}), ...(preparedText !== undefined ? { preparedText } : {}), ...(cfgValues ? { cfgValues } : {}),
             ...(preparedMessages ? { preparedMessages: true } : {}), ...(functionTools.length ? { functionTools } : {}), ...(stepNamespace ? { stepNamespace } : {}) });
         if (jobContext) {
             const retained = readArtifact(context.directories, jobContext.job.id, 'provider:' + key);
@@ -245,7 +246,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
                 power: material.power, mainApi: binding.backend === 'text' ? 'textgenerationwebui' : 'openai',
                 name1: userName, name2: characterName, groupNames, trimNames: rawOptions.trimNames !== false,
                 trimWrongNames: rawOptions.trimNames !== false, displayIncompleteSentences: true,
-            }) : cleanScopedTextResponse(result.text, payload.stopping_strings, material.instruct.enabled ? material.instruct : undefined);
+            }) : cleanScopedTextResponse(result.text, payload.stopping_strings, rawOptions.includeInstruct !== false && material.instruct.enabled ? material.instruct : undefined);
             if (raw && !text && !functionTools.length) fail('No message generated.', 502);
             return { ...result, text, generation: { backend: binding.backend || 'chat', source: material.source,
                 showThoughts: Boolean(material.active.show_thoughts || material.active.auto_append_reasoning_tags) } };

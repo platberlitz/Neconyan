@@ -59,6 +59,15 @@ export async function buildTextProfileRequest(context, material, messages, maxTo
         return value;
     };
     const model = modelOverride.trim() || profile.model || '';
+    if (material.kind !== 'active' && rawOptions.includePreset === false && rawOptions.includeInstruct === false) {
+        // The browser's direct profile request has no sampler or instruct preset.
+        return { stream: false, prompt: typeof messages === 'string' ? messages : messages.map(message => normalizeContentText(message.content)).join('\n\n'),
+            max_tokens: maxTokens, max_new_tokens: maxTokens, model, api_type: source, api_server: settings.api_server,
+            ...(secretId ? { secret_id: secretId } : {}), ...overridePayload };
+    }
+    if (material.kind !== 'active' && (rawOptions.includePreset === false || rawOptions.includeInstruct === false)) {
+        fail('Omit both the sampler and instruct presets together for an unformatted text request.', 409);
+    }
     if (macroEnvironment?.extra) {
         macroEnvironment.extra.mainApi = 'textgenerationwebui';
         macroEnvironment.extra.powerUser = { ...macroEnvironment.extra.powerUser, instruct: structuredClone(instruct), context: structuredClone(material.context) };

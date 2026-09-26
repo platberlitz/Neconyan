@@ -1,10 +1,11 @@
+/* eslint-disable playwright/no-standalone-expect -- These assertions are inside Jest's test.each callback. */
 import { afterEach, describe, expect, test } from '@jest/globals';
 import express from 'express';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { info, init as initHopper } from '../public/scripts/extensions/third-party/Neconyan-Hopper/server/index.js';
+import { info, init as initHopper, mutateMeowerStore, readMeowerStore } from '../public/scripts/extensions/third-party/Neconyan-Hopper/server/index.js';
 
 const temporaryDirectories = [];
 function privateDirectory() {
@@ -94,5 +95,11 @@ describe('native private storage', () => {
         expect(fs.readFileSync(savedPath, 'utf8')).toBe(savedBytes);
         expect((await request('get', undefined, privateDirectory())).body.revision).toBe(0);
         expect((await request('get', undefined, { ...directories, root: '' })).status).toBe(500);
+        const receipt = { version: 1, jobId: 'permanent', units: { applied: { posts: ['deleted-post'] } }, closed: true };
+        await mutateMeowerStore(directories, 'native-test', (_store, receipts) => { receipts['a'.repeat(64)] = receipt; });
+        const visible = await request('get');
+        expect(visible.body.jobReceipts).toBeUndefined();
+        expect((await request('post', { ...visible.body, jobReceipts: {} })).status).toBe(200);
+        expect((await readMeowerStore(directories, 'native-test')).receipts['a'.repeat(64)]).toEqual(receipt);
     });
 });

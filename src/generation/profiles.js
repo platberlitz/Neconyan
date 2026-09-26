@@ -331,7 +331,7 @@ export async function buildChatProfileRequest(directories, binding, messages, ma
     };
     const urlField = { custom: 'custom_url', vertexai: 'vertexai_region', zai: 'zai_endpoint', siliconflow: 'siliconflow_endpoint', minimax: 'minimax_endpoint' }[source];
     if (urlField) payload[urlField] = profile['api-url'];
-    const result = createChatRequestData(preset || generationType !== 'quiet' ? await buildChatPresetPayload(active, preset ?? {}, undefined, payload, generate) : payload);
+    const result = createChatRequestData((preset && rawOptions.includePreset !== false) || generationType !== 'quiet' ? await buildChatPresetPayload(active, preset ?? {}, undefined, payload, generate) : payload);
     delete result.__connectionProfileRequestFields;
     delete result.modelOverride;
     if (result.service_tier === '') delete result.service_tier;

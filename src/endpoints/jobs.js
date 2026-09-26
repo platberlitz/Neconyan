@@ -118,13 +118,13 @@ router.post('/:id/approval/:approval', (request, response) => {
 // Source-bound work needs native preparation and permanent acceptance receipts.
 // The generic route cannot create that authority from browser-supplied intent.
 const RESERVED_JOB_TYPES = new Set(['conversation.reply', 'conversation.participant', 'conversation.summary', 'conversation.schedule',
-    'conversation.rewrite', 'conversation.selfie']);
+    'conversation.rewrite', 'conversation.selfie', 'meower.refresh', 'meower.profile']);
 
 router.post('/submit', (request, response) => {
     try {
         const { owner, directories } = directoriesFor(request);
         const body = request.body ?? {};
-        if (RESERVED_JOB_TYPES.has(body.type) || /^(media|roleplay)\./.test(String(body.type))) {
+        if (RESERVED_JOB_TYPES.has(body.type) || /^(media|roleplay|meower)\./.test(String(body.type))) {
             return response.status(400).json({ error: 'This job type requires its native acceptance endpoint.' });
         }
         const accepted = acceptJob(directories, {

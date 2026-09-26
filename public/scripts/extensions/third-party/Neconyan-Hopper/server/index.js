@@ -4,6 +4,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { SETTINGS_KEY } from '../src/core.js';
+import { checkMeowerReceipts } from './job-receipts.js';
 import { MAX_STORE_BYTES, HOST_STORE_NAME, HOST_PLUGIN_MARKER, encodedLimit, migrateLegacy, parseBytes, sizeOf, storeFrom } from '../src/storage-format.js';
 
 export const info = { id: 'hopper', name: 'Meower', description: 'Private, revision-checked storage for Meower timelines.' };
@@ -55,7 +56,10 @@ async function loadStore(directories, account) {
             fail(409, 'The signed-in account changed. Reload Meower before continuing.');
         }
         // Host bytes stay in place; only private bytes participate in backup and rollback.
-        return { ...storeFrom(raw), previous };
+        const receipts = previous === null ? {} : (raw.jobReceipts ?? {});
+        if (!isRecord(receipts)) fail(500, 'The saved Meower job receipts are invalid. Restore them before saving.');
+        checkMeowerReceipts(receipts);
+        return { ...storeFrom(raw), receipts, previous };
     }
 
     const hostBytes = await readBytes(path.join(directories.root, 'settings.json'), MAX_STORE_BYTES);
@@ -67,7 +71,7 @@ async function loadStore(directories, account) {
         }
         raw = own(host.extension_settings, SETTINGS_KEY);
     }
-    return { ...await migrateLegacy(raw, (pointer, limit) => readBytes(path.join(directories.files, path.basename(pointer)), limit)), previous: null };
+    return { ...await migrateLegacy(raw, (pointer, limit) => readBytes(path.join(directories.files, path.basename(pointer)), limit)), receipts: {}, previous: null };
 }
 
 async function temporaryFile(directory, bytes) {
@@ -140,7 +144,7 @@ async function saveStore(directory, store, previous) {
     return bytes;
 }
 
-async function writeLocked(directories, candidate, account) {
+async function writeLocked(directories, account, produce) {
     const directory = path.join(directories.root, 'hopper');
     await fs.mkdir(directory, { mode: 0o700 }).catch(error => { if (error.code !== 'EEXIST') throw error; });
     const stat = await fs.lstat(directory);
@@ -164,24 +168,47 @@ async function writeLocked(directories, candidate, account) {
     try {
         await fs.writeFile(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, hostname: hostname(), startedAt: new Date().toISOString() }), { flag: 'wx', mode: 0o600 });
         const current = await loadStore(directories, account);
-        if (candidate.revision !== current.store.revision) return { ...current, conflict: true };
+        const draft = JSON.parse(JSON.stringify({ store: current.store, receipts: current.receipts }));
+        const result = await produce(draft.store, draft.receipts);
+        if (result?.unchanged || result?.conflict) return { ...current, ...result };
         if (current.store.revision === Number.MAX_SAFE_INTEGER) fail(500, 'The Meower revision limit has been reached. Nothing was saved.');
-        const store = { ...candidate, revision: current.store.revision + 1 };
+        const store = storeFrom({ ...draft.store, revision: current.store.revision + 1 }, { strict: true }).store;
+        const envelope = { ...store, account, jobReceipts: draft.receipts };
+        const { unused } = checkMeowerReceipts(draft.receipts);
+        sizeOf(envelope, MAX_STORE_BYTES - 1 - unused, 'The Meower store including reserved job receipts');
         await markServerStorage(directories.files);
         // Persist the imported revision first so even the first committed save has a private backup.
         if (current.previous === null) current.previous = await saveStore(directory, current.store, null);
-        await saveStore(directory, store, current.previous);
-        return { store, warnings: [] };
+        await saveStore(directory, envelope, current.previous);
+        return { store, receipts: draft.receipts, warnings: [], result };
     } finally {
         await fs.rm(lock, { recursive: true, force: true });
     }
+}
+
+/** Native jobs and browser writes share this queue and the on-disk lock. */
+export async function mutateMeowerStore(directories, account, produce) {
+    const key = path.resolve(directories.root);
+    const attempt = (writes.get(key) ?? Promise.resolve()).then(() => writeLocked(directories, account, produce));
+    const settled = attempt.catch(() => {});
+    writes.set(key, settled);
+    try { return await attempt; } finally {
+        if (writes.get(key) === settled) writes.delete(key);
+    }
+}
+
+/** Internal reads include permanent receipts; HTTP responses expose only the normal store. */
+export async function readMeowerStore(directories, account) {
+    await writes.get(path.resolve(directories.root));
+    return loadStore(directories, account);
 }
 
 /**
  * Disk: {format:1, revision:integer, settings:normalizeSettings(...), feeds:{[sessionId]:{version:1, posts:[], interactions:[], epoch?:string}}}.
  * The host mounts /api/plugins/hopper. Responses add authenticated account and optional warnings.
  * POST takes the base revision; 409 returns the current full envelope plus error, not a wrapper.
- * Only POST writes root/hopper/store.json, retaining exact old bytes in store.previous.json.
+ * Native mutations and POST retain exact old bytes in store.previous.json.
+ * jobReceipts is private, preserved on every browser save, and committed atomically with the feed.
  * Before committing, POST permanently marks files/hopper-server-storage.json; host imports stay untouched.
  */
 export async function init(router) {
@@ -202,7 +229,7 @@ export async function init(router) {
                 const revision = request.query?.revision;
                 if (revision !== undefined && (typeof revision !== 'string' || !/^(0|[1-9][0-9]*)$/.test(revision)
                     || !Number.isSafeInteger(Number(revision)))) fail(400, 'The Meower revision must be a non-negative integer.');
-                result = await loadStore(directories, account);
+                result = await readMeowerStore(directories, account);
                 if (revision !== undefined && Number(revision) === result.store.revision) {
                     return response.json({ account, revision: result.store.revision, unchanged: true });
                 }
@@ -210,15 +237,10 @@ export async function init(router) {
                 if (request.body?.account !== account) fail(409, 'The signed-in account changed. Reload Meower before continuing.');
                 if (Number(request.headers?.['content-length']) > MAX_STORE_BYTES) fail(413, 'The Meower store exceeds 128 MiB.');
                 const candidate = storeFrom(request.body, { strict: true, status: 400 }).store;
-                const key = path.resolve(directories.root);
-                const attempt = (writes.get(key) ?? Promise.resolve()).then(() => writeLocked(directories, candidate, account));
-                const settled = attempt.catch(() => {});
-                writes.set(key, settled);
-                try {
-                    result = await attempt;
-                } finally {
-                    if (writes.get(key) === settled) writes.delete(key);
-                }
+                result = await mutateMeowerStore(directories, account, store => {
+                    if (candidate.revision !== store.revision) return { conflict: true };
+                    Object.assign(store, candidate);
+                });
             }
             return response.status(result.conflict ? 409 : 200).json({
                 ...result.store,
