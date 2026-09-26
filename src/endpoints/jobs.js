@@ -124,7 +124,7 @@ router.post('/submit', (request, response) => {
     try {
         const { owner, directories } = directoriesFor(request);
         const body = request.body ?? {};
-        if (RESERVED_JOB_TYPES.has(body.type) || /^(media|roleplay|meower)\./.test(String(body.type))) {
+        if (RESERVED_JOB_TYPES.has(body.type) || /^(media|roleplay|meower|labs)\./.test(String(body.type))) {
             return response.status(400).json({ error: 'This job type requires its native acceptance endpoint.' });
         }
         const accepted = acceptJob(directories, {

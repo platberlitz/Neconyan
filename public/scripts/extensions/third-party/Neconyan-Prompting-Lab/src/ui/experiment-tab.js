@@ -7,6 +7,7 @@ import { createCharacterPicker } from './character-picker.js';
 import { currentPersona, renderScenePreview } from './scene-preview.js';
 import { getSettings, updateSettings } from '../settings.js';
 import * as storage from '../storage.js';
+import { mountSavedPromptingResults } from '../native.js';
 
 const ROLES = ['system', 'user', 'assistant'];
 const ANALYSIS_MAX_TOKENS = 800;
@@ -54,6 +55,8 @@ export function createExperimentTab() {
     let reloadEpoch = 0;
     let actionEpoch = 0;
     let analysisEpoch = 0;
+    let disposeSaved = null;
+    let disposeAnalysisSaved = null;
 
     function startReload() {
         const epoch = ++reloadEpoch;
@@ -513,7 +516,7 @@ export function createExperimentTab() {
             className: 'menu_button menu_button_primary sbpl-button',
         });
         cancelButton = button('Stop', () => {
-            controller?.abort();
+            controller?.abort('user-stop');
             status.textContent = 'Stopping.';
         }, { className: 'menu_button sbpl-button' });
         cancelButton.hidden = true;
@@ -564,6 +567,29 @@ export function createExperimentTab() {
             output,
             analysisHost,
         );
+        disposeSaved = mountSavedPromptingResults(root, { kind: 'requests', operation: 'experiment',
+            isBusy: () => Boolean(controller || analysisController),
+            onBusy: (value, previous) => { if (value || controller === previous) controller = value; updateControls(); },
+            onResult: (replies, record) => {
+                lastResult = { ...record.display, replies };
+                replace(output);
+                renderReplies(replies, profiles.find(profile => profile.id === lastResult.profileId));
+                renderAnalysisControls();
+                status.textContent = 'Saved prompt comparison loaded.';
+            },
+            onError: error => { status.textContent = errorMessage(error); },
+        });
+        const savedAnalysis = element('div', { className: 'sbpl-analysis-host' });
+        root.append(savedAnalysis);
+        disposeAnalysisSaved = mountSavedPromptingResults(savedAnalysis, { kind: 'requests', operation: 'analysis', label: 'Saved analyses',
+            isBusy: () => Boolean(controller || analysisController),
+            onBusy: (value, previous) => { if (value || controller === previous) controller = value; updateControls(); },
+            onResult: result => {
+                replace(analysisHost, element('pre', { className: 'sbpl-ab-body', text: result.error ?? result.text }));
+                status.textContent = 'Saved analysis loaded.';
+            },
+            onError: error => { status.textContent = errorMessage(error); },
+        });
         updateControls();
         return root;
     }
@@ -593,6 +619,8 @@ export function createExperimentTab() {
             }
         },
         dispose() {
+            disposeSaved?.();
+            disposeAnalysisSaved?.();
             reloadEpoch += 1;
             actionEpoch += 1;
             controller?.abort();

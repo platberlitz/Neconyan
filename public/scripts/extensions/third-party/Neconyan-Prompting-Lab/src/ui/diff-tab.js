@@ -612,13 +612,10 @@ export function createDiffTab() {
             } else {
                 completion = `All ${result.runs.length} setups were built.`;
             }
-            const restoration = result.restoreProblems?.length
-                ? `Your own settings could not be fully put back: ${result.restoreProblems.join('; ')}. Check your character, persona, preset and connection profile.`
-                : 'Your settings have been put back.';
-            status.textContent = `${completion} ${restoration}${presetWarning ? ` ${presetWarning}` : ''}`;
+            status.textContent = `${completion}${presetWarning ? ` ${presetWarning}` : ''}`;
         } catch (error) {
             if (epoch === setupRunEpoch && setupController === controller && root) {
-                status.textContent = controller.signal.aborted
+                status.textContent = error.cancelled
                     ? 'Stopped the setup comparison.'
                     : `The setups could not be compared: ${errorMessage(error)}`;
             }
@@ -702,8 +699,8 @@ export function createDiffTab() {
             title: 'Builds the same test case once per setup, then compares the prompts',
         });
         setupStopButton = button('Stop', () => {
-            setupController?.abort();
-            status.textContent = 'Stopping after the current setup...';
+            setupController?.abort('user-stop');
+            status.textContent = 'Saving the stop request...';
         }, { className: 'menu_button sbpl-button' });
         setupStopButton.hidden = true;
         setupHost = element('div', { className: 'sbpl-setups' });

@@ -3,13 +3,13 @@ import { renderTemplateAsync } from './templates.js';
 import { debounce, download } from './utils.js';
 import {
     convertCharacterBook, flushWorldInfoEditor, getWorldInfoEditorSnapshot, loadWorldInfo,
-    replaceWorldInfoData, restoreWorldInfoCommit, selectWorldInfoEntry, showWorldEditor, world_names,
+    restoreWorldInfoCommit, selectWorldInfoEntry, showWorldEditor, world_names,
 } from './world-info.js';
 import {
-    delimitLorebook, exportLorebookProject, lorebookChanges, lorebookDigest, lorebookEntryTitle,
-    lorebookMergeCandidates, lorebookToCharacterBook, mergeLorebooks, parseLorebookImport,
-    searchReplaceLorebook, serializeLorebook,
+    exportLorebookProject, lorebookChanges, lorebookDigest, lorebookEntryTitle,
+    lorebookMergeCandidates, lorebookToCharacterBook, parseLorebookImport, serializeLorebook,
 } from './neconyan-lorebook-tools-core.js';
+import { getLabClient, mountLabRecovery } from './labs-client.js';
 
 function node(tag, text = '', className = '') {
     const element = document.createElement(tag);
@@ -108,6 +108,39 @@ export async function mountLorebookTools(root) {
         let opener = null;
         let generation = 0;
         let selectedUid = null;
+        const client = await getLabClient();
+        mountLabRecovery(panel);
+        const saved = node('select', '', 'text_pole');
+        saved.setAttribute('aria-label', 'Saved LoreStitch previews');
+        status.before(saved);
+        saved.addEventListener('change', () => void run(async () => {
+            if (!saved.value) return;
+            const record = await client.observe(await client.read(saved.value));
+            if (record.result.target.name !== state.name) throw new Error('This preview belongs to another lorebook.');
+            const toolMode = { replace: 'search', delimit: 'delimiters', merge: 'merge' }[record.result.operation];
+            if (!toolMode) throw new Error('The saved preview operation is unavailable.');
+            showMode(toolMode);
+            preview(toolMode, { ...record.result, record });
+        }));
+
+        async function refreshSaved() {
+            const records = await client.list('lorestitch');
+            saved.replaceChildren(new Option('Choose a saved LoreStitch preview', ''));
+            for (const record of records.filter(item => item.book === state.name)) {
+                saved.add(new Option(`${record.operation} - ${new Date(record.createdAt).toLocaleString()} - ${record.state}`, record.key));
+            }
+        }
+
+        async function nativePreview(toolMode, operation, options, extra = {}) {
+            if (!await prepare()) return;
+            const name = state.name;
+            const record = await client.run('lorestitch', { book: name, revision: state.revision, operation, options, ...extra },
+                { scope: `lorestitch:${name}:${operation}` });
+            if (state.name !== name) return;
+            preview(toolMode, { ...record.result, record });
+            await refreshSaved();
+            saved.value = record.key;
+        }
 
         const historyButton = button('History', event => open('history', event.currentTarget));
         historyButton.id = 'neco-lore-history-button';
@@ -237,6 +270,7 @@ export async function mountLorebookTools(root) {
                 book.replaceChildren(new Option('--- Pick a lorebook ---', ''));
                 for (const name of world_names.filter(name => name !== state.name)) book.add(new Option(name, name));
                 book.value = previous;
+                await refreshSaved();
             });
             panel.querySelector(`[data-mode="${nextMode}"]`)?.focus();
         }
@@ -388,7 +422,9 @@ export async function mountLorebookTools(root) {
                 const result = previews.get(toolMode);
                 if (!result?.changes.length) return;
                 const name = state.name;
-                await replaceWorldInfoData(name, result.book, state.revision);
+                await flushWorldInfoEditor();
+                await client.run('apply', { proposalKey: result.record.key, resultHash: result.record.resultHash },
+                    { scope: `apply:${result.record.key}` });
                 if (root.querySelector('#world_editor_select')?.selectedOptions[0]?.textContent !== name) return;
                 await showWorldEditor(name);
                 if (!await prepare()) return;
@@ -405,10 +441,10 @@ export async function mountLorebookTools(root) {
                 const form = new FormData(searchForm);
                 const fields = form.getAll('field');
                 if (fields.includes('comment')) fields.push('name');
-                preview('search', searchReplaceLorebook(state.data, {
+                await nativePreview('search', 'replace', {
                     search: String(form.get('search')), replacement: String(form.get('replacement')), fields,
                     regex: form.has('regex'), wholeWord: form.has('wholeWord'), caseSensitive: form.has('caseSensitive'),
-                }));
+                });
             });
         });
         const delimiterForm = panel.querySelector('.neco-lore-delimiter-form');
@@ -420,10 +456,10 @@ export async function mountLorebookTools(root) {
             event.preventDefault();
             void run(async () => {
                 const values = new FormData(delimiterForm);
-                preview('delimiters', delimitLorebook(state.data, {
+                await nativePreview('delimiters', 'delimit', {
                     style: values.get('delimiterStyle'), name: values.get('delimiterName') ?? '',
                     nameSource: values.get('nameSource'), uid: values.get('uid'),
-                }));
+                });
             });
         });
         panel.querySelector('#neco-lore-merge-book').addEventListener('change', event => {
@@ -448,7 +484,8 @@ export async function mountLorebookTools(root) {
         panel.querySelector('[data-merge-preview]').addEventListener('click', () => void run(async () => {
             if (!incoming) return;
             const choices = Object.fromEntries([...panel.querySelectorAll('.neco-lore-merge-list select')].map(select => [select.dataset.uid, select.value]));
-            preview('merge', mergeLorebooks(state.data, incoming, choices));
+            const incomingBook = panel.querySelector('#neco-lore-merge-book').value;
+            await nativePreview('merge', 'merge', { choices }, incomingBook ? { incomingBook } : { incoming });
         }));
         for (const action of panel.querySelectorAll('[data-export]')) action.addEventListener('click', () => void run(async () => {
             if (!await prepare()) return;

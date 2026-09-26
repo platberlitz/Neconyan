@@ -1,20 +1,9 @@
 import * as api from './api.js';
-import {
-    buildDistillPrompt,
-    chunkLines,
-    markDuplicates,
-    mergeProposals,
-    messageLines,
-    normalizeProposals,
-    parseProposals,
-} from './core.js';
+import { getLabClient, prepareLabConnection, mountLabRecovery } from '../../../../labs-client.js';
 
 const SETTINGS_KEY = 'SillyBunnyLorebookDistiller';
 const NEW_BOOK = '__sbld_new__';
 const CURRENT_CHAT = '__sbld_current__';
-// ponytail: named profiles expose no context limit; replace this fallback when the host does.
-const PROFILE_CONTEXT_FALLBACK = 4096;
-const TOKEN_SAFETY_MARGIN = 512;
 
 let popup = null;
 let closing = null;
@@ -60,6 +49,7 @@ function defaultBookName(ctx) {
 
 function proposalCard(proposal) {
     const card = el('div', 'sbld-card');
+    card.dataset.proposalId = String(proposal.id);
     const head = el('div', 'sbld-card-head');
     const include = el('input');
     include.type = 'checkbox';
@@ -102,7 +92,7 @@ function collectApproved(list) {
             .map(key => key.trim().toLowerCase())
             .filter(Boolean);
         if (title && content && keys.length) {
-            approved.push({ title, content, keys, card });
+            approved.push({ id: Number(card.dataset.proposalId), title, content, keys, card });
         }
     }
     return approved;
@@ -122,7 +112,7 @@ export async function openDistiller(ctx, opener) {
     heading.id = 'sbld_heading';
     root.append(
         heading,
-        el('p', 'sbld-note', 'Reads a chat, proposes one-concept lorebook entries, and writes only the ones you approve. Nothing is saved without your say-so.'),
+        el('p', 'sbld-note', 'Reads a saved chat and keeps proposed entries for review. Only the entries you approve are added to the lorebook.'),
     );
 
     const sourceSelect = el('select', 'text_pole sbld-select');
@@ -188,6 +178,8 @@ export async function openDistiller(ctx, opener) {
     profileSelect.addEventListener('change', () => saveSettings(ctx, { profileId: profileSelect.value }));
 
     const abort = new AbortController();
+    const client = await getLabClient();
+    mountLabRecovery(root, { signal: abort.signal });
     void api.listReadableChats(ctx, abort.signal).then((rows) => {
         for (const row of rows) {
             const character = (ctx.characters ?? []).find(item => item?.avatar === row.avatar);
@@ -205,6 +197,41 @@ export async function openDistiller(ctx, opener) {
 
     let busy = false;
     let resultTarget = null;
+    const savedSelect = el('select', 'text_pole sbld-select');
+    savedSelect.setAttribute('aria-label', 'Saved distillations');
+    controls.append(labelled('Saved distillations', savedSelect));
+    async function refreshSaved() {
+        const records = await client.list('distill');
+        if (abort.signal.aborted) return;
+        const selected = savedSelect.value;
+        savedSelect.replaceChildren(option('', 'Choose a saved distillation'));
+        for (const record of records) savedSelect.append(option(record.key, `${new Date(record.createdAt).toLocaleString()} - ${record.state}`));
+        savedSelect.value = selected;
+    }
+    function showResult(record) {
+        if (abort.signal.aborted) return;
+        resultTarget = record;
+        const used = new Set(record.review?.usedIds ?? []);
+        const proposals = record.result.proposals.filter(proposal => !used.has(proposal.id));
+        list.replaceChildren(...proposals.map(proposalCard));
+        applyButton.hidden = !proposals.length;
+        status.textContent = proposals.length
+            ? `Review ${proposals.length} proposed entries for '${record.result.target.name}'. Unticked entries are skipped.`
+            : 'There are no remaining proposed entries to add.';
+        if (record.result.failedChunks) status.textContent += ` ${record.result.failedChunks} parts returned no readable proposals.`;
+    }
+    const observation = { signal: abort.signal, onProgress: progress => {
+        if (!abort.signal.aborted) status.textContent = `${progress?.stage || 'Working on the server'}${progress?.total ? ` (${progress.completed}/${progress.total})` : ''}...`;
+    } };
+    savedSelect.addEventListener('change', async () => {
+        if (busy || !savedSelect.value) return;
+        busy = true;
+        distillButton.disabled = true;
+        try { showResult(await client.observe(await client.read(savedSelect.value), observation)); }
+        catch (error) { if (!abort.signal.aborted) status.textContent = error.message; }
+        finally { busy = false; distillButton.disabled = false; }
+    });
+    void refreshSaved().catch(error => { if (!abort.signal.aborted) status.textContent = error.message; });
     distillButton.addEventListener('click', async () => {
         if (busy) {
             return;
@@ -224,88 +251,29 @@ export async function openDistiller(ctx, opener) {
         applyButton.hidden = true;
         list.replaceChildren();
         try {
-            status.textContent = 'Reading the chat...';
-            const messages = source === CURRENT_CHAT
-                ? api.currentChatMessages(ctx)
-                : await api.readChatFile(ctx, JSON.parse(source), abort.signal);
-            const lines = messageLines(messages, { userName: ctx.name1, characterName: ctx.name2 });
-            if (!lines.length) {
-                status.textContent = 'This chat has no messages to distill.';
-                return;
-            }
-            const target = await api.prepareBook(ctx, requestedBook, { create: createBook, signal: abort.signal });
-            if (abort.signal.aborted) {
-                return;
-            }
-            const configuredContext = Number(ctx.maxContext);
-            const contextLimit = profileId
-                ? PROFILE_CONTEXT_FALLBACK
-                : Number.isFinite(configuredContext) && configuredContext > 0
-                    ? configuredContext
-                    : PROFILE_CONTEXT_FALLBACK;
-            const promptBudget = Math.floor(contextLimit - api.MODEL_RESPONSE_TOKENS - TOKEN_SAFETY_MARGIN);
-            if (promptBudget < 1) {
-                throw new Error('The selected connection context is too small for a distillation response.');
-            }
-            const chunks = await chunkLines(
-                lines,
-                text => ctx.getTokenCountAsync(text),
-                promptBudget,
-                buildDistillPrompt,
-            );
-            if (abort.signal.aborted) {
-                return;
-            }
-            const collected = [];
-            let failedChunks = 0;
-            for (const [index, chunk] of chunks.entries()) {
-                if (abort.signal.aborted) {
-                    return;
-                }
-                status.textContent = chunks.length === 1
-                    ? 'Asking the model for entries...'
-                    : `Asking the model for entries (part ${index + 1} of ${chunks.length})...`;
-                const prompt = buildDistillPrompt(chunk);
-                try {
-                    const reply = await api.runModel(ctx, prompt, {
-                        profileId,
-                        responseLength: api.MODEL_RESPONSE_TOKENS,
-                        signal: abort.signal,
-                    });
-                    if (abort.signal.aborted) {
-                        return;
+            status.textContent = 'Submitting saved chat for distillation...';
+            const selected = source === CURRENT_CHAT ? null : JSON.parse(source);
+            const currentLocator = current => current.groupId != null ? { group: true, chat: current.getCurrentChatId() }
+                : { group: false, avatar: current.characters?.[current.characterId]?.avatar, chat: current.getCurrentChatId() };
+            const locator = selected ? { group: false, avatar: selected.avatar, chat: selected.fileName.replace(/\.jsonl$/, '') }
+                : currentLocator(SillyTavern.getContext());
+            const record = await client.run('distill', { locator, book: requestedBook, create: createBook, profileId }, {
+                ...observation, prepareInput: async input => {
+                    if (source === CURRENT_CHAT) {
+                        const current = SillyTavern.getContext();
+                        const before = currentLocator(current);
+                        if (JSON.stringify(before) !== JSON.stringify(input.locator)) throw new Error('The selected chat changed. Choose it again.');
+                        await current.saveChat();
+                        if (JSON.stringify(currentLocator(SillyTavern.getContext())) !== JSON.stringify(before)) {
+                            throw new Error('The selected chat changed while saving. Choose it again.');
+                        }
                     }
-                    collected.push(...parseProposals(reply));
-                } catch (error) {
-                    if (abort.signal.aborted || error?.name === 'AbortError') {
-                        return;
-                    }
-                    failedChunks++;
-                    console.error('[Lorebook Distiller] chunk failed:', error);
-                }
-            }
-
-            const { proposals, dropped } = normalizeProposals(collected);
-            const reviewed = markDuplicates(mergeProposals(proposals), target.entries);
-            if (!reviewed.length) {
-                status.textContent = failedChunks
-                    ? `No entries came back, and ${failedChunks} of ${chunks.length} parts failed. Try again or pick another connection.`
-                    : 'The model found nothing durable worth keeping in this chat.';
-                return;
-            }
-            resultTarget = { name: target.name, create: createBook };
-            for (const proposal of reviewed) {
-                list.append(proposalCard(proposal));
-            }
-            applyButton.hidden = false;
-            const notes = [];
-            if (failedChunks) {
-                notes.push(`${failedChunks} of ${chunks.length} parts failed and are not included`);
-            }
-            if (dropped) {
-                notes.push(`${dropped} unusable ${dropped === 1 ? 'proposal was' : 'proposals were'} discarded`);
-            }
-            status.textContent = `Review ${reviewed.length} proposed ${reviewed.length === 1 ? 'entry' : 'entries'} for "${target.name}". Unticked ones are skipped.${notes.length ? ` (${notes.join('; ')}.)` : ''}`;
+                    return prepareLabConnection(input);
+                },
+            });
+            showResult(record);
+            await refreshSaved();
+            savedSelect.value = record.key;
         } catch (error) {
             if (!abort.signal.aborted && error?.name !== 'AbortError') {
                 status.textContent = `Distilling failed: ${error?.message ?? error}`;
@@ -331,14 +299,19 @@ export async function openDistiller(ctx, opener) {
             status.textContent = 'Distill the chat again before saving these entries.';
             return;
         }
-        const bookName = resultTarget.name;
+        const bookName = resultTarget.result.target.name;
         busy = true;
         applyButton.disabled = true;
+        let savedResult;
         try {
             status.textContent = `Saving ${approved.length} ${approved.length === 1 ? 'entry' : 'entries'} to "${bookName}"...`;
-            const saved = await api.appendEntries(ctx, bookName, approved, { create: resultTarget.create });
-            approved.forEach(item => item.card.remove());
-            resultTarget = { name: saved.name, create: false };
+            const applied = await client.run('apply', { proposalKey: resultTarget.key, resultHash: resultTarget.resultHash,
+                selected: approved.map(({ id, title, content, keys }) => ({ id, title, content, keys })) },
+            { ...observation, scope: `apply:${resultTarget.key}` });
+            const saved = applied.result;
+            savedResult = saved;
+            showResult(await client.read(resultTarget.key));
+            await ctx.updateWorldInfoList?.();
             saveSettings(ctx, { targetBook: saved.name });
             refreshBooks();
             if (![...bookSelect.options].some(item => item.value === saved.name)) {
@@ -346,13 +319,15 @@ export async function openDistiller(ctx, opener) {
             }
             bookSelect.value = saved.name;
             syncNewBookVisibility();
-            status.textContent = `Added ${approved.length} ${approved.length === 1 ? 'entry' : 'entries'} to "${saved.name}".${saved.refreshError ? ' The host lorebook list could not be refreshed.' : ''}`;
+            status.textContent = `Added ${saved.selected.length} entries to '${saved.name}'.`;
             if (!list.children.length) {
                 applyButton.hidden = true;
                 resultTarget = null;
             }
         } catch (error) {
-            status.textContent = `The entries could not be saved: ${error?.message ?? error}`;
+            status.textContent = savedResult
+                ? `The entries were saved to '${savedResult.name}'. Reload the lorebook to see them. ${error?.message ?? error}`
+                : `The entries could not be saved: ${error?.message ?? error}`;
         } finally {
             busy = false;
             applyButton.disabled = false;

@@ -234,42 +234,6 @@ export function readInstalledPreset(apiId, name, source = getContext) {
     return structuredClone(payload);
 }
 
-function assertSafePresetName(name) {
-    // Match sanitize-filename's default rewrites so the catalog name and disk name cannot diverge.
-    if (typeof name !== 'string'
-        || !name
-        || /[/?<>\\:*|"\u0000-\u001f\u0080-\u009f]/.test(name)
-        || /^\.+$/.test(name)
-        || /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\..*)?$/i.test(name)
-        || /[. ]$/.test(name)
-        || new TextEncoder().encode(name).length > 255) {
-        throw new Error('Choose a preset name that is safe as a filename (no control characters, / ? < > \\ : * | ", dot-only or Windows-reserved names, trailing dots or spaces, or more than 255 UTF-8 bytes).');
-    }
-}
-
-/**
- * Saves a draft after checking the current on-disk catalogue for its name.
- * The host has no atomic create-only save, so another request can still race
- * this check; the caller asks the user to reload after a successful save.
- */
-export async function publishPreset(apiId, name, payload, { signal } = {}) {
-    assertSafePresetName(name);
-    const catalog = await readPresetCatalog({ signal });
-    const taken = (catalog[apiId] ?? []).some(entry => entry.name.toLowerCase() === name.toLowerCase());
-    if (taken) {
-        throw new Error(`Neconyan already has a ${apiId} preset called "${name}". Choose another name.`);
-    }
-    if (apiId === 'openai') {
-        const context = getContext();
-        await context?.eventSource?.emit?.(
-            context?.eventTypes?.OAI_PRESET_IMPORT_READY ?? 'oai_preset_import_ready',
-            { data: payload, presetName: name },
-        );
-    }
-    const result = await requestJson('/api/presets/save', { name, apiId, preset: payload }, { signal });
-    return String(result?.name || name);
-}
-
 export function notify(level, message) {
     const method = globalThis.toastr?.[level];
     if (typeof method === 'function') {

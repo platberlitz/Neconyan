@@ -1,14 +1,13 @@
 import { MAX_EXPORT_WITH_BASELINES_BYTES } from '../constants.js';
 import { button, element, errorMessage, field, replace, statusRegion } from '../dom.js';
-import { adoptEmbeddedCases, findCharactersWithTests, PRIVACY_NOTICE, readEmbeddedCases, writeEmbeddedCases, embeddedSize } from '../embed.js';
-import { getContext, readInstalledPreset } from '../host.js';
+import { findCharactersWithTests, PRIVACY_NOTICE } from '../embed.js';
+import { getContext } from '../host.js';
 import * as lab from '../lab.js';
 import { registerActiveTask } from '../operations.js';
-import { reviewConnectionFields, withoutFields } from '../presets.js';
-import { createDraft } from '../schema.js';
+import { mountSavedPromptingResults, runPromptingLab } from '../native.js';
 import { getSettings, isSettingsReadOnly, updateSettings } from '../settings.js';
 import * as storage from '../storage.js';
-import { buildExport, downloadExport, formatSize, parseImport, suggestedFileName } from '../transfer.js';
+import { downloadExport, formatSize } from '../transfer.js';
 
 /**
  * Preferences, moving suites between installations, and storing tests inside a
@@ -25,6 +24,8 @@ export function createSettingsTab({ onChanged = null } = {}) {
     let suites = [];
     let activeSuite = null;
     let reloadEpoch = 0;
+    let reviewHost = null;
+    const savedDisposers = [];
 
     async function reload({ preferredSuiteId = '' } = {}) {
         const epoch = ++reloadEpoch;
@@ -71,57 +72,12 @@ export function createSettingsTab({ onChanged = null } = {}) {
             }
         }
         try {
-            const cases = await lab.getSuiteCases(suite);
-            let baselineRuns = null;
-            if (includeBaselines) {
-                baselineRuns = [];
-                for (const runId of Object.values(suite.baselines ?? {})) {
-                    const run = await storage.getRun(runId);
-                    if (run) {
-                        baselineRuns.push(run);
-                    }
-                }
-            }
-            const presets = await collectPresets(cases, { includePresets, includeConnection });
-            const { text, size, kind } = buildExport(suite, cases, baselineRuns, presets);
-            downloadExport(suggestedFileName(suite), text);
-            status.textContent = `Exported ${cases.length} test case${cases.length === 1 ? '' : 's'} (${formatSize(size)})${kind === 'suite-with-baselines' ? ', including baseline runs' : ''}${presets.length ? `, with ${presets.length} preset${presets.length === 1 ? '' : 's'}` : ''}.`;
+            const exported = await runPromptingLab('transfer', { operation: 'export', suiteId: suite.id, includeBaselines, includePresets, includeConnection });
+            downloadExport(exported.fileName, exported.text);
+            status.textContent = `Exported ${exported.caseCount} test cases (${formatSize(exported.size)}), with ${exported.presetCount} presets.`;
         } catch (error) {
             status.textContent = `The suite could not be exported: ${errorMessage(error)}`;
         }
-    }
-
-    /**
-     * Copies the presets a suite depends on, so it still works elsewhere.
-     * Settings that say where requests go are left out unless the user asks
-     * for them, because they point at someone's private setup.
-     */
-    async function collectPresets(cases, { includePresets, includeConnection }) {
-        if (!includePresets) {
-            return [];
-        }
-        const wanted = new Map();
-        for (const testCase of cases) {
-            for (const ref of testCase.pins.presets) {
-                wanted.set(`${ref.apiId}:${ref.name}`, ref);
-            }
-        }
-        const presets = [];
-        for (const ref of wanted.values()) {
-            const payload = readInstalledPreset(ref.apiId, ref.name);
-            if (!payload) {
-                continue;
-            }
-            const fields = reviewConnectionFields(ref.apiId, payload);
-            presets.push(createDraft({
-                apiId: ref.apiId,
-                name: ref.name,
-                payload: includeConnection
-                    ? payload
-                    : withoutFields(payload, fields.map(entry => entry.field)),
-            }));
-        }
-        return presets;
     }
 
     async function importFile(file) {
@@ -132,9 +88,8 @@ export function createSettingsTab({ onChanged = null } = {}) {
             }
             task = registerActiveTask('suite import');
             const text = await file.text();
-            const { suite, cases, baselineRuns, presets } = parseImport(text);
-            const imported = await storage.saveImportBatch({ suite, cases, baselineRuns, presets });
-            status.textContent = `Imported "${suite.name}" with ${cases.length} test case${cases.length === 1 ? '' : 's'}${baselineRuns.length ? ' and its baseline runs' : ''}${presets.length ? `. Its ${presets.length} preset${presets.length === 1 ? ' is' : 's are'} waiting on the Presets tab, ready to publish` : ''}.`;
+            const imported = await runPromptingLab('transfer', { operation: 'import', text }, { signal: task.signal });
+            status.textContent = `Imported '${imported.suite.name}' and its saved test definitions. Imported presets are available on the Presets tab.`;
             await reload({ preferredSuiteId: imported.suite.id });
             onChanged?.();
         } catch (error) {
@@ -164,20 +119,10 @@ export function createSettingsTab({ onChanged = null } = {}) {
                         return;
                     }
                     const suiteId = activeSuite.id;
-                    const adopted = adoptEmbeddedCases(
-                        readEmbeddedCases(context, carrier.avatar),
-                        carrier.avatar,
-                    );
                     const task = registerActiveTask('embedded case adoption');
                     try {
-                        for (const testCase of adopted) {
-                            await storage.saveCase(testCase);
-                        }
-                        await storage.updateSuite(suiteId, (suite) => {
-                            const ids = adopted.map(item2 => item2.id);
-                            suite.caseIds.push(...ids.filter(id => !suite.caseIds.includes(id)));
-                        });
-                        status.textContent = `Copied ${adopted.length} test case${adopted.length === 1 ? '' : 's'} from ${carrier.name}.`;
+                        const adopted = await runPromptingLab('embed', { operation: 'adopt', suiteId, avatar: carrier.avatar }, { signal: task.signal });
+                        status.textContent = `Copied ${adopted.cases.length} test cases from ${carrier.name}.`;
                         await reload();
                         onChanged?.();
                     } finally {
@@ -225,7 +170,7 @@ export function createSettingsTab({ onChanged = null } = {}) {
             }));
         }
 
-        const saveInto = button('Save this suite into a character card', async () => {
+        const saveInto = button('Preview saving this suite into a character card', async () => {
             if (!activeSuite) {
                 status.textContent = 'Choose a suite first.';
                 return;
@@ -237,24 +182,11 @@ export function createSettingsTab({ onChanged = null } = {}) {
                     : 'None of these test cases has a character, so there is no card to save them into.';
                 return;
             }
-            const forCharacter = suiteCases
-                .filter(item => item.pins.characterAvatar === avatar)
-                .map(item => structuredClone(item));
-            const size = embeddedSize(forCharacter);
-            const existing = readEmbeddedCases(context, avatar);
-            const confirmed = globalThis.confirm?.(
-                `${PRIVACY_NOTICE}\n\n${forCharacter.length} test case${forCharacter.length === 1 ? '' : 's'} (${formatSize(size)}) will be saved into this card. ${existing.length ? `They will replace the ${existing.length} test case${existing.length === 1 ? '' : 's'} already stored there.` : 'Any Prompting Lab test cases already stored there will be replaced.'}\n\nReplace the card's stored test cases?`,
-            );
-            if (!confirmed) {
-                status.textContent = 'Nothing was saved into the card.';
-                return;
-            }
             let task = null;
             try {
                 task = registerActiveTask('character card embedding');
-                await writeEmbeddedCases(context, avatar, forCharacter, { signal: task.signal });
-                status.textContent = `Saved ${forCharacter.length} test case${forCharacter.length === 1 ? '' : 's'} into the card.`;
-                renderEmbedSection(suiteCases);
+                const record = await runPromptingLab('embed', { operation: 'preview', suiteId: activeSuite.id, avatar }, { signal: task.signal, returnRecord: true });
+                showEmbeddedProposal(record.result, record);
             } catch (error) {
                 status.textContent = `They could not be saved into the card: ${errorMessage(error)}`;
             } finally {
@@ -262,6 +194,20 @@ export function createSettingsTab({ onChanged = null } = {}) {
             }
         }, { className: 'menu_button sbpl-button' });
         embedHost.append(saveInto);
+    }
+
+    function showEmbeddedProposal(proposal, record) {
+        replace(reviewHost, element('p', { text: `${proposal.count} tests (${formatSize(proposal.size)}) will replace ${proposal.previousCount} stored tests in ${proposal.avatar}.` }),
+            button('Apply reviewed character tests', async () => {
+                if (!globalThis.confirm?.(`${PRIVACY_NOTICE}\n\nApply these reviewed test definitions?`)) return;
+                try {
+                    await runPromptingLab('embed-apply', { proposalKey: record.key, resultHash: record.resultHash });
+                    await getContext().getCharacters?.();
+                    replace(reviewHost);
+                    await reload();
+                    status.textContent = 'The reviewed tests were saved into the character card.';
+                } catch (error) { status.textContent = `The saved operation needs attention: ${errorMessage(error)}`; }
+            }, { className: 'menu_button sbpl-button' }));
     }
 
     function build() {
@@ -358,18 +304,7 @@ export function createSettingsTab({ onChanged = null } = {}) {
             }
             const task = registerActiveTask('run history deletion');
             try {
-                for (const testCase of await storage.listCases()) {
-                    for (const entry of await storage.listRuns(testCase.id)) {
-                        await storage.deleteRun(testCase.id, entry.id);
-                    }
-                }
-                // The baseline pointers now point at nothing; clearing them keeps
-                // every suite honest about having no baselines any more.
-                for (const suite of await storage.listSuites()) {
-                    await storage.updateSuite(suite.id, (current) => {
-                        current.baselines = {};
-                    });
-                }
+                await runPromptingLab('storage', { method: 'clearRuns', args: [] }, { signal: task.signal });
                 await reload();
                 status.textContent = 'Deleted every saved run and cleared every baseline.';
                 onChanged?.();
@@ -380,6 +315,7 @@ export function createSettingsTab({ onChanged = null } = {}) {
 
         status = statusRegion('');
         embedHost = element('div', { className: 'sbpl-embed-section' });
+        reviewHost = element('div', { className: 'sbpl-embed-section' });
 
         if (readOnly) {
             root.append(element('p', {
@@ -401,10 +337,20 @@ export function createSettingsTab({ onChanged = null } = {}) {
             transfer,
             field('Import a suite file', fileInput),
             embedHost,
+            reviewHost,
             element('p', { className: 'sbpl-field-label', text: 'Clearing data' }),
             danger,
             status,
         );
+        savedDisposers.push(mountSavedPromptingResults(root, { kind: 'embed', operation: 'preview', label: 'Saved character test proposals',
+            onResult: showEmbeddedProposal, onError: error => { status.textContent = errorMessage(error); } }));
+        const savedTransfer = element('div', { className: 'sbpl-controls' });
+        root.append(savedTransfer);
+        savedDisposers.push(mountSavedPromptingResults(root, { kind: 'transfer', label: 'Saved suite transfers', onResult: result => {
+            savedTransfer.replaceChildren();
+            if (typeof result.text === 'string') savedTransfer.append(button('Download saved suite export', () => downloadExport(result.fileName, result.text)));
+            else if (result.suite) { status.textContent = `Imported suite: ${result.suite.name}`; void reload({ preferredSuiteId: result.suite.id }); }
+        }, onError: error => { status.textContent = errorMessage(error); } }));
         return root;
     }
 
@@ -423,6 +369,7 @@ export function createSettingsTab({ onChanged = null } = {}) {
         },
         dispose() {
             reloadEpoch++;
+            savedDisposers.splice(0).forEach(dispose => dispose());
             root?.remove();
             root = null;
         },

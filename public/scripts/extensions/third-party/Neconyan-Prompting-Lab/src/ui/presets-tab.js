@@ -1,6 +1,7 @@
 import { copyPrompt, onClipboardChange, readClipboard } from '../clipboard.js';
 import { button, confirmButton, element, emptyState, errorMessage, field, promptField, replace, statusRegion } from '../dom.js';
-import { countTokens, getContext, listInstalledPresets, publishPreset, readInstalledPreset } from '../host.js';
+import { countTokens, getContext, listInstalledPresets, readInstalledPreset } from '../host.js';
+import { runPromptingLab } from '../native.js';
 import { registerActiveTask } from '../operations.js';
 import { moduleToDraft, pastePromptModule } from '../prompt-drafts.js';
 import {
@@ -692,18 +693,13 @@ export function createPresetsTab({ onChanged = null, onPromptSaved = null } = {}
         }
         try {
             const editor = editing;
-            const draft = structuredClone(editor);
-            const name = draft.name.trim();
-            const payload = withCanonicalName(draft.apiId, draft.payload, name);
-            const savedName = await publishPreset(draft.apiId, name, payload, { signal: task.signal });
+            const draft = await storage.saveDraft(structuredClone(editor));
+            const published = await runPromptingLab('publish', { draftId: draft.id, version: await fingerprint(draft) }, { signal: task.signal });
+            const savedName = published.name;
             if (task.signal.aborted) {
                 return;
             }
-            draft.publishedAs = savedName;
-            const saved = await storage.saveDraft(draft);
-            if (task.signal.aborted) {
-                return;
-            }
+            const saved = published.draft;
             if (editing === editor) {
                 editing = saved;
             }

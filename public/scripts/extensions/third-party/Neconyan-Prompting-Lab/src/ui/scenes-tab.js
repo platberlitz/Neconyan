@@ -1,5 +1,6 @@
 import { listComparableProfiles } from '../ab.js';
-import { hasUnsavedPresetEdits, willCreateChatFile } from '../apply-state.js';
+import { hasUnsavedPresetEdits } from '../apply-state.js';
+import { mountSavedPromptingResults } from '../native.js';
 import { CAVEAT_TEXT } from '../constants.js';
 import { button, element, errorMessage, field, formatTokens, promptField, replace, statusRegion } from '../dom.js';
 import { getContext, loadHost } from '../host.js';
@@ -15,6 +16,7 @@ import {
     formatScene,
     MAX_PRESETS,
     MAX_TURNS,
+    mergeSavedSceneReplacement,
     runSceneComparison,
     SCENE_MODE,
     sceneFileName,
@@ -64,9 +66,9 @@ export function createScenesTab() {
     let controller = null;
     let lastResult = null;
     let lastRun = null;
+    let disposeSaved = null;
     let retrying = -1;
     let reloadEpoch = 0;
-    let chatFileEpoch = 0;
     let chatFileCheck = null;
     let actionEpoch = 0;
     // The reply arriving is a text change inside one panel, not a new layout;
@@ -198,7 +200,7 @@ export function createScenesTab() {
 
     function dirtyPresetProblem() {
         return PRESET_API_IDS.some(apiId => hasUnsavedPresetEdits(getContext, apiId) === true)
-            ? 'You have unsaved changes in the preset panel. Save them before playing a scene, or selecting presets will discard them.'
+            ? 'Save the preset changes before playing a scene so the server can use them.'
             : '';
     }
 
@@ -221,45 +223,13 @@ export function createScenesTab() {
         });
     }
 
-    /**
-     * Playing a scene opens the character, and opening a character that has
-     * never been chatted to creates a chat file for it. Say so before the
-     * button is pressed rather than leaving a new file behind unannounced.
-     */
-    function checkChatFile(reloadAtStart = reloadEpoch) {
-        const epoch = ++chatFileEpoch;
+    /** The server captures saved character and chat data without opening a chat. */
+    function checkChatFile() {
         const avatar = characterSelect.value;
-        const check = { avatar, pending: Boolean(avatar), promise: null };
+        const check = { avatar, pending: false, promise: Promise.resolve() };
         chatFileCheck = check;
-        chatFileNote.textContent = avatar
-            ? 'Checking whether playing this character will create a chat...'
-            : '';
-        chatFileNote.hidden = !avatar;
+        chatFileNote.hidden = true;
         updateControls();
-        if (!avatar) {
-            check.promise = Promise.resolve();
-            return check.promise;
-        }
-        check.promise = (async () => {
-            let creates = false;
-            let failed = false;
-            try {
-                creates = await willCreateChatFile(getContext, avatar);
-            } catch {
-                failed = true;
-            }
-            check.pending = false;
-            if (check !== chatFileCheck || epoch !== chatFileEpoch || reloadAtStart !== reloadEpoch
-                || avatar !== characterSelect.value || !root) {
-                return;
-            }
-            // A check that cannot be made is not a reason to block the tab.
-            chatFileNote.hidden = failed || !creates;
-            if (creates) {
-                chatFileNote.textContent = 'This character has no chat yet. Playing a scene opens it, which creates one. The scene itself is still never saved to it.';
-            }
-            updateControls();
-        })();
         return check.promise;
     }
 
@@ -509,8 +479,7 @@ export function createScenesTab() {
                 },
                 onProgress: (event) => {
                     if (epoch === actionEpoch) {
-                        status.textContent = `${event.presetName}: turn ${event.turn} of ${event.turnTotal}`
-                            + ` (preset ${event.presetIndex} of ${event.presetTotal})`;
+                        status.textContent = `${event.stage || 'Comparing scenes'} (${event.completed || 0}/${event.total || 0})`;
                     }
                 },
             });
@@ -519,11 +488,7 @@ export function createScenesTab() {
             }
             lastResult = result;
             renderColumns(result);
-            const parts = [result.aborted ? 'Stopped.' : 'Finished.'];
-            parts.push(result.restoreProblems.length
-                ? `Your settings could not be fully put back: ${result.restoreProblems.join('; ')}. Check your character, preset and connection profile.`
-                : 'Your character, preset and connection have been put back.');
-            status.textContent = parts.join(' ');
+            status.textContent = 'Scene comparison saved.';
         } catch (error) {
             if (epoch === actionEpoch) {
                 status.textContent = error?.code === 'SBPL_BUSY'
@@ -602,7 +567,7 @@ export function createScenesTab() {
                 onUpdate: ({ columns, streaming }) => {
                     if (epoch === actionEpoch) {
                         const merged = (lastResult?.columns ?? baseResult.columns).slice();
-                        merged[index] = columns[0] ?? merged[index];
+                        merged[index] = mergeSavedSceneReplacement(merged[index], columns[0]);
                         handleUpdate({ columns: merged, streaming });
                     }
                 },
@@ -610,16 +575,10 @@ export function createScenesTab() {
             if (epoch !== actionEpoch) {
                 return;
             }
-            lastResult.columns[index] = result.columns[0] ?? target;
+            lastResult.columns[index] = mergeSavedSceneReplacement(lastResult.columns[index] ?? target, result.columns[0]);
             recomputeCompletion(result.aborted);
             renderColumns(lastResult);
-            status.textContent = result.aborted
-                ? (result.restoreProblems.length
-                    ? `Stopped, but your settings could not be fully put back: ${result.restoreProblems.join('; ')}.`
-                    : 'Stopped. Your settings have been put back.')
-                : (result.restoreProblems.length
-                    ? `Tried again, but your settings could not be fully put back: ${result.restoreProblems.join('; ')}.`
-                    : `Tried ${target.label} again. Your settings have been put back.`);
+            status.textContent = result.aborted ? 'Stopped.' : `Saved the new reply for ${target.label}.`;
         } catch (error) {
             if (epoch === actionEpoch) {
                 status.textContent = error?.code === 'SBPL_BUSY'
@@ -680,15 +639,7 @@ export function createScenesTab() {
 
         const merge = (fresh) => {
             const merged = (lastResult?.columns ?? baseResult.columns).slice();
-            merged[columnIndex] = fresh
-                ? {
-                    ...fresh,
-                    // The turns before the retry stay exactly as they were: they
-                    // were not sent again, so nothing about them changed.
-                    turns: [...kept, ...fresh.turns],
-                    caveats: [...new Set([...target.caveats, ...fresh.caveats])],
-                }
-                : target;
+            merged[columnIndex] = mergeSavedSceneReplacement(merged[columnIndex] ?? target, fresh);
             return merged;
         };
 
@@ -718,13 +669,7 @@ export function createScenesTab() {
             lastResult.columns = merge(result.columns[0]);
             recomputeCompletion(result.aborted);
             renderColumns(lastResult);
-            status.textContent = result.aborted
-                ? (result.restoreProblems.length
-                    ? `Stopped, but your settings could not be fully put back: ${result.restoreProblems.join('; ')}.`
-                    : 'Stopped. Your settings have been put back.')
-                : (result.restoreProblems.length
-                    ? `Played turn ${turnNumber} again, but your settings could not be fully put back: ${result.restoreProblems.join('; ')}.`
-                    : `Played ${target.label} again from turn ${turnNumber}. Your settings have been put back.`);
+            status.textContent = result.aborted ? 'Stopped.' : `Saved ${target.label} from turn ${turnNumber}.`;
         } catch (error) {
             if (epoch === actionEpoch) {
                 status.textContent = error?.code === 'SBPL_BUSY'
@@ -952,8 +897,8 @@ export function createScenesTab() {
             className: 'menu_button menu_button_primary sbpl-button',
         });
         cancelButton = button('Stop', () => {
-            controller?.abort();
-            status.textContent = 'Stopping after the turn in flight.';
+            controller?.abort('user-stop');
+            status.textContent = 'Saving the stop request...';
         }, { className: 'menu_button sbpl-button' });
         cancelButton.hidden = true;
 
@@ -967,7 +912,7 @@ export function createScenesTab() {
         root.append(
             element('p', {
                 className: 'sbpl-settings-note',
-                text: 'Sends the same scene to a real model once for each preset, so you can read how each one plays it out. This uses tokens. Nothing is added to any chat; your character, preset and connection change while it runs and are put back afterwards.',
+                text: 'Sends the same scene to a model once for each preset. This uses tokens. The server saves each reply and continues when the page closes.',
             }),
             characterPicker.node,
             chatFileNote,
@@ -989,6 +934,22 @@ export function createScenesTab() {
             output,
         );
         renderTurnFields();
+        disposeSaved = mountSavedPromptingResults(root, { kind: 'scene',
+            isBusy: () => Boolean(controller),
+            onBusy: (value, previous) => {
+                if (value || controller === previous) controller = value;
+                updateControls();
+                renderExportBar();
+            },
+            onResult: (result, record) => {
+                lastRun = record.display;
+                lastResult = result;
+                renderColumns(result);
+                renderExportBar();
+                status.textContent = record.state === 'completed' ? 'Saved scene comparison loaded.' : 'Showing saved replies; observing the remaining work.';
+            },
+            onError: error => { status.textContent = errorMessage(error); },
+        });
         return root;
     }
 
@@ -1006,8 +967,8 @@ export function createScenesTab() {
             }
         },
         dispose() {
+            disposeSaved?.();
             reloadEpoch += 1;
-            chatFileEpoch += 1;
             actionEpoch += 1;
             controller?.abort();
             controller = null;

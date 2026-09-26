@@ -1,4 +1,4 @@
-import { sendPrompt } from './ab.js';
+import { runPromptingLab } from './native.js';
 import { ctxOf, getContext } from './host.js';
 
 /**
@@ -120,25 +120,11 @@ export async function runExperiment({
     scenario = '',
     greeting = null,
     profileId = '',
-    hostRef = getContext,
     maxTokens = 300,
     signal = null,
 } = {}) {
-    const variants = [
-        { key: 'A', prompt: String(promptA ?? '') },
-        { key: 'B', prompt: String(promptB ?? '') },
-    ];
-    return Promise.all(variants.map(async (variant) => {
-        const messages = buildExperimentMessages({
-            prompt: variant.prompt,
-            role,
-            character,
-            scenario,
-            greeting,
-        });
-        const result = await sendPrompt(profileId, messages, { hostRef, maxTokens, signal });
-        return { ...variant, messages, ...result };
-    }));
+    return runPromptingLab('requests', { operation: 'experiment', promptA, promptB, role,
+        characterAvatar: character?.avatar || '', scenario, greeting, profileId, maxTokens }, { signal });
 }
 
 /**
@@ -185,9 +171,8 @@ export function buildAnalysisMessages({
  */
 export async function requestAnalysis(details, {
     profileId = '',
-    hostRef = getContext,
     maxTokens = 800,
     signal = null,
 } = {}) {
-    return sendPrompt(profileId, buildAnalysisMessages(details), { hostRef, maxTokens, signal });
+    return runPromptingLab('requests', { operation: 'analysis', details, profileId, maxTokens }, { signal });
 }

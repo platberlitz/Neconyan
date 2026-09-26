@@ -6,6 +6,7 @@ import { assertUntrackedRoleplayFiles, confirmRoleplayAccount, createRoleplayDir
     roleplayError, roleplayHash, roleplayLease, roleplayStoreDirectory, withRoleplayAccount } from '../roleplay-store.js';
 import { fsyncDirectorySync, tryWriteFileSync } from '../util.js';
 import { reserveJobApprovalCapacityLocked } from './job-approvals.js';
+import { assertLabsTargetIdle } from '../labs/store.js';
 
 // Reserve enough for every allowed sprite replacement or 256-part speech result
 // before accepting work, including file evidence and the final completion list.
@@ -75,6 +76,7 @@ function reserveReceipt(base, filename, targetHash) {
 
 /** An ordinary cooperating writer cannot replace an accepted native media target. */
 export function assertNativeMediaTargetIdle(lease, target) {
+    assertLabsTargetIdle(lease, target);
     const { scope } = roleplayLease(lease);
     const directory = path.join(roleplayStoreDirectory(scope), 'media');
     readRoleplayFile(path.join(directory, '.media-path-check'), 1, { allowMissingParent: true });

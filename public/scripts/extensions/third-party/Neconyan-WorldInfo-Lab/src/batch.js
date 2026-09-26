@@ -1,5 +1,5 @@
 import { LOGIC, POSITION } from './constants.js';
-import { getContext, loadHost, mutateWorldInfo } from './host.js';
+import { applyWorldInfoLab, runWorldInfoLab } from './native.js';
 
 const PREVIEW_VERSION = 1;
 const ALLOWED_FIELDS = new Set([
@@ -146,67 +146,6 @@ function normalizeFieldValue(field, value) {
     }
 }
 
-async function mirrorOriginalData(book, changes, signal) {
-    if (!Array.isArray(book?.originalData?.entries)) {
-        return;
-    }
-    const originalIndex = (uid) => {
-        const mappedIndex = book.originalDataUidMap?.[uid];
-        const mapped = book.originalData.entries[mappedIndex];
-        if (Number.isInteger(mappedIndex) && String(mapped?.id ?? mapped?.uid) === String(uid)) {
-            return mappedIndex;
-        }
-        const matches = book.originalData.entries
-            .map((item, index) => String(item?.id ?? item?.uid) === String(uid) ? index : -1)
-            .filter(index => index !== -1);
-        if (matches.length !== 1) {
-            return -1;
-        }
-        if (!book.originalDataUidMap || typeof book.originalDataUidMap !== 'object' || Array.isArray(book.originalDataUidMap)) {
-            book.originalDataUidMap = {};
-        }
-        book.originalDataUidMap[uid] = matches[0];
-        return matches[0];
-    };
-    const missing = changes.filter((change) => {
-        const entry = book.entries[change.entryKey];
-        const uid = entry?.uid ?? change.uid;
-        return originalIndex(uid) === -1;
-    });
-    if (missing.length) {
-        throw new Error(`Nothing was saved because ${missing.length} reviewed ${missing.length === 1 ? 'entry could not' : 'entries could not'} be matched to the lorebook's CharacterBook data. Reload and build a new preview.`);
-    }
-    const host = await loadHost();
-    checkAbort(signal);
-    const setOriginal = host.ok ? host.worldInfo?.setWIOriginalDataValue : null;
-    const keyMap = host.ok ? host.worldInfo?.originalWIDataKeyMap : null;
-    if (typeof setOriginal !== 'function' || !keyMap) {
-        throw new Error('This CharacterBook-format lorebook cannot be safely updated with this Neconyan version. Nothing was saved.');
-    }
-    for (const change of changes) {
-        const entry = book.entries[change.entryKey];
-        const uid = entry?.uid ?? change.uid;
-        if (change.field === 'disable') {
-            setOriginal(book, uid, 'enabled', !change.after);
-            continue;
-        }
-        if (change.field === 'characterFilter') {
-            setOriginal(book, uid, 'character_filter', clone(change.after));
-            continue;
-        }
-        if (change.field === 'position') {
-            setOriginal(book, uid, 'position', change.after === POSITION.before ? 'before_char' : 'after_char');
-            setOriginal(book, uid, 'extensions.position', change.after);
-            continue;
-        }
-        const originalKey = keyMap[change.field];
-        if (!originalKey) {
-            throw new Error(`The setting "${change.field}" cannot be safely written to this CharacterBook-format lorebook. Nothing was saved.`);
-        }
-        setOriginal(book, uid, originalKey, clone(change.after));
-    }
-}
-
 function getBookFromSnapshot(snapshot, bookName) {
     const book = snapshot?.books instanceof Map
         ? snapshot.books.get(bookName)
@@ -230,7 +169,7 @@ function makeChange(entry, key, field, before, after) {
     };
 }
 
-export async function previewBatch(payload, { signal } = {}) {
+export async function computeBatchPreview(payload, { signal } = {}) {
     checkAbort(signal);
     const bookName = String(payload?.bookName ?? '').trim();
     if (!bookName) {
@@ -297,51 +236,11 @@ export async function previewBatch(payload, { signal } = {}) {
     };
 }
 
-async function applyReviewedPreview(preview, signal) {
-    checkAbort(signal);
-    if (preview?.kind !== 'batch-preview' || preview.version !== PREVIEW_VERSION || !Array.isArray(preview.changes)) {
-        throw new TypeError('This preview is no longer valid. Build and review a new preview.');
-    }
-    if (!preview.changes.length) {
-        return { count: 0, message: 'There are no reviewed changes to save. Create a new preview.' };
-    }
-    const context = getContext();
-    const result = await mutateWorldInfo(preview.bookName, async (next) => {
-        if (!next?.entries || typeof next.entries !== 'object' || Array.isArray(next.entries)) {
-            throw new Error(`The latest copy of "${preview.bookName}" could not be loaded. Nothing was saved.`);
-        }
-        const conflicts = [];
-        for (const change of preview.changes) {
-            const current = next.entries[change.entryKey];
-            if (!current || JSON.stringify(current) !== change.entrySnapshot) {
-                conflicts.push({ entryKey: change.entryKey, uid: change.uid, label: change.label });
-            }
-        }
-        if (conflicts.length) {
-            throw new BatchConflictError(conflicts);
-        }
-        for (const change of preview.changes) {
-            next.entries[change.entryKey][change.field] = clone(change.after);
-        }
-        await mirrorOriginalData(next, preview.changes, signal);
-        return {
-            count: preview.changes.length,
-            message: `Saved changes to ${preview.changes.length} ${preview.changes.length === 1 ? 'entry' : 'entries'} in "${preview.bookName}".`,
-        };
-    }, { signal });
-    let refreshWarning = '';
-    try {
-        await context.reloadWorldInfoEditor?.(preview.bookName, true);
-        await context.updateWorldInfoList?.();
-    } catch (error) {
-        refreshWarning = `Changes were saved, but Neconyan could not refresh its lorebook list. Reload before making another edit. Technical details: ${error?.message ?? error}`;
-    }
-    return {
-        ...result,
-        refreshWarning,
-    };
+export function applyBatch(preview, { signal } = {}) {
+    return applyWorldInfoLab(preview, { signal });
 }
 
-export function applyBatch(preview, { signal } = {}) {
-    return applyReviewedPreview(preview, signal);
+export function previewBatch(payload, options) {
+    const { snapshot, bookName, ...input } = payload;
+    return runWorldInfoLab('batch', { ...input, book: bookName, expectedBook: getBookFromSnapshot(snapshot, bookName) }, options);
 }

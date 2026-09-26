@@ -5,7 +5,7 @@ import { normalizeScanSettings } from './sources.js';
 const VOLATILE_MACRO = /{{\s*(?:random|randomPick|roll|dice|time|date|idle|pick|uuid)\b/ig;
 const VARIABLE_SHORTHAND_MACRO = /{{\s*[.$][A-Za-z_][\w-]*/i;
 
-function buildMacroSnapshot(overrides = {}, macroEngine = 'legacy') {
+export function buildMacroSnapshot(overrides = {}, macroEngine = 'legacy', substituteValue = substitute) {
     const source = overrides instanceof Map ? [...overrides] : Object.entries(overrides ?? {});
     if (source.some(([key, value]) => typeof key !== 'string' || typeof value !== 'string')) {
         throw new TypeError('Saved macro values are invalid. Recreate this saved test.');
@@ -29,7 +29,7 @@ function buildMacroSnapshot(overrides = {}, macroEngine = 'legacy') {
             volatile.add(`${scope}:volatile:${volatileIndex++}`);
         }
         let index = 0;
-        const output = substitute(input, (result) => {
+        const output = substituteValue(input, (result) => {
             const key = `${scope}:${index++}`;
             const replacement = frozen.has(key) ? frozen.get(key) : String(result ?? '');
             cache.set(key, replacement);
@@ -93,7 +93,7 @@ async function getScanInjections(context, expand) {
     return injections;
 }
 
-function getTimedEffects(context, entries, chatLength) {
+export function getTimedEffects(context, entries, chatLength) {
     const metadata = context?.chatMetadata?.timedWorldInfo ?? {};
     const result = { sticky: [], cooldown: [], delay: [] };
     for (const entry of entries) {

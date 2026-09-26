@@ -116,7 +116,7 @@ export function getActiveBookPlan(context = getContext(), host = null) {
     };
 }
 
-function getWorldEntries(data, world, source) {
+export function getWorldEntries(data, world, source) {
     if (!data?.entries || typeof data.entries !== 'object' || Array.isArray(data.entries)) {
         return [];
     }
@@ -138,7 +138,7 @@ function sortDescending(entries) {
     return entries.sort((a, b) => b.order - a.order);
 }
 
-function sortByStrategy(groups, strategy) {
+export function sortByStrategy(groups, strategy) {
     const character = [...groups.character];
     const global = [...groups.global];
     let remainder;
@@ -161,7 +161,7 @@ function sortByStrategy(groups, strategy) {
     ];
 }
 
-function normalizePlan(value) {
+export function normalizePlan(value) {
     const plan = {};
     const seen = new Set();
     for (const source of ['chat', 'persona', 'character', 'global']) {

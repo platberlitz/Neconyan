@@ -2,6 +2,7 @@ import { getContext } from '../host.js';
 import { LOGIC_LABEL, POSITION_LABEL } from '../constants.js';
 import { getSettings, updateSettings } from '../settings.js';
 import { snapshotLorebooks } from '../sources.js';
+import { mountSavedWorldInfoResults, restoredSnapshot } from '../native.js';
 import {
     element,
     errorMessage,
@@ -172,6 +173,7 @@ export function createTestsTab({
         const saveCase = exported(module, ['saveTestCase', 'createTestCase', 'upsertTestCase']);
         const runCase = exported(module, ['runTestCase', 'executeTestCase']);
         const removeCase = exported(module, ['deleteTestCase', 'removeTestCase']);
+        const applyCase = exported(module, ['applyTestCase']);
 
         if (!listCases) {
             status.textContent = 'Saved tests could not load. Update or reinstall World Info Lab, then try again.';
@@ -209,7 +211,7 @@ export function createTestsTab({
         });
         const saveButton = element('button', {
             className: 'menu_button sbwil-button',
-            text: 'Save displayed scan as test',
+            text: 'Preview saving displayed scan as test',
             attributes: { type: 'submit' },
         });
         const consentInput = element('input', {
@@ -312,7 +314,10 @@ export function createTestsTab({
         if (capability) {
             section.append(capability);
         }
-        section.append(loadWarning, caseList);
+        const reviewText = element('p', { className: 'sbwil-field-hint' });
+        const reviewButton = element('button', { className: 'menu_button sbwil-button', text: 'Apply reviewed test change', attributes: { type: 'button' } });
+        reviewButton.hidden = true;
+        section.append(loadWarning, caseList, reviewText, reviewButton);
         panel.insertBefore(section, panel.lastElementChild?.nextSibling ?? null);
 
         let cases = [];
@@ -322,17 +327,51 @@ export function createTestsTab({
         let refreshSequence = 0;
         let activeCaseController = null;
         let caseRunSequence = 0;
+        let reviewedCase = null;
+        function showCasePreview(preview) {
+            reviewedCase = preview;
+            reviewText.textContent = `${preview.operation === 'delete' ? 'Delete' : 'Save'} test '${preview.item.name}' in '${preview.target.name}'. ${preview.item.expected?.activated?.length ?? 0} expected activations. Review this change before applying it.`;
+            reviewButton.hidden = false;
+        }
+        void mountSavedWorldInfoResults(section, { kinds: ['world-info.case', 'world-info.tests'], signal: controller.signal,
+            onError: error => { status.textContent = errorMessage(error); }, onResult: result => {
+                if (result.operation) showCasePreview(result);
+                else if (result.tests?.length) {
+                    const test = result.tests[0];
+                    const scan = { ...test.result, labRecord: { ...result.labRecord, caseId: test.caseId } };
+                    acceptResult(scan, beginResultRun(), restoredSnapshot(scan));
+                    status.textContent = result.tests.map(test => test.summary).join(' ');
+                }
+            } }).catch(error => { status.textContent = errorMessage(error); });
+        reviewButton.addEventListener('click', async () => {
+            if (!reviewedCase || operationBusy || !applyCase) return;
+            operationBusy = true;
+            reviewButton.disabled = true;
+            updateDisabled();
+            try {
+                const saved = await applyCase(reviewedCase, { signal: controller.signal });
+                reviewedCase = null;
+                reviewButton.hidden = true;
+                reviewText.textContent = saved.refreshWarning || 'Reviewed test change saved.';
+                await refreshCases('Reviewed test change saved.');
+            } catch (error) { status.textContent = `The apply did not finish: ${errorMessage(error)}. Its saved record is retained.`; }
+            finally { operationBusy = false; reviewButton.disabled = false; updateDisabled(); }
+        }, { signal: controller.signal });
 
         function updateConsentText() {
             const name = bookSelect.value || 'the selected lorebook';
             consentText.textContent = `I understand that this test will be stored inside "${name}" and shared with that lorebook.`;
         }
 
+        function resultNeedsNewScan(result) {
+            return isLatestResultStale() && !(result?.labRecord?.key && result.labRecord.resultHash);
+        }
+
         function updateDisabled() {
             const busy = operationBusy || refreshBusy;
             const hasSelection = Boolean(select.value) && cases.length > 0;
             const hasResult = Boolean(getLatestResult());
-            const resultStale = hasResult && isLatestResultStale();
+            const resultStale = hasResult && resultNeedsNewScan(getLatestResult());
             saveButton.disabled = busy || !saveCase || !hasResult || resultStale;
             bookSelect.disabled = busy || !bookSelect.options.length;
             consentInput.disabled = busy;
@@ -362,7 +401,7 @@ export function createTestsTab({
             }
         }
 
-        invalidateCaseRun = (message = 'Saved test canceled because the chat or lorebooks changed. Run it again.') => {
+        invalidateCaseRun = (message = 'The chat or lorebooks changed. Observation closed; the accepted test keeps running on its saved inputs.') => {
             cancelCaseRun(message);
         };
 
@@ -475,7 +514,7 @@ export function createTestsTab({
                 status.textContent = 'Run a scan before saving it as a test.';
                 return;
             }
-            if (isLatestResultStale()) {
+            if (resultNeedsNewScan(result)) {
                 status.textContent = 'This scan is out of date. Run it again before saving a test.';
                 return;
             }
@@ -491,7 +530,7 @@ export function createTestsTab({
             const bookName = bookSelect.value;
             operationBusy = true;
             updateDisabled();
-            status.textContent = `Saving test "${testName}" to "${bookName}"...`;
+            status.textContent = `Preparing test '${testName}' for review...`;
             try {
                 const saved = await saveCase({
                     name: testName,
@@ -500,15 +539,10 @@ export function createTestsTab({
                     createdAt: new Date().toISOString(),
                     confirmReplayStorage: consentInput.checked,
                 });
-                nameInput.value = '';
-                consentInput.checked = false;
-                const localWarning = await refreshCases(`Saved test "${testName}" to "${bookName}".`);
-                const warnings = [saved?.refreshWarning, localWarning].filter(Boolean);
-                status.textContent = warnings.length
-                    ? warnings.join(' ')
-                    : `Saved test "${testName}" to "${bookName}".`;
+                showCasePreview(saved);
+                status.textContent = 'Test preview saved. Review it, then apply the change.';
             } catch (error) {
-                status.textContent = `The test could not be saved. Nothing was changed. Technical details: ${errorMessage(error)}`;
+                status.textContent = `The test preview could not finish: ${errorMessage(error)}`;
             } finally {
                 operationBusy = false;
                 updateDisabled();
@@ -536,7 +570,7 @@ export function createTestsTab({
                 }
                 const result = response?.result ?? response;
                 if (result?.kind === 'simulated') {
-                    if (!acceptResult(result, resultSequence)) {
+                    if (!acceptResult(result, resultSequence, restoredSnapshot(result))) {
                         status.textContent = 'A newer scan or saved test was started; this result was not shown.';
                         return;
                     }
@@ -575,7 +609,7 @@ export function createTestsTab({
             const name = caseName(selected, index);
             const book = selected.bookName ?? 'its lorebook';
             if (typeof globalThis.confirm === 'function'
-                && !globalThis.confirm(`Delete "${name}" from "${book}"? This cannot be undone.`)) {
+                && !globalThis.confirm(`Prepare a reviewed deletion of '${name}' from '${book}'?`)) {
                 return;
             }
             operationBusy = true;
@@ -589,9 +623,8 @@ export function createTestsTab({
                     status.textContent = 'The test was not found. It may already have been deleted; reload saved tests.';
                     return;
                 }
-                const localWarning = await refreshCases('Saved test deleted.');
-                const warnings = [removed?.refreshWarning, localWarning].filter(Boolean);
-                status.textContent = warnings.length ? warnings.join(' ') : 'Saved test deleted.';
+                showCasePreview(removed);
+                status.textContent = 'Deletion preview saved. Review it, then apply the change.';
             } catch (error) {
                 status.textContent = `The saved test could not be deleted. Technical details: ${errorMessage(error)}`;
             } finally {
@@ -961,7 +994,7 @@ export function createBatchTab({ panel }) {
         });
         previewRegion.append(element('p', {
             className: 'sbwil-empty-line',
-            text: 'Choose an edit above, then select Preview changes. Nothing will be saved yet.',
+            text: 'Choose an edit above, then select Preview changes. The preview is saved for review; your lorebook changes only when you apply it.',
         }));
 
         const approval = element('label', { className: 'sbwil-approval' });
@@ -1264,10 +1297,10 @@ export function createBatchTab({ panel }) {
                     ? 'Preview ready. Review every proposed change before saving.'
                     : 'No entries would change. No entries matched, or matching entries already had the requested value.';
             } catch (error) {
-                status.textContent = `The preview could not be built. Nothing was saved. Technical details: ${errorMessage(error)}`;
+                status.textContent = `The preview could not be built. Your lorebook was not changed. Technical details: ${errorMessage(error)}`;
                 previewRegion.replaceChildren(element('p', {
                     className: 'sbwil-empty-line',
-                    text: 'Preview failed. Nothing was saved.',
+                    text: 'Preview failed. Your lorebook was not changed.',
                 }));
             } finally {
                 busy = false;
@@ -1305,7 +1338,7 @@ export function createBatchTab({ panel }) {
                     status.textContent = message;
                     invalidatePreview(message);
                 } else {
-                    status.textContent = `The changes could not be saved. Nothing was changed. Technical details: ${errorMessage(error)}`;
+                    status.textContent = `The apply did not finish: ${errorMessage(error)}. Its saved record is retained for recovery.`;
                 }
             } finally {
                 busy = false;
@@ -1316,6 +1349,16 @@ export function createBatchTab({ panel }) {
         configureValueControl(false);
         syncOperation(false);
         await refreshBooks(false);
+        await mountSavedWorldInfoResults(panel, { kinds: ['world-info.batch'], signal: controller.signal,
+            onError: error => { status.textContent = errorMessage(error); }, onResult: result => {
+                const count = renderBatchPreview(previewRegion, result);
+                preview = count ? result : null;
+                previewPayload = count ? { bookName: result.target.name } : null;
+                approvalInput.checked = false;
+                approvalText.textContent = `I reviewed every proposed change and want to save it to '${result.target.name}'.`;
+                status.textContent = 'Saved preview loaded. Review every change before applying.';
+                updateDisabled();
+            } });
     }
 
     return {
@@ -1438,7 +1481,7 @@ export function createHealthTab({ panel }) {
             panel,
             tabIntroduction(
                 'Check a lorebook for problems',
-                'Find entries that mix concepts, keys that overlap other entries, entries that never activate, and what each entry costs in tokens. Nothing is changed or saved.',
+                'Find entries that mix concepts, keys that overlap other entries, entries that never activate, and what each entry costs in tokens. The report is saved; your lorebook stays unchanged.',
                 'LOREBOOK HEALTH',
             ),
             status,
@@ -1544,7 +1587,7 @@ export function createHealthTab({ panel }) {
             const bookName = bookSelect.value;
             status.textContent = `Checking "${bookName}"...`;
             try {
-                const report = await auditLorebook({ bookName });
+                const report = await auditLorebook({ bookName, signal: controller.signal });
                 if (!disposed) {
                     const problemCount = renderHealthReport(output, report);
                     hasResults = true;
@@ -1566,6 +1609,12 @@ export function createHealthTab({ panel }) {
         }, { signal: controller.signal });
 
         await reloadBooks();
+        await mountSavedWorldInfoResults(panel, { kinds: ['world-info.health'], signal: controller.signal,
+            onError: error => { status.textContent = errorMessage(error); }, onResult: result => {
+                renderHealthReport(output, { ...result, tokens: { ...result.tokens, outliers: new Set(result.tokens.outliers) } });
+                hasResults = true;
+                status.textContent = `Saved health check for '${result.bookName}' loaded.`;
+            } });
         if (!disposed && bookSelect.value) {
             status.textContent = 'Ready. Choose a lorebook, then run the health check.';
         }

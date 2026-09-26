@@ -1,8 +1,17 @@
-import { sendPrompt } from './ab.js';
-import { applyCase, restoreState, snapshotState } from './apply-state.js';
-import { captureOnce } from './capture.js';
 import { CAVEAT, CAVEAT_TEXT } from './constants.js';
-import { ctxOf, getContext } from './host.js';
+import { runPromptingLab } from './native.js';
+
+/** A saved earlier reply stays visible until its replacement has been saved successfully. */
+export function mergeSavedSceneReplacement(previous, replacement) {
+    if (!replacement) return previous;
+    const turns = new Map((previous.turns ?? []).map(turn => [turn.index, turn]));
+    for (const turn of replacement.turns ?? []) {
+        if (!turn.waiting && !turn.error && turn.text?.trim()) turns.set(turn.index, turn);
+        else if (!turns.has(turn.index)) turns.set(turn.index, turn);
+    }
+    return { ...previous, ...replacement, turns: [...turns.values()].sort((a, b) => a.index - b.index),
+        caveats: [...new Set([...(previous.caveats ?? []), ...(replacement.caveats ?? [])])] };
+}
 
 /**
  * Plays one scene under several presets and puts the replies side by side.
@@ -13,8 +22,8 @@ import { ctxOf, getContext } from './host.js';
  * the next turn starts from there.
  *
  * This spends tokens, so nothing here runs until the user presses the button.
- * Nothing is written to any chat: the turns live in the in-memory chat for the
- * length of one dry-run build and are taken out again.
+ * Accepted comparisons and their replies are retained on the server. Building
+ * the scene does not change the saved chat.
  */
 
 export const SCENE_MODE = Object.freeze({
@@ -47,7 +56,7 @@ function clampCount(value, max) {
  * carries on by itself; from the second turn onwards the columns are answering
  * their own replies rather than the same input.
  */
-function sceneTurnEntries({ mode = SCENE_MODE.SCRIPTED, turns = [], exchanges = 2 } = {}) {
+export function sceneTurnEntries({ mode = SCENE_MODE.SCRIPTED, turns = [], exchanges = 2 } = {}) {
     const written = (turns ?? [])
         .map((text, index) => ({ index: index + 1, text: String(text ?? '') }))
         .filter(turn => turn.text.trim())
@@ -427,8 +436,7 @@ export function sceneFileName({ characterName = '', format = 'md', savedAt = '' 
 }
 
 /**
- * Runs the comparison. Apply, build and send are injectable so the sequencing
- * can be tested without a live Neconyan or a real model.
+ * Submits one complete scene comparison and observes its saved progress.
  *
  * @returns {Promise<{columns: object[], script: string[], restoreProblems: string[], aborted: boolean}>}
  */
@@ -446,235 +454,13 @@ export async function runSceneComparison({
     startAt = 1,
     history = [],
     maxTokens = 300,
-    context = getContext,
-    host = null,
     signal = null,
     onProgress = null,
     onUpdate = null,
-    live = false,
-    captureFn = captureOnce,
-    applyFn = applyCase,
-    sendFn = sendPrompt,
-    snapshotFn = snapshotState,
-    restoreFn = restoreState,
 } = {}) {
-    const fullTurns = sceneTurnEntries({ mode, turns, exchanges });
-    const requestedStart = Math.max(Math.floor(Number(startAt)) || 1, 1);
-    let startIndex = fullTurns.findIndex(turn => turn.index >= requestedStart);
-    if (startIndex < 0) {
-        startIndex = Math.max(fullTurns.length - 1, 0);
-    }
-    const selectedTurns = fullTurns.slice(startIndex);
-    const script = selectedTurns.map(turn => turn.text);
-    const chosen = (presets ?? []).filter(preset => preset?.name).slice(0, MAX_PRESETS);
-    const opening = String(greeting ?? '').trim() ? String(greeting) : '';
-    const columns = [];
-    const expectedRequests = script.length * chosen.length;
-    const finish = (restoreProblems = []) => {
-        const completedRequests = columns.reduce(
-            (total, column) => total + column.turns.filter(turn => !turn.waiting).length,
-            0,
-        );
-        const aborted = Boolean(signal?.aborted);
-        return {
-            columns,
-            script,
-            opening,
-            restoreProblems,
-            aborted,
-            expectedRequests,
-            completedRequests,
-            incomplete: aborted || completedRequests < expectedRequests,
-        };
-    };
-    if (!script.length || !chosen.length || signal?.aborted) {
-        return finish();
-    }
-
-    // Snapshotted before the first preset is applied and restored no matter how
-    // this ends, so a failed send cannot leave the user on another preset.
-    const snapshot = await snapshotFn(context);
-    let restoreProblems = [];
-
-    try {
-        for (const [presetIndex, preset] of chosen.entries()) {
-            if (signal?.aborted) {
-                break;
-            }
-            if (presetIndex) {
-                let columnRestoreProblems = [];
-                try {
-                    columnRestoreProblems = await restoreFn(context, snapshot) ?? [];
-                } catch (error) {
-                    columnRestoreProblems = [String(error?.message ?? error)];
-                }
-                if (columnRestoreProblems.length) {
-                    restoreProblems.push(...columnRestoreProblems);
-                    break;
-                }
-            }
-            const column = {
-                preset,
-                label: preset.name,
-                turns: [],
-                caveats: [],
-                error: '',
-                done: false,
-            };
-            columns.push(column);
-            onUpdate?.({ columns });
-            if (signal?.aborted) {
-                column.done = true;
-                onUpdate?.({ columns });
-                break;
-            }
-
-            try {
-                await applyFn(context, {
-                    characterAvatar,
-                    personaKey,
-                    connectionProfileId,
-                    presets: [preset],
-                }, { signal, originalState: snapshot });
-                if (signal?.aborted) {
-                    column.done = true;
-                    onUpdate?.({ columns });
-                    break;
-                }
-            } catch (error) {
-                column.error = String(error?.message ?? error);
-                column.done = true;
-                onUpdate?.({ columns });
-                continue;
-            }
-
-            // The chat that was opened is part of every prompt built from here,
-            // and a greeting laid on top of a saved conversation reads as a
-            // second opening. Say so rather than let it pass unnoticed.
-            if ((ctxOf(context)?.chat ?? []).length) {
-                column.caveats.push(CAVEAT_EXISTING_CHAT);
-            }
-
-            // The chosen greeting opens the scene, so every preset answers the
-            // same first message rather than whatever its chat happened to hold.
-            const scene = opening ? [{ role: 'assistant', text: opening }] : [];
-            // What was already said, when only part of the scene is replayed.
-            for (const entry of history ?? []) {
-                if (String(entry?.text ?? '').trim()) {
-                    scene.push({
-                        role: entry.role === 'assistant' ? 'assistant' : 'user',
-                        text: String(entry.text),
-                    });
-                }
-            }
-
-            for (const turn of selectedTurns) {
-                if (signal?.aborted) {
-                    break;
-                }
-                const turnNumber = turn.index;
-                const userText = turn.text;
-                onProgress?.({
-                    presetName: preset.name,
-                    presetIndex: columns.length,
-                    presetTotal: chosen.length,
-                    turn: turnNumber,
-                    turnTotal: fullTurns.at(-1)?.index ?? 0,
-                });
-                if (signal?.aborted) {
-                    break;
-                }
-
-                scene.push({ role: 'user', text: userText });
-                let capture;
-                try {
-                    capture = await captureFn({ scene: [...scene], context, host, signal });
-                } catch (error) {
-                    column.error = String(error?.message ?? error);
-                    column.done = true;
-                    onUpdate?.({ columns });
-                    break;
-                }
-                if (signal?.aborted) {
-                    break;
-                }
-                for (const caveat of capture?.caveats ?? []) {
-                    if (!column.caveats.includes(caveat)) {
-                        column.caveats.push(caveat);
-                    }
-                }
-
-                // The record exists before the reply does, so a watcher can
-                // show the turn filling in rather than a blank wait.
-                const record = {
-                    index: turnNumber,
-                    userText,
-                    text: '',
-                    error: null,
-                    promptTokens: Number(capture?.tokenTable?.total ?? 0),
-                    durationMs: 0,
-                    waiting: true,
-                };
-                column.turns.push(record);
-                onUpdate?.({ columns });
-                if (signal?.aborted) {
-                    column.turns.pop();
-                    onUpdate?.({ columns });
-                    break;
-                }
-
-                const startedMs = Date.now();
-                const prompt = capture?.messages ?? capture?.combinedPrompt ?? '';
-                const reply = await sendFn(connectionProfileId, prompt, {
-                    hostRef: context,
-                    maxTokens,
-                    signal,
-                    presetName: ['openai', 'textgenerationwebui'].includes(preset.apiId)
-                        ? preset.name
-                        : undefined,
-                    includePreset: true,
-                    includeInstruct: preset.apiId !== 'instruct',
-                    onDelta: live
-                        ? (text) => {
-                            record.text = text;
-                            record.durationMs = Date.now() - startedMs;
-                            onUpdate?.({ columns, streaming: record });
-                        }
-                        : null,
-                });
-                const returnedText = String(reply?.text ?? '');
-                if (returnedText.trim() || !record.text) {
-                    record.text = returnedText;
-                }
-                record.error = reply?.error
-                    ?? (record.text.trim() ? null : 'The model returned an empty reply.');
-                record.durationMs = Date.now() - startedMs;
-                record.waiting = false;
-                onUpdate?.({ columns });
-
-                // A scene that stalled cannot be continued honestly: the next
-                // turn would be answering a reply that never arrived.
-                if (record.error || !record.text.trim()) {
-                    break;
-                }
-                scene.push({ role: 'assistant', text: record.text });
-            }
-            column.done = true;
-            onUpdate?.({ columns });
-        }
-    } finally {
-        try {
-            restoreProblems = [...new Set([
-                ...restoreProblems,
-                ...(await restoreFn(context, snapshot) ?? []),
-            ])];
-        } catch (error) {
-            restoreProblems = [...new Set([
-                ...restoreProblems,
-                String(error?.message ?? error),
-            ])];
-        }
-    }
-
-    return finish(restoreProblems);
+    return runPromptingLab('scene', { presets, characterAvatar, personaKey, connectionProfileId,
+        greeting, mode, turns, exchanges, startAt, history, maxTokens }, {
+        signal, onUpdate,
+        onProgress: progress => onProgress?.({ stage: progress?.stage, completed: progress?.completed, total: progress?.total }),
+    });
 }

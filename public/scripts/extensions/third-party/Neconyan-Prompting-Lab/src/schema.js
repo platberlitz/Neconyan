@@ -203,7 +203,7 @@ export function normalizeAssertions(value) {
  * Reports why an assertion cannot be evaluated, in words a non-programmer can
  * act on. Returns an empty array when the assertion is usable.
  */
-export function validateAssertion(assertion) {
+export function validateAssertion(assertion, { safetyProblem = regexSafetyProblem } = {}) {
     const problems = [];
     const normalized = normalizeAssertion(assertion);
     if (!normalized) {
@@ -235,9 +235,9 @@ export function validateAssertion(assertion) {
                     } catch (error) {
                         problems.push(`That search pattern is not valid: ${error?.message ?? error}`);
                     }
-                    const safetyProblem = regexSafetyProblem(normalized.value);
-                    if (!problems.length && safetyProblem) {
-                        problems.push(safetyProblem);
+                    const unsafe = safetyProblem(normalized.value);
+                    if (!problems.length && unsafe) {
+                        problems.push(unsafe);
                     }
                 }
             }
@@ -295,7 +295,7 @@ export function migrateCase(value) {
     return normalizeCase(source);
 }
 
-export function validateCase(testCase) {
+export function validateCase(testCase, regex) {
     const problems = [];
     const normalized = normalizeCase(testCase);
     if (!normalized.name.trim()) {
@@ -311,7 +311,7 @@ export function validateCase(testCase) {
         problems.push('This test case pins both Chat Completion and Text Completion presets. Only one prompt mode can run at a time.');
     }
     normalized.assertions.forEach((assertion, index) => {
-        for (const problem of validateAssertion(assertion)) {
+        for (const problem of validateAssertion(assertion, regex)) {
             problems.push(`Check ${index + 1}: ${problem}`);
         }
     });

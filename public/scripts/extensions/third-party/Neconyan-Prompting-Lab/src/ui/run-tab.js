@@ -7,6 +7,7 @@ import { avatarThumbnail } from './character-picker.js';
 import { dismissWarning, isWarningDismissed } from '../settings.js';
 import { registerActiveTask } from '../operations.js';
 import * as storage from '../storage.js';
+import { mountSavedPromptingResults } from '../native.js';
 
 const CHAT_FILE_WARNING = 'chat-file-creation';
 
@@ -70,6 +71,7 @@ export function createRunTab({ onRunFinished = null } = {}) {
     let activeSuite = null;
     let controller = null;
     let lastResult = null;
+    let disposeSaved = null;
     let running = false;
     let refreshEpoch = 0;
     let preflightEpoch = 0;
@@ -459,20 +461,12 @@ export function createRunTab({ onRunFinished = null } = {}) {
                 return;
             }
             lastResult = result;
-            if (result.restoreProblems?.length) {
-                statusLine.textContent = result.aborted
-                    ? 'Stopped, but some settings could not be put back.'
-                    : 'Finished, but some settings could not be put back.';
-            } else {
-                statusLine.textContent = result.aborted
-                    ? 'Stopped. Your settings have been put back.'
-                    : 'Finished. Your settings have been put back.';
-            }
+            statusLine.textContent = result.aborted ? 'Stopped.' : 'Prompt tests saved.';
             renderResults(result);
             onRunFinished?.(result);
         } catch (error) {
             if (root) {
-                statusLine.textContent = task.signal.aborted
+                statusLine.textContent = error.cancelled
                     ? 'Stopped.'
                     : `The run could not finish: ${errorMessage(error)}`;
             }
@@ -512,8 +506,8 @@ export function createRunTab({ onRunFinished = null } = {}) {
             className: 'menu_button menu_button_primary sbpl-button',
         });
         cancelButton = button('Stop', () => {
-            controller?.abort();
-            statusLine.textContent = 'Stopping after the current test case...';
+            controller?.abort('user-stop');
+            statusLine.textContent = 'Saving the stop request...';
         }, { className: 'menu_button sbpl-button' });
         cancelButton.hidden = true;
         baselineButton = button('Set passing runs as baselines', async () => {
@@ -546,6 +540,16 @@ export function createRunTab({ onRunFinished = null } = {}) {
         resultsHost = element('div', { className: 'sbpl-results' });
 
         root.append(controls, warningsHost, progressLabel, progressBar, statusLine, queueHost, resultsHost);
+        disposeSaved = mountSavedPromptingResults(root, { kind: 'suite',
+            isBusy: () => Boolean(controller),
+            onBusy: (value, previous) => {
+                if (value || controller === previous) controller = value;
+                running = Boolean(controller);
+                updateControls();
+            },
+            onResult: result => { lastResult = result; renderResults(result); statusLine.textContent = 'Saved prompt tests loaded.'; },
+            onError: error => { statusLine.textContent = errorMessage(error); },
+        });
         return root;
     }
 
@@ -599,6 +603,7 @@ export function createRunTab({ onRunFinished = null } = {}) {
             });
         },
         dispose() {
+            disposeSaved?.();
             refreshEpoch++;
             preflightEpoch++;
             controller?.abort();

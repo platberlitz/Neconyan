@@ -197,12 +197,12 @@ export const test = base.extend({
                         }
                         return job;
                     },
-                    async open({ workspace = true, timeout = 20000 } = {}) {
+                    async open({ workspace = true, timeout = 20000, readyTimeout = timeout } = {}) {
                         const page = await context.newPage();
                         navigationErrors.push(trackNavigationErrors(page).errors);
                         page.setDefaultTimeout(timeout);
                         await page.goto('/', { waitUntil: 'domcontentloaded' });
-                        await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+                        await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: readyTimeout });
                         const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
                         if (await skip.isVisible()) await skip.click();
                         if (!workspace) return page;

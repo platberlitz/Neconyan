@@ -5,10 +5,8 @@ import {
 } from '../constants.js';
 import { getContext, loadHost, notify } from '../host.js';
 import { appendHistory } from '../history.js';
-import { buildSimulationRequest } from '../scan-input.js';
 import { getSettings, updateSettings } from '../settings.js';
-import { simulateWorldInfo } from '../simulator/engine.js';
-import { snapshotLorebooks } from '../sources.js';
+import { runWorldInfoLab, restoredSnapshot, mountSavedWorldInfoResults } from '../native.js';
 import {
     element,
     errorMessage,
@@ -742,7 +740,7 @@ export function createWorkbench({
             },
         });
         const textField = field('Text to scan', textInput, {
-            hint: 'Kept only for this Neconyan session unless you save the result as a test.',
+            hint: 'Submitted text and results are saved on the server so you can reopen the scan.',
         });
 
         const triggerSelect = element('select', {
@@ -813,6 +811,11 @@ export function createWorkbench({
             runStatus,
         );
         controls.append(form);
+        void mountSavedWorldInfoResults(controls, { kinds: ['world-info.scan'], signal,
+            onError: error => { runStatus.textContent = errorMessage(error); }, onResult: result => {
+                acceptResult(result, beginResultRun(), restoredSnapshot(result));
+                runStatus.textContent = 'Saved scan loaded.';
+            } }).catch(error => { runStatus.textContent = errorMessage(error); });
 
         const scanOutput = element('div', {
             className: 'sbwil-scan-output',
@@ -946,7 +949,11 @@ export function createWorkbench({
             runStatus.textContent = 'Loading active lorebooks...';
 
             try {
-                const snapshot = await snapshotLorebooks({ context: getContext() });
+                const result = await runWorldInfoLab('scan', { mode, text, trigger, seed }, {
+                    signal: controller.signal,
+                    onProgress: progress => { if (!disposed) runStatus.textContent = progress?.stage || 'Checking saved lorebooks...'; },
+                });
+                const snapshot = restoredSnapshot(result);
                 if (disposed || controller.signal.aborted || sequence !== runSequence || resultSequence !== resultRunSequence) {
                     if (!disposed && !controller.signal.aborted && sequence === runSequence) {
                         runStatus.textContent = 'A newer scan or saved test was started; this result was not shown.';
@@ -955,22 +962,12 @@ export function createWorkbench({
                 }
                 latestSnapshot = snapshot;
                 updateHeader();
-                runStatus.textContent = 'Preparing chat, character, and scan settings...';
-                const request = await buildSimulationRequest(snapshot, {
-                    context: getContext(),
-                    mode,
-                    text,
-                    trigger,
-                    seed,
-                });
                 if (disposed || controller.signal.aborted || sequence !== runSequence || resultSequence !== resultRunSequence) {
                     if (!disposed && !controller.signal.aborted && sequence === runSequence) {
                         runStatus.textContent = 'A newer scan or saved test was started; this result was not shown.';
                     }
                     return;
                 }
-                runStatus.textContent = `Checking ${plural(snapshot.entries.length, 'lorebook entry', 'lorebook entries')}...`;
-                const result = await simulateWorldInfo(request, { signal: controller.signal });
                 if (disposed || controller.signal.aborted || sequence !== runSequence) {
                     return;
                 }
@@ -994,8 +991,10 @@ export function createWorkbench({
                     runStatus.textContent = 'A newer scan or saved test was started; this result was not shown.';
                     return;
                 }
-                if (isAbort(error) || controller.signal.aborted) {
-                    runStatus.textContent = 'Scan canceled.';
+                if (error.cancelled) {
+                    runStatus.textContent = 'Scan cancelled.';
+                } else if (isAbort(error)) {
+                    runStatus.textContent = 'Observation closed. The server keeps the scan.';
                 } else {
                     const retained = latestResult ? ' The previous completed result is still shown.' : '';
                     const message = `Scan failed.${retained} Technical details: ${errorMessage(error)}`;
@@ -1086,7 +1085,8 @@ export function createWorkbench({
             void runSimulation();
         }, { signal });
         cancelButton.addEventListener('click', () => {
-            abortRun('Scan canceled.');
+            runController?.abort('user-stop');
+            runStatus.textContent = 'Saving the stop request...';
         }, { signal });
         checkCompatibilityButton.addEventListener('click', async () => {
             availability = null;
@@ -1119,9 +1119,13 @@ export function createWorkbench({
                 }
                 const message = staleMessage(reason);
                 if (message) {
-                    abortRun('Scan input changed. Run the scan again.');
+                    // Accepted work owns its saved input. A settings refresh must not
+                    // detach the observer before that saved result reaches the page.
+                    if (runController) {
+                        runStatus.textContent = 'Inputs changed. The accepted scan is continuing with its saved inputs.';
+                    }
                     if (reason === 'worldinfo-updated') {
-                        testsTab.invalidate('Saved test canceled because a lorebook changed. Run it again.');
+                        void testsTab.refresh();
                         void batchTab.refresh();
                         healthTab.refresh();
                     }

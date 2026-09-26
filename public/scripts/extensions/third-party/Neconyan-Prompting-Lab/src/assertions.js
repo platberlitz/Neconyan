@@ -132,7 +132,7 @@ const EVALUATORS = {
         };
     },
 
-    [ASSERTION.CONTENT_MATCH](assertion, run) {
+    [ASSERTION.CONTENT_MATCH](assertion, run, regex = {}) {
         const { text, missing } = scopeText(run, assertion.scope);
         const where = !assertion.scope || assertion.scope === 'final'
             ? 'the prompt'
@@ -172,7 +172,7 @@ const EVALUATORS = {
                     message: `That search pattern is not valid: ${error?.message ?? error}`,
                 };
             }
-            const safetyProblem = regexSafetyProblem(assertion.value);
+            const safetyProblem = (regex.safetyProblem ?? regexSafetyProblem)(assertion.value);
             if (safetyProblem) {
                 return {
                     pass: null,
@@ -180,7 +180,7 @@ const EVALUATORS = {
                     message: safetyProblem,
                 };
             }
-            return testRegexSafely(assertion.value, text).then((result) => {
+            return (regex.test ?? testRegexSafely)(assertion.value, text).then((result) => {
                 if (result.status === 'timeout') {
                     return {
                         pass: null,
@@ -262,7 +262,7 @@ const EVALUATORS = {
 };
 
 /** Evaluates one check against a run. */
-export function evaluateAssertion(assertion, run) {
+export function evaluateAssertion(assertion, run, regex) {
     const evaluator = EVALUATORS[assertion?.type];
     if (!evaluator) {
         return {
@@ -284,7 +284,7 @@ export function evaluateAssertion(assertion, run) {
                 message: INEXACT_CAPTURE_MESSAGE,
             };
         }
-        const result = evaluator(assertion, run);
+        const result = evaluator(assertion, run, regex);
         return typeof result?.then === 'function' ? result.catch(couldNotEvaluate) : result;
     } catch (error) {
         return couldNotEvaluate(error);
@@ -292,11 +292,11 @@ export function evaluateAssertion(assertion, run) {
 }
 
 /** Evaluates every check on a test case and returns one result per check. */
-export async function evaluateAssertions(assertions, run) {
+export async function evaluateAssertions(assertions, run, regex) {
     const results = await Promise.all((assertions ?? []).map(async (assertion, index) => ({
         index,
         type: assertion?.type ?? '',
-        ...await evaluateAssertion(assertion, run),
+        ...await evaluateAssertion(assertion, run, regex),
     })));
     if (!results.length && run?.capture?.metricsComplete === false) {
         results.push({

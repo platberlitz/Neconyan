@@ -4,6 +4,7 @@ import { getContext } from '../host.js';
 import * as lab from '../lab.js';
 import { getSettings, updateSettings } from '../settings.js';
 import * as storage from '../storage.js';
+import { mountSavedPromptingResults } from '../native.js';
 
 /**
  * Sends one captured prompt to two connection profiles and shows the replies
@@ -32,6 +33,8 @@ export function createAbTab() {
     let controller = null;
     let reloadEpoch = 0;
     let actionEpoch = 0;
+    let disposeSaved = null;
+    let showingSaved = false;
 
     function startReload(task = reload) {
         const epoch = ++reloadEpoch;
@@ -207,7 +210,8 @@ export function createAbTab() {
 
     function renderReplies(run, replies, chosen) {
         const note = element('p', { className: 'sbpl-status' });
-        note.textContent = `Both replies used the same prompt of ${formatTokens(run.capture?.tokenTable?.total ?? 0)} tokens.`;
+        note.textContent = run.capture?.tokenTable ? `Both replies used the same prompt of ${formatTokens(run.capture.tokenTable.total)} tokens.`
+            : 'Both replies used the same saved prompt.';
         output.append(note);
 
         const grid = element('div', { className: 'sbpl-ab-grid' });
@@ -265,7 +269,7 @@ export function createAbTab() {
             className: 'menu_button menu_button_primary sbpl-button',
         });
         cancelButton = button('Stop', () => {
-            controller?.abort();
+            controller?.abort('user-stop');
             status.textContent = 'Stopping.';
         }, { className: 'menu_button sbpl-button' });
         cancelButton.hidden = true;
@@ -288,6 +292,12 @@ export function createAbTab() {
             status,
             output,
         );
+        disposeSaved = mountSavedPromptingResults(root, { kind: 'requests', operation: 'compare',
+            isBusy: () => Boolean(controller),
+            onBusy: (value, previous) => { if (value || controller === previous) controller = value; updateControls(); },
+            onResult: replies => { showingSaved = true; replace(output); renderReplies({}, replies, profiles); status.textContent = 'Saved comparison loaded.'; },
+            onError: error => { status.textContent = errorMessage(error); },
+        });
         updateControls();
         return root;
     }
@@ -300,7 +310,7 @@ export function createAbTab() {
             } else if (!controller) {
                 tokensInput.value = String(getSettings().abMaxTokens);
             }
-            if (!runIndex.length) {
+            if (!runIndex.length && !showingSaved) {
                 replace(output, emptyState(
                     'No saved runs yet.',
                     'Run a test case first. Its saved prompt is what gets sent here.',
@@ -315,6 +325,7 @@ export function createAbTab() {
             }
         },
         dispose() {
+            disposeSaved?.();
             reloadEpoch += 1;
             actionEpoch += 1;
             controller?.abort();

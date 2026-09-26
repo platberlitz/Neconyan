@@ -121,7 +121,7 @@ function collectUniqueIds(values, label) {
     return ids;
 }
 
-function importCase(value, index) {
+function importCase(value, index, regex) {
     const id = requireEntityId(value, `test case ${index + 1}`);
     if (!Array.isArray(value.assertions)) {
         throw new Error(`Test case "${id}" has a damaged assertion list.`);
@@ -131,7 +131,7 @@ function importCase(value, index) {
             throw new Error(`Test case "${id}" contains an invalid assertion.`);
         }
         const normalized = normalizeAssertion(assertion);
-        const problems = validateAssertion(assertion);
+        const problems = validateAssertion(assertion, regex);
         if (!normalized || problems.length || Object.entries(normalized).some(([key, item]) => (
             !Object.hasOwn(assertion, key) || !Object.is(assertion[key], item)
         ))) {
@@ -142,7 +142,7 @@ function importCase(value, index) {
     if (!migrated) {
         throw new Error(`Test case "${id}" was made by a newer version of Prompting Lab.`);
     }
-    const problems = validateCase(migrated);
+    const problems = validateCase(migrated, regex);
     if (problems.length) {
         throw new Error(`Test case "${id}" is invalid: ${problems.join(' ')}`);
     }
@@ -189,7 +189,7 @@ function importDraft(value, index) {
  *
  * @returns {{suite: object, cases: object[], baselineRuns: object[], presets: object[]}}
  */
-export function parseImport(text) {
+export function parseImport(text, { regex } = {}) {
     const source = String(text ?? '');
     const size = byteLength(source);
     if (size > MAX_EXPORT_WITH_BASELINES_BYTES) {
@@ -252,7 +252,7 @@ export function parseImport(text) {
     if (!suite) {
         throw new Error('The suite in that file could not be read.');
     }
-    const cases = payload.cases.map(importCase);
+    const cases = payload.cases.map((value, index) => importCase(value, index, regex));
     const rawRuns = Array.isArray(payload.baselineRuns) ? payload.baselineRuns : [];
     collectUniqueIds(rawRuns, 'baseline run');
     const baselineRuns = rawRuns.map(importRun);

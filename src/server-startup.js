@@ -62,6 +62,7 @@ import { router as mewmoryRouter } from './endpoints/mewmory.js';
 // Neconyan divergence: durable server-side job dispatcher for work that must finish without an open tab.
 import { router as jobsRouter } from './endpoints/jobs.js';
 import { router as meowerRouter } from './endpoints/meower.js';
+import { router as labsRouter } from './endpoints/labs.js';
 import { router as roleplayRouter } from './endpoints/roleplay.js';
 import { resumableGenerationMiddleware, router as resumableGenerationsRouter } from './resumable-generations.js';
 
@@ -137,6 +138,7 @@ export function setupPrivateEndpoints(app) {
     app.use('/api/mewmory', mewmoryRouter);
     app.use('/api/jobs', jobsRouter);
     app.use('/api/meower', meowerRouter);
+    app.use('/api/labs', labsRouter);
     // Named Roleplay workflows are accepted only by their own native routes.
     app.use('/api/roleplay', roleplayRouter);
     app.use('/api/sillybunny-conversation', neconyanConversationRouter);

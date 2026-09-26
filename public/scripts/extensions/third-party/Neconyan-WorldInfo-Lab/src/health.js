@@ -1,8 +1,6 @@
 import { entryId } from './constants.js';
-import { countTokens, getContext, loadHost, substitute } from './host.js';
-import { currentChatMessages } from './scan-input.js';
 import { matchKey } from './simulator/matching.js';
-import { snapshotLorebooks } from './sources.js';
+import { runWorldInfoLab } from './native.js';
 
 const MIN_OVERLAP_KEY_LENGTH = 3;
 const identity = value => String(value ?? '');
@@ -149,34 +147,12 @@ export function tokenOutliers(perEntry) {
         .map(item => item.id));
 }
 
-export async function auditLorebook({ bookName, context = getContext() } = {}) {
-    const name = String(bookName ?? '').trim();
-    if (!name) {
-        throw new TypeError('Choose a lorebook to check.');
-    }
-    const host = await loadHost();
-    if (!host.ok) {
-        throw new Error(host.reason);
-    }
-    const snapshot = await snapshotLorebooks({ context, bookNames: [name] });
-    if (!snapshot.books.has(name)) {
-        throw new Error(`"${name}" could not be loaded. Check that it still exists, then try again.`);
-    }
-    const { entries, settings } = snapshot;
-    const parseRegex = host.worldInfo.parseRegexFromString;
-    const expand = value => substitute(value);
-    const messages = currentChatMessages(context, settings.includeNames, 'normal');
-    const fields = context?.getCharacterCardFields?.() ?? {};
-    const haystack = [
-        ...messages,
-        ...Object.values(fields).filter(value => typeof value === 'string' && value),
-    ].join('\n');
-
+export async function auditSnapshot({ bookName, entries, settings, parseRegex, expand, messages, haystack, tokenCount, maxContext }) {
     const tokenCache = new Map();
     const cost = (content) => {
         const text = String(content ?? '');
         if (!tokenCache.has(text)) {
-            tokenCache.set(text, countTokens(text));
+            tokenCache.set(text, tokenCount(text));
         }
         return tokenCache.get(text);
     };
@@ -198,15 +174,14 @@ export async function auditLorebook({ bookName, context = getContext() } = {}) {
     const alwaysTotal = perEntry
         .filter(item => !item.disabled && alwaysIds.has(item.id))
         .reduce((sum, item) => sum + item.tokens, 0);
-    const promptLimit = Number(host.script.getMaxPromptTokens?.() ?? context?.maxContext ?? 4096);
-    const maxContext = Number.isFinite(promptLimit) && promptLimit > 0 ? promptLimit : 4096;
+    maxContext = Number.isFinite(maxContext) && maxContext > 0 ? maxContext : 4096;
     let budget = Math.round(Number(settings.budgetPercent) * maxContext / 100) || 1;
     if (Number(settings.budgetCap) > 0 && budget > Number(settings.budgetCap)) {
         budget = Number(settings.budgetCap);
     }
 
     return {
-        bookName: name,
+        bookName,
         entryCount: entries.length,
         enabledCount: entries.filter(entry => !entry.disable).length,
         chatMessageCount: messages.length,
@@ -223,4 +198,9 @@ export async function auditLorebook({ bookName, context = getContext() } = {}) {
             outliers: tokenOutliers(perEntry),
         },
     };
+}
+
+export async function auditLorebook({ bookName, signal } = {}) {
+    const report = await runWorldInfoLab('health', { book: bookName, mode: 'text' }, { signal });
+    return { ...report, tokens: { ...report.tokens, outliers: new Set(report.tokens.outliers) } };
 }

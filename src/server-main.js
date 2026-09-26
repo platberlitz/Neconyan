@@ -132,6 +132,7 @@ app.use('/api/jobs', express.json({ limit: JOB_INTENT_LIMIT_BYTES }), express.ur
 // and the chat revisions it answers, so it stays far below the job intent size.
 app.use('/api/roleplay', express.json({ limit: '256kb' }), express.urlencoded({ extended: false, limit: '256kb' }));
 app.use('/api/meower', express.json({ limit: '32kb' }), express.urlencoded({ extended: false, limit: '32kb' }));
+app.use('/api/labs', express.json({ limit: '32mb' }), express.urlencoded({ extended: false, limit: '32mb' }));
 app.use(express.json({ limit: '500mb' }));
 app.use(express.urlencoded({ extended: true, limit: '500mb' }));
 
@@ -780,6 +781,8 @@ async function postSetupTasks(result) {
     await import('./generation/assistant-tool-jobs.js');
     await import('./generation/quick-image-gen-workflow.js');
     const { finalizeMeowerSubmission } = await import('./generation/meower-jobs.js');
+    const { finalizeLabSubmission } = await import('./labs/store.js');
+    await import('./labs/jobs.js');
     const { recoverWaitingRoleplayWorkflow } = await import('./generation/roleplay-workflow.js');
     const [{ startJobsRunner }, { getUserDirectories, getAllUserHandles }, { recoverJobApproval }] = await Promise.all([
         import('./jobs/runner.js'),
@@ -793,6 +796,7 @@ async function postSetupTasks(result) {
             recoverJobApproval(context);
             recoverWaitingRoleplayWorkflow(context);
             await finalizeMeowerSubmission(context);
+            finalizeLabSubmission(context);
         },
     });
     const { startConversationWorker } = await import('./generation/conversation-worker.js');
