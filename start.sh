@@ -293,6 +293,10 @@ run_package_install() {
     done
 
     echo "Bun lockfile check failed; retrying without --frozen-lockfile so bun.lock can refresh."
+    # Bun treats --production as frozen too, so refresh the lockfile on its own first.
+    if [[ " ${fallback_args[*]} " == *" --production "* ]]; then
+        "$PACKAGE_MANAGER_CMD" install --lockfile-only --no-progress --no-summary
+    fi
     "$PACKAGE_MANAGER_CMD" "${fallback_args[@]}"
 }
 
