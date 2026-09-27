@@ -12,6 +12,11 @@ an Android 11 or newer phone with a 64-bit ARM processor. Android asks you to al
 installation from the app opening the APK. The x86_64 download is for compatible
 devices and emulators. Allow about 2 GiB of free storage for installation and data.
 
+Android System WebView, the system component that displays the interface, must be
+version 124 or newer. I check this before starting the server: an older WebView
+gets update instructions instead of an endless loading screen. Update it through
+your phone's app store or system updater, then reopen Neconyan.
+
 The first opening unpacks the server and can take a few minutes. Later openings
 reuse the installed files. Chats, characters and settings stay in private app
 storage. Use Neconyan's export and backup controls to save copies outside the app.
@@ -82,6 +87,9 @@ and packages the same commit as a source ZIP. Its downloaded artefacts include
 the provenance report and `SHA256SUMS`. The Android 11 and 15 emulator jobs install
 the signed x86_64 APK and check private authentication, background operation,
 process-death recovery and data retention after reinstalling it.
+The Android 11 check also verifies the update screen with its original WebView 83,
+then installs the newer WebView supplied by the Android 15 SDK image and checks
+the loaded interface. The APK uses the phone's WebView; it doesn't bundle one.
 
 The first official release uses a fresh signing key. Earlier desktop-signed test
 APKs need an exported backup and a reinstall; Android won't accept an update signed

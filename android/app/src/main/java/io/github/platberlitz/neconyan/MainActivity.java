@@ -21,6 +21,7 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public final class MainActivity extends Activity {
+    private static final int MIN_WEBVIEW_MAJOR = 124;
     private WebView web;
     private TextView status;
     private String origin;
@@ -49,11 +50,12 @@ public final class MainActivity extends Activity {
         status.setTextSize(18);
         status.setPadding(24, 32, 24, 32);
         root.addView(status);
+        setContentView(root);
+        if (!checkWebView(root)) return;
         web = new WebView(this);
         web.setBackgroundColor(Color.rgb(22, 23, 22));
         web.setVisibility(View.GONE);
         root.addView(web, new LinearLayout.LayoutParams(-1, 0, 1));
-        setContentView(root);
         if (Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(0, this::handleBack);
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, false);
@@ -142,6 +144,34 @@ public final class MainActivity extends Activity {
             if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
                 requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 11);
         } catch (Exception error) { status.setText("Could not start Neconyan: " + error.getMessage()); }
+    }
+
+    private boolean checkWebView(LinearLayout root) {
+        android.content.pm.PackageInfo provider = WebView.getCurrentWebViewPackage();
+        String version = provider == null || provider.versionName == null ? "Unavailable" : provider.versionName;
+        int major = 0;
+        try { major = Integer.parseInt(version.split("\\.")[0]); } catch (NumberFormatException ignored) { }
+        if (major >= MIN_WEBVIEW_MAJOR) return true;
+        status.setText("Update Android System WebView\n\nWebView draws Neconyan's interface. Version " + MIN_WEBVIEW_MAJOR
+            + " or newer is required. Installed: " + version
+            + ".\n\nUpdate your phone's WebView through your app store or system updater, then reopen Neconyan.");
+        Button settings = new Button(this);
+        settings.setText("Open WebView settings");
+        settings.setMinHeight(Math.round(48 * getResources().getDisplayMetrics().density));
+        settings.setOnClickListener(view -> {
+            Intent intent = provider == null ? new Intent(android.provider.Settings.ACTION_SETTINGS)
+                : new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + provider.packageName));
+            try { startActivity(intent); } catch (ActivityNotFoundException error) {
+                Toast.makeText(this, "Open your phone's Settings to update WebView.", Toast.LENGTH_LONG).show();
+            }
+        });
+        root.addView(settings);
+        Button close = new Button(this);
+        close.setText("Close Neconyan");
+        close.setMinHeight(Math.round(48 * getResources().getDisplayMetrics().density));
+        close.setOnClickListener(view -> finish());
+        root.addView(close);
+        return false;
     }
 
     private static void copy(InputStream input, OutputStream output) throws IOException {
@@ -308,6 +338,7 @@ public final class MainActivity extends Activity {
     @SuppressLint("GestureBackNavigation")
     @Override public void onBackPressed() { handleBack(); }
     private void handleBack() {
+        if (web == null) { finish(); return; }
         if (web.canGoBack()) { web.goBack(); return; }
         new AlertDialog.Builder(this).setMessage("Keep Neconyan running in the background?")
             .setPositiveButton("Keep running", (dialog, which) -> moveTaskToBack(true))
@@ -318,7 +349,7 @@ public final class MainActivity extends Activity {
         if (chooser != null) chooser.onReceiveValue(null);
         if (media != null) media.deny();
         cancelExport();
-        web.destroy();
+        if (web != null) web.destroy();
         super.onDestroy();
     }
 }

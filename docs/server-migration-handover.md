@@ -14,9 +14,16 @@ The first candidate was committed and pushed to staging as
 and the eight-part browser run `36334373000` test that exact commit.
 Neither main promotion nor release publication has taken place.
 The runner and settings-fixture follow-up is pushed as `b94a0e9`; Android run
-`36337607593` is validating its smaller emulator disk. A further acceptance check
-now waits for the actual Android Home screen or tour and retains a screenshot and
-the visible-control tree on failure. That screen check still needs a remote run.
+`36337607593` passed the signed app's server lifecycle checks on Android 11 and 15.
+The screen check added in `adc2988` then exposed a separate Android 11 startup
+failure. Diagnostics from `d573c77`, run `36338862101`, identify its stock WebView
+83.0.4103.120 rejecting top-level await and logical assignment syntax. Android 15
+loads the interface with WebView 124.0.6367.219. The next candidate checks for
+WebView 124 before starting the server and gives native update instructions.
+Its Android 11 test checks that screen first, then updates the emulator with the
+WebView from the Android 15 SDK image and repeats the full acceptance checks.
+That updated-WebView run is pending; do not report Android 11 interface acceptance
+until it passes.
 
 - Automatic and manual captions now compare the same settings fingerprint, excluding
   save counters and account bookkeeping. All 42 caption tests pass. All six desktop
@@ -49,13 +56,12 @@ the visible-control tree on failure. That screen check still needs a remote run.
   coalesced, and update notices dismiss after eight seconds unless hovered or focused.
 - The new manual Android validation workflow builds from a clean commit, records the
   embedded source and frontend hashes, verifies both signed APKs and 16 KiB native
-  alignment, and exercises the signed app on Android 11 and 15 emulators. Its first
-   remote build passed, including signature, source-content and alignment checks.
-   The signed app passed Android 15 startup, private login, background operation,
-   process-death recovery and reinstallation. Android 11 did not reach installation:
-   the hosted runner had 8,684 MB free but its requested emulator disk needed 9,830 MB.
-   The follow-up uses a 4 GiB disk and bounds failure-log collection to 20 seconds;
-   Android 11 still requires a successful rerun. The owner authorised a fresh signing key because the
+  alignment, and exercises the signed app on Android 11 and 15 emulators. Remote
+  builds pass signature, source-content and alignment checks. Both Android versions
+  pass private login, background operation, process-death recovery and reinstallation;
+  only Android 15 has passed the visible-interface check so far. The runner uses a
+  4 GiB emulator disk after an 8 GiB request exhausted its available storage.
+  The owner authorised a fresh signing key because the
   desktop key was unavailable. The new key and password are stored outside Git and
   in encrypted repository secrets. Older desktop-signed test installations require
   backup and reinstallation; future releases must retain the new key.

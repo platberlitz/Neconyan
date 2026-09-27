@@ -19,6 +19,7 @@ parser.add_argument('--adb', default='adb')
 parser.add_argument('--serial', required=True)
 parser.add_argument('--apk', required=True)
 parser.add_argument('--release', action='store_true', help='Check the signed app on a disposable root-capable emulator')
+parser.add_argument('--update-webview', help='Check the old-WebView screen, then install the SDK reference WebView APK')
 args = parser.parse_args()
 if not args.serial.startswith('emulator-'):
     parser.error('This destructive lifecycle check is restricted to an emulator.')
@@ -101,6 +102,27 @@ if int(adb('shell', 'getprop', 'ro.build.version.sdk')) >= 33:
     adb('shell', 'pm', 'grant', package, 'android.permission.POST_NOTIFICATIONS')
 adb('shell', 'am', 'force-stop', package)
 start()
+if args.update_webview:
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        adb('shell', 'uiautomator', 'dump', '/data/local/tmp/neconyan-window.xml')
+        screen = adb('shell', 'cat', '/data/local/tmp/neconyan-window.xml')
+        if 'Update Android System WebView' in screen:
+            break
+        time.sleep(1)
+    else:
+        raise AssertionError('The unsupported WebView did not show its update screen')
+    assert 'Open WebView settings' in screen and 'Close Neconyan' in screen
+    assert adb('shell', 'test ! -f /data/user/0/' + package + '/no_backup/launcher.json && echo untouched') == 'untouched'
+    # Exercise Back on the native screen before creating any WebView or server.
+    adb('shell', 'input', 'keyevent', '4')
+    adb('shell', 'am', 'force-stop', package)
+    print('Unsupported WebView shows update instructions without starting the server.', flush=True)
+    print(adb('install', '-r', args.update_webview), flush=True)
+    selected = adb('shell', 'cmd', 'webviewupdate', 'set-webview-implementation', 'com.android.webview')
+    assert 'Success' in selected, selected
+    print(adb('shell', 'dumpsys', 'webviewupdate'), flush=True)
+    start()
 request, token, port, origin = connect()
 try:
     wait_for_workspace()
