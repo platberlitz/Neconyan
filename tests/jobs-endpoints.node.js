@@ -16,7 +16,8 @@ globalThis.DATA_ROOT = root;
 
 const { router: jobsRouter } = await import('../src/endpoints/jobs.js');
 const { JOB_INTENT_LIMIT_BYTES, JOB_INTENT_MAX_BYTES, acceptJob, attachOwnedChild, getJob } = await import('../src/jobs/store.js');
-const { roleplayHash } = await import('../src/roleplay-store.js');
+const { roleplayHash, roleplayAccountStamp, initialiseRoleplayAccount } = await import('../src/roleplay-store.js');
+const { publishRoleplayPreview, subscribeRoleplayPreview } = await import('../src/generation/roleplay-preview.js');
 const { registerHandler, setDirectoriesResolver, abortJob, testExports: runner } = await import('../src/jobs/runner.js');
 const { writeArtifact } = await import('../src/jobs/artifacts.js');
 const { pcmWave } = await import('../src/jobs/audio-artifacts.js');
@@ -77,7 +78,7 @@ test('native Conversation, Roleplay and media work cannot bypass its own accepta
 test('stale browser account headers refuse every job route before accessing the new account', async () => {
     const { job } = await (await submit('bob', { key: 'stale-tab' })).json();
     const before = await (await request('GET', '/api/jobs/list', { account: 'bob' })).json();
-    for (const [method, suffix] of [['GET', '/list'], ['GET', '/capacity'], ['GET', `/${job.id}`], ['GET', `/${job.id}/result`],
+    for (const [method, suffix] of [['GET', '/list'], ['GET', '/capacity'], ['GET', `/${job.id}`], ['GET', `/${job.id}/result`], ['GET', `/${job.id}/preview`],
         ['POST', '/submit'], ['POST', `/${job.id}/cancel`], ['POST', `/${job.id}/dismiss`], ['POST', `/${job.id}/retry`]]) {
         const response = await request(method, '/api/jobs' + suffix, { account: 'bob', headers: { 'X-Neconyan-Account': 'alice' },
             body: method === 'POST' ? { type: 'roleplay', submissionKey: 'blocked', intent: {} } : undefined });
@@ -157,6 +158,36 @@ test('prepared audio artifacts are owner-scoped and served as bytes', async () =
     }
     writeArtifact(aliceDirs, job.id, name, { ok: false, error: 'offline' });
     assert.equal((await request('GET', path, { account: 'alice' })).status, 404);
+});
+
+test('live reply previews are account-scoped and disconnecting never cancels the job', async () => {
+    const base = { owner: 'alice', directories: aliceDirs };
+    initialiseRoleplayAccount(base);
+    const account = roleplayAccountStamp(base);
+    const { job } = acceptJob(aliceDirs, { owner: 'alice', type: 'media.roleplay-workflow', submissionKey: 'live-preview',
+        intent: { media: account, request: {} } });
+    const child = { id: 'preview-child', intent: { request: { characterName: 'Nova', workflowCandidate: { parentJobId: job.id } } } };
+    const context = { ...base, job: child };
+    const pathname = `/api/jobs/${job.id}/preview`;
+    assert.equal((await request('GET', pathname, { account: 'bob' })).status, 404);
+    const response = await request('GET', pathname);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type'), /text\/event-stream/);
+    const reader = response.body.getReader();
+    await reader.read();
+    const unsubscribe = subscribeRoleplayPreview('alice', job.id, () => { throw new Error('lost viewer'); });
+    assert.doesNotThrow(() => publishRoleplayPreview(context, { stage: 'generating', text: 'First token' }));
+    unsubscribe();
+    let received = '';
+    while (!received.includes('First token')) received += new TextDecoder().decode((await reader.read()).value);
+    await reader.cancel();
+    assert.equal(getJob(aliceDirs, job.id).cancellation.requested, false);
+    publishRoleplayPreview(context, { stage: 'companions', text: 'Completed main reply' });
+    const reopened = await request('GET', pathname);
+    const reopenedReader = reopened.body.getReader();
+    assert.match(new TextDecoder().decode((await reopenedReader.read()).value), /Completed main reply/);
+    await reopenedReader.cancel();
+    assert.equal(getJob(aliceDirs, job.id).cancellation.requested, false);
 });
 
 test('cancelling a root interrupts a running vector grandchild before another stage', { timeout: 10000 }, async () => {

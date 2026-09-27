@@ -16,7 +16,7 @@ import { capturePathfinderSource } from './world-info-pathfinder.js';
 import { captureIncomingRoleplayTranslation, captureRoleplayInputTranslation } from './roleplay-translation.js';
 import { captureRoleplayCaptions } from './roleplay-captions.js';
 import { captureSpeechPolicy } from './speech-config.js';
-import { agentHistorySources, captureRoleplayAgents, readRoleplayAgentsLocked } from './roleplay-agents-source.js';
+import { agentHistorySources, captureRoleplayAgentSet } from './roleplay-agents-source.js';
 import { captureCompanionCapacity } from './companion-capacity.js';
 import { captureRoleplayToolBindings } from './roleplay-tool-bindings.js';
 import { activeRoleplayAuthorNote, isWorldInfoAuthorNoteActive, selectRoleplayPromptRecords, savedRoleplayMacroSnapshot } from './roleplay-prompt.js';
@@ -285,11 +285,12 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             chatBook: saved.records[0].chat_metadata?.world_info, personaBook: persona.lorebook,
             members: group ? members : [{ avatar, card: character.data }], charLore: settings.world_info?.charLore ?? [],
         });
-        const agents = nativeBindingVersion && serverPrompt ? captureRoleplayAgents(lease, savedSettings,
+        const agentSet = nativeBindingVersion && serverPrompt ? captureRoleplayAgentSet(lease, savedSettings,
             { group: Boolean(source.locator.group), serverPrompt,
                 characterAvatars: source.locator.group ? members.map(member => member.avatar) : [avatar],
                 ...agentHistorySources(saved.records), forcedIds: agentIds }) : null;
-        const companionCapacity = agents ? captureCompanionCapacity(readRoleplayAgentsLocked(lease, agents), saved.records,
+        const agents = agentSet?.policy ?? null;
+        const companionCapacity = agents ? captureCompanionCapacity(agentSet.definitions, saved.records,
             source, { agentContext, trigger, hiddenIds: agents.hiddenIds }) : null;
         const tools = nativeBindingVersion && serverPrompt && !agentContext
             ? captureRoleplayToolBindings(lease, source, avatar, character.data, agents, savedSettings) : null;

@@ -13,6 +13,38 @@ export { roleplayPathKey } from '../roleplay-store.js';
 
 export const ROLEPLAY_METADATA_KEY = 'neconyan_roleplay';
 
+// Reuse decoding only after the protected reader has re-read and hashed the
+// exact file bytes. JSON copies keep callers from changing cached card data.
+const decodedCharacters = new Map();
+const DECODED_CHARACTER_BYTES = 32 * 1024 * 1024;
+let decodedCharacterBytes = 0;
+
+function decodedCharacter(filename, file, id) {
+    const cached = decodedCharacters.get(filename);
+    if (cached) {
+        decodedCharacters.delete(filename);
+        decodedCharacterBytes -= cached.bytes;
+        if (cached.rawHash === file.rawHash) {
+            decodedCharacters.set(filename, cached);
+            decodedCharacterBytes += cached.bytes;
+            return { data: JSON.parse(cached.json), contentHash: cached.contentHash };
+        }
+    }
+    const result = roleplayEntityContent('character', id, file.bytes);
+    const json = JSON.stringify(result.data);
+    const bytes = Buffer.byteLength(json);
+    if (bytes <= DECODED_CHARACTER_BYTES) {
+        decodedCharacters.set(filename, { rawHash: file.rawHash, contentHash: result.contentHash, json, bytes });
+        decodedCharacterBytes += bytes;
+        while (decodedCharacterBytes > DECODED_CHARACTER_BYTES || decodedCharacters.size > 128) {
+            const oldest = decodedCharacters.keys().next().value;
+            decodedCharacterBytes -= decodedCharacters.get(oldest).bytes;
+            decodedCharacters.delete(oldest);
+        }
+    }
+    return result;
+}
+
 function identifier(value) {
     if (typeof value !== 'string' || !value || value.length > 256 || value !== sanitize(value)
         || ['.', '..', '__proto__', 'constructor', 'prototype'].includes(value)) {
@@ -139,7 +171,8 @@ function inspectEntity(lease, kind, id, { storage = false } = {}) {
     const filename = path.join(kind === 'character' ? scope.directories.characters : scope.directories.groups, kind === 'character' ? id : id + '.json');
     const file = readRoleplayFile(filename, 64 * 1024 * 1024);
     if (!file) throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'A required Roleplay character or group no longer exists.', 404);
-    const { data, contentHash } = roleplayEntityContent(kind, id, file.bytes, { storage });
+    const { data, contentHash } = kind === 'character' ? decodedCharacter(filename, file, id)
+        : roleplayEntityContent(kind, id, file.bytes, { storage });
     const existing = state.paths[roleplayPathKey(state, kind, locator)];
     if (existing) {
         const resource = state.resources[existing.instanceId];

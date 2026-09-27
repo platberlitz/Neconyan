@@ -12,14 +12,20 @@ const fail = message => roleplayError('ROLEPLAY_AGENT_SOURCE_CHANGED', message, 
 
 /** The caller holds the account lock. Only record identities and private-profile fingerprints are saved. */
 export function captureRoleplayAgents(lease, settings, { group = false, serverPrompt = true, characterAvatars = [], historyAgentIds = [], hasHistory = false, forcedIds = [] } = {}) {
-    if (!serverPrompt) return null;
+    return captureRoleplayAgentSet(lease, settings, { group, serverPrompt, characterAvatars, historyAgentIds, hasHistory, forcedIds }).policy;
+}
+
+/** Policy and runnable definitions come from the same protected, synchronous read. */
+export function captureRoleplayAgentSet(lease, settings, { group = false, serverPrompt = true, characterAvatars = [], historyAgentIds = [], hasHistory = false, forcedIds = [] } = {}) {
+    const empty = { policy: null, definitions: [] };
+    if (!serverPrompt) return empty;
     const { scope } = roleplayLease(lease);
     const extensions = settings.extension_settings ?? {};
     const global = extensions.inChatAgents?.globalSettings ?? {};
     const disabled = global.enabled === false || extensions.disabledExtensions?.map(normalizeExtensionBootId).includes('in-chat-agents');
     if (!Array.isArray(forcedIds) || forcedIds.length > 512 || forcedIds.some(id => typeof id !== 'string' || !id)) throw fail('The requested manual Agents are invalid.');
     if (forcedIds.length && disabled) throw fail('Enable Agents before accepting this manual action.');
-    if (disabled && !hasHistory) return null;
+    if (disabled && !hasHistory) return empty;
     const directory = agentCollectionDirectory(scope.directories);
     const library = readAgentCollection(directory);
     if (library.errors.length) throw fail('The saved Agent library needs recovery before generation.');
@@ -27,6 +33,7 @@ export function captureRoleplayAgents(lease, settings, { group = false, serverPr
     const ids = global.enabledAgentIdsByChatType?.[group ? 'group' : 'individual'] ?? [];
     if (!Array.isArray(ids)) throw fail('The saved Agent enablement scope is invalid.');
     const agents = [], historyAgents = [], extraCharacters = new Map();
+    const definitions = new Map(), cards = new Map();
     // Reuse a shared connection only during this synchronous capture. The next
     // capture must read it again so edits still invalidate accepted work.
     const bindings = new Map();
@@ -52,6 +59,7 @@ export function captureRoleplayAgents(lease, settings, { group = false, serverPr
         const reference = { id: agent.id, revision: roleplayHash(raw), rawHash: file.rawHash, physical: file.physical, binding,
             order: agent.injection.order, profileLabel: String(profile?.name || binding?.profileId || '') };
         if (enabled) agents.push(reference);
+        if (enabled) definitions.set(agent.id, { ...agent, binding, revision: reference.revision, profileLabel: reference.profileLabel });
         if (historyAgentIds.includes(raw.id)) historyAgents.push(reference);
         if (enabled && getAgentTemplateId(agent) === CHATROOM_TEMPLATE_ID) {
             for (const avatar of companionExtraCharacterAvatars(agent.settings.chatroomExtraCharacterAvatars)) {
@@ -61,20 +69,27 @@ export function captureRoleplayAgents(lease, settings, { group = false, serverPr
                 const { contentHash, physical } = character;
                 const descriptor = Object.fromEntries(Object.entries(character).filter(([key]) => !['data', 'changed', 'kind', 'contentHash', 'physical'].includes(key)));
                 extraCharacters.set(avatar, { avatar, descriptor, contentHash, physical });
+                cards.set(avatar, character.data);
             }
         }
     }
     if (forcedIds.some(id => !agents.some(agent => agent.id === id))) throw fail('A requested manual Agent no longer exists.');
-    if (!agents.length && !hasHistory) return null;
+    if (!agents.length && !hasHistory) return empty;
     agents.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
     const helperPrefill = global.helperPrefillMessages ?? '';
     if (typeof helperPrefill !== 'string' || Buffer.byteLength(helperPrefill) > 64 * 1024) throw fail('The saved Agent helper messages are invalid.');
-    return { version: 1, group: Boolean(group), globalHash: roleplayHash(global), agents, historyAgents, hiddenIds,
+    const policy = { version: 1, group: Boolean(group), globalHash: roleplayHash(global), agents, historyAgents, hiddenIds,
         characterAvatars, historyAgentIds, hasHistory, forcedIds, extraCharacters: [...extraCharacters.values()],
         appendMode: global.appendAgentsExecutionMode === 'sequential' ? 'sequential' : 'parallel',
         companionMode: global.companionExecutionMode === 'sequential' ? 'sequential' : 'parallel',
         concurrentCompanions: Boolean(global.companionConcurrentWithPostGen),
         reviewPostMain: global.postMainInterceptShowMessageFirst !== false, helperPrefill };
+    return { policy, definitions: agents.map(reference => {
+        const agent = definitions.get(reference.id);
+        agent.extraCharacterCards = [...cards].filter(([avatar]) => companionExtraCharacterAvatars(agent.settings.chatroomExtraCharacterAvatars).includes(avatar))
+            .map(([, card]) => card);
+        return agent;
+    }) };
 }
 
 export function readRoleplayAgentsLocked(lease, policy) {
@@ -83,17 +98,10 @@ export function readRoleplayAgentsLocked(lease, policy) {
     const file = readRoleplayFile(filename, 8 * 1024 * 1024);
     let settings;
     try { settings = JSON.parse(file?.bytes.toString('utf8')); } catch { throw fail('The saved Agent settings are unreadable.'); }
-    const current = captureRoleplayAgents(lease, settings, { group: policy.group, characterAvatars: policy.characterAvatars ?? [],
+    const current = captureRoleplayAgentSet(lease, settings, { group: policy.group, characterAvatars: policy.characterAvatars ?? [],
         historyAgentIds: policy.historyAgentIds ?? [], hasHistory: policy.hasHistory ?? false, forcedIds: policy.forcedIds ?? [] });
-    if (roleplayHash(current) !== roleplayHash(policy)) throw fail('The accepted Agents or their model connections have changed.');
-    return policy.agents.map(reference => {
-        const stored = readAgentRecordLocked(lease, 'agent', reference.id);
-        if (!stored || roleplayHash(stored.record) !== reference.revision) throw fail('An accepted Agent record has changed.');
-        const agent = { ...nativeAgentDefinition(stored.record), binding: reference.binding, revision: reference.revision, profileLabel: reference.profileLabel };
-        agent.extraCharacterCards = (policy.extraCharacters ?? []).filter(item => companionExtraCharacterAvatars(agent.settings.chatroomExtraCharacterAvatars).includes(item.avatar))
-            .map(item => readRoleplayEntityLocked(lease, 'character', item.avatar).data);
-        return agent;
-    });
+    if (roleplayHash(current.policy) !== roleplayHash(policy)) throw fail('The accepted Agents or their model connections have changed.');
+    return current.definitions;
 }
 
 export function readRoleplayAgents(base, snapshot) {

@@ -7,10 +7,11 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { setConfigFilePath } from '../src/util.js';
+import { TavernCardValidator } from '../src/validator/TavernCardValidator.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { initialiseRoleplayAccount, readRoleplayAccount } = await import('../src/roleplay-store.js');
-const { captureRoleplaySource, captureRoleplayStorageSource, assertRoleplaySource, readRoleplayChat, normaliseRoleplayLocator, roleplayGroupContentHash } = await import('../src/generation/roleplay-source.js');
+const { captureRoleplaySource, captureRoleplayStorageSource, assertRoleplaySource, readRoleplayChat, readRoleplayEntity, normaliseRoleplayLocator, roleplayGroupContentHash } = await import('../src/generation/roleplay-source.js');
 const { read: readCard, write: writeCard } = await import('../src/character-card-parser.js');
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
 
@@ -80,6 +81,34 @@ for (const group of [false, true]) {
         });
     });
 }
+
+test('unchanged character decoding is reused without trusting mutated data or replaced files', t => {
+    const f = fixture(t);
+    let validations = 0;
+    for (const method of ['validateV1', 'validateV2', 'validateV3']) {
+        const original = TavernCardValidator.prototype[method];
+        t.mock.method(TavernCardValidator.prototype, method, function (...args) {
+            validations++;
+            return original.apply(this, args);
+        });
+    }
+    const first = readRoleplayEntity(f.scope, 'character', 'Nova.png');
+    const expected = structuredClone(first.data);
+    const initialValidations = validations;
+    assert.ok(initialValidations > 0);
+    first.data.name = 'Locally changed';
+    assert.deepEqual(readRoleplayEntity(f.scope, 'character', 'Nova.png').data, expected);
+    assert.equal(validations, initialValidations);
+    const originalBytes = fs.readFileSync(f.cardPath);
+    fs.writeFileSync(f.cardPath, writeCard(png, JSON.stringify({ name: 'Nova', description: 'Changed' })));
+    assert.throws(() => readRoleplayEntity(f.scope, 'character', 'Nova.png'), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    fs.writeFileSync(f.cardPath, originalBytes);
+    assert.deepEqual(readRoleplayEntity(f.scope, 'character', 'Nova.png').data, expected);
+    const replacement = f.cardPath + '.replacement';
+    fs.writeFileSync(replacement, originalBytes);
+    fs.renameSync(replacement, f.cardPath);
+    assert.throws(() => readRoleplayEntity(f.scope, 'character', 'Nova.png'), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+});
 
 test('same-length text, hidden fields and selected swipe changes invalidate protected source', t => {
     const f = fixture(t);

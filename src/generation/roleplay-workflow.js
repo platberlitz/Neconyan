@@ -1,7 +1,7 @@
 import { roleplayError, roleplayHash } from '../roleplay-store.js';
 import { assertRoleplaySourceLocked, captureRoleplayStorageSourceLocked } from './roleplay-source.js';
 import { captureRoleplayWorldInfo } from './world-info.js';
-import { getChatProfileContextLimit } from './profiles.js';
+import { getChatProfileContextLimit, resolveGenerationProfile } from './profiles.js';
 import { admitRoleplayJob, previewRoleplayWorkflowEffect, readRoleplayJobResult } from '../roleplay-jobs.js';
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { commitSingleChatWriteLocked } from '../roleplay-lifecycle.js';
@@ -64,7 +64,9 @@ export function captureRoleplayWorkflowRequest(base, account, source, { avatar, 
     const companionBytes = Math.max(worldInfo.companionCapacity?.requiredBytes ?? 0,
         ...(speakers?.map(speaker => speaker.worldInfo.companionCapacity?.requiredBytes ?? 0) ?? []));
     const capacity = captureRoleplayWorkflowCapacity(base, account, source, { companionBytes });
-    return { version: 1, avatar: selectedAvatar, effect, binding, maxTokens, worldInfo,
+    const stream = (!binding.backend || binding.backend === 'chat')
+        && resolveGenerationProfile(base.directories, binding).active?.stream_openai === true;
+    return { version: 1, avatar: selectedAvatar, effect, binding, maxTokens, worldInfo, stream,
         capacity,
         ...(named ? { named } : {}),
         ...(group ? { group: { ...group, speakers } } : {}),
@@ -129,6 +131,7 @@ function childRequest(job, turn = 0, history = [], lineage = null, decision = nu
     if (decision) candidate.decisionHash = decision.hash;
     if (request.group) Object.assign(candidate, { groupHash: request.group.hash, speakerIndex });
     return { binding: request.binding, maxTokens: request.maxTokens, serverPrompt: true,
+        ...(request.stream !== undefined ? { stream: request.stream } : {}),
         characterName: worldInfo.speakerNames.character, worldInfo, messages: [],
         ...(speaker?.modelOverride ? { modelOverride: speaker.modelOverride } : {}),
         workflowCandidate: candidate };

@@ -314,6 +314,8 @@ async function readbackReceipt(key, name, options, id) {
 /** Watch an accepted root job and read its receipt back once it settles. */
 export function observeRoleplayWorkflowJob(jobId, { key, name, locator, account = getCurrentUserHandle() }) {
     if (!jobId || observed.has(jobId)) return;
+    let stopPreview = () => {};
+    let ended = false;
     const stop = observeJob(jobId, {
         account,
         onSnapshot: async root => {
@@ -333,8 +335,10 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, account 
             }
         },
         onStop: async (reason) => {
+            ended = true;
             observed.delete(jobId);
             if (reason !== 'done' && reason !== 'stopped') {
+                stopPreview();
                 announce({ key, name, state: reason, result: null, jobId });
                 // A refused or lost job must not leave a caller waiting for a write
                 // that will never arrive.
@@ -346,10 +350,25 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, account 
             } catch {
                 // The receipt is permanent; the next resume reads it back.
                 settleFinished(key, null);
+            } finally {
+                stopPreview();
             }
         },
     });
     observed.set(jobId, { account, stop });
+    void import('./roleplay-preview.js').then(({ observeRoleplayPreview }) => {
+        if (ended) return;
+        stopPreview = observeRoleplayPreview(jobId, { account,
+            isCurrent: () => account === getCurrentUserHandle()
+                && currentLocator()?.chat === locator?.chat && currentLocator()?.avatar === locator?.avatar,
+            onTerminal: value => {
+                if (value.state !== 'completed') {
+                    if (value.error) globalThis.toastr?.error?.(value.error, 'Reply stopped');
+                    stop(value.state);
+                } else stop('done');
+            },
+        });
+    }).catch(() => {});
 }
 
 /**

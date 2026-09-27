@@ -4,7 +4,15 @@ const STREAM_LIMIT = 2 * 1024 * 1024;
 
 /** Assemble a complete provider stream; never turn an EOF without a final event into a reply. */
 export function assembleGenerationStream(raw) {
-    if (Buffer.byteLength(raw) > STREAM_LIMIT) throw new Error('The generated stream exceeded the saved result limit.');
+    const stream = createGenerationStream();
+    stream.push(String(raw));
+    return stream.finish();
+}
+
+/** Preview deltas share the final parser, but only finish() can accept a reply. */
+export function createGenerationStream(onUpdate) {
+    let pending = '';
+    let bytes = 0;
     let text = '';
     let reasoning = '';
     let signature = '';
@@ -12,15 +20,14 @@ export function assembleGenerationStream(raw) {
     let terminated = false;
     let textBytes = 0;
     let reasoningBytes = 0;
-    const events = String(raw).replace(/\r\n/g, '\n').split('\n\n');
-    for (const event of events) {
+    const accept = event => {
         if (event.split('\n').some(line => /^event:\s*error\s*$/.test(line))) throw new Error('The provider rejected the generated stream.');
         const data = event.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
-        if (!data) continue;
+        if (!data) return;
         if (data === '[DONE]') {
             complete = true;
             terminated = true;
-            continue;
+            return;
         }
         let chunk;
         try { chunk = JSON.parse(data); } catch { throw new Error('The generated stream contains an invalid event.'); }
@@ -30,7 +37,7 @@ export function assembleGenerationStream(raw) {
         const delta = choice?.delta ?? choice?.message;
         const candidate = chunk.candidates?.[0];
         const parts = candidate?.content?.parts;
-        if (choice?.index > 0 || candidate?.index > 0) continue;
+        if (choice?.index > 0 || candidate?.index > 0) return;
         if (delta?.tool_calls?.length || parts?.some(part => part?.functionCall || part?.inlineData)) {
             throw new Error('The provider stream contains an output this Roleplay reply cannot save.');
         }
@@ -56,11 +63,27 @@ export function assembleGenerationStream(raw) {
         reasoning += nextReasoning;
         if (chunk.type === 'message_stop' || chunk.type === 'message-end' || chunk.done === true || choice?.finish_reason != null
             || candidate?.finishReason || chunk.event === 'done') complete = true;
-    }
-    if (!complete || !text.trim()) throw new Error('The provider stream ended without a complete reply.');
-    return { choices: [{ text, reasoning, message: { content: text, reasoning_content: reasoning, reasoning,
-        ...(signature ? { reasoning_details: [{ id: 'thought', type: 'reasoning.encrypted', data: signature }] } : {}) } }],
-    content: [{ type: 'thinking', thinking: reasoning }, { type: 'text', text }], thinking: reasoning,
-    responseContent: { parts: [...(reasoning ? [{ thought: true, text: reasoning }] : []),
-        { text, ...(signature ? { thoughtSignature: signature } : {}) }] } };
+        if (nextText || nextReasoning) onUpdate?.({ text, reasoning });
+    };
+    return {
+        push(chunk) {
+            bytes += Buffer.byteLength(chunk);
+            if (bytes > STREAM_LIMIT) throw new Error('The generated stream exceeded the saved result limit.');
+            pending += chunk;
+            let boundary;
+            while ((boundary = /\r?\n\r?\n/.exec(pending))) {
+                accept(pending.slice(0, boundary.index).replace(/\r\n/g, '\n'));
+                pending = pending.slice(boundary.index + boundary[0].length);
+            }
+        },
+        finish() {
+            if (pending) { accept(pending.replace(/\r\n/g, '\n')); pending = ''; }
+            if (!complete || !text.trim()) throw new Error('The provider stream ended without a complete reply.');
+            return { choices: [{ text, reasoning, message: { content: text, reasoning_content: reasoning, reasoning,
+                ...(signature ? { reasoning_details: [{ id: 'thought', type: 'reasoning.encrypted', data: signature }] } : {}) } }],
+            content: [{ type: 'thinking', thinking: reasoning }, { type: 'text', text }], thinking: reasoning,
+            responseContent: { parts: [...(reasoning ? [{ thought: true, text: reasoning }] : []),
+                { text, ...(signature ? { thoughtSignature: signature } : {}) }] } };
+        },
+    };
 }

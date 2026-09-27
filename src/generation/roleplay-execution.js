@@ -40,6 +40,7 @@ import { prepareRoleplayAgentContributions, runRoleplayAgentInterceptors, runRol
 import { runRoleplayCompanions } from './roleplay-companions.js';
 import { createProviderScope } from '../jobs/artifacts.js';
 import { stageBoundModelToolCalls } from './roleplay-tool-dispatch.js';
+import { publishRoleplayPreview } from './roleplay-preview.js';
 import { applyRoleplayVectorFiles, prepareRoleplayVectors } from './roleplay-vectors.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
@@ -140,6 +141,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             throw roleplayError('ROLEPLAY_TOOLS_PENDING', 'The saved provider result needs the native tool workflow before a reply can be written.', 409);
         }
         const output = replyOutput(result, effect, request.characterName, result.generation);
+        publishRoleplayPreview(context, { text: result.text, reasoning: output.extra?.reasoning ?? output.message?.extra?.reasoning ?? '', stage: 'agents' });
         if (request.worldInfo?.captions?.persist) {
             const { hash, ...captions } = readArtifact(directories, job.id, 'roleplay-captions') ?? {};
             if (hash !== roleplayHash(captions) || !Array.isArray(captions.results)) {
@@ -188,13 +190,19 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 macros: savedRoleplayMacroSnapshot(request.worldInfo, records), generationType: request.worldInfo.global.trigger,
                 assistantName: request.characterName, assertCurrent: () => { assertSource(); assertRoleplayWorldInfoCurrent(base, request.worldInfo); }, generate: generateAgent };
             const intercepted = await runRoleplayAgentInterceptors(context, { ...options, value, timing: 'post-main-generation', format: 'text' });
-            if (intercepted.waiting) return { waiting: true, approval: intercepted.approval };
+            if (intercepted.waiting) {
+                publishRoleplayPreview(context, { stage: 'review' });
+                return { waiting: true, approval: intercepted.approval };
+            }
             const pre = readArtifact(directories, job.id, 'roleplay-agents-pre');
             let post, companions;
             if (request.worldInfo.agents.concurrentCompanions) {
                 const shared = { ...context, providerScope: createProviderScope(context) };
                 const settled = await Promise.allSettled([
-                    runRoleplayAgentPostprocessing(shared, { ...options, value: intercepted.value }),
+                    runRoleplayAgentPostprocessing(shared, { ...options, value: intercepted.value }).then(post => {
+                        publishRoleplayPreview(context, { text: post.text, stage: 'companions' });
+                        return post;
+                    }),
                     runRoleplayCompanions(shared, { ...options, effect, value: roleplayAgentOutputBaseline(intercepted.value, pre) }),
                 ]);
                 const failure = settled.find(item => item.status === 'rejected');
@@ -202,6 +210,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 [post, companions] = settled.map(item => item.value);
             } else {
                 post = await runRoleplayAgentPostprocessing(context, { ...options, value: intercepted.value });
+                publishRoleplayPreview(context, { text: post.text, stage: 'companions' });
                 companions = await runRoleplayCompanions(context, { ...options, effect, value: post.text });
             }
             if (effect === 'continue') output.continuedText = post.text;
@@ -214,10 +223,12 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             output.agentProof = { pre: pre.hash, base: baseProof.hash, intercepts: intercepted.hash, post: post.hash, companions: companions.hash };
         }
         if (request.worldInfo?.translation) {
+            publishRoleplayPreview(context, { stage: 'translating' });
             await translateIncomingRoleplayOutput(context, { base, snapshot: request.worldInfo,
                 effect: { type: effect }, output, assertSource, fetchImpl: translationFetch ?? fetch });
         }
         if (request.worldInfo?.speech) {
+            publishRoleplayPreview(context, { stage: 'speech' });
             const speechRecords = assertSource().records;
             const message = output.message ?? output.messages?.[0] ?? output;
             const text = effect === 'continue' ? output.continuedText ?? String(speechRecords[source.message.index + 1].mes ?? '') + output.text : message.mes ?? output.text;
@@ -233,6 +244,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             output.timedBaseline = selection.timedBaseline;
             output.timedChatLength = request.worldInfo.savedChatLength ?? selection.chatLength;
         }
+        publishRoleplayPreview(context, { text: output.continuedText ?? output.text ?? output.message?.mes ?? output.messages?.[0]?.mes, stage: 'saving' });
         if (job.type === 'roleplay.candidate') return saveCandidate('text', { output });
         writeArtifact(directories, job.id, 'roleplay-output', output);
         setJobResume(directories, job.id, 'roleplay-delivery');
@@ -303,6 +315,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         throw roleplayError('ROLEPLAY_INVALID', 'The accepted Roleplay generation input is invalid.', 400);
     }
     const overridePayload = requestOverrides(request);
+    publishRoleplayPreview(context, { text: '', reasoning: '', stage: 'preparing' });
     const initialSource = assertSource();
     let initialRecords = request.serverPrompt ? selectRoleplayPromptRecords(initialSource.records, source, effect) : initialSource.records;
     let captions;
@@ -844,7 +857,9 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (previous !== undefined && roleplayHash(previous) !== roleplayHash(prepared)) throw roleplayError('ROLEPLAY_AGENT_RECOVERY', 'The saved Agent-modified prompt changed.', 409);
         if (previous === undefined) writeArtifact(directories, job.id, 'roleplay-prompt', prepared);
     }
+    publishRoleplayPreview(context, { stage: 'generating' });
     const result = await generate({ context: base, jobContext: context, binding: request.binding, messages,
+        onStream: value => publishRoleplayPreview(context, { ...value, stage: 'generating' }),
         maxTokens: request.maxTokens, userName, characterName: request.characterName,
         generationType: request.serverPrompt ? request.worldInfo.global.trigger : 'quiet',
         groupNames, macroEnvironment, preparedText, cfgValues, preparedMessages: Boolean(request.serverPrompt && countChat), functionTools,
@@ -874,7 +889,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             beforeDispatch();
         } : undefined,
         beforeDispatch,
-        modelOverride: request.modelOverride || '', overridePayload, stream: request.stream === true });
+        modelOverride: request.modelOverride || '', overridePayload, stream: request.stream === true && !functionTools.length });
     return finish(result, worldInfo);
 }
 

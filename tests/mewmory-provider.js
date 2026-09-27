@@ -26,7 +26,7 @@ export async function createMewmoryProvider(port = 0) {
             return response.end('{}');
         }
         const name = typeof body.prompt === 'string' ? 'text-writer' : body.model;
-        const call = { model: name, messages: body.messages, prompt: body.prompt, input: body.input, tools: body.tools, headers: request.headers, url: request.url, startedAt: Date.now(), completedAt: null };
+        const call = { model: name, stream: body.stream, messages: body.messages, prompt: body.prompt, input: body.input, tools: body.tools, headers: request.headers, url: request.url, startedAt: Date.now(), completedAt: null };
         calls.push(call);
         if ([].concat(mode.hold).includes(name)) await new Promise(resolve => held.add(resolve));
         call.completedAt = Date.now();
@@ -44,6 +44,17 @@ export async function createMewmoryProvider(port = 0) {
             wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(16000, 28);
             wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(16000, 40);
             return response.end(wav);
+        }
+        if (body.stream && mode.streamReply) {
+            response.setHeader('Content-Type', 'text/event-stream');
+            call.completedAt = null;
+            const event = content => 'data: ' + JSON.stringify({ choices: [{ delta: { content } }] }) + '\n\n';
+            call.firstTokenAt = Date.now();
+            response.write(event(mode.streamReply.first));
+            await new Promise(resolve => { mode.finishStream = resolve; });
+            response.write(event(mode.streamReply.rest));
+            call.completedAt = Date.now();
+            return response.end('data: [DONE]\n\n');
         }
         if (mode.reply) return response.end(JSON.stringify(typeof mode.reply === 'function' ? mode.reply(body) : mode.reply));
         if (mode.fail) {

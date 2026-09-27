@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
-import { assembleGenerationStream } from '../generation/stream-result.js';
+import { assembleGenerationStream, createGenerationStream } from '../generation/stream-result.js';
 import sanitize from 'sanitize-filename';
 
 import { parse as parseCharacterCard } from '../character-card-parser.js';
@@ -394,7 +394,7 @@ export function buildGenerationRequestBody(generation, systemPrompt, promptMessa
 /**
  * Create a capturing response mock for backend generation
  */
-export function createCapturingResponse({ stream = false } = {}) {
+export function createCapturingResponse({ stream = false, onChunk } = {}) {
     let statusCode = 200;
     let payload;
     let headersSent = false;
@@ -491,6 +491,12 @@ export function createCapturingResponse({ stream = false } = {}) {
                 this.end();
                 return false;
             }
+            try { onChunk?.(next); } catch (error) {
+                streamError = error;
+                events.emit('close');
+                this.end();
+                return false;
+            }
             chunks.push(next);
             headersSent = true;
             return true;
@@ -545,13 +551,13 @@ export function getSafeConversationGenerationStatus(status) {
 /**
  * Run backend generation with error handling
  */
-export async function runBackendGeneration(request, backend, payload, { signal, fetch, anonymousCustom = false, boundProfile = false } = {}) {
+export async function runBackendGeneration(request, backend, payload, { signal, fetch, anonymousCustom = false, boundProfile = false, onStream } = {}) {
     const handler = backend === GENERATION_BACKENDS.TEXT ? handleTextCompletionsGenerate : handleChatCompletionsGenerate;
-    return runBackendRequest(request, handler, payload, { signal, fetch, anonymousCustom, boundProfile });
+    return runBackendRequest(request, handler, payload, { signal, fetch, anonymousCustom, boundProfile, onStream });
 }
 
 /** Invoke an existing provider handler with the same owner and cancellation policy. */
-export async function runBackendRequest(request, handler, payload, { signal, fetch, anonymousCustom = false, boundProfile = false } = {}) {
+export async function runBackendRequest(request, handler, payload, { signal, fetch, anonymousCustom = false, boundProfile = false, onStream } = {}) {
     if (!Object.keys(payload).length) {
         const error = new Error('generation payload is required');
         error.status = 400;
@@ -596,7 +602,8 @@ export async function runBackendRequest(request, handler, payload, { signal, fet
         },
         body: payload,
     };
-    const capture = createCapturingResponse({ stream: payload.stream === true });
+    const preview = payload.stream === true && onStream ? createGenerationStream(onStream) : null;
+    const capture = createCapturingResponse({ stream: payload.stream === true, onChunk: preview ? chunk => preview.push(chunk) : undefined });
     const finished = payload.stream === true && new Promise(resolve => capture.once('finish', resolve));
     const abort = () => {
         capture.emit('close');

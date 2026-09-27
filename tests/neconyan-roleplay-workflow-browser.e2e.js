@@ -73,6 +73,65 @@ async function terminal(account, id) {
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
 
+    test(`${viewport} live Roleplay text appears before completion and remains visible while Companions run`, async ({ app }, info) => {
+        app.provider.mode.streamReply = { first: 'First words', rest: ' and the finished reply.' };
+        app.provider.mode.reply = { choices: [{ message: { content: 'A saved Companion note.' }, finish_reason: 'stop' }] };
+        app.provider.mode.hold = 'unused-named-model';
+        const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
+            saved.oai_settings.stream_openai = true;
+            saved.extension_settings.inChatAgents = { globalSettings: { enabled: true, separateRecentChats: false,
+                connectionProfile: 'durable', companionConcurrentWithPostGen: true } };
+        } });
+        const native = owned(app);
+        await fs.mkdir(native.directories.inChatAgents, { recursive: true });
+        await fs.writeFile(path.join(native.directories.inChatAgents, 'live-note.json'), JSON.stringify({
+            id: 'live-note', name: 'Live note', enabled: true, category: 'companion', execution: 'companion', prompt: 'Keep a note.',
+        }));
+        const locator = await savedChat(account, `Live preview ${viewport}`);
+        const page = await account.open({ workspace: false, readyTimeout: 120000 });
+        await openChat(page, locator);
+        const submitted = page.waitForResponse(acceptedSubmission);
+        await page.locator('#send_textarea').fill('Show the reply as it arrives.');
+        await page.locator('#send_textarea').press('Enter');
+        const response = await submitted;
+        expect(response.status(), await response.text()).toBe(202);
+        const { jobId } = await response.json();
+        const preview = page.locator('#neconyan-roleplay-preview');
+        try {
+            await expect(preview).toContainText('First words', { timeout: 60000 });
+            expect(app.provider.calls[0].stream).toBe(true);
+            expect(app.provider.calls[0].completedAt).toBeNull();
+            expect(readRoleplayChat(native.scope, locator).records.at(-1).is_user).toBe(true);
+            expect(await page.evaluate(() => window.SillyTavern.getContext().chat.at(-1).is_user)).toBe(true);
+            const geometry = await preview.boundingBox();
+            expect(geometry.width).toBeGreaterThan(0);
+            expect(geometry.x + geometry.width).toBeLessThanOrEqual(phone ? 393 : 1280);
+            app.provider.mode.finishStream();
+            await expect(preview).toContainText('First words and the finished reply.', { timeout: 30000 });
+            await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBe(2);
+            expect(app.provider.calls[1].completedAt).toBeNull();
+            expect(readRoleplayChat(native.scope, locator).records.at(-1).is_user).toBe(true);
+            await page.screenshot({ path: info.outputPath('live-reply-with-companion-pending.png') });
+            // Reopening only observes the existing reply; it cannot pay for another one.
+            await page.reload({ waitUntil: 'domcontentloaded' });
+            await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 120000 });
+            await openChat(page, locator);
+            await page.evaluate(async () => (await import('/scripts/neconyan-conversation/roleplay-workflows.js')).resumeNativeRoleplayWorkflowObservation());
+            await expect(preview).toContainText('First words and the finished reply.', { timeout: 30000 });
+            expect(app.provider.calls).toHaveLength(2);
+        } finally {
+            app.provider.mode.finishStream?.();
+            await app.release();
+        }
+        await account.settled(jobId);
+        await expect(page.locator('#chat .mes').last()).toContainText('First words and the finished reply.', { timeout: 30000 });
+        await expect(preview).toHaveCount(0);
+        const records = readRoleplayChat(native.scope, locator).records;
+        expect(records.filter(row => row.mes === 'First words and the finished reply.')).toHaveLength(1);
+        expect(records.at(-1).extra.inChatAgentCompanionResults['live-note'].status).toBe('done');
+        expect(app.provider.calls).toHaveLength(2);
+    });
+
     test(`${viewport} Agents can be switched off during setup recovery and the Companion paw stays available`, async ({ app }, info) => {
         const agent = { id: 'controls-companion', name: 'Controls companion', enabled: true, category: 'companion',
             execution: 'companion', prompt: 'Keep a note.', companion: { displayMode: 'panel' } };

@@ -41,7 +41,7 @@ function restoreTransport(payload, material) {
  * server transport the Conversation API uses. Callers supply an already-built
  * request; saved chat profiles use runChatProfile below.
  */
-export async function runTextGeneration({ context, backend, payload, signal, anonymousCustom = false, boundProfile = false, fetch: fetchImpl, validatePrompt } = {}) {
+export async function runTextGeneration({ context, backend, payload, signal, anonymousCustom = false, boundProfile = false, fetch: fetchImpl, validatePrompt, onStream } = {}) {
     if (!context?.directories) throw Object.assign(new Error('A generation context is required.'), { status: 400, code: 'GENERATION_CONTEXT_MISSING' });
     if (!payload || typeof payload !== 'object' || Object.keys(payload).length === 0) {
         throw Object.assign(new Error('A generation payload is required.'), { status: 400, code: 'GENERATION_PAYLOAD_MISSING' });
@@ -58,7 +58,7 @@ export async function runTextGeneration({ context, backend, payload, signal, ano
     } : fetchImpl;
     let response;
     try {
-        response = await runBackendGeneration(request, resolvedBackend, payload, { signal, fetch: send, anonymousCustom, boundProfile });
+        response = await runBackendGeneration(request, resolvedBackend, payload, { signal, fetch: send, anonymousCustom, boundProfile, onStream });
     } catch (error) {
         if (validationError) throw validationError;
         throw isDefiniteProviderRefusal(error?.providerStatus) ? providerRefused(error) : error;
@@ -135,7 +135,7 @@ export async function fetchChatProfileModels({ context, material, signal, fetch:
 /** Execute a bound Chat Completion profile without browser globals or credential persistence. */
 export async function runChatProfile({ context, binding, messages, maxTokens, macroEnvironment,
     ephemeralStops = [], userName = 'User', characterName = 'Character', groupNames = [],
-    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, preparedMessages = false, onProviderStep, functionTools = [], generationType = 'quiet', stepNamespace = '',
+    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, preparedMessages = false, onProviderStep, onStream, functionTools = [], generationType = 'quiet', stepNamespace = '',
 } = {}) {
     if (!context?.directories) fail('A generation context is required.', 400);
     if (typeof stepNamespace !== 'string' || stepNamespace.length > 512) fail('The saved generation step identity is invalid.', 400);
@@ -236,7 +236,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         const call = async () => {
             try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
             const requestPayload = payload;
-            const result = await runTextGeneration({ context, backend: binding.backend, payload: requestPayload, signal, fetch: fetchImpl, validatePrompt,
+            const result = await runTextGeneration({ context, backend: binding.backend, payload: requestPayload, signal, fetch: fetchImpl, validatePrompt, onStream,
                 anonymousCustom: binding.backend === 'text' ? !material.secretId : payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy, boundProfile: true });
             if (raw && rawOptions.jsonSchema) return { ...result, text: extractJsonFromData(result.response, {
                 mainApi: 'openai', chatCompletionSource: material.source, returnInvalidJson: rawOptions.jsonSchema.returnInvalid,
@@ -272,7 +272,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     await validatePrompt?.(payload, material);
     const call = async () => {
         try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
-        return runTextGeneration({ context, backend: 'chat', payload, signal, fetch: fetchImpl, validatePrompt,
+        return runTextGeneration({ context, backend: 'chat', payload, signal, fetch: fetchImpl, validatePrompt, onStream,
             anonymousCustom: payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy, boundProfile: true })
             .then(result => ({ ...result, text: cleanGeneratedText(removePartialStops(result.text,
                 Array.isArray(payload.stop) ? payload.stop : []), { power: material.power,

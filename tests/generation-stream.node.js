@@ -11,6 +11,30 @@ const { runTextGeneration } = await import('../src/generation/service.js');
 
 const event = value => `data: ${JSON.stringify(value)}\n\n`;
 
+test('native streaming publishes the first text before the provider completes', async () => {
+    const first = Promise.withResolvers(), finish = Promise.withResolvers();
+    let completed = false;
+    const handler = async (request, response) => forwardFetchResponse({ ok: true, status: 200,
+        body: Readable.from((async function* () {
+            yield event({ choices: [{ delta: { content: 'First' } }] });
+            await finish.promise;
+            yield event({ choices: [{ delta: { content: ' second' }, finish_reason: 'stop' }] });
+        })()) }, response, request);
+    const result = runBackendRequest({}, handler, { stream: true }, { onStream: value => first.resolve(value) })
+        .then(value => { completed = true; return value; });
+    try {
+        assert.deepEqual(await first.promise, { text: 'First', reasoning: '' });
+        assert.equal(completed, false);
+    } finally { finish.resolve(); }
+    assert.equal((await result).choices[0].message.content, 'First second');
+    const updates = [];
+    await assert.rejects(runBackendRequest({}, (_request, response) => {
+        response.write(event({ choices: [{ delta: { content: 'Unfinished' } }] }));
+        response.end();
+    }, { stream: true }, { onStream: value => updates.push(value) }), /without a complete reply/);
+    assert.equal(updates[0].text, 'Unfinished');
+});
+
 test('native streaming waits for upstream completion and assembles reasoning', async () => {
     const chunks = [event({ choices: [{ delta: { content: 'Hel', reasoning_content: 'Why ' } }] }),
         event({ choices: [{ delta: { content: 'lo', reasoning_content: 'not?' }, finish_reason: 'stop' }] }),
