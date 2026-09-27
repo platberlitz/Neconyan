@@ -40,6 +40,7 @@ import { prepareRoleplayAgentContributions, runRoleplayAgentInterceptors, runRol
 import { runRoleplayCompanions } from './roleplay-companions.js';
 import { createProviderScope } from '../jobs/artifacts.js';
 import { stageBoundModelToolCalls } from './roleplay-tool-dispatch.js';
+import { applyRoleplayVectorFiles, prepareRoleplayVectors } from './roleplay-vectors.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
@@ -270,9 +271,12 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             const { hash: agentInterceptHash, ...agentInterceptData } = agentIntercept ?? {};
             const quickReply = request.worldInfo?.hookPolicy?.quickReply?.enabled && readArtifact(directories, job.id, 'roleplay-quick-replies');
             const { hash: quickReplyHash, ...quickReplyData } = quickReply ?? {};
+            const vectors = request.worldInfo?.vectors && readArtifact(directories, job.id, 'roleplay-vectors');
+            const { hash: vectorsHash, ...vectorsData } = vectors ?? {};
             if (request.serverPrompt && (!prompt || prompt.hash !== providerReference.promptHash
                 || prompt.hash !== roleplayPromptContentHash(prompt, request.worldInfo, { quickReply: Boolean(quickReply) }))
                 || quickReply && (quickReplyHash !== roleplayHash(quickReplyData) || prompt.quickReplyHash !== quickReplyHash)
+                || request.worldInfo?.vectors && (!vectors || vectorsHash !== roleplayHash(vectorsData) || prompt.vectorsHash !== vectorsHash)
                 || request.worldInfo?.pathfinder && (!retrieval || retrievalHash !== roleplayHash(retrievalData)
                     || prompt.pathfinderHash !== retrievalHash)
                 || request.worldInfo?.captions && (!captions || captionsHash !== roleplayHash(captionsData)
@@ -305,6 +309,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     let inputTranslation;
     let agentPre;
     let quickReply;
+    let vectors;
     if (request.serverPrompt && initialRecords.length !== initialSource.records.length && request.worldInfo?.serverPrompt !== true) {
         throw roleplayError('ROLEPLAY_INVALID', 'Capture server prompt inputs for the selected saved message or range.', 409);
     }
@@ -350,7 +355,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             throw roleplayError('ROLEPLAY_INVALID', 'Enabled Pathfinder retrieval needs server-owned pre-scan execution.', 409);
         }
         if (!Array.isArray(request.worldInfo.hookPolicy.scanContributors)
-            || request.worldInfo.hookPolicy.scanContributors.some(item => item.kind !== 'agent' || !request.serverPrompt || !request.worldInfo.agents)) {
+            || request.worldInfo.hookPolicy.scanContributors.some(item => item.kind === 'vectors'
+                ? !request.serverPrompt || !request.worldInfo.vectors : item.kind !== 'agent' || !request.serverPrompt || !request.worldInfo.agents)) {
             throw roleplayError('ROLEPLAY_INVALID', 'Enabled vector or Agent scan contributions need server-owned preparation.', 409);
         }
         if (request.serverPrompt) {
@@ -365,6 +371,19 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 inputTranslation = await prepareRoleplayInputTranslation(context, { base, snapshot: request.worldInfo,
                     records: initialRecords, assertSource, fetchImpl: translationFetch ?? fetch });
                 initialRecords = inputTranslation.records;
+                acceptedMacros = boundMacroSnapshot(savedRoleplayMacroSnapshot(request.worldInfo, initialRecords));
+            }
+            if (request.worldInfo.vectors) {
+                vectors = await prepareRoleplayVectors(context, { snapshot: request.worldInfo, source, records: initialRecords,
+                    macros: acceptedMacros, binding: request.binding, maxTokens: request.maxTokens, contextLimit: limit });
+                if (vectors.waiting) return vectors;
+                const keys = new Set(contributions.extensions.map(item => item.key));
+                const additions = vectors.projection.extensions.map(item => ({ key: item.key, content: item.value,
+                    position: item.position, depth: item.depth, role: ['system', 'user', 'assistant'][item.role], scan: item.scan }));
+                if (additions.some(item => keys.has(item.key))) throw roleplayError('ROLEPLAY_INVALID', 'A vector prompt conflicts with an existing contributor.', 409);
+                contributions = { ...contributions, extensions: [...contributions.extensions, ...additions] };
+                scanContributions = contributions.extensions.filter(item => item.scan).map(item => item.content);
+                initialRecords = applyRoleplayVectorFiles(initialRecords, vectors.projection);
                 acceptedMacros = boundMacroSnapshot(savedRoleplayMacroSnapshot(request.worldInfo, initialRecords));
             }
             if (request.worldInfo.agents) {
@@ -384,9 +403,11 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 }
                 const environment = createMacroEnvironment(acceptedMacros, roleplayMacroCapabilities(request.worldInfo, boundMaterial,
                     request.maxTokens, limit, () => environment));
-                const { content, reasoning, global, characterExamples, authorNote, depthPrompt, depthPrompts, worldInfoContent, companionHostIndex } = prepareRoleplayHistoryContent(initialRecords, request.worldInfo, environment, agentPre?.history);
+                const historySnapshot = vectors ? { ...request.worldInfo, attachments: request.worldInfo.attachments
+                    .filter(item => !vectors.projection.files.some(file => file.index === item.index)) } : request.worldInfo;
+                const { content, reasoning, global, characterExamples, authorNote, depthPrompt, depthPrompts, worldInfoContent, companionHostIndex } = prepareRoleplayHistoryContent(initialRecords, historySnapshot, environment, agentPre?.history);
                 const scanContent = worldInfoContent ?? content;
-                const promptChat = initialRecords.slice(1).flatMap((record, index) => record.is_system && index !== companionHostIndex
+                const promptChat = initialRecords.slice(1).flatMap((record, index) => vectors?.projection.removed.some(item => item.index === index) || record.is_system && index !== companionHostIndex
                     || !scanContent[index].trim() && !record.extra?.media?.length ? [] : [
                         request.worldInfo.settings.world_info_include_names ? `${record.name}: ${scanContent[index]}` : scanContent[index],
                     ]).reverse();
@@ -407,7 +428,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         worldInfo = readArtifact(directories, job.id, 'roleplay-world-info');
         if (worldInfo === undefined) {
             worldInfo = await prepareRoleplayWorldInfo(base, request.worldInfo, { ...worldInfoHooks, macros: acceptedMacros,
-                promptChat: preparedHistory?.promptChat, promptGlobal: preparedHistory?.global, promptInjections: scanContributions });
+                promptChat: preparedHistory?.promptChat, promptGlobal: preparedHistory?.global, promptInjections: scanContributions,
+                vectorEntries: vectors?.projection.worldInfo ?? [] });
             writeArtifact(directories, job.id, 'roleplay-world-info', worldInfo);
         }
         if (!worldInfo || typeof worldInfo !== 'object' || Array.isArray(worldInfo)) {
@@ -418,6 +440,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             || preparedHistory && worldInfo.promptChatHash !== roleplayHash(preparedHistory.promptChat)
             || preparedHistory && worldInfo.promptGlobalHash !== roleplayHash(preparedHistory.global)
             || scanContributions.length && worldInfo.promptInjectionsHash !== roleplayHash(scanContributions)
+            || vectors && worldInfo.vectorEntriesHash !== roleplayHash(vectors.projection.worldInfo)
             || !Array.isArray(passes) || passes.length !== worldInfo.iterations
             || !Array.isArray(worldInfo.draws)
             || passes.some((pass, index) => pass?.state?.loopCount !== index + 1
@@ -501,7 +524,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     }
     const historyOptions = request.worldInfo && { reasoningInPrompt: request.worldInfo.reasoningInPrompt,
         reasoning: request.worldInfo.reasoning, regex: request.worldInfo.regex,
-        attachments: request.worldInfo.attachments, images: media, imageDetail, mediaDisplay: request.worldInfo.mediaDisplay,
+        attachments: request.worldInfo.attachments.filter(item => !vectors?.projection.files.some(file => file.index === item.index)), images: media, imageDetail, mediaDisplay: request.worldInfo.mediaDisplay,
         preparedContent: preparedHistory?.content,
         companionHostIndex: preparedHistory?.companionHostIndex,
         toolHistory: hasToolHistory, toolSource: namingMaterial?.source, toolModel: namingMaterial?.profile?.model,
@@ -529,7 +552,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         return operation();
     });
     let memory;
-    let promptRecords = promptSource ? (captions || inputTranslation ? structuredClone(initialRecords) : selectRoleplayPromptRecords(promptSource.records, source, effect)) : null;
+    let promptRecords = promptSource ? (captions || inputTranslation || vectors ? structuredClone(initialRecords) : selectRoleplayPromptRecords(promptSource.records, source, effect)) : null;
     if (request.serverPrompt) {
         const locator = promptSource.locator;
         const normalised = normalizeLocator(locator);
@@ -563,7 +586,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         }
         const retainedIndices = new Map();
         promptRecords = [promptRecords[0], ...promptRecords.slice(1).filter((record, index) => {
-            if (memory.excludedIndices.includes(index)) return false;
+            if (memory.excludedIndices.includes(index) || vectors?.projection.removed.some(item => item.index === index)) return false;
             retainedIndices.set(index, retainedIndices.size);
             return true;
         })];
@@ -704,6 +727,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         binding: request.binding, maxTokens: request.maxTokens, effect, memory, contributions,
         ...(retrieval ? { pathfinderHash: retrieval.hash } : {}), ...(captions ? { captionsHash: captions.hash } : {}),
         ...(inputTranslation ? { inputTranslationHash: inputTranslation.hash } : {}), ...(agentPre ? { agentsHash: agentPre.hash } : {}),
+        ...(vectors ? { vectorsHash: vectors.hash } : {}),
         ...(quickReply ? { quickReplyHash: quickReply.hash } : {}) });
     if (preparedPrompt !== undefined && (!preparedPrompt || preparedPrompt.identity !== promptIdentity
         || !Array.isArray(preparedPrompt.messages) || !preparedPrompt.macroState
@@ -712,6 +736,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
              ...(preparedText !== undefined ? { preparedText } : {}), ...(cfgValues ? { cfgValues } : {}),
              ...(retrieval ? { pathfinderHash: retrieval.hash } : {}), ...(captions ? { captionsHash: captions.hash } : {}),
              ...(inputTranslation ? { inputTranslationHash: inputTranslation.hash } : {}), ...(agentPre ? { agentsHash: agentPre.hash } : {}),
+             ...(vectors ? { vectorsHash: vectors.hash } : {}),
              ...(quickReply ? { quickReplyHash: quickReply.hash } : {}) }))) {
         throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved Roleplay prompt needs recovery.', 503);
     }
@@ -772,6 +797,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         const saved = { messages, macroState: macroEnvironment.captureState(), ...(preparedText !== undefined ? { preparedText } : {}),
             ...(cfgValues ? { cfgValues } : {}), ...(retrieval ? { pathfinderHash: retrieval.hash } : {}),
             ...(captions ? { captionsHash: captions.hash } : {}), ...(inputTranslation ? { inputTranslationHash: inputTranslation.hash } : {}),
+            ...(vectors ? { vectorsHash: vectors.hash } : {}),
             ...(agentPre ? { agentsHash: agentPre.hash } : {}), ...(quickReply ? { quickReplyHash: quickReply.hash } : {}) };
         writeArtifact(directories, job.id, request.worldInfo?.agents ? 'roleplay-base-prompt' : 'roleplay-prompt', { identity: promptIdentity, hash: roleplayHash(saved), ...saved });
     }
@@ -799,6 +825,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         const final = { messages, macroState: basePrompt.macroState, ...(preparedText !== undefined ? { preparedText } : {}),
             ...(cfgValues ? { cfgValues } : {}), ...(retrieval ? { pathfinderHash: retrieval.hash } : {}), ...(captions ? { captionsHash: captions.hash } : {}),
             ...(inputTranslation ? { inputTranslationHash: inputTranslation.hash } : {}),
+            ...(vectors ? { vectorsHash: vectors.hash } : {}),
             ...(quickReply ? { quickReplyHash: quickReply.hash } : {}), agentsHash: agentPre.hash, agentInterceptHash: intercepted.hash };
         const prepared = { identity: promptIdentity, ...final, hash: roleplayHash(final) };
         const previous = readArtifact(directories, job.id, 'roleplay-prompt');

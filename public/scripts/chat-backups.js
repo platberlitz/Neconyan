@@ -25,6 +25,18 @@ function fetchBackupApi(resource, init = {}, stamp = roleplayAccountStamp()) {
 }
 
 /**
+ * Deletes confirmed backups as one saved server job that finishes after the page closes.
+ * @param {string[]} names Backup file names
+ * @param {object} [options] Observation options
+ * @returns {Promise<object>} Completed operation record
+ */
+async function deleteChatBackups(names, options = {}) {
+    const { getOperationClient } = await import('./operations-client.js');
+    const client = await getOperationClient();
+    return client.run('chat-backup-delete', { names }, { ...options, scope: names.length === 1 ? `chat-backup-delete:${names[0]}` : 'chat-backup-delete:cleanup' });
+}
+
+/**
  * Creates a read-only backup preview without using a native text editor.
  * @param {string} fileText JSONL backup content
  * @param {string} fileName Backup file name
@@ -230,24 +242,14 @@ class BackupsBrowser {
             }
         }
 
-        let response;
         try {
-            response = await fetchBackupApi('/api/backups/chat/delete', {
-                method: 'POST',
-                body: JSON.stringify({ name: name }),
-            });
+            await deleteChatBackups([name]);
         } catch (error) {
             if (error?.name === 'AbortError') {
                 return false;
             }
-            toastr.error(t`Failed to delete backup, try again later.`);
+            toastr.error(String(error?.message || t`Failed to delete backup, try again later.`));
             console.error('Failed to delete chat backup:', error);
-            return false;
-        }
-
-        if (!response.ok) {
-            toastr.error(t`Failed to delete backup, try again later.`);
-            console.error('Failed to delete chat backup:', response.statusText);
             return false;
         }
 
@@ -379,23 +381,24 @@ class BackupsBrowser {
             return;
         }
 
+        this.setCleanupStatus(`${t`Deleting`} ${candidates.length} ${t`backup(s)`}`);
         let deleted = 0;
-        let failed = 0;
-
-        for (const [index, backup] of candidates.entries()) {
-            this.setCleanupStatus(`${t`Deleting`} ${index + 1}/${candidates.length}: ${backup.file_name}`);
-            const success = await this.deleteBackup(backup.file_name, { confirm: false, silent: true });
-            success ? deleted++ : failed++;
-        }
-
-        if (failed) {
-            toastr.warning(`${deleted} ${t`backup(s) deleted.`} ${failed} ${t`failed.`}`);
-        } else {
+        try {
+            const record = await deleteChatBackups(candidates.map(backup => backup.file_name), {
+                onProgress: progress => this.setCleanupStatus(`${t`Deleting`} ${candidates.length} ${t`backup(s)`}: ${progress?.stage ?? ''}`),
+            });
+            deleted = Number(record?.result?.removed) || 0;
             toastr.success(`${deleted} ${t`old backup(s) deleted.`}`);
+        } catch (error) {
+            // The server keeps the accepted cleanup; closing or reopening the page does not repeat it.
+            toastr.error(String(error?.message || error));
+            this.setCleanupStatus(String(error?.message || error));
+            await this.reloadBackupsList();
+            return;
         }
 
         await this.reloadBackupsList();
-        this.setCleanupStatus(`${deleted} ${t`backup(s) deleted.`}${failed ? ` ${failed} ${t`failed.`}` : ''}`);
+        this.setCleanupStatus(`${deleted} ${t`backup(s) deleted.`}`);
     }
 
     /**

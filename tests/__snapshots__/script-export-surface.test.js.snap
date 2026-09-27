@@ -16,6 +16,7 @@ exports[`public/script.js named export surface matches the parser-derived export
   "active_group",
   "addCopyToCodeBlocks",
   "addOneMessage",
+  "adoptServerSettingsWrite",
   "amount_gen",
   "animation_duration",
   "animation_easing",

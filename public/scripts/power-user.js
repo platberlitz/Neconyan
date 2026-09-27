@@ -2119,33 +2119,28 @@ async function handleCustomCssAiWandClick() {
     deactivateSendButtons({ markBodyGenerating: false });
 
     try {
-        const generatedCss = await generateCustomCssWithAI({
+        const result = await generateCustomCssWithAI({
             instruction,
-            currentCss,
             profileId: effectiveProfileId,
+            mode: applyMode,
         });
 
-        if (!generatedCss.trim()) {
-            globalThis.toastr?.clear?.();
-            globalThis.toastr?.error?.('AI returned an empty CSS response.');
+        globalThis.toastr?.clear?.();
+        if (!result.applied) {
+            globalThis.toastr?.warning?.('Your custom CSS changed while this was generating, so the new CSS was kept in the saved job result instead of replacing it.');
             return;
         }
 
-        const nextCss = applyMode === 'append' && currentCss.trim()
-            ? `${currentCss.trimEnd()}\n\n${generatedCss}`
-            : generatedCss;
-
-        $('#customCSS').val(nextCss);
-        power_user.custom_css = nextCss;
+        $('#customCSS').val(result.customCss);
+        power_user.custom_css = result.customCss;
         applyCustomCSS();
         markNeconyanPaletteCustom();
         saveSettingsDebounced();
-        globalThis.toastr?.clear?.();
         globalThis.toastr?.success?.('Generated custom CSS.');
     } catch (error) {
         globalThis.toastr?.clear?.();
         if (!String(error?.message ?? error ?? '').match(/abort|cancel/i)) {
-            globalThis.toastr?.error?.(`Custom CSS generation failed: ${error?.message ?? error}`);
+            globalThis.toastr?.error?.(`Custom CSS generation failed: ${error?.message ?? error}. Any accepted job stays in Jobs and is never re-sent automatically.`);
         }
     } finally {
         activateSendButtons();

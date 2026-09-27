@@ -133,6 +133,7 @@ app.use('/api/jobs', express.json({ limit: JOB_INTENT_LIMIT_BYTES }), express.ur
 app.use('/api/roleplay', express.json({ limit: '256kb' }), express.urlencoded({ extended: false, limit: '256kb' }));
 app.use('/api/meower', express.json({ limit: '32kb' }), express.urlencoded({ extended: false, limit: '32kb' }));
 app.use('/api/labs', express.json({ limit: '32mb' }), express.urlencoded({ extended: false, limit: '32mb' }));
+app.use('/api/operations', express.json({ limit: '32mb' }), express.urlencoded({ extended: false, limit: '32mb' }));
 app.use(express.json({ limit: '500mb' }));
 app.use(express.urlencoded({ extended: true, limit: '500mb' }));
 
@@ -782,8 +783,24 @@ async function postSetupTasks(result) {
     await import('./generation/quick-image-gen-workflow.js');
     const { finalizeMeowerSubmission } = await import('./generation/meower-jobs.js');
     const { finalizeLabSubmission } = await import('./labs/store.js');
+    const { finalizeOperation } = await import('./operations/store.js');
+    const { finalizeBrowserWork } = await import('./operations/browser-work.js');
+    await import('./operations/translation.js');
+    await import('./operations/vectors.js');
+    await import('./operations/vector-purge.js');
+    await import('./operations/maintenance.js');
+    await import('./operations/archive.js');
+    await import('./operations/account-backup.js');
+    await import('./operations/account-reset.js');
+    await import('./operations/account-import.js');
+    await import('./operations/backup-deletion.js');
+    await import('./operations/custom-css.js');
+    await import('./operations/quiet-generation.js');
+    await import('./operations/raw-generation.js');
+    await import('./operations/time-machine.js');
     await import('./labs/jobs.js');
     const { recoverWaitingRoleplayWorkflow } = await import('./generation/roleplay-workflow.js');
+    const { recoverWaitingRoleplayVectors } = await import('./generation/roleplay-vectors.js');
     const [{ startJobsRunner }, { getUserDirectories, getAllUserHandles }, { recoverJobApproval }] = await Promise.all([
         import('./jobs/runner.js'),
         import('./users.js'),
@@ -795,8 +812,11 @@ async function postSetupTasks(result) {
         recoverWaiting: async context => {
             recoverJobApproval(context);
             recoverWaitingRoleplayWorkflow(context);
+            recoverWaitingRoleplayVectors(context);
             await finalizeMeowerSubmission(context);
             finalizeLabSubmission(context);
+            finalizeOperation(context);
+            finalizeBrowserWork(context);
         },
     });
     const { startConversationWorker } = await import('./generation/conversation-worker.js');

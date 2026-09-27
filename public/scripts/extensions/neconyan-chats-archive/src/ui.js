@@ -1,10 +1,8 @@
+import { mountSavedArchiveWork } from './saved-work.js';
 import {
-    buildSearchScopes,
     createDefaultOrganization,
-    deepResultToRecentRow,
     filterRows,
     findMatchingMessageIndex,
-    findMatchingSnippetInJsonlAsync,
     groupRows,
     normalizeRow,
     normalizeOrganization,
@@ -26,7 +24,7 @@ import {
     ORGANIZATION_FILE_NAME,
     releaseArchiveSession,
     saveOrganization,
-    searchScope,
+    searchArchive,
 } from './api.js';
 
 const KINDS = [
@@ -460,8 +458,37 @@ export async function openArchive(ctx, opener = null) {
         viewTouched: false,
         selectedViewId: null,
         closed: false,
+        savedWorkAbort: new AbortController(),
     };
     const ui = buildRoot(ctx, state);
+    mountSavedArchiveWork(ui.root.querySelector('.sbca-toolbar'), {
+        signal: state.savedWorkAbort.signal,
+        onBusy: busy => {
+            if (busy) { state.listAbort?.abort(); state.searchAbort?.abort(); state.scanAbort?.abort(); }
+            ui.refreshButton.disabled = busy; ui.scanButton.disabled = busy;
+        },
+        onError: error => { if (!state.closed) setStatus(ui, error.cancelled ? tr(ctx, 'Archive work stopped.') : error.message); },
+        onResult: record => {
+            if (state.closed) return;
+            if (record.kind === 'archive-export') {
+                resetViewer(ctx, ui);
+                const download = button('sbca-control', tr(ctx, 'Download saved chat export'));
+                download.addEventListener('click', () => downloadBlob(record.result.result, 'text/plain', record.result.fileName));
+                ui.viewerContent.append(download);
+                return;
+            }
+            const rows = record.result.rows.map(row => normalizeRow({ ...row, archive_record: record.key }, state.charactersByAvatar, state.groupsById, ctx.timestampToMoment));
+            exitDeepSearch(ctx, state, ui);
+            if (record.kind === 'archive-search') {
+                state.deepRows = rows; state.deepQuery = record.result.query; ui.search.value = record.result.query;
+            } else if (record.result.scope === 'orphans') {
+                state.orphanRows = rows; state.orphanScanReadToken = record.key; state.orphanScanComplete = true;
+            } else { state.rows = rows; state.archiveReadToken = record.key; }
+            state.inventoryFailures = record.result.errors; state.listState = 'ready';
+            refreshOwnerOptions(ctx, state, ui); renderList(ctx, state, ui); updateSelectionControls(ctx, state, ui);
+            setStatus(ui, tr(ctx, 'Saved archive work loaded.'));
+        },
+    });
     const instance = new ctx.Popup(ui.root, ctx.POPUP_TYPE.TEXT, '', {
         wide: true,
         large: true,
@@ -486,6 +513,7 @@ export async function openArchive(ctx, opener = null) {
         await shown;
     } finally {
         state.closed = true;
+        state.savedWorkAbort.abort();
         state.listAbort?.abort();
         state.viewerAbort?.abort();
         state.searchAbort?.abort();
@@ -1094,7 +1122,7 @@ function buildRoot(ctx, state) {
     });
     refreshButton.addEventListener('click', () => {
         if (state.listAbort) {
-            state.listAbort.abort();
+            state.listAbort.abort('user-stop');
             refreshButton.disabled = true;
             refreshButton.textContent = tr(ctx, 'Stopping...');
             return;
@@ -1103,10 +1131,10 @@ function buildRoot(ctx, state) {
     });
     scanButton.addEventListener('click', () => {
         if (state.scanAbort) {
-            state.scanAbort.abort();
+            state.scanAbort.abort('user-stop');
             scanButton.disabled = true;
             scanButton.textContent = tr(ctx, 'Stopping...');
-            setStatus(ui, tr(ctx, 'Stopping after the current server scan...'));
+            setStatus(ui, tr(ctx, 'Saving the stop request...'));
         } else {
             void scanOrphans(ctx, state, ui);
         }
@@ -1552,7 +1580,7 @@ function runOrganizationSave(ctx, state, ui) {
     state.organizationSaveError = null;
     const snapshot = state.organization;
     updateOrganizationStatus(ctx, state, ui);
-    // ponytail: host upload has no compare-and-swap/etag; simultaneous tabs are last-writer-wins.
+    // The saved revision is checked by the server before publishing this snapshot.
     const operation = saveOrganization(ctx, snapshot)
         .then(() => {
             state.organizationSavedRevision = Math.max(state.organizationSavedRevision, revision);
@@ -1970,7 +1998,6 @@ async function loadRows(ctx, state, ui) {
     const nextRows = [];
     const known = new Set();
     let invalidRows = 0;
-    state.rows = nextRows;
     state.inventoryFailures = 0;
     state.selectedKey = null;
     state.selectedRow = null;
@@ -1996,6 +2023,7 @@ async function loadRows(ctx, state, ui) {
                     nextRows.push(row);
                 }
             }
+            state.rows = nextRows;
             state.inventoryFailures = page.errors + invalidRows;
             refreshOwnerOptions(ctx, state, ui);
             renderList(ctx, state, ui);
@@ -2023,7 +2051,7 @@ async function loadRows(ctx, state, ui) {
                 refreshOwnerOptions(ctx, state, ui);
                 renderList(ctx, state, ui);
                 updateSelectionControls(ctx, state, ui);
-                setStatus(ui, `${tr(ctx, 'Scan stopped.')} ${tr(ctx, '{total} indexed chat files', { total: state.rows.length })}`);
+                setStatus(ui, `${tr(ctx, error.cancelled ? 'Scan stopped.' : 'Observation closed. Accepted work is retained.')} ${tr(ctx, '{total} indexed chat files', { total: state.rows.length })}`);
                 if (mentionSearchState(ui.search.value, ui.characterMentions).text) {
                     void runDeepSearch(ctx, state, ui);
                 }
@@ -2606,6 +2634,9 @@ function refreshOpenOrganizer(ctx, state, ui) {
 }
 
 async function loadRawChat(ctx, state, row, signal) {
+    if (row.archiveRecord && row.archiveHash) {
+        return fetchArchiveFile(ctx, row.archiveRecord, row.archiveHash, signal);
+    }
     if (row.source === 'archive-orphan') {
         const readToken = state.orphanScanReadToken ?? state.archiveReadToken;
         if (!readToken || !row.archiveHash) {
@@ -3034,80 +3065,17 @@ async function runDeepSearch(ctx, state, ui) {
     ui.status.setAttribute('aria-busy', 'true');
     renderList(ctx, state, ui);
 
-    const mentionedAvatars = new Set(search.mentions.filter(mention => !mention.missing).flatMap(mention => mention.avatars));
-    const hasMentions = search.mentions.length > 0;
-    const scopes = buildSearchScopes(ctx.characters, ctx.groups, ui.owner.value)
-        .filter(scope => !hasMentions || (scope.avatar_url && mentionedAvatars.has(scope.avatar_url)));
-    const localFiles = filterRows(
-        mentionedRows(allRows(state), search.mentions).filter(row => row.kind === 'orphan'),
-        { owner: ui.owner.value },
-    );
-    const total = scopes.length + localFiles.length;
     const found = new Map(filterRows(mentionedRows(allRows(state), search.mentions), { text: query }, state.organization)
         .map(row => [physicalChatKey(row), row]));
-    let completed = 0;
-    let errors = 0;
 
     try {
-        for (const scope of scopes) {
-            if (signal.aborted) {
-                break;
-            }
-            setStatus(ui, tr(ctx, 'Searching source {current} of {total}...', { current: completed + 1, total }));
-            try {
-                const results = await searchScope(ctx, query, scope, signal);
-                let malformed = false;
-                for (const result of results) {
-                    const recent = deepResultToRecentRow(result, scope);
-                    const row = normalizeRow(recent, state.charactersByAvatar, state.groupsById, ctx.timestampToMoment);
-                    if (!row?.file_id) {
-                        malformed = true;
-                        continue;
-                    }
-                    if (found.has(physicalChatKey(row))) {
-                        continue;
-                    }
-                    found.set(physicalChatKey(row), { ...row, matchSnippet: true });
-                }
-                if (malformed) {
-                    errors++;
-                }
-            } catch (error) {
-                if (error?.name === 'AbortError') {
-                    break;
-                }
-                errors++;
-                console.warn('[Chat Archive] search scope failed:', error);
-            }
-            completed++;
-        }
-
-        for (const row of localFiles) {
-            if (signal.aborted) {
-                break;
-            }
-            if (found.has(physicalChatKey(row))) {
-                completed++;
-                continue;
-            }
-            setStatus(ui, tr(ctx, 'Searching source {current} of {total}...', { current: completed + 1, total }));
-            try {
-                const raw = await loadRawChat(ctx, state, row, signal);
-                const { snippet, invalidLines } = await findMatchingSnippetInJsonlAsync(raw, query, { signal });
-                if (invalidLines > 0) {
-                    errors++;
-                }
-                if (snippet !== null) {
-                    found.set(physicalChatKey(row), { ...row, snippet, matchSnippet: true });
-                }
-            } catch (error) {
-                if (error?.name === 'AbortError') {
-                    break;
-                }
-                errors++;
-                console.warn('[Chat Archive] local file search failed:', error);
-            }
-            completed++;
+        const saved = await searchArchive(ctx, query, signal, progress => {
+            if (state.searchAbort !== controller || state.closed) return;
+            setStatus(ui, tr(ctx, 'Searching source {current} of {total}...', { current: progress.completed, total: progress.total }));
+        });
+        const rows = saved.rows.map(row => normalizeRow(row, state.charactersByAvatar, state.groupsById, ctx.timestampToMoment));
+        for (const row of filterRows(mentionedRows(rows, search.mentions), { owner: ui.owner.value })) {
+            if (row?.file_id && !found.has(physicalChatKey(row))) found.set(physicalChatKey(row), { ...row, matchSnippet: true });
         }
 
         if (state.searchAbort !== controller || state.closed) {
@@ -3116,16 +3084,15 @@ async function runDeepSearch(ctx, state, ui) {
         state.deepRows = [...found.values()];
         state.visibleLimit = LIST_PAGE_SIZE;
         renderList(ctx, state, ui);
-        if (signal.aborted) {
-            setStatus(ui, tr(ctx, 'Search stopped after {completed} of {total} sources. {count} matching chats shown.', {
-                completed,
-                total,
-                count: found.size,
-            }));
-        } else if (errors > 0) {
-            setStatus(ui, tr(ctx, '{count} matching chats. {errors} search items had errors.', { count: found.size, errors }));
+        if (saved.errors > 0) {
+            setStatus(ui, tr(ctx, '{count} matching chats. {errors} search items had errors.', { count: found.size, errors: saved.errors }));
         } else {
             setStatus(ui, tr(ctx, '{count} matching chats for "{query}".', { count: found.size, query }));
+        }
+    } catch (error) {
+        if (!signal.aborted && !state.closed) {
+            console.error('[Chat Archive] saved search failed:', error);
+            setStatus(ui, error.message);
         }
     } finally {
         if (state.searchAbort === controller) {

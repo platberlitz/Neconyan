@@ -1,6 +1,5 @@
 import { getRequestHeaders } from '../script.js';
 import { POPUP_RESULT, POPUP_TYPE, callGenericPopup } from './popup.js';
-import { canViewSecrets } from './secrets.js';
 import { renderTemplateAsync } from './templates.js';
 import { ensureImageFormatSupported, getBase64Async, humanFileSize } from './utils.js';
 
@@ -514,33 +513,14 @@ async function backupUserData(handle, button, callback) {
     button.setAttribute('aria-busy', 'true');
     if (button instanceof HTMLButtonElement) button.disabled = true;
     try {
-        toastr.info('Please wait for the download to start.', 'Backup Requested');
-        const response = await fetch('/api/users/backup', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({ handle }),
-        });
-
-        if (!response.ok) {
-            const data = await response.json().catch(() => ({}));
-            throw new Error(data.error || 'The backup could not be created. Try again.');
-        }
-
-        const includesSecrets = await canViewSecrets();
-        if (includesSecrets === false) {
+        toastr.info('The accepted backup will continue if this page closes.', 'Backup requested');
+        const { createAccountBackup, downloadAccountBackup } = await import('./account-data.js');
+        const owner = getCurrentUserHandle();
+        const record = await createAccountBackup(handle);
+        if (record.result.includeSecrets === false) {
             toastr.warning('The backup will not include secrets due to a server configuration.', 'Secrets Not Included');
         }
-
-        const blob = await response.blob();
-        const header = response.headers.get('Content-Disposition');
-        const parts = header.split(';');
-        const filename = parts[1].split('=')[1].replaceAll('"', '');
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
+        downloadAccountBackup(record, owner);
         await callback?.();
     } catch (error) {
         console.error('Error backing up user data:', error);
@@ -916,22 +896,14 @@ async function resetEverything(callback) {
             throw new Error('Reset everything cancelled');
         }
 
-        const step2Response = await fetch('/api/users/reset-step2', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({ password, code }),
-        });
-
-        if (!step2Response.ok) {
-            const data = await step2Response.json();
-            toastr.error(data.error || 'Unknown error', 'Failed to reset');
-            throw new Error('Failed to reset everything');
-        }
+        const { resetAccountData } = await import('./account-data.js');
+        await resetAccountData({ password, code });
 
         toastr.success('Everything reset successfully', 'Reset Everything');
         callback();
     } catch (error) {
         console.error('Error resetting everything:', error);
+        toastr.error(error.message || 'The saved reset needs recovery.', 'Account reset');
     }
 }
 
@@ -993,7 +965,10 @@ async function openUserProfile() {
         allowVerticalScrolling: true,
         allowHorizontalScrolling: false,
     };
-    callGenericPopup(template, POPUP_TYPE.TEXT, '', popupOptions);
+    const lifetime = new AbortController();
+    const { mountAccountDataWork } = await import('./account-data.js');
+    await mountAccountDataWork(template[0], { signal: lifetime.signal });
+    void callGenericPopup(template, POPUP_TYPE.TEXT, '', popupOptions).finally(() => lifetime.abort());
 }
 
 /**

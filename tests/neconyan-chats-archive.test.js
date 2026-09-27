@@ -1,25 +1,25 @@
-/* eslint-disable playwright/no-conditional-in-test */
 /* global globalThis */
+/* eslint-disable playwright/no-conditional-in-test */
 import { EventEmitter } from 'node:events';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
+import { readFile } from 'node:fs/promises';
 
-import { afterEach, describe, expect, jest, test } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 
-import {
+const nativeClient = { run: jest.fn(), request: jest.fn() };
+jest.unstable_mockModule('../public/scripts/operations-client.js', () => ({
+    getOperationClient: async () => nativeClient, mountOperationRecovery: () => {},
+}));
+const {
     ARCHIVE_PAGE_SIZE,
-    createTimedSignal,
     exportChat,
     fetchArchiveFile,
     fetchArchiveInventory,
     fetchOrganization,
     iterateArchiveInventoryPages,
-    ORGANIZATION_FILE_NAME,
     releaseArchiveSession,
     saveOrganization,
-    searchScope,
-} from '../public/scripts/extensions/neconyan-chats-archive/src/api.js';
+    searchArchive,
+} = await import('../public/scripts/extensions/neconyan-chats-archive/src/api.js');
 import {
     buildSearchScopes,
     createDefaultOrganization,
@@ -47,23 +47,7 @@ import {
     shapeChatRecords,
     sortRows,
 } from '../public/scripts/extensions/neconyan-chats-archive/src/core.js';
-import { navigateAndConfirm } from '../public/scripts/extensions/neconyan-chats-archive/src/ui.js';
-
-jest.unstable_mockModule('../src/endpoints/chats.js', () => ({ CHAT_BACKUPS_PREFIX: 'chat_', roleplayNativeHost: {} }));
-jest.unstable_mockModule('../src/roleplay-store.js', () => ({
-    assertUntrackedRoleplayFiles: jest.fn(), roleplayAccountBase: jest.fn(() => null), roleplayAccountStamp: jest.fn(() => null),
-    roleplayFileLocator: jest.fn(() => null), roleplayLease: jest.fn(),
-    withRoleplayAccount: jest.fn((_base, _account, operation) => operation({})),
-}));
-jest.unstable_mockModule('../src/roleplay-lifecycle.js', () => ({ commitRoleplayLifecycleLocked: jest.fn(), forgetRoleplayReceiptLocked: jest.fn(), roleplayTrackedInstance: jest.fn(() => null) }));
-jest.unstable_mockModule('../src/endpoints/settings.js', () => ({ getSettingsBackupFilePrefix: () => 'settings_' }));
-jest.unstable_mockModule('../src/util.js', () => ({
-    isPathUnderParent: () => true,
-    recoverFileWriteSync: () => {},
-    tryParse: value => JSON.parse(value),
-}));
-
-const { DataMaidService } = await import('../src/endpoints/data-maid.js');
+const { navigateAndConfirm } = await import('../public/scripts/extensions/neconyan-chats-archive/src/ui.js');
 
 const extensionRoot = new URL('../public/scripts/extensions/neconyan-chats-archive/', import.meta.url);
 const [entry, ui, manifestText, extensionsEndpoint] = await Promise.all([
@@ -75,357 +59,77 @@ const [entry, ui, manifestText, extensionsEndpoint] = await Promise.all([
 const manifest = JSON.parse(manifestText);
 const entryModule = await import('../public/scripts/extensions/neconyan-chats-archive/index.js');
 const originalFetch = globalThis.fetch;
-const originalAbortSignalAny = Object.getOwnPropertyDescriptor(AbortSignal, 'any');
+beforeEach(() => { nativeClient.run.mockReset(); nativeClient.request.mockReset(); });
 
 afterEach(() => {
     globalThis.fetch = originalFetch;
-    if (originalAbortSignalAny) {
-        Object.defineProperty(AbortSignal, 'any', originalAbortSignalAny);
-    } else {
-        delete AbortSignal.any;
-    }
     jest.useRealTimers();
 });
 
 describe('SillyBunny Chats Archive API', () => {
-    test('loads every bounded archive page through one inventory endpoint', async () => {
-        const cursor = 'a'.repeat(64);
-        const requests = [];
+    test('one accepted inventory supplies every display page and preserves late matching metadata', async () => {
+        const rows = Array.from({ length: ARCHIVE_PAGE_SIZE }, (_, index) => ({ avatar: 'Scale.png', file_name: `chat-${index}.jsonl`, file_size: '1KB', chat_items: 1, last_mes: index }));
+        rows.push({ avatar: 'Scale.png', file_name: 'qualifying.jsonl', file_size: '8MB', chat_items: 900, last_mes: 50_000 });
+        nativeClient.run.mockResolvedValue({ key: 'saved-inventory', result: { rows, errors: 1 } });
         const progress = jest.fn();
-        const pages = [
-            { rows: [{ file_name: 'one.jsonl' }], cursor, read_token: null, errors: 1, total: 3 },
-            { rows: [{ file_name: 'two.jsonl' }, { file_name: 'three.jsonl' }], cursor: null, read_token: null, errors: 0, total: 3 },
-        ];
-        globalThis.fetch = async (url, options) => {
-            requests.push({ url, options });
-            return { ok: true, status: 200, json: async () => pages.shift() };
-        };
+        const inventory = await fetchArchiveInventory({}, 'archive', undefined, progress);
+        expect(nativeClient.run).toHaveBeenCalledTimes(1);
+        expect(nativeClient.run).toHaveBeenCalledWith('archive-inventory', { scope: 'archive' }, expect.objectContaining({ scope: 'archive:archive' }));
+        expect(progress.mock.calls.map(([page]) => page.loaded)).toEqual([250, 251]);
+        expect(inventory.readToken).toBe('saved-inventory');
+        expect(inventory.errors).toBe(1);
+        const normalized = inventory.rows.map(row => normalizeRow(row, [{ avatar: 'Scale.png', name: 'Scale' }], []));
+        expect(filterRows(normalized, { minDate: 40_000, minMessages: 500, minSize: 4 * 1024 * 1024 }).map(row => row.file_id)).toEqual(['qualifying']);
+        expect(sortRows(normalized, 'size')[0]).toMatchObject({ file_id: 'qualifying', archiveRecord: 'saved-inventory' });
+    });
 
-        const result = await fetchArchiveInventory(
-            { getRequestHeaders: () => ({ authorization: 'test' }) },
-            'archive',
-            undefined,
-            progress,
-        );
+    test('closing display pagination neither releases server evidence nor submits another inventory', async () => {
+        nativeClient.run.mockResolvedValue({ key: 'saved', result: { rows: Array.from({ length: 251 }, () => ({ file_name: 'one.jsonl' })), errors: 0 } });
+        globalThis.fetch = jest.fn();
+        const pages = iterateArchiveInventoryPages({}, 'orphans');
+        expect((await pages.next()).value.loaded).toBe(250);
+        await pages.return();
+        await releaseArchiveSession({}, { token: 'saved' });
+        expect(nativeClient.run).toHaveBeenCalledTimes(1);
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
 
-        expect(result).toEqual({
-            rows: [
-                { file_name: 'one.jsonl' },
-                { file_name: 'two.jsonl' },
-                { file_name: 'three.jsonl' },
-            ],
-            errors: 1,
-            readToken: null,
-        });
-        expect(requests.map(request => request.url)).toEqual([
-            '/api/chats/archive/inventory',
-            '/api/chats/archive/inventory',
+    test('search and export each submit one complete workflow and propagate unknown outcomes', async () => {
+        nativeClient.run.mockResolvedValueOnce({ key: 'search', result: { rows: [{ file_name: 'match.jsonl' }], errors: 2 } });
+        expect(await searchArchive({}, 'dragon tavern')).toEqual({ rows: [{ file_name: 'match.jsonl', archive_record: 'search' }], errors: 2 });
+        nativeClient.run.mockRejectedValueOnce(Object.assign(new Error('Unknown completion'), { status: 503 }));
+        await expect(exportChat({}, { file: 'one.jsonl' })).rejects.toMatchObject({ status: 503 });
+        expect(nativeClient.run.mock.calls.map(([kind]) => kind)).toEqual(['archive-search', 'archive-export']);
+    });
+
+    test('organisation changes retain Unicode and advance only the acknowledged server revision', async () => {
+        const ctx = {}; const organization = { version: 1, name: '兔子 café', tags: ['竜', '🙂'] };
+        await expect(saveOrganization(ctx, organization)).rejects.toThrow(/Load/);
+        nativeClient.request.mockResolvedValue({ organization: null, revision: 'before' });
+        expect(await fetchOrganization(ctx)).toBeNull();
+        nativeClient.run.mockResolvedValueOnce({ result: { organization, revision: 'after' } });
+        expect(await saveOrganization(ctx, organization)).toEqual({ organization, revision: 'after' });
+        nativeClient.run.mockRejectedValueOnce(new Error('Lost acknowledgement'));
+        await expect(saveOrganization(ctx, organization)).rejects.toThrow('Lost acknowledgement');
+        expect(nativeClient.run.mock.calls.map(([, input]) => input)).toEqual([
+            { revision: 'before', organization }, { revision: 'after', organization },
         ]);
-        expect(requests.map(request => JSON.parse(request.options.body))).toEqual([
-            { scope: 'archive', page_size: ARCHIVE_PAGE_SIZE },
-            { scope: 'archive', page_size: ARCHIVE_PAGE_SIZE, cursor },
-        ]);
-        expect(progress.mock.calls).toEqual([
-            [expect.objectContaining({ loaded: 1, errors: 1, total: 3 })],
-            [expect.objectContaining({ loaded: 3, errors: 1, total: 3 })],
-        ]);
     });
 
-    test('delivers the first inventory page before a later request resolves and releases early iteration', async () => {
-        const cursor = 'e'.repeat(64);
-        let resolveLaterPage;
-        let laterRequestStarted;
-        const laterRequest = new Promise(resolve => { laterRequestStarted = resolve; });
-        const released = [];
-        let inventoryRequests = 0;
-        globalThis.fetch = async (url, options) => {
-            if (url === '/api/chats/archive/release') {
-                released.push(JSON.parse(options.body));
-                return { ok: true, status: 204 };
-            }
-            inventoryRequests++;
-            if (inventoryRequests === 1) {
-                return {
-                    ok: true,
-                    status: 200,
-                    json: async () => ({
-                        rows: [{ file_name: 'first.jsonl' }],
-                        cursor,
-                        read_token: null,
-                        errors: 0,
-                        total: 2,
-                    }),
-                };
-            }
-            laterRequestStarted();
-            return new Promise(resolve => { resolveLaterPage = resolve; });
-        };
-
-        const pages = iterateArchiveInventoryPages({ getRequestHeaders: () => ({}) }, 'archive');
-        await expect(pages.next()).resolves.toMatchObject({
-            done: false,
-            value: { loaded: 1, total: 2, rows: [{ file_name: 'first.jsonl' }] },
-        });
-        const pendingLaterPage = pages.next();
-        await laterRequest;
-        let laterPageSettled = false;
-        void pendingLaterPage.finally(() => { laterPageSettled = true; });
-        await Promise.resolve();
-        expect(laterPageSettled).toBe(false);
-
-        resolveLaterPage({
-            ok: true,
-            status: 200,
-            json: async () => ({
-                rows: [{ file_name: 'second.jsonl' }],
-                cursor: null,
-                read_token: null,
-                errors: 0,
-                total: 2,
-            }),
-        });
-        await expect(pendingLaterPage).resolves.toMatchObject({
-            value: { loaded: 2, rows: [{ file_name: 'second.jsonl' }] },
-        });
-
-        const earlyPages = iterateArchiveInventoryPages({ getRequestHeaders: () => ({}) }, 'archive');
-        inventoryRequests = 0;
-        await earlyPages.next();
-        await earlyPages.return();
-        expect(released).toContainEqual({ cursor });
-    });
-
-    test('sorts and filters complete metadata from beyond the first archive page', async () => {
-        const cursor = 'd'.repeat(64);
-        const firstPage = Array.from({ length: ARCHIVE_PAGE_SIZE }, (_, index) => ({
-            avatar: 'Scale.png',
-            file_name: `chat-${String(index).padStart(3, '0')}.jsonl`,
-            file_size: '1KB',
-            chat_items: 1,
-            last_mes: index + 1,
-            mes: '',
-        }));
-        const qualifying = {
-            avatar: 'Scale.png',
-            file_name: 'qualifying.jsonl',
-            file_size: '8MB',
-            chat_items: 900,
-            last_mes: 50_000,
-            mes: 'late page metadata',
-        };
-        const pages = [
-            { rows: firstPage, cursor, read_token: null, errors: 0, total: ARCHIVE_PAGE_SIZE + 1 },
-            { rows: [qualifying], cursor: null, read_token: null, errors: 0, total: ARCHIVE_PAGE_SIZE + 1 },
-        ];
-        globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => pages.shift() });
-
-        const inventory = await fetchArchiveInventory({ getRequestHeaders: () => ({}) }, 'archive');
-        const rows = inventory.rows.map(row => normalizeRow(row, [{ avatar: 'Scale.png', name: 'Scale' }], []));
-        const filtered = filterRows(rows, {
-            minDate: 40_000,
-            minMessages: 500,
-            minSize: 4 * 1024 * 1024,
-        });
-
-        expect(filtered.map(row => row.file_id)).toEqual(['qualifying']);
-        expect(sortRows(rows, 'count')[0].file_id).toBe('qualifying');
-        expect(sortRows(rows, 'recent')[0].file_id).toBe('qualifying');
-        expect(sortRows(rows, 'size')[0].file_id).toBe('qualifying');
-    });
-
-    test('POST failures preserve HTTP status for lazy missing-file handling', async () => {
-        globalThis.fetch = async () => ({
-            ok: false,
-            status: 404,
-            json: async () => ({ message: 'missing chat' }),
-        });
-
-        await expect(exportChat({ getRequestHeaders: () => ({}) }, {})).rejects.toMatchObject({
-            message: 'missing chat',
-            status: 404,
-        });
-    });
-
-    test('organization sidecar GET distinguishes first use from failures', async () => {
+    test('versioned file reads retain status errors and use only the permanent owner-bound record', async () => {
         const signal = new AbortController().signal;
-        const requests = [];
-        let response = { ok: false, status: 404 };
-        globalThis.fetch = async (url, options) => {
-            requests.push({ url, options });
-            return response;
-        };
-        const ctx = { getRequestHeaders: () => ({ 'x-test': 'yes' }) };
-
-        await expect(fetchOrganization(ctx, signal)).resolves.toBeNull();
-        expect(requests[0].url).toBe(`/user/files/${ORGANIZATION_FILE_NAME}`);
-        expect(requests[0].options).toEqual({
-            method: 'GET',
-            headers: { 'x-test': 'yes' },
-            cache: 'no-store',
-            signal,
-        });
-
-        response = { ok: false, status: 503 };
-        await expect(fetchOrganization(ctx)).rejects.toThrow(/_sbca_organization\.json failed with status 503/);
-
-        const organization = { version: 1, folders: [], collections: [], views: [], chats: {} };
-        response = { ok: true, status: 200, text: async () => JSON.stringify(organization) };
-        await expect(fetchOrganization(ctx)).resolves.toEqual(organization);
-
-        response = { ok: true, status: 200, text: async () => btoa(JSON.stringify(organization)) };
-        await expect(fetchOrganization(ctx)).resolves.toEqual(organization);
-
-        response = { ok: true, status: 200, text: async () => 'bad sidecar' };
-        await expect(fetchOrganization(ctx)).rejects.toThrow(SyntaxError);
+        globalThis.fetch = jest.fn(async () => ({ ok: true, text: async () => 'chat body' }));
+        expect(await fetchArchiveFile({ getRequestHeaders: () => ({ 'x-test': 'yes' }) }, 'saved/key', 'hash', signal)).toBe('chat body');
+        expect(globalThis.fetch).toHaveBeenCalledWith('/api/operations/records/saved%2Fkey/archive/hash', { headers: { 'x-test': 'yes' }, signal, cache: 'no-store' });
+        globalThis.fetch.mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ error: 'File changed' }) });
+        await expect(fetchArchiveFile({ getRequestHeaders: () => ({}) }, 'saved', 'hash')).rejects.toMatchObject({ status: 409, message: 'File changed' });
     });
 
-    test('organization upload round-trips Unicode through browser base64 APIs', async () => {
-        let request;
-        globalThis.fetch = async (url, options) => {
-            request = { url, options };
-            return { ok: true, status: 200, json: async () => ({ uploaded: true }) };
-        };
-        const organization = { version: 1, name: '兔子 café', tags: ['竜', '🙂'] };
-
-        await expect(saveOrganization(
-            { getRequestHeaders: () => ({ 'x-csrf-token': 'token' }) },
-            organization,
-        )).resolves.toEqual({ uploaded: true });
-
-        expect(request.url).toBe('/api/files/upload');
-        expect(request.options.headers).toEqual({ 'x-csrf-token': 'token' });
-        const upload = JSON.parse(request.options.body);
-        expect(upload.name).toBe(ORGANIZATION_FILE_NAME);
-        const binary = atob(upload.data);
-        const decoded = new TextDecoder().decode(Uint8Array.from(binary, character => character.charCodeAt(0)));
-        expect(JSON.parse(decoded)).toEqual(organization);
-        expect(decoded).toBe(JSON.stringify(organization));
-    });
-
-    test('organization uploads are bounded and caller-cancellable without AbortSignal.any', async () => {
-        Object.defineProperty(AbortSignal, 'any', { configurable: true, value: undefined, writable: true });
-        let requestSignal;
-        const ctx = { getRequestHeaders: () => ({}) };
-        const caller = new AbortController();
-        globalThis.fetch = (_url, options) => {
-            requestSignal = options.signal;
-            return new Promise((_resolve, reject) => {
-                options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
-            });
-        };
-        const pending = saveOrganization(ctx, { version: 1 }, caller.signal);
-        expect(requestSignal).not.toBe(caller.signal);
-        caller.abort();
-        await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
-        expect(requestSignal.aborted).toBe(true);
-    });
-
-    test('composes caller cancellation and timeouts when AbortSignal.any is absent', async () => {
-        Object.defineProperty(AbortSignal, 'any', { configurable: true, value: undefined, writable: true });
-        const caller = new AbortController();
-        const callerRequest = createTimedSignal(caller.signal, 10_000);
-        const reason = new DOMException('cancelled', 'AbortError');
-        caller.abort(reason);
-        expect(callerRequest.signal.aborted).toBe(true);
-        expect(callerRequest.signal.reason).toBe(reason);
-        callerRequest.cleanup();
-
-        jest.useFakeTimers();
-        const timedRequest = createTimedSignal(undefined, 25);
-        jest.advanceTimersByTime(25);
-        expect(timedRequest.signal.aborted).toBe(true);
-        expect(timedRequest.signal.reason).toMatchObject({ name: 'TimeoutError' });
-        timedRequest.cleanup();
-    });
-
-    test('cancels a later inventory page and releases its cursor and read token', async () => {
-        Object.defineProperty(AbortSignal, 'any', { configurable: true, value: undefined, writable: true });
-        const cursor = 'b'.repeat(64);
-        const readToken = 'c'.repeat(64);
-        const controller = new AbortController();
-        let requestCount = 0;
-        const releases = [];
-        let secondRequestStarted;
-        const secondRequest = new Promise(resolve => { secondRequestStarted = resolve; });
-        globalThis.fetch = async (url, options) => {
-            if (url === '/api/chats/archive/release') {
-                releases.push(JSON.parse(options.body));
-                return { ok: true, status: 204 };
-            }
-            requestCount++;
-            if (requestCount === 1) {
-                return {
-                    ok: true,
-                    status: 200,
-                    json: async () => ({ rows: [{ file_name: 'one.jsonl' }], cursor, read_token: readToken, errors: 0, total: 2 }),
-                };
-            }
-            secondRequestStarted();
-            return await new Promise((_resolve, reject) => {
-                options.signal.addEventListener('abort', () => {
-                    const error = new Error('aborted');
-                    error.name = 'AbortError';
-                    reject(error);
-                }, { once: true });
-            });
-        };
-
-        const pending = fetchArchiveInventory({ getRequestHeaders: () => ({}) }, 'orphans', controller.signal);
-        await secondRequest;
-        controller.abort();
-
-        await expect(pending).rejects.toMatchObject({
-            name: 'AbortError',
-            archiveCursor: cursor,
-            archiveReadToken: readToken,
-        });
-        expect(requestCount).toBe(2);
-        expect(releases).toEqual([{ token: readToken, cursor }]);
-    });
-
-    test('views and releases orphan files only through the archive namespace', async () => {
-        const requests = [];
-        globalThis.fetch = async (url, options = {}) => {
-            requests.push({ url: String(url), options });
-            if (String(url).includes('/view?')) {
-                return { ok: true, status: 200, text: async () => 'chat body' };
-            }
-            return { ok: true, status: 204 };
-        };
-        const ctx = { getRequestHeaders: () => ({ 'x-test': 'yes' }) };
-        const signal = new AbortController().signal;
-
-        await expect(fetchArchiveFile(ctx, 'token', 'hash', signal)).resolves.toBe('chat body');
-        await releaseArchiveSession(ctx, { token: 'token', cursor: 'cursor' }, signal);
-
-        expect(requests[0].url).toBe('/api/chats/archive/view?token=token&hash=hash');
-        expect(requests[0].options.signal).toBe(signal);
-        expect(requests[1].url).toBe('/api/chats/archive/release');
-        expect(JSON.parse(requests[1].options.body)).toEqual({ token: 'token', cursor: 'cursor' });
-        expect(requests.every(request => !request.url.includes('/api/data-maid'))).toBe(true);
-    });
-
-    test('successful list endpoints reject malformed JSON and response shapes', async () => {
-        const ctx = { getRequestHeaders: () => ({ 'x-test': 'yes' }) };
-        globalThis.fetch = async (_url, options) => {
-            expect(options.method).toBe('POST');
-            expect(options.headers).toEqual({ 'x-test': 'yes' });
-            return { ok: true, status: 200, json: async () => { throw new SyntaxError('bad json'); } };
-        };
-        await expect(fetchArchiveInventory(ctx, 'archive')).rejects.toThrow(SyntaxError);
-
-        globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ results: [] }) });
-        await expect(fetchArchiveInventory(ctx, 'archive')).rejects.toThrow(/invalid response/);
-        await expect(searchScope(ctx, 'x', {})).rejects.toThrow(/invalid response/);
-    });
-
-    test('body-read aborts remain aborts', async () => {
-        globalThis.fetch = async () => ({
-            ok: true,
-            status: 200,
-            json: async () => { throw new DOMException('aborted', 'AbortError'); },
-        });
-        await expect(fetchArchiveInventory({ getRequestHeaders: () => ({}) }, 'archive')).rejects.toMatchObject({ name: 'AbortError' });
+    test('incomplete saved results and aborted observations never become an empty successful archive', async () => {
+        nativeClient.run.mockResolvedValueOnce({ key: 'broken', result: {} });
+        await expect(fetchArchiveInventory({}, 'archive')).rejects.toThrow(/incomplete/);
+        nativeClient.run.mockRejectedValueOnce(new DOMException('closed', 'AbortError'));
+        await expect(fetchArchiveInventory({}, 'archive')).rejects.toMatchObject({ name: 'AbortError' });
     });
 });
 
@@ -1120,7 +824,7 @@ describe('SillyBunny Chats Archive integration', () => {
         expect(ui).toMatch(/SEARCH_CONTENT_DEBOUNCE_MS = 600/);
         expect(ui).toMatch(/state\.listState !== 'ready' \|\| state\.scanAbort \|\| state\.searchAbort/);
         expect(ui).toMatch(/search\.addEventListener\('input',[\s\S]*?applyQuery\(\);[\s\S]*?runDeepSearch/);
-        expect(ui).toMatch(/buildSearchScopes\(ctx\.characters, ctx\.groups, ui\.owner\.value\)/);
+        expect(ui).toMatch(/await searchArchive\(ctx, query, signal/);
         expect(ui).toMatch(/findMatchingMessageIndex/);
         expect(ui).toMatch(/First search match/);
         expect(ui).toMatch(/Latest messages/);
@@ -1132,9 +836,9 @@ describe('SillyBunny Chats Archive integration', () => {
         expect(ui).not.toMatch(/search result verification failed/);
         expect(ui).toMatch(/const found = new Map\(filterRows\(mentionedRows\(allRows\(state\), search\.mentions\), \{ text: query \}/);
         expect(ui).toMatch(/search items had errors/);
-        expect(ui).toMatch(/mentionedRows\(allRows\(state\), search\.mentions\)\.filter\(row => row\.kind === 'orphan'\)/);
+        expect(ui).toMatch(/normalizeRow\(raw, state\.charactersByAvatar, state\.groupsById/);
         expect(ui).not.toMatch(/row\.kind === 'orphan' \|\| row\.source === 'inventory'/);
-        expect(ui).toMatch(/findMatchingSnippetInJsonlAsync\(raw, query, \{ signal \}\)/);
+        expect(ui).not.toMatch(/findMatchingSnippetInJsonlAsync\(raw, query/);
         expect(ui).not.toMatch(/findExistingGroupFiles/);
         expect(ui).toMatch(/savedViewField\.wrap\.hidden = true/);
         expect(ui).toMatch(/ui\.savedViewWrap\.hidden = organization\.views\.length === 0/);
@@ -1221,43 +925,4 @@ describe('SillyBunny Chats Archive integration', () => {
         expect(entry).toMatch(/pending = setTimeout\(\(\) => \{\s*pending = null;\s*install\(\);/);
     });
 
-});
-
-describe('Data Maid Chat Archive integration', () => {
-    test('keeps the organization sidecar out of loose user files', async () => {
-        const root = await mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-archive-'));
-        const directories = {
-            root,
-            userImages: path.join(root, 'user-images'),
-            files: path.join(root, 'files'),
-            chats: path.join(root, 'chats'),
-            groupChats: path.join(root, 'group-chats'),
-            groups: path.join(root, 'groups'),
-            characters: path.join(root, 'characters'),
-            thumbnailsAvatar: path.join(root, 'thumbnails-avatar'),
-            backgrounds: path.join(root, 'backgrounds'),
-            thumbnailsBg: path.join(root, 'thumbnails-bg'),
-            thumbnailsBgMobile: path.join(root, 'thumbnails-bg-mobile'),
-            avatars: path.join(root, 'avatars'),
-            thumbnailsPersona: path.join(root, 'thumbnails-persona'),
-            backups: path.join(root, 'backups'),
-        };
-
-        try {
-            await Promise.all(Object.values(directories).map(directory => mkdir(directory, { recursive: true })));
-            const sidecar = path.join(directories.files, ORGANIZATION_FILE_NAME);
-            const ordinaryFile = path.join(directories.files, 'notes.txt');
-            await Promise.all([
-                writeFile(sidecar, '{"version":1}'),
-                writeFile(ordinaryFile, 'loose file'),
-            ]);
-
-            const report = await new DataMaidService('test-user', directories).generateReport();
-
-            expect(report.files).toEqual([ordinaryFile]);
-            expect(report.files).not.toContain(sidecar);
-        } finally {
-            await rm(root, { recursive: true, force: true });
-        }
-    });
 });

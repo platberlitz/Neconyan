@@ -7,6 +7,7 @@ export function roleplayPromptContentHash(prompt, worldInfo, { quickReply = fals
         ...(worldInfo?.pathfinder ? { pathfinderHash: prompt.pathfinderHash } : {}),
         ...(worldInfo?.captions ? { captionsHash: prompt.captionsHash } : {}),
         ...(worldInfo?.inputTranslation ? { inputTranslationHash: prompt.inputTranslationHash } : {}),
+        ...(worldInfo?.vectors ? { vectorsHash: prompt.vectorsHash } : {}),
         ...(quickReply ? { quickReplyHash: prompt.quickReplyHash } : {}),
         ...(worldInfo?.agents ? { agentsHash: prompt.agentsHash, agentInterceptHash: prompt.agentInterceptHash } : {}) });
 }

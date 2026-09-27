@@ -103,11 +103,11 @@ test('retiring a deleted user keeps files, and recreation re-identifies them und
 });
 
 test('imports after a reset write files whose paths the old epoch tracked', async t => {
-    const { importUserFile } = await import('../src/endpoints/users-private.js');
+    const { importTestFile } = await import('./application-import-fixture.js');
     const f = fixture(t, false, 'fixture');
     const bytes = fs.readFileSync(f.filename);
     readRoleplayChat(f.scope, f.locator);
     const next = resetRoleplayAccount(f.scope, null, 'reset');
-    assert.equal(importUserFile(next, f.filename, bytes), true);
+    assert.equal((await importTestFile(next, f.filename, bytes)).state, 'completed');
     assert.ok(readRoleplayChat(next, f.locator).instanceId);
 });

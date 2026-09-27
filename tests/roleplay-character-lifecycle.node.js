@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -101,6 +102,25 @@ test('a character delete retires the card and chats, and refuses out-of-band cha
     assert.equal(state.resources[chat.instanceId].status, 'deleted');
     assert.equal(fs.existsSync(path.join(f.scope.directories.characters, 'Nova.png')), false);
     assert.equal(fs.existsSync(path.join(f.scope.directories.chats, 'Nova')), false);
+});
+
+test('a conditional character delete refuses a card that changed after it was checked', async t => {
+    const f = fixture(t, false, 'character-conditional-delete');
+    const post = await characterServer(t, f);
+    const card = path.join(f.scope.directories.characters, 'Nova.png');
+    const checked = crypto.createHash('sha256').update(fs.readFileSync(card)).digest('hex');
+    const invalid = await post('/delete', { avatar_url: 'Nova.png', delete_chats: false, expected_revision: 'nope' });
+    assert.equal(invalid.status, 400);
+    assert.equal(invalid.body.code, 'ROLEPLAY_CHARACTER_REVISION_INVALID');
+    assert.equal((await post('/edit-attribute', { avatar_url: 'Nova.png', ch_name: 'Nova', field: 'description', value: 'Later edit' })).status, 200);
+    const refused = await post('/delete', { avatar_url: 'Nova.png', delete_chats: false, expected_revision: checked });
+    assert.equal(refused.status, 409);
+    assert.equal(refused.body.code, 'ROLEPLAY_CHARACTER_CHANGED');
+    assert.equal(readRoleplayEntity(f.scope, 'character', 'Nova.png').data.data.description, 'Later edit');
+    const current = crypto.createHash('sha256').update(fs.readFileSync(card)).digest('hex');
+    const deleted = await post('/delete', { avatar_url: 'Nova.png', delete_chats: false, expected_revision: current });
+    assert.equal(deleted.status, 200, JSON.stringify(deleted.body));
+    assert.equal(fs.existsSync(card), false);
 });
 
 test('a rename retires a vanished protected chat, and a delete removes hard-linked loose chats', async t => {

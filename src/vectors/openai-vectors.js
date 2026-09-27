@@ -1,7 +1,7 @@
 import fetch from 'node-fetch';
 import { SECRET_KEYS, readSecret } from '../endpoints/secrets.js';
 import { OPENROUTER_HEADERS } from '../constants.js';
-import { createSingleVectorFn, extractOpenAIEmbeddings } from './common.js';
+import { createSingleVectorFn, extractOpenAIEmbeddings, readEmbeddingResponse } from './common.js';
 
 const SOURCES = {
     'togetherai': {
@@ -81,6 +81,10 @@ const SOURCES = {
  * @returns {Promise<number[][]>} - The array of vectors for the texts
  */
 export async function getOpenAIBatchVector(texts, source, directories, model = '', urlOverride = null) {
+    return requestOpenAIBatchVector(texts, source, directories, model, urlOverride);
+}
+
+export async function requestOpenAIBatchVector(texts, source, directories, model = '', urlOverride = null, { fetchImpl = fetch, signal } = {}) {
     const config = SOURCES[source];
 
     if (!config) {
@@ -106,7 +110,8 @@ export async function getOpenAIBatchVector(texts, source, directories, model = '
         config.processBody(body);
     }
 
-    const response = await fetch(`${url}/embeddings`, {
+    const response = await fetchImpl(`${url}/embeddings`, {
+        signal,
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -116,14 +121,7 @@ export async function getOpenAIBatchVector(texts, source, directories, model = '
         body: JSON.stringify(body),
     });
 
-    if (!response.ok) {
-        const text = await response.text();
-        console.warn('API request failed', response.statusText, text);
-        throw new Error('API request failed');
-    }
-
-    /** @type {any} */
-    const data = await response.json();
+    const data = await readEmbeddingResponse(response, 'OpenAI');
     return extractOpenAIEmbeddings(data, 'OpenAI');
 }
 

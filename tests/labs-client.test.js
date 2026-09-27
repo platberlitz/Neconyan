@@ -18,6 +18,17 @@ function fixture() {
 }
 const observe = async f => { for (let index = 0; index < 12 && !f.observer; index++) await Promise.resolve(); };
 
+test('listing all saved work does not send an undefined kind filter', async () => {
+    const f = fixture();
+    const records = [{ kind: 'distill', key: 'one' }, { kind: 'lorestitch', key: 'two' }];
+    f.request.mockImplementation(async url => {
+        const kind = new URL(url, 'http://fixture').searchParams.get('kind');
+        return records.filter(record => !kind || record.kind === kind);
+    });
+    await expect(f.client.list()).resolves.toEqual(records);
+    await expect(f.client.list('distill')).resolves.toEqual([records[0]]);
+});
+
 test('lost acceptance reuses the exact body and does not recapture changed controls', async () => {
     const f = fixture();
     f.request.mockRejectedValueOnce(new Error('offline'));

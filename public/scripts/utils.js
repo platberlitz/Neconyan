@@ -10,6 +10,8 @@ import { getContext } from './extensions.js';
 import { getStringHash, isTrueBoolean } from './macro-primitives.js';
 import { parseTimestamp } from './message-timestamp.js';
 import { regexFromString as parseRegex } from './regex-utils.js';
+import { trimToEndSentence, trimToStartSentence } from './sentence-boundaries.js';
+export { trimToEndSentence, trimToStartSentence };
 import { characters, getRequestHeaders, processDroppedFiles, this_chid, user_avatar } from '../script.js';
 import { isMobile } from './RossAscends-mods.js';
 import { collapseNewlines, power_user } from './power-user.js';
@@ -864,68 +866,6 @@ export function trimSpaces(input) {
         return input;
     }
     return power_user.trim_spaces ? input.trim() : input;
-}
-
-/**
- * Trims a string to the end of a nearest sentence.
- * @param {string} input The string to trim.
- * @returns {string} The trimmed string.
- * @example
- * trimToEndSentence('Hello, world! I am from'); // 'Hello, world!'
- */
-export function trimToEndSentence(input) {
-    if (!input) {
-        return '';
-    }
-
-    const isEmoji = x => /(\p{Emoji_Presentation}|\p{Extended_Pictographic})/gu.test(x);
-    const punctuation = new Set(['.', '!', '?', '*', '"', ')', '}', '`', ']', '$', '。', '！', '？', '”', '）', '】', '’', '」', '_']); // extend this as you see fit
-    let last = -1;
-
-    const characters = Array.from(input);
-    for (let i = characters.length - 1; i >= 0; i--) {
-        const char = characters[i];
-        const emoji = isEmoji(char);
-
-        if (punctuation.has(char) || emoji) {
-            if (!emoji && i > 0 && /[\s\n]/.test(characters[i - 1])) {
-                last = i - 1;
-            } else {
-                last = i;
-            }
-            break;
-        }
-    }
-
-    if (last === -1) {
-        return input.trimEnd();
-    }
-
-    return characters.slice(0, last + 1).join('').trimEnd();
-}
-
-export function trimToStartSentence(input) {
-    if (!input) {
-        return '';
-    }
-
-    let p1 = input.indexOf('.');
-    let p2 = input.indexOf('!');
-    let p3 = input.indexOf('?');
-    let p4 = input.indexOf('\n');
-    let first = p1;
-    let skip1 = false;
-    if (p2 > 0 && p2 < first) { first = p2; }
-    if (p3 > 0 && p3 < first) { first = p3; }
-    if (p4 > 0 && p4 < first) { first = p4; skip1 = true; }
-    if (first > 0) {
-        if (skip1) {
-            return input.substring(first + 1);
-        } else {
-            return input.substring(first + 2);
-        }
-    }
-    return input;
 }
 
 /**

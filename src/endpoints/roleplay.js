@@ -1,7 +1,7 @@
 import express from 'express';
 import { validateOwner } from '../jobs/store.js';
 import { noteOwner } from '../jobs/runner.js';
-import { acceptRoleplayNamedWorkflow, readRoleplayWorkflowReceipt } from '../generation/roleplay-acceptance.js';
+import { acceptRoleplayGroupTurn, acceptRoleplayNamedWorkflow, readRoleplayWorkflowReceipt } from '../generation/roleplay-acceptance.js';
 
 export const router = express.Router();
 
@@ -29,6 +29,17 @@ router.post('/workflow/submit', async (request, response) => {
     try {
         scope(request);
         const accepted = await acceptRoleplayNamedWorkflow(request, request.body || {});
+        response.set('X-Neconyan-Job', accepted.jobId ?? '');
+        return response.status(accepted.created ? 202 : 200).json(accepted);
+    } catch (error) {
+        return fail(response, error);
+    }
+});
+
+router.post('/group/submit', async (request, response) => {
+    try {
+        scope(request);
+        const accepted = await acceptRoleplayGroupTurn(request, request.body || {});
         response.set('X-Neconyan-Job', accepted.jobId ?? '');
         return response.status(accepted.created ? 202 : 200).json(accepted);
     } catch (error) {

@@ -199,6 +199,7 @@ export function normalizeRow(row, characters = [], groups = [], toMoment = undef
         mtimeKnown: mtime !== 0,
         snippet: previewText(row.mes, PREVIEW_LENGTH),
         archiveHash: row.archive_hash ?? null,
+        ...(typeof row.archive_record === 'string' ? { archiveRecord: row.archive_record } : {}),
     };
 }
 

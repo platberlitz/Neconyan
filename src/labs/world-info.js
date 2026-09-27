@@ -2,42 +2,15 @@ import path from 'node:path';
 import { normalizePlan, normalizeScanSettings } from '../../public/scripts/extensions/third-party/Neconyan-WorldInfo-Lab/src/sources.js';
 import { currentChatMessages } from '../../public/scripts/extensions/third-party/Neconyan-WorldInfo-Lab/src/scan-input.js';
 import { GENERATION_TRIGGERS } from '../../public/scripts/extensions/third-party/Neconyan-WorldInfo-Lab/src/constants.js';
-import { resolveChatTokenizerModel } from '../../public/scripts/chat-prompt-tokens.js';
-import { countOpenAIChatTokens, getTokenizerModel, encodeGenerationText } from '../endpoints/tokenizers.js';
-import { captureGenerationBinding, resolveGenerationProfile } from '../generation/profiles.js';
-import { createRoleplayTextCounter } from '../generation/roleplay-budget.js';
+import { captureSavedTokenizer as captureTokenizer, savedTokenCounter as labTokenCounter } from '../generation/saved-token-counter.js';
 import { activeRoleplayAuthorNote, isWorldInfoAuthorNoteActive } from '../generation/roleplay-prompt.js';
-import { getSettingsRevision } from '../settings-version.js';
-import { getCounter } from '../mewmory/tokens.js';
 import { roleplayHash } from '../roleplay-store.js';
 import { captureLabBook } from './books.js';
 import { captureLabChat, readLabSettings } from './sources.js';
 import { computeLab } from './compute.js';
 import { labError } from './store.js';
 
-function captureTokenizer(base, saved) {
-    if (saved.main_api === 'openai') {
-        const model = resolveChatTokenizerModel(saved.oai_settings ?? {}, { main_api: 'openai' });
-        if (typeof model !== 'string' || !model) throw labError('Save a model selection before counting lorebook tokens.');
-        return { kind: 'chat', model, tokenizer: getTokenizerModel(model) };
-    }
-    if (saved.main_api === 'novel') {
-        const model = saved.nai_settings?.model_novel || '';
-        return { kind: 'local', model, tokenizer: model.includes('erato') ? 'llama3' : model.includes('kayra') ? 'nerdstash_v2' : 'nerdstash' };
-    }
-    // Read-only tokenisation uses the saved connection, without dispatching generation.
-    return { kind: 'binding', binding: captureGenerationBinding(base.directories, { kind: 'active' }, { settingsRevision: getSettingsRevision(saved) }) };
-}
-
-export async function labTokenCounter(context, tokenizer) {
-    if (tokenizer.kind === 'chat') {
-        await getCounter(tokenizer.tokenizer);
-        return async text => text ? await countOpenAIChatTokens(tokenizer.tokenizer, tokenizer.model,
-            [{ role: 'system', content: text }], { strict: true }) - 1 : 0;
-    }
-    if (tokenizer.kind === 'local') return async text => (await encodeGenerationText(tokenizer.tokenizer, text, tokenizer.model, context.signal)).length;
-    return createRoleplayTextCounter(context, resolveGenerationProfile(context.directories, tokenizer.binding), { signal: context.signal });
-}
+export { labTokenCounter };
 
 export function captureWorldInfoLab(base, account, input, kind, captured = {}) {
     if (kind === 'world-info.batch') {

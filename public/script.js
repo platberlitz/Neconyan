@@ -6421,6 +6421,19 @@ export function getStoppingStrings(isImpersonate, isContinue, api = main_api) {
  * @param {GenerateQuietPromptParams} params Parameters for the quiet prompt generation
  * @returns {Promise<string>} Generated text. If using structured output, will contain a serialized JSON object.
  */
+/**
+ * Background prompts run as retained server jobs once the account has protected
+ * storage. An account that is still loading, or has none, keeps the page path.
+ */
+function nativeOperationsReady() {
+    try {
+        roleplayAccountStamp();
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 export async function generateQuietPrompt({ quietPrompt = '', quietToLoud = false, skipWIAN = false, quietImage = null, quietName = null, responseLength = null, forceChId = null, jsonSchema = null, removeReasoning = true, trimToSentence = false, signal = null, cacheScope = 'auxiliary', preserveReasoningBudget = false } = {}) {
     if (arguments.length > 0 && typeof arguments[0] !== 'object') {
         console.trace('generateQuietPrompt called with positional arguments. Please use an object instead.');
@@ -6442,6 +6455,38 @@ export async function generateQuietPrompt({ quietPrompt = '', quietToLoud = fals
             abortFromExternalSignal();
         } else {
             externalSignal.addEventListener('abort', abortFromExternalSignal, { once: true });
+        }
+    }
+
+    // Neconyan: a plain background prompt in a saved solo chat runs as one retained server job, so
+    // closing the page cannot drop it and an unknown model outcome is never sent again. Other
+    // shapes (groups, images, structured output, loud replies) still use the page generator.
+    const nativeQuiet = !quietToLoud && !skipWIAN && !quietImage && !quietName && forceChId === null && !jsonSchema
+        && !selected_group && this_chid !== undefined && characters[this_chid]?.avatar && getCurrentChatId() && nativeOperationsReady();
+    if (nativeQuiet) {
+        const stop = new AbortController();
+        const forwardStop = () => stop.abort('user-stop');
+        quietAbortController?.signal.aborted ? forwardStop() : quietAbortController?.signal.addEventListener('abort', forwardStop, { once: true });
+        try {
+            const { getOperationClient } = await import('./scripts/operations-client.js');
+            const client = await getOperationClient();
+            const locator = { group: false, avatar: characters[this_chid].avatar, chat: String(getCurrentChatId()) };
+            const input = { prompt: String(quietPrompt ?? ''), locator, ...(Number(requestResponseLength) >= 1 ? { maxTokens: Math.min(32768, Math.floor(Number(requestResponseLength))) } : {}) };
+            const record = await client.run('quiet-generation', input, {
+                scope: `quiet:${getStringHash(JSON.stringify(input))}`,
+                signal: stop.signal,
+                prepareInput: async body => {
+                    await saveChatConditional({ throwOnError: true, throwOnPromptError: true });
+                    await saveSettings(0, { returnResult: true });
+                    return { ...body, acknowledgement: getActiveGenerationAcknowledgement() };
+                },
+            });
+            let result = String(record?.result?.text ?? '');
+            result = trimToSentence ? trimToEndSentence(result) : result;
+            return removeReasoning ? removeReasoningFromString(result) : result;
+        } finally {
+            quietAbortController?.signal.removeEventListener('abort', forwardStop);
+            if (externalSignal && abortFromExternalSignal) externalSignal.removeEventListener('abort', abortFromExternalSignal);
         }
     }
 
@@ -7791,6 +7836,37 @@ export async function generateRaw({ prompt = '', api = null, instructOverride = 
     if (arguments.length > 0 && typeof arguments[0] !== 'object') {
         console.trace('generateRaw called with positional arguments. Please use an object instead.');
         [prompt, api, instructOverride, quietToLoud, systemPrompt, responseLength, trimNames, prefill, jsonSchema] = arguments;
+    }
+
+    // Neconyan: a plain text prompt runs as one retained server job, so closing the page cannot drop
+    // it and an unknown model outcome is never sent again. Chat-message arrays, prefills, schemas,
+    // explicit backends and sampler overrides still use the page generator.
+    const nativeRaw = !api && !instructOverride && !quietToLoud && !prefill && !jsonSchema && temperature === undefined
+        && typeof prompt === 'string' && typeof systemPrompt === 'string' && (prompt.trim() || systemPrompt.trim()) && nativeOperationsReady();
+    if (nativeRaw) {
+        const stop = new AbortController();
+        const forwardStop = () => stop.abort('user-stop');
+        signal?.aborted ? forwardStop() : signal?.addEventListener('abort', forwardStop, { once: true });
+        try {
+            const { getOperationClient } = await import('./scripts/operations-client.js');
+            const client = await getOperationClient();
+            const input = { prompt, systemPrompt, ...(Number(responseLength) >= 1 ? { maxTokens: Math.min(32768, Math.floor(Number(responseLength))) } : {}) };
+            const record = await client.run('raw-generation', input, {
+                scope: `raw:${getStringHash(JSON.stringify(input))}`,
+                signal: stop.signal,
+                prepareInput: async body => {
+                    await saveSettings(0, { returnResult: true });
+                    return { ...body, acknowledgement: getActiveGenerationAcknowledgement() };
+                },
+            });
+            const message = String(record?.result?.text ?? '').trim();
+            if (!message) {
+                throw new Error('No message generated');
+            }
+            return message;
+        } finally {
+            signal?.removeEventListener('abort', forwardStop);
+        }
     }
 
     const data = await generateRawData({ prompt, api, instructOverride, quietToLoud, systemPrompt, responseLength, prefill, jsonSchema, signal, cacheScope, preserveReasoningBudget, temperature });
@@ -12989,6 +13065,23 @@ export async function saveSettings(loopCounter = 0, { returnResult = false } = {
 }
 
 /** Return proof of the saved active controls, never mutable settings or credentials. */
+/**
+ * Accept a settings write the server made on this account's behalf, but only when this page had
+ * already seen the version the server wrote over. Otherwise the ordinary conflict reload applies.
+ * @param {{account: string, previousVersion: number, version: number, settingsRevision: number}} write
+ * @returns {boolean}
+ */
+export function adoptServerSettingsWrite({ account, previousVersion, version, settingsRevision }) {
+    if (account !== getCurrentUserHandle() || lastServerSettingsVersion !== previousVersion) return false;
+    if (!Number.isSafeInteger(version) || version <= previousVersion || !Number.isSafeInteger(settingsRevision)) return false;
+    lastServerSettingsVersion = version;
+    lastServerSettingsRevision = settingsRevision;
+    if (acknowledgedGenerationSettings?.account === account) {
+        acknowledgedGenerationSettings = { ...acknowledgedGenerationSettings, settingsRevision };
+    }
+    return true;
+}
+
 export function getActiveGenerationAcknowledgement() {
     const saved = acknowledgedGenerationSettings;
     const current = generationSettingsSnapshot({

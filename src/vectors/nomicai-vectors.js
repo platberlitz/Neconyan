@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
 import { SECRET_KEYS, readSecret } from '../endpoints/secrets.js';
-import { createSingleVectorFn } from './common.js';
+import { createSingleVectorFn, readEmbeddingResponse } from './common.js';
 
 const SOURCES = {
     'nomicai': {
@@ -17,7 +17,7 @@ const SOURCES = {
  * @param {import('../users.js').UserDirectoryList} directories - The directories object for the user
  * @returns {Promise<number[][]>} - The array of vectors for the texts
  */
-export async function getNomicAIBatchVector(texts, source, directories) {
+export async function getNomicAIBatchVector(texts, source, directories, { fetchImpl = fetch, signal } = {}) {
     const config = SOURCES[source];
 
     if (!config) {
@@ -34,7 +34,8 @@ export async function getNomicAIBatchVector(texts, source, directories) {
 
     const url = config.url;
     let response;
-    response = await fetch(`https://${url}`, {
+    response = await fetchImpl(`https://${url}`, {
+        signal,
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -46,14 +47,7 @@ export async function getNomicAIBatchVector(texts, source, directories) {
         }),
     });
 
-    if (!response.ok) {
-        const text = await response.text();
-        console.warn('API request failed', response.statusText, text);
-        throw new Error('API request failed');
-    }
-
-    /** @type {any} */
-    const data = await response.json();
+    const data = await readEmbeddingResponse(response, 'NomicAI');
     if (!Array.isArray(data?.embeddings)) {
         console.warn('API response was not an array');
         throw new Error('API response was not an array');

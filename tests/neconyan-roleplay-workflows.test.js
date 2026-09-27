@@ -21,6 +21,7 @@ const saveSettings = jest.fn(async () => {
 });
 const listJobs = jest.fn(async () => []);
 const cancelJob = jest.fn(async () => ({}));
+const serviceVectorBrowserWork = jest.fn(async () => {});
 const extensionPrompts = {};
 const extensionSettings = {};
 const interceptors = [];
@@ -33,6 +34,7 @@ jest.unstable_mockModule('../public/scripts/extensions.js', () => ({
 }));
 
 jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => account }));
+jest.unstable_mockModule('../public/scripts/extensions/vectors/native.js', () => ({ serviceVectorBrowserWork }));
 jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ selected_group: null }));
 jest.unstable_mockModule('../public/scripts/chats.js', () => ({ hasPendingFileAttachment: () => false }));
 jest.unstable_mockModule('../public/scripts/jobs.js', () => ({
@@ -103,6 +105,7 @@ beforeEach(() => {
     observers.clear();
     listJobs.mockClear();
     cancelJob.mockClear();
+    serviceVectorBrowserWork.mockClear();
     saveSettings.mockClear();
     submitHandler = async () => response(202, { key: 'k', jobId: 'job-1', created: true });
     receiptHandler = () => response(200, { key: 'k', accepted: true, state: 'closed', jobId: 'job-1', result: { named: { appended: true } } });
@@ -193,7 +196,6 @@ test.each([
     ['a prompt that must be scanned for lore', () => { extensionPrompts.script_inject_scan = { value: 'Scan me.', position: 1, depth: 0, scan: true, role: 0 }; }],
     ['a macro the page cannot resolve', () => { extensionPrompts.script_inject_macro = { value: 'Roll {{roll:d6}}.', position: 1, depth: 0, scan: false, role: 0 }; }],
     ['a key the server cannot name', () => { extensionPrompts['script_inject_a b'] = { value: 'Spaced.', position: 1, depth: 0, scan: false, role: 0 }; }],
-    ['enabled vector retrieval', () => { interceptors.push({ name: 'vectors', key: 'vectors_rearrangeChat' }); extensionSettings.vectors = { enabled_chats: true }; }],
     ['an unknown generation interceptor', () => { interceptors.push({ name: 'third-party/other', key: 'otherInterceptor' }); }],
 ])('%s keeps the browser path instead of generating without it', async (_label, arrange) => {
     arrange();
@@ -208,6 +210,28 @@ test.each([
 test('page text a control hands over resolves its macros or keeps the browser path', () => {
     expect(workflows.resolvePageText(' Rewrite {{user}}\'s reply. ')).toBe('Rewrite Alice\'s reply.');
     expect(workflows.resolvePageText('Roll {{roll:d6}}')).toBeNull();
+});
+
+test('native vector retrieval ignores page copies and services only an owned WebLLM descendant', async () => {
+    interceptors.push({ name: 'vectors', key: 'vectors_rearrangeChat' });
+    extensionSettings.vectors = { enabled_chats: true };
+    extensionPrompts['3_vectors'] = { value: 'Stale browser retrieval.', position: 0, depth: 0, scan: true, role: 0 };
+    extensionPrompts['4_vectors_data_bank'] = { value: 'Stale file retrieval.', position: 0, depth: 0, scan: true, role: 0 };
+    expect(await workflows.capturePagePrompts('roleplay.reply')).toEqual([]);
+    const pending = workflows.runNativeRoleplayGeneration('normal');
+    await settle();
+    expect(requests.find(entry => entry.url.endsWith('/workflow/submit')).body.intent).toEqual({});
+    const child = { id: 'vector-child', parentId: 'reply-child', owner: 'alice', type: 'operations.vectors',
+        state: 'waiting', resume: { browserId: 'local-work' } };
+    listJobs.mockResolvedValueOnce([
+        { id: 'reply-child', parentId: 'job-1', owner: 'alice', children: ['vector-child', 'foreign'] }, child,
+        { ...child, id: 'foreign', owner: 'bob' },
+    ]);
+    await observers.get('job-1').onSnapshot({ id: 'job-1', state: 'waiting', children: ['reply-child'] });
+    expect(serviceVectorBrowserWork).toHaveBeenCalledTimes(1);
+    expect(serviceVectorBrowserWork).toHaveBeenCalledWith(child);
+    await observers.get('job-1').onStop('done');
+    await pending;
 });
 
 test('a refused submission never falls through to a browser generation', async () => {

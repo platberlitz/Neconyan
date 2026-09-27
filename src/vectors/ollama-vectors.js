@@ -1,7 +1,7 @@
 import fetch from 'node-fetch';
 import { setAdditionalHeadersByType } from '../additional-headers.js';
 import { TEXTGEN_TYPES } from '../constants.js';
-import { createSingleVectorFn } from './common.js';
+import { createSingleVectorFn, readEmbeddingResponse } from './common.js';
 
 /**
  * Gets the vector for the given text from Ollama
@@ -12,14 +12,15 @@ import { createSingleVectorFn } from './common.js';
  * @param {import('../users.js').UserDirectoryList} directories - The directories object for the user
  * @returns {Promise<number[][]>} - The array of vectors for the texts
  */
-export async function getOllamaBatchVector(texts, apiUrl, model, keep, directories) {
+export async function getOllamaBatchVector(texts, apiUrl, model, keep, directories, { fetchImpl = fetch, signal } = {}) {
     const url = new URL(apiUrl);
     url.pathname = '/api/embed';
 
     const headers = {};
     setAdditionalHeadersByType(headers, TEXTGEN_TYPES.OLLAMA, apiUrl, directories);
 
-    const response = await fetch(url, {
+    const response = await fetchImpl(url, {
+        signal,
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -33,13 +34,7 @@ export async function getOllamaBatchVector(texts, apiUrl, model, keep, directori
         }),
     });
 
-    if (!response.ok) {
-        const responseText = await response.text();
-        throw new Error(`Ollama: Failed to get batch vectors: ${response.statusText} ${responseText}`);
-    }
-
-    /** @type {any} */
-    const data = await response.json();
+    const data = await readEmbeddingResponse(response, 'Ollama');
 
     if (!Array.isArray(data?.embeddings)) {
         throw new Error('API response was not an array');

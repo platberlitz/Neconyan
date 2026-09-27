@@ -9,8 +9,6 @@ import {
     saveSettingsDebounced,
     setExtensionPrompt,
     substituteParams,
-    generateRaw,
-    substituteParamsExtended,
 } from '../../../script.js';
 import {
     ModuleWorkerWrapper,
@@ -19,24 +17,22 @@ import {
     renderExtensionTemplateAsync,
     openThirdPartyExtensionMenu,
 } from '../../extensions.js';
-import { collapseNewlines, registerDebugFunction } from '../../power-user.js';
+import { registerDebugFunction } from '../../power-user.js';
 import { SECRET_KEYS, secret_state } from '../../secrets.js';
-import { getDataBankAttachments, getDataBankAttachmentsForSource, getFileAttachment } from '../../chats.js';
-import { debounce, getStringHash as calculateHash, waitUntilCondition, onlyUnique, splitRecursive, trimToStartSentence, trimToEndSentence, escapeHtml, isTrueBoolean } from '../../utils.js';
+import { getDataBankAttachments, getDataBankAttachmentsForSource } from '../../chats.js';
+import { debounce, getStringHash as calculateHash, onlyUnique, escapeHtml, isTrueBoolean } from '../../utils.js';
 import { debounce_timeout } from '../../constants.js';
 import { getSortedEntries } from '../../world-info.js';
-import { textgen_types, textgenerationwebui_settings } from '../../textgen-settings.js';
 import { SlashCommandParser } from '../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from '../../slash-commands/SlashCommandArgument.js';
 import { SlashCommandEnumValue, enumTypes } from '../../slash-commands/SlashCommandEnumValue.js';
 import { commonEnumProviders } from '../../slash-commands/SlashCommandCommonEnumsProvider.js';
 import { slashCommandReturnHelper } from '../../slash-commands/SlashCommandReturnHelper.js';
-import { generateWebLlmChatPrompt, isWebLlmSupported } from '../shared.js';
 import { WebLlmVectorProvider } from './webllm.js';
 import { applyLegacyVectorEnabledSetting, bindVectorEnabledSettingsStore, getPersistableVectorSettings, getVectorEnabledState, normalizeVectorEnabledOptions, normalizeVectorSources, stripLegacyVectorEnabledSetting } from './settings-utils.js';
-import { removeReasoningFromString } from '../../reasoning.js';
 import { oai_settings } from '../../openai.js';
+import { runVectorWork, mountSavedVectorWork } from './native.js';
 
 /**
  * @typedef {object} HashedMessage
@@ -50,9 +46,6 @@ const MODULE_NAME = 'vectors';
 
 export const EXTENSION_PROMPT_TAG = '3_vectors';
 export const EXTENSION_PROMPT_TAG_DB = '4_vectors_data_bank';
-
-// Force solo chunks for sources that don't support batching.
-const getBatchSize = () => ['transformers', 'ollama'].includes(settings.source) ? 1 : 5;
 
 const settings = {
     // For both
@@ -120,21 +113,6 @@ const settings = {
 
 const moduleWorker = new ModuleWorkerWrapper(synchronizeChat);
 const webllmProvider = new WebLlmVectorProvider();
-/**
- * Cache for storing summaries of messages by their hash.
- * @type {Map<number, string>}
- */
-const cachedSummaries = new Map();
-/**
- * Hashes skipped this Vectorize All session (summary or embed failure). Cleared on next Vectorize All click.
- * @type {Set<number>}
- */
-const skippedHashes = new Set();
-/**
- * Error causes treated as fatal — abort Vectorize All rather than skip.
- * @type {Set<string>}
- */
-const FATAL_CAUSES = new Set(['account_id_missing', 'api_key_missing', 'api_url_missing', 'api_model_missing', 'webllm_not_supported', 'summary_endpoint_invalid']);
 const vectorApiRequiresUrl = ['llamacpp', 'vllm', 'ollama', 'koboldcpp'];
 
 /**
@@ -201,73 +179,15 @@ function getFileCollectionId(fileUrl) {
 
 async function onVectorizeAllClick() {
     try {
-        if (!settings.enabled_chats) {
-            return;
-        }
-
-        const chatId = getCurrentChatId();
-
-        if (!chatId) {
-            toastr.info('No chat selected', 'Vectorization aborted');
-            return;
-        }
-
-        // Clear all cached summaries to ensure that new ones are created
-        // upon request of a full vectorise
-        cachedSummaries.clear();
-        skippedHashes.clear();
-
-        const batchSize = getBatchSize();
-        const elapsedLog = [];
-        let finished = false;
-        let initialPending = null; // total items pending at the start of this run — set on first sync return
+        if (!settings.enabled_chats || !getCurrentChatId()) return;
         $('#vectorize_progress').show();
-        $('#vectorize_progress_percent').text('0');
-        $('#vectorize_progress_eta').text('...');
-
-        while (!finished) {
-            if (is_send_press) {
-                toastr.info('Message generation is in progress.', 'Vectorization aborted');
-                throw new Error('Message generation is in progress.');
-            }
-
-            const startTime = Date.now();
-            const remaining = await synchronizeChat(batchSize);
-            const elapsed = Date.now() - startTime;
-
-            if (remaining === null) {
-                // synchronizeChat already surfaced a toast; bail out of the loop.
-                throw new Error('Vectorization aborted');
-            }
-
-            elapsedLog.push(elapsed);
-            finished = remaining <= 0;
-
-            if (initialPending === null) {
-                initialPending = Math.max(0, remaining + batchSize);
-            }
-            const pending = Math.max(0, remaining);
-            const processed = Math.max(0, initialPending - pending);
-            const processedPercent = initialPending > 0
-                ? Math.min(100, Math.round((processed / initialPending) * 100))
-                : 100;
-            const lastElapsed = elapsedLog.slice(-5); // last 5 elapsed times
-            const averageElapsed = lastElapsed.reduce((a, b) => a + b, 0) / lastElapsed.length; // average time needed to process one item
-            const pace = averageElapsed / batchSize; // time needed to process one item
-            const remainingTime = Math.round(pace * pending / 1000);
-
-            $('#vectorize_progress_percent').text(processedPercent);
-            $('#vectorize_progress_eta').text(remainingTime);
-
-            if (chatId !== getCurrentChatId()) {
-                throw new Error('Chat changed');
-            }
-        }
-        if (skippedHashes.size > 0) {
-            toastr.warning(`${skippedHashes.size} message(s) skipped due to errors. Click Vectorize All again to retry.`, 'Vectorization partial');
-        }
+        await runVectorWork('sync-chat', {}, { onProgress: progress => {
+            $('#vectorize_progress_percent').text(progress.total ? Math.round(100 * progress.completed / progress.total) : 0);
+            $('#vectorize_progress_eta').text(progress.stage);
+        } });
+        toastr.success('The saved chat vector index is ready.');
     } catch (error) {
-        console.error('Vectors: Failed to vectorize all', error);
+        toastr.error(error.message, 'Vector work retained');
     } finally {
         $('#vectorize_progress').hide();
     }
@@ -275,229 +195,14 @@ async function onVectorizeAllClick() {
 
 let syncBlocked = false;
 
-/**
- * Gets the chunk delimiters for splitting text.
- * @returns {string[]} Array of chunk delimiters
- */
-function getChunkDelimiters() {
-    const delimiters = ['\n\n', '\n', ' ', ''];
-
-    if (settings.force_chunk_delimiter) {
-        delimiters.unshift(settings.force_chunk_delimiter);
-    }
-
-    return delimiters;
-}
-
-/**
- * Splits messages into chunks before inserting them into the vector index.
- * @param {object[]} items Array of vector items
- * @returns {object[]} Array of vector items (possibly chunked)
- */
-function splitByChunks(items) {
-    if (settings.message_chunk_size <= 0) {
-        return items;
-    }
-
-    const chunkedItems = [];
-
-    for (const item of items) {
-        const chunks = splitRecursive(item.text, settings.message_chunk_size, getChunkDelimiters());
-        for (const chunk of chunks) {
-            const chunkedItem = { ...item, text: chunk };
-            chunkedItems.push(chunkedItem);
-        }
-    }
-
-    return chunkedItems;
-}
-
-/**
- * Summarizes messages using the main API method.
- * @param {HashedMessage} element hashed message
- * @returns {Promise<boolean>} Success
- */
-async function summarizeMain(element) {
-    element.text = removeReasoningFromString(await generateRaw({ prompt: element.text, systemPrompt: settings.summary_prompt }));
-    return true;
-}
-
-/**
- * Summarizes messages using WebLLM.
- * @param {HashedMessage} element hashed message
- * @returns {Promise<boolean>} Success
- */
-async function summarizeWebLLM(element) {
-    if (!isWebLlmSupported()) {
-        console.warn('Vectors: WebLLM is not supported');
-        return false;
-    }
-
-    const messages = [{ role: 'system', content: settings.summary_prompt }, { role: 'user', content: element.text }];
-    element.text = removeReasoningFromString(await generateWebLlmChatPrompt(messages));
-
-    return true;
-}
-
-/**
- * Runs one summarization attempt for a single element via the chosen endpoint.
- * @param {HashedMessage} element
- * @param {string} endpoint
- * @returns {Promise<boolean>} Whether the attempt succeeded.
- */
-async function summarizeOne(element, endpoint) {
-    switch (endpoint) {
-        case 'main':
-            return await summarizeMain(element);
-        case 'webllm':
-            return await summarizeWebLLM(element);
-        default:
-            throw new Error(`Unsupported summary endpoint: ${endpoint}`, { cause: 'summary_endpoint_invalid' });
-    }
-}
-
-/**
- * Summarizes messages using the chosen method. Every returned element has been
- * summarized (via live call or cache). Throws if any element fails after
- * `settings.summary_retries` attempts.
- * @param {HashedMessage[]} hashedMessages Array of hashed messages (mutated in place)
- * @param {string} endpoint Type of endpoint to use
- * @param {Object} [options] Options for summarization behavior
- * @param {boolean} [options.skipOnFailure=false] If true, tags failed elements with `summaryFailed = true` instead of throwing
- * @returns {Promise<HashedMessage[]>} Summarized messages
- */
-async function summarize(hashedMessages, endpoint = 'main', { skipOnFailure = false } = {}) {
-    const maxAttempts = Math.max(1, Number(settings.summary_retries) || 1);
-    for (const element of hashedMessages) {
-        const cachedSummary = cachedSummaries.get(element.hash);
-        if (cachedSummary) {
-            element.text = cachedSummary;
-            continue;
-        }
-
-        let success = false;
-        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            try {
-                success = await summarizeOne(element, endpoint);
-                if (success) break;
-            } catch (error) {
-                if (FATAL_CAUSES.has(error?.cause)) throw error;
-                console.warn(`Vectors: summary attempt ${attempt}/${maxAttempts} threw for hash ${element.hash}`, error);
-            }
-            console.warn(`Vectors: summary attempt ${attempt}/${maxAttempts} failed for hash ${element.hash}`);
-        }
-        if (!success) {
-            if (skipOnFailure) {
-                console.warn(`Vectors: summarization exhausted ${maxAttempts} attempt(s) for hash ${element.hash}: marking for skip`);
-                element.summaryFailed = true;
-                continue;
-            }
-
-            throw new Error(`Summarization failed after ${maxAttempts} attempt(s)`, { cause: 'summary_failed' });
-        }
-        cachedSummaries.set(element.hash, element.text);
-    }
-    return hashedMessages;
-}
-
-async function synchronizeChat(batchSize = 5) {
-    if (!settings.enabled_chats) {
-        return -1;
-    }
-
-    try {
-        await waitUntilCondition(() => !syncBlocked && !is_send_press, 1000);
-    } catch {
-        console.log('Vectors: Synchronization blocked by another process');
-        return -1;
-    }
-
+async function synchronizeChat() {
+    if (!settings.enabled_chats || !getCurrentChatId() || syncBlocked || is_send_press) return -1;
     try {
         syncBlocked = true;
-        const context = getContext();
-        const chatId = getCurrentChatId();
-
-        if (!chatId || !Array.isArray(context.chat)) {
-            console.debug('Vectors: No chat selected');
-            return -1;
-        }
-
-        /** @type {HashedMessage[]} */
-        const hashedMessages = context.chat.filter(x => settings.keep_hidden || !x.is_system).map(x => ({ text: String(substituteParams(x.mes)), hash: getStringHash(substituteParams(x.mes)), index: context.chat.indexOf(x) }));
-        const hashesInCollection = await getSavedHashes(chatId);
-
-        const newVectorItems = hashedMessages
-            .filter(x => !hashesInCollection.includes(x.hash))
-            .filter(x => !skippedHashes.has(x.hash));
-        const deletedHashes = hashesInCollection.filter(x => !hashedMessages.some(y => y.hash === x));
-
-        let batch = newVectorItems.slice(0, batchSize);
-
-        if (settings.summarize) {
-            const minLength = Math.max(0, Number(settings.summary_threshold) || 0);
-            const toSummarize = minLength > 0 ? batch.filter(x => x.text.length >= minLength) : batch;
-            if (toSummarize.length > 0) {
-                await summarize(toSummarize, settings.summary_source, { skipOnFailure: true });
-                const failed = toSummarize.filter(x => x.summaryFailed);
-                if (failed.length > 0) {
-                    for (const item of failed) skippedHashes.add(item.hash);
-                    batch = batch.filter(x => !x.summaryFailed);
-                }
-            }
-        }
-
-        if (batch.length > 0) {
-            const chunkedBatch = splitByChunks(batch);
-
-            console.log(`Vectors: Found ${newVectorItems.length} new items. Processing ${batch.length}...`);
-            try {
-                await insertVectorItems(chatId, chunkedBatch);
-            } catch (insertError) {
-                if (FATAL_CAUSES.has(insertError?.cause)) {
-                    throw insertError;
-                }
-                console.warn('Vectors: insert failed for batch: marking for skip', insertError);
-                for (const item of batch) skippedHashes.add(item.hash);
-            }
-        }
-
-        if (deletedHashes.length > 0) {
-            await deleteVectorItems(chatId, deletedHashes);
-            console.log(`Vectors: Deleted ${deletedHashes.length} old hashes`);
-        }
-
-        return newVectorItems.length - batchSize;
+        const result = await runVectorWork('sync-chat', {}, { automatic: true });
+        return result.remaining;
     } catch (error) {
-        /**
-         * Gets the error message for a given cause
-         * @param {string} cause Error cause key
-         * @returns {string} Error message
-         */
-        const getErrorMessage = (cause) => {
-            switch (cause) {
-                case 'api_key_missing':
-                    return 'API key missing. Save it in the "API Connections" panel.';
-                case 'api_url_missing':
-                    return 'API URL missing. Save it in the "API Connections" panel.';
-                case 'api_model_missing':
-                    return 'Vectorization Source Model is required, but not set.';
-                case 'webllm_not_supported':
-                    return 'WebLLM extension is not installed or the model is not set.';
-                case 'account_id_missing':
-                    return 'Workers AI account ID is required. Save it in the "API Connections" panel.';
-                case 'summary_endpoint_invalid':
-                    return 'Summarization endpoint is not supported.';
-                case 'summary_failed':
-                    return 'Summarization failed after the configured number of retries.';
-                default:
-                    return 'Check server console for more details';
-            }
-        };
-
-        console.error('Vectors: Failed to synchronize chat', error);
-
-        const message = getErrorMessage(error.cause);
-        toastr.error(message, 'Vectorization failed', { preventDuplicates: true });
+        toastr.error(error.message, 'Vector work retained', { preventDuplicates: true });
         return null;
     } finally {
         syncBlocked = false;
@@ -530,201 +235,14 @@ function getStringHash(str) {
 }
 
 /**
- * Retrieves files from the chat and inserts them into the vector index.
- * @param {ChatMessage[]} chat Array of chat messages
- * @returns {Promise<void>}
- */
-async function processFiles(chat) {
-    try {
-        if (!settings.enabled_files) {
-            return;
-        }
-
-        const dataBankCollectionIds = await ingestDataBankAttachments();
-
-        if (dataBankCollectionIds.length) {
-            const queryText = await getQueryText(chat, 'file');
-            await injectDataBankChunks(queryText, dataBankCollectionIds);
-        }
-
-        for (const message of chat) {
-            // Message has no files
-            if (!Array.isArray(message?.extra?.files) || !message.extra.files.length) {
-                continue;
-            }
-
-            // Trim file inserted by the script
-            const allFileText = String(message.mes || '').substring(0, message.extra.fileLength).trim();
-
-            // Convert kilobytes to string length
-            const thresholdLength = settings.size_threshold * 1024;
-
-            // File is too small
-            if (allFileText.length < thresholdLength) {
-                continue;
-            }
-
-            message.mes = message.mes.substring(message.extra.fileLength);
-
-            const allFileChunks = [];
-            const queryText = await getQueryText(chat, 'file');
-
-            for (const file of message.extra.files) {
-                const fileName = file.name;
-                const fileUrl = file.url;
-                const collectionId = getFileCollectionId(fileUrl);
-                const hashesInCollection = await getSavedHashes(collectionId);
-
-                // File is not vectorized yet
-                if (!hashesInCollection.length) {
-                    const fileText = file.text || (await getFileAttachment(fileUrl));
-                    if (!fileText) {
-                        continue;
-                    }
-                    await vectorizeFile(fileText, fileName, collectionId, settings.chunk_size, settings.overlap_percent);
-                }
-
-                const fileChunks = await retrieveFileChunks(queryText, collectionId);
-                if (fileChunks) {
-                    allFileChunks.push(fileChunks);
-                }
-            }
-
-            message.mes = `${allFileChunks.join('\n\n')}\n\n${message.mes}`;
-        }
-    } catch (error) {
-        console.error('Vectors: Failed to retrieve files', error);
-    }
-}
-
-/**
  * Ensures that data bank attachments are ingested and inserted into the vector index.
  * @param {string} [source] Optional source filter for data bank attachments.
  * @returns {Promise<string[]>} Collection IDs
  */
 async function ingestDataBankAttachments(source) {
-    // Exclude disabled files
     const dataBank = source ? getDataBankAttachmentsForSource(source, false) : getDataBankAttachments(false);
-    const dataBankCollectionIds = [];
-
-    for (const file of dataBank) {
-        const collectionId = getFileCollectionId(file.url);
-        const hashesInCollection = await getSavedHashes(collectionId);
-        dataBankCollectionIds.push(collectionId);
-
-        // File is already in the collection
-        if (hashesInCollection.length) {
-            continue;
-        }
-
-        // Download and process the file
-        const fileText = await getFileAttachment(file.url);
-        console.log(`Vectors: Retrieved file ${file.name} from Data Bank`);
-        // Convert kilobytes to string length
-        const thresholdLength = settings.size_threshold_db * 1024;
-        // Use chunk size from settings if file is larger than threshold
-        const chunkSize = file.size > thresholdLength ? settings.chunk_size_db : -1;
-        await vectorizeFile(fileText, file.name, collectionId, chunkSize, settings.overlap_percent_db);
-    }
-
-    return dataBankCollectionIds;
-}
-
-/**
- * Inserts file chunks from the Data Bank into the prompt.
- * @param {string} queryText Text to query
- * @param {string[]} collectionIds File collection IDs
- * @returns {Promise<void>}
- */
-async function injectDataBankChunks(queryText, collectionIds) {
-    try {
-        const queryResults = await queryMultipleCollections(collectionIds, queryText, settings.chunk_count_db, settings.score_threshold);
-        console.debug(`Vectors: Retrieved ${collectionIds.length} Data Bank collections`, queryResults);
-        let textResult = '';
-
-        for (const collectionId in queryResults) {
-            console.debug(`Vectors: Processing Data Bank collection ${collectionId}`, queryResults[collectionId]);
-            const metadata = queryResults[collectionId].metadata?.filter(x => x.text)?.sort((a, b) => a.index - b.index)?.map(x => x.text)?.filter(onlyUnique) || [];
-            textResult += metadata.join('\n') + '\n\n';
-        }
-
-        if (!textResult) {
-            console.debug('Vectors: No Data Bank chunks found');
-            return;
-        }
-
-        const insertedText = substituteParamsExtended(settings.file_template_db, { text: textResult });
-        setExtensionPrompt(EXTENSION_PROMPT_TAG_DB, insertedText, settings.file_position_db, settings.file_depth_db, settings.include_wi, settings.file_depth_role_db);
-    } catch (error) {
-        console.error('Vectors: Failed to insert Data Bank chunks', error);
-    }
-}
-
-/**
- * Retrieves file chunks from the vector index and inserts them into the chat.
- * @param {string} queryText Text to query
- * @param {string} collectionId File collection ID
- * @returns {Promise<string>} Retrieved file text
- */
-async function retrieveFileChunks(queryText, collectionId) {
-    console.debug(`Vectors: Retrieving file chunks for collection ${collectionId}`, queryText);
-    const queryResults = await queryCollection(collectionId, queryText, settings.chunk_count);
-    console.debug(`Vectors: Retrieved ${queryResults.hashes.length} file chunks for collection ${collectionId}`, queryResults);
-    const metadata = queryResults.metadata.filter(x => x.text).sort((a, b) => a.index - b.index).map(x => x.text).filter(onlyUnique);
-    const fileText = metadata.join('\n');
-
-    return fileText;
-}
-
-/**
- * Vectorizes a file and inserts it into the vector index.
- * @param {string} fileText File text
- * @param {string} fileName File name
- * @param {string} collectionId File collection ID
- * @param {number} chunkSize Chunk size
- * @param {number} overlapPercent Overlap size (in %)
- * @returns {Promise<boolean>} True if successful, false if not
- */
-async function vectorizeFile(fileText, fileName, collectionId, chunkSize, overlapPercent) {
-    let toast = jQuery();
-
-    try {
-        if (settings.translate_files && typeof globalThis.translate === 'function') {
-            console.log(`Vectors: Translating file ${fileName} to English...`);
-            const translatedText = await globalThis.translate(fileText, 'en');
-            fileText = translatedText;
-        }
-
-        const batchSize = getBatchSize();
-        const toastBody = $('<span>').text('This may take a while. Please wait...');
-        toast = toastr.info(toastBody, `Ingesting file ${escapeHtml(fileName)}`, { closeButton: false, escapeHtml: false, timeOut: 0, extendedTimeOut: 0 });
-        const overlapSize = Math.round(chunkSize * overlapPercent / 100);
-        const delimiters = getChunkDelimiters();
-        // Overlap should not be included in chunk size. It will be later compensated by overlapChunks
-        chunkSize = overlapSize > 0 ? (chunkSize - overlapSize) : chunkSize;
-        const applyOverlap = (x, y, z) => overlapSize > 0 ? overlapChunks(x, y, z, overlapSize) : x;
-        const chunks = settings.only_custom_boundary && settings.force_chunk_delimiter
-            ? fileText.split(settings.force_chunk_delimiter).map(applyOverlap)
-            : splitRecursive(fileText, chunkSize, delimiters).map(applyOverlap);
-        console.debug(`Vectors: Split file ${fileName} into ${chunks.length} chunks with ${overlapPercent}% overlap`, chunks);
-
-        const items = chunks.map((chunk, index) => ({ hash: getStringHash(chunk), text: chunk, index: index }));
-
-        for (let i = 0; i < items.length; i += batchSize) {
-            toastBody.text(`${i}/${items.length} (${Math.round((i / items.length) * 100)}%) chunks processed`);
-            const chunkedBatch = items.slice(i, i + batchSize);
-            await insertVectorItems(collectionId, chunkedBatch);
-        }
-
-        toastr.clear(toast);
-        console.log(`Vectors: Inserted ${chunks.length} vector items for file ${fileName} into ${collectionId}`);
-        return true;
-    } catch (error) {
-        toastr.clear(toast);
-        toastr.error(String(error), 'Failed to vectorize file', { preventDuplicates: true });
-        console.error('Vectors: Failed to vectorize file', error);
-        return false;
-    }
+    const result = await runVectorWork('sync-files', { urls: dataBank.map(file => file.url), ...(source ? { scope: source } : {}) });
+    return result.collections.map(collection => collection.collectionId);
 }
 
 /**
@@ -735,118 +253,26 @@ async function vectorizeFile(fileText, fileName, collectionId, chunkSize, overla
  * @param {string} type Generation type
  */
 async function rearrangeChat(chat, _contextSize, _abort, type) {
-    try {
-        if (type === 'quiet') {
-            console.debug('Vectors: Skipping quiet prompt');
-            return;
-        }
-
-        // Clear the extension prompt
-        setExtensionPrompt(EXTENSION_PROMPT_TAG, '', settings.position, settings.depth, settings.include_wi);
-        setExtensionPrompt(EXTENSION_PROMPT_TAG_DB, '', settings.file_position_db, settings.file_depth_db, settings.include_wi, settings.file_depth_role_db);
-
-        if (settings.enabled_files) {
-            await processFiles(chat);
-        }
-
-        if (settings.enabled_world_info) {
-            await activateWorldInfo(chat);
-        }
-
-        if (!settings.enabled_chats) {
-            return;
-        }
-
-        const chatId = getCurrentChatId();
-
-        if (!chatId || !Array.isArray(chat)) {
-            console.debug('Vectors: No chat selected');
-            return;
-        }
-
-        if (chat.length < settings.protect) {
-            console.debug(`Vectors: Not enough messages to rearrange (less than ${settings.protect})`);
-            return;
-        }
-
-        const queryText = await getQueryText(chat, 'chat');
-
-        if (queryText.length === 0) {
-            console.debug('Vectors: No text to query');
-            return;
-        }
-
-        // Get the most relevant messages, excluding the last few
-        const queryResults = await queryCollection(chatId, queryText, settings.insert);
-        const queryHashes = queryResults.hashes.filter(onlyUnique);
-        const queriedMessages = [];
-        const insertedHashes = new Set();
-        const retainMessages = chat.slice(-settings.protect);
-
-        for (const message of chat) {
-            if (retainMessages.includes(message) || !message.mes) {
-                continue;
-            }
-            const hash = getStringHash(substituteParams(message.mes));
-            if (queryHashes.includes(hash) && !insertedHashes.has(hash)) {
-                queriedMessages.push(message);
-                insertedHashes.add(hash);
-            }
-        }
-
-        // Rearrange queried messages to match query order
-        // Order is reversed because more relevant are at the lower indices
-        queriedMessages.sort((a, b) => queryHashes.indexOf(getStringHash(substituteParams(b.mes))) - queryHashes.indexOf(getStringHash(substituteParams(a.mes))));
-
-        // Remove queried messages from the original chat array
-        for (const message of chat) {
-            if (queriedMessages.includes(message)) {
-                chat.splice(chat.indexOf(message), 1);
-            }
-        }
-
-        if (queriedMessages.length === 0) {
-            console.debug('Vectors: No relevant messages found');
-            return;
-        }
-
-        // Format queried messages into a single string
-        const insertedText = getPromptText(queriedMessages);
-        setExtensionPrompt(EXTENSION_PROMPT_TAG, insertedText, settings.position, settings.depth, settings.include_wi);
-    } catch (error) {
-        toastr.error('Generation interceptor aborted. Check browser console for more details.', 'Vector Storage');
-        console.error('Vectors: Failed to rearrange chat', error);
+    if (type === 'quiet' || !getCurrentChatId() || !isVectorStorageEnabled('any')) return;
+    const before = JSON.stringify(chat);
+    const result = await runVectorWork('prompt', {}, { automatic: true });
+    if (JSON.stringify(chat) !== before) throw new Error('The prompt changed while vector work was running. Its saved result has been kept.');
+    const projection = result.projection;
+    const find = target => chat.find(row => row.name === target.name && row.mes === target.original);
+    const removals = projection.removed.map(find);
+    const files = projection.files.map(item => ({ row: find(item), item }));
+    if (removals.some(row => !row) || files.some(item => !item.row)) throw new Error('A saved vector target is no longer in this prompt.');
+    setExtensionPrompt(EXTENSION_PROMPT_TAG, '', settings.position, settings.depth, settings.include_wi);
+    setExtensionPrompt(EXTENSION_PROMPT_TAG_DB, '', settings.file_position_db, settings.file_depth_db, settings.include_wi, settings.file_depth_role_db);
+    for (const extension of projection.extensions) setExtensionPrompt(extension.key, extension.value, extension.position, extension.depth, extension.scan, extension.role);
+    for (const { row, item } of files) row.mes = item.text;
+    for (const row of removals) chat.splice(chat.indexOf(row), 1);
+    if (projection.worldInfo.length) {
+        const entries = await getSortedEntries();
+        const matched = entries.filter(entry => projection.worldInfo.some(item => item.world === entry.world
+            && String(item.uid) === String(entry.uid) && item.hash === getStringHash(entry.content)));
+        await eventSource.emit(event_types.WORLDINFO_FORCE_ACTIVATE, matched);
     }
-}
-
-/**
- * @param {any[]} queriedMessages
- * @returns {string}
- */
-function getPromptText(queriedMessages) {
-    const queriedText = queriedMessages.map(x => collapseNewlines(`${x.name}: ${x.mes}`).trim()).join('\n\n');
-    console.log('Vectors: relevant past messages found.\n', queriedText);
-    return substituteParamsExtended(settings.template, { text: queriedText });
-}
-
-/**
- * Modifies text chunks to include overlap with adjacent chunks.
- * @param {string} chunk Current item
- * @param {number} index Current index
- * @param {string[]} chunks List of chunks
- * @param {number} overlapSize Size of the overlap
- * @returns {string} Overlapped chunks, with overlap trimmed to sentence boundaries
- */
-function overlapChunks(chunk, index, chunks, overlapSize) {
-    const halfOverlap = Math.floor(overlapSize / 2);
-    const nextChunk = chunks[index + 1];
-    const prevChunk = chunks[index - 1];
-
-    const nextOverlap = trimToEndSentence(nextChunk?.substring(0, halfOverlap)) || '';
-    const prevOverlap = trimToStartSentence(prevChunk?.substring(prevChunk.length - halfOverlap)) || '';
-    const overlappedChunk = [prevOverlap, chunk, nextOverlap].filter(x => x).join(' ');
-
-    return overlappedChunk;
 }
 
 globalThis.vectors_rearrangeChat = rearrangeChat;
@@ -973,303 +399,12 @@ exposeVectorStorageApi();
 const onChatEvent = debounce(async () => await moduleWorker.update(), debounce_timeout.relaxed);
 
 /**
- * Gets the text to query from the chat
- * @param {ChatMessage[]} chat Chat messages
- * @param {'file'|'chat'|'world-info'} initiator Initiator of the query
- * @returns {Promise<string>} Text to query
- */
-async function getQueryText(chat, initiator) {
-    const getTextWithoutAttachments = (x) => {
-        const fileLength = x?.extra?.fileLength || 0;
-        return String(x?.mes || '').substring(fileLength).trim();
-    };
-
-    let hashedMessages = chat
-        .map(x => ({ text: substituteParams(getTextWithoutAttachments(x)), hash: getStringHash(substituteParams(getTextWithoutAttachments(x))), index: chat.indexOf(x) }))
-        .filter(x => x.text)
-        .reverse()
-        .slice(0, settings.query);
-
-    if (initiator === 'chat' && settings.enabled_chats && settings.summarize && settings.summarize_sent) {
-        const minLength = Math.max(0, Number(settings.summary_threshold) || 0);
-        const toSummarize = minLength > 0 ? hashedMessages.filter(x => x.text.length >= minLength) : hashedMessages;
-        if (toSummarize.length > 0) {
-            await summarize(toSummarize, settings.summary_source, { skipOnFailure: true });
-        }
-    }
-
-    const queryText = hashedMessages.map(x => x.text).join('\n');
-
-    return collapseNewlines(queryText).trim();
-}
-
-/**
- * Gets common body parameters for vector requests.
- * @param {object} args Additional arguments
- * @returns {object} Request body
- */
-function getVectorsRequestBody(args = {}) {
-    const body = Object.assign({}, args);
-    switch (settings.source) {
-        case 'electronhub':
-            body.model = extension_settings.vectors.electronhub_model;
-            break;
-        case 'openrouter':
-            body.model = extension_settings.vectors.openrouter_model;
-            break;
-        case 'togetherai':
-            body.model = extension_settings.vectors.togetherai_model;
-            break;
-        case 'openai':
-            body.model = extension_settings.vectors.openai_model;
-            break;
-        case 'cohere':
-            body.model = extension_settings.vectors.cohere_model;
-            break;
-        case 'ollama':
-            body.model = extension_settings.vectors.ollama_model;
-            body.apiUrl = settings.use_alt_endpoint ? settings.alt_endpoint_url : textgenerationwebui_settings.server_urls[textgen_types.OLLAMA];
-            body.keep = !!extension_settings.vectors.ollama_keep;
-            break;
-        case 'llamacpp':
-            body.apiUrl = settings.use_alt_endpoint ? settings.alt_endpoint_url : textgenerationwebui_settings.server_urls[textgen_types.LLAMACPP];
-            break;
-        case 'vllm':
-            body.apiUrl = settings.use_alt_endpoint ? settings.alt_endpoint_url : textgenerationwebui_settings.server_urls[textgen_types.VLLM];
-            body.model = extension_settings.vectors.vllm_model;
-            break;
-        case 'webllm':
-            body.model = extension_settings.vectors.webllm_model;
-            break;
-        case 'palm':
-            body.model = extension_settings.vectors.google_model;
-            body.api = 'makersuite';
-            break;
-        case 'vertexai':
-            body.model = extension_settings.vectors.google_model;
-            body.api = 'vertexai';
-            body.vertexai_auth_mode = oai_settings.vertexai_auth_mode;
-            body.vertexai_region = oai_settings.vertexai_region;
-            body.vertexai_express_project_id = oai_settings.vertexai_express_project_id;
-            break;
-        case 'chutes':
-            body.model = extension_settings.vectors.chutes_model;
-            break;
-        case 'nanogpt':
-            body.model = extension_settings.vectors.nanogpt_model;
-            break;
-        case 'siliconflow':
-            body.model = extension_settings.vectors.siliconflow_model;
-            body.siliconflow_endpoint = oai_settings.siliconflow_endpoint;
-            break;
-        case 'workers_ai':
-            body.model = extension_settings.vectors.workers_ai_model || '@cf/baai/bge-m3';
-            body.workers_ai_account_id = oai_settings.workers_ai_account_id;
-            break;
-        default:
-            break;
-    }
-    return body;
-}
-
-/**
- * Gets additional arguments for vector requests.
- * @param {string[]} items Items to embed
- * @returns {Promise<object>} Additional arguments
- */
-async function getAdditionalArgs(items) {
-    const args = {};
-    switch (settings.source) {
-        case 'webllm':
-            args.embeddings = await createWebLlmEmbeddings(items);
-            break;
-        case 'koboldcpp': {
-            const { embeddings, model } = await createKoboldCppEmbeddings(items);
-            args.embeddings = embeddings;
-            args.model = model;
-            break;
-        }
-    }
-    return args;
-}
-
-/**
  * Gets the saved hashes for a collection
 * @param {string} collectionId
 * @returns {Promise<number[]>} Saved hashes
 */
 async function getSavedHashes(collectionId) {
-    const args = await getAdditionalArgs([]);
-    const response = await fetch('/api/vector/list', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({
-            ...getVectorsRequestBody(args),
-            collectionId: collectionId,
-            source: settings.source,
-        }),
-    });
-
-    if (!response.ok) {
-        throw new Error(`Failed to get saved hashes for collection ${collectionId}`);
-    }
-
-    const hashes = await response.json();
-    return hashes;
-}
-
-/**
- * Inserts vector items into a collection
- * @param {string} collectionId - The collection to insert into
- * @param {{ hash: number, text: string }[]} items - The items to insert
- * @returns {Promise<void>}
- */
-async function insertVectorItems(collectionId, items) {
-    throwIfSourceInvalid();
-
-    const args = await getAdditionalArgs(items.map(x => x.text));
-    const response = await fetch('/api/vector/insert', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({
-            ...getVectorsRequestBody(args),
-            collectionId: collectionId,
-            items: items,
-            source: settings.source,
-        }),
-    });
-
-    if (!response.ok) {
-        throw new Error(`Failed to insert vector items for collection ${collectionId}`);
-    }
-}
-
-/**
- * Throws an error if the source is invalid (missing API key or URL, or missing module)
- */
-function throwIfSourceInvalid() {
-    if (settings.source === 'openai' && !secret_state[SECRET_KEYS.OPENAI] ||
-        settings.source === 'electronhub' && !secret_state[SECRET_KEYS.ELECTRONHUB] ||
-        settings.source === 'chutes' && !secret_state[SECRET_KEYS.CHUTES] ||
-        settings.source === 'nanogpt' && !secret_state[SECRET_KEYS.NANOGPT] ||
-        settings.source === 'openrouter' && !secret_state[SECRET_KEYS.OPENROUTER] ||
-        settings.source === 'palm' && !secret_state[SECRET_KEYS.MAKERSUITE] ||
-        settings.source === 'vertexai' && !secret_state[SECRET_KEYS.VERTEXAI] && !secret_state[SECRET_KEYS.VERTEXAI_SERVICE_ACCOUNT] ||
-        settings.source === 'mistral' && !secret_state[SECRET_KEYS.MISTRALAI] ||
-        settings.source === 'togetherai' && !secret_state[SECRET_KEYS.TOGETHERAI] ||
-        settings.source === 'nomicai' && !secret_state[SECRET_KEYS.NOMICAI] ||
-        settings.source === 'cohere' && !secret_state[SECRET_KEYS.COHERE] ||
-        settings.source === 'workers_ai' && !secret_state[SECRET_KEYS.WORKERS_AI] ||
-        settings.source === 'siliconflow' && !secret_state[SECRET_KEYS.SILICONFLOW]) {
-        throw new Error('Vectors: API key missing', { cause: 'api_key_missing' });
-    }
-
-    if (vectorApiRequiresUrl.includes(settings.source) && settings.use_alt_endpoint) {
-        if (!settings.alt_endpoint_url) {
-            throw new Error('Vectors: API URL missing', { cause: 'api_url_missing' });
-        }
-    } else {
-        if (settings.source === 'ollama' && !textgenerationwebui_settings.server_urls[textgen_types.OLLAMA] ||
-            settings.source === 'vllm' && !textgenerationwebui_settings.server_urls[textgen_types.VLLM] ||
-            settings.source === 'koboldcpp' && !textgenerationwebui_settings.server_urls[textgen_types.KOBOLDCPP] ||
-            settings.source === 'llamacpp' && !textgenerationwebui_settings.server_urls[textgen_types.LLAMACPP]) {
-            throw new Error('Vectors: API URL missing', { cause: 'api_url_missing' });
-        }
-    }
-
-    if (settings.source === 'ollama' && !settings.ollama_model || settings.source === 'vllm' && !settings.vllm_model) {
-        throw new Error('Vectors: API model missing', { cause: 'api_model_missing' });
-    }
-
-    if (settings.source === 'webllm' && (!isWebLlmSupported() || !settings.webllm_model)) {
-        throw new Error('Vectors: WebLLM is not supported', { cause: 'webllm_not_supported' });
-    }
-
-    if (settings.source === 'workers_ai' && !oai_settings.workers_ai_account_id) {
-        throw new Error('Vectors: Workers AI account ID missing', { cause: 'account_id_missing' });
-    }
-}
-
-/**
- * Deletes vector items from a collection
- * @param {string} collectionId - The collection to delete from
- * @param {number[]} hashes - The hashes of the items to delete
- * @returns {Promise<void>}
- */
-async function deleteVectorItems(collectionId, hashes) {
-    const args = await getAdditionalArgs([]);
-    const response = await fetch('/api/vector/delete', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({
-            ...getVectorsRequestBody(args),
-            collectionId: collectionId,
-            hashes: hashes,
-            source: settings.source,
-        }),
-    });
-
-    if (!response.ok) {
-        throw new Error(`Failed to delete vector items for collection ${collectionId}`);
-    }
-}
-
-/**
- * @param {string} collectionId - The collection to query
- * @param {string} searchText - The text to query
- * @param {number} topK - The number of results to return
- * @returns {Promise<{ hashes: number[], metadata: object[]}>} - Hashes of the results
- */
-async function queryCollection(collectionId, searchText, topK) {
-    const args = await getAdditionalArgs([searchText]);
-    const response = await fetch('/api/vector/query', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({
-            ...getVectorsRequestBody(args),
-            collectionId: collectionId,
-            searchText: searchText,
-            topK: topK,
-            source: settings.source,
-            threshold: settings.score_threshold,
-        }),
-    });
-
-    if (!response.ok) {
-        throw new Error(`Failed to query collection ${collectionId}`);
-    }
-
-    return await response.json();
-}
-
-/**
- * Queries multiple collections for a given text.
- * @param {string[]} collectionIds - Collection IDs to query
- * @param {string} searchText - Text to query
- * @param {number} topK - Number of results to return
- * @param {number} threshold - Score threshold
- * @returns {Promise<Record<string, { hashes: number[], metadata: object[] }>>} - Results mapped to collection IDs
- */
-async function queryMultipleCollections(collectionIds, searchText, topK, threshold) {
-    const args = await getAdditionalArgs([searchText]);
-    const response = await fetch('/api/vector/query-multi', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({
-            ...getVectorsRequestBody(args),
-            collectionIds: collectionIds,
-            searchText: searchText,
-            topK: topK,
-            source: settings.source,
-            threshold: threshold ?? settings.score_threshold,
-        }),
-    });
-
-    if (!response.ok) {
-        throw new Error('Failed to query multiple collections');
-    }
-
-    return await response.json();
+    return (await runVectorWork('list', { collectionIds: [collectionId] }))[collectionId] || [];
 }
 
 /**
@@ -1285,18 +420,7 @@ async function purgeFileVectorIndex(fileUrl) {
         console.log(`Vectors: Purging file vector index for ${fileUrl}`);
         const collectionId = getFileCollectionId(fileUrl);
 
-        const response = await fetch('/api/vector/purge', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({
-                ...getVectorsRequestBody(),
-                collectionId: collectionId,
-            }),
-        });
-
-        if (!response.ok) {
-            throw new Error(`Could not delete vector index for collection ${collectionId}`);
-        }
+        await runVectorWork('purge', { collectionIds: [collectionId] });
 
         console.log(`Vectors: Purged vector index for collection ${collectionId}`);
     } catch (error) {
@@ -1315,18 +439,7 @@ async function purgeVectorIndex(collectionId) {
             return true;
         }
 
-        const response = await fetch('/api/vector/purge', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({
-                ...getVectorsRequestBody(),
-                collectionId: collectionId,
-            }),
-        });
-
-        if (!response.ok) {
-            throw new Error(`Could not delete vector index for collection ${collectionId}`);
-        }
+        await runVectorWork('purge', { collectionIds: [collectionId] });
 
         console.log(`Vectors: Purged vector index for collection ${collectionId}`);
         return true;
@@ -1341,17 +454,7 @@ async function purgeVectorIndex(collectionId) {
  */
 async function purgeAllVectorIndexes() {
     try {
-        const response = await fetch('/api/vector/purge-all', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({
-                ...getVectorsRequestBody(),
-            }),
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to purge all vector indexes');
-        }
+        await runVectorWork('purge');
 
         console.log('Vectors: Purged all vector indexes');
         toastr.success('All vector indexes purged', 'Purge successful');
@@ -1499,64 +602,6 @@ function loadWebLlmModels() {
     });
 }
 
-/**
- * Creates WebLLM embeddings for a list of items.
- * @param {string[]} items Items to embed
- * @returns {Promise<Record<string, number[]>>} Calculated embeddings
- */
-async function createWebLlmEmbeddings(items) {
-    if (items.length === 0) {
-        return /** @type {Record<string, number[]>} */ ({});
-    }
-    return executeWithWebLlmErrorHandling(async () => {
-        const embeddings = await webllmProvider.embedTexts(items, settings.webllm_model);
-        const result = /** @type {Record<string, number[]>} */ ({});
-        for (let i = 0; i < items.length; i++) {
-            result[items[i]] = embeddings[i];
-        }
-        return result;
-    });
-}
-
-/**
- * Creates KoboldCpp embeddings for a list of items.
- * @param {string[]} items Items to embed
- * @returns {Promise<{embeddings: Record<string, number[]>, model: string}>} Calculated embeddings
- */
-async function createKoboldCppEmbeddings(items) {
-    const response = await fetch('/api/backends/kobold/embed', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({
-            items: items,
-            server: settings.use_alt_endpoint ? settings.alt_endpoint_url : textgenerationwebui_settings.server_urls[textgen_types.KOBOLDCPP],
-        }),
-    });
-
-    if (!response.ok) {
-        throw new Error('Failed to get KoboldCpp embeddings');
-    }
-
-    const data = await response.json();
-    if (!Array.isArray(data.embeddings) || !data.model || data.embeddings.length !== items.length) {
-        throw new Error('Invalid response from KoboldCpp embeddings');
-    }
-
-    const embeddings = /** @type {Record<string, number[]>} */ ({});
-    for (let i = 0; i < data.embeddings.length; i++) {
-        if (!Array.isArray(data.embeddings[i]) || data.embeddings[i].length === 0) {
-            throw new Error('KoboldCpp returned an empty embedding. Reduce the chunk size and/or size threshold and try again.');
-        }
-
-        embeddings[items[i]] = data.embeddings[i];
-    }
-
-    return {
-        embeddings: embeddings,
-        model: data.model,
-    };
-}
-
 async function onPurgeClick() {
     const chatId = getCurrentChatId();
     if (!chatId) {
@@ -1600,78 +645,10 @@ async function onViewStatsClick() {
 
 async function onVectorizeAllFilesClick() {
     try {
-        const dataBank = getDataBankAttachments();
-        const chatAttachments = getContext().chat.filter(x => Array.isArray(x.extra?.files)).map(x => x.extra.files).flat();
-        const allFiles = [...dataBank, ...chatAttachments];
-
-        /**
-         * Gets the chunk size for a file attachment.
-         * @param file {import('../../chats.js').FileAttachment} File attachment
-         * @returns {number} Chunk size for the file
-         */
-        const getChunkSize = (file) => {
-            if (chatAttachments.includes(file)) {
-                // Convert kilobytes to string length
-                const thresholdLength = settings.size_threshold * 1024;
-                return file.size > thresholdLength ? settings.chunk_size : -1;
-            }
-
-            if (dataBank.includes(file)) {
-                // Convert kilobytes to string length
-                const thresholdLength = settings.size_threshold_db * 1024;
-                // Use chunk size from settings if file is larger than threshold
-                return file.size > thresholdLength ? settings.chunk_size_db : -1;
-            }
-
-            return -1;
-        };
-
-        /**
-         * Gets the overlap percent for a file attachment.
-         * @param file {import('../../chats.js').FileAttachment} File attachment
-         * @returns {number} Overlap percent for the file
-         */
-        const getOverlapPercent = (file) => {
-            if (chatAttachments.includes(file)) {
-                return settings.overlap_percent;
-            }
-
-            if (dataBank.includes(file)) {
-                return settings.overlap_percent_db;
-            }
-
-            return 0;
-        };
-
-        let allSuccess = true;
-
-        for (const file of allFiles) {
-            const text = await getFileAttachment(file.url);
-            const collectionId = getFileCollectionId(file.url);
-            const hashes = await getSavedHashes(collectionId);
-
-            if (hashes.length) {
-                console.log(`Vectors: File ${file.name} is already vectorized`);
-                continue;
-            }
-
-            const chunkSize = getChunkSize(file);
-            const overlapPercent = getOverlapPercent(file);
-            const result = await vectorizeFile(text, file.name, collectionId, chunkSize, overlapPercent);
-
-            if (!result) {
-                allSuccess = false;
-            }
-        }
-
-        if (allSuccess) {
-            toastr.success('All files vectorized', 'Vectorization successful');
-        } else {
-            toastr.warning('Some files failed to vectorize. Check browser console for more details.', 'Vector Storage');
-        }
+        await runVectorWork('sync-files');
+        toastr.success('All selected saved files indexed.', 'Vector Storage');
     } catch (error) {
-        console.error('Vectors: Failed to vectorize all files', error);
-        toastr.error('Failed to vectorize all files', 'Vectorization failed');
+        toastr.error(error.message, 'Vector work retained');
     }
 }
 
@@ -1681,120 +658,13 @@ async function onPurgeFilesClick() {
         const chatAttachments = getContext().chat.filter(x => Array.isArray(x.extra?.files)).map(x => x.extra.files).flat();
         const allFiles = [...dataBank, ...chatAttachments];
 
-        for (const file of allFiles) {
-            await purgeFileVectorIndex(file.url);
-        }
+        await runVectorWork('purge', { collectionIds: allFiles.map(file => getFileCollectionId(file.url)).filter(onlyUnique) });
 
         toastr.success('All files purged', 'Purge successful');
     } catch (error) {
         console.error('Vectors: Failed to purge all files', error);
         toastr.error('Failed to purge all files', 'Purge failed');
     }
-}
-
-async function activateWorldInfo(chat) {
-    if (!settings.enabled_world_info) {
-        console.debug('Vectors: Disabled for World Info');
-        return;
-    }
-
-    const entries = await getSortedEntries();
-
-    if (!Array.isArray(entries) || entries.length === 0) {
-        console.debug('Vectors: No WI entries found');
-        return;
-    }
-
-    // Group entries by "world" field
-    const groupedEntries = {};
-
-    for (const entry of entries) {
-        // Skip orphaned entries. Is it even possible?
-        if (!entry.world) {
-            console.debug('Vectors: Skipped orphaned WI entry', entry);
-            continue;
-        }
-
-        // Skip disabled entries
-        if (entry.disable) {
-            console.debug('Vectors: Skipped disabled WI entry', entry);
-            continue;
-        }
-
-        // Skip entries without content
-        if (!entry.content) {
-            console.debug('Vectors: Skipped WI entry without content', entry);
-            continue;
-        }
-
-        // Skip non-vectorized entries
-        if (!entry.vectorized && !settings.enabled_for_all) {
-            console.debug('Vectors: Skipped non-vectorized WI entry', entry);
-            continue;
-        }
-
-        if (!Object.hasOwn(groupedEntries, entry.world)) {
-            groupedEntries[entry.world] = [];
-        }
-
-        groupedEntries[entry.world].push(entry);
-    }
-
-    const collectionIds = [];
-
-    if (Object.keys(groupedEntries).length === 0) {
-        console.debug('Vectors: No WI entries to synchronize');
-        return;
-    }
-
-    // Synchronize collections
-    for (const world in groupedEntries) {
-        const collectionId = `world_${getStringHash(world)}`;
-        const hashesInCollection = await getSavedHashes(collectionId);
-        const newEntries = groupedEntries[world].filter(x => !hashesInCollection.includes(getStringHash(x.content)));
-        const deletedHashes = hashesInCollection.filter(x => !groupedEntries[world].some(y => getStringHash(y.content) === x));
-
-        if (newEntries.length > 0) {
-            console.log(`Vectors: Found ${newEntries.length} new WI entries for world ${world}`);
-            await insertVectorItems(collectionId, newEntries.map(x => ({ hash: getStringHash(x.content), text: x.content, index: x.uid })));
-        }
-
-        if (deletedHashes.length > 0) {
-            console.log(`Vectors: Deleted ${deletedHashes.length} old hashes for world ${world}`);
-            await deleteVectorItems(collectionId, deletedHashes);
-        }
-
-        collectionIds.push(collectionId);
-    }
-
-    // Perform a multi-query
-    const queryText = await getQueryText(chat, 'world-info');
-
-    if (queryText.length === 0) {
-        console.debug('Vectors: No text to query for WI');
-        return;
-    }
-
-    const queryResults = await queryMultipleCollections(collectionIds, queryText, settings.max_entries, settings.score_threshold);
-    const activatedHashes = Object.values(queryResults).flatMap(x => x.hashes).filter(onlyUnique);
-    const activatedEntries = [];
-
-    // Activate entries found in the query results
-    for (const entry of entries) {
-        const hash = getStringHash(entry.content);
-
-        if (activatedHashes.includes(hash)) {
-            activatedEntries.push(entry);
-        }
-    }
-
-    if (activatedEntries.length === 0) {
-        console.debug('Vectors: No activated WI entries found');
-        return;
-    }
-
-    console.log(`Vectors: Activated ${activatedEntries.length} WI entries`, activatedEntries);
-    await eventSource.emit(event_types.WORLDINFO_FORCE_ACTIVATE, activatedEntries);
 }
 
 export async function init() {
@@ -1810,6 +680,7 @@ export async function init() {
 
     const template = await renderExtensionTemplateAsync(MODULE_NAME, 'settings');
     $('#vectors_container').append(template);
+    mountSavedVectorWork(document.querySelector('#vectors_container .inline-drawer-content') || document.querySelector('#vectors_container'));
     const migratedSources = normalizeVectorSources(settings, Array.from(document.querySelectorAll('#vectors_source option'), option => option.value));
     stripLegacyVectorEnabledSetting(savedVectorSettings);
     Object.assign(savedVectorSettings, getPersistableVectorSettings(settings));
@@ -2186,9 +1057,7 @@ export async function init() {
         callback: async () => {
             const dataBank = getDataBankAttachments();
 
-            for (const file of dataBank) {
-                await purgeFileVectorIndex(file.url);
-            }
+            await runVectorWork('purge', { collectionIds: dataBank.map(file => getFileCollectionId(file.url)).filter(onlyUnique) });
 
             return '';
         },
@@ -2205,8 +1074,9 @@ export async function init() {
             const count = validateCount(Number(args?.count)) ?? settings.chunk_count_db;
             const source = String(args?.source ?? '');
             const attachments = source ? getDataBankAttachmentsForSource(source, false) : getDataBankAttachments(false);
-            const collectionIds = await ingestDataBankAttachments(String(source));
-            const queryResults = await queryMultipleCollections(collectionIds, String(query), count, threshold);
+            const result = await runVectorWork('sync-files', { urls: attachments.map(file => file.url),
+                ...(source ? { scope: source } : {}), query: String(query), topK: count, threshold });
+            const queryResults = result.query || {};
 
             // Get URLs
             const urls = Object

@@ -14,7 +14,7 @@ const { readArtifact, writeArtifact, providerStep } = await import('../src/jobs/
 const { getJob, updateJob, markProviderUncertain } = await import('../src/jobs/store.js');
 const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
 const { write: writeCard } = await import('../src/character-card-parser.js');
-const { initialiseRoleplayAccount } = await import('../src/roleplay-store.js');
+const { initialiseRoleplayAccount, resetRoleplayAccount, settleRoleplayAccountReset, roleplayStoreDirectory } = await import('../src/roleplay-store.js');
 const { meowerMacros, checkMeowerReceipts, receiptKey, RECEIPT_LIMIT } = await import('../src/generation/meower-plan.js');
 const { createMacroEnvironment } = await import('../src/macros/index.js');
 after(() => cancelAutoSaves());
@@ -37,6 +37,7 @@ async function fixture(owner = 'tester', options = {}) {
         power_user: { personas: { 'user.png': 'User' }, persona_descriptions: { 'user.png': { description: 'A botanist.', appendices: [{ id: 'note', name: 'Test', description: 'Growing roses.' }] } } },
         extension_settings: { connectionManager: { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o' }] } },
         oai_settings: { chat_completion_source: 'openai' } }));
+    initialiseRoleplayAccount({ owner, directories });
     await mutateMeowerStore(directories, owner, store => {
         store.settings = normalizeSettings({ profileId: 'saved', profiles: { 'character:nova.png': { name: 'Nova', handle: 'nova', bio: 'Space', location: 'Moon' } },
             incremental: true, quotas: { posts: 1, replies: 0, reposts: 0, likes: 0 }, ...options });
@@ -44,7 +45,6 @@ async function fixture(owner = 'tester', options = {}) {
         store.feeds.one = { version: 1, epoch: 'original', posts: [], interactions: [] };
     });
     const request = { user: { profile: { handle: owner }, directories } };
-    initialiseRoleplayAccount({ owner, directories });
     const body = { sessionId: 'one', submissionKey: 'submit-1' };
     const accepted = await acceptMeowerJob(request, body);
     const context = { owner, directories, job: accepted.job, signal: new AbortController().signal,
@@ -54,6 +54,82 @@ async function fixture(owner = 'tester', options = {}) {
 
 const postText = JSON.stringify({ posts: [{ authorHandle: 'nova', tempId: 'post1', content: 'Moon garden', imagePrompt: null }], interactions: [], follows: [], strangers: [], trends: [] });
 const getFeed = async fixture => (await readMeowerStore(fixture.directories, fixture.owner)).store.feeds.one;
+
+test('account reset retains Meower completion proof without retaining deleted feed content', async () => {
+    const f = await fixture();
+    let calls = 0;
+    await createMeowerJobHandler({ generate: async () => { calls++; return { text: postText }; } })(f.context);
+    const base = { owner: f.owner, directories: f.directories };
+    resetRoleplayAccount(base, null, 'reset');
+    assert.equal(fs.existsSync(path.join(f.directories.root, 'hopper')), false);
+    const archive = path.join(roleplayStoreDirectory(base), 'meower-receipts');
+    const saved = fs.readFileSync(path.join(archive, fs.readdirSync(archive)[0]), 'utf8');
+    assert.equal(JSON.parse(saved).receipts[receiptKey(f.owner, f.body.submissionKey)].closed, true);
+    assert.equal(saved.includes('Moon garden'), false, 'retained receipts do not keep the deleted post text');
+    assert.equal(getJob(f.directories, f.context.job.id), null);
+    await assert.rejects(acceptMeowerJob(f.request, f.body), /accepted before.*reset.*not be repeated/);
+    assert.equal(calls, 1);
+});
+
+test('a delayed Meower writer cannot publish or remove a replacement lock after account reset', async () => {
+    const f = await fixture();
+    let release;
+    let entered;
+    const gate = new Promise(resolve => { release = resolve; });
+    const inside = new Promise(resolve => { entered = resolve; });
+    const mutation = mutateMeowerStore(f.directories, f.owner, async store => {
+        entered();
+        await gate;
+        store.settings.sessions.one.name = 'Old delayed edit';
+    });
+    const rejected = assert.rejects(mutation, /account or its saved data was replaced/i);
+    await inside;
+    resetRoleplayAccount({ owner: f.owner, directories: f.directories }, null, 'reset');
+    const replacementLock = path.join(f.directories.root, 'hopper/store.lock');
+    fs.mkdirSync(replacementLock, { recursive: true });
+    fs.writeFileSync(path.join(replacementLock, 'owner.json'), 'replacement lock');
+    release();
+    await rejected;
+    assert.equal(fs.readFileSync(path.join(replacementLock, 'owner.json'), 'utf8'), 'replacement lock');
+    assert.equal(fs.existsSync(path.join(f.directories.root, 'hopper/store.json')), false);
+});
+
+test('an interrupted purge recovers from the durable Meower receipt checkpoint after the feed was removed', async () => {
+    const f = await fixture();
+    await createMeowerJobHandler({ generate: async () => ({ text: postText }) })(f.context);
+    const base = { owner: f.owner, directories: f.directories };
+    const remove = fs.rmSync;
+    let interrupted = false;
+    try {
+        fs.rmSync = (filename, options) => {
+            remove(filename, options);
+            if (!interrupted && filename === path.join(f.directories.root, 'hopper')) {
+                interrupted = true;
+                throw new Error('Simulated stop after feed removal');
+            }
+        };
+        assert.throws(() => resetRoleplayAccount(base, null, 'purge'), /Simulated stop/);
+    } finally { fs.rmSync = remove; }
+    assert.equal(settleRoleplayAccountReset(base), null);
+    const archive = path.join(roleplayStoreDirectory(base), 'meower-receipts');
+    const names = fs.readdirSync(archive);
+    assert.equal(names.length, 1);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(archive, names[0]), 'utf8')).receipts[receiptKey(f.owner, f.body.submissionKey)].closed, true);
+});
+
+test('damaged retired Meower evidence blocks a later reset before deleting replacement data', async () => {
+    const f = await fixture();
+    const base = { owner: f.owner, directories: f.directories };
+    resetRoleplayAccount(base, null, 'reset');
+    const archive = path.join(roleplayStoreDirectory(base), 'meower-receipts');
+    const filename = path.join(archive, fs.readdirSync(archive)[0]);
+    fs.writeFileSync(filename, '{damaged');
+    const replacement = path.join(f.directories.root, 'replacement.txt');
+    fs.writeFileSync(replacement, 'Keep this new data');
+    assert.throws(() => resetRoleplayAccount(base, null, 'reset'), /Meower receipts are unreadable/);
+    assert.equal(fs.readFileSync(replacement, 'utf8'), 'Keep this new data');
+    assert.equal(fs.readFileSync(filename, 'utf8'), '{damaged');
+});
 
 test('native snapshots merge saved activity and profiles without discarding local edits', async () => {
     const f = await fixture();

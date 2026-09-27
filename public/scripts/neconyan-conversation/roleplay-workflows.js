@@ -12,7 +12,7 @@
  * reads its permanent receipt back rather than submitting anything again.
  */
 import { activateSendButtons, chat, deactivateSendButtons, extension_prompts, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, reloadCurrentChat, saveChatConditional, saveSettings, substituteParams, willRunNativeRoleplayWorkflow } from '../../script.js';
-import { activeGenerationInterceptors, extension_settings } from '../extensions.js';
+import { activeGenerationInterceptors } from '../extensions.js';
 import { cancelJob, listJobs, observeJob, TERMINAL } from '../jobs.js';
 import { roleplayAccountStamp } from '../roleplay-save-chain.js';
 import { getCurrentUserHandle } from '../user.js';
@@ -146,10 +146,10 @@ function storyPrompt() {
 }
 
 /** Prompts the server rebuilds itself from the saved chat, card, persona and lorebooks. */
-const SERVER_PROMPT_KEYS = new Set(['2_floating_prompt', 'PERSONA_DESCRIPTION', '__STORY_STRING__', 'QUIET_PROMPT']);
+const SERVER_PROMPT_KEYS = new Set(['2_floating_prompt', 'PERSONA_DESCRIPTION', '__STORY_STRING__', 'QUIET_PROMPT', '3_vectors', '4_vectors_data_bank']);
 const SERVER_PROMPT_PREFIXES = ['DEPTH_PROMPT', 'customDepthWI', 'customWIOutlet_'];
 /** Prompts written by work the server decides itself; text from them has no faithful page copy. */
-const POLICY_PROMPT_PREFIXES = ['inchat_agent_', 'pathfinder_', '3_vectors', '4_vectors_data_bank'];
+const POLICY_PROMPT_PREFIXES = ['inchat_agent_', 'pathfinder_'];
 const PAGE_KEY = /^[a-zA-Z0-9_-]{1,120}$/;
 const PAGE_ROLES = ['system', 'user', 'assistant'];
 const MAX_PAGE_PROMPTS = 32;
@@ -170,8 +170,6 @@ export async function capturePagePrompts(name) {
             continue;
         }
         if (interceptor.key === 'vectors_rearrangeChat') {
-            const vectors = extension_settings.vectors ?? {};
-            if (vectors.enabled_chats || vectors.enabled_files) return null;
             continue;
         }
         return null;
@@ -226,8 +224,8 @@ function createKey(name) {
     return `roleplay-workflow:${name}:${random}`;
 }
 
-async function postSubmission(payload, account) {
-    const response = await fetch('/api/roleplay/workflow/submit', {
+async function postSubmission(payload, account, url = '/api/roleplay/workflow/submit') {
+    const response = await fetch(url, {
         method: 'POST',
         credentials: 'same-origin',
         headers: { ...getRequestHeaders(), 'Content-Type': 'application/json', 'X-Neconyan-Account': account },
@@ -271,7 +269,9 @@ async function readback(key, name, { locator, account }) {
             return null;
         }
         const current = currentLocator();
-        if (current && locator && current.chat === locator.chat && current.avatar === locator.avatar) {
+        const sameGroup = locator?.group && !getCurrentCharAvatar()
+            && String(getCurrentChatId() || '').replace(/\.jsonl$/, '') === locator.chat;
+        if (sameGroup || (current && locator && current.chat === locator.chat && current.avatar === locator.avatar)) {
             await reloadCurrentChat();
         }
         announce({ key, name, state: receipt.state, result: receipt.result ?? null, jobId: receipt.jobId });
@@ -287,7 +287,22 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, account 
     if (!jobId || observed.has(jobId)) return;
     const stop = observeJob(jobId, {
         account,
-        onSnapshot: () => {},
+        onSnapshot: async root => {
+            if (root.state !== 'waiting' || !root.children?.length) return;
+            const jobs = new Map((await listJobs({ account })).map(job => [job.id, job]));
+            const pending = [root];
+            const seen = new Set();
+            const { serviceVectorBrowserWork } = await import('../extensions/vectors/native.js');
+            for (const job of pending) {
+                if (seen.has(job.id)) continue;
+                seen.add(job.id);
+                if (job.type === 'operations.vectors') await serviceVectorBrowserWork(job);
+                for (const id of job.children ?? []) {
+                    const child = jobs.get(id);
+                    if (child?.parentId === job.id && child.owner === account) pending.push(child);
+                }
+            }
+        },
         onStop: async (reason) => {
             observed.delete(jobId);
             if (reason !== 'done' && reason !== 'stopped') {
@@ -386,6 +401,41 @@ export async function submitRoleplayWorkflow({ name, intent: named = {}, page = 
     if (accepted?.jobId) observeRoleplayWorkflowJob(accepted.jobId, { key: payload.key, name, locator, account });
     if (accepted?.result) void readback(payload.key, name, { locator, account });
     return { ...accepted, key: payload.key, finished };
+}
+
+/**
+ * Submit one whole group turn. The page has already chosen the speakers exactly as
+ * the group settings say and saved the user's message, so the server receives the
+ * saved chat, the chosen speakers in order and the batch id. It then writes every
+ * speaker's reply itself, so closing the page does not stop the turn. The call
+ * resolves once the durable write has been read back; stopping cancels the job.
+ */
+export async function submitRoleplayGroupTurn({ groupId, forcedAvatars, generationId, signal = null, account = getCurrentUserHandle() }) {
+    const chatName = String(getCurrentChatId() || '').replace(/\.jsonl$/, '');
+    if (!chatName || !groupId) throw new Error('Open a saved group chat before generating.');
+    const locator = { chat: chatName, group: true };
+    const stamp = roleplayAccountStamp().account;
+    const payload = {
+        key: createKey('group.reply'),
+        source: { locator: { ...locator, groupId: String(groupId) } },
+        messageCount: chat.length,
+        forcedAvatars,
+        generationId,
+        account: stamp,
+        acknowledgement: { account, settingsRevision: await acknowledgedSettingsRevision() },
+    };
+    const finished = awaitFinished(payload.key);
+    await saveChatConditional({ throwOnError: true, account });
+    const accepted = await postSubmission({ ...payload, name: 'group.reply' }, account, '/api/roleplay/group/submit');
+    const onAbort = () => { if (accepted?.jobId) void cancelJob(accepted.jobId, { reason: 'user_cancelled' }).catch(() => {}); };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    try {
+        if (accepted?.jobId) observeRoleplayWorkflowJob(accepted.jobId, { key: payload.key, name: 'group.reply', locator, account });
+        else void readback(payload.key, 'group.reply', { locator, account });
+        return await finished;
+    } finally {
+        signal?.removeEventListener('abort', onAbort);
+    }
 }
 
 /**

@@ -5,15 +5,20 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { initialiseRoleplayAccount } from '../src/roleplay-store.js';
 import { info, init as initHopper, mutateMeowerStore, readMeowerStore } from '../public/scripts/extensions/third-party/Neconyan-Hopper/server/index.js';
 
 const temporaryDirectories = [];
 function privateDirectory() {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-native-storage-'));
-    temporaryDirectories.push(root);
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-native-storage-'));
+    temporaryDirectories.push(parent);
+    const root = path.join(parent, 'native-test');
+    fs.mkdirSync(root);
     const files = path.join(root, 'files');
     fs.mkdirSync(files);
-    return { root, files };
+    const directories = { root, files };
+    initialiseRoleplayAccount({ owner: 'native-test', directories });
+    return directories;
 }
 
 afterEach(() => {

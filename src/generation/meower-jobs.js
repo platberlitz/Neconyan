@@ -2,7 +2,8 @@ import { hash } from '../mewmory/core.js';
 import { acceptJob, getJob, listJobs, releaseJob, validateOwner } from '../jobs/store.js';
 import { createProviderScope, readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
-import { withRoleplayAccount } from '../roleplay-store.js';
+import { readRoleplayFile, roleplayStoreDirectory, withRoleplayAccount } from '../roleplay-store.js';
+import { findRetiredMeowerReceipt } from '../meower-retirement.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { runChatProfile } from './service.js';
 import { generateQuickImageGenJobImage } from './quick-image-gen-job.js';
@@ -43,6 +44,7 @@ export async function finalizeMeowerSubmission(context) {
     const plan = job.intent?.plan;
     if (!plan || hash(plan) !== job.config?.planHash) throw meowerError('The accepted Meower plan needs recovery.');
     await mutateMeowerStore(directories, owner, (store, receipts) => {
+        withRoleplayAccount({ owner, directories }, plan.account, () => {});
         const key = keyFor(context);
         if (receipts[key]) { receiptFor(context, receipts); return { unchanged: true }; }
         checkMeowerReceipts(receipts, RECEIPT_LIMIT);
@@ -64,8 +66,14 @@ export async function acceptMeowerJob(request, body = {}, kind = 'refresh') {
     const input = meowerInput(body, kind);
     const requestHash = hash(input);
     const key = receiptKey(owner, body.submissionKey);
+    const base = { owner, directories };
+    withRoleplayAccount(base, null, (_lease, account) => {
+        if (findRetiredMeowerReceipt(roleplayStoreDirectory(base), account, key, readRoleplayFile)) {
+            throw meowerError('This Meower operation was accepted before the account data was reset. It will not be repeated.');
+        }
+    });
     let accepted;
-    await mutateMeowerStore(directories, owner, async (store, receipts) => {
+    await mutateMeowerStore(directories, owner, async (store, receipts, account) => {
         checkMeowerReceipts(receipts);
         const prior = receipts[key];
         const existing = prior ? getJob(directories, prior.jobId) : listJobs(directories, { owner, includeDismissed: true }).find(job => job.submissionKey === body.submissionKey);
@@ -78,9 +86,14 @@ export async function acceptMeowerJob(request, body = {}, kind = 'refresh') {
         checkMeowerReceipts(receipts, RECEIPT_LIMIT);
         const plan = await captureMeowerPlan({ owner, directories }, store, input);
         const planHash = hash(plan);
-        accepted = acceptJob(directories, { owner, type: `meower.${kind}`, submissionKey: body.submissionKey,
-            intent: { requestHash, plan }, target: { kind: 'meower', id: input.sessionId }, config: { planHash },
-            credentialRef: plan.binding, mutating: true, paused: true, label: kind === 'refresh' ? 'Meower refresh' : 'Meower profiles' });
+        accepted = withRoleplayAccount(base, account, () => {
+            if (findRetiredMeowerReceipt(roleplayStoreDirectory(base), account, key, readRoleplayFile)) {
+                throw meowerError('This Meower operation was accepted before the account data was reset. It will not be repeated.');
+            }
+            return acceptJob(directories, { owner, type: `meower.${kind}`, submissionKey: body.submissionKey,
+                intent: { requestHash, plan }, target: { kind: 'meower', id: input.sessionId }, config: { planHash },
+                credentialRef: plan.binding, mutating: true, paused: true, label: kind === 'refresh' ? 'Meower refresh' : 'Meower profiles' });
+        });
         receipts[key] = { version: 1, jobId: accepted.job.id, requestHash, planHash, units: {}, closed: false };
     });
     noteOwner(owner);

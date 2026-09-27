@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
 import { SECRET_KEYS, readSecret } from '../endpoints/secrets.js';
-import { createSingleVectorFn } from './common.js';
+import { createSingleVectorFn, readEmbeddingResponse } from './common.js';
 
 /**
  * Gets the vector for the given text batch from an OpenAI compatible endpoint.
@@ -10,7 +10,7 @@ import { createSingleVectorFn } from './common.js';
  * @param {string} model - The model to use for the embedding
  * @returns {Promise<number[][]>} - The array of vectors for the texts
  */
-export async function getCohereBatchVector(texts, isQuery, directories, model) {
+export async function getCohereBatchVector(texts, isQuery, directories, model, { fetchImpl = fetch, signal } = {}) {
     const key = readSecret(directories, SECRET_KEYS.COHERE);
 
     if (!key) {
@@ -18,7 +18,8 @@ export async function getCohereBatchVector(texts, isQuery, directories, model) {
         throw new Error('No API key found');
     }
 
-    const response = await fetch('https://api.cohere.ai/v2/embed', {
+    const response = await fetchImpl('https://api.cohere.ai/v2/embed', {
+        signal,
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -33,14 +34,7 @@ export async function getCohereBatchVector(texts, isQuery, directories, model) {
         }),
     });
 
-    if (!response.ok) {
-        const text = await response.text();
-        console.warn('API request failed', response.statusText, text);
-        throw new Error('API request failed');
-    }
-
-    /** @type {any} */
-    const data = await response.json();
+    const data = await readEmbeddingResponse(response, 'Cohere');
     if (!Array.isArray(data?.embeddings?.float)) {
         console.warn('API response was not an array');
         throw new Error('API response was not an array');
@@ -58,4 +52,3 @@ export async function getCohereBatchVector(texts, isQuery, directories, model) {
  * @returns {Promise<number[]>} - The vector for the text
  */
 export const getCohereVector = createSingleVectorFn(getCohereBatchVector);
-

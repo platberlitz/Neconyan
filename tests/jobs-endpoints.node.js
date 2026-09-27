@@ -1,5 +1,5 @@
-/* eslint playwright/expect-expect: off -- These checks use node:assert, not Playwright assertions. */
 /* global globalThis */
+/* eslint playwright/expect-expect: off -- These checks use node:assert, not Playwright assertions. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -15,7 +15,9 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-jobs-http-'));
 globalThis.DATA_ROOT = root;
 
 const { router: jobsRouter } = await import('../src/endpoints/jobs.js');
-const { JOB_INTENT_LIMIT_BYTES, JOB_INTENT_MAX_BYTES } = await import('../src/jobs/store.js');
+const { JOB_INTENT_LIMIT_BYTES, JOB_INTENT_MAX_BYTES, acceptJob, attachOwnedChild, getJob } = await import('../src/jobs/store.js');
+const { roleplayHash } = await import('../src/roleplay-store.js');
+const { registerHandler, setDirectoriesResolver, abortJob, testExports: runner } = await import('../src/jobs/runner.js');
 const { writeArtifact } = await import('../src/jobs/artifacts.js');
 const { pcmWave } = await import('../src/jobs/audio-artifacts.js');
 
@@ -155,6 +157,40 @@ test('prepared audio artifacts are owner-scoped and served as bytes', async () =
     }
     writeArtifact(aliceDirs, job.id, name, { ok: false, error: 'offline' });
     assert.equal((await request('GET', path, { account: 'alice' })).status, 404);
+});
+
+test('cancelling a root interrupts a running vector grandchild before another stage', { timeout: 10000 }, async () => {
+    const root = acceptJob(aliceDirs, { owner: 'alice', type: 'media.roleplay-workflow', submissionKey: 'nested-root', intent: {} }).job;
+    const reply = acceptJob(aliceDirs, { owner: 'alice', type: 'roleplay.reply', submissionKey: 'nested-reply', intent: {} }).job;
+    const vectors = acceptJob(aliceDirs, { owner: 'alice', type: 'operations.vectors', submissionKey: 'nested-vectors', intent: {} }).job;
+    for (const [parent, child] of [[root, reply], [reply, vectors]]) attachOwnedChild(aliceDirs, parent.id, child.id,
+        { parentIntentHash: roleplayHash(parent.intent), childIntentHash: roleplayHash(child.intent) });
+    let started;
+    const ready = new Promise(resolve => { started = resolve; });
+    let aborted = false;
+    registerHandler('operations.vectors', async ({ signal }) => {
+        started();
+        await new Promise((resolve, reject) => signal.addEventListener('abort', () => {
+            aborted = true;
+            reject(signal.reason);
+        }, { once: true }));
+        assert.fail('Cancelled retrieval must not dispatch another stage');
+    });
+    setDirectoriesResolver(() => aliceDirs);
+    const running = runner.runJob(vectors);
+    try {
+        await ready;
+        const response = await request('POST', `/api/jobs/${root.id}/cancel`);
+        assert.equal(response.status, 200);
+        await running;
+        assert.equal(aborted, true);
+        assert.equal(getJob(aliceDirs, vectors.id).state, 'cancelled');
+        assert.equal(getJob(aliceDirs, reply.id).cancellation.requested, true);
+    } finally {
+        abortJob(vectors.id);
+        await running;
+        setDirectoriesResolver(null);
+    }
 });
 
 test('an account with a damaged ledger gets an actionable error while healthy accounts keep working', async () => {

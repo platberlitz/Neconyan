@@ -1,4 +1,4 @@
-import { getRequestHeaders } from '../script.js';
+import { getOperationClient, mountOperationRecovery } from './operations-client.js';
 import { VIDEO_EXTENSIONS } from './constants.js';
 import { t } from './i18n.js';
 import { callGenericPopup, Popup, POPUP_TYPE } from './popup.js';
@@ -19,6 +19,8 @@ class DataMaidDialog {
         this.token = null;
         this.container = null;
         this.isScanning = false;
+        this.controller = new AbortController();
+        this.record = null;
 
         this.DATA_MAID_CATEGORIES = {
             files: {
@@ -66,33 +68,17 @@ class DataMaidDialog {
      * @private
      */
     async getReport() {
-        const response = await fetch('/api/data-maid/report', {
-            method: 'POST',
-            headers: getRequestHeaders({ omitContentType: true }),
-        });
-
-        if (!response.ok) {
-            throw new Error(`Error fetching Data Maid report: ${response.statusText}`);
-        }
-
-        return await response.json();
+        this.record = await this.client.run('maintenance-report', {}, { scope: 'maintenance:report', signal: this.controller.signal });
+        return { report: this.record.result.report, token: this.record.key };
     }
 
     /**
-     * Finalizes the Data Maid process by sending a request to the server.
+     * Detaches this dialog. Accepted server work and its report remain available.
      * @returns {Promise<void>}
      * @private
      */
     async finalize() {
-        const response = await fetch('/api/data-maid/finalize', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({ token: this.token }),
-        });
-
-        if (!response.ok) {
-            throw new Error(`Error finalizing Data Maid: ${response.statusText}`);
-        }
+        this.controller.abort();
     }
 
     /**
@@ -104,6 +90,33 @@ class DataMaidDialog {
         this.container = document.createElement('div');
         this.container.classList.add('dataMaidDialogContainer');
         this.container.innerHTML = template;
+
+        this.client = await getOperationClient();
+        const saved = document.createElement('select');
+        saved.className = 'text_pole';
+        saved.setAttribute('aria-label', 'Saved maintenance reports');
+        const refresh = async () => {
+            const records = await this.client.list('maintenance-report');
+            const selected = saved.value;
+            saved.replaceChildren(new Option('Choose a saved maintenance report', ''), ...records.map(record =>
+                new Option(`${new Date(record.createdAt).toLocaleString()} · ${record.state}`, record.key)));
+            if (records.some(record => record.key === selected)) saved.value = selected;
+        };
+        saved.addEventListener('focus', () => { void refresh().catch(error => toastr.error(error.message)); });
+        saved.addEventListener('change', async () => {
+            if (!saved.value || this.isScanning) return;
+            this.isScanning = true;
+            try {
+                this.record = await this.client.observe(await this.client.read(saved.value), { signal: this.controller.signal });
+                this.token = this.record.key;
+                const list = this.container.querySelector('.dataMaidResultsList');
+                list.replaceChildren();
+                await this.renderReport({ report: this.record.result.report, token: this.token }, list);
+            } catch (error) { if (!this.controller.signal.aborted) toastr.error(error.message); } finally { this.isScanning = false; }
+        });
+        this.container.prepend(saved);
+        mountOperationRecovery(this.container, { signal: this.controller.signal });
+        await refresh();
 
         const startButton = this.container.querySelector('.dataMaidStartButton');
         startButton.addEventListener('click', () => this.handleScanClick());
@@ -246,10 +259,10 @@ class DataMaidDialog {
                 }
 
                 const hashes = items.map(item => item.hash).filter(hash => hash);
-                await this.delete(hashes);
-
-                categoryElement.remove();
-                this.displayEmptyPlaceholder();
+                if (await this.delete(hashes)) {
+                    categoryElement.remove();
+                    this.displayEmptyPlaceholder();
+                }
             });
         });
         categoryElement.querySelectorAll('.dataMaidItemDelete').forEach(button => {
@@ -282,7 +295,7 @@ class DataMaidDialog {
      * @private
      */
     getViewUrl(hash) {
-        return `/api/data-maid/view?hash=${encodeURIComponent(hash)}&token=${encodeURIComponent(this.token)}`;
+        return `/api/operations/records/${encodeURIComponent(this.token)}/file/${encodeURIComponent(hash)}`;
     }
 
     /**
@@ -329,19 +342,12 @@ class DataMaidDialog {
      */
     async delete(hashes) {
         try {
-            const response = await fetch('/api/data-maid/delete', {
-                method: 'POST',
-                headers: getRequestHeaders(),
-                body: JSON.stringify({ hashes: hashes, token: this.token }),
-            });
-
-            if (!response.ok) {
-                throw new Error(`Error deleting item: ${response.statusText}`);
-            }
-
+            await this.client.run('maintenance-delete', { hashes, reportKey: this.record.key, resultHash: this.record.resultHash },
+                { scope: `maintenance:delete:${this.record.key}`, signal: this.controller.signal });
             return true;
         } catch (error) {
             console.error('Error deleting item:', error);
+            if (!this.controller.signal.aborted) toastr.error(error.message, 'Saved maintenance work');
             return false;
         }
     }
@@ -387,9 +393,7 @@ class DataMaidDialog {
         await this.setupDialogUI();
         await callGenericPopup(this.container, POPUP_TYPE.TEXT, '', { wide: true, large: true });
 
-        if (this.token) {
-            await this.finalize();
-        }
+        await this.finalize();
     }
 }
 

@@ -17,7 +17,7 @@ import { OVERSWIPE_BEHAVIOR, SWIPE_DIRECTION, SWIPE_SOURCE, SWIPE_STATE } from '
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget } from '../public/scripts/neconyan-assistant-knowledge.js';
 import { combineRoleplayTextPrompt } from '../public/scripts/roleplay-text-format.js';
 
-const sources = Object.fromEntries(['script.js', 'scripts/openai.js', 'scripts/reasoning.js', 'scripts/generation-format.js', 'scripts/group-chats.js', 'scripts/utils.js', 'scripts/st-context.js', 'scripts/sse-stream.js', 'scripts/textgen-settings.js'].map(file => {
+const sources = Object.fromEntries(['script.js', 'scripts/openai.js', 'scripts/reasoning.js', 'scripts/generation-format.js', 'scripts/group-chats.js', 'scripts/utils.js', 'scripts/sentence-boundaries.js', 'scripts/st-context.js', 'scripts/sse-stream.js', 'scripts/textgen-settings.js'].map(file => {
     const source = readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8');
     return [file, { source, ast: parse(source, { ecmaVersion: 'latest', sourceType: 'module' }) }];
 }));
@@ -56,6 +56,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
         // This harness runs the host generation flow without the Neconyan server
         // lane, so the Stage 9 funnel reports that it has no named workflow.
         nativeRoleplayWorkflowFor: async () => null,
+        nativeOperationsReady: () => false,
         AbortController, AbortSignal, Event, MessageEvent, TextDecoderStream, TransformStream, structuredClone,
         console: { log: jest.fn(), info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn(), trace: jest.fn() },
         main_api: api,
@@ -648,7 +649,7 @@ describe('owned host generation flow', () => {
         context.power_user.trim_sentences = true;
         context.reply = 'abcdefgh-overrun';
         context.chunks = [{ text: context.reply }];
-        load(context, 'scripts/utils.js', ['trimToEndSentence']);
+        load(context, 'scripts/sentence-boundaries.js', ['trimToEndSentence']);
         load(context, 'script.js', ['cleanUpMessage']);
         const result = await context.Generate('continue', { suppressUserMessage: true, suppressAutoContinue: true, maxOutputTokens: 2 });
         expect(context.chat[0].mes).toBe('Existing prose. abcdefgh');
@@ -691,7 +692,7 @@ describe('owned host generation flow', () => {
     test.each(['nonstream', 'stream', 'buffer'])('honours the provider length ending before the character estimate: %s', async mode => {
         const { context, eventSource } = makeRuntime({ stream: mode !== 'nonstream', buffer: mode === 'buffer' });
         context.power_user.trim_sentences = true;
-        load(context, 'scripts/utils.js', ['trimToEndSentence']);
+        load(context, 'scripts/sentence-boundaries.js', ['trimToEndSentence']);
         load(context, 'script.js', ['cleanUpMessage']);
         context.fetchResumable.mockImplementation(async () => mode === 'nonstream'
             ? new Response(JSON.stringify({ choices: [{ message: { content: 'partial' }, finish_reason: 'length' }] }))

@@ -557,21 +557,6 @@ test('real Regenerate validates its replacement prompt rather than the unused ex
     expect(app.provider.calls).toHaveLength(1);
 });
 
-test('manual active preflight resolves the requested token limit', async ({ app }) => {
-    const account = await app.account({ activeConnection: true, textProfile: true, configureSettings(saved) {
-        saved.power_user.experimental_macro_engine = true;
-        saved.textgenerationwebui_settings.send_banned_tokens = true;
-        saved.textgenerationwebui_settings.banned_tokens = '[{{maxResponseTokens}}]';
-    } });
-    const page = await account.open();
-    app.provider.mode.reply = { choices: [{ text: 'Valid token limit.' }] };
-    const text = await page.evaluate(async avatar => (await import('/scripts/neconyan-conversation/generation.js')).generateConversationRaw({
-        prompt: 'Use the captured limit.', responseLength: 73, scope: { avatar },
-    }, {}), account.avatar);
-    expect(text).toBe('Valid token limit.');
-    expect(app.provider.calls).toHaveLength(1);
-});
-
 for (const afterAcceptance of [false, true]) {
     test(`permitted character transformations cannot change ${afterAcceptance ? 'after acceptance' : 'after preflight'}`, async ({ app }) => {
         const account = await app.account({ activeConnection: true });
@@ -689,76 +674,21 @@ for (const changeImage of [false, true]) {
     });
 }
 
-test('bound manual generation accepts bounded image data and rejects oversized text before dispatch', async ({ app }) => {
+test('page-owned raw Conversation generation is retired without a provider call', async ({ app }) => {
     const account = await app.account();
     const page = await account.open();
-    app.provider.mode.reply = { choices: [{ message: { content: 'Large image accepted.' } }] };
-    const result = await page.evaluate(async avatar => {
+    const result = await page.evaluate(async () => {
         const generation = await import('/scripts/neconyan-conversation/generation.js');
-        const bindingContext = await generation.captureConversationTextBinding({ avatar });
-        const image = 'data:image/png;base64,' + 'A'.repeat(4 * 1024 * 1024);
-        const text = await generation.generateConversationRaw({ bindingContext, responseLength: 73,
-            prompt: [{ role: 'user', content: [{ type: 'text', text: 'Inspect the supplied image.' }, { type: 'image_url', image_url: { url: image } }] }] }, {});
-        let oversized;
-        try { await generation.generateConversationRaw({ bindingContext, responseLength: 73, prompt: 'x'.repeat(256 * 1024 + 1) }, {}); }
-        catch (error) { oversized = error.status; }
-        return { text, oversized };
-    }, account.avatar);
-    expect(result).toEqual({ text: 'Large image accepted.', oversized: 413 });
-    expect(app.provider.calls).toHaveLength(1);
+        return { exported: 'generateConversationRaw' in generation };
+    });
+    expect(result).toEqual({ exported: false });
+    const response = await account.context.request.post('/api/neconyan-conversation/binding/generate', { headers: account.headers,
+        data: { target: { avatar: account.avatar }, options: { prompt: 'Reply now.' } } });
+    expect(response.status()).toBe(409);
+    expect((await response.json()).code).toBe('NATIVE_OPERATION_REQUIRED');
+    expect(app.provider.calls).toHaveLength(0);
     await page.close();
 });
-
-for (const change of ['remove', 'mute']) {
-    test(`manual generation refuses to ${change} its selected speaker during server preparation`, async ({ app }) => {
-        const account = await app.account({ textProfile: true, configureSettings(saved) {
-            Object.assign(saved.textgenerationwebui_settings, { banned_tokens: 'blocked', send_banned_tokens: true });
-            saved.power_user.tokenizer = 'api_textgenerationwebui';
-        } });
-        const created = await account.context.request.post('/api/characters/create', { headers: account.headers,
-            data: { ch_name: 'Durable Kit', description: 'A second group member.', first_mes: 'Hello.' } });
-        expect(created.ok()).toBe(true);
-        const partner = await created.text();
-        const remaining = await account.context.request.post('/api/characters/create', { headers: account.headers,
-            data: { ch_name: 'Durable Remaining', description: 'Keeps the group valid after removing a member.', first_mes: 'Hello.' } });
-        expect(remaining.ok()).toBe(true);
-        const remainingAvatar = await remaining.text();
-        const current = await account.post('/api/neconyan-conversation/store/get');
-        const { group } = await account.post('/api/neconyan-conversation/group/create', { version: current.version,
-            personaId: account.personaId, members: [account.avatar, partner, remainingAvatar], name: 'Preparation group' });
-        const page = await account.open();
-        await page.evaluate(async ({ avatar, partner, groupId }) => {
-            const context = await import('/scripts/neconyan-conversation/context.js');
-            for (const member of [avatar, partner]) Object.assign(context.getConversationThreadStore(member, { groupId, create: true }).settings,
-                { enabled: true, availability: 'online', connection_profile: 'durable' });
-            context.getConversationThreadStore(avatar, { groupId }).branches.main.messages.push({
-                id: 'server-preparation-reply', role: 'character', mes: 'Preserve this reply.', timestamp: 1700000000001,
-            });
-            if (!await (await import('/scripts/neconyan-conversation/store-sync.js')).flushConversationStore()) throw new Error('Group setup failed');
-        }, { avatar: account.avatar, partner, groupId: group.id });
-        app.provider.mode.hold = MODEL;
-        app.provider.mode.reply = { tokens: [17], choices: [{ text: 'Must not generate.' }] };
-        const pending = page.evaluate(async ({ avatar, partner, groupId }) => {
-            const generation = await import('/scripts/neconyan-conversation/generation.js');
-            const bindingContext = await generation.captureConversationTextBinding({ avatar, speakerAvatar: partner, groupId });
-            try { await generation.generateConversationRaw({ bindingContext, prompt: 'Reply now.', responseLength: 73 }, {}); return 200; }
-            catch (error) { return error.status; }
-        }, { avatar: account.avatar, partner, groupId: group.id });
-        await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBe(1);
-        expect(app.provider.calls[0].url).toContain('/tokenize');
-        await account.changeStore(store => {
-            const saved = store.groups.find(item => item.id === group.id);
-            if (change === 'remove') saved.members = saved.members.filter(member => member !== partner);
-            else saved.disabled_members = [partner];
-        });
-        await app.release();
-        expect(await pending).toBe(409);
-        expect(app.provider.calls).toHaveLength(1);
-        const messages = Object.values((await account.store()).characters).flatMap(thread => Object.values(thread.branches || {}).flatMap(branch => branch.messages || []));
-        expect(messages.find(message => message.id === 'server-preparation-reply').mes).toBe('Preserve this reply.');
-        await page.close();
-    });
-}
 
 for (const changeBinding of [false, true]) {
     test(`group batching ${changeBinding ? 'separates changed bindings' : 'uses later mentions with captured bindings'}`, async ({ app, browser }) => {
@@ -867,17 +797,20 @@ for (const method of ['snapshot', 'folder', 'zip', 'reset then snapshot']) test(
         const source = path.join(app.directory, 'import');
         await fs.mkdir(source);
         await fs.writeFile(path.join(source, 'settings.json'), originalSettings);
-        await account.post('/api/users/import-sillytavern/folder', { sourcePath: source });
+        const imported = await account.post('/api/operations/submit', { key: 'fixture-folder-import', kind: 'account-import', mode: 'folder', path: source });
+        await account.settled(imported.job.id);
     } else if (method === 'zip') {
         const archive = archiver('zip');
         const chunks = [];
         archive.on('data', chunk => chunks.push(chunk));
         archive.append(originalSettings, { name: 'settings.json' });
         await archive.finalize();
-        const response = await account.context.request.post('/api/users/import-sillytavern/zip', {
-            headers: account.headers, multipart: { avatar: { name: 'backup.zip', mimeType: 'application/zip', buffer: Buffer.concat(chunks) } },
+        const response = await account.context.request.post('/api/operations/import-input', {
+            headers: account.headers, multipart: { key: 'fixture-zip-source', avatar: { name: 'backup.zip', mimeType: 'application/zip', buffer: Buffer.concat(chunks) } },
         });
         expect(response.ok(), await response.text()).toBe(true);
+        const imported = await account.post('/api/operations/submit', { key: 'fixture-zip-import', kind: 'account-import', mode: 'zip', inputId: (await response.json()).inputId });
+        await account.settled(imported.job.id);
     } else {
         if (method === 'reset then snapshot') {
             expect((await account.context.request.post('/api/users/reset-settings', { headers: account.headers, data: { password: '' } })).status()).toBe(204);
@@ -1423,20 +1356,6 @@ test('manual preflight follows prefill-first macro order', async ({ app }) => {
     }, account.avatar);
     expect(status).toBe(409);
     expect(app.provider.calls).toHaveLength(0);
-});
-
-test('manual preflight honours an explicit instruct override', async ({ app }) => {
-    const account = await app.account({ activeConnection: true, textProfile: true, configureSettings(saved) {
-        saved.power_user.experimental_macro_engine = true;
-        Object.assign(saved.power_user.instruct, { macro: true, input_sequence: '{{isMobile}}', sequences_as_stop_strings: false });
-    } });
-    const page = await account.open();
-    app.provider.mode.reply = { choices: [{ text: 'Override accepted.' }] };
-    const text = await page.evaluate(async avatar => (await import('/scripts/neconyan-conversation/generation.js')).generateConversationRaw({
-        prompt: 'Use the deliberately disabled instruct template.', instructOverride: true, responseLength: 73, scope: { avatar },
-    }, {}), account.avatar);
-    expect(text).toBe('Override accepted.');
-    expect(app.provider.calls).toHaveLength(1);
 });
 
 test('failed store acknowledgement prevents submission and preserves the draft', async ({ app }) => {

@@ -220,6 +220,74 @@ export async function acceptRoleplayNamedWorkflow(request, body = {}) {
         write: { instanceId: captured.source.instanceId, revision: captured.source.revision } };
 }
 
+const GROUP_SUBMISSION = ['key', 'name', 'source', 'messageCount', 'forcedAvatars', 'generationId', 'maxTokens', 'account', 'acknowledgement'];
+
+/**
+ * One whole group turn. The page names the saved group chat, how many messages it
+ * saw and the speakers it chose from the group settings, in order. The server
+ * checks every speaker is an enabled member and writes each reply itself.
+ */
+export function normalizeRoleplayGroupSubmission(body = {}) {
+    assertKeys(body, GROUP_SUBMISSION, 'group submission');
+    assertKeys(body.source, ['locator'], 'group source');
+    assertKeys(body.source.locator, ['chat', 'group', 'groupId'], 'group locator');
+    const key = identifier(body.key, 'workflow key');
+    if (key.length > MAX_KEY_LENGTH) throw invalid('The workflow key is too long.');
+    if (body.name !== undefined && body.name !== 'group.reply') throw invalid('Unknown group workflow.');
+    if (body.source.locator.group !== true) throw invalid('A group turn needs a group chat.');
+    const groupId = identifier(body.source.locator.groupId, 'group id');
+    const messageCount = body.messageCount;
+    if (!Number.isSafeInteger(messageCount) || messageCount < 0) throw invalid('Invalid group message count.');
+    const forcedAvatars = body.forcedAvatars;
+    if (!Array.isArray(forcedAvatars) || !forcedAvatars.length
+        || forcedAvatars.some(avatar => typeof avatar !== 'string' || !avatar || sanitize(avatar) !== avatar)) {
+        throw invalid('A group turn needs its chosen speakers.');
+    }
+    if (!Number.isSafeInteger(body.generationId) || body.generationId < 0) throw invalid('Invalid group generation id.');
+    const maxTokens = body.maxTokens === undefined || body.maxTokens === null ? null : body.maxTokens;
+    if (maxTokens !== null && (!Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > MAX_TOKENS)) throw invalid('Invalid workflow token limit.');
+    const settingsRevision = body.acknowledgement?.settingsRevision;
+    if (!Number.isSafeInteger(settingsRevision) || settingsRevision < 0) throw invalid('Invalid settings revision.');
+    return { key, locator: { chat: chatName(body.source.locator.chat), avatar: '', group: true }, groupId, messageCount,
+        forcedAvatars: [...forcedAvatars], generationId: body.generationId, maxTokens, account: accountStamp(body.account),
+        acknowledgement: { account: identifier(body.acknowledgement?.account, 'account handle'), settingsRevision } };
+}
+
+/**
+ * Accept one whole group turn. The saved chat must still have the messages the page
+ * saw, so a chat that moved on is refused rather than answered by the wrong speakers.
+ */
+export async function acceptRoleplayGroupTurn(request, body = {}) {
+    const { base, owner, directories } = submissionScope(request);
+    const submission = normalizeRoleplayGroupSubmission(body);
+    if (submission.acknowledgement.account !== owner) throw changed('This account does not match the saved one.');
+    const source = withRoleplayAccount(base, submission.account, lease => {
+        const saved = readRoleplayChatLocked(lease, submission.locator);
+        if (saved.records.length - 1 !== submission.messageCount) {
+            throw changed('The saved group chat moved on after this turn was captured.', 'roleplay_workflow_anchor');
+        }
+        const captured = captureRoleplaySourceLocked(lease, { locator: submission.locator, groupId: submission.groupId });
+        if (saved.changed || captured.changed) saveRoleplayAccount(lease);
+        return captured.source;
+    });
+    let binding;
+    try {
+        binding = captureGenerationBinding(directories, { kind: 'active' }, submission.acknowledgement);
+    } catch (error) {
+        if (error?.status !== 409) throw error;
+        throw changed('The active connection settings are not acknowledged. Save them before generating a reply.', 'roleplay_settings_ack_required');
+    }
+    const maxTokens = workflowTokenLimit(directories, binding, submission.maxTokens);
+    const workflow = captureRoleplayWorkflowRequest(base, submission.account, source, { binding, maxTokens, effect: 'append',
+        forcedAvatars: submission.forcedAvatars, generationId: submission.generationId });
+    const accepted = admitRoleplayWorkflowJob(base, submission.account, { operationKey: submission.key, source, request: workflow });
+    if (accepted.jobId) releaseJob(directories, accepted.jobId);
+    return { key: submission.key, name: 'group.reply', jobId: accepted.jobId ?? null,
+        created: accepted.created !== false, state: accepted.state ?? null,
+        ...(accepted.result ? { result: accepted.result } : {}),
+        write: { instanceId: source.instanceId, revision: source.revision } };
+}
+
 /**
  * The owner's readback for one submitted key. A pruned job, a finished write and
  * a never-accepted key are all answered without new work, which is what lets a

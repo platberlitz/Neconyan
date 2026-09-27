@@ -147,11 +147,11 @@ describe('chat backup route hardening', () => {
 
         const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
         try {
-            for (const endpoint of ['download', 'delete']) {
-                for (const name of rejectedNames) {
-                    const response = await postBackupRequest(endpoint, name);
-                    expect(response.status).toBe(400);
-                }
+            for (const name of rejectedNames) {
+                expect((await postBackupRequest('download', name)).status).toBe(400);
+                const deletion = await postBackupRequest('delete', name);
+                expect(deletion.status).toBe(409);
+                expect((await deletion.json()).code).toBe('NATIVE_OPERATION_REQUIRED');
             }
         } finally {
             warnSpy.mockRestore();
@@ -161,7 +161,7 @@ describe('chat backup route hardening', () => {
         expect(fs.readFileSync(sanitizedTarget, 'utf8')).toBe('inside');
     });
 
-    test('download and delete operate on regular scoped backups', async () => {
+    test('download serves regular scoped backups and page deletion is retired', async () => {
         const name = 'chat_route_valid.jsonl';
         const filePath = path.join(backupDirectory, name);
         fs.writeFileSync(filePath, 'backup body');
@@ -171,9 +171,9 @@ describe('chat backup route hardening', () => {
         expect(await downloadResponse.text()).toBe('backup body');
 
         const deleteResponse = await postBackupRequest('delete', name);
-        expect(deleteResponse.status).toBe(200);
-        expect(fs.existsSync(filePath)).toBe(false);
-        expect((await postBackupRequest('download', name)).status).toBe(404);
+        expect(deleteResponse.status).toBe(409);
+        expect((await deleteResponse.json()).code).toBe('NATIVE_OPERATION_REQUIRED');
+        expect(fs.readFileSync(filePath, 'utf8')).toBe('backup body');
     });
 
     function postBackupRequest(endpoint, name) {

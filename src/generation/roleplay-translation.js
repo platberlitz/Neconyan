@@ -6,7 +6,7 @@ import { translate as bingTranslate } from 'bing-translate-api';
 import { Translator } from 'google-translate-api-x';
 
 import { readSecret, SECRET_KEYS } from '../endpoints/secrets.js';
-import { providerNotDispatched, providerStep, readArtifact, unresolvedProviderStep, writeArtifact } from '../jobs/artifacts.js';
+import { isDefiniteProviderRefusal, providerNotDispatched, providerRefused, providerStep, readArtifact, unresolvedProviderStep, writeArtifact } from '../jobs/artifacts.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { readResponseText } from '../../public/scripts/extensions/quick-image-gen/lib/security.js';
 import { assertRoleplayWorldInfoCurrent } from './world-info.js';
@@ -27,7 +27,7 @@ function endpoint(value, name) {
     return url.href;
 }
 
-function translatorCredentials(directories, provider, options) {
+export function translatorCredentials(directories, provider, options) {
     switch (provider) {
         case 'libre': return { key: readSecret(directories, SECRET_KEYS.LIBRE),
             url: readSecret(directories, SECRET_KEYS.LIBRE_URL) };
@@ -41,7 +41,7 @@ function translatorCredentials(directories, provider, options) {
 }
 
 function validateCredentials(provider, credentials) {
-    if (['libre', 'deepl'].includes(provider) && !credentials.key) throw bad('The configured translation key is unavailable.');
+    if (provider === 'deepl' && !credentials.key) throw bad('The configured translation key is unavailable.');
     if (['libre', 'deepl', 'lingva', 'oneringtranslator', 'deeplx'].includes(provider)) {
         if (!credentials.url) throw bad('The configured translation address is unavailable.');
         endpoint(credentials.url, provider);
@@ -54,23 +54,33 @@ export function captureIncomingRoleplayTranslation(directories, savedSettings, {
 }
 
 function captureTranslationPolicy(directories, savedSettings, direction) {
+    return captureSavedTranslationPolicy(directories, savedSettings, { direction });
+}
+
+/** Manual translations share the saved provider policy without changing automatic-translation settings. */
+export function captureSavedTranslationPolicy(directories, savedSettings, { direction = 'output', manual = false,
+    target: requestedTarget, internal: requestedInternal, provider: requestedProvider } = {}) {
     const options = savedSettings?.extension_settings?.translate;
-    if (!(direction === 'input' ? ['inputs', 'both'] : ['responses', 'both']).includes(options?.auto_mode)
-        || savedSettings?.extension_settings?.disabledExtensions?.some(name => String(name).toLowerCase() === 'translate')) return null;
-    const provider = String(options.provider || 'google');
+    if (!manual && (!(direction === 'input' ? ['inputs', 'both'] : ['responses', 'both']).includes(options?.auto_mode)
+        || savedSettings?.extension_settings?.disabledExtensions?.some(name => String(name).toLowerCase() === 'translate'))) return null;
+    const selected = options || {};
+    const provider = String(manual && requestedProvider || selected.provider || 'google');
     if (!PROVIDERS.has(provider)) throw bad('The saved incoming translation provider is not supported.');
-    const target = String(options.target_language || 'en');
-    const internal = String(options.internal_language || 'en');
+    const target = String(requestedTarget ?? selected.target_language ?? 'en');
+    const internal = String(requestedInternal ?? selected.internal_language ?? 'en');
     if (![target, internal].every(lang => /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/.test(lang))) {
         throw bad('The saved translation language is invalid.');
     }
-    const credentials = translatorCredentials(directories, provider, options);
+    const credentials = translatorCredentials(directories, provider, selected);
     validateCredentials(provider, credentials);
-    return { provider, target: direction === 'input' ? internal : target, internal, translateReasoning: options.translate_reasoning === true,
+    return { provider, target: direction === 'input' ? internal : target, internal, translateReasoning: manual || selected.translate_reasoning === true,
         ...(direction === 'input' ? { direction, from: target } : {}),
-        deeplEndpoint: options.deepl_endpoint || 'free',
+        ...(manual && direction !== 'input' ? { from: target === internal ? String(selected.target_language || 'en') : internal } : {}),
+        deeplEndpoint: selected.deepl_endpoint || 'free',
         formality: getConfigValue('deepl.formality', 'default'),
-        settingsHash: roleplayHash(options), credentialsHash: roleplayHash(credentials) };
+        settingsHash: roleplayHash(selected), credentialsHash: roleplayHash(credentials),
+        ...(manual ? { manual: true, requestedTarget: requestedTarget ?? null, requestedInternal: requestedInternal ?? null,
+            requestedProvider: requestedProvider ?? null } : {}) };
 }
 
 /** Bind only the new user input at the end of the accepted prompt, never older unrelated history. */
@@ -142,7 +152,8 @@ function splitChunks(text, size) {
 }
 
 async function responseText(response, field) {
-    if (!response.ok) throw bad(`The translation provider returned HTTP ${response.status}.`, 'ROLEPLAY_TRANSLATION_PROVIDER', 502);
+    if (!response.ok) throw Object.assign(bad(`The translation provider returned HTTP ${response.status}.`,
+        'ROLEPLAY_TRANSLATION_PROVIDER', response.status), { translationProviderResponse: true });
     let result;
     try { result = JSON.parse(await readResponseText(response, 1024 * 1024)); } catch {
         throw bad('The translation provider returned invalid JSON.', 'ROLEPLAY_TRANSLATION_PROVIDER', 502);
@@ -241,7 +252,17 @@ export async function translateIncomingRoleplayOutput(context, { base, snapshot,
 }
 
 async function translateSavedFields(context, { base, snapshot, policy, fields, extra, assertSource, fetchImpl }) {
-    const withAccount = operation => withRoleplayAccount(base, snapshot.account, operation);
+    return translateCapturedFields(context, { base, account: snapshot.account, policy, fields, extra, fetchImpl,
+        verify: () => {
+            assertSource();
+            assertRoleplayWorldInfoCurrent(base, snapshot);
+            return currentCredentials(base, snapshot, policy);
+        } });
+}
+
+/** Complete a field set with durable per-chunk outcomes; callers supply their real source validator. */
+export async function translateCapturedFields(context, { base, account, policy, fields, extra = {}, verify, fetchImpl = fetch, onField }) {
+    const withAccount = operation => withRoleplayAccount(base, account, operation);
     for (const field of fields) {
         const split = field.text.split(/(!\[.*?]\([^)]*\))/g);
         const translated = [];
@@ -250,7 +271,7 @@ async function translateSavedFields(context, { base, snapshot, policy, fields, e
             const requests = partsForTranslation(value, policy.provider);
             for (const [chunk, chunks] of requests.entries()) {
                 const step = `translation:${field.key}:${segment}:${chunk}`;
-                const identity = roleplayHash({ account: snapshot.account, policy, field: field.key,
+                const identity = roleplayHash({ account, policy, field: field.key,
                     source: roleplayHash(field.text), segment, chunk, chunks });
                 const artifact = `input:${step}`;
                 const saved = withAccount(() => readArtifact(context.directories, context.job.id, artifact));
@@ -266,14 +287,11 @@ async function translateSavedFields(context, { base, snapshot, policy, fields, e
                 }
                 let credentials;
                 if (readArtifact(context.directories, context.job.id, providerArtifact) === undefined) {
-                    assertRoleplayWorldInfoCurrent(base, snapshot);
-                    credentials = currentCredentials(base, snapshot, policy);
+                    credentials = verify();
                 }
                 const result = await providerStep(context, step, async () => {
                     try {
-                        assertSource();
-                        assertRoleplayWorldInfoCurrent(base, snapshot);
-                        const verified = currentCredentials(base, snapshot, policy);
+                        const verified = verify();
                         if (roleplayHash(verified) !== roleplayHash(credentials)) {
                             throw bad('The translation connection changed before dispatch.', 'ROLEPLAY_TRANSLATION_SOURCE_CHANGED');
                         }
@@ -284,6 +302,7 @@ async function translateSavedFields(context, { base, snapshot, policy, fields, e
                             fetchImpl, signal: context.signal });
                     } catch (error) {
                         if (context.signal?.aborted) throw error;
+                        if (error.translationProviderResponse && isDefiniteProviderRefusal(error.status)) throw providerRefused(error);
                         throw bad('The translation provider did not return a result.', 'ROLEPLAY_TRANSLATION_PROVIDER', 502);
                     }
                     if (typeof text !== 'string' || Buffer.byteLength(text) > MAX_TRANSLATION_BYTES) {
@@ -302,7 +321,9 @@ async function translateSavedFields(context, { base, snapshot, policy, fields, e
             throw bad('The translated reply exceeds its saved limit.', 'ROLEPLAY_TRANSLATION_INVALID');
         }
         extra[field.key] = content;
+        await onField?.(field.key);
     }
+    return extra;
 }
 
 /** Prepare translated input before lore and prompt construction, retaining its accepted original for display. */

@@ -59,6 +59,7 @@ export const test = base.extend({
         let output = '';
         const app = {
             url: `http://127.0.0.1:${port}`, provider, directory, processes,
+            get serverOutput() { return output; },
             async images() {
                 imageProvider = await createMewmoryProvider();
                 imageProvider.mode.reply = { images: ['iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'] };
@@ -197,14 +198,14 @@ export const test = base.extend({
                         }
                         return job;
                     },
-                    async open({ workspace = true, timeout = 20000, readyTimeout = timeout } = {}) {
+                    async open({ workspace = true, timeout = 20000, readyTimeout = timeout, skipTour = true } = {}) {
                         const page = await context.newPage();
                         navigationErrors.push(trackNavigationErrors(page).errors);
                         page.setDefaultTimeout(timeout);
                         await page.goto('/', { waitUntil: 'domcontentloaded' });
                         await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: readyTimeout });
                         const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
-                        if (await skip.isVisible()) await skip.click();
+                        if (skipTour && await skip.isVisible()) await skip.click();
                         if (!workspace) return page;
                         await page.evaluate(async avatar => {
                             await window.SillyTavern.getContext().getCharacters();

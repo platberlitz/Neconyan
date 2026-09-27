@@ -275,54 +275,35 @@ export async function capturePresets({ force = false } = {}) {
  * silent write turns out to matter more than the cost.
  */
 export async function captureEverything(onProgress = () => {}) {
-    const context = ctx();
-    const result = { taken: 0, skipped: 0, failed: 0 };
-    const capture = async (label, action) => {
-        try {
-            const row = await action();
-            result[row ? 'taken' : 'skipped']++;
-        } catch (error) {
-            result.failed++;
-            console.error(`[Time Machine] could not snapshot ${label}`, error);
-        }
-    };
-
-    try {
-        await context.getCharacters();
-        const characters = [...(context.characters ?? [])];
-        for (const [done, character] of characters.entries()) {
-            onProgress(`Characters: ${done + 1} of ${characters.length}`);
-            const avatar = character?.avatar;
-            await capture(character?.name || avatar || 'character', () => captureCharacter(avatar, { force: true }));
-        }
-    } catch (error) {
-        result.failed++;
-        console.error('[Time Machine] could not read characters', error);
+    const [{ getOperationClient }, core, { getCurrentUserHandle }] = await Promise.all([
+        import('../../../../operations-client.js'), import('../../../../../script.js'), import('../../../../user.js')]);
+    const account = getCurrentUserHandle();
+    const client = await getOperationClient();
+    // One server job reads every card, lorebook and preset from disk and saves the
+    // snapshots and index together, so closing the page cannot leave it half done.
+    const record = await client.run('time-machine-capture', {}, {
+        scope: 'time-machine-capture',
+        onProgress: progress => {
+            if (progress?.total) {
+                onProgress(`Saving snapshots: ${progress.completed} of ${progress.total}`);
+            }
+        },
+        prepareInput: async input => {
+            if (!await core.saveSettings(0, { returnResult: true })) {
+                throw new Error('Save your settings before taking snapshots.');
+            }
+            return input;
+        },
+    });
+    const result = record?.result ?? {};
+    if (account === getCurrentUserHandle() && result.module) {
+        const settings = ctx().extensionSettings;
+        settings[MODULE_NAME] = structuredClone(result.module);
+        settings.character_attachments = isPlainObject(settings.character_attachments) ? settings.character_attachments : {};
+        settings.character_attachments['__SillyBunny-Card-Time-Machine__'] = structuredClone(result.attachments ?? []);
+        core.adoptServerSettingsWrite({ account, previousVersion: result.previousVersion, version: result.version, settingsRevision: result.settingsRevision });
     }
-
-    try {
-        const names = context.getWorldInfoNames?.() ?? [];
-        for (const [done, name] of names.entries()) {
-            onProgress(`Lorebooks: ${done + 1} of ${names.length}`);
-            await capture(name, () => captureLorebook(name, undefined, { force: true }));
-        }
-    } catch (error) {
-        result.failed++;
-        console.error('[Time Machine] could not list lorebooks', error);
-    }
-
-    onProgress('Presets...');
-    try {
-        const presets = await capturePresets({ force: true });
-        result.taken += presets.taken;
-        result.skipped += presets.skipped;
-        result.failed += presets.failed;
-    } catch (error) {
-        result.failed++;
-        console.error('[Time Machine] could not read presets', error);
-    }
-
-    return result;
+    return { taken: result.taken ?? 0, skipped: result.skipped ?? 0, failed: 0, removed: result.removed ?? 0 };
 }
 
 // ------------------------------------------------------------- live state ---

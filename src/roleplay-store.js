@@ -5,6 +5,8 @@ import { isDeepStrictEqual, TextDecoder, types } from 'node:util';
 import sanitize from 'sanitize-filename';
 import { acquireChatFileLock } from './chat-file-lock.js';
 import { canonical, retireJobStore, validateOwner } from './jobs/store.js';
+import { preserveMeowerReceipts } from './meower-retirement.js';
+import { saveResetContent, loadResetContent, installResetContent } from './account-reset-content.js';
 import { decodeFileWriteRecovery, fsyncDirectorySync, setFileWriteRecoveryGuard, tryWriteFileSync, FILE_WRITE_RECOVERY_SUFFIX, FILE_WRITE_RECOVERY_MAX_BYTES } from './util.js';
 
 export const ROLEPLAY_STORE_MAX_BYTES = 16 * 1024 * 1024;
@@ -122,6 +124,15 @@ function prepareDirectory(scope) {
 }
 
 export function readRoleplayFile(filename, limit = ROLEPLAY_STORE_MAX_BYTES, { flush = false, allowMissingParent = false } = {}) {
+    return readProtectedFile(filename, limit, { flush, allowMissingParent, collectBytes: true });
+}
+
+/** The same physical and content checks without allocating the whole binary file. */
+export function inspectRoleplayFile(filename, limit, { flush = false, allowMissingParent = false } = {}) {
+    return readProtectedFile(filename, limit, { flush, allowMissingParent, collectBytes: false });
+}
+
+function readProtectedFile(filename, limit, { flush, allowMissingParent, collectBytes }) {
     if (directory(path.dirname(filename), false, allowMissingParent) === false) return null;
     let stat;
     try { stat = fs.lstatSync(filename, { bigint: true }); } catch (error) {
@@ -134,11 +145,15 @@ export function readRoleplayFile(filename, limit = ROLEPLAY_STORE_MAX_BYTES, { f
     try {
         const current = fs.fstatSync(fd, { bigint: true });
         if (!current.isFile() || current.dev !== stat.dev || current.ino !== stat.ino || current.size !== stat.size) throw damaged();
-        const bytes = Buffer.alloc(Number(stat.size));
+        const size = Number(stat.size);
+        const bytes = Buffer.alloc(collectBytes ? size : Math.min(size, 64 * 1024));
+        const hash = crypto.createHash('sha256');
         let offset = 0;
-        while (offset < bytes.length) {
-            const read = fs.readSync(fd, bytes, offset, bytes.length - offset, offset);
+        while (offset < size) {
+            const start = collectBytes ? offset : 0;
+            const read = fs.readSync(fd, bytes, start, Math.min(bytes.length - start, size - offset), offset);
             if (!read) break;
+            hash.update(bytes.subarray(start, start + read));
             offset += read;
         }
         if (flush) {
@@ -151,7 +166,7 @@ export function readRoleplayFile(filename, limit = ROLEPLAY_STORE_MAX_BYTES, { f
         const finalPath = fs.lstatSync(filename, { bigint: true });
         if (!finalPath.isFile() || finalPath.nlink !== 1n || finalPath.dev !== after.dev || finalPath.ino !== after.ino
             || finalPath.size !== after.size || finalPath.mtimeNs !== after.mtimeNs || finalPath.ctimeNs !== after.ctimeNs) throw damaged();
-        return { bytes, rawHash: crypto.createHash('sha256').update(bytes).digest('hex'),
+        return { ...(collectBytes ? { bytes } : { size }), rawHash: hash.digest('hex'),
             physical: { dev: String(after.dev), ino: String(after.ino), birthtimeNs: String(after.birthtimeNs) } };
     } finally { fs.closeSync(fd); }
 }
@@ -321,6 +336,17 @@ function validateState(state, identity) {
         || !['ready', 'maintenance', 'deleted', 'recovery-required'].includes(state.status)
         || !object(state.paths) || !object(state.resources) || !object(state.submissions)
         || (state.pending !== null && !object(state.pending))) throw damaged();
+    if (state.accountResets !== undefined) {
+        if (!object(state.accountResets)) throw damaged();
+        for (const [key, value] of Object.entries(state.accountResets)) {
+            if (!HASH.test(key) || !object(value) || !UUID.test(value.accountId) || !UUID.test(value.resetId)
+                || !integer(value.dataEpoch) || value.dataEpoch < 1 || !HASH.test(value.intentHash)
+                || !['reset', 'purge', 'retire'].includes(value.mode) || !['accepted', 'complete'].includes(value.phase)
+                || !object(value.result) || value.result.accountId !== value.accountId || value.result.dataEpoch !== value.dataEpoch + 1
+                || value.contentHash !== undefined && !HASH.test(value.contentHash)
+                || value.intentHash !== resetIntentHash(value)) throw damaged();
+        }
+    }
     for (const [key, value] of Object.entries(state.resources)) {
         if (!UUID.test(key) || !object(value) || !UUID.test(value.accountId) || !integer(value.dataEpoch)
             || !['chat', 'character', 'group'].includes(value.kind) || !isStoredLocator(value.kind, value.locator)
@@ -405,14 +431,18 @@ function stamp(scope, state) {
     return { owner: scope.owner, directories: scope.directories, accountId: state.accountId, dataEpoch: state.dataEpoch };
 }
 
-function save(root, identity, state, expected = null) {
+function encodeState(identity, state) {
     validateState(state, identity);
     const saved = { hash: roleplayHash(state), state };
     const reserved = Object.values(state.submissions).reduce((sum, item) => sum + item.reservedReceiptBytes, state.pending?.reservedBytes ?? 0);
     if (!Number.isSafeInteger(reserved) || Buffer.byteLength(JSON.stringify(saved)) + reserved > ROLEPLAY_STORE_MAX_BYTES) {
         throw roleplayError('ROLEPLAY_STORE_FULL', 'Protected Roleplay evidence has no room for this change; existing records were retained.', 413);
     }
-    return writeJson(path.join(root, 'state.json'), saved, expected);
+    return saved;
+}
+
+function save(root, identity, state, expected = null) {
+    return writeJson(path.join(root, 'state.json'), encodeState(identity, state), expected);
 }
 
 function isCurrentResource(state, instanceId) {
@@ -855,15 +885,44 @@ export function initialiseRoleplayAccount(scope) {
 }
 
 const RESET_KEYS = ['schema', 'kind', 'id', 'mode', 'dataEpoch', 'phase'];
+function resetIntentHash({ accountId, dataEpoch, mode, contentHash }) {
+    return roleplayHash({ accountId, dataEpoch, mode, ...(contentHash ? { contentHash } : {}) });
+}
+const resetContentHelpers = () => ({ readFile: readRoleplayFile, createDirectory: createRoleplayDirectory,
+    error: message => roleplayError('ROLEPLAY_RESET_CONTENT', message, 409) });
+
+/** Freeze the account's replacement defaults before accepting its reset. */
+export function prepareRoleplayResetContent(base, expected, content) {
+    return withRoleplayAccount(base, expected, () => saveResetContent(roleplayStoreDirectory(base), content, resetContentHelpers()));
+}
 
 function validateResetTransaction(pending, state) {
-    if (Object.keys(pending).length !== RESET_KEYS.length || RESET_KEYS.some(name => !Object.hasOwn(pending, name))
+    const keyed = Object.hasOwn(pending, 'operationKeyHash');
+    if (Object.keys(pending).length !== RESET_KEYS.length + Number(keyed) || RESET_KEYS.some(name => !Object.hasOwn(pending, name))
         || pending.schema !== 1 || !UUID.test(pending.id) || !['reset', 'purge', 'retire'].includes(pending.mode)
         || pending.dataEpoch !== state.dataEpoch + 1 || pending.phase !== 'prepared' || state.status !== 'maintenance') throw damaged();
+    if (keyed) {
+        const receipt = state.accountResets?.[pending.operationKeyHash];
+        if (!HASH.test(pending.operationKeyHash) || !receipt || receipt.phase !== 'accepted' || receipt.resetId !== pending.id
+            || receipt.accountId !== state.accountId || receipt.dataEpoch !== state.dataEpoch || receipt.mode !== pending.mode) throw damaged();
+    }
 }
 
 function finishAccountReset(scope, root, identity, state, stateFile) {
     const { pending } = state;
+    const contentHash = pending.operationKeyHash && state.accountResets[pending.operationKeyHash].contentHash;
+    const content = contentHash ? loadResetContent(root, contentHash, resetContentHelpers()) : null;
+    const resources = Object.fromEntries(Object.entries(state.resources)
+        .map(([id, resource]) => [id, resource.status === 'live' ? { ...resource, status: 'deleted' } : resource]));
+    const submissions = Object.fromEntries(Object.entries(state.submissions).map(([id, receipt]) =>
+        [id, ['preparing', 'accepted'].includes(receipt.state) ? { ...receipt, state: 'void', reservedReceiptBytes: 0 } : receipt]));
+    const next = { ...state, revision: state.revision + 1, dataEpoch: pending.dataEpoch,
+        status: pending.mode === 'reset' ? 'ready' : 'deleted', paths: {}, resources, submissions, pending: null };
+    if (pending.operationKeyHash) next.accountResets = { ...state.accountResets,
+        [pending.operationKeyHash]: { ...state.accountResets[pending.operationKeyHash], phase: 'complete' } };
+    // Check room for completion before removing any data. Reset evidence is never evicted.
+    encodeState(identity, next);
+    preserveMeowerReceipts(scope, root, state, { readFile: readRoleplayFile, createDirectory: createRoleplayDirectory });
     // Old jobs and artefacts stay beside the ledger; late callbacks then find neither their job nor their epoch.
     retireJobStore(scope.directories, path.join(root, 'retired', `${state.dataEpoch}-${pending.id}`, 'jobs'));
     const userRoot = scope.directories.root;
@@ -871,14 +930,8 @@ function finishAccountReset(scope, root, identity, state, stateFile) {
     for (const name of pending.mode !== 'retire' && fs.existsSync(userRoot) ? fs.readdirSync(userRoot) : []) {
         if (name !== 'jobs') fs.rmSync(path.join(userRoot, name), { recursive: true, force: true });
     }
+    if (content) installResetContent(userRoot, content, resetContentHelpers());
     // ponytail: a purge leaves the empty jobs lock folder; account recreation reuses it.
-    const resources = Object.fromEntries(Object.entries(state.resources)
-        .map(([id, resource]) => [id, resource.status === 'live' ? { ...resource, status: 'deleted' } : resource]));
-    // Reservations held by admitted work of the old epoch are released; that work can no longer complete.
-    const submissions = Object.fromEntries(Object.entries(state.submissions).map(([id, receipt]) =>
-        [id, ['preparing', 'accepted'].includes(receipt.state) ? { ...receipt, state: 'void', reservedReceiptBytes: 0 } : receipt]));
-    const next = { ...state, revision: state.revision + 1, dataEpoch: pending.dataEpoch,
-        status: pending.mode === 'reset' ? 'ready' : 'deleted', paths: {}, resources, submissions, pending: null };
     save(root, identity, next, stateFile);
     const key = path.resolve(userRoot);
     if (next.status === 'ready') observedAccounts.set(key, stamp(scope, next));
@@ -890,24 +943,69 @@ function finishAccountReset(scope, root, identity, state, stateFile) {
  * Replace the account's saved data with a new data epoch ('reset'), or retire the account with ('purge') or without ('retire') its files.
  * The maintenance record is durable before any file is touched; receipts are kept.
  */
-export function resetRoleplayAccount(base, expected, mode) {
+export function resetRoleplayAccount(base, expected, mode, { operationKey, contentHash } = {}) {
     if (!['reset', 'purge', 'retire'].includes(mode)) throw new TypeError('Unknown account reset mode.');
+    const keyed = operationKey !== undefined;
+    if (contentHash !== undefined && (!keyed || mode !== 'reset' || !HASH.test(contentHash))) {
+        throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'Replacement defaults require a keyed account reset.');
+    }
+    if (keyed && (typeof operationKey !== 'string' || !operationKey || operationKey.length > 200 || !expected)) {
+        throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'A reset operation key and captured account identity are required.');
+    }
     return locked(base, root => {
         const loaded = load(base);
         let { state, stateFile } = loaded;
+        const key = keyed ? roleplayHash([expected.accountId, 'account-reset', operationKey]) : null;
+        const intentHash = keyed ? resetIntentHash({ accountId: expected.accountId, dataEpoch: expected.dataEpoch, mode, contentHash }) : null;
+        const prior = key ? state.accountResets?.[key] : null;
+        if (keyed && state.accountId !== expected.accountId) throw roleplayError('ROLEPLAY_ACCOUNT_CHANGED', 'The account was replaced.');
+        if (prior && prior.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'This reset key already names different work.');
+        if (prior?.phase === 'complete') return { ...base, ...prior.result };
         if (expected) assertAccountIdentity(expected, state);
         if (state.pending?.kind === 'account-reset') {
-            if (state.pending.mode !== mode) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'A different account reset is already in progress.');
+            if (state.pending.mode !== mode || keyed && state.pending.operationKeyHash !== key) {
+                throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'A different account reset is already in progress.');
+            }
         } else {
             if (mode !== 'reset' && state.status === 'deleted') return stamp(base, state);
             assertRoleplayAccountCurrent(stamp(base, state), state);
             if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay operation must settle first.');
+            if (contentHash) loadResetContent(root, contentHash, resetContentHelpers());
             state = { ...state, revision: state.revision + 1, status: 'maintenance',
-                pending: { schema: 1, kind: 'account-reset', id: crypto.randomUUID(), mode, dataEpoch: state.dataEpoch + 1, phase: 'prepared' } };
+                pending: { schema: 1, kind: 'account-reset', id: crypto.randomUUID(), mode, dataEpoch: state.dataEpoch + 1, phase: 'prepared',
+                    ...(keyed ? { operationKeyHash: key } : {}) } };
+            if (keyed) state.accountResets = { ...state.accountResets, [key]: {
+                accountId: state.accountId, dataEpoch: state.dataEpoch, resetId: state.pending.id, mode, intentHash, phase: 'accepted',
+                ...(contentHash ? { contentHash } : {}),
+                result: { accountId: state.accountId, dataEpoch: state.dataEpoch + 1 },
+            } };
             stateFile = save(root, loaded.identity, state, stateFile);
         }
         return finishAccountReset(base, root, loaded.identity, state, stateFile);
     });
+}
+
+/** Read a reset receipt across data epochs without starting or repeating the reset. */
+export function readRoleplayAccountReset(base, expected, operationKey) {
+    if (!expected || typeof operationKey !== 'string' || !operationKey || operationKey.length > 200) {
+        throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'A reset operation key and captured account identity are required.');
+    }
+    return locked(base, () => {
+        const { state } = load(base);
+        if (state.accountId !== expected.accountId) throw roleplayError('ROLEPLAY_ACCOUNT_CHANGED', 'The account was replaced.');
+        const receipt = state.accountResets?.[roleplayHash([expected.accountId, 'account-reset', operationKey])];
+        if (receipt && receipt.dataEpoch !== expected.dataEpoch) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'The reset belongs to different saved data.');
+        return receipt ? structuredClone(receipt) : null;
+    });
+}
+
+export function readRoleplayAccountResetLocked(lease, expected, operationKey) {
+    const { state } = roleplayLease(lease);
+    if (!expected || state.accountId !== expected.accountId) throw roleplayError('ROLEPLAY_ACCOUNT_CHANGED', 'The account was replaced.');
+    if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 200) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'A reset operation key is required.');
+    const receipt = state.accountResets?.[roleplayHash([expected.accountId, 'account-reset', operationKey])];
+    if (receipt && receipt.dataEpoch !== expected.dataEpoch) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'The reset belongs to different saved data.');
+    return receipt ? structuredClone(receipt) : null;
 }
 
 /** Startup: finish an interrupted reset. Returns the current stamp, or null for a retired account that must not be served. */

@@ -841,7 +841,12 @@ test.describe('native import report', () => {
             readyCount: 0, warningCount: 0, failedCount: 0, shadowedCount: 1,
             results: [{ name: 'Neconyan-Hopper', displayName: 'Meower', version: '0.4.0', author: 'platberlitz', status: 'shadowed', copiedFiles: 3 }],
         };
-        await page.route('**/api/users/import-sillytavern/extensions', route => route.fulfill({ json: report }));
+        await page.route('**/api/operations/submit', route => {
+            const input = route.request().postDataJSON();
+            if (input.kind !== 'account-import') return route.fallback();
+            return route.fulfill({ status: 202, json: { record: { key: input.key, kind: 'account-import', state: 'completed',
+                result: { ...report, mode: 'extensions' } } } });
+        });
         page.on('dialog', dialog => dialog.accept());
         await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
         await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });

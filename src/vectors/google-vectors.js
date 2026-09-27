@@ -1,5 +1,6 @@
 import fetch from 'node-fetch';
 import { getGoogleApiConfig } from '../endpoints/google.js';
+import { readEmbeddingResponse } from './common.js';
 
 /**
  * Gets the vector for the given text from Google AI Studio
@@ -8,8 +9,8 @@ import { getGoogleApiConfig } from '../endpoints/google.js';
  * @param {import('express').Request} request - The request object to get API key and URL
  * @returns {Promise<number[][]>} - The array of vectors for the texts
  */
-export async function getMakerSuiteBatchVector(texts, model, request) {
-    const { url, headers, apiName } = await getGoogleApiConfig(request, model, 'batchEmbedContents');
+export async function getMakerSuiteBatchVector(texts, model, request, { config, fetchImpl = fetch, signal } = {}) {
+    const { url, headers, apiName } = config ?? await getGoogleApiConfig(request, model, 'batchEmbedContents');
 
     const body = {
         requests: texts.map(text => ({
@@ -18,20 +19,14 @@ export async function getMakerSuiteBatchVector(texts, model, request) {
         })),
     };
 
-    const response = await fetch(url, {
+    const response = await fetchImpl(url, {
+        signal,
         body: JSON.stringify(body),
         method: 'POST',
         headers: headers,
     });
 
-    if (!response.ok) {
-        const text = await response.text();
-        console.warn(`${apiName} batch request failed`, response.statusText, text);
-        throw new Error(`${apiName} batch request failed`);
-    }
-
-    /** @type {any} */
-    const data = await response.json();
+    const data = await readEmbeddingResponse(response, apiName);
     if (!Array.isArray(data?.embeddings)) {
         throw new Error(`${apiName} did not return an array`);
     }
@@ -47,27 +42,21 @@ export async function getMakerSuiteBatchVector(texts, model, request) {
  * @param {import('express').Request} request - The request object to get API key and URL
  * @returns {Promise<number[][]>} - The array of vectors for the texts
  */
-export async function getVertexBatchVector(texts, model, request) {
-    const { url, headers, apiName } = await getGoogleApiConfig(request, model, 'predict');
+export async function getVertexBatchVector(texts, model, request, { config, fetchImpl = fetch, signal } = {}) {
+    const { url, headers, apiName } = config ?? await getGoogleApiConfig(request, model, 'predict');
 
     const body = {
         instances: texts.map(text => ({ content: text })),
     };
 
-    const response = await fetch(url, {
+    const response = await fetchImpl(url, {
+        signal,
         body: JSON.stringify(body),
         method: 'POST',
         headers: headers,
     });
 
-    if (!response.ok) {
-        const text = await response.text();
-        console.warn(`${apiName} batch request failed`, response.statusText, text);
-        throw new Error(`${apiName} batch request failed`);
-    }
-
-    /** @type {any} */
-    const data = await response.json();
+    const data = await readEmbeddingResponse(response, apiName);
     if (!Array.isArray(data?.predictions)) {
         throw new Error(`${apiName} did not return an array`);
     }

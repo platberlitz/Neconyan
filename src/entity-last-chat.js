@@ -217,19 +217,24 @@ export function removeEntityLastChat(userRoot, id) {
  * @param {string|Buffer|object} value Imported metadata.
  */
 export function importEntityLastChat(userRoot, value) {
+    withStoreLock(userRoot, () => {
+        const state = readStore(userRoot);
+        const importedStore = mergeImportedEntityLastChat(state.store, value);
+        tryWriteFileSync(state.filePath, `${JSON.stringify(importedStore, null, 4)}\n`, 'utf8');
+    });
+}
+
+/** Prepare the same merge for a recorded publication without writing the current file. */
+export function mergeImportedEntityLastChat(current, value) {
     const parsed = typeof value === 'string' || Buffer.isBuffer(value)
         ? JSON.parse(value.toString())
         : value;
     const importedStore = normalizeStore(parsed);
-
-    withStoreLock(userRoot, () => {
-        const state = readStore(userRoot);
-        for (const [id, chatName] of Object.entries(state.store.characters.entries)) {
-            if (!Object.hasOwn(importedStore.characters.entries, id)) {
-                importedStore.characters.entries[id] = chatName;
-            }
+    const currentStore = current ? normalizeStore(current) : createStore();
+    for (const [id, chatName] of Object.entries(currentStore.characters.entries)) {
+        if (!Object.hasOwn(importedStore.characters.entries, id)) {
+            importedStore.characters.entries[id] = chatName;
         }
-
-        tryWriteFileSync(state.filePath, `${JSON.stringify(importedStore, null, 4)}\n`, 'utf8');
-    });
+    }
+    return importedStore;
 }

@@ -16,7 +16,7 @@ import { serverDirectory } from '../server-directory.js';
 import { Jimp, JimpMime } from '../jimp.js';
 import { DEFAULT_AVATAR_PATH, USER_DIRECTORY_TEMPLATE } from '../constants.js';
 import { invalidateThumbnail } from './thumbnails.js';
-import { assertUntrackedRoleplayFiles, roleplayAccountBase, roleplayLease, validRoleplayAvatar, withRoleplayAccount } from '../roleplay-store.js';
+import { assertUntrackedRoleplayFiles, roleplayAccountBase, roleplayLease, validRoleplayAvatar, withRoleplayAccount, readRoleplayFile } from '../roleplay-store.js';
 import { commitRoleplayLifecycleLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
 import { writeAuthoringFileLocked } from '../authoring-store.js';
 import { assertNativeMediaTargetIdle } from '../generation/media-jobs.js';
@@ -1555,6 +1555,38 @@ export async function checkForNewContent(directoriesList, forceCategories = []) 
     } catch (err) {
         console.error('Content check failed', err);
     }
+}
+
+/** Freeze the same user-scoped defaults for a reset, without changing global content or the user's current files. */
+export function captureUserResetContent(directories) {
+    const files = new Map();
+    const folders = new Set(Object.values(USER_DIRECTORY_TEMPLATE).filter(Boolean));
+    const log = [];
+    const add = (source, relative) => {
+        const stat = fs.lstatSync(source);
+        if (stat.isSymbolicLink()) throw new Error('A bundled reset source is a symbolic link.');
+        if (stat.isDirectory()) {
+            folders.add(relative);
+            for (const name of fs.readdirSync(source).sort()) add(path.join(source, name), `${relative}/${name}`);
+        } else {
+            if (files.has(relative)) return;
+            const file = readRoleplayFile(source, 32 * 1024 * 1024);
+            if (!file) throw new Error('A bundled reset source is missing.');
+            files.set(relative, { relative, data: file.bytes.toString('base64') });
+        }
+    };
+    if (!getConfigValue('skipContentCheck', false, 'boolean')) {
+        for (const item of getContentIndex(CONTENT_SCOPE.USER)) {
+            const target = getUserTargetByType(item.type, directories);
+            if (!target || !item.folder) throw new Error('A bundled reset target is unavailable.');
+            const relative = path.relative(directories.root, path.join(target, path.basename(item.filename)));
+            if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('A bundled reset target is outside the account.');
+            add(path.join(item.folder, item.filename), relative.split(path.sep).join('/'));
+            log.push(item.filename);
+        }
+        files.set('content.log', { relative: 'content.log', data: Buffer.from(log.join('\n')).toString('base64') });
+    }
+    return { version: 1, directories: [...folders].map(name => name.split(path.sep).join('/')), files: [...files.values()] };
 }
 
 /**

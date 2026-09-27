@@ -1,7 +1,8 @@
 /** Retained submissions and read-only observation of native Labs work. */
-export function createLabClient({ request, observeJob, account, storage, uuid = () => crypto.randomUUID() }) {
-    const read = key => request(`/api/labs/records/${encodeURIComponent(key)}`);
-    const list = kind => request(`/api/labs/records?kind=${encodeURIComponent(kind)}`);
+export function createLabClient({ request, observeJob, account, storage, uuid = () => crypto.randomUUID(),
+    basePath = '/api/labs', storagePrefix = 'neconyan-labs', label = 'Labs' }) {
+    const read = key => request(`${basePath}/records/${encodeURIComponent(key)}`);
+    const list = (kind = '') => request(`${basePath}/records?kind=${encodeURIComponent(kind)}`);
     const refusal = record => Object.assign(new Error(record.error || 'This reviewed change was refused. Review the current records before trying again.'), { refused: true });
 
     async function observationClosed(record, signal) {
@@ -26,7 +27,7 @@ export function createLabClient({ request, observeJob, account, storage, uuid = 
         if (signal?.aborted) return observationClosed(record, signal);
         if (record.state === 'completed') return record;
         if (record.state === 'refused') throw refusal(record);
-        if (!record.jobId) throw new Error('Labs acceptance is incomplete. Submit the retained request again.');
+        if (!record.jobId) throw new Error(`${label} acceptance is incomplete. Submit the retained request again.`);
         return new Promise((resolve, reject) => {
             let completed;
             observeJob(record.jobId, { account, signal, intervalMs: 750,
@@ -36,12 +37,12 @@ export function createLabClient({ request, observeJob, account, storage, uuid = 
                 },
                 onDone: job => completed?.state === 'completed' ? resolve(completed)
                     : reject(completed?.state === 'refused' ? refusal(completed)
-                        : new Error(job.error?.message || `Labs work is ${job.state}. Review it in Jobs before retrying.`)),
+                        : new Error(job.error?.message || `${label} work is ${job.state}. Review it in Jobs before retrying.`)),
                 onStop: async reason => {
                     if (reason === 'done') return;
                     if (reason === 'missing') {
                         read(record.key).then(saved => saved.state === 'completed' ? resolve(saved)
-                            : reject(new Error('The job is unavailable. Its saved Labs record has been retained.')), reject);
+                            : reject(new Error(`The job is unavailable. Its saved ${label} record has been retained.`)), reject);
                     } else if (reason === 'aborted') {
                         try { resolve(await observationClosed(record, signal)); } catch (error) { reject(error); }
                     } else reject(new Error(reason));
@@ -52,11 +53,11 @@ export function createLabClient({ request, observeJob, account, storage, uuid = 
 
     async function run(kind, input, { scope = kind, prepareInput = value => value, ...options } = {}) {
         options.signal?.throwIfAborted();
-        const storageKey = `neconyan-labs:${account}:${scope}`;
+        const storageKey = `${storagePrefix}:${account}:${scope}`;
         const raw = storage.getItem(storageKey);
         let pending = raw ? JSON.parse(raw) : null;
         if (pending && (typeof pending.key !== 'string' || !pending.key || (pending.body && pending.body.kind !== kind))) {
-            throw new Error('The retained Labs request is invalid. It has not been repeated.');
+            throw new Error(`The retained ${label} request is invalid. It has not been repeated.`);
         }
         let record;
         if (pending && !pending.body) record = await read(pending.key);
@@ -68,7 +69,7 @@ export function createLabClient({ request, observeJob, account, storage, uuid = 
                 storage.setItem(storageKey, JSON.stringify(pending));
             }
             try {
-                const accepted = await request('/api/labs/submit', { method: 'POST', body: JSON.stringify(pending.body) });
+                const accepted = await request(`${basePath}/submit`, { method: 'POST', body: JSON.stringify(pending.body) });
                 record = accepted.record;
             } catch (error) {
                 if (error.notAccepted === true) storage.removeItem(storageKey);
@@ -85,31 +86,32 @@ export function createLabClient({ request, observeJob, account, storage, uuid = 
             throw error;
         }
     }
-    const recover = async (key, options) => observe(await request(`/api/labs/records/${encodeURIComponent(key)}/recover`, { method: 'POST', body: '{}' }), options);
+    const recover = async (key, options) => observe(await request(`${basePath}/records/${encodeURIComponent(key)}/recover`, { method: 'POST', body: '{}' }), options);
     return { run, read, list, observe, request, recover };
 }
 
 const recoveryPanels = new WeakMap();
 /** Explicitly finish interrupted local publications; never restart a model request. */
-export function mountLabRecovery(container, { signal, onError = console.error } = {}) {
+export function mountLabRecovery(container, { signal, onError = console.error, getClient = getLabClient,
+    basePath = '/api/labs', label = 'Labs' } = {}) {
     let panel = recoveryPanels.get(container);
     if (!panel) {
         const wrapper = document.createElement('div');
         const select = document.createElement('select');
         select.className = 'text_pole';
-        select.setAttribute('aria-label', 'Interrupted local Labs changes');
+        select.setAttribute('aria-label', `Interrupted local ${label} changes`);
         const button = document.createElement('button');
         button.type = 'button'; button.className = 'menu_button'; button.textContent = 'Recover saved local changes';
         const status = document.createElement('span'); status.setAttribute('role', 'status');
         wrapper.append(select, button, status); wrapper.hidden = true; wrapper.style.display = 'none'; container.prepend(wrapper);
         const lifetime = new AbortController();
         let working = false;
-        const ready = getLabClient();
+        const ready = getClient();
         const refresh = async () => {
             if (working || lifetime.signal.aborted) return;
             working = true;
             try {
-                const records = await (await ready).request('/api/labs/recovery');
+                const records = await (await ready).request(`${basePath}/recovery`);
                 if (lifetime.signal.aborted) return;
                 const selected = select.value;
                 select.replaceChildren(...records.map(record => new Option(record.label, record.key)));
@@ -140,7 +142,11 @@ export function mountLabRecovery(container, { signal, onError = console.error } 
     return dispose;
 }
 
-export async function getLabClient() {
+export function getLabClient() {
+    return getNativeOperationClient();
+}
+
+export async function getNativeOperationClient({ basePath = '/api/labs', storagePrefix = 'neconyan-labs', label = 'Labs' } = {}) {
     const [host, jobs, user] = await Promise.all([import('../script.js'), import('./jobs.js'), import('./user.js')]);
     const account = user.getCurrentUserHandle();
     const request = async (url, options = {}) => {
@@ -150,12 +156,12 @@ export async function getLabClient() {
         if (user.getCurrentUserHandle() !== account) throw new Error('account_changed');
         let body;
         try { body = JSON.parse(text); } catch { body = null; }
-        if (!response.ok) throw Object.assign(new Error(body?.error || `Labs request failed with ${response.status}.`),
+        if (!response.ok) throw Object.assign(new Error(body?.error || `${label} request failed with ${response.status}.`),
             { status: response.status, notAccepted: body?.notAccepted === true });
-        if (!body) throw new Error('The Labs response was not readable. The request has been retained.');
+        if (!body) throw new Error(`The ${label} response was not readable. The request has been retained.`);
         return body;
     };
-    return createLabClient({ request, observeJob: jobs.observeJob, account, storage: localStorage });
+    return createLabClient({ request, observeJob: jobs.observeJob, account, storage: localStorage, basePath, storagePrefix, label });
 }
 
 export async function prepareLabConnection(input) {

@@ -711,10 +711,34 @@ function isDamagedCard(error) {
  * @param {Buffer} bytes New card bytes
  * @param {() => void} legacyWrite Ordinary-storage writer
  */
+/**
+ * Refuses a conditional card write when the installed PNG no longer has the revision the caller checked.
+ * Runs inside the account lease so no other writer can land between the check and the write.
+ * @param {import('express').Request} request
+ * @param {string} filename
+ */
+function assertExpectedCardRevision(request, filename) {
+    const expected = request.body?.expected_revision;
+    if (expected === undefined || expected === '') return;
+    if (typeof expected !== 'string' || !/^[a-f0-9]{64}$/.test(expected)) {
+        throw roleplayError('ROLEPLAY_CHARACTER_REVISION_INVALID', 'The expected character revision is not valid.', 400);
+    }
+    let bytes = null;
+    try {
+        bytes = fs.readFileSync(filename);
+    } catch (error) {
+        if (error?.code !== 'ENOENT') throw error;
+    }
+    if (!bytes || createHash('sha256').update(bytes).digest('hex') !== expected) {
+        throw roleplayError('ROLEPLAY_CHARACTER_CHANGED', 'The character changed after it was checked.', 409);
+    }
+}
+
 function publishCharacterCard(request, avatar, bytes, legacyWrite) {
     const filename = path.join(request.user.directories.characters, avatar);
     return withRoleplayAccount(characterBase(request), null, lease => {
         assertNativeMediaTargetIdle(lease, { kind: 'character', id: avatar });
+        assertExpectedCardRevision(request, filename);
         let valid = true;
         try {
             roleplayEntityContent('character', avatar, bytes, { storage: true });
@@ -2289,6 +2313,7 @@ router.post('/last-chat', getFileNameValidationFunction('avatar'), async functio
 function deleteCharacterCard(request, avatar, avatarPath, chatsDirectory, deleteChats) {
     return withRoleplayAccount(characterBase(request), null, lease => {
         assertNativeMediaTargetIdle(lease, { kind: 'character', id: avatar });
+        assertExpectedCardRevision(request, avatarPath);
         const card = enrolCharacterCard(lease, avatar);
         const cardTracked = card === 'tracked';
         const chats = deleteChats ? characterChats(lease, request, avatar) : { tracked: [], untracked: [], vanished: [], loose: [] };
@@ -2634,6 +2659,17 @@ router.post('/import', async function (request, response) {
 
     if (preservedFileName) {
         recoverFileWriteSync(path.join(request.user.directories.characters, `${preservedFileName}.png`));
+    }
+    if (request.body.expected_revision !== undefined && request.body.expected_revision !== '') {
+        // The same check runs again inside the account lease when the card is published.
+        try {
+            if (!preservedFileName) throw roleplayError('ROLEPLAY_CHARACTER_REVISION_INVALID', 'An expected revision needs the character it replaces.', 400);
+            assertExpectedCardRevision(request, path.join(request.user.directories.characters, `${preservedFileName}.png`));
+        } catch (error) {
+            if (String(error?.code).startsWith('ROLEPLAY_')) return sendCharacterRoleplayError(response, error);
+            console.error('Could not check the character revision before import.', error);
+            return response.sendStatus(500);
+        }
     }
 
     const formatImportFunctions = {

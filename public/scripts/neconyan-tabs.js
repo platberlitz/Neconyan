@@ -12238,49 +12238,6 @@ function startNeconyanUpdateToast() {
     void checkForNeconyanUpdate();
 }
 
-async function requestUserPrivateAction(endpoint, { body = {}, useFormData = false, onProgress = null } = {}) {
-    const buildRequest = async () => {
-        const requestHeaders = await waitForAuthorizedRequestHeaders();
-        const headers = useFormData
-            ? (() => {
-                const multipartHeaders = { ...requestHeaders };
-                delete multipartHeaders['Content-Type'];
-                delete multipartHeaders['content-type'];
-                return multipartHeaders;
-            })()
-            : requestHeaders;
-
-        if (onProgress) headers.Accept = 'application/x-ndjson';
-        return {
-            method: 'POST',
-            headers,
-            body: useFormData ? body : JSON.stringify(body),
-        };
-    };
-
-    const response = await fetchWithCsrfRetry(endpoint, buildRequest, { refreshCsrfToken });
-
-    if (response.ok && onProgress && response.headers.get('content-type')?.includes('application/x-ndjson')) {
-        const { readImportProgress } = await import('./import-progress.js');
-        return readImportProgress(response, onProgress);
-    }
-
-    const text = await response.text();
-    let data = null;
-
-    try {
-        data = text ? JSON.parse(text) : {};
-    } catch {
-        data = { message: text };
-    }
-
-    if (!response.ok) {
-        throw new Error(data?.error || data?.message || text || `Request failed with status ${response.status}.`);
-    }
-
-    return data;
-}
-
 function setServerAdminPill(element, label, tone = 'neutral') {
     if (!(element instanceof HTMLElement)) {
         return;
@@ -13997,10 +13954,8 @@ async function handleSillyTavernFolderImport() {
     setServerAdminMessage(refs.note, 'Importing folder data… This may take a moment for larger libraries.');
 
     try {
-        const result = await requestUserPrivateAction('/api/users/import-sillytavern/folder', {
-            body: { sourcePath },
-            onProgress: showImportProgress,
-        });
+        const { importAccountData } = await import('./account-import.js');
+        const { result } = await importAccountData({ mode: 'folder', path: sourcePath }, { onProgress: showNativeImportProgress });
 
         setServerAdminMessage(refs.note, result?.message || 'Folder import finished. Reloading…', 'good');
         toastr.success(result?.message || 'Folder import finished. Reloading…', 'Import SillyTavern');
@@ -14041,10 +13996,8 @@ async function handleSillyTavernExtensionSync() {
     setServerAdminMessage(refs.note, 'Syncing third-party extensions… Neconyan will validate each one and show a report when it finishes.');
 
     try {
-        const result = await requestUserPrivateAction('/api/users/import-sillytavern/extensions', {
-            body: { sourcePath },
-            onProgress: showImportProgress,
-        });
+        const { importAccountData } = await import('./account-import.js');
+        const { result } = await importAccountData({ mode: 'extensions', path: sourcePath }, { onProgress: showNativeImportProgress });
         const warningCount = Number(result?.warningCount ?? 0) || 0;
         const failedCount = Number(result?.failedCount ?? 0) || 0;
         const needsAttention = warningCount + failedCount > 0;
@@ -14090,19 +14043,13 @@ async function handleSillyTavernZipImport(file) {
         return;
     }
 
-    const formData = new FormData();
-    formData.append('avatar', file, file.name);
-
     setSillyTavernImportBusy(true);
     renderSillyTavernExtensionSyncReport(null);
     setServerAdminMessage(refs.note, 'Importing backup ZIP… This may take a moment for larger libraries.');
 
     try {
-        const result = await requestUserPrivateAction('/api/users/import-sillytavern/zip', {
-            body: formData,
-            useFormData: true,
-            onProgress: showImportProgress,
-        });
+        const { importAccountData } = await import('./account-import.js');
+        const { result } = await importAccountData({ mode: 'zip' }, { file, onProgress: showNativeImportProgress });
 
         setServerAdminMessage(refs.note, result?.message || 'Backup ZIP imported. Reloading…', 'good');
         toastr.success(result?.message || 'Backup ZIP imported. Reloading…', 'Import SillyTavern');
@@ -14119,6 +14066,12 @@ async function handleSillyTavernZipImport(file) {
 
         setSillyTavernImportBusy(false);
     }
+}
+
+function showNativeImportProgress(progress) {
+    const total = Number(progress?.total) || 0;
+    showImportProgress({ percent: total ? Math.round(Number(progress?.completed || 0) / total * 100) : 0,
+        phase: progress?.stage || 'Preparing account import' });
 }
 
 function injectSillyTavernImportCard() {
@@ -14248,6 +14201,14 @@ function injectSillyTavernImportCard() {
         reportHelp,
         reportList,
     };
+
+    void import('./account-import.js').then(module => module.mountSavedAccountImports(card, {
+        onBusy: setSillyTavernImportBusy,
+        onResult: result => {
+            renderSillyTavernExtensionSyncReport(result.mode === 'extensions' ? result : null);
+            if (result.mode === 'extensions') logSillyTavernExtensionSyncReport(result);
+        },
+    })).catch(error => setServerAdminMessage(note, error.message, 'danger'));
 
     folderButton.addEventListener('click', handleSillyTavernFolderImport);
     syncButton.addEventListener('click', handleSillyTavernExtensionSync);

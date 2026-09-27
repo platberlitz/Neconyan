@@ -10,6 +10,7 @@ import { createMacroEnvironment } from '../macros/index.js';
 import { applyRegexScriptList, AGENT_REGEX_PLACEMENT } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { scanWorldInfo } from './world-info-scan.js';
 import { normalizeExtensionBootId } from '../../public/scripts/extension-boot-lifecycle/index.js';
+import { getStringHash } from '../../public/scripts/macro-primitives.js';
 import { captureWorldInfoHookPolicy, worldInfoActivationActions } from './world-info-hook-policy.js';
 import { capturePathfinderSource } from './world-info-pathfinder.js';
 import { captureIncomingRoleplayTranslation, captureRoleplayInputTranslation } from './roleplay-translation.js';
@@ -424,6 +425,9 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             ...(agents ? { agents } : {}),
             ...(companionCapacity ? { companionCapacity } : {}),
             ...(tools ? { tools } : {}),
+            ...(serverPrompt && !agentContext && !extensions.disabledExtensions?.some(name => normalizeExtensionBootId(name) === 'vectors')
+                && ['enabled_chats', 'enabled_files', 'enabled_world_info'].some(key => extensions.vectors?.[key])
+                ? { vectors: { settingsHash: roleplayHash(extensions.vectors) } } : {}),
             hookPolicy, ...(pathfinder ? { pathfinder } : {}),
             ...(translation ? { translation } : {}),
             ...(inputTranslation ? { inputTranslation } : {}),
@@ -473,7 +477,7 @@ export function assertRoleplayWorldInfoCurrent(base, snapshot) {
     }
 }
 
-export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.random, onEntriesLoaded, onScan, macros, promptChat, promptGlobal, promptInjections = [] } = {}) {
+export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.random, onEntriesLoaded, onScan, macros, promptChat, promptGlobal, promptInjections = [], vectorEntries = [] } = {}) {
     assertRoleplayWorldInfoCurrent(base, snapshot);
     let records;
     const selected = withRoleplayAccount(base, snapshot.account, lease => {
@@ -540,8 +544,16 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
         || Buffer.byteLength(JSON.stringify(global)) > 2 * 1024 * 1024) {
         throw roleplayError('ROLEPLAY_INVALID', 'The prepared World Info character context is invalid.', 409);
     }
+    if (!Array.isArray(vectorEntries) || vectorEntries.length && !snapshot.vectors) throw roleplayError('ROLEPLAY_INVALID', 'Vector activation needs its bound saved context.', 409);
+    const external = vectorEntries.map(item => {
+        const book = selected[item.world];
+        const entry = book && Object.entries(book.data.entries).find(([key, entry]) => String(entry.uid ?? key) === String(item.uid))?.[1];
+        if (!entry || entry.disable || getStringHash(String(entry.content ?? '')) !== item.hash) throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'A vector-selected lore entry changed.', 409);
+        return `${item.world}.${item.uid}`;
+    });
     const result = await scanWorldInfo({ entries, chat: promptChat ?? snapshot.chat, metadata: snapshot.metadata,
-        settings: snapshot.settings, global: { ...global, inject: [...global.inject, ...promptInjections], characterFile: snapshot.characterFile },
+        settings: snapshot.settings, global: { ...global, inject: [...global.inject, ...promptInjections], characterFile: snapshot.characterFile,
+            ...(external.length ? { external } : {}) },
         maxContext: snapshot.maxContext, countTokens: count, substitute, random, onScan, transform });
     const outputText = [result.worldInfoBefore, result.worldInfoAfter,
         ...result.EMEntries.map(entry => entry.content), ...result.WIDepthEntries.flatMap(entry => entry.entries),
@@ -556,6 +568,7 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
         ...(promptChat !== undefined ? { promptChatHash: roleplayHash(promptChat) } : {}),
         ...(promptGlobal !== undefined ? { promptGlobalHash: roleplayHash(promptGlobal) } : {}),
         ...(promptInjections.length ? { promptInjectionsHash: roleplayHash(promptInjections) } : {}),
+        ...(snapshot.vectors ? { vectorEntriesHash: roleplayHash(vectorEntries) } : {}),
         boundLore: [...new Set([...snapshot.names.chat, ...snapshot.names.character, ...snapshot.names.global])]
             .flatMap(name => Object.values(selected[name].data.entries).filter(entry => !entry.disable).map(entry => ({
                 book: name,

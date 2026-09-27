@@ -299,6 +299,8 @@ export async function commitPreparedCardImport(prepared, { replaceAvatar, expect
         form.append('file_type', prepared.kind);
         if (typeof replaceAvatar === 'string' && replaceAvatar !== '') {
             form.append('preserved_name', replaceAvatar);
+            // The host re-checks this inside its write lock, closing the check/write race.
+            form.append('expected_revision', expectedRevision);
         }
 
         assertCanWrite(signal);
@@ -315,6 +317,9 @@ export async function commitPreparedCardImport(prepared, { replaceAvatar, expect
             });
         } catch {
             return { avatar: null, name: '', committed: null, canUndo: false, revision: null, refreshed: false };
+        }
+        if (importResponse.status === 409) {
+            throw new Error('character_changed');
         }
         if (!importResponse.ok) {
             throw new Error('import_failed');
@@ -436,8 +441,7 @@ async function verifyRevision(avatar, expected, signal) {
     if (typeof expected !== 'string' || !/^[a-f0-9]{64}$/.test(expected)) {
         throw new Error('character_unverified');
     }
-    // ponytail: preflight detects prior edits; only a conditional host write can
-    // close the remaining check/write race with another tab.
+    // Preflight gives an early answer; the host repeats the check inside its write lock.
     if (await readCharacterRevision(avatar, { signal }) !== expected) {
         throw new Error('character_changed');
     }
@@ -500,8 +504,11 @@ export async function removeCharacter(avatar, { expectedRevision, signal } = {})
             method: 'POST',
             credentials: 'same-origin',
             headers: ctx.getRequestHeaders(),
-            body: JSON.stringify({ avatar_url: avatar, delete_chats: false }),
+            body: JSON.stringify({ avatar_url: avatar, delete_chats: false, expected_revision: expectedRevision }),
         });
+        if (response.status === 409) {
+            throw new Error('character_changed');
+        }
         if (!response.ok) {
             throw new Error('delete_failed');
         }

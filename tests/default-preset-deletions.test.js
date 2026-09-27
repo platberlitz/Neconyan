@@ -19,7 +19,7 @@ jest.unstable_mockModule('../src/endpoints/thumbnails.js', () => ({ invalidateTh
 jest.unstable_mockModule('../src/authoring-store.js', () => ({ writeAuthoringFileLocked: jest.fn() }));
 jest.unstable_mockModule('../src/generation/media-jobs.js', () => ({ assertNativeMediaTargetIdle: jest.fn() }));
 jest.unstable_mockModule('../src/roleplay-store.js', () => ({
-    assertUntrackedRoleplayFiles: jest.fn(), roleplayAccountBase: jest.fn(() => null), roleplayLease: jest.fn(),
+    assertUntrackedRoleplayFiles: jest.fn(), readRoleplayFile: jest.fn(), roleplayAccountBase: jest.fn(() => null), roleplayLease: jest.fn(),
     validRoleplayAvatar: jest.fn(() => true), withRoleplayAccount: jest.fn(),
 }));
 jest.unstable_mockModule('../src/roleplay-lifecycle.js', () => ({ commitRoleplayLifecycleLocked: jest.fn(), roleplayTrackedInstance: jest.fn(() => null) }));

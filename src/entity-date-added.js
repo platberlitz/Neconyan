@@ -301,31 +301,35 @@ export function removeEntityDateAdded(userRoot, entityType, id, now = Date.now()
  * @param {string|Buffer|object} value Imported metadata.
  */
 export function importEntityDateAdded(userRoot, value) {
+    withStoreLock(userRoot, () => {
+        const state = readStore(userRoot);
+        const importedStore = mergeImportedEntityDateAdded(state.store, value);
+        tryWriteFileSync(state.filePath, `${JSON.stringify(importedStore, null, 4)}\n`, 'utf8', { durable: true });
+    });
+}
+
+/** Prepare the same merge for a recorded publication without writing the current file. */
+export function mergeImportedEntityDateAdded(current, value) {
     const parsed = typeof value === 'string' || Buffer.isBuffer(value)
         ? JSON.parse(value.toString())
         : value;
     const importedStore = normalizeStore(parsed);
-
-    withStoreLock(userRoot, () => {
-        const state = readStore(userRoot);
-        for (const entityType of ENTITY_TYPES) {
-            const currentScope = state.store[entityType];
-            const importedScope = importedStore[entityType];
-
-            for (const [id, timestamp] of Object.entries(currentScope.entries)) {
-                if (!Object.hasOwn(importedScope.entries, id)) {
-                    importedScope.entries[id] = timestamp;
-                    delete importedScope.deleted[id];
-                }
+    const currentStore = current ? normalizeStore(current) : createStore();
+    for (const entityType of ENTITY_TYPES) {
+        const currentScope = currentStore[entityType];
+        const importedScope = importedStore[entityType];
+        for (const [id, timestamp] of Object.entries(currentScope.entries)) {
+            if (!Object.hasOwn(importedScope.entries, id)) {
+                importedScope.entries[id] = timestamp;
+                delete importedScope.deleted[id];
             }
-            for (const [id, timestamp] of Object.entries(currentScope.deleted)) {
-                if (!Object.hasOwn(importedScope.entries, id) && !Object.hasOwn(importedScope.deleted, id)) {
-                    importedScope.deleted[id] = timestamp;
-                }
-            }
-            importedScope.initialized ||= currentScope.initialized;
         }
-
-        tryWriteFileSync(state.filePath, `${JSON.stringify(importedStore, null, 4)}\n`, 'utf8', { durable: true });
-    });
+        for (const [id, timestamp] of Object.entries(currentScope.deleted)) {
+            if (!Object.hasOwn(importedScope.entries, id) && !Object.hasOwn(importedScope.deleted, id)) {
+                importedScope.deleted[id] = timestamp;
+            }
+        }
+        importedScope.initialized ||= currentScope.initialized;
+    }
+    return importedStore;
 }

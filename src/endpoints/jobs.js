@@ -124,7 +124,7 @@ router.post('/submit', (request, response) => {
     try {
         const { owner, directories } = directoriesFor(request);
         const body = request.body ?? {};
-        if (RESERVED_JOB_TYPES.has(body.type) || /^(media|roleplay|meower|labs)\./.test(String(body.type))) {
+        if (RESERVED_JOB_TYPES.has(body.type) || /^(media|roleplay|meower|labs|operations)\./.test(String(body.type))) {
             return response.status(400).json({ error: 'This job type requires its native acceptance endpoint.' });
         }
         const accepted = acceptJob(directories, {
@@ -155,10 +155,18 @@ router.post('/:id/cancel', async (request, response) => {
         if (!job || job.owner !== owner) return response.status(404).json({ error: 'No such job.' });
         await retainConversationAutomaticAcceptance(request, job);
         const requested = requestCancellation(directories, job.id, { reason: request.body?.reason ?? null });
-        // A family root's participants hold their own controllers; stop them too
-        // so an in-flight provider call or delay does not run to completion.
-        for (const childId of requested.job.children ?? []) abortJob(childId);
-        abortJob(job.id);
+        // A reply may own retrieval work below a workflow child. Stop every
+        // owned controller after the complete cancellation is durable.
+        const pending = [requested.job.id];
+        const visited = new Set();
+        for (const id of pending) {
+            if (visited.has(id)) continue;
+            visited.add(id);
+            const current = getJob(directories, id);
+            if (!current || current.owner !== owner) continue;
+            pending.push(...(current.children ?? []));
+            abortJob(id);
+        }
         return response.json({ job: requested.job });
     } catch (error) {
         return fail(response, error);

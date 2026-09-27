@@ -1855,6 +1855,27 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             return Promise.resolve();
         }
 
+        // An ordinary group turn runs on the server: the speakers chosen above are
+        // handed over in order, and the server writes every reply even if the page closes.
+        if (!['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && !params?.quiet_prompt && getCurrentChatId()) {
+            const workflows = await import('./neconyan-conversation/roleplay-workflows.js');
+            const { roleplayAccountStamp } = await import('./roleplay-save-chain.js');
+            let ready = true;
+            try { roleplayAccountStamp(); } catch { ready = false; }
+            const forcedAvatars = activatedMembers.map(chid => characters[chid]?.avatar).filter(Boolean);
+            if (ready && forcedAvatars.length === activatedMembers.length) {
+                deactivateSendButtons();
+                setGroupTypingIndicator(characters[activatedMembers[0]]?.name || '');
+                await eventSource.emit(event_types.GROUP_WRAPPER_STARTED, { selected_group, type });
+                textResult = await workflows.submitRoleplayGroupTurn({ groupId: selected_group, forcedAvatars,
+                    generationId: group_generation_id, signal: params?.signal ?? null });
+                if (selectedSpeakerChid !== -1 && !(params && typeof params.force_chid == 'number')) {
+                    clearSelectedGroupSpeaker();
+                }
+                return Promise.resolve(textResult);
+            }
+        }
+
         await unshallowGroupMembers(selected_group);
         groupChatQueueOrder = new Map();
 

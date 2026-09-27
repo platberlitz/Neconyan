@@ -89,28 +89,10 @@ router.post('/chat/get', async (request, response) => {
     }
 });
 
-router.post('/chat/delete', async (request, response) => {
-    try {
-        const name = request.body?.name;
-        const backup = await inspectChatBackupFile(request.user.directories.backups, name);
-
-        if (backup.status !== 200) {
-            if (backup.status === 400) {
-                console.warn('Attempt to delete non-chat backup file:', name);
-            }
-            return response.sendStatus(backup.status);
-        }
-
-        await fsPromises.unlink(backup.filePath);
-        return response.sendStatus(200);
-    } catch (error) {
-        if (error?.code === 'ENOENT') {
-            return response.sendStatus(404);
-        }
-        console.error(error);
-        return response.sendStatus(500);
-    }
-});
+router.post('/chat/delete', (_request, response) => response.status(409).json({
+    error: 'Chat backups are deleted by a saved server job. Submit chat-backup-delete through /api/operations/submit.',
+    code: 'NATIVE_OPERATION_REQUIRED',
+}));
 
 router.post('/chat/download', async (request, response) => {
     try {

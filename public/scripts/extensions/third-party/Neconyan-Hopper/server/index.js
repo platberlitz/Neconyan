@@ -1,11 +1,12 @@
 import fs from 'node:fs/promises';
-import { constants } from 'node:fs';
+import syncFs, { constants } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { SETTINGS_KEY } from '../src/core.js';
 import { checkMeowerReceipts } from './job-receipts.js';
 import { MAX_STORE_BYTES, HOST_STORE_NAME, HOST_PLUGIN_MARKER, encodedLimit, migrateLegacy, parseBytes, sizeOf, storeFrom } from '../src/storage-format.js';
+import { withRoleplayAccount } from '../../../../../../src/roleplay-store.js';
 
 export const info = { id: 'hopper', name: 'Meower', description: 'Private, revision-checked storage for Meower timelines.' };
 
@@ -28,7 +29,7 @@ async function readBytes(file, limit) {
     }
     try {
         const stat = await handle.stat();
-        if (!stat.isFile()) fail(500, 'Saved Meower data is not a regular file.');
+        if (!stat.isFile() || stat.nlink !== 1) fail(500, 'Saved Meower data is not a private regular file.');
         if (stat.size > limit) fail(413, 'Saved Meower data exceeds the supported size limit.');
         const bytes = await handle.readFile();
         if (bytes.length > limit) fail(413, 'Saved Meower data exceeds the supported size limit.');
@@ -74,122 +75,145 @@ async function loadStore(directories, account) {
     return { ...await migrateLegacy(raw, (pointer, limit) => readBytes(path.join(directories.files, path.basename(pointer)), limit)), receipts: {}, previous: null };
 }
 
-async function temporaryFile(directory, bytes) {
+function temporaryFile(directory, bytes) {
     const file = path.join(directory, `store-${randomUUID()}.tmp`);
     try {
-        const handle = await fs.open(file, 'wx', 0o600);
+        const handle = syncFs.openSync(file, 'wx', 0o600);
         try {
-            await handle.writeFile(bytes);
-            await handle.sync();
+            syncFs.writeFileSync(handle, bytes);
+            syncFs.fsyncSync(handle);
         } finally {
-            await handle.close();
+            syncFs.closeSync(handle);
         }
         return file;
     } catch (error) {
-        await fs.rm(file, { force: true }).catch(() => {});
+        try { syncFs.rmSync(file, { force: true }); } catch { /* Retain the original write error. */ }
         throw error;
     }
 }
 
-async function markServerStorage(directory) {
-    const folder = await fs.open(directory, constants.O_RDONLY | constants.O_DIRECTORY);
+function markServerStorage(directory) {
+    const folder = syncFs.openSync(directory, constants.O_RDONLY | constants.O_DIRECTORY);
     let pending;
     try {
-        pending = await temporaryFile(directory, '{"format":1,"storage":"server"}\n');
-        await fs.rename(pending, path.join(directory, HOST_PLUGIN_MARKER));
+        pending = temporaryFile(directory, '{"format":1,"storage":"server"}\n');
+        syncFs.renameSync(pending, path.join(directory, HOST_PLUGIN_MARKER));
         pending = null;
         // Keep the marker on failure, and sync it again on retry, even if already visible.
-        await folder.sync();
+        syncFs.fsyncSync(folder);
     } finally {
-        if (pending) await fs.rm(pending, { force: true }).catch(() => {});
-        await folder.close();
+        if (pending) syncFs.rmSync(pending, { force: true });
+        syncFs.closeSync(folder);
     }
 }
 
-async function saveStore(directory, store, previous) {
+function saveStore(directory, store, previous) {
     const bytes = `${sizeOf(store, MAX_STORE_BYTES - 1, 'The Meower store (128 MiB limit)')}\n`;
-    const folder = await fs.open(directory, constants.O_RDONLY | constants.O_DIRECTORY);
+    const folder = syncFs.openSync(directory, constants.O_RDONLY | constants.O_DIRECTORY);
     const current = path.join(directory, 'store.json');
     let pending;
     let backup;
     let restored;
     try {
-        pending = await temporaryFile(directory, bytes);
+        pending = temporaryFile(directory, bytes);
         if (previous !== null) {
-            backup = await temporaryFile(directory, previous);
-            await fs.rename(backup, path.join(directory, 'store.previous.json'));
+            backup = temporaryFile(directory, previous);
+            syncFs.renameSync(backup, path.join(directory, 'store.previous.json'));
             backup = null;
         }
-        await folder.sync();
-        await fs.rename(pending, current);
+        syncFs.fsyncSync(folder);
+        syncFs.renameSync(pending, current);
         pending = null;
         try {
-            await folder.sync();
+            syncFs.fsyncSync(folder);
         } catch (error) {
             // A failed directory sync must not leave a newer visible revision after a failed save.
             if (previous !== null) {
-                restored = await temporaryFile(directory, previous);
-                await fs.rename(restored, current);
+                restored = temporaryFile(directory, previous);
+                syncFs.renameSync(restored, current);
                 restored = null;
             } else {
-                await fs.unlink(current);
+                syncFs.unlinkSync(current);
             }
-            await folder.sync();
+            syncFs.fsyncSync(folder);
             throw error;
         }
     } finally {
-        await Promise.all([pending, backup, restored].filter(Boolean).map(file => fs.rm(file, { force: true }).catch(() => {})));
-        await folder.close();
+        for (const file of [pending, backup, restored].filter(Boolean)) {
+            try { syncFs.rmSync(file, { force: true }); } catch { /* Keep failed-write evidence. */ }
+        }
+        syncFs.closeSync(folder);
     }
     return bytes;
 }
 
-async function writeLocked(directories, account, produce) {
+async function writeLocked(directories, account, stamp, produce) {
+    const base = { owner: account, directories };
     const directory = path.join(directories.root, 'hopper');
-    await fs.mkdir(directory, { mode: 0o700 }).catch(error => { if (error.code !== 'EEXIST') throw error; });
-    const stat = await fs.lstat(directory);
-    if (!stat.isDirectory() || stat.isSymbolicLink()) fail(500, 'The private Meower storage directory is invalid.');
-    const parent = await fs.open(directories.root, constants.O_RDONLY | constants.O_DIRECTORY);
-    try {
-        await parent.sync();
-    } finally {
-        await parent.close();
-    }
     const lock = path.join(directory, 'store.lock');
-    try {
-        await fs.mkdir(lock, { mode: 0o700 });
-    } catch (error) {
-        if (error.code === 'EEXIST') {
-            // ponytail: never steal stale locks. Stop the host and clear hopper/store.lock manually after a crash.
-            fail(423, 'Meower storage is locked. Retry shortly; after a server crash, ask the administrator to clear the Meower storage lock while the host is stopped.');
+    const lockIdentity = withRoleplayAccount(base, stamp, () => {
+        try { syncFs.mkdirSync(directory, { mode: 0o700 }); } catch (error) { if (error.code !== 'EEXIST') throw error; }
+        const stat = syncFs.lstatSync(directory);
+        if (!stat.isDirectory() || stat.isSymbolicLink()) fail(500, 'The private Meower storage directory is invalid.');
+        const parent = syncFs.openSync(directories.root, constants.O_RDONLY | constants.O_DIRECTORY);
+        try { syncFs.fsyncSync(parent); } finally { syncFs.closeSync(parent); }
+        try {
+            syncFs.mkdirSync(lock, { mode: 0o700 });
+        } catch (error) {
+            if (error.code === 'EEXIST') {
+                // Never steal stale locks. Stop the host and clear this lock manually after a crash.
+                fail(423, 'Meower storage is locked. Retry shortly; after a server crash, ask the administrator to clear the Meower storage lock while the host is stopped.');
+            }
+            throw error;
         }
-        throw error;
-    }
+        return syncFs.lstatSync(lock, { bigint: true });
+    });
     try {
-        await fs.writeFile(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, hostname: hostname(), startedAt: new Date().toISOString() }), { flag: 'wx', mode: 0o600 });
+        withRoleplayAccount(base, stamp, () => syncFs.writeFileSync(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, hostname: hostname(), startedAt: new Date().toISOString() }), { flag: 'wx', mode: 0o600 }));
         const current = await loadStore(directories, account);
         const draft = JSON.parse(JSON.stringify({ store: current.store, receipts: current.receipts }));
-        const result = await produce(draft.store, draft.receipts);
-        if (result?.unchanged || result?.conflict) return { ...current, ...result };
-        if (current.store.revision === Number.MAX_SAFE_INTEGER) fail(500, 'The Meower revision limit has been reached. Nothing was saved.');
-        const store = storeFrom({ ...draft.store, revision: current.store.revision + 1 }, { strict: true }).store;
-        const envelope = { ...store, account, jobReceipts: draft.receipts };
-        const { unused } = checkMeowerReceipts(draft.receipts);
-        sizeOf(envelope, MAX_STORE_BYTES - 1 - unused, 'The Meower store including reserved job receipts');
-        await markServerStorage(directories.files);
-        // Persist the imported revision first so even the first committed save has a private backup.
-        if (current.previous === null) current.previous = await saveStore(directory, current.store, null);
-        await saveStore(directory, envelope, current.previous);
-        return { store, receipts: draft.receipts, warnings: [], result };
+        const result = await produce(draft.store, draft.receipts, stamp);
+        return withRoleplayAccount(base, stamp, () => {
+            if (result?.unchanged || result?.conflict) return { ...current, ...result };
+            if (current.store.revision === Number.MAX_SAFE_INTEGER) fail(500, 'The Meower revision limit has been reached. Nothing was saved.');
+            const store = storeFrom({ ...draft.store, revision: current.store.revision + 1 }, { strict: true }).store;
+            const envelope = { ...store, account, jobReceipts: draft.receipts };
+            const { unused } = checkMeowerReceipts(draft.receipts);
+            sizeOf(envelope, MAX_STORE_BYTES - 1 - unused, 'The Meower store including reserved job receipts');
+            markServerStorage(directories.files);
+            // Persist the imported revision first so even the first committed save has a private backup.
+            if (current.previous === null) current.previous = saveStore(directory, current.store, null);
+            saveStore(directory, envelope, current.previous);
+            return { store, receipts: draft.receipts, warnings: [], result };
+        });
     } finally {
-        await fs.rm(lock, { recursive: true, force: true });
+        releaseStoreLock(base, stamp, lock, lockIdentity);
     }
+}
+
+function releaseStoreLock(base, stamp, lock, identity) {
+    try {
+        withRoleplayAccount(base, stamp, () => {
+            const current = syncFs.lstatSync(lock, { bigint: true });
+            if (current.dev !== identity.dev || current.ino !== identity.ino || current.birthtimeNs !== identity.birthtimeNs) fail(409, 'The Meower storage lock was replaced.');
+            syncFs.rmSync(lock, { recursive: true });
+        });
+    } catch (error) {
+        // An old epoch must never remove a replacement account's lock.
+        if (!['ROLEPLAY_ACCOUNT_CHANGED', 'ROLEPLAY_ACCOUNT_UNAVAILABLE'].includes(error.code)) throw error;
+    }
+}
+
+function resolveDirectories(directories) {
+    return { ...directories, root: path.resolve(directories.root), files: path.resolve(directories.files) };
 }
 
 /** Native jobs and browser writes share this queue and the on-disk lock. */
 export async function mutateMeowerStore(directories, account, produce) {
+    directories = resolveDirectories(directories);
+    const stamp = withRoleplayAccount({ owner: account, directories }, null, (_lease, current) => current);
     const key = path.resolve(directories.root);
-    const attempt = (writes.get(key) ?? Promise.resolve()).then(() => writeLocked(directories, account, produce));
+    const attempt = (writes.get(key) ?? Promise.resolve()).then(() => writeLocked(directories, account, stamp, produce));
     const settled = attempt.catch(() => {});
     writes.set(key, settled);
     try { return await attempt; } finally {
@@ -199,8 +223,12 @@ export async function mutateMeowerStore(directories, account, produce) {
 
 /** Internal reads include permanent receipts; HTTP responses expose only the normal store. */
 export async function readMeowerStore(directories, account) {
+    directories = resolveDirectories(directories);
+    const base = { owner: account, directories };
+    const stamp = withRoleplayAccount(base, null, (_lease, current) => current);
     await writes.get(path.resolve(directories.root));
-    return loadStore(directories, account);
+    const saved = await loadStore(directories, account);
+    return withRoleplayAccount(base, stamp, () => saved);
 }
 
 /**

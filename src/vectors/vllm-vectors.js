@@ -3,7 +3,7 @@ import urlJoin from 'url-join';
 import { setAdditionalHeadersByType } from '../additional-headers.js';
 import { TEXTGEN_TYPES } from '../constants.js';
 import { trimV1 } from '../util.js';
-import { createSingleVectorFn, extractOpenAIEmbeddings } from './common.js';
+import { createSingleVectorFn, extractOpenAIEmbeddings, readEmbeddingResponse } from './common.js';
 
 /**
  * Gets the vector for the given text from VLLM
@@ -13,13 +13,14 @@ import { createSingleVectorFn, extractOpenAIEmbeddings } from './common.js';
  * @param {import('../users.js').UserDirectoryList} directories - The directories object for the user
  * @returns {Promise<number[][]>} - The array of vectors for the texts
  */
-export async function getVllmBatchVector(texts, apiUrl, model, directories) {
+export async function getVllmBatchVector(texts, apiUrl, model, directories, { fetchImpl = fetch, signal } = {}) {
     const url = new URL(urlJoin(trimV1(apiUrl), '/v1/embeddings'));
 
     const headers = {};
     setAdditionalHeadersByType(headers, TEXTGEN_TYPES.VLLM, apiUrl, directories);
 
-    const response = await fetch(url, {
+    const response = await fetchImpl(url, {
+        signal,
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -28,13 +29,7 @@ export async function getVllmBatchVector(texts, apiUrl, model, directories) {
         body: JSON.stringify({ input: texts, model }),
     });
 
-    if (!response.ok) {
-        const responseText = await response.text();
-        throw new Error(`VLLM: Failed to get vector for text: ${response.statusText} ${responseText}`);
-    }
-
-    /** @type {any} */
-    const data = await response.json();
+    const data = await readEmbeddingResponse(response, 'VLLM');
     return extractOpenAIEmbeddings(data, 'VLLM');
 }
 
@@ -47,4 +42,3 @@ export async function getVllmBatchVector(texts, apiUrl, model, directories) {
  * @returns {Promise<number[]>} - The vector for the text
  */
 export const getVllmVector = createSingleVectorFn(getVllmBatchVector);
-

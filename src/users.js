@@ -10,15 +10,14 @@ import { Buffer } from 'node:buffer';
 import storage from 'node-persist';
 import express from 'express';
 import mime from 'mime-types';
-import archiver from 'archiver';
 import _ from 'lodash';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import sanitize from 'sanitize-filename';
 import ipMatching from 'ip-matching';
 
 import { USER_DIRECTORY_TEMPLATE, DEFAULT_USER, PUBLIC_DIRECTORIES, SETTINGS_FILE, UPLOADS_DIRECTORY } from './constants.js';
-import { getConfigValue, color, delay, generateTimestamp, invalidateFirefoxCache, isPathUnderParent, recoverFileWriteSync, setPermissionsSync } from './util.js';
-import { allowKeysExposure, readSecret, writeSecret, SECRETS_FILE } from './endpoints/secrets.js';
+import { getConfigValue, color, delay, invalidateFirefoxCache, isPathUnderParent, recoverFileWriteSync, setPermissionsSync } from './util.js';
+import { readSecret, writeSecret } from './endpoints/secrets.js';
 import { getContentOfType } from './endpoints/content-manager.js';
 import { serverDirectory } from './server-directory.js';
 import { filterValidIpPatterns, getIpFromRequest } from './express-common.js';
@@ -1168,49 +1167,6 @@ export function requireAdminMiddleware(request, response, next) {
 
     console.warn('Unauthorized access to admin endpoint:', request.originalUrl);
     return response.sendStatus(403);
-}
-
-/**
- * Creates an archive of the user's data root directory.
- * @param {string} handle User handle
- * @param {import('express').Response} response Express response object to write to
- * @returns {Promise<void>} Promise that resolves when the archive is created
- */
-export async function createBackupArchive(handle, response) {
-    const directories = getUserDirectories(handle);
-
-    console.info('Backup requested for', handle);
-    const archive = archiver('zip');
-
-    archive.on('error', function (err) {
-        response.status(500).send({ error: err.message });
-    });
-
-    // On stream closed we can end the request
-    archive.on('end', function () {
-        console.info('Archive wrote %d bytes', archive.pointer());
-        response.end(); // End the Express response
-    });
-
-    const timestamp = generateTimestamp();
-
-    // Set the archive name
-    response.attachment(`${handle}-${timestamp}.zip`);
-
-    // This is the streaming magic
-    // @ts-ignore
-    archive.pipe(response);
-
-    // Append files from a sub-directory, putting its contents at the root of archive
-    const ignore = allowKeysExposure ? [] : [SECRETS_FILE, 'backups/secrets_migration_*.json'];
-    archive.glob('**/*', {
-        cwd: directories.root,
-        follow: false,
-        stat: true,
-        dot: true,
-        ignore,
-    });
-    archive.finalize();
 }
 
 /**

@@ -473,7 +473,8 @@ export function attachOwnedChild(directories, parentId, childId, { parentIntentH
             || crypto.createHash('sha256').update(canonical(child.intent)).digest('hex') !== childIntentHash) {
             throw fail(409, 'JOB_FAMILY_CONFLICT', 'The saved workflow child does not belong to its accepted parent.');
         }
-        if (parent.type !== 'media.roleplay-workflow' || child.parentId && child.parentId !== parentId
+        const vectorChild = ['roleplay.reply', 'roleplay.candidate'].includes(parent.type) && child.type === 'operations.vectors';
+        if (parent.type !== 'media.roleplay-workflow' && !vectorChild || child.parentId && child.parentId !== parentId
             || isTerminal(parent) || parent.cancellation?.requested || child.cancellation?.requested) {
             throw fail(409, 'JOB_FAMILY_CONFLICT', 'The saved workflow family changed before a child could run.');
         }
@@ -592,9 +593,15 @@ export function requestCancellation(directories, id, { reason = null } = {}) {
         }
         // Cancelling a family cancels its unfinished children in the same write.
         // Committed child effects stay intact; only pending work stops.
-        for (const childId of job.children ?? []) {
+        const descendants = [...(job.children ?? [])];
+        const visited = new Set([job.id]);
+        for (const childId of descendants) {
+            if (visited.has(childId)) continue;
+            visited.add(childId);
             const child = store.jobs[jobKey(childId)];
-            if (!child || TERMINAL_STATES.includes(child.state)) continue;
+            if (!child || child.owner !== job.owner) continue;
+            descendants.push(...(child.children ?? []));
+            if (TERMINAL_STATES.includes(child.state)) continue;
             child.cancellation = { requested: true, requestedAt: now(), reason };
             child.updatedAt = now();
             if (child.state === 'queued' || child.state === 'waiting') {

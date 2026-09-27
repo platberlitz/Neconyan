@@ -1,22 +1,24 @@
 import { describe, expect, jest, test } from '@jest/globals';
 
-async function importHelper({ resolvedProfileId = 'profile-1', profileResponse = { content: '.profile { color: red; }' }, fallbackResponse = '.fallback { color: blue; }', sendRequestImpl = null } = {}) {
+async function importHelper({ resolvedProfileId = 'profile-1', result = { applied: true, customCss: '.done {}', previousVersion: 3, version: 4, settingsRevision: 9 } } = {}) {
     jest.resetModules();
 
-    const sendRequest = sendRequestImpl ?? jest.fn(async () => profileResponse);
-    const generateRaw = jest.fn(async () => fallbackResponse);
     const resolveConnectionProfile = jest.fn(profileId => String(profileId || resolvedProfileId).trim());
-    const extractProfileResponseText = jest.fn(response => String(response?.content ?? response ?? ''));
+    const run = jest.fn(async (kind, input, options) => {
+        await options.prepareInput(input);
+        return { state: 'completed', result };
+    });
+    const saveSettings = jest.fn(async () => true);
+    const adoptServerSettingsWrite = jest.fn(() => true);
+    const getActiveGenerationAcknowledgement = jest.fn(() => ({ account: 'alice', settingsRevision: 3 }));
 
-    await jest.unstable_mockModule('../public/script.js', () => ({ generateRaw }));
+    await jest.unstable_mockModule('../public/script.js', () => ({ saveSettings, adoptServerSettingsWrite, getActiveGenerationAcknowledgement }));
+    await jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => 'alice' }));
+    await jest.unstable_mockModule('../public/scripts/operations-client.js', () => ({ getOperationClient: async () => ({ run }) }));
     await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-store.js', () => ({ resolveConnectionProfile }));
-    await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/profile-utils.js', () => ({
-        getConnectionManagerRequestService: jest.fn(() => ({ sendRequest })),
-    }));
-    await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/llm-utils.js', () => ({ extractProfileResponseText }));
 
     const helper = await import('../public/scripts/neconyan-custom-css-ai.js');
-    return { helper, sendRequest, generateRaw, resolveConnectionProfile, extractProfileResponseText };
+    return { helper, run, saveSettings, adoptServerSettingsWrite, getActiveGenerationAcknowledgement, resolveConnectionProfile };
 }
 
 describe('SillyBunny Custom CSS AI helper', () => {
@@ -50,44 +52,27 @@ describe('SillyBunny Custom CSS AI helper', () => {
         expect(messages[1].content).toContain('--SmartThemeBodyColor: white;');
     });
 
-    test('uses the resolved connection profile before falling back', async () => {
-        const { helper, sendRequest, generateRaw } = await importHelper({
-            profileResponse: { content: '```css\n.profile { color: red; }\n```' },
-        });
+    test('submits one retained server job and adopts its settings write', async () => {
+        const { helper, run, saveSettings, adoptServerSettingsWrite, getActiveGenerationAcknowledgement } = await importHelper();
+        const result = await helper.generateCustomCssWithAI({ instruction: 'Make it cosy', profileId: 'profile-1', mode: 'append', paletteSnapshot: '--neco-ink: #111;' });
 
-        const css = await helper.generateCustomCssWithAI({
-            instruction: 'Use red accents.',
-            currentCss: '',
-            profileId: 'profile-2',
-            paletteSnapshot: '',
-        });
-
-        expect(css).toBe('.profile { color: red; }');
-        expect(sendRequest).toHaveBeenCalledWith(
-            'profile-2',
-            expect.any(Array),
-            helper.CUSTOM_CSS_AI_MAX_TOKENS,
-            expect.objectContaining({ extractData: true, includePreset: true, includeInstruct: true, stream: false }),
-        );
-        expect(generateRaw).not.toHaveBeenCalled();
+        expect(run).toHaveBeenCalledTimes(1);
+        expect(run).toHaveBeenCalledWith('custom-css', { instruction: 'Make it cosy', paletteSnapshot: '--neco-ink: #111;', mode: 'append', profileId: 'profile-1' },
+            expect.objectContaining({ scope: 'custom-css' }));
+        expect(saveSettings).toHaveBeenCalledWith(0, { returnResult: true });
+        expect(getActiveGenerationAcknowledgement).not.toHaveBeenCalled();
+        expect(adoptServerSettingsWrite).toHaveBeenCalledWith({ account: 'alice', previousVersion: 3, version: 4, settingsRevision: 9 });
+        expect(result.customCss).toBe('.done {}');
     });
 
-    test('falls back to the main model when the profile request fails', async () => {
-        const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-        const { helper, sendRequest, generateRaw } = await importHelper({
-            sendRequestImpl: jest.fn(async () => { throw new Error('profile failed'); }),
-            fallbackResponse: '```css\n.fallback { color: blue; }\n```',
-        });
+    test('uses the acknowledged active connection and never falls back after a failure', async () => {
+        const { helper, run, getActiveGenerationAcknowledgement, adoptServerSettingsWrite } = await importHelper({ result: { applied: false, css: '.kept {}', customCss: '.newer {}' } });
+        await helper.generateCustomCssWithAI({ instruction: 'Rounder buttons', paletteSnapshot: '' });
+        expect(getActiveGenerationAcknowledgement).toHaveBeenCalledTimes(1);
+        expect(adoptServerSettingsWrite).not.toHaveBeenCalled();
 
-        const css = await helper.generateCustomCssWithAI({
-            instruction: 'Use blue accents.',
-            currentCss: '',
-            paletteSnapshot: '',
-        });
-
-        expect(css).toBe('.fallback { color: blue; }');
-        expect(sendRequest).toHaveBeenCalledTimes(1);
-        expect(generateRaw).toHaveBeenCalledWith(expect.objectContaining({ prompt: expect.any(Array), trimNames: false, cacheScope: 'auxiliary' }));
-        warnSpy.mockRestore();
+        run.mockRejectedValueOnce(new Error('connection lost'));
+        await expect(helper.generateCustomCssWithAI({ instruction: 'Again', paletteSnapshot: '' })).rejects.toThrow('connection lost');
+        expect(run).toHaveBeenCalledTimes(2);
     });
 });
