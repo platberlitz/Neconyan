@@ -55,7 +55,7 @@ function fixture(owner = 'tester') {
     fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify({ name1: 'User', main_api: 'openai', max_context: 4096,
         extension_settings: { connectionManager: { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o' }] } },
         oai_settings: { chat_completion_source: 'openai', openai_model: 'gpt-4o' } }));
-    fs.copyFileSync(new URL('../default/content/presets/openai/Default.json', import.meta.url), path.join(directories.openAI_Settings, 'Default.json'));
+    fs.copyFileSync(new URL('./fixtures/openai-default-preset.json', import.meta.url), path.join(directories.openAI_Settings, 'Default.json'));
     const base = { owner, directories };
     initialiseRoleplayAccount(base);
     const account = withRoleplayAccount(base, null, (_lease, account) => account);
@@ -444,7 +444,7 @@ test('native prompt suites compile frozen sources, save checked runs, and do not
     const f = fixture();
     const settingsPath = path.join(f.base.directories.root, 'settings.json');
     const settings = JSON.parse(fs.readFileSync(settingsPath));
-    settings.oai_settings = { ...JSON.parse(fs.readFileSync(new URL('../default/content/presets/openai/Default.json', import.meta.url))), ...settings.oai_settings };
+    settings.oai_settings = { ...JSON.parse(fs.readFileSync(new URL('./fixtures/openai-default-preset.json', import.meta.url))), ...settings.oai_settings };
     fs.writeFileSync(settingsPath, JSON.stringify(settings));
     for (const [method, value] of [['saveCase', { id: 'case', name: 'Nova prompt', pins: { characterAvatar: 'nova.png', connectionProfileId: 'saved' },
         userMessage: 'Describe the garden.', assertions: [] }], ['saveSuite', { id: 'suite', name: 'Native tests', caseIds: ['case'] }]]) {

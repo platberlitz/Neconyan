@@ -554,7 +554,9 @@ let templateLoadError = null;
 let templateRegexBundles = {};
 let autoSeededTemplateIds = new Set();
 
-const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([]);
+const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
+    'tpl-proofreader',
+]);
 
 // Internal bundled templates stay available for migrations/settings even when
 // their agent card is hidden from the In-Chat Agents management UI.
@@ -585,6 +587,7 @@ const REMOVED_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-nsfw-mode',
     'tpl-prose-polisher',
     'tpl-npc-motivator',
+    'tpl-unscheduled-phenomena',
 ]);
 
 const REMOVED_BUNDLED_GROUP_IDS = new Set([

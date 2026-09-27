@@ -64,7 +64,7 @@ describe('bundled default preset deletion tombstones', () => {
         const directories = makeTempUserDirectories();
         const defaultPreset = contentManager.findDefaultPreset(directories, {
             folder: directories.openAI_Settings,
-            name: 'Default',
+            name: 'Pura\'s Director Preset 16.0',
         });
 
         expect(defaultPreset).toBeTruthy();
@@ -96,7 +96,7 @@ describe('bundled default preset deletion tombstones', () => {
         const directories = makeTempUserDirectories();
         const defaultPreset = contentManager.findDefaultPreset(directories, {
             folder: directories.openAI_Settings,
-            name: 'Default',
+            name: 'Pura\'s Director Preset 16.0',
         });
 
         expect(defaultPreset).toBeTruthy();

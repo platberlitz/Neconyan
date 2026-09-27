@@ -31,7 +31,7 @@ function prepared(t) {
     fs.writeFileSync(path.join(directories.worlds, 'Town.json'), JSON.stringify({ entries: {
         7: { key: ['never matches the chat'], content: 'Vector-selected lore', vectorized: true, position: 0, order: 1 },
     } }));
-    const preset = JSON.parse(fs.readFileSync(new URL('../default/content/presets/openai/Default.json', import.meta.url)));
+    const preset = JSON.parse(fs.readFileSync(new URL('./fixtures/openai-default-preset.json', import.meta.url)));
     const settings = { main_api: 'openai', _settingsRevision: 1,
         active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
         oai_settings: { ...preset, openai_max_context: 8192, chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'fixture' },

@@ -48,6 +48,7 @@ const sourceFilenames = [
     'omen-tracker.json',
     'parallel-tracker.json',
     'plot-compass-companion.json',
+    'proofreader.json',
     'relationship-lens-companion.json',
     'relationship-tracker.json',
     'reputation-tracker.json',
@@ -63,7 +64,6 @@ const sourceFilenames = [
     'thin-places-tracker.json',
     'thought-cabinet.json',
     'time-tracker.json',
-    'unscheduled-phenomena.json',
     'what-the-town-knows.json',
     'world-detail.json',
 ];
@@ -191,7 +191,7 @@ describe('in-chat agent bundled templates', () => {
             expect(closed).not.toContain(`[/${tag}]`);
             expect(closed.endsWith(suffix)).toBe(true);
             expect(render(`[${tag}|${fields}]\nfirst detail${suffix}`).endsWith(suffix)).toBe(true);
-            expect(readTemplate(`${id}.json`).version).toBeGreaterThan(1);
+            expect(readTemplate(`${id}.json`).version).toBe(1);
         }
     });
 
@@ -313,7 +313,6 @@ describe('in-chat agent bundled templates', () => {
             ['tpl-the-turning', '[TURNING]\nAva reaches 2\n[/TURNING]'],
             ['tpl-thin-places-tracker', '[THIN|Harbor|Bells|OPEN]\nnote: leaks\n[/THIN]'],
             ['tpl-thought-cabinet', '[THOUGHT|The Bells|Forming|2 of 3]\nnote: settling\n[/THOUGHT]'],
-            ['tpl-unscheduled-phenomena', '[UNSCHEDULED|Vector|Scope|MILD]\nwas: a\nnow: b\nnote: c\n[/UNSCHEDULED]'],
             ['tpl-what-the-town-knows', '[RUMOR|Ava|Walks on water|GROWING]\ncause: witness\n[/RUMOR]'],
         ]);
         const catalog = readTemplate('index.json');
@@ -365,7 +364,6 @@ describe('in-chat agent bundled templates', () => {
             ['tpl-four-winds', '[WINDS]\nA. North\nB. South\nC. East\nD. West\n[/WINDS]'],
             ['tpl-the-turning', '[TURNING]\nAva reaches 2\n[/TURNING]'],
             ['tpl-almanac-generator', '[ALMANAC]\nName: Ava\n[/ALMANAC]'],
-            ['tpl-unscheduled-phenomena', '[UNSCHEDULED|Vector|Scope|MILD]\nwas: a\nnow: b\nnote: c\n[/UNSCHEDULED]'],
         ];
 
         for (const [templateId, sample] of samples) {
@@ -439,7 +437,7 @@ describe('in-chat agent bundled templates', () => {
             expect(catalog.find(item => item.id === template.id).version).toBe(template.version);
         }
         const expressions = catalog.find(template => template.id === 'tpl-expressions-agent');
-        expect(expressions.version).toBeGreaterThan(1);
+        expect(expressions.version).toBe(1);
         expect(expressions.prompt).toContain('{{availableExpressions}}');
     });
 
@@ -765,6 +763,17 @@ describe('in-chat agent bundled templates', () => {
         expect(readIndexSetBody('INTERNAL_BUNDLED_TEMPLATE_IDS')).toContain(pathfinderTemplateId);
         expect(readIndexSetBody('REMOVED_BUNDLED_TEMPLATE_IDS')).not.toContain(pathfinderTemplateId);
         expect(readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS')).not.toContain(pathfinderTemplateId);
+    });
+
+    test('installs the Proofreader by default as a post-phase rewrite agent', () => {
+        const proofreader = readTemplate('proofreader.json');
+
+        expect(readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS')).toContain('\'tpl-proofreader\'');
+        expect(readIndexSetBody('REMOVED_BUNDLED_TEMPLATE_IDS')).toContain('\'tpl-unscheduled-phenomena\'');
+        expect(proofreader.phase).toBe('post');
+        expect(proofreader.enabled).toBe(false);
+        expect(proofreader.postProcess).toMatchObject({ promptTransformEnabled: true, promptTransformMode: 'rewrite' });
+        expect(proofreader.prompt).toContain('Output ONLY the revised message.');
     });
 
     test('keeps every catalog template category renderable in the browser', async () => {

@@ -62,10 +62,9 @@
     {
         "id": "grp-pura-ethereality-trackers",
         "name": "Pura's Ethereality Trackers",
-        "description": "All trackers from The Ethereality Express, plus Unscheduled Phenomena and the Doors and Dice menus",
+        "description": "All trackers from The Ethereality Express, plus the Doors and Dice menus",
         "builtin": true,
         "agentTemplateIds": [
-            "tpl-unscheduled-phenomena",
             "tpl-drift-tracker",
             "tpl-motif-tracker",
             "tpl-omen-tracker",

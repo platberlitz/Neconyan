@@ -70,10 +70,10 @@
   },
   "regexScripts": [
     {
-      "id": "07b32b4e-0752-4422-a078-8641c4962063",
-      "scriptName": "Render Fallout CYOA Choices",
-      "findRegex": "/\\[CHOICES\\]\\s*([\\s\\S]*?)\\s*\\[\\/CHOICES\\]/g",
-      "replaceString": "<details open class=\"term-choices\">\n  <summary>\n    <span class=\"term-window-dots\">\n      <span class=\"term-dot red\"></span>\n      <span class=\"term-dot yellow\"></span>\n      <span class=\"term-dot green\"></span>\n    </span>\n    <span class=\"term-title\">CHOICES.exe</span>\n    <span class=\"term-status\">awaiting input</span>\n  </summary>\n\n  <div class=\"term-choice-body\">\n    <div class=\"term-prompt\">{{user}}@st:~$ select_next_action</div>\n    <div class=\"term-choice-output\">\n$1\n    </div>\n    <div class=\"term-prompt term-cursor\">{{user}}@st:~$ </div>\n  </div>\n</details>\n\n<style>\n@keyframes termChoiceGlow {\n  from {\n    box-shadow:\n      0 0 8px rgba(115,255,155,.16),\n      inset 0 0 16px rgba(115,255,155,.025);\n  }\n  to {\n    box-shadow:\n      0 0 16px rgba(115,255,155,.30),\n      0 0 28px rgba(47,191,99,.10),\n      inset 0 0 22px rgba(115,255,155,.055);\n  }\n}\n\n@keyframes termChoiceBlink {\n  0%, 45% { opacity: 1; }\n  46%, 100% { opacity: 0; }\n}\n\n.term-choices {\n  --term-bg: #050807;\n  --term-panel: #07100b;\n  --term-green: #73ff9b;\n  --term-green-soft: #b8ffce;\n  --term-green-dim: #2fbf63;\n  --term-text: #d8ffe4;\n  --term-muted: #7fa88c;\n  --term-border: rgba(115,255,155,.36);\n  --term-border-soft: rgba(115,255,155,.18);\n  --term-glow: rgba(115,255,155,.20);\n\n  margin: 10px 0;\n  padding: 0;\n  border: 1px solid var(--term-border);\n  border-radius: 12px;\n  background:\n    linear-gradient(rgba(255,255,255,.024) 50%, rgba(0,0,0,.035) 50%),\n    radial-gradient(circle at top left, rgba(115,255,155,.09), transparent 35%),\n    radial-gradient(circle at bottom right, rgba(47,191,99,.07), transparent 32%),\n    var(--term-bg);\n  background-size: 100% 4px, 100% 100%, 100% 100%, 100% 100%;\n  color: var(--term-text);\n  font-family: \"Courier New\", Courier, monospace;\n  font-size: 10px;\n  overflow: hidden;\n  text-align: left;\n  animation: termChoiceGlow 3s ease-in-out infinite alternate;\n}\n\n.term-choices summary {\n  cursor: pointer;\n  list-style: none;\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  padding: 9px 12px;\n  background:\n    linear-gradient(90deg, rgba(115,255,155,.10), rgba(47,191,99,.045), rgba(0,0,0,.12)),\n    #07100b;\n  border-bottom: 1px solid var(--term-border-soft);\n  color: var(--term-green);\n  font-weight: 800;\n  letter-spacing: .035em;\n  text-shadow: 0 0 7px rgba(115,255,155,.42);\n  user-select: none;\n}\n\n.term-choices summary::-webkit-details-marker {\n  display: none;\n}\n\n.term-window-dots {\n  display: inline-flex;\n  gap: 6px;\n  align-items: center;\n  flex: 0 0 auto;\n}\n\n.term-dot {\n  width: .72em;\n  height: .72em;\n  border-radius: 50%;\n  display: inline-block;\n  opacity: .95;\n}\n\n.term-dot.red { background: #ff5f56; }\n.term-dot.yellow { background: #ffbd2e; }\n.term-dot.green { background: #27c93f; }\n\n.term-title {\n  color: var(--term-green);\n  font-weight: 900;\n}\n\n.term-status {\n  margin-left: auto;\n  color: var(--term-muted);\n  font-weight: 500;\n  letter-spacing: 0;\n}\n\n.term-choices:not([open]) .term-status::before {\n  content: \"[closed] \";\n}\n\n.term-choices[open] .term-status::before {\n  content: \"[open] \";\n}\n\n.term-choice-body {\n  padding: 11px 14px 13px 15px;\n  border-left: 4px solid rgba(115,255,155,.42);\n  background:\n    radial-gradient(circle at top left, rgba(115,255,155,.075), transparent 36%),\n    repeating-linear-gradient(180deg, rgba(255,255,255,.022) 0, rgba(255,255,255,.022) 1px, transparent 1px, transparent 24px),\n    rgba(0,0,0,.18);\n  line-height: 1.42;\n  word-break: break-word;\n}\n\n.term-prompt {\n  color: var(--term-green);\n  margin: 0 0 9px 0;\n  text-shadow: 0 0 7px rgba(115,255,155,.35);\n  font-weight: 700;\n}\n\n.term-cursor {\n  margin: 10px 0 0 0;\n}\n\n.term-cursor::after {\n  content: \"█\";\n  display: inline-block;\n  margin-left: 2px;\n  color: var(--term-green);\n  animation: termChoiceBlink 1s steps(2, start) infinite;\n}\n\n.term-choice-output {\n  color: var(--term-text);\n  white-space: pre-wrap;\n}\n\n.term-choice-output ol {\n  margin: 0;\n  padding-left: 2.25em;\n  list-style-position: outside;\n  white-space: normal;\n}\n\n.term-choice-output li {\n  margin: 0 0 .72em 0;\n  padding: .52em .7em .62em .75em;\n  color: var(--term-text);\n  background:\n    linear-gradient(90deg, rgba(115,255,155,.105), rgba(115,255,155,.035)),\n    rgba(0,0,0,.16);\n  border: 1px solid rgba(115,255,155,.16);\n  border-radius: 8px;\n  text-shadow: 0 0 3px rgba(115,255,155,.10);\n}\n\n.term-choice-output li:last-child {\n  margin-bottom: 0;\n}\n\n.term-choice-output li::marker {\n  color: var(--term-green);\n  font-weight: 900;\n  text-shadow: 0 0 6px rgba(115,255,155,.35);\n}\n\n.term-choice-output li:nth-child(1) {\n  background: linear-gradient(90deg, rgba(115,255,155,.14), rgba(115,255,155,.035)), rgba(0,0,0,.16);\n}\n\n.term-choice-output li:nth-child(2) {\n  background: linear-gradient(90deg, rgba(93,242,135,.12), rgba(93,242,135,.03)), rgba(0,0,0,.16);\n}\n\n.term-choice-output li:nth-child(3) {\n  background: linear-gradient(90deg, rgba(184,255,206,.105), rgba(184,255,206,.025)), rgba(0,0,0,.16);\n}\n\n.term-choice-output li:nth-child(4) {\n  background: linear-gradient(90deg, rgba(115,220,255,.10), rgba(115,220,255,.025)), rgba(0,0,0,.16);\n}\n\n.term-choice-output li:nth-child(5) {\n  background: linear-gradient(90deg, rgba(190,160,255,.10), rgba(190,160,255,.025)), rgba(0,0,0,.16);\n}\n\n.term-choice-output li:nth-child(6) {\n  background: linear-gradient(90deg, rgba(255,224,130,.10), rgba(255,224,130,.025)), rgba(0,0,0,.16);\n}\n\n.term-choice-output li:nth-child(7) {\n  background: linear-gradient(90deg, rgba(255,145,145,.10), rgba(255,145,145,.025)), rgba(0,0,0,.16);\n}\n\n.term-choice-output strong,\n.term-choice-output b {\n  color: var(--term-green-soft);\n  font-weight: 900;\n  text-shadow: 0 0 6px rgba(115,255,155,.38);\n}\n\n.term-choice-output a {\n  color: #a7ffbf;\n  text-shadow: 0 0 5px rgba(115,255,155,.25);\n}\n\n.term-choice-output::selection,\n.term-choice-output *::selection {\n  background: rgba(115,255,155,.25);\n  color: #ffffff;\n}\n\n.term-choices:not([open]) .term-choice-body {\n  display: none !important;\n}\n</style>",
+      "id": "1a3158de-fb03-4471-9718-2022bd6b5f44",
+      "scriptName": "Replace CYOA Choices",
+      "findRegex": "/\\[CHOICES\\][ \\t]*(?:\\r?\\n)*[ \\t]*(\\d+)[.)][ \\t]*([^\\r\\n]*)(?:(?:\\r?\\n)+[ \\t]*(\\d+)[.)][ \\t]*([^\\r\\n]*))?(?:(?:\\r?\\n)+[ \\t]*(\\d+)[.)][ \\t]*([^\\r\\n]*))?(?:(?:\\r?\\n)+[ \\t]*(\\d+)[.)][ \\t]*([^\\r\\n]*))?(?:(?:\\r?\\n)+[ \\t]*(\\d+)[.)][ \\t]*([^\\r\\n]*))?(?:(?:\\r?\\n)+[ \\t]*(\\d+)[.)][ \\t]*([^\\r\\n]*))?(?:(?:\\r?\\n)+[ \\t]*(\\d+)[.)][ \\t]*([^\\r\\n]*))?(?:\\s*\\[\\/CHOICES\\])?/g",
+      "replaceString": "<details open style=\"margin:14px 0;border-radius:16px;overflow:hidden;border:1px solid rgba(246,193,119,0.38);background:linear-gradient(160deg,#261c3d 0%,#1b1731 55%,#2b1c35 100%);box-shadow:0 12px 28px rgba(0,0,0,0.30)\"><summary style=\"display:flex;align-items:center;gap:8px;padding:11px 14px;cursor:pointer;list-style:none;background:linear-gradient(90deg,rgba(246,193,119,0.18),rgba(255,143,177,0.10));border-bottom:1px solid rgba(246,193,119,0.24)\"><span style=\"font-size:15px\">🧭</span><span style=\"font-family:Georgia,serif;font-style:italic;font-size:14px;letter-spacing:0.3px;color:#f6d9a8\">What will you do?</span><span style=\"margin-left:auto;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#bfb3d9\">choose ▾</span></summary><div style=\"padding:8px 11px 11px;font-size:13px;color:#ece6f7\"><div class=\"pura-choice\" style=\"display:flex;align-items:flex-start;gap:10px;margin:6px 0;padding:9px 11px;border-radius:12px;background:linear-gradient(90deg,rgba(255,143,177,0.16),rgba(255,255,255,0.025));border:1px solid rgba(255,143,177,0.30)\"><span style=\"flex:0 0 24px;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:radial-gradient(circle at 32% 28%,rgba(255,255,255,0.75),#ff8fb1 62%);color:#221a35;font-weight:700;font-size:12px;font-family:Georgia,serif;box-shadow:0 2px 6px rgba(255,143,177,0.35)\">$1</span><span style=\"flex:1;min-width:0;line-height:1.5;padding-top:2px\">$2</span></div><div class=\"pura-choice\" style=\"display:flex;align-items:flex-start;gap:10px;margin:6px 0;padding:9px 11px;border-radius:12px;background:linear-gradient(90deg,rgba(246,193,119,0.16),rgba(255,255,255,0.025));border:1px solid rgba(246,193,119,0.30)\"><span style=\"flex:0 0 24px;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:radial-gradient(circle at 32% 28%,rgba(255,255,255,0.75),#f6c177 62%);color:#221a35;font-weight:700;font-size:12px;font-family:Georgia,serif;box-shadow:0 2px 6px rgba(246,193,119,0.35)\">$3</span><span style=\"flex:1;min-width:0;line-height:1.5;padding-top:2px\">$4</span></div><div class=\"pura-choice\" style=\"display:flex;align-items:flex-start;gap:10px;margin:6px 0;padding:9px 11px;border-radius:12px;background:linear-gradient(90deg,rgba(139,213,202,0.16),rgba(255,255,255,0.025));border:1px solid rgba(139,213,202,0.30)\"><span style=\"flex:0 0 24px;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:radial-gradient(circle at 32% 28%,rgba(255,255,255,0.75),#8bd5ca 62%);color:#221a35;font-weight:700;font-size:12px;font-family:Georgia,serif;box-shadow:0 2px 6px rgba(139,213,202,0.35)\">$5</span><span style=\"flex:1;min-width:0;line-height:1.5;padding-top:2px\">$6</span></div><div class=\"pura-choice\" style=\"display:flex;align-items:flex-start;gap:10px;margin:6px 0;padding:9px 11px;border-radius:12px;background:linear-gradient(90deg,rgba(138,173,244,0.16),rgba(255,255,255,0.025));border:1px solid rgba(138,173,244,0.30)\"><span style=\"flex:0 0 24px;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:radial-gradient(circle at 32% 28%,rgba(255,255,255,0.75),#8aadf4 62%);color:#221a35;font-weight:700;font-size:12px;font-family:Georgia,serif;box-shadow:0 2px 6px rgba(138,173,244,0.35)\">$7</span><span style=\"flex:1;min-width:0;line-height:1.5;padding-top:2px\">$8</span></div><div class=\"pura-choice\" style=\"display:flex;align-items:flex-start;gap:10px;margin:6px 0;padding:9px 11px;border-radius:12px;background:linear-gradient(90deg,rgba(198,160,246,0.16),rgba(255,255,255,0.025));border:1px solid rgba(198,160,246,0.30)\"><span style=\"flex:0 0 24px;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:radial-gradient(circle at 32% 28%,rgba(255,255,255,0.75),#c6a0f6 62%);color:#221a35;font-weight:700;font-size:12px;font-family:Georgia,serif;box-shadow:0 2px 6px rgba(198,160,246,0.35)\">$9</span><span style=\"flex:1;min-width:0;line-height:1.5;padding-top:2px\">$10</span></div><div class=\"pura-choice\" style=\"display:flex;align-items:flex-start;gap:10px;margin:6px 0;padding:9px 11px;border-radius:12px;background:linear-gradient(90deg,rgba(245,169,127,0.16),rgba(255,255,255,0.025));border:1px solid rgba(245,169,127,0.30)\"><span style=\"flex:0 0 24px;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:radial-gradient(circle at 32% 28%,rgba(255,255,255,0.75),#f5a97f 62%);color:#221a35;font-weight:700;font-size:12px;font-family:Georgia,serif;box-shadow:0 2px 6px rgba(245,169,127,0.35)\">$11</span><span style=\"flex:1;min-width:0;line-height:1.5;padding-top:2px\">$12</span></div><div class=\"pura-choice\" style=\"display:flex;align-items:flex-start;gap:10px;margin:6px 0;padding:9px 11px;border-radius:12px;background:linear-gradient(90deg,rgba(237,135,150,0.16),rgba(255,255,255,0.025));border:1px solid rgba(237,135,150,0.30)\"><span style=\"flex:0 0 24px;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:radial-gradient(circle at 32% 28%,rgba(255,255,255,0.75),#ed8796 62%);color:#221a35;font-weight:700;font-size:12px;font-family:Georgia,serif;box-shadow:0 2px 6px rgba(237,135,150,0.35)\">$13</span><span style=\"flex:1;min-width:0;line-height:1.5;padding-top:2px\">$14</span></div></div></details>",
       "trimStrings": [],
       "placement": [
         2
@@ -87,26 +87,26 @@
       "maxDepth": null
     },
     {
-      "id": "43535115-b766-4e19-8f94-d1cb440048f4",
-      "scriptName": "Trim Choices",
-      "findRegex": "/\\[CHOICES\\][\\s\\S]*?\\[\\/CHOICES\\]/g",
+      "id": "bdb64078-4ee6-5349-b111-88893c372ad9",
+      "scriptName": "Remove Empty Choice Rows",
+      "findRegex": "/<div class=\"pura-choice\"[^>]*><span[^>]*><\\/span><span[^>]*><\\/span><\\/div>/g",
       "replaceString": "",
       "trimStrings": [],
       "placement": [
         2
       ],
       "disabled": false,
-      "markdownOnly": false,
-      "promptOnly": true,
+      "markdownOnly": true,
+      "promptOnly": false,
       "runOnEdit": true,
       "substituteRegex": 0,
-      "minDepth": 2,
+      "minDepth": null,
       "maxDepth": null
     },
     {
-      "id": "3a1f4833-6528-4eb9-9fe2-6f99d1e5996f",
+      "id": "4678436c-2ab7-49fd-bc64-b7e1aa2ff779",
       "scriptName": "Replace Bold Markdown",
-      "findRegex": "/\\*\\*(.*?)\\*\\*/g",
+      "findRegex": "/\\*\\*([^\\n\\r*][^\\n\\r]*?)\\*\\*/g",
       "replaceString": "<strong>$1</strong>",
       "trimStrings": [],
       "placement": [
@@ -118,6 +118,23 @@
       "runOnEdit": true,
       "substituteRegex": 0,
       "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "1c892238-de70-40bf-8394-97dd68d8eaff",
+      "scriptName": "Trim Choices",
+      "findRegex": "/\\[CHOICES\\]\\s*\\d+\\.[ \\t]*[^\\n\\r]*(?:(?:\\r?\\n)+\\d+\\.[ \\t]*[^\\n\\r]*)*(?:\\s*\\[\\/CHOICES\\])?/g",
+      "replaceString": "",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": false,
+      "promptOnly": true,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": 2,
       "maxDepth": null
     }
   ],

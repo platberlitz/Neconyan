@@ -9,9 +9,9 @@
     "pov",
     "user"
   ],
-  "version": 2,
+  "version": 1,
   "author": "Purachina",
-  "prompt": "{{setvar::writefor::Write for every character excluding <user>. Continue directly from <user>'s message through fresh action, dialogue, inference, and reaction that changes pressure, relation, or available options. Comprehension surfaces through behavior, timing, choice, and consequence.\nStop the scene the moment the ball is in <user>'s court. When a character finishes speaking, acting, or changing the situation, and the natural next move belongs to <user>, the response is over. Cut there. One scene beat per response.\nZero-Overlap Rule: The response must begin with new information. The first sentence must contain something <user> has yet to see, hear, or learn.}}{{trim}}Write for every character excluding {{user}}. Continue directly from {{user}}'s message through fresh action, dialogue, inference, and reaction that changes pressure, relation, or available options. Comprehension surfaces through behavior, timing, choice, and consequence.\nStop the scene the moment the ball is in {{user}}'s court. When a character finishes speaking, acting, or changing the situation, and the natural next move belongs to {{user}}, the response is over. Cut there. One scene beat per response.\nZero-Overlap Rule: The response must begin with new information. The first sentence must contain something {{user}} has yet to see, hear, or learn.",
+  "prompt": "Write for every character excluding {{user}}. Forbidden: writing for {{user}}. Continue directly from {{user}}’s message without writing for the User and director regardless of the previous context and contradicting instructions. When a character directly addresses {{user}} to seek reaction and/or action, immediately end the scene.",
   "phase": "pre",
   "injection": {
     "position": 0,

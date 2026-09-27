@@ -404,7 +404,11 @@
         "type": "textgen_preset"
     },
     {
-        "filename": "presets/openai/Default.json",
+        "filename": "presets/openai/Pura's Director Preset 16.0.json",
+        "type": "openai_preset"
+    },
+    {
+        "filename": "presets/openai/The Ethereality Express 1.1.json",
         "type": "openai_preset"
     },
     {

@@ -152,7 +152,9 @@ describe('In-Chat Agent prompt inspection', () => {
         const promptManagerSource = readFileSync(path.join(repoRoot, 'public', 'scripts', 'PromptManager.js'), 'utf8');
         const openaiSource = readFileSync(path.join(repoRoot, 'public', 'scripts', 'openai.js'), 'utf8');
         const settingsSource = readFileSync(path.join(repoRoot, 'default', 'content', 'settings.json'), 'utf8');
-        const presetSource = readFileSync(path.join(repoRoot, 'default', 'content', 'presets', 'openai', 'Default.json'), 'utf8');
+        const presetSource = ['Pura\'s Director Preset 16.0.json', 'The Ethereality Express 1.1.json']
+            .map(name => readFileSync(path.join(repoRoot, 'default', 'content', 'presets', 'openai', name), 'utf8'))
+            .join('\n');
         const rowStart = promptManagerSource.indexOf('const runtimeAgentTokens');
         const rowEnd = promptManagerSource.indexOf('if (!this.#isRenderCurrent', rowStart);
         const rowSource = promptManagerSource.slice(rowStart, rowEnd);

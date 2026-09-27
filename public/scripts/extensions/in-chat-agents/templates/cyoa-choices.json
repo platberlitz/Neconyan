@@ -12,7 +12,7 @@
   ],
   "version": 1,
   "author": "Purachina",
-  "prompt": "### CYOA Choices\nAdd a player-choice block after the scene reply. When this runs as a repair task, the choice block is the full result. Choices are from {{user}}’s perspective and describe possible next actions.\n\nUse this format with 3-7 numbered options:\n[CHOICES]\n1. Action description\n2. Action description\n3. Action description\n[/CHOICES]",
+  "prompt": "{{// Use included regex for best results.}}{{trim}}\n### CYOA Choices\nAdd a player-choice block after the scene reply. When this runs as a repair task, the choice block is the full result. Choices are from {{user}}’s perspective and describe possible next actions.\n\n3-7 numbered options:\n[CHOICES]\n1. Action description\n2. Action description\n3. Action description\n[/CHOICES]",
   "phase": "post",
   "injection": {
     "position": 0,

@@ -35,7 +35,7 @@ function prepared(owner = 'quiet') {
     const chatPath = path.join(directories.chats, 'nova', 'scene.jsonl');
     fs.writeFileSync(chatPath, [{ user_name: 'User', character_name: 'Nova', chat_metadata: {} },
         { name: 'Nova', mes: 'The moon garden grows roses.', is_user: false }].map(row => JSON.stringify(row)).join('\n'));
-    const preset = JSON.parse(fs.readFileSync(new URL('../default/content/presets/openai/Default.json', import.meta.url), 'utf8'));
+    const preset = JSON.parse(fs.readFileSync(new URL('./fixtures/openai-default-preset.json', import.meta.url), 'utf8'));
     fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify({ name1: 'User', main_api: 'openai', max_context: 4096,
         extension_settings: { connectionManager: { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o' }] } },
         oai_settings: { ...preset, chat_completion_source: 'openai', openai_model: 'gpt-4o' } }));

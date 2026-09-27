@@ -256,17 +256,11 @@ test('Vertex AI pickers include current models and omit retired Gemini 2.0 entri
 
 test('new provider models are the defaults where requested', () => {
     const openAiScript = readSource('../public/scripts/openai.js');
-    const defaultPreset = JSON.parse(readSource('../default/content/presets/openai/Default.json'));
 
     expect(openAiScript).toContain('google_model: \'gemini-3.7-flash\'');
     expect(openAiScript).toContain('vertexai_model: \'gemini-3.7-flash\'');
     expect(openAiScript).toContain('minimax_model: \'MiniMax-M3\'');
     expect(openAiScript).toContain('zai_model: \'glm-5.3\'');
-    expect(defaultPreset).toMatchObject({
-        google_model: 'gemini-3.7-flash',
-        vertexai_model: 'gemini-3.7-flash',
-        minimax_model: 'MiniMax-M3',
-    });
 });
 
 test('Z.AI includes GLM-5.3-Flash with multimodal and one-million-token support', () => {

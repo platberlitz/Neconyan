@@ -428,7 +428,7 @@ const sensitiveFields = [
  * @type {Record<string, [string, string, boolean, boolean, boolean?]>}
  */
 const default_settings = {
-    preset_settings_openai: 'Default',
+    preset_settings_openai: 'Pura\'s Director Preset 16.0',
     temp_openai: 1.0,
     freq_pen_openai: 0,
     pres_pen_openai: 0,

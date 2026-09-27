@@ -19,7 +19,7 @@ const { resetRoleplayAccount } = await import('../src/roleplay-store.js');
 const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
 const { captureGenerationBinding } = await import('../src/generation/profiles.js');
 const { runChatProfile } = await import('../src/generation/service.js');
-const defaultChatPreset = JSON.parse(fs.readFileSync(new URL('../default/content/presets/openai/Default.json', import.meta.url), 'utf8'));
+const defaultChatPreset = JSON.parse(fs.readFileSync(new URL('./fixtures/openai-default-preset.json', import.meta.url), 'utf8'));
 
 const blankChatControls = { prompts: [{ identifier: 'main', role: 'system', system_prompt: true, content: '' },
     { identifier: 'chatHistory', marker: true, system_prompt: true }], prompt_order: [{ character_id: 100001,

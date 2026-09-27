@@ -10,7 +10,7 @@
     "sprites",
     "classification"
   ],
-  "version": 2,
+  "version": 1,
   "author": "SillyBunny",
   "prompt": "Read the latest assistant reply and classify its dominant emotional tone for a character sprite expression.\n\nOutput ONLY the single most appropriate label from this exact list:\n{{availableExpressions}}\n\nRules:\n- Return exactly one word from the list above, nothing else.\n- Prioritise the speaker's visible emotional state in the scene.\n- If multiple emotions apply, choose the strongest one.\n- If the reply is calm, factual, or emotionally neutral, return neutral.\n- Do not explain, punctuate, or wrap the answer in quotes.",
   "phase": "post",

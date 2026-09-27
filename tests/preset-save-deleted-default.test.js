@@ -15,7 +15,7 @@ const { router: presetsRouter } = await import('../src/endpoints/presets.js');
 const { initialiseRoleplayAccount } = await import('../src/roleplay-store.js');
 const { USER_DIRECTORY_TEMPLATE } = await import('../src/constants.js');
 
-const PRESET_NAME = 'Default';
+const PRESET_NAME = 'Pura\'s Director Preset 16.0';
 
 describe('saving over a deleted bundled default preset', () => {
     let baseUrl;

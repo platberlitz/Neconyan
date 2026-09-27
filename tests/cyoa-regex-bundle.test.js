@@ -42,8 +42,8 @@ describe('CYOA choices bundled regex', () => {
         ].join('\n'));
 
         expect(countChoiceRows(html)).toBe(4);
-        expect(html).toContain('4. Wait and watch');
-        expect(html).not.toMatch(/<div class="pura-choice" style="[^"]*">\s*<\/div>/);
+        expect(html).toMatch(/<span[^>]*>4<\/span><span[^>]*>Wait and watch<\/span>/);
+        expect(html).not.toMatch(/<div class="pura-choice"[^>]*><span[^>]*><\/span><span[^>]*><\/span><\/div>/);
     });
 
     test('keeps all seven choice rows when seven choices are present', () => {
@@ -60,7 +60,7 @@ describe('CYOA choices bundled regex', () => {
         ].join('\n'));
 
         expect(countChoiceRows(html)).toBe(7);
-        expect(html).toContain('7. Open the door');
+        expect(html).toMatch(/<span[^>]*>7<\/span><span[^>]*>Open the door<\/span>/);
     });
 
     test('still trims choices from prompt history at the configured depth', () => {
