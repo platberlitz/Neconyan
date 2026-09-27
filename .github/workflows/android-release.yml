@@ -112,7 +112,10 @@ jobs:
           script: python3 tests/android-apk-smoke.py --serial emulator-5554 --release --apk release/*-android-x86_64.apk
       - name: Capture emulator log on failure
         if: failure()
-        run: timeout 20s adb -s emulator-5554 logcat -d > android-logcat.txt 2>&1 || true
+        run: |
+          if [ ! -s android-logcat.txt ]; then
+            timeout 20s adb -s emulator-5554 logcat -d > android-logcat.txt 2>&1 || true
+          fi
       - name: Upload emulator diagnostics
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -122,4 +125,5 @@ jobs:
             android-logcat.txt
             android-window.xml
             android-screen.png
+            android-webview.txt
           if-no-files-found: ignore

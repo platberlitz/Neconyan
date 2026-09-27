@@ -50,6 +50,11 @@ def wait_for_workspace():
             failure = error
         time.sleep(1)
     Path('android-window.xml').write_text(last)
+    # Capture before the emulator action shuts down its device on script failure.
+    for command, filename in [(('logcat', '-d'), 'android-logcat.txt'),
+                              (('shell', 'dumpsys', 'webviewupdate'), 'android-webview.txt')]:
+        with open(filename, 'w') as output:
+            subprocess.run([args.adb, '-s', args.serial, *command], stdout=output, stderr=subprocess.STDOUT, timeout=20, check=False)
     with open('android-screen.png', 'wb') as screenshot:
         subprocess.run([args.adb, '-s', args.serial, 'exec-out', 'screencap', '-p'], stdout=screenshot, timeout=20, check=False)
     raise AssertionError('The Android workspace did not become visible: ' + str(failure or 'Home and tour controls were absent'))
@@ -90,6 +95,7 @@ if args.release:
     adb('root')
     adb('wait-for-device')
     assert adb('shell', 'id', '-u') == '0', 'Signed app acceptance needs a root-capable disposable emulator'
+print(adb('shell', 'dumpsys', 'webviewupdate'), flush=True)
 print(adb('install', '-r', args.apk), flush=True)
 if int(adb('shell', 'getprop', 'ro.build.version.sdk')) >= 33:
     adb('shell', 'pm', 'grant', package, 'android.permission.POST_NOTIFICATIONS')
