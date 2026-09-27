@@ -29,6 +29,17 @@ export async function sidecarGenerate(prompt, systemPrompt = '', signal = null) 
     return sidecarGenerateWithProfile(prompt, systemPrompt, profileId, 2048, signal);
 }
 
+function knownReplyError(message) {
+    return Object.assign(new Error(message), { knownReply: true });
+}
+
+function isUnknownSidecarOutcome(error) {
+    if (error?.knownReply) return false;
+    const status = Number(error?.status ?? error?.response?.status ?? error?.cause?.status);
+    if (!Number.isInteger(status)) return true;
+    return status === 408 || (status >= 500 && status !== 503 && status !== 529);
+}
+
 /**
  * Generate using a specific connection profile
  * @param {string} prompt - User prompt
@@ -60,12 +71,18 @@ export async function sidecarGenerateWithProfile(prompt, systemPrompt = '', prof
                 signal,
             }, temperatureOverride), signal);
             signal?.throwIfAborted();
-            if (result?.lengthLimited || isGenerationLengthFinish(result)) throw new Error('The retrieval reply reached its output limit.');
+            if (result?.lengthLimited || isGenerationLengthFinish(result)) throw knownReplyError('The retrieval reply reached its output limit.');
             const text = typeof result === 'string' ? result : extractProfileResponseText(result);
-            if (!text.trim()) throw new Error('Sidecar generation failed; Pawthfinder retrieval was skipped.');
+            if (!text.trim()) throw knownReplyError('Sidecar generation failed; Pawthfinder retrieval was skipped.');
             return text;
         } catch (err) {
             if (isAbortLikeError(err, signal)) {
+                throw err;
+            }
+            // A lost connection or server error may already have produced a paid reply,
+            // so it is never sent again through the main model.
+            if (isUnknownSidecarOutcome(err)) {
+                notifySidecarIssue('The connection profile request result is unknown, so Pawthfinder retrieval was skipped.', 'error');
                 throw err;
             }
             console.warn(`[Pawthfinder] Sidecar via profile "${profileId}" failed:`, err);

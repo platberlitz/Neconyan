@@ -7635,12 +7635,29 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[0].mes).toBe('Original reply');
     });
 
-    test('text formatting fallback is still available when it changes the request', async () => {
+    test('a failed request whose result is unknown is never re-sent with fallback formatting', async () => {
         usePromptTransformPostAgent();
         enabledAgents[0].connectionProfile = 'profile-text';
         connectionManagerRequestService = {
             getProfile: jest.fn(() => ({ name: 'Text profile', model: 'm' })),
-            sendRequest: jest.fn().mockRejectedValueOnce(new Error('Unsupported prompt format'))
+            sendRequest: jest.fn().mockRejectedValue(new Error('Connection lost')),
+            constructPrompt: jest.fn(() => 'Formatted text request'),
+        };
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} });
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await new Promise(resolve => setTimeout(resolve, 50));
+        expect(connectionManagerRequestService.sendRequest).toHaveBeenCalledTimes(1);
+        expect(chat[0].mes).toBe('Original reply');
+    });
+
+    test('text formatting fallback is still available after an empty reply', async () => {
+        usePromptTransformPostAgent();
+        enabledAgents[0].connectionProfile = 'profile-text';
+        connectionManagerRequestService = {
+            getProfile: jest.fn(() => ({ name: 'Text profile', model: 'm' })),
+            sendRequest: jest.fn().mockResolvedValueOnce({ content: '' })
                 .mockResolvedValueOnce({ content: 'Formatted rewrite' }),
             constructPrompt: jest.fn(() => 'Formatted text request'),
         };

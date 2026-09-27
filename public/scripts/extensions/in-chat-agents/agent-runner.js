@@ -3467,6 +3467,19 @@ function getRequestErrorStatus(error) {
 }
 
 /**
+ * Reports whether a model request failed in a way that leaves its result unknown: a lost
+ * connection, a timeout or a server error other than a busy refusal (503/529).
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isUnknownProviderOutcome(error) {
+    if (error?.name === 'AbortError') return false;
+    const status = getRequestErrorStatus(error);
+    if (status === null) return error?.providerRequest === true;
+    return status === 408 || (status >= 500 && status !== 503 && status !== 529);
+}
+
+/**
  * Builds a human-readable error message that keeps the useful wrapped cause.
  * @param {unknown} error
  * @returns {string}
@@ -3500,7 +3513,6 @@ async function requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, 
         requestOptions.modelOverride = modelOverride.trim();
     }
 
-    let primaryError = null;
     let primaryResponse;
     try {
         primaryResponse = await CMRS.sendRequest(profileId, promptMessages, maxTokens, requestOptions);
@@ -3523,7 +3535,10 @@ async function requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, 
             throw error;
         }
 
-        primaryError = error;
+        // A lost connection or server error may already have produced a paid reply, so the
+        // request is never re-sent with fallback formatting.
+        if (error && typeof error === 'object') error.providerRequest = true;
+        throw error;
     }
 
     let fallbackPrompt = '';
@@ -3537,16 +3552,12 @@ async function requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, 
 
     if (Array.isArray(fallbackPrompt)) {
         // Chat-completion profiles return the same message array, so a retry would be identical.
-        if (primaryError) throw primaryError;
         return {
             output: extractProfileResponseText(primaryResponse),
             runner: 'profile',
             profileId,
             lengthLimited: primaryResponse?.lengthLimited === true,
         };
-    }
-    if (primaryError) {
-        console.warn(`[InChatAgents] Primary prompt transform request via ${describePromptTransformTarget(profileId, 'profile')} failed, retrying with fallback prompt formatting.`, primaryError);
     }
 
     const fallbackRequestPrompt = Array.isArray(fallbackPrompt)
@@ -4453,6 +4464,7 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
     let pipelineCompleted = false;
     let alreadyProcessed = false;
     let failureDetail = '';
+    let failureOutcomeUnknown = false;
     try {
         syncAssistantMessageTextToSwipe(message);
 
@@ -4694,10 +4706,12 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
     } catch (error) {
         console.error('[InChatAgents] Agent post-processing failed:', error);
         failureDetail = describeAgentError(error);
+        failureOutcomeUnknown = isUnknownProviderOutcome(error);
     } finally {
         if (!pipelineCompleted && !alreadyProcessed && agentGenerationCancelRevision === operationCancelRevision
             && !generationStopRequested && postProcessingTarget.valid && chat[messageIndex] === message) {
-            if (retryAttempt < POST_PROCESSING_MAX_RETRIES
+            // A request whose result is unknown may already have been paid for, so it is never re-sent.
+            if (!failureOutcomeUnknown && retryAttempt < POST_PROCESSING_MAX_RETRIES
                 && isMessageTargetCurrent(message, postProcessingTarget.state, messageIndex)) {
                 schedulePostProcessingRetry(messageIndex, generationType, activationSnapshot, message, {
                     cancelRevision: operationCancelRevision,

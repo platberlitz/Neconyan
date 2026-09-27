@@ -1290,6 +1290,7 @@ async function generateStreamCallback(args, value) {
 
         let finalText = '';
         let finalReasoning = '';
+        let streamStarted = false;
 
         /** Gets the final (if requested, formatted) text to return for this command @returns {string} */
         function buildResultText() {
@@ -1314,6 +1315,7 @@ async function generateStreamCallback(args, value) {
             if (typeof streamResponse === 'function') {
                 const generator = streamResponse();
                 for await (const chunk of generator) {
+                    streamStarted = true;
                     finalText = chunk.text;
                     finalReasoning = chunk.state?.reasoning || '';
                     display.updateReasoning(finalReasoning);
@@ -1334,6 +1336,15 @@ async function generateStreamCallback(args, value) {
             if (abortController?.signal?.aborted) {
                 display.markStopped({ label: `${generatingLabel} [Stopped]` });
                 return buildResultText();
+            }
+
+            // Only a request the provider definitely refused before streaming can be sent again.
+            // A lost connection or server error may already have produced a paid reply.
+            const status = Number(error?.status ?? error?.response?.status ?? error?.cause?.status);
+            const refused = !streamStarted && Number.isInteger(status) && status >= 400 && status < 500 && status !== 408 && status !== 429;
+            if (!refused) {
+                display.hide({ instant: true });
+                throw error;
             }
 
             console.warn('[Slash Commands] Streaming failed, falling back to non-streaming:', error);

@@ -289,8 +289,18 @@ describe('Pawthfinder retrieval with real pipeline and model transport stubs', (
         expect(result.selectedEntryData).toEqual([expect.objectContaining({ bookName: 'Book A', uid: 1 })]);
     });
 
+    test('an unknown profile result is never re-sent through the main model', async () => {
+        const lost = new Error('Connection lost');
+        sendRequest.mockRejectedValue(lost);
+        await expect(sidecarGenerateWithProfile('prompt', 'system', 'profile-a', 123)).rejects.toBe(lost);
+        const gateway = Object.assign(new Error('Bad gateway'), { status: 502 });
+        sendRequest.mockRejectedValue(gateway);
+        await expect(sidecarGenerateWithProfile('prompt', 'system', 'profile-a', 123)).rejects.toBe(gateway);
+        expect(generateRaw).not.toHaveBeenCalled();
+    });
+
     test('propagates terminal LLM failure and guards the raw fallback as auxiliary work', async () => {
-        sendRequest.mockRejectedValue(new Error('profile offline'));
+        sendRequest.mockRejectedValue(Object.assign(new Error('profile refused'), { status: 429 }));
         const failure = new Error('main offline');
         generateRaw.mockRejectedValue(failure);
         await expect(sidecarGenerateWithProfile('prompt', 'system', 'profile-a', 123)).rejects.toBe(failure);
@@ -371,7 +381,7 @@ describe('Pawthfinder retrieval with real pipeline and model transport stubs', (
     test('per-stage zero temperature reaches profile and main requests', async () => {
         await sidecarGenerateWithProfile('prompt', 'system', 'profile-a', 50, null, { temperature: 0 });
         expect(sendRequest.mock.calls[0][4]).toEqual({ temperature: 0 });
-        sendRequest.mockRejectedValueOnce(new Error('offline'));
+        sendRequest.mockRejectedValueOnce(Object.assign(new Error('refused'), { status: 429 }));
         await sidecarGenerateWithProfile('prompt', 'system', 'profile-a', 50, null, { temperature: 0 });
         expect(generateRaw).toHaveBeenLastCalledWith(expect.objectContaining({ temperature: 0 }));
     });
