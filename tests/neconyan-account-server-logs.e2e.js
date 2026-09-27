@@ -20,7 +20,7 @@ test.beforeEach(({ page }) => {
 test.afterEach(() => expect(pageErrors).toEqual([]));
 
 const accountFixture = {
-    handle: 'neco-user',
+    handle: 'default-user',
     name: 'Neco User',
     admin: true,
     created: '2026-09-12T00:00:00.000Z',
@@ -144,7 +144,7 @@ async function installFailClosedRoutes(page, { light = false, delayLogs = false,
         }
         if (endpoint === '/api/server-admin/logs') {
             logsRequests++;
-            if (delayLogs) await new Promise(resolve => setTimeout(resolve, 400));
+            if (delayLogs) await delayLogs;
             if (logsMode === 'initial-503' && logsRequests === 1) {
                 await route.fulfill({ status: 503, json: { error: 'Logs are temporarily unavailable.' } });
                 return;
@@ -224,7 +224,7 @@ test('account profile keeps identity facts, hooks, current avatar, and touch tar
     await expect(popup.locator('.hasPassword')).toHaveText('Protected');
     await expect(popup.locator('.noPassword')).toBeHidden();
     await expect(popup).toContainText('Chat personas are separate identities');
-    await expect(popup.locator('.userHandle')).toHaveText('neco-user');
+    await expect(popup.locator('.userHandle')).toHaveText(accountFixture.handle);
     await expect(popup.locator('.userRole')).toHaveText('Admin');
     await expect(popup.locator('.userAvatarChange')).toContainText('Change avatar');
     await expect(popup.locator('.userAvatarRemove')).toContainText('Remove avatar');
@@ -366,7 +366,9 @@ test('Logs retain previous output after a failed refresh and recover', async ({ 
 });
 
 test('Pause Live keeps an in-flight response from rewriting selected output', async ({ page }) => {
-    await installFailClosedRoutes(page, { delayLogs: true });
+    let releaseLogs;
+    const delayLogs = new Promise(resolve => { releaseLogs = resolve; });
+    await installFailClosedRoutes(page, { delayLogs });
     await openSettings(page);
     await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'console-logs'));
 
@@ -374,10 +376,14 @@ test('Pause Live keeps an in-flight response from rewriting selected output', as
     const output = panel.locator('[role="log"]');
     const pauseButton = panel.locator('.sb-console-log-actions button').nth(1);
     const before = await output.textContent();
-    await expect(output).toHaveAttribute('aria-busy', 'true');
-    await pauseButton.click();
-    await expect(pauseButton).toHaveAttribute('aria-pressed', 'true');
-    await page.waitForTimeout(600);
+    try {
+        await expect(output).toHaveAttribute('aria-busy', 'true');
+        await pauseButton.click();
+        await expect(pauseButton).toHaveAttribute('aria-pressed', 'true');
+    } finally {
+        releaseLogs();
+    }
+    await expect(output).toHaveAttribute('aria-busy', 'false');
     await expect.poll(() => output.textContent()).toBe(before);
     await expect(output).not.toContainText('Started Neconyan.');
 
@@ -442,7 +448,7 @@ test('Account shows no-password state and guards Backup re-entry and failed-down
     let backupRequests = 0;
     await page.route('**/api/operations/submit', async route => {
         backupRequests++;
-        expect(route.request().postDataJSON()).toMatchObject({ kind: 'account-backup', handle: 'neco-user' });
+        expect(route.request().postDataJSON()).toMatchObject({ kind: 'account-backup', handle: accountFixture.handle });
         await new Promise(resolve => setTimeout(resolve, 400));
         await route.fulfill({ status: 503, json: { error: 'Backup temporarily unavailable.', notAccepted: true } });
     });

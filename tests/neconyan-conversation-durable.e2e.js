@@ -7,7 +7,8 @@ import path from 'node:path';
 import archiver from 'archiver';
 import { test, MODEL, send, noLateEffects } from './neconyan-conversation-durable-fixture.js';
 
-test.describe.configure({ mode: 'default' });
+// Each case owns its server and data. Let release shards divide this large file.
+test.describe.configure({ mode: 'parallel' });
 test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires an explicitly opted-in disposable server.');
 test.setTimeout(180000);
 

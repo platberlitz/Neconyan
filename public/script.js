@@ -6039,6 +6039,8 @@ function formatGenerationTimer(gen_started, gen_finished, tokenCount, reasoningD
 let requestId = null;
 
 function scrollChatElementToBottom({ behavior = 'auto' } = {}) {
+    // A new bottom landing supersedes resize callbacks preserving an older reading position.
+    chatScrollVersion++;
     let position = chatElement[0].scrollHeight;
 
     if (power_user.waifuMode) {
@@ -6058,6 +6060,7 @@ function scrollChatElementToBottom({ behavior = 'auto' } = {}) {
 
     chatElement.scrollTop(position);
     chatLastBottomPinScrollTop = element.scrollTop;
+    refreshObservedChatMessageResizeViewportStates();
 }
 
 /**

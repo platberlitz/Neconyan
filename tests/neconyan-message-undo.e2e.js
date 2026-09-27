@@ -376,6 +376,8 @@ test('range selection rejects newly appended content before Delete', async ({ pa
     await seedMessages(page);
     await enterRange(page, 1);
     await appendMessage(page, 'arrived during selection');
+    // Settle metadata saved by rendering the appended message before counting Delete's writes.
+    await page.evaluate(async () => (await import('/script.js')).saveChatConditional({ throwOnError: true }));
     const before = await messages(page), saves = state.saveRequests.length;
     await page.locator('#dialogue_del_mes_ok').click();
     expect(await messages(page)).toEqual(before);

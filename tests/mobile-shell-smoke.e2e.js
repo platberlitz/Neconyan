@@ -107,7 +107,8 @@ function getIsMobileShellViewport(page) {
 }
 
 async function expectNoDocumentOverflow(page) {
-    await expect.poll(async () => {
+    let lastMeasurement;
+    const measureViolations = async () => {
         const overflow = await getDocumentOverflow(page);
         const escapedSurfaces = await page.evaluate((selector) => {
             const viewport = window.visualViewport;
@@ -145,8 +146,14 @@ async function expectNoDocumentOverflow(page) {
         if (overflow.horizontal > 1) violations.push({ documentHorizontalOverflow: overflow.horizontal });
         if (overflow.vertical > 1) violations.push({ documentVerticalOverflow: overflow.vertical });
         violations.push(...escapedSurfaces);
-        return JSON.stringify(violations);
-    }).toBe('[]');
+        return lastMeasurement = JSON.stringify(violations);
+    };
+    try {
+        await expect.poll(measureViolations).toBe('[]');
+    } catch (error) {
+        error.message += `\nLast viewport measurements: ${lastMeasurement}`;
+        throw error;
+    }
 }
 
 async function waitForNavOpenGrace(page) {
@@ -766,6 +773,7 @@ test.describe('mobile shell smoke at iPhone 390x844', () => {
     });
 
     test('composer stays on screen through keyboard-style viewport shrink', async ({ page }, testInfo) => {
+        await selectSampleCharacter(page);
         await page.setViewportSize({ width: 390, height: 500 });
 
         await expect.poll(async () => {

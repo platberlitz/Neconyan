@@ -64,9 +64,10 @@ test.describe('mobile composer spacing at 320x568', () => {
     test('normal and compact modes keep the action rails clear of the textarea', async ({ page }) => {
         await openQuietChatForSmoke(page);
 
-        await page.evaluate(() => {
+        await page.evaluate(async () => {
             document.documentElement.style.setProperty('--sb-bottom-bar-scale', '1.5');
-            document.getElementById('send_but')?.classList.remove('displayNone');
+            // Exercise the real connected layout, rather than force Send into a disconnected row.
+            (await import('/script.js')).setOnlineStatus('Composer spacing fixture connection');
         });
 
         for (const compactMode of ['false', 'true']) {

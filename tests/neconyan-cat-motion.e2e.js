@@ -43,7 +43,8 @@ test('Home paints the backflip and keeps OS and app motion preferences separate'
         settings = JSON.parse(bytes.toString());
         savedSettings.push(structuredClone(settings));
         settings._version = Math.max(Date.now(), Number(settings._version || 0) + 1);
-        await route.fulfill({ json: { version: settings._version } });
+        settings._settingsRevision = Number(settings._settingsRevision || 0) + 1;
+        await route.fulfill({ json: { result: 'ok', version: settings._version, settingsRevision: settings._settingsRevision } });
     });
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -62,6 +63,7 @@ test('Home paints the backflip and keeps OS and app motion preferences separate'
 
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await expect(cat).toHaveAttribute('src', /neconyan-pixel-cat-rest\.webp/);
+    await cat.evaluate(image => image.decode());
     const stillFrame = await frame();
     await page.waitForTimeout(1000);
     expect((await frame()).equals(stillFrame)).toBe(true);

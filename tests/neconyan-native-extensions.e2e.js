@@ -47,6 +47,10 @@ async function mockNativeSettings(page, { tone = 'dark', resetTerminal = false, 
         if (!settings) {
             settings = JSON.parse(envelope.settings);
             settings.firstRun = firstRun;
+            // Layout checks must not prune real snapshot history inherited from another case.
+            settings.extension_settings.disabledExtensions = [...new Set([
+                ...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine',
+            ])];
             settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': tutorialStatus, 'NeconyanTutorialIndex.v1': '0' };
             delete settings.accountStorage['NeconyanTutorialHidden.v1'];
             if (homePanelMode) settings.accountStorage.WelcomePage_PanelMode = homePanelMode;
@@ -1012,6 +1016,7 @@ for (const width of [393, 1280]) {
                 await expect(page.locator('#options_button')).toBeVisible();
                 await expect(page.locator('#extensionsMenuButton')).toBeVisible();
                 await expect(page.locator('#qig-input-btn')).toBeVisible();
+                await page.evaluate(async () => (await import('/script.js')).setOnlineStatus('Terminal fixture connection'));
                 await expect(page.locator('#send_but')).toBeVisible();
                 await page.locator('#send_textarea').focus();
                 await expect(page.locator('#send_textarea')).toHaveCSS('outline-style', 'solid');

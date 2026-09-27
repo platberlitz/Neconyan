@@ -59,7 +59,11 @@ function reply(native, avatar, locator, operationKey) {
 }
 
 async function noPages(browser) {
-    for (const context of browser.contexts()) for (const page of context.pages()) await page.close();
+    for (const context of browser.contexts()) for (const page of context.pages()) {
+        // Finish startup writes before this test edits saved settings directly with every page closed.
+        expect(await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }))).toBe(true);
+        await page.close();
+    }
     expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
 }
 

@@ -21,7 +21,7 @@ async function openBarForTest(page) {
     await openQuietChatForSmoke(page);
     await dismissOpenDialogIfPresent(page);
     await page.evaluate(() => {
-        const shellIds = new Set(['top-bar', 'top-settings-holder', 'sheld', 'left-nav-panel', 'right-nav-panel', 'user-settings-block']);
+        const shellIds = new Set(['top-bar', 'top-settings-holder', 'sheld', 'left-nav-panel', 'right-nav-panel', 'user-settings-block', 'neconyan-workspace-rail', 'neconyan-workspace-scrim']);
         const viewportArea = window.innerWidth * window.innerHeight;
 
         for (const node of Array.from(document.body.children)) {
@@ -354,6 +354,8 @@ test.describe('third-party top-bar button adoption', () => {
         await waitForAnimationFrames(page, 3);
         await injectCharacterLibraryButton(page);
 
+        await page.locator('#sb-hamburger').click();
+        await expect(page.locator('body')).toHaveClass(/neconyan-rail-drawer-open/);
         const snapshot = await getAdoptionSnapshot(page);
 
         expect(snapshot.inSlot).toBe(true);

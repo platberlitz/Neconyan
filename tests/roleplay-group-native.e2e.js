@@ -37,6 +37,11 @@ async function openGroup({ account, group }) {
         await groups.openGroupById(id);
     }, group.id);
     await expect(page.locator('#send_textarea')).toBeVisible();
+    expect(await page.evaluate(async () => {
+        const core = await import('/script.js');
+        if (!await core.saveSettings(0, { returnResult: true })) return false;
+        return Boolean(core.getActiveGenerationAcknowledgement());
+    })).toBe(true);
     return page;
 }
 

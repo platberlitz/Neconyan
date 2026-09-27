@@ -65,6 +65,25 @@ conditional saves and Stop handling, assistant-copy preservation, the extension
 catalogue, Termeownal and the visible character badges pass their follow-up checks.
 These focused results do not replace a complete run of the next candidate.
 
+The second candidate, `f196549521fda8156d77afb2e1cd78c112635599`, passed all four
+Android jobs in run `36345292384`, including both visible-workspace checks.
+Its browser run `36345292688` finished with 870 passes and 15 failures across seven
+completed batches, plus nine skips and five tests not reached. The remaining batch
+hit its two-hour limit after 144 of 208 cases. The large Conversation file now lets
+the runner distribute its independent cases; the new eight-batch plan has between
+134 and 142 cases per batch. Two-worker Conversation and closed-page Agent/group
+checks pass locally.
+
+I also traced a real send-scroll regression: a delayed resize callback restored the
+reading position from before Send, hiding the new message again. A new bottom scroll
+now invalidates those older callbacks and updates the saved viewport state immediately.
+The browser check verifies the message is visible within one second and stays there
+after a delayed save. Loading older history, late image resizing, pruning old rows
+and reading above a streaming reply also pass. The focused scroll unit checks pass
+all 120 tests. The subsequent full run passed 355 suites and 4,668 tests, with two
+skipped; root lint, changed-test lint, frontend limits and a fresh build also pass.
+The next candidate still needs complete browser and signed Android validation.
+
 - Automatic and manual captions now compare the same settings fingerprint, excluding
   save counters and account bookkeeping. All 42 caption tests pass. All six desktop
   and phone browser cases pass for captions, translation, Pawthfinder, speech, image
