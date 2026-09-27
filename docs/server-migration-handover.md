@@ -21,7 +21,7 @@ This task does not deploy the Oracle service; older deployment notes below are h
   all 24 cases. Six further glossary, Story and native-workspace cases passed after
   correcting stale test fixtures and the intentional phone header expectation.
 - The release browser workflow now explicitly prepares disposable data and divides
-  the full suite between four isolated runners. Its complete remote result is still
+  the full suite between eight isolated runners. Its complete remote result is still
   required; local focused checks are not a claim that every browser test passed.
 - Android implementation and local acceptance are complete. The embedded Node 24 server
   passed startup, private authentication, background availability, process-death and
