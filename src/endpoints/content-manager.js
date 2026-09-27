@@ -1061,7 +1061,9 @@ function publishRetiredFile(source, destination, expectedHash) {
 function publishRetiredPayload(source, destination, kind, expectedHash) {
     if (kind === 'directory') {
         fs.mkdirSync(destination);
-        fs.cpSync(source, destination, { recursive: true, force: false, errorOnExist: true });
+        for (const name of fs.readdirSync(source)) {
+            fs.cpSync(path.join(source, name), path.join(destination, name), { recursive: true, force: false, errorOnExist: true });
+        }
     } else publishRetiredFile(source, destination, expectedHash);
     const restored = inspectRetiredPath(destination);
     if (!restored.ok || restored.hash !== expectedHash || restored.kind !== kind) {

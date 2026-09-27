@@ -8,12 +8,20 @@ on:
     paths-ignore:
       - '**/*.md'
       - '.github/**'
+      - '.gitignore'
+      - 'android/**'
+      - 'scripts/build-android-payload.js'
+      - 'tests/android-apk-smoke.py'
   push:
     branches:
       - main
     paths-ignore:
       - '**/*.md'
       - '.github/**'
+      - '.gitignore'
+      - 'android/**'
+      - 'scripts/build-android-payload.js'
+      - 'tests/android-apk-smoke.py'
 
 permissions:
   contents: read
@@ -26,12 +34,18 @@ jobs:
   run-release-e2e:
     name: Run Chromium E2E suite
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     env:
       CI: 'true'
       PLAYWRIGHT_HTML_OPEN: never
       NECONYAN_TEST_BASE_URL: http://127.0.0.1:4433
       SILLYBUNNY_TEST_BASE_URL: http://127.0.0.1:4433
+      NECONYAN_CONVERSATION_TEST_DISPOSABLE: '1'
+      NECONYAN_RELEASE_TEST_DISPOSABLE: '1'
 
     steps:
       - name: Checkout Repository
@@ -64,7 +78,9 @@ jobs:
         run: npx --no-install playwright install --with-deps chromium
 
       - name: Initialize server state
-        run: npm run init
+        run: |
+          mkdir -p /tmp/opencode
+          npm run init
 
       - name: Run release E2E suite
         env:
@@ -102,7 +118,8 @@ jobs:
             sleep 1
           done
 
-          npm run test:e2e --prefix tests -- --workers=1 --reporter=line,html
+          node tests/prepare-release-fixture.js
+          npm run test:e2e --prefix tests -- --workers=1 --shard=${{ matrix.shard }}/4 --reporter=line,html
 
       - name: Print server log on failure
         if: failure()
@@ -115,7 +132,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: release-e2e-diagnostics-${{ github.run_attempt }}
+          name: release-e2e-diagnostics-${{ matrix.shard }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/sillybunny-server.log
             tests/playwright-report/

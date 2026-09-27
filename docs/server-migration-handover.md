@@ -1,5 +1,37 @@
 # Full server migration: continuation
 
+## Release preparation: 1.0.0
+
+The owner requested a main release, a self-contained Android APK and staging prepared
+for 1.0.1. The release base is the latest verified GitHub staging commit
+`76a90f18a7d2e620e0903c0297a1a0e12dc80158`. A local `main` branch now exists.
+This task does not deploy the Oracle service; older deployment notes below are historical.
+
+- Fixed the shared sprite archive/restore copy for Node 26, retaining exclusive
+  destination creation and no-overwrite checks. The full unit run passed 352 suites,
+  with 4,634 tests passing and two skipped. The server suite passed 1,409 tests;
+  a further ONNX/Protobuf compatibility test passed separately.
+- Updated compatible dependencies and synchronised npm and Bun 1.3.14 lockfiles.
+  The audit has zero high or critical findings and eight moderate dependency findings
+  remain. Do not describe this as a clean security audit.
+- Root lint, changed-test lint with zero errors, frontend build, asset budgets and
+  whitespace checks pass. Desktop 1280x900 and touch 393x852 migration checks passed
+  all 24 cases. Six further glossary, Story and native-workspace cases passed after
+  correcting stale test fixtures and the intentional phone header expectation.
+- The release browser workflow now explicitly prepares disposable data and divides
+  the full suite between four isolated runners. Its complete remote result is still
+  required; local focused checks are not a claim that every browser test passed.
+- Android implementation and acceptance are in progress. The embedded Node 24 server
+  passed startup, private authentication, background availability, process-death and
+  APK-reinstallation data checks on Android 11 and 15 emulators. Native document-picker
+  import and PNG export preserved the exact character data. Final review corrections
+  cover server preferences, custom global extensions and private startup verification.
+  No APK has been published. Physical ARM devices and iOS/WebKit remain unverified.
+
+Next: finish the Android correction checks and signed APKs, publish the verified main
+release, then advance staging to 1.0.1. Keep signing material and generated artefacts
+out of Git. Reuse the passing common-code checks while those files stay unchanged.
+
 ## Status and authority
 
 The full migration's thirteen stages are implemented and verified locally; deployment remains a separate owner decision. The Oracle VM runs `staging` up to `9e87a12`, which contains verified Stages 1-9 and was deployed on 26 September 2026; Stages 10-13 have not been deployed. Small, coherent local checkpoint commits are authorised within stages. They record implementation progress and are not reviewed stage completion. Do not push, deploy, or commit credentials, runtime data, generated builds or test artefacts without an explicit request. Stage 10 onwards is developed in a separate clone on the VM, `/srv/projects/Neconyan`, whose push URL is disabled; the live checkout in `/home/ubuntu/Neconyan` self-updates from GitHub and must never be edited, tested or committed in.

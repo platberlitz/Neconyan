@@ -10,7 +10,10 @@ for (const width of [393, 1280]) {
         test.use({ viewport: { width, height: width === 393 ? 852 : 900 }, hasTouch: width === 393, isMobile: width === 393 });
 
         test('joins prose, keeps only end sleepers and still opens the editor', async ({ page }) => {
-            await page.route('**/api/settings/save', route => route.fulfill({ json: { version: Date.now() } }));
+            await page.route('**/api/settings/save', route => {
+                const settings = route.request().postDataJSON();
+                return route.fulfill({ json: { version: Date.now(), settingsRevision: (settings._settingsRevision || 0) + 1 } });
+            });
             await openQuietChatForSmoke(page);
             const skip = page.locator('[data-tour-coach-skip]');
             if (await skip.isVisible()) await skip.click();

@@ -7,6 +7,8 @@ test.setTimeout(120000);
 async function ready(page) {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+    const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
+    if (await skip.isVisible()) await skip.click();
 }
 
 async function open(page, side, tab) {
@@ -56,9 +58,23 @@ test('native character library preserves a failed edit and saves the card withou
         await page.locator('#rm_button_back').click();
         for (const width of [1280, 1024, 997, 768, 390, 320]) {
             await page.setViewportSize({ width, height: 900 });
-            const title = await page.locator('#right-nav-panel > .sb-character-shell-header .sb-shell-title').boundingBox();
-            expect(title.width).toBeGreaterThan(60);
-            expect(title.height).toBeGreaterThan(12);
+            await open(page, 'characters', 'characters');
+            const heading = page.locator('#right-nav-panel > .sb-character-shell-header .sb-shell-title');
+            if (width > 768) {
+                await expect(heading, `Character heading at ${width}px`).toBeVisible();
+                const title = await heading.boundingBox();
+                expect(title.width).toBeGreaterThan(60);
+                expect(title.height).toBeGreaterThan(12);
+            } else {
+                // Phone sheets deliberately replace the large header with the close
+                // control and labelled tabs (neconyan.css's phone shell rules).
+                await expect(heading).toBeHidden();
+                const close = page.locator('#right-nav-panel > .sb-character-shell-header .sb-shell-close');
+                await expect(close).toBeVisible();
+                const bounds = await close.boundingBox();
+                expect(bounds.width).toBeGreaterThanOrEqual(44);
+                expect(bounds.height).toBeGreaterThanOrEqual(44);
+            }
             await expect(page.locator('#character_search_bar')).toBeVisible();
             await expect(row.locator('[data-entity-action="edit-card"]')).toBeVisible();
             const clipped = await page.locator('#rm_print_characters_block > .character_select').evaluateAll(rows => rows.flatMap(row => {

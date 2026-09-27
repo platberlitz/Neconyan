@@ -343,6 +343,17 @@ function indexFault(fixture, number, after) {
 }
 
 describe('retirement transaction and reference regressions', () => {
+    test('restores every sprite into the exclusively created directory', () => {
+        const f = recoveryFixture();
+        const entry = f.sprites('Mittens');
+        fs.writeFileSync(path.join(entry.target, 'sad.png'), fixtureImage);
+        entry.item.hashes = [retirement.getRetiredContentHash(entry.target)];
+        expect(f.archive([entry.item.stableName]).results[0].ok).toBe(true);
+        expect(f.restore(f.index()[0].id).ok).toBe(true);
+        expect(fs.readdirSync(entry.target).sort()).toEqual(['joy.png', 'sad.png']);
+        expect(retirement.getRetiredContentHash(entry.target)).toBe(entry.item.hashes[0]);
+    });
+
     test('retains every successful record in a multi-item batch and restores both originals', () => {
         const f = recoveryFixture();
         const first = f.add('background', 'first.jpg', 'first');
