@@ -139,7 +139,6 @@ export const MEMORY_SUMMARY_MIN_MESSAGES = 24;
 export const MEMORY_SUMMARY_INTERVAL_MESSAGES = 12;
 export const MEMORY_SUMMARY_RECENT_MESSAGES = 36;
 export const MEMORY_SUMMARY_RESPONSE_TOKENS = 32000;
-export const SCHEDULE_GENERATION_RESPONSE_TOKENS = 8000;
 export const SELFIE_COMMAND_RE = /\[selfie(?::\s*(?:context=)?"?([^"\]]*)"?)?\]/gi;
 export const SCHEDULE_UPDATE_RE = /\[schedule_update:\s*([^\]]+)\]/gi;
 export const REMINDER_COMMAND_RE = /\[reminder:\s*([^|\]]+)\s*\|\s*([^\]]+)\]/gi;

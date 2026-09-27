@@ -17,7 +17,6 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.
         const parsed = Number.parseInt(String(value), 10);
         return Number.isFinite(parsed) && parsed >= min ? parsed : fallback;
     },
-    persistConversationStore: jest.fn(),
 }));
 const captureConversationTextBinding = jest.fn();
 const requestConversationBinding = jest.fn();
@@ -36,8 +35,11 @@ const {
     getConversationRuntimeStatusKey,
     getCurrentActivityFromSchedule,
     getStoredSchedule,
-    saveStoredSchedule,
 } = await import('../public/scripts/neconyan-conversation/schedule.js');
+
+function storeServerSchedule(avatar, schedule, personaId) {
+    stores.set(`${personaId}|${avatar}`, { schedule });
+}
 
 describe('Conversation schedule persona scoping', () => {
     beforeEach(() => {
@@ -46,11 +48,11 @@ describe('Conversation schedule persona scoping', () => {
         runtimeStatusOverrides.clear();
     });
 
-    test('reads and writes the explicitly captured persona after the active persona changes', () => {
+    test('reads the explicitly captured persona after the active persona changes', () => {
         const scheduleA = { days: { 0: [] }, marker: 'A' };
         const scheduleB = { days: { 0: [] }, marker: 'B' };
-        saveStoredSchedule('char.png', scheduleA, { personaId: 'persona-a.png' });
-        saveStoredSchedule('char.png', scheduleB, { personaId: 'persona-b.png' });
+        storeServerSchedule('char.png', scheduleA, 'persona-a.png');
+        storeServerSchedule('char.png', scheduleB, 'persona-b.png');
 
         activePersonaId = 'persona-b.png';
 
@@ -83,7 +85,7 @@ describe('Conversation schedule persona scoping', () => {
         requestConversationBinding.mockResolvedValue({ job: { id: 'job-1' } });
         const saved = { days: { 0: [] }, marker: 'server' };
         waitForNativeConversationJob.mockImplementationOnce(async () => {
-            saveStoredSchedule('char.png', saved, { personaId: 'persona-a.png' });
+            storeServerSchedule('char.png', saved, 'persona-a.png');
             return { state: 'completed' };
         });
 

@@ -17,7 +17,6 @@ const threadStore = {
     memoryMessageCount: 100,
 };
 const composeConversationPersonaDescription = jest.fn(() => 'captured persona appendix');
-const generateConversationRaw = jest.fn(async () => 'new branch summary');
 const captureConversationTextBinding = jest.fn(async scope => ({ account: 'tester', scope: { target: scope }, bindingRequest: { participants: {} } }));
 const requestConversationBinding = jest.fn(async () => ({ job: { id: 'summary-job' } }));
 const refreshConversationStore = jest.fn(async () => ({}));
@@ -40,7 +39,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.
     getCurrentCharName: () => 'Aster',
     parsePositiveInt: (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback,
 }));
-await jest.unstable_mockModule('../public/scripts/neconyan-conversation/generation.js', () => ({ generateConversationRaw, captureConversationTextBinding }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/generation.js', () => ({ captureConversationTextBinding }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/bindings.js', () => ({ requestConversationBinding }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({ refreshConversationStore }));
 await jest.unstable_mockModule('../public/scripts/jobs.js', () => ({ observeJob }));
@@ -99,7 +98,6 @@ describe('conversation prompt captured identity', () => {
             message.mes = `message ${index}`;
         });
         composeConversationPersonaDescription.mockClear();
-        generateConversationRaw.mockReset().mockResolvedValue('new branch summary');
         captureConversationTextBinding.mockClear();
         requestConversationBinding.mockClear();
         refreshConversationStore.mockClear();
@@ -155,7 +153,6 @@ describe('conversation prompt captured identity', () => {
         expect(captureConversationTextBinding).toHaveBeenCalledWith({ avatar: 'char.png', branchId: 'branch-a', groupId: '', personaId: 'persona-a.png' });
         expect(requestConversationBinding).toHaveBeenCalledWith('summary/submit', expect.objectContaining({ target: { avatar: 'char.png', branchId: 'branch-a', groupId: '', personaId: 'persona-a.png' }, force: false }), 'tester');
         expect(refreshConversationStore).toHaveBeenCalledWith('tester');
-        expect(generateConversationRaw).not.toHaveBeenCalled();
         expect(saveConversationMemorySummary).not.toHaveBeenCalled();
     });
 

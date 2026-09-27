@@ -132,98 +132,24 @@ afterEach(() => {
 });
 
 describe('Conversation extension media integration', () => {
-    test('uses the activated QIG capability with the explicit Conversation speaker only', async () => {
-        const characters = [
-            { name: 'Roleplay', avatar: 'roleplay.png', description: 'roleplay description' },
-            { name: 'Conversation', avatar: 'conversation.png', description: 'conversation description' },
-        ];
-        const state = { imageGenerationActive: false, imageGenerationAbortController: null };
-        const qig = {
-            ensureReady: jest.fn(async () => {}),
-            generateScopedImage: jest.fn(async () => ({ url: 'generated.png' })),
-        };
+    test('Conversation media no longer renders pictures from the page', async () => {
+        const qig = { ensureReady: jest.fn(), generateScopedImage: jest.fn() };
         installCapabilityRegistry([['quick-image-gen', qig]]);
+        const state = { imageGenerationActive: false, imageGenerationAbortController: null };
         const media = await importConversationMedia({
-            characters,
-            currentAvatar: 'roleplay.png',
+            characters: [{ name: 'Conversation', avatar: 'conversation.png' }],
+            currentAvatar: 'conversation.png',
             state,
             render: jest.fn(),
         });
 
-        const prompt = media.buildCharacterImagePrompt('{{char}} selfie', 'outside', 'conversation.png');
-        await expect(media.generateConversationImage(prompt, '', { avatar: 'conversation.png' })).resolves.toBe('generated.png');
-
-        expect(qig.generateScopedImage).toHaveBeenCalledWith(prompt, '', expect.objectContaining({
-            avatar: 'conversation.png',
-            character: characters[1],
-            signal: expect.any(AbortSignal),
-        }));
+        expect(media.generateConversationImage).toBeUndefined();
+        expect(media.buildCharacterImagePrompt).toBeUndefined();
+        expect(media.getCharacterImageDetails).toBeUndefined();
+        expect(media.getCharacterForAvatar('conversation.png')?.name).toBe('Conversation');
+        expect(qig.ensureReady).not.toHaveBeenCalled();
+        expect(qig.generateScopedImage).not.toHaveBeenCalled();
         expect(state).toEqual({ imageGenerationActive: false, imageGenerationAbortController: null });
-
-        // No prompt-keyed side channel: without explicit options the request is refused
-        // instead of falling back to the current roleplay character.
-        await expect(media.generateConversationImage(prompt)).resolves.toBeNull();
-        expect(qig.generateScopedImage).toHaveBeenCalledTimes(1);
-    });
-
-    test('returns cleanly when QIG is disabled and has no registered capability', async () => {
-        const state = { imageGenerationActive: false, imageGenerationAbortController: null };
-        globalThis.toastr = { warning: jest.fn() };
-        const media = await importConversationMedia({
-            characters: [{ name: 'Conversation', avatar: 'conversation.png' }],
-            currentAvatar: 'conversation.png',
-            state,
-            render: jest.fn(),
-        });
-
-        await expect(media.generateConversationImage('portrait', '', { avatar: 'conversation.png', notify: true })).resolves.toBeNull();
-        expect(state.imageGenerationActive).toBe(false);
-        expect(state.imageGenerationAbortController).toBeNull();
-        expect(globalThis.toastr.warning).not.toHaveBeenCalled();
-    });
-
-    test('an aborted old run cannot clear a newer run controller or log a failure', async () => {
-        let releaseOldReadiness;
-        let releaseNewGeneration;
-        const oldReadiness = new Promise(resolve => { releaseOldReadiness = resolve; });
-        const newGeneration = new Promise(resolve => { releaseNewGeneration = resolve; });
-        const qig = {
-            ensureReady: jest.fn()
-                .mockImplementationOnce(() => oldReadiness)
-                .mockResolvedValue(undefined),
-            generateScopedImage: jest.fn(() => newGeneration),
-        };
-        installCapabilityRegistry([['quick-image-gen', qig]]);
-        const state = { imageGenerationActive: false, imageGenerationAbortController: null };
-        const media = await importConversationMedia({
-            characters: [{ name: 'Conversation', avatar: 'conversation.png' }],
-            currentAvatar: 'conversation.png',
-            state,
-            render: jest.fn(),
-        });
-        const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-        globalThis.toastr = { warning: jest.fn() };
-
-        const oldRun = media.generateConversationImage('old', '', { avatar: 'conversation.png', notify: true });
-        const oldController = state.imageGenerationAbortController;
-        oldController.abort();
-        state.imageGenerationActive = false;
-        state.imageGenerationAbortController = null;
-
-        const newRun = media.generateConversationImage('new', '', { avatar: 'conversation.png' });
-        const newController = state.imageGenerationAbortController;
-        releaseOldReadiness();
-        await oldRun;
-
-        expect(state.imageGenerationActive).toBe(true);
-        expect(state.imageGenerationAbortController).toBe(newController);
-        expect(warn).not.toHaveBeenCalled();
-        expect(globalThis.toastr.warning).not.toHaveBeenCalled();
-
-        releaseNewGeneration({ url: 'new.png' });
-        await expect(newRun).resolves.toBe('new.png');
-        expect(state.imageGenerationActive).toBe(false);
-        expect(state.imageGenerationAbortController).toBeNull();
     });
 
     test('scoped context is immutable, explicit, and never exposes roleplay chat/group globals', () => {

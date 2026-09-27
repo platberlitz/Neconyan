@@ -1,6 +1,5 @@
 import { PARTNER_FOLLOWUP_RECENT_WINDOW } from './constants.js';
 import { getConversationGroupIdForAvatar, getConversationPersonaId, getCurrentCharAvatar } from './context.js';
-import { normalizeConversationOutputText } from './generation.js';
 import { getCharacterForAvatar, getConversationPartnerAvatars } from './media.js';
 import { getSettings } from './settings-store.js';
 import { getConversationThread } from './thread-store.js';
@@ -10,7 +9,6 @@ import {
     isCharacterMentionedInText,
     parseAvatarList,
     mergeConversationPartnerSettings,
-    stripSpeakerPrefixText,
 } from './partners-utils.js';
 
 export {
@@ -86,8 +84,4 @@ export function getRecentlySilentMentionedPartner(avatar, selectedAvatars, setti
 
     const thread = getConversationThread(avatar, { branchId, create: false, groupId, personaId });
     return getRecentlySilentMentionedPartnerFromThread(thread, partners, PARTNER_FOLLOWUP_RECENT_WINDOW);
-}
-
-export function stripSpeakerPrefix(messageText, speakerName) {
-    return stripSpeakerPrefixText(messageText, speakerName, normalizeConversationOutputText);
 }

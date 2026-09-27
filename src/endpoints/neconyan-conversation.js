@@ -68,7 +68,7 @@ import {
     extractGeneratedText,
     getSafeConversationGenerationStatus,
 } from './conversation-generation.js';
-import { acceptConversationAside, acceptConversationSubmission, preflightConversationBindings, generateBoundConversationText } from '../generation/conversation-jobs.js';
+import { acceptConversationAside, acceptConversationSubmission, preflightConversationBindings } from '../generation/conversation-jobs.js';
 import { acceptConversationAsideEvent } from '../generation/conversation-aside-events.js';
 import { acceptConversationSchedule, acceptConversationSummary } from '../generation/conversation-maintenance.js';
 import { claimConversationPresentations } from '../generation/conversation-effects.js';
@@ -670,21 +670,8 @@ router.post('/message/append', asyncRoute(async (request, response) => {
     });
 }));
 
-router.post('/binding/generate', asyncRoute(async (request, response) => {
-    if (!await consumeMessageSendLimit(response, messageSendIpLimiter, getIpAddress(request, PREFER_REAL_IP_HEADER))) return;
-    if (!await consumeMessageSendLimit(response, messageSendUserLimiter, request.user.profile.handle)) return;
-    const controller = new AbortController();
-    const abort = () => { if (!response.writableEnded) controller.abort(); };
-    response.once('close', abort);
-    try {
-        return response.send(await generateBoundConversationText(request, request.body || {}, controller.signal));
-    } catch (error) {
-        if (error.apiError === 'automation_server_owned') return response.status(409).send({ error: error.apiError, message: error.message });
-        return response.status(error.status || 500).send({ error: 'bound_generation_failed', message: 'The captured connection could not complete this request. Check its saved settings and try again.' });
-    } finally {
-        response.removeListener('close', abort);
-    }
-}));
+router.post('/binding/generate', (_request, response) => response.status(409).send({ error: 'NATIVE_OPERATION_REQUIRED',
+    code: 'NATIVE_OPERATION_REQUIRED', message: 'Page-owned Conversation generation was retired. Use the native reply, rewrite or selfie jobs.' }));
 
 router.post('/binding/preflight', asyncRoute(async (request, response) => {
     try {

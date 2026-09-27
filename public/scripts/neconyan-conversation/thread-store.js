@@ -47,21 +47,6 @@ export function getConversationSeenAt(avatar = getCurrentCharAvatar(), { branchI
     return parsePositiveInt(getConversationSessionMarker(avatar, 'seen_at', { branchId, groupId, personaId }), 0, 0);
 }
 
-export function getImageCooldownRemainingSeconds(avatar, settings, now = Date.now(), { branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {
-    const cooldownMinutes = parsePositiveInt(settings.image_gen_cooldown, 10, 0);
-    if (!cooldownMinutes) {
-        return 0;
-    }
-
-    const lastImageAt = parsePositiveInt(getConversationSessionMarker(avatar, 'image_at', { branchId, groupId, personaId }), 0, 0);
-    const remainingMs = (cooldownMinutes * 60 * 1000) - (now - lastImageAt);
-    return Math.max(0, Math.ceil(remainingMs / 1000));
-}
-
-export function markImageGenerated(avatar, timestamp = Date.now(), { branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {
-    setConversationSessionMarker(avatar, 'image_at', timestamp, { branchId, groupId, personaId });
-}
-
 export function addConversationReminder(avatar, groupId, delayText, memoText, { branchId = '', personaId = getConversationPersonaId() } = {}) {
     const delayMs = parseReminderDelayToMs(delayText);
     if (delayMs <= 0) {

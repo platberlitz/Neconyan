@@ -11,29 +11,6 @@ function readConversationSource(file) {
     return normalizeSource(readFileSync(path.join(conversationDir, file), 'utf8'));
 }
 
-function getFunctionSource(source, name) {
-    const marker = `function ${name}(`;
-    const start = source.indexOf(marker);
-    expect(start).toBeGreaterThanOrEqual(0);
-
-    const bodyStart = source.indexOf('{', start);
-    let depth = 0;
-
-    for (let index = bodyStart; index < source.length; index++) {
-        const char = source[index];
-        if (char === '{') {
-            depth++;
-        } else if (char === '}') {
-            depth--;
-            if (depth === 0) {
-                return source.slice(start, index + 1);
-            }
-        }
-    }
-
-    throw new Error(`Unable to find function source for ${name}`);
-}
-
 const generationSource = readConversationSource('generation.js');
 const attachmentsSource = readConversationSource('attachments.js');
 const personasSource = readConversationSource('personas.js');
@@ -82,24 +59,18 @@ describe('conversation mode scoped connection profile', () => {
         expect(stateSource).not.toContain('conversationProfileSwitchQueue');
     });
 
-    test('exposes a scoped generateConversationRaw helper that never switches the global profile', () => {
-        const helperSource = getFunctionSource(generationSource, 'generateConversationRaw');
-
-        expect(helperSource).toContain('captureConversationTextBinding');
-        expect(helperSource).toContain('requestConversationBinding(\'binding/generate\'');
-        expect(helperSource).toContain('bindingRequest');
-        // It must not run the `/profile` slash command or mutate global state.
-        expect(helperSource).not.toContain('/profile ');
-        expect(helperSource).not.toContain('applyConnectionProfileByName');
-        expect(helperSource).not.toContain('generateRaw(');
-        expect(helperSource).not.toContain('catch');
+    test('retires the page-owned raw generation helper and route caller', () => {
+        expect(generationSource).not.toContain('generateConversationRaw');
+        expect(generationSource).not.toContain('binding/generate');
+        expect(generationSource).not.toContain('/profile ');
+        expect(generationSource).not.toContain('generateRaw(');
     });
 
     test('replaces every generation call site with the scoped helper', () => {
         const consumers = ['generation.js', 'interface.js', 'schedule.js', 'timeline-render.js'];
         for (const file of consumers) {
             const source = readConversationSource(file);
-            expect(source).toMatch(/generateConversationRaw|submitConversationRewrite|captureConversationTextBinding/);
+            expect(source).toMatch(/submitConversationRewrite|captureConversationTextBinding|generateCharacterSchedule|requestConversationSelfie/);
             expect(source).not.toContain('withConversationConnectionProfile');
         }
         expect(readConversationSource('interface.js')).toContain('submitConversationRewrite(\'polish\'');
@@ -237,8 +208,8 @@ describe('conversation mode scoped connection profile', () => {
         expect(chromeSource).toContain('generate-selfie-command');
         expect(generationSource).toContain('requestConversationBinding(\'selfie/submit\'');
         expect(generationSource).not.toContain('generateConversationImage');
-        expect(mediaSource).toContain('Quick Image Gen failed');
-        expect(mediaSource).toContain('getExtensionCapability(\'quick-image-gen\')');
+        expect(mediaSource).not.toContain('generateConversationImage');
+        expect(mediaSource).not.toContain('getExtensionCapability(\'quick-image-gen\')');
         expect(mediaSource).not.toContain('../extensions/quick-image-gen/index.js');
     });
 

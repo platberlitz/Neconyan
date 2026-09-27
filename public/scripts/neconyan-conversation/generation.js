@@ -42,15 +42,6 @@ async function addAssistantKnowledge(requestOptions, scope, bindingRequest, assi
     requestOptions.systemPrompt = [requestOptions.systemPrompt, knowledge.text].filter(Boolean).join('\n\n');
 }
 
-export async function generateConversationRaw(options, settings, assistantContext = null) {
-    const { signal, scope: providedScope, bindingContext, ...requestOptions } = options;
-    const { account, scope, bindingRequest } = bindingContext || await captureConversationTextBinding(providedScope, requestOptions);
-    await addAssistantKnowledge(requestOptions, scope, bindingRequest, assistantContext);
-    const result = await requestConversationBinding('binding/generate', { ...scope, bindingRequest,
-        options: requestOptions }, account, signal);
-    return result.text;
-}
-
 function getDeviceTimeZone() {
     try {
         return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';

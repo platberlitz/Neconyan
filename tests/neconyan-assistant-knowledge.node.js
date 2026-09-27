@@ -110,45 +110,32 @@ test('Mewmory uses the unchanged shared ranking implementation', () => {
     assert.deepEqual(sharedSearch(documents, ''), []);
 });
 
-test('browser Conversation captures its binding before request-local help and never falls back', async () => {
+test('browser Conversation adds request-local help after capturing the binding', async () => {
     const source = readFileSync(new URL('public/scripts/neconyan-conversation/generation.js', root), 'utf8');
     const helper = source.match(/^(async function addAssistantKnowledge\([\s\S]*?^})/m)[1];
-    const declaration = `${helper}\n${source.match(/export (async function generateConversationRaw\([\s\S]*?^})/m)[1]}`;
-    const requests = [];
-    let captureError;
-    const runtime = vm.createContext({
-        console,
-        buildAssistantKnowledge, getAssistantKnowledgeBudget, isNeconyanAssistant,
-        captureConversationTextBinding: async () => {
-            if (captureError) throw captureError;
-            return { account: 'alice', scope: { target: { avatar: 'char.png' } }, bindingRequest: { contextLimits: { 'char.png': 16000 } } };
-        },
-        requestConversationBinding: async (_path, request) => { requests.push(request); return { text: 'Reply' }; },
-    });
-    vm.runInContext(declaration, runtime);
-    const options = { systemPrompt: 'Character personality', prompt: [{ role: 'user', content: 'Question' }], responseLength: 128 };
+    const rewrite = source.match(/export async function submitConversationRewrite\([\s\S]*?^}/m)[0];
+    assert.ok(rewrite.indexOf('captureConversationTextBinding') < rewrite.indexOf('addAssistantKnowledge'));
+    assert.doesNotMatch(source, /generateConversationRaw/);
+    const runtime = vm.createContext({ buildAssistantKnowledge, getAssistantKnowledgeBudget, isNeconyanAssistant });
+    vm.runInContext(helper, runtime);
+    const scope = { target: { avatar: 'char.png' } };
+    const bindingRequest = { contextLimits: { 'char.png': 16000 } };
+    const base = { systemPrompt: 'Character personality', responseLength: 128 };
     const colour = { character: marked('miso-female'), messages: [user('Dialogue colours')] };
     const voice = { character: marked('taro-male'), messages: [user('TTS voice')] };
+    const colourRequest = { ...base };
+    const voiceRequest = { ...base };
     await Promise.all([
-        runtime.generateConversationRaw(options, { connection_profile: 'Other profile' }, colour),
-        runtime.generateConversationRaw(options, {}, voice),
+        runtime.addAssistantKnowledge(colourRequest, scope, bindingRequest, colour),
+        runtime.addAssistantKnowledge(voiceRequest, scope, bindingRequest, voice),
     ]);
-    assert.equal(requests.length, 2);
-    const colourRequest = requests.find(request => request.options.systemPrompt.includes('appearance.dialogue'));
-    const voiceRequest = requests.find(request => request.options.systemPrompt.includes('audio.tts'));
-    assert.ok(colourRequest);
-    assert.ok(voiceRequest);
-    assert.doesNotMatch(colourRequest.options.systemPrompt, /audio.tts/);
-    assert.doesNotMatch(voiceRequest.options.systemPrompt, /appearance.dialogue/);
-    assert.equal(options.systemPrompt, 'Character personality');
-    requests.length = 0;
-    await runtime.generateConversationRaw(options, {});
-    await runtime.generateConversationRaw(options, {}, { character: { name: 'Miso' }, messages: colour.messages });
-    assert.ok(requests.every(request => request.options.systemPrompt === options.systemPrompt));
-    captureError = Object.assign(new Error('cancelled'), { name: 'AbortError' });
-    await assert.rejects(runtime.generateConversationRaw(options, { connection_profile: 'Other profile' }, colour), /cancelled/);
-    assert.equal(requests.length, 2);
-    captureError = new Error('Profile is no longer supported');
-    await assert.rejects(runtime.generateConversationRaw(options, { connection_profile: 'Other profile' }, colour), /no longer supported/);
-    assert.equal(requests.length, 2);
+    assert.match(colourRequest.systemPrompt, /appearance.dialogue/);
+    assert.match(voiceRequest.systemPrompt, /audio.tts/);
+    assert.doesNotMatch(colourRequest.systemPrompt, /audio.tts/);
+    assert.doesNotMatch(voiceRequest.systemPrompt, /appearance.dialogue/);
+    assert.equal(base.systemPrompt, 'Character personality');
+    const plain = { ...base };
+    await runtime.addAssistantKnowledge(plain, scope, bindingRequest, { character: { name: 'Miso' }, messages: colour.messages });
+    await runtime.addAssistantKnowledge(plain, scope, bindingRequest, null);
+    assert.equal(plain.systemPrompt, base.systemPrompt);
 });

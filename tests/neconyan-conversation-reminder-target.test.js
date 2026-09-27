@@ -49,8 +49,6 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/generati
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/interface.js', () => ({ loadCurrentPanelSettings: jest.fn() }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/media.js', () => ({
-    buildCharacterImagePrompt: () => '',
-    generateConversationImage: jest.fn(),
     getCharacterForAvatar: () => ({ avatar: 'char.png', name: 'Aster' }),
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/message-writer.js', () => ({ appendConversationMessage: jest.fn() }));
@@ -100,8 +98,6 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/thread-store.js', () => ({
     getConversationThread: () => [],
-    getImageCooldownRemainingSeconds: () => 0,
-    markImageGenerated: jest.fn(),
     resolveConversationReminderBranchId,
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/typing.js', () => ({

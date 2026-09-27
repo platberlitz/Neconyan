@@ -185,38 +185,6 @@ function assertBrowserAutomationAllowed(current, options) {
     }
 }
 
-export async function generateBoundConversationText(request, body, signal) {
-    const options = validateManualOptions(body.options);
-    const submitted = normalizeBindingRequest(body.bindingRequest);
-    if (!submitted) fail('A captured connection is required.', 400);
-    const currentBindings = await preflightConversationBindings(request, { ...body, bindingOnly: false, acknowledgement: submitted.acknowledgement });
-    if (hash(normalizeBindingRequest(currentBindings)) !== hash(submitted)) fail('The captured connection changed. Try again.', 409);
-    const { prompt, responseLength, ...rawOptions } = options;
-    const target = captureConversationTarget(request, body.target);
-    const current = readConversationTarget(request, target);
-    const avatar = body.speakerAvatar || target.avatar;
-    const binding = submitted.participants[avatar];
-    if (!binding) fail('The selected speaker has no captured connection.', 409);
-    const snapshot = await buildConversationParticipantSnapshot(request, current, target, { avatar }, { binding, directive: '', timeZone: 'UTC' });
-    const assertSource = () => {
-        const fresh = captureConversationTarget(request, body.target);
-        const latest = readConversationTarget(request, fresh);
-        assertBrowserAutomationAllowed(latest, options);
-        verifyConversationAnchors(latest, fresh, normalizeSubmissionAnchors(body));
-        resolveManualSpeaker(latest, fresh, normalizeSubmissionAnchors(body), avatar);
-    };
-    assertSource();
-    const messages = binding.kind === 'active' ? prompt : [
-        ...(rawOptions.systemPrompt ? [{ role: 'system', content: rawOptions.systemPrompt }] : []),
-        ...(Array.isArray(prompt) ? prompt : [{ role: 'user', content: prompt }]),
-    ];
-    const result = await runChatProfile({ context: { owner: request.user.profile.handle, directories: request.user.directories },
-        binding, messages, maxTokens: responseLength, macroEnvironment: createMacroEnvironment(snapshot.macros),
-        userName: snapshot.userName, characterName: snapshot.speaker.name, groupNames: snapshot.groupNames,
-        rawOptions: binding.kind === 'active' ? rawOptions : {}, signal, beforeDispatch: assertSource });
-    return { text: result.text };
-}
-
 /** Re-check every captured identity against the fresh branch. Appends are fine; edits and deletions are not. */
 export function verifyConversationAnchors(current, target, anchors) {
     if (!anchors) return;

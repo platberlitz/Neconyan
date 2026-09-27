@@ -10,7 +10,6 @@ import {
     getConversationPersonaId,
     getCurrentCharAvatar,
     parsePositiveInt,
-    persistConversationStore,
 } from './context.js';
 import { getCurrentUserHandle } from '../user.js';
 import { requestConversationBinding } from './bindings.js';
@@ -63,16 +62,6 @@ export function getStoredSchedule(avatar = getCurrentCharAvatar(), { personaId =
 
     const schedule = getCharacterConversationStore(avatar, { create: false, personaId })?.schedule;
     return schedule && typeof schedule === 'object' ? schedule : null;
-}
-
-export function saveStoredSchedule(avatar, schedule, { personaId = getConversationPersonaId() } = {}) {
-    if (!avatar) {
-        return;
-    }
-
-    const characterStore = getCharacterConversationStore(avatar, { personaId });
-    characterStore.schedule = schedule && typeof schedule === 'object' ? schedule : null;
-    persistConversationStore();
 }
 
 /**

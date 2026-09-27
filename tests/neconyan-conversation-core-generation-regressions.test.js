@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 
 const appendConversationMessage = jest.fn();
 const addConversationReminder = jest.fn();
-const generateConversationImage = jest.fn();
 const updateConversationThreadMessage = jest.fn();
 const runtimeStatusOverrides = new Map();
 const threadMessages = [{ id: 'user-1', role: 'user', name: 'User', mes: 'hello', extra: {} }];
@@ -32,14 +31,10 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.
     getCurrentCharName: () => 'Aster',
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/media.js', () => ({
-    buildCharacterImagePrompt: value => value,
-    generateConversationImage,
     getCharacterForAvatar: avatar => ({ avatar, name: avatar === 'char.png' ? 'Aster' : 'Partner' }),
-    getCharacterImageDetails: () => '',
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/message-writer.js', () => ({ appendConversationMessage }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/partners.js', () => ({
-    stripSpeakerPrefix: value => String(value || '').trim(),
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/personas.js', () => ({ getConnectionProfiles: () => [] }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/prompt.js', () => ({
@@ -64,9 +59,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/thread-s
     addConversationReminder,
     buildConversationMessageReplyReference: message => message ? { messageId: message.id, name: message.name, role: message.role, text: message.mes } : null,
     getConversationThread: () => threadMessages,
-    getImageCooldownRemainingSeconds: () => 0,
     hasConversationMessageContent: message => Boolean(message?.id && message?.mes),
-    markImageGenerated: jest.fn(),
     updateConversationThreadMessage,
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/typing.js', () => ({
@@ -86,7 +79,6 @@ describe('Conversation core generated reply regressions', () => {
         waitForNativeConversationJob.mockReset();
         appendConversationMessage.mockReset().mockImplementation(async (text, options) => ({ id: `message-${appendConversationMessage.mock.calls.length}`, mes: text, ...options }));
         addConversationReminder.mockClear();
-        generateConversationImage.mockClear();
         updateConversationThreadMessage.mockClear();
         runtimeStatusOverrides.clear();
         delete globalThis.document;
