@@ -40,6 +40,7 @@ printf '%s\n\n' "$MIRROR_NOTICE" > "$TMP_FILE"
 # Resolve root README links from the mirror's .github directory.
 sed -e 's#](\.github/readme-#](readme-#g' \
     -e 's#src="public/#src="../public/#g' \
+    -e 's#src="docs/#src="../docs/#g' \
     -e 's#](docs/#](../docs/#g' \
     -e 's#](LICENSE)#](../LICENSE)#g' "$SOURCE_README" >> "$TMP_FILE"
 
