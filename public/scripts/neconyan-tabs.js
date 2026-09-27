@@ -2398,7 +2398,8 @@ function placeComposerExtensionButtons(leftForm, rightForm) {
 
     if (mobile) {
         for (const child of Array.from(rightForm.children)) {
-            if (!(child instanceof HTMLElement) || NN_COMPOSER_NATIVE_RIGHT_RAIL_IDS.includes(child.id)) {
+            // The paw's send pops are hosted here on purpose (neconyan-send-nya.js).
+            if (!(child instanceof HTMLElement) || NN_COMPOSER_NATIVE_RIGHT_RAIL_IDS.includes(child.id) || child.classList.contains('neconyan-send-nya')) {
                 continue;
             }
 

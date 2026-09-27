@@ -31,21 +31,35 @@ const listeners = {};
 const appended = [];
 const pendingFrames = [];
 const paint = () => pendingFrames.splice(0).forEach(callback => callback());
+// The paw's row, #rightSendForm: it stays visible when Stop replaces the paw.
+const sendRow = {
+    style: {},
+    computed: { position: 'static', borderRightWidth: '2px', borderBottomWidth: '1px' },
+    getBoundingClientRect: () => ({ left: 60, top: 190, right: 160, bottom: 250, width: 100, height: 60 }),
+    append: node => appended.push(node),
+};
 const sendButton = {
     id: 'send_but',
     style: {},
+    parentElement: sendRow,
     contains: node => node === sendButton,
     closest: selector => (selector.includes('#send_but') ? sendButton : null),
-    getBoundingClientRect: () => ({ left: 100, top: 200, width: 40, height: 40 }),
-    append: node => appended.push(node),
+    getBoundingClientRect: () => ({ left: 100, top: 200, right: 140, bottom: 240, width: 40, height: 40 }),
+    append: () => { throw new Error('The pop must not live inside the paw, which hides while sending.'); },
 };
+// Right: 160 - 2 border - 120 paw centre. Bottom: 250 - 1 border - 200 paw top.
+const ABOVE_PAW = { position: 'absolute', right: '38px', bottom: '49px' };
 const elsewhere = { contains: () => false, closest: () => null };
 let hitTarget = sendButton;
 let sendNya;
 
 beforeAll(async () => {
     jest.useFakeTimers();
-    global.window = { matchMedia: () => ({ matches: false }), requestAnimationFrame: callback => pendingFrames.push(callback) };
+    global.window = {
+        matchMedia: () => ({ matches: false }),
+        requestAnimationFrame: callback => pendingFrames.push(callback),
+        getComputedStyle: element => element.computed,
+    };
     global.document = {
         addEventListener: (type, handler) => { listeners[type] = handler; },
         createElement,
@@ -95,10 +109,21 @@ describe('paw send button', () => {
         expect(['nya!', 'mrrp?', 'mrrah', 'mew', 'purr']).toContain(pop.textContent);
         expect(pop.className).toBe('neconyan-send-nya');
         expect(pop.attributes['aria-hidden']).toBe('true');
-        expect(pop.style).toMatchObject({ position: 'absolute', bottom: '100%', left: '50%', pointerEvents: 'none' });
-        expect(sendButton.style).toMatchObject({ position: 'relative' });
+        expect(pop.style).toMatchObject({ ...ABOVE_PAW, pointerEvents: 'none', transform: 'translateX(50%)' });
+        expect(sendRow.style).toMatchObject({ position: 'relative' });
         paint();
         expect(pop.options.duration).toBe(900);
+    });
+
+    test('an already positioned row keeps its own positioning', () => {
+        sendRow.style = {};
+        sendRow.computed.position = 'absolute';
+        try {
+            expect(sendNya.popNya(sendButton).style).toMatchObject(ABOVE_PAW);
+            expect(sendRow.style.position).toBeUndefined();
+        } finally {
+            sendRow.computed.position = 'static';
+        }
     });
 
     for (const [index, sound] of ['nya!', 'mrrp?', 'mrrah', 'mew', 'purr'].entries()) {
@@ -143,7 +168,7 @@ describe('paw send button', () => {
     test('a keyboard press pops above the middle of the button', () => {
         listeners.click({ target: sendButton, isTrusted: true, detail: 0 });
         expect(appended).toHaveLength(1);
-        expect(appended[0].style).toMatchObject({ bottom: '100%', left: '50%' });
+        expect(appended[0].style).toMatchObject(ABOVE_PAW);
     });
 
     test('a cancelled pointer still pops once from the iOS fast-tap touch sequence', () => {
@@ -154,7 +179,7 @@ describe('paw send button', () => {
         listeners.pointercancel({ pointerId: 7 });
         listeners.touchend(event);
         expect(appended).toHaveLength(1);
-        expect(appended[0].style).toMatchObject({ bottom: '100%', left: '50%' });
+        expect(appended[0].style).toMatchObject(ABOVE_PAW);
     });
 
     test('touch and pointer events from one tap do not duplicate the pop', () => {
@@ -181,7 +206,7 @@ describe('paw send button', () => {
         listeners.touchstart(event);
         listeners.touchend(event);
         expect(appended).toHaveLength(1);
-        expect(appended[0].style).toMatchObject({ position: 'absolute', bottom: '100%', left: '50%' });
+        expect(appended[0].style).toMatchObject(ABOVE_PAW);
     });
 
     test('cancelled, dragged-off and untrusted touches do not pop', () => {

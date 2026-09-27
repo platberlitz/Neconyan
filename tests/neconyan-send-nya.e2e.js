@@ -1,6 +1,6 @@
 /* global document, window */
 import { expect } from '@playwright/test';
-import { test } from './neconyan-conversation-durable-fixture.js';
+import { MODEL, test } from './neconyan-conversation-durable-fixture.js';
 
 test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires an owned disposable server.');
 test.setTimeout(180000);
@@ -10,6 +10,9 @@ cases.push({ phone: true, conversation: false, safariKeyboard: true });
 for (const { phone, conversation, safariKeyboard = false } of cases) {
     test(`${phone ? 'phone' : 'desktop'} ${conversation ? 'Conversation' : 'Roleplay'} paw survives ${safariKeyboard ? 'simulated Safari keyboard coordinates' : 'busy message preparation'}`, async ({ app }, info) => {
         app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: 'Paw reply.' } }] };
+        // A real model takes seconds, and Roleplay hides the paw behind Stop for
+        // that whole time. Hold the reply until the pop has finished.
+        app.provider.mode.hold = MODEL;
         const account = await app.account({ phone, activeConnection: true });
         if (phone) await account.context.addInitScript(() => Object.defineProperty(window.navigator, 'platform', { get: () => 'iPhone' }));
         if (safariKeyboard) await account.context.addInitScript(() => {
@@ -30,7 +33,7 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
             const ctx = window.SillyTavern.getContext();
             await ctx.selectCharacterById(ctx.characters.findIndex(c => c.avatar === avatar), { switchMenu: false });
         }, account.avatar);
-        await page.evaluate(() => {
+        await page.evaluate(sendSelector => {
             window.pawFrames = [];
             window.pawSounds = [];
             const clipper = (el) => {
@@ -58,6 +61,8 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
                             opacity: Number(window.getComputedStyle(pop).opacity),
                             connected: pop.isConnected,
                             clipped: clipper(pop),
+                            sendHidden: document.querySelector(sendSelector).getClientRects().length === 0,
+                            moved: pop.isConnected && pop.parentElement !== document.querySelector(sendSelector).parentElement,
                             left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,
                             width: rect.width, height: rect.height,
                             viewportTop: window.visualViewport.offsetTop,
@@ -68,7 +73,7 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
                     window.requestAnimationFrame(frame);
                 }
             }).observe(document.body, { childList: true, subtree: true });
-        });
+        }, conversation ? '#sb_conversation_send' : '#send_but');
         const input = page.locator(conversation ? '#sb_conversation_input' : '#send_textarea');
         const send = page.locator(conversation ? '#sb_conversation_send' : '#send_but');
         await input.fill('Hello from the paw.');
@@ -90,12 +95,15 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
         // paw, not merely somewhere on the page.
         const buttonBox = await send.boundingBox();
         // Message preparation can occupy the main thread longer than the pop's lifetime.
-        await send.evaluate((button, phone) => {
+        await send.evaluate((button, { phone, conversation }) => {
             button.addEventListener(phone ? 'touchend' : 'click', () => {
+                // Swap in Stop before the pop's first paint, as a slow device does,
+                // so the paw is always hidden while the pop is showing.
+                if (!conversation) document.getElementById('send_form').classList.add('sb-generating-controls');
                 const until = window.performance.now() + 1400;
                 while (window.performance.now() < until) { /* Simulate a busy send. */ }
             }, { once: true });
-        }, phone);
+        }, { phone, conversation });
         if (safariKeyboard) {
             // Direct touch avoids Playwright's hit-test helper, whose coordinates
             // are Chromium's rather than the Safari coordinates simulated above.
@@ -103,9 +111,13 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
             await page.touchscreen.tap(rect.x + rect.width / 2, rect.y + rect.height / 2);
         } else if (phone) await send.tap();
         else await send.click();
+        await expect.poll(() => app.provider.calls.length, { timeout: 60000 }).toBe(1);
+        if (!conversation) await expect(send).toBeHidden();
+        await expect.poll(() => page.evaluate(() => window.pawSounds.length)).toBe(1);
+        await expect(page.locator('.neconyan-send-nya')).toHaveCount(0);
+        await app.release();
         await expect(page.locator(conversation ? '#sb_conversation_timeline' : '#chat')).toContainText('Paw reply.', { timeout: 60000 });
         expect(app.provider.calls).toHaveLength(1);
-        await expect(page.locator('.neconyan-send-nya')).toHaveCount(0);
         const { frames, sounds } = await page.evaluate(() => ({ frames: window.pawFrames, sounds: window.pawSounds }));
         await info.attach('paw-frames', { body: JSON.stringify(frames), contentType: 'application/json' });
         expect(sounds).toHaveLength(1);
@@ -120,7 +132,12 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
         expect(first).toBeTruthy();
         expect(Math.abs(first.bottom - buttonBox.y)).toBeLessThan(14);
         expect(Math.abs((first.left + first.right) / 2 - (buttonBox.x + buttonBox.width / 2))).toBeLessThan(20);
+        // The phone composer relocates stray right-rail children; the pop must stay put.
+        expect(frames.filter(frame => frame.moved)).toEqual([]);
         // Nothing on the ancestor chain may clip the pop away.
         expect(visible.some(frame => !frame.clipped)).toBe(true);
+        // Roleplay swaps the paw for Stop as soon as sending starts; the pop
+        // must outlive the paw rather than vanish with it.
+        if (!conversation) expect(visible.some(frame => frame.sendHidden)).toBe(true);
     });
 }

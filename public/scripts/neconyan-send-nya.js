@@ -18,8 +18,6 @@ export function popNya(anchor, { reduced = reducedMotion.matches, random = Math.
     pop.setAttribute('aria-hidden', 'true');
     Object.assign(pop.style, {
         position: 'absolute',
-        bottom: '100%',
-        left: '50%',
         zIndex: '2147483000',
         pointerEvents: 'none',
         userSelect: 'none',
@@ -27,14 +25,22 @@ export function popNya(anchor, { reduced = reducedMotion.matches, random = Math.
         font: '400 20px/1 var(--sb-font-display, var(--mainFontFamily, sans-serif))',
         color: 'var(--neco-ginger, var(--sb-accent, var(--SmartThemeQuoteColor)))',
         textShadow: '0 0 2px var(--neco-surface, var(--SmartThemeBlurTintColor)), 0 1px 3px var(--neco-surface, var(--SmartThemeBlurTintColor))',
-        transform: 'translateX(-50%)',
+        transform: 'translateX(50%)',
         opacity: '0',
     });
-    // The pop lives inside the paw itself, so normal layout places it above the
-    // button whatever the keyboard or viewport has done to the page. No touch or
-    // layout coordinates are measured, so no second viewport can disagree.
-    anchor.style.position = 'relative';
-    anchor.append(pop);
+    // Roleplay hides the paw behind Stop while sending, which would hide a pop
+    // inside it too. Host it in the paw's row instead, placed by comparing the
+    // paw and the row: both rects share one coordinate system, so whatever the
+    // keyboard has done to the viewport cancels out. Measure from the row's
+    // right and bottom edges, the end where Stop takes the paw's slot.
+    const host = anchor.parentElement || anchor;
+    const hostStyle = window.getComputedStyle(host);
+    if (hostStyle.position === 'static') host.style.position = 'relative';
+    const box = host.getBoundingClientRect();
+    const rect = anchor.getBoundingClientRect();
+    pop.style.right = `${box.right - (parseFloat(hostStyle.borderRightWidth) || 0) - (rect.left + rect.width / 2)}px`;
+    pop.style.bottom = `${box.bottom - (parseFloat(hostStyle.borderBottomWidth) || 0) - rect.top}px`;
+    host.append(pop);
     activePops += 1;
 
     const drift = Math.round((random() - 0.5) * 36);
@@ -42,10 +48,10 @@ export function popNya(anchor, { reduced = reducedMotion.matches, random = Math.
     const frames = reduced
         ? [{ opacity: 1 }, { opacity: 1, offset: 0.5 }, { opacity: 0 }]
         : [
-            { opacity: 0, transform: 'translateX(-50%) translateY(0) scale(0.6) rotate(0deg)' },
-            { opacity: 1, transform: `translateX(-50%) translateY(-6px) scale(1.15) rotate(${tilt / 2}deg)`, offset: 0.18 },
-            { opacity: 1, transform: `translateX(calc(-50% + ${drift / 2}px)) translateY(-20px) scale(1) rotate(${tilt}deg)`, offset: 0.6 },
-            { opacity: 0, transform: `translateX(calc(-50% + ${drift}px)) translateY(-34px) scale(0.95) rotate(${tilt}deg)` },
+            { opacity: 0, transform: 'translateX(50%) translateY(0) scale(0.6) rotate(0deg)' },
+            { opacity: 1, transform: `translateX(50%) translateY(-6px) scale(1.15) rotate(${tilt / 2}deg)`, offset: 0.18 },
+            { opacity: 1, transform: `translateX(calc(50% + ${drift / 2}px)) translateY(-20px) scale(1) rotate(${tilt}deg)`, offset: 0.6 },
+            { opacity: 0, transform: `translateX(calc(50% + ${drift}px)) translateY(-34px) scale(0.95) rotate(${tilt}deg)` },
         ];
     let done = false;
     let cleanupTimer;
