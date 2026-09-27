@@ -7,7 +7,13 @@ document; this file only records what is actually finished and what is not.
 Status values: `done` (implemented and verified), `partial` (implemented but an
 acceptance case is unproven), `pending` (not started).
 
-## Current checkpoint: Stage 12 Labs (verified)
+## Current checkpoint: Stage 13 remaining application and final audit (verified)
+
+- Accepted locally on top of Stage 12 at `5eedc53` after one whole-stage self-review, batched corrections and correction-only follow-up. Translation, vectors, maintenance, archive, backup, reset, imports, chat backup cleanup, custom CSS, supported quiet/raw prompts, Time Machine full snapshots and ordinary group turns run as native accepted jobs with permanent records.
+- Checks: 351 Jest suites (4,608 passing, 2 skipped, 1 snapshot), 1,405 Node tests, root lint, budgets and whitespace; tests-folder lint keeps 183 existing errors. Browser acceptance passed for translation, vectors, archive/maintenance/backup/reset, imports, group turns and the retired Conversation route on desktop and touch Chromium. iOS is inferred.
+- Documented page-owned residuals: WebLLM, browser Kokoro, Quick Reply auto-run chains, unsupported quiet/raw shapes, group swipe/continue/impersonate/quiet turns, Token Ledger, Time Machine per-item actions and the BotSearcher bulk queue. No push or deployment is authorised.
+
+## Historical checkpoint: Stage 12 Labs (verified)
 
 - Stage 12 is accepted locally on top of Stage 11 at `220ba45`. Implementation, one whole-stage self-review, batched corrections and correction-only follow-up are complete.
 - Native Labs jobs own saved-source computation, prompt suites, comparisons and scenes, retained proposals, reviewed lorebook/card applies, preset publication, suite transfers and record completion. Permanent records and local publication evidence outlive job pruning. Unknown provider outcomes never repeat automatically.
@@ -149,7 +155,7 @@ owner resumes this paused migration, continue automatically between verified che
 | 10. Remaining manual Conversation | done | Regeneration and polishing, selfies and schedule generation run as native jobs with cached paid results and one receipt-protected completion write that checks only the messages the result depends on; hand-edited schedules save through a version-checked route. Definite provider refusals now fail instead of staying unknown, explicit retry releases unknown steps, and a failed narration no longer stops a reply. The six pre-existing durable browser failures are fixed. |
 | 11. Meower | done | Native saved profile/feed/interaction/image waves, permanent receipts, conflict checks and closed-page completion using its revisioned store. |
 | 12. Labs | done | Native computation, retained results and reviewed version-checked publication are implemented. Full non-browser checks and all 18 desktop/touch browser acceptance cases pass. |
-| 13. Remaining application and final audit | pending | Translation, vectors, automation, archive, import, backup, maintenance and every remaining bundled workflow; final ownership verification. |
+| 13. Remaining application and final audit | done | Translation, vectors, automation, archive, import, backup, maintenance and every remaining bundled workflow; final ownership verification. |
 
 Accepted work must finish with every page closed. Keep old replies, selected
 swipes and unrelated history until replacements are durable. Unknown unqueryable
@@ -408,8 +414,8 @@ The older results below describe earlier checkpoints, not the latest totals.
   are implemented.
 - `done` Meower: native refresh/profile jobs, saved image/activity waves, private permanent receipts, observed results and explicit Stop.
 - `done` Prompting Lab, Distiller, LoreStitch, World Info Lab: native workflows, reviewed publication and all 18 desktop/touch browser acceptance cases verified.
-- `pending` remaining bundled model and file workflows.
-- `pending` removal of duplicate browser execution and old-client protection.
+- `done` remaining bundled model and file workflows: translation, vectors, maintenance, archive, backup, reset, imports, backup cleanup, custom CSS, supported quiet/raw prompts, Time Machine full snapshots and ordinary group turns (Stage 13; documented page-owned residuals listed in the current checkpoint).
+- `done` removal of duplicate browser execution: the old page HTTP routes for migrated workflows answer 409 with the native job to use, and Stage 10 leftovers are deleted.
 
 ## Known genuine blockers
 
