@@ -184,7 +184,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 if (previous !== undefined && roleplayHash(previous) !== roleplayHash(baseProof)) throw roleplayError('ROLEPLAY_AGENT_RECOVERY', 'The saved Agent response source changed.', 409);
                 if (previous === undefined) writeArtifact(directories, job.id, 'roleplay-agent-output-base', baseProof);
             });
-            const options = { base, snapshot: request.worldInfo, records, binding: request.binding,
+            const options = { base, snapshot: request.worldInfo, records, metadataRecords: current.records, binding: request.binding,
                 macros: savedRoleplayMacroSnapshot(request.worldInfo, records), generationType: request.worldInfo.global.trigger,
                 assistantName: request.characterName, assertCurrent: () => { assertSource(); assertRoleplayWorldInfoCurrent(base, request.worldInfo); }, generate: generateAgent };
             const intercepted = await runRoleplayAgentInterceptors(context, { ...options, value, timing: 'post-main-generation', format: 'text' });

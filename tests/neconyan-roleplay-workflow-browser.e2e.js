@@ -190,7 +190,7 @@ for (const phone of [false, true]) {
     test(`${viewport} hidden Companions do not block a named Roleplay reply with a false capacity error`, async ({ app }, info) => {
         const agents = Array.from({ length: 31 }, (_, index) => ({ id: `capacity-${index}`, name: `Capacity ${index}`,
             enabled: true, category: 'companion', execution: 'companion', phase: 'pre', prompt: `TASK_CAPACITY_${index}`,
-            companion: { trigger: 'auto', includeWorldInfo: false } }));
+            conditions: { generationTypes: ['normal', 'swipe'] }, companion: { trigger: 'auto', includeWorldInfo: false } }));
         app.provider.mode.reply = () => ({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: ANSWER } }] });
         const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
             saved.extension_settings.character_allowed_regex = ['Another character.png'];
@@ -216,6 +216,19 @@ for (const phone of [false, true]) {
         const result = readRoleplayChat(native.scope, locator).records.at(-1);
         expect(Object.keys(result.extra.inChatAgentCompanionResults).sort()).toEqual(agents.slice(0, 9).map(agent => agent.id).sort());
         expect(app.provider.calls).toHaveLength(10);
+        const swiped = page.waitForResponse(acceptedSubmission);
+        await page.locator('#chat .mes').last().locator('.swipe_right').click();
+        const swipeResponse = await swiped;
+        expect(swipeResponse.status(), await swipeResponse.text()).toBe(202);
+        const swipeJob = await terminal(account, (await swipeResponse.json()).jobId);
+        const children = await Promise.all((swipeJob.children ?? []).map(id => account.job(id)));
+        expect(swipeJob.state, JSON.stringify(children.map(job => job.error))).toBe('completed');
+        await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating()), { timeout: 30000 }).toBe(false);
+        await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
+        const replacement = readRoleplayChat(native.scope, locator).records.at(-1);
+        expect(replacement.swipes).toHaveLength(2);
+        expect(Object.keys(replacement.extra.inChatAgentCompanionResults).sort()).toEqual(agents.slice(0, 9).map(agent => agent.id).sort());
+        expect(app.provider.calls).toHaveLength(20);
         await page.screenshot({ path: info.outputPath('companion-capacity-reply.png') });
     });
 

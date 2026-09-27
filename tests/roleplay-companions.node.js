@@ -45,8 +45,9 @@ function prepared(t, agents, { global = {}, effect = 'append', changeRecords, ex
     fs.writeFileSync(path.join(directories.root, 'settings.json'), JSON.stringify(settings));
     for (const agent of agents) fs.writeFileSync(path.join(directories.inChatAgents, `${agent.id}.json`), JSON.stringify(agent));
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
-    const source = captureRoleplaySource(f.scope, { locator: f.locator, ...(effect === 'continue' ? { message: f.records.length - 2 } : {}) });
-    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 4000, serverPrompt: true, trigger: effect === 'continue' ? 'continue' : 'normal' });
+    const anchored = ['continue', 'swipe'].includes(effect);
+    const source = captureRoleplaySource(f.scope, { locator: f.locator, ...(anchored ? { message: f.records.length - 2 } : {}) });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 4000, serverPrompt: true, trigger: anchored ? effect : 'normal' });
     const request = { binding: { kind: 'profile', ...captureChatProfile(directories, 'main') }, maxTokens: 32, characterName: 'Nova', worldInfo, serverPrompt: true, messages: [] };
     const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'companions-native', source, effect, request });
     releaseJob(directories, jobId);
@@ -104,6 +105,18 @@ test('hidden Companions still reserve explicit manual runs and retained notes', 
     assert.equal(continued.companionCount, 0);
     assert.equal(continued.baselineBytes, Buffer.byteLength(JSON.stringify(existing)));
     assert.ok(continued.requiredBytes > continued.baselineBytes);
+});
+
+test('swiping with Agents preserves the original host while reconciling reply metadata', async t => {
+    const f = prepared(t, [{ ...companion('side'), conditions: { generationTypes: ['swipe'] } }], { effect: 'swipe' });
+    const original = f.rows().at(-1).mes;
+    await f.run({ generate: paid('main', 'Replacement reply'), generateAgent: paid('agent', 'Replacement note') });
+    const row = f.rows().at(-1);
+    assert.equal(row.mes, 'Replacement reply');
+    assert.ok(row.swipes.includes(original));
+    assert.ok(row.swipes.includes('Replacement reply'));
+    assert.equal(row.extra.inChatAgentCompanionResults.side.content, 'Replacement note');
+    assert.equal(row.extra.inChatAgentCompanionResults.side.status, 'done');
 });
 
 test('native companions see the processed reply, saved lore, original notes and bound extra cards, then run their own post passes', async t => {
