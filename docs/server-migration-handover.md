@@ -23,11 +23,16 @@ This task does not deploy the Oracle service; older deployment notes below are h
 - The release browser workflow now explicitly prepares disposable data and divides
   the full suite between four isolated runners. Its complete remote result is still
   required; local focused checks are not a claim that every browser test passed.
-- Android implementation and acceptance are in progress. The embedded Node 24 server
+- Android implementation and local acceptance are complete. The embedded Node 24 server
   passed startup, private authentication, background availability, process-death and
   APK-reinstallation data checks on Android 11 and 15 emulators. Native document-picker
-  import and PNG export preserved the exact character data. Final review corrections
-  cover server preferences, custom global extensions and private startup verification.
+  import and PNG export preserved the exact character data. An update to a different
+  payload retained the imported card, generated reply, server preferences and custom
+  global extension; a name collision was preserved in the account's Files backups.
+  Final debug lifecycle checks passed on Android 11 and 15, and the actual signed
+  release APK reached its fully loaded Home screen. Both release signatures and APK
+  alignment verify; all packaged native LOAD segments use 16 KiB alignment. Android
+  lint has zero errors and seven warnings. Signing material is backed up outside Git.
   No APK has been published. Physical ARM devices and iOS/WebKit remain unverified.
 - The pre-release Agent review restores bundled CYOA and skill-check rows as real
   accessible buttons after sanitisation, both in replies and companion notes. Click,
@@ -52,8 +57,11 @@ This task does not deploy the Oracle service; older deployment notes below are h
   case passes separately. All 19 Agent workspace and full companion-interface cases
   pass, including saved setups, failed saves, retry, and widths from 320 to 1280 pixels.
 
-Next: push the reviewed fixes to staging first, finish Android update preservation
-and signed APK verification, publish the verified main release, then advance staging
+The reviewed web fixes were committed and pushed to staging as `4176c8d41` before
+further main changes. The Android source follows on staging. Main still points to
+the earlier preparation commit; there is no release tag or published APK yet.
+
+Next: finish the remaining remote browser checks, publish the verified main release, then advance staging
 to 1.0.1. Keep signing material and generated artefacts
 out of Git. Reuse the passing common-code checks while those files stay unchanged.
 

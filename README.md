@@ -87,6 +87,16 @@ The chat turned into continuous prose, for when you'd rather read a story than s
   <img src="docs/readme/banner-getting-started.webp" alt="Getting Started">
 </p>
 
+### Android app
+
+On an Android 11 or newer phone, install `Neconyan-1.0.0-android-arm64.apk` from
+the [latest release](https://github.com/platberlitz/Neconyan/releases/latest).
+It runs Neconyan on your phone, without Termux or a separate server. You still
+need your own model connection. Allow about 2 GiB of free storage and give the
+first opening time to unpack. [Android setup, backups and build instructions.](android/README.md)
+
+### Computer or Termux
+
 1. Extract the release into its own folder.
 2. Run the launcher for your system (the table below).
 3. Open **http://127.0.0.1:4433/** in your browser.

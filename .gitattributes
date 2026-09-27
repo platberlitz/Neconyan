@@ -19,3 +19,6 @@
 *.mp3 binary
 *.wav binary
 *.zip binary
+
+# Preserve the embedded runtime's upstream licence verbatim.
+android/app/src/main/assets/NODE-LICENSE.txt -whitespace
