@@ -235,6 +235,7 @@ for (const width of [1280, 1024, 997, 768, 390, 393, 320]) {
                 expect((await page.request.post('/api/in-chat-agents/save', { headers: await headers(page), data: seeded })).ok()).toBe(true);
                 await openAgents(page, true);
                 await page.locator('#ica--search').fill(name);
+                await page.locator('#ica--agentList .ica--card-more').click();
                 await page.locator('#ica--agentList .ica--btn-edit').click();
                 await chooseEditorSection(page, 'basics');
                 await expect(editor.locator('#ica--editor-name')).toHaveValue(name);

@@ -1,6 +1,5 @@
 :root:has(body.neconyan) { --mainFontFamily: 'Nunito', 'Figtree', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', sans-serif; --sb-font-display: 'Fredoka One', var(--mainFontFamily); }
-/* Body text reads in Nunito (stylesheet loaded in index.html); headings and the brand slots keep the rounded Fredoka One display face.
-   A font chosen in the Google Font drawer (or an imported theme) lands inline on :root and then applies everywhere, as before. */
+/* Theme fonts override Nunito and Fredoka One inline on :root. */
 :root[style*='--mainFontFamily']:has(body.neconyan) { --sb-font-display: var(--mainFontFamily); }
 body.neconyan:not(.sbterm) :is(h1, h2, h3, h4, h5, h6, .sb-topbar-brand, .neconyan-rail-brand) { font-family: var(--sb-font-display); }
 
@@ -402,8 +401,7 @@ body.neconyan.neconyan-home-visible #sheld { display: flex; flex-direction: colu
 body.neconyan #neconyan-home-host { display: none; }
 body.neconyan.neconyan-home-visible #neconyan-home-host { display: block; flex: 1; min-height: 0; background: var(--neco-canvas); overflow: auto; overscroll-behavior: contain; }
 body.neconyan.neconyan-home-visible #sheld > :not(#neconyan-home-host) { display: none !important; }
-/* Boot: while the 'Preparing your Neconyan workspace' skeleton is still in #chat, only it shows.
-   Home removes the skeleton itself and clearChat() empties #chat before any chat prints, so the bars return on every path. */
+/* Hide chrome until Home or clearChat removes the boot skeleton. */
 body.neconyan:has(#neconyan-home-skeleton) :is(#top-bar, #form_sheld, #ica--tracker-panel, #ica--tracker-panel-handle) { visibility: hidden !important; }
 body.neconyan:has(#neconyan-home-skeleton) #sheld { background: var(--neco-canvas); }
 body.neconyan .welcomePanel {
@@ -1029,9 +1027,7 @@ body.neconyan #sb-topbar-inner :is(#sb-home-toggle, #sb-character-toggle) {
         display: flex !important;
         flex-direction: column;
     }
-    /* Phones show every sheet's sections as one horizontally scrolling row of
-       labelled 44px tabs (icon + name), no dropdown. The Characters sheet keeps
-       its close button floating at the right end of this row. */
+    /* Phone sections use labelled tabs; Characters keeps a floating close button. */
     body.neconyan .sb-shell-root.openDrawer .sb-shell-nav-wrapper,
     body.neconyan #right-nav-panel.openDrawer > .sb-character-shell-nav-wrapper,
     body.neconyan #right-nav-panel.neconyan-character-workspace > .neconyan-character-native-nav-wrapper {
@@ -1828,10 +1824,7 @@ body.neconyan #right-nav-panel .sb-group-commit-bar {
     border-top: 1px solid var(--neco-border);
     background: var(--neco-rail);
 }
-/* The sheet's .scrollableInner is the one scroller for the editor at every width. Nested
-   #rm_ch_create_block / #form_create / subtab-panels scrollers left ~200px of editing room (less
-   with the panel pinned), stacked two scrollbar gutters, and on phones the document pan guard
-   cancelled swipes that started outside that box. */
+/* Keep one editor scroller so the phone pan guard permits swipes. */
 body.neconyan #right-nav-panel.openDrawer #rm_ch_create_block,
 body.neconyan #right-nav-panel.openDrawer #form_create {
     height: auto !important;
@@ -1887,8 +1880,7 @@ body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar i
     body.neconyan #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) { padding: 8px; }
     body.neconyan #right-nav-panel .sb-entity-action { flex: 1 1 10rem; justify-content: center; }
 }
-/* Sized by the bar, not the window, so a pinned panel gets the phone treatment: the cats' 94px of
-   padding goes, the buttons share one row, and the status wraps above them only when it must. */
+/* Use the bar width so pinned panels get compact controls too. */
 @container (max-width: 560px) {
     body.neconyan #right-nav-panel :is(.sb-character-commit-actions, .sb-group-commit-actions) { flex: 1 1 auto; flex-wrap: nowrap; }
     body.neconyan #right-nav-panel :is(.sb-character-commit-actions, .sb-group-commit-actions) > :is(.menu_button, label) { flex: 1 1 0; justify-content: center; text-align: center; }
@@ -2392,9 +2384,7 @@ body.neconyan .sb-console-log-output {
     body.neconyan .neconyan-account-panel { padding-inline: 10px; }
 }
 
-/* Companion Agents (in-chat-agents extension): the side panel, its edge handle and the
-   dashboard rows use the Neconyan surface, border and ginger tokens instead of blurred tints.
-   The extension stylesheet loads after this one, so every selector here carries body.neconyan. */
+/* body.neconyan wins over the later companion stylesheet. */
 body.neconyan :is(.ica--settings, .ica--editor, .ica--cdash, .ica--template-browser, .popup:has(.ica--editor, .ica--cdash, .ica--template-browser)) {
     --ica-surface: var(--neco-surface);
     --ica-raised: var(--neco-raised);
@@ -2928,11 +2918,6 @@ body.neconyan .sb-shell-tab[data-sb-tab='included-tool'],
 body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] :is(.sb-shell-nav-wrapper, .sb-shell-subtitle) { display: none !important; }
 body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell-main { grid-column: 1 / -1; }
 @media (max-width: 768px) {
-    /* Phones: the list is what matters, so the chrome above it is two 44px rows.
-       Row 1: the search field. Row 2: one horizontally scrolling line of labelled
-       tools: Create, Import, Filter and organise, Grid, Bulk edit, then the page
-       range, prev/next and page size when there is more than one page. Opening
-       the filters lets the row wrap so the filter controls get the full width. */
     body.neconyan #right-nav-panel #neconyan-character-library { padding: 6px 12px 8px; gap: 6px; }
     body.neconyan #right-nav-panel #neconyan-character-library #charListFixedTop { grid-template-columns: minmax(0, 1fr); }
     body.neconyan #right-nav-panel #neconyan-character-library #form_character_search_form { grid-column: 1; }
@@ -2984,14 +2969,10 @@ body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell
     body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > #bulkEditButton::after { content: 'Bulk edit'; }
     body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > #bulkSelectAllButton::after { content: 'Select all'; }
     body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > #bulkDeleteButton::after { content: 'Delete'; }
-    /* Editor mode: the favourites band has nothing to show, so it takes no room. */
     body.neconyan #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) > #CharListButtonAndHotSwaps { display: none !important; }
-    /* Favourites: one 44px row, label beside the avatars; the old 134px right
-       inset cleared header controls that no longer float over this band. */
     body.neconyan #right-nav-panel.openDrawer > #CharListButtonAndHotSwaps.has-favorites { min-height: 44px !important; max-height: 44px !important; padding: 2px 12px !important; }
     body.neconyan #right-nav-panel.openDrawer #CharListButtonAndHotSwaps.has-favorites #HotSwapWrapper { flex-wrap: nowrap; margin: 0 !important; min-height: 0; }
     body.neconyan #right-nav-panel.openDrawer #CharListButtonAndHotSwaps.has-favorites .hotswap { flex: 1 1 auto; width: auto; max-height: none; }
-    /* Model shell: its id-scoped desktop nav rules wrap tabs into rows; phones get the same one-line scrolling row as every other shell. */
     body.neconyan #left-nav-panel .sb-model-native-nav-wrapper .sb-shell-nav {
         flex-wrap: nowrap;
         justify-content: flex-start;
@@ -3025,3 +3006,23 @@ body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell
 .sb-custom-params-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 10px; }
 .sb-custom-params-grid label { display: grid; gap: 4px; margin: 0; }
 .sb-custom-params [hidden] { display: none; }
+
+/* Agent shortcuts and searchable companion connections. */
+.ica--quick-settings { display: grid; gap: 14px; text-align: left; min-width: 0; }
+.ica--quick-settings h3, .ica--quick-settings p { margin: 0; overflow-wrap: anywhere; }
+.ica--quick-settings fieldset { min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--neco-border); border-radius: 12px; }
+.ica--quick-settings legend { font-weight: 700; padding-inline: 6px; }
+.ica--quick-settings .ica--quick-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 12px; }
+.ica--quick-settings .ica--quick-fields > label:not(.checkbox_label) { display: grid; gap: 4px; min-width: 0; }
+.ica--quick-settings .text_pole { width: 100%; min-width: 0; min-height: 44px; }
+.ica--quick-settings .ica--profile-help { grid-column: 1 / -1; color: var(--neco-muted); }
+.ica--quick-settings .ica--link-list { display: grid; gap: 8px; }
+.ica--quick-settings .ica--link-options { max-height: 240px; overflow-y: auto; }
+.ica--quick-settings .checkbox_label { min-height: 44px; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+.ica--quick-settings [hidden] { display: none; }
+.ica--quick-settings :is(button, summary), #ica--bulkBar :is(button, summary) { min-height: 44px; }
+.ica--quick-settings :is(input, select, button):focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
+#ica--settings .ica--bulk-bar-top { flex-wrap: wrap; align-items: center; }
+#ica--settings .ica--card-actions { flex-wrap: wrap; }
+#ica--settings .ica--card-primary-actions .ica--card-btn { min-height: 44px; gap: 5px; opacity: 1; border: 1px solid var(--neco-border); border-radius: 10px; background: var(--neco-raised); }
+#ica--settings .ica--card-primary-actions .ica--btn-history[aria-pressed='true'] { background: var(--neco-ginger); color: var(--neco-on-accent); }

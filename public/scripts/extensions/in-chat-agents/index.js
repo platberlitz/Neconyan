@@ -121,6 +121,8 @@ import { initCompanionCardUi, sanitizeCompanionHtml, updateCompanionButtonVisibi
 import { configureCompanionDashboard, initCompanionWandMenuItem, openCompanionDashboard } from './companion/companion-dashboard.js';
 import { configureCompanionPanel, getCompanionPanelLauncher, initCompanionPanel, refreshCompanionPanel, setCompanionPanelLauncher, updateCompanionPanelHandleVisibility } from './companion/companion-panel.js';
 import { attachTextareaFullscreen } from './textarea-fullscreen.js';
+import { openAgentQuickSettings } from './quick-settings.js';
+import { renderTemplateAsync } from '../../templates.js';
 
 const MODULE_NAME = 'in-chat-agents';
 
@@ -2564,9 +2566,30 @@ function setupCategorySortable(itemsEl) {
 
 function updateBulkBar() {
     const count = selectedAgentIds.size;
+    const companions = [...selectedAgentIds].map(getAgentById).filter(agent => agent && isCompanionAgent(agent)).length;
     $('#ica--bulkCount').text(`${count} selected`);
+    $('#ica--bulkBar button').not('#ica--bulkSelectAll, #ica--bulkClear, #ica--bulkCancel').prop('disabled', count === 0);
+    $('#ica--bulkConnect').prop('disabled', companions < 2);
+    $('#ica--bulkHistory').prop('disabled', companions === 0);
+    $('#ica--bulkHistory').attr('title', `Keep ${companions} selected companion(s) in chat history`);
     $('#ica--bulkBar').toggle(selectModeActive);
     $('#ica--selectMode').toggleClass('is-active', selectModeActive);
+}
+
+async function openQuickSettings(ids, view = 'settings') {
+    await openAgentQuickSettings(ids, { view, lockAgent: lockBundledAgentCustomization, onSaved: refreshSavedAgents });
+    updateBulkBar();
+}
+
+async function setAgentsChatHistory(ids, enabled) {
+    const changes = ids.map(getAgentById).filter(agent => agent && isCompanionAgent(agent)).map(agent => {
+        const draft = structuredClone(agent);
+        draft.companion = { ...getCompanionConfig(draft), includeInChatHistory: enabled };
+        lockBundledAgentCustomization(draft);
+        return draft;
+    });
+    await saveAgentBatch(changes, 'Chat history');
+    await refreshSavedAgents(changes.map(agent => agent.id));
 }
 
 function exitSelectMode() {
@@ -2994,6 +3017,27 @@ function updateAgentOverview(agentList = getVisibleInChatAgents()) {
     }
 }
 
+function getFilteredAgentList(allAgents = sortAgentsByOrder(getVisibleInChatAgents())) {
+    const activeTab = getActiveAgentListTab();
+    const searchTerm = ($('#ica--search').val() || '').toString().toLowerCase();
+    const categoryFilter = ($('#ica--categoryFilter').val() || '').toString();
+    let agents = [...allAgents];
+    if (searchTerm) {
+        agents = agents.filter(a =>
+            a.name.toLowerCase().includes(searchTerm) ||
+            a.description.toLowerCase().includes(searchTerm) ||
+            a.tags.some(t => t.toLowerCase().includes(searchTerm)),
+        );
+    }
+    if (categoryFilter) agents = agents.filter(a => a.category === categoryFilter);
+    if (activeTab === 'quick') {
+        agents = agents.filter(agent => Boolean(agent.favorite));
+    } else if (activeTab !== 'all') {
+        agents = agents.filter(a => agentMatchesListTab(a, activeTab));
+    }
+    return agents;
+}
+
 function renderAgentList() {
     if (!applyingAgentSetup && selectedAgentSetupId && ['saved', 'modified'].includes(document.getElementById('ica--setupStatus')?.dataset.tone)) showAgentSetupMatch();
     const container = $('#ica--agentList');
@@ -3010,25 +3054,9 @@ function renderAgentList() {
     const searchTerm = ($('#ica--search').val() || '').toString().toLowerCase();
     const categoryFilter = ($('#ica--categoryFilter').val() || '').toString();
     syncCategoryChips(categoryFilter);
-    let agents = [...allAgents];
-
-    if (searchTerm) {
-        agents = agents.filter(a =>
-            a.name.toLowerCase().includes(searchTerm) ||
-            a.description.toLowerCase().includes(searchTerm) ||
-            a.tags.some(t => t.toLowerCase().includes(searchTerm)),
-        );
-    }
-
-    if (categoryFilter) {
-        agents = agents.filter(a => a.category === categoryFilter);
-    }
-
-    if (activeTab === 'quick') {
-        agents = agents.filter(agent => Boolean(agent.favorite));
-    } else if (activeTab !== 'all') {
-        agents = agents.filter(a => agentMatchesListTab(a, activeTab));
-    }
+    const agents = getFilteredAgentList(allAgents);
+    for (const id of selectedAgentIds) if (!allAgents.some(agent => agent.id === id)) selectedAgentIds.delete(id);
+    updateBulkBar();
 
     // Group by category
     const grouped = {};
@@ -3162,11 +3190,14 @@ function renderAgentList() {
                     <div class="ica--card-actions">
                         <div class="ica--card-primary-actions">
                             ${isPathfinderAgent(agent) ? '' : `<button type="button" class="ica--card-btn ica--btn-run ica--quick-chip-apply" title="${escapeHtml(applyTitle)}" aria-label="${escapeHtml(applyAria)}"><i class="fa-solid ${applyIcon}"></i><span>${applyLabel}</span></button>`}
-                            <button type="button" class="ica--card-btn ica--btn-edit" title="Edit agent" aria-label="Edit agent"><i class="fa-solid fa-pen-to-square"></i><span>Edit</span></button>
+                            <button type="button" class="ica--card-btn ica--btn-settings" title="Agent settings"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span>Settings</span></button>
+                            ${companionExecution ? `<button type="button" class="ica--card-btn ica--btn-connect"><i class="fa-solid fa-link" aria-hidden="true"></i><span>Batch &amp; connect</span></button>
+                            <button type="button" class="ica--card-btn ica--btn-history" aria-pressed="${getCompanionConfig(agent).includeInChatHistory}" title="Use saved notes as context for future replies"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><span>${getCompanionConfig(agent).includeInChatHistory ? 'In chat history' : 'Keep in history'}</span></button>` : ''}
                         </div>
                         <details class="ica--card-secondary">
                             <summary class="ica--card-more"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i><span>More actions</span></summary>
                             <div class="ica--card-secondary-actions">
+                                <button type="button" class="ica--card-btn ica--btn-edit" title="Edit agent" aria-label="Edit agent"><i class="fa-solid fa-pen-to-square"></i><span>Edit</span></button>
                                 ${previewCompanionButton}
                                 ${previewPromptButton}
                                 ${canApplyToChosenTarget ? '<button type="button" class="ica--card-btn ica--btn-run-target ica--quick-chip-apply-target" title="Apply this agent to a chosen target: the last reply, the composer text, or a companion note" aria-label="Apply to target"><i class="fa-solid fa-crosshairs"></i><span>Apply to target</span></button>' : ''}
@@ -3248,6 +3279,7 @@ function renderAgentList() {
             const touchPassthrough = function (event) { event.stopPropagation(); };
             card.find('.ica--card-toggle').on('touchstart touchend', touchPassthrough);
             card.find('.ica--card-favorite').on('touchstart touchend', touchPassthrough);
+            card.find('.ica--card-actions, .ica--card-select').on('touchstart touchend', touchPassthrough);
             const quickItem = card;
 
             card.find('.ica--card-toggle').on('click', agentAction(async function (event) {
@@ -3268,6 +3300,19 @@ function renderAgentList() {
             card.find('.ica--btn-edit').on('click', agentAction(async event => {
                 stopEvent(event);
                 await openEditor(agent.id);
+            }));
+
+            for (const [selector, view] of [['.ica--btn-settings', 'settings'], ['.ica--btn-connect', 'connections']]) {
+                card.find(selector).on('click', agentAction(async event => {
+                    stopEvent(event);
+                    await openQuickSettings([agent.id], view);
+                    $('#ica--agentList .ica--agent-card').filter((_, el) => el.dataset.agentId === agent.id).find(selector).prop('disabled', false).trigger('focus');
+                }));
+            }
+            card.find('.ica--btn-history').on('click', agentAction(async event => {
+                stopEvent(event);
+                await setAgentsChatHistory([agent.id], !getCompanionConfig(getAgentById(agent.id)).includeInChatHistory);
+                $('#ica--agentList .ica--agent-card').filter((_, el) => el.dataset.agentId === agent.id).find('.ica--btn-history').trigger('focus');
             }));
 
             card.find('.ica--btn-convert-execution').on('click', agentAction(async event => {
@@ -6149,7 +6194,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
 // ===================== Initialization =====================
 
 (async function () {
-    const settingsHtml = await renderExtensionTemplateAsync(MODULE_NAME, 'settings');
+    const settingsHtml = await renderTemplateAsync('/scripts/extensions/in-chat-agents/settings.html?v=20260927i', {}, true, true, true);
     if (!settingsHtml) {
         console.warn('[InChatAgents] Could not load the settings template.');
         return;
@@ -6400,12 +6445,27 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     });
     $('#ica--bulkCancel').on('click', exitSelectMode);
     $('#ica--bulkSelectAll').on('click', () => {
-        for (const agent of getVisibleInChatAgents()) {
+        for (const agent of getFilteredAgentList()) {
             selectedAgentIds.add(agent.id);
         }
         updateBulkBar();
         renderAgentList();
     });
+
+    $('#ica--bulkClear').on('click', () => {
+        selectedAgentIds.clear();
+        renderAgentList();
+    });
+    for (const [selector, view] of [['#ica--bulkSettings', 'settings'], ['#ica--bulkConnect', 'connections']]) {
+        $(selector).on('click', agentAction(async function () {
+            await openQuickSettings([...selectedAgentIds], view);
+            $(this).prop('disabled', false).trigger('focus');
+        }));
+    }
+    $('#ica--bulkHistory').on('click', agentAction(async () => {
+        await setAgentsChatHistory([...selectedAgentIds], true);
+        toastr.success('Selected companions are kept in chat history.');
+    }));
     $('#ica--bulkEnable').on('click', agentAction(async () => {
         const ids = [...selectedAgentIds];
         await saveAgentEnabledState(ids, true);

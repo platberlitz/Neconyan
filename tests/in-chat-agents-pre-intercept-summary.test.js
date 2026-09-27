@@ -14,6 +14,10 @@ beforeAll(async () => {
         getContext: jest.fn(() => ({})),
     }));
 
+    await jest.unstable_mockModule('../public/scripts/templates.js', () => ({
+        renderTemplateAsync: jest.fn(async () => ''),
+    }));
+
     await jest.unstable_mockModule('../public/lib.js', () => ({
         DiffMatchPatch: class DiffMatchPatch {
             diff_main(beforeText, afterText) {

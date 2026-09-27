@@ -116,25 +116,6 @@
                 </details>
             </div>
 
-            <div id="ica--bulkBar" class="ica--bulk-bar" style="display:none">
-                <div class="ica--bulk-bar-top">
-                    <span id="ica--bulkCount" class="ica--bulk-count">0 selected</span>
-                    <span class="ica--bulk-help">Apply one change to several agents at once.</span>
-                </div>
-                <div class="ica--bulk-bar-actions">
-                    <button type="button" id="ica--bulkSelectAll" class="menu_button menu_button_icon" title="Select all agents"><i class="fa-solid fa-check-double" aria-hidden="true"></i><span>Select all</span></button>
-                    <button type="button" id="ica--bulkEnable" class="menu_button menu_button_icon" title="Enable selected agents"><i class="fa-solid fa-toggle-on" aria-hidden="true"></i><span>Enable</span></button>
-                    <button type="button" id="ica--bulkEnableOnCompanions" class="menu_button menu_button_icon" title="Enable selected post-generation agents on Companion Agent outputs"><i class="fa-solid fa-user-astronaut" aria-hidden="true"></i><span>On Companions</span></button>
-                    <button type="button" id="ica--bulkDisable" class="menu_button menu_button_icon" title="Disable selected agents"><i class="fa-solid fa-toggle-off" aria-hidden="true"></i><span>Disable</span></button>
-                    <button type="button" id="ica--bulkRoleSystem" class="menu_button menu_button_icon" title="Set injection role to System for all selected agents"><i class="fa-solid fa-server" aria-hidden="true"></i><span>System role</span></button>
-                    <button type="button" id="ica--bulkRoleUser" class="menu_button menu_button_icon" title="Set injection role to User for all selected agents"><i class="fa-solid fa-user" aria-hidden="true"></i><span>User role</span></button>
-                    <button type="button" id="ica--bulkConvertCompanion" class="menu_button menu_button_icon" title="Convert selected agents to companion execution (side note cards under replies)"><i class="fa-solid fa-user-astronaut" aria-hidden="true"></i><span>To companion</span></button>
-                    <button type="button" id="ica--bulkEditProps" class="menu_button menu_button_icon" title="Bulk-edit properties for selected agents"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span>Edit</span></button>
-                    <button type="button" id="ica--bulkDelete" class="menu_button menu_button_icon caution" title="Delete selected agents"><i class="fa-solid fa-trash" aria-hidden="true"></i><span>Delete</span></button>
-                    <button type="button" id="ica--bulkCancel" class="menu_button menu_button_icon" title="Cancel selection"><i class="fa-solid fa-xmark" aria-hidden="true"></i><span>Done</span></button>
-                </div>
-            </div>
-
             <div class="ica--manage-layout">
             <aside class="ica--manage-nav" aria-label="Agent list filters">
             <div id="ica--agentTabs" class="ica--agent-tabs" role="tablist" aria-orientation="vertical" aria-label="Agent list tabs">
@@ -176,6 +157,33 @@
                 </label>
             </div>
 
+            <div id="ica--bulkBar" class="ica--bulk-bar" style="display:none">
+                <div class="ica--bulk-bar-top">
+                    <span id="ica--bulkCount" class="ica--bulk-count" role="status">0 selected</span>
+                    <button type="button" id="ica--bulkSelectAll" class="menu_button" title="Select all agents matching the current filters">Select filtered</button>
+                    <button type="button" id="ica--bulkClear" class="menu_button">Clear selection</button>
+                    <button type="button" id="ica--bulkCancel" class="menu_button">Done</button>
+                </div>
+                <div class="ica--bulk-bar-actions">
+                    <button type="button" id="ica--bulkSettings" class="menu_button menu_button_icon"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span>Settings</span></button>
+                    <button type="button" id="ica--bulkConnect" class="menu_button menu_button_icon" title="Select at least two companions to batch them or share notes"><i class="fa-solid fa-link" aria-hidden="true"></i><span>Batch &amp; connect</span></button>
+                    <button type="button" id="ica--bulkHistory" class="menu_button menu_button_icon"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><span>Keep in history</span></button>
+                    <details>
+                        <summary class="menu_button">More changes</summary>
+                        <div class="ica--bulk-bar-actions">
+                            <button type="button" id="ica--bulkEnable" class="menu_button">Enable</button>
+                            <button type="button" id="ica--bulkDisable" class="menu_button">Disable</button>
+                            <button type="button" id="ica--bulkEnableOnCompanions" class="menu_button" title="Run selected post-generation agents on companion outputs">On Companions</button>
+                            <button type="button" id="ica--bulkRoleSystem" class="menu_button">System role</button>
+                            <button type="button" id="ica--bulkRoleUser" class="menu_button">User role</button>
+                            <button type="button" id="ica--bulkConvertCompanion" class="menu_button">To companion</button>
+                            <button type="button" id="ica--bulkEditProps" class="menu_button">Edit other properties</button>
+                            <button type="button" id="ica--bulkDelete" class="menu_button caution">Delete</button>
+                        </div>
+                    </details>
+                </div>
+                <small class="ica--bulk-help">Batching and chat history apply to companions. Settings apply to every selected agent.</small>
+            </div>
             <div id="ica--agentList" class="ica--agentList"></div>
             </div>
             </div>
