@@ -59,9 +59,10 @@ export function renderSlots(spec, tokens, options) {
             ? pairSlot(slotSpec, tokens, accentIndex, index)
             : slot(slotSpec, tokens, accentIndex, index);
     }).join('');
+    const listTag = spec.slots.some(slotSpec => slotSpec.number) ? 'div' : 'ul';
     const slots = spec.kv
         ? `<dl role="list"${part('slots')}${decl({ margin: '0', padding: '0' })}>${items}</dl>`
-        : `<ul role="list"${part('slots')}${decl({ margin: '0', padding: '0', 'list-style': 'none' })}>${items}</ul>`;
+        : `<${listTag} role="list"${part('slots')}${decl({ margin: '0', padding: '0', 'list-style': 'none' })}>${items}</${listTag}>`;
 
     return collapsible(spec, tokens, headerChip(spec, tokens) + bodyPanel(tokens, slots), { open });
 }

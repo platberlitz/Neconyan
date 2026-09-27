@@ -39,6 +39,9 @@ export const SAMPLES = Object.freeze({
         full: '[METER|Mira|7/10|5/10|Wary ally|🌱 Warming]\nThe shared risk on the rooftop pulled you closer.\n[/METER]',
         nonNumeric: '[METER|Mira|High|Guarded|Wary ally|🌱 Warming]\nShe still counts the exits.\n[/METER]',
     },
+    'relationship-bond': {
+        full: '[METER|Mira|Wary ally|Growing closer|🌱 Warming]\nroute: Shared secrets\npath: Strangers > Allies > Confidants\nheart: 7/10\ntrust: 5/10\nwant: 4/10\nguard: 6/10\nlikes: Honest answers\ndislikes: Guild politics\ntell: Stops counting the exits\nunsaid: I hoped you would stay\nmemory: The rooftop at dusk\ndate: Tea after curfew\nturn: You returned the ledger\nnext: Tell her who sent you\n[/METER]',
+    },
     parallel: {
         full: '[PARALLEL|City|High]\n- Docks: The night shift is short two hands.\n- Guild hall: A courier arrives asking for you by name.\n- Barracks: Patrol routes changed at sundown.\n[/PARALLEL]',
         partial: '[PARALLEL|City|Low]\n- Docks: The night shift is short two hands.\n[/PARALLEL]',
@@ -59,7 +62,7 @@ export const SAMPLES = Object.freeze({
         partial: '[NPC:SUPPORT|Dock foreman]\nb: Ezra Kolt, 50s, man, foreman\n[/NPC]',
     },
     'npc-upgrade': {
-        full: '[NPC:UP|Ezra Kolt|MAJOR]\nb: Ezra Kolt, 54, man, dock foreman and informal broker\na: Broad, sunburnt, missing two fingers on his right hand\np: Blunt, fair, and quietly furious about the split\nh: Ran guild cargo for twenty years before walking out\n[/NPC]',
+        full: '[NPC:UP|Ezra Kolt|MAJOR]\nb: Ezra Kolt, 54, man, dock foreman and informal broker\na: Broad, sunburnt, missing two fingers on his right hand\np: Blunt, fair, and quietly furious about the split\nh: Ran guild cargo for twenty years before walking out\nr: Owes Mira a favour\n[/NPC]',
     },
     'npc-minor': {
         full: '[NPC:MINOR|Ledger clerk]\nb: Unnamed clerk, 20s\na: Too-large coat, chewed pen\np: Nervous, eager to help\n[/NPC]',

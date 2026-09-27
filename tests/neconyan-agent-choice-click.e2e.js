@@ -6,18 +6,25 @@ test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires a
 test.setTimeout(180000);
 
 for (const phone of [false, true]) {
-    for (const skillChecks of [false, true]) {
-        test(`${phone ? 'phone' : 'desktop'} ${skillChecks ? 'skill-check' : 'CYOA'} choices insert once without sending`, async ({ app }, info) => {
+    for (const variant of ['CYOA', 'skill-check', 'themed CYOA', 'themed skill-check']) {
+        const skillChecks = variant.includes('skill-check');
+        const themed = variant.startsWith('themed');
+        test(`${phone ? 'phone' : 'desktop'} ${variant} choices insert once without sending`, async ({ app }, info) => {
             const account = await app.account({ phone });
             const page = await account.open({ workspace: false, readyTimeout: 60000 });
-            await page.evaluate(async ({ avatar, skillChecks }) => {
+            await page.evaluate(async ({ avatar, skillChecks, themed }) => {
                 const core = await import('/script.js');
                 const runner = await import('/scripts/extensions/in-chat-agents/companion/companion-runner.js');
                 const regex = await import('/scripts/extensions/in-chat-agents/regex-scripts.js');
                 const { eventSource, event_types } = await import('/scripts/events.js');
-                const scripts = skillChecks
+                let scripts = skillChecks
                     ? (await (await fetch('/scripts/extensions/in-chat-agents/templates/cyoa-choices-skill-checks.json')).json()).regexScripts
                     : (await (await fetch('/scripts/extensions/in-chat-agents/templates/regex-bundles.json')).json())['tpl-cyoa-choices'];
+                if (themed) {
+                    const { buildAgentScripts } = await import('/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/build.js');
+                    const { THEMES } = await import('/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/themes/index.js');
+                    scripts = buildAgentScripts(skillChecks ? 'tpl-cyoa-choices-skill-checks' : 'tpl-cyoa-choices', scripts, THEMES[0]).scripts;
+                }
                 await window.SillyTavern.getContext().getCharacters();
                 await core.selectCharacterById(window.SillyTavern.getContext().characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
                 await window.NeconyanShell.activateMode('roleplay');
@@ -33,7 +40,7 @@ for (const phone of [false, true]) {
                 await context.printMessages();
                 // The host emits this after printMessages when opening a saved chat.
                 await eventSource.emit(event_types.CHAT_CHANGED, core.getCurrentChatId());
-            }, { avatar: account.avatar, skillChecks });
+            }, { avatar: account.avatar, skillChecks, themed });
 
             const choices = page.locator('#chat .mes_text .ica--choice-line');
             const noteChoices = page.locator('#chat .ica--companion-body .ica--choice-line');

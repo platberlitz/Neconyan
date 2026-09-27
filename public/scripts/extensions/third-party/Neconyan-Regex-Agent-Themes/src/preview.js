@@ -23,7 +23,7 @@ export const PREVIEW_KEYS = Object.freeze({
     [ARCHETYPES.PANEL]: 'scene',
     [ARCHETYPES.PROFILE]: 'npc-major',
     [ARCHETYPES.SLOTS]: 'choices',
-    [ARCHETYPES.STATCARD]: 'relationship',
+    [ARCHETYPES.STATCARD]: 'relationship-bond',
     [ARCHETYPES.CHIP]: 'npc-ref',
     [ARCHETYPES.STREAM]: 'chatroom',
     [ARCHETYPES.TRANSCRIPT]: 'chat-only',
@@ -65,7 +65,9 @@ export function renderPreviewHtml(archetype, theme, options = {}) {
         : stockScripts;
 
     const context = getContext();
-    const substitute = value => String(value).replaceAll('{{user}}', context?.name1 ?? 'You');
+    const substitute = value => String(value)
+        .replaceAll('{{user}}', context?.name1 ?? 'You')
+        .replaceAll('{{char}}', context?.name2 ?? '');
     const raw = applyList(sampleFor(spec), scripts, substitute);
 
     if (typeof context?.messageFormatting !== 'function') {

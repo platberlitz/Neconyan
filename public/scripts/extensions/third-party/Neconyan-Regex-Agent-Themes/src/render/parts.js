@@ -278,11 +278,23 @@ export function headerChip(spec, tokens, { welded = true, showChevron = true } =
     const iconMarkup = decorative(spec.icon, tokens);
     const icon = iconMarkup ? `${iconMarkup} ` : '';
     const inner = ornament(tokens, 'headerBefore')
-        + icon + headContent(spec, tokens)
+        + (spec.portrait ? portrait(spec.portrait, tokens) : icon) + headContent(spec, tokens)
         + (showChevron ? chevron(tokens) : '')
         + ornament(tokens, 'headerAfter');
 
     return `<summary${part('header')}${style}>${inner}</summary>`;
+}
+
+/** Keep the current relationship portrait endpoint and its initial fallback. */
+function portrait(spec, tokens) {
+    return `<span${part('portrait')}${decl({
+        position: 'relative', display: 'inline-flex', 'align-items': 'center', 'justify-content': 'center',
+        width: '32px', height: '32px', 'vertical-align': 'middle', 'margin-right': '8px',
+        'border-radius': '50%', overflow: 'hidden', background: tokens.surface.row, color: tokens.on.strong,
+    })}>$${spec.initial}<span${decl({
+        position: 'absolute', inset: '0', 'border-radius': '50%',
+        background: `url(&quot;/thumbnail/portrait?name=$${spec.name}&amp;char={{char}}&quot;) center 18%/cover no-repeat`,
+    })}></span></span>`;
 }
 
 /** The body panel under a header chip. Caller supplies the already-rendered children. */
@@ -343,6 +355,10 @@ export function row(rowSpec, tokens, accentIndex, index = 0) {
         })}>${decorative(tokens.glyph.section, tokens)}${tokens.glyph.section ? ' ' : ''}${rowSpec.label}:</span> `
         : '';
 
+    if (rowSpec.concealed) {
+        return `<details${part('row')}${style}><summary>${label}</summary>`
+            + `<span${part('row-value')}>$${rowSpec.g}</span></details>`;
+    }
     return `<div${part('row')}${style}>`
         + ornament(tokens, 'rowBefore')
         + label
@@ -395,7 +411,11 @@ export function slot(slotSpec, tokens, accentIndex, index) {
         'overflow-wrap': 'anywhere',
     }), tokens, 'row');
 
-    return `<li${part('slot')}${style}>$${slotSpec.g}</li>`;
+    const number = slotSpec.number ? `<span${part('choice-number')}>$${slotSpec.number}.</span> ` : '';
+    // The host turns these styled choice rows into tappable controls after sanitising.
+    return slotSpec.number
+        ? `<div class="pura-choice"${part('slot')}${style}>${number}$${slotSpec.g}</div>`
+        : `<li${part('slot')}${style}>$${slotSpec.g}</li>`;
 }
 
 /**

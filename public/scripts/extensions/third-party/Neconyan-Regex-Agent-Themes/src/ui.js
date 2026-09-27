@@ -8,7 +8,8 @@ import { DRAWER_ID, MODULE_NAME, STOCK_THEME } from './constants.js';
 import { ARCHETYPES, THEMABLE_TEMPLATE_IDS } from './specs.js';
 import { summarizeStatuses } from './drift.js';
 import { FAMILIES, THEMES, getTheme } from './themes/index.js';
-import { DENSITIES, OPEN_DEFAULTS, getSettings, resolveThemeSlug, updateSettings } from './settings.js';
+import { DENSITIES, OPEN_DEFAULTS, getSettings, isTemplateInScope, resolveThemeSlug, updateSettings } from './settings.js';
+import { TEMPLATE_LABELS } from './template-catalog.js';
 import { PREVIEW_KEYS, detectEncodedTags, mountPreview } from './preview.js';
 import {
     applyAll,
@@ -33,26 +34,6 @@ const ARCHETYPE_LABELS = Object.freeze({
     [ARCHETYPES.CHIP]: 'Inline chip',
     [ARCHETYPES.STREAM]: 'Chatroom stream',
     [ARCHETYPES.TRANSCRIPT]: 'Transcript row',
-});
-
-const TEMPLATE_LABELS = Object.freeze({
-    'tpl-scene-tracker': 'Scene',
-    'tpl-time-tracker': 'Time',
-    'tpl-item-tracker': 'Items',
-    'tpl-event-tracker': 'Pending events',
-    'tpl-world-detail': 'World detail',
-    'tpl-status-tracker': 'Status and conditions',
-    'tpl-secrets-tracker': 'Secrets',
-    'tpl-reputation-tracker': 'Reputation',
-    'tpl-achievements-tracker': 'Achievements',
-    'tpl-relationship-tracker': 'Relationship meter',
-    'tpl-parallel-tracker': 'Parallel threads',
-    'tpl-npc-profiles': 'NPC profiles',
-    'tpl-cyoa-choices': 'CYOA choices',
-    'tpl-direction-menu': 'Direction menu',
-    'tpl-chatroom-companion': 'Chatroom',
-    'tpl-message-inbox-companion': 'Message inbox',
-    'tpl-chat-only-companion': 'Chat-only transcript',
 });
 
 const STATUS_LABELS = Object.freeze({
@@ -685,8 +666,21 @@ function renderOverview(settings, host, agents, reports) {
     content.append(fieldRow(
         'Default theme',
         themeSelect,
-        'Applied to compatible trackers unless a tracker override says otherwise.',
+        'Applied to the selected tracker families and companion panels unless an override says otherwise.',
     ));
+
+    const scopeSelect = select('rat_tracker_scope', [
+        { value: 'both', label: 'Both' },
+        { value: 'pura', label: 'Pura trackers only' },
+        { value: 'ethereal', label: 'Ethereal trackers only' },
+    ], settings.trackerScope, value => runOperation('Applying tracker selection', async () => {
+        updateSettings({ trackerScope: value });
+        const result = await applyAll();
+        setResult(summarizeApplyResult(result), { notify: true });
+        return result;
+    }));
+    content.append(fieldRow('Apply to trackers', scopeSelect,
+        'Excluded trackers return to their original styles. Saved overrides resume when selected again. Companion panels keep their own theme settings.'));
 
     const refreshButton = button('Refresh all tracker cards', () => refreshTrackerCards(agents), {
         disabled: !host.ok || !agents.length,
@@ -1142,6 +1136,7 @@ function renderScope(settings, host, agents) {
         const label = TEMPLATE_LABELS[templateId] ?? templateId;
         const titleId = `rat_scope_title_${templateId}`;
         const effective = resolveThemeSlug(templateId, settings);
+        const inScope = isTemplateInScope(templateId, settings);
 
         const themeSelect = groupedSelect(
             `rat_scope_${templateId}`,
@@ -1150,6 +1145,10 @@ function renderScope(settings, host, agents) {
             value => applyTemplateOverride(templateId, value, templateAgents),
             { focusKey: `scope-${templateId}` },
         );
+        if (!inScope) {
+            themeSelect.disabled = true;
+            themeSelect.dataset.ratStaticDisabled = 'true';
+        }
 
         const agentList = el('ul', { class: 'rat-agent-list' });
         for (const report of reports) {
@@ -1220,7 +1219,7 @@ function renderScope(settings, host, agents) {
                 ]),
                 statusBadge(worst),
             ]),
-            fieldRow(`Theme for ${label}`, themeSelect),
+            fieldRow(`Theme for ${label}`, themeSelect, inScope ? '' : 'Excluded by Apply to trackers. This override is saved for when you select this family again.'),
             agentDetail,
             actions,
         ]));

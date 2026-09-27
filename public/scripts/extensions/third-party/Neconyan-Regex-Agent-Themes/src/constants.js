@@ -6,7 +6,7 @@ export const EXTENSION_PATH = `third-party/${MODULE_NAME}`;
  * every generated root element, so a bump makes previously applied themes read as
  * `outdated` and get regenerated on the next reconcile pass.
  */
-export const ENGINE_VERSION = 2;
+export const ENGINE_VERSION = 3;
 
 export const DRAWER_ID = 'rat_drawer';
 export const SETTINGS_KEY = MODULE_NAME;

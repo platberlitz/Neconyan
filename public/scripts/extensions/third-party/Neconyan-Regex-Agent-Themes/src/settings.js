@@ -6,6 +6,7 @@
 import { SETTINGS_KEY, STOCK_THEME } from './constants.js';
 import { THEME_BY_SLUG } from './themes/index.js';
 import { THEMABLE_TEMPLATE_IDS } from './specs.js';
+import { TRACKER_FAMILIES } from './template-catalog.js';
 import { getContext } from './host.js';
 import { validateCustomThemeMap } from './custom-themes.js';
 
@@ -14,10 +15,12 @@ const SCHEMA_VERSION = 2;
 const DENSITIES = ['compact', 'normal', 'roomy'];
 const OPEN_DEFAULTS = ['theme', 'all-open', 'all-closed'];
 const GLYPH_MODES = ['theme', 'none'];
+export const TRACKER_SCOPES = Object.freeze(['both', 'pura', 'ethereal']);
 
 export const DEFAULTS = Object.freeze({
     _v: SCHEMA_VERSION,
     theme: STOCK_THEME,
+    trackerScope: 'both',
     overrides: {},
     options: Object.freeze({
         density: 'normal',
@@ -155,6 +158,7 @@ export function getSettings() {
     const clean = {
         _v: SCHEMA_VERSION,
         theme: isKnownTheme(raw.theme, customThemes) ? raw.theme : STOCK_THEME,
+        trackerScope: clampEnum(raw.trackerScope, TRACKER_SCOPES, DEFAULTS.trackerScope),
         overrides: validOverrides(raw.overrides, customThemes),
         options: {
             density: clampEnum(options.density, DENSITIES, DEFAULTS.options.density),
@@ -190,8 +194,16 @@ export function updateSettings(patch) {
     return getSettings();
 }
 
-/** The theme slug in force for a template: its override, else the global choice. */
+/** Companion panels remain independent of the tracker-family selection. */
+export function isTemplateInScope(templateId, settings = getSettings()) {
+    const family = TRACKER_FAMILIES[templateId];
+    const scope = clampEnum(settings.trackerScope, TRACKER_SCOPES, DEFAULTS.trackerScope);
+    return !family || scope === 'both' || scope === family;
+}
+
+/** Excluded trackers restore owned styling; their overrides remain saved for later. */
 export function resolveThemeSlug(templateId, settings = getSettings()) {
+    if (!isTemplateInScope(templateId, settings)) return STOCK_THEME;
     return settings.overrides[templateId] ?? settings.theme;
 }
 
