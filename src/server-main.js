@@ -56,6 +56,7 @@ import { getFrontendAssetMiddleware, redirectLegacyFrontendAsset, setPublicAsset
 import getResponseCompressionMiddleware from './middleware/response-compression.js';
 import basicAuthMiddleware from './middleware/basicAuth.js';
 import { createImageReferenceHandler } from './generation/image-reference-links.js';
+import { renderRegisteredDocsPage } from './docs-reader.js';
 import requireHttpsMiddleware from './middleware/requireHttps.js';
 import authRouter, { setAuthRouterBasicAuthMode } from './endpoints/auth.js';
 import { createSession, destroySession, validateCredentials, isSessionAuthEnabled } from './middleware/sessionAuth.js';
@@ -464,6 +465,18 @@ app.get('/callback/:source?', (request, response) => {
 app.get('/login', loginPageMiddleware);
 app.get('/docs/in-chat-agents-glossary.md', (_request, response) => {
     response.type('text/plain').sendFile(path.join(serverDirectory, 'docs/in-chat-agents-glossary.md'));
+});
+app.get('/docs/:slug', (request, response, next) => {
+    try {
+        const html = renderRegisteredDocsPage(serverDirectory, String(request.params.slug || ''));
+        if (html === null) {
+            return next();
+        }
+        response.set('Cache-Control', 'no-cache');
+        return response.type('html').send(html);
+    } catch (error) {
+        return next(error);
+    }
 });
 
 // Host frontend assets

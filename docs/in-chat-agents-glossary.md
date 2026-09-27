@@ -12,63 +12,71 @@
 
 The main Agents panel is used to install, enable, search, organize, import, export, and edit agents.
 
-| Control                    | What it does                                                                                                  |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **Agents On / Agents Off** | Enables or disables all ICA processing without changing individual agent toggles.                             |
-| **New Agent**              | Opens a blank agent editor.                                                                                   |
-| **Templates**              | Opens the bundled template library.                                                                           |
-| **Update All**             | Updates installed agents whose bundled templates have newer versions. It is shown when updates are available. |
-| **Fix Trackers**           | Reruns enabled tracker agents on the last assistant reply using tracker repair behavior where supported.      |
-| **Companions**             | Opens the Companion dashboard.                                                                                |
-| **Trackers → Companions**  | Converts inline tracker agents to Companion execution using automatic operation and panel display.            |
-| **Cancel Agent**           | Stops the active ICA generation. It appears while an agent request is running.                                |
-| **Select**                 | Enables multi-select mode for bulk actions.                                                                   |
-| **Import**                 | Imports one or more agents from a JSON file.                                                                  |
-| **Export All**             | Exports all installed agents to a file.                                                                       |
+| Control | What it does |
+| --- | --- |
+| **Agents On / Agents Off** | Enables or disables all ICA processing without changing individual agent toggles. |
+| **Stop agent** | Stops the active ICA generation. It appears while an agent request is running. |
+| **Create agent** | Opens a blank agent editor. |
+| **Browse library** | Opens the bundled template library so you can add pre-made agents. |
+| **Select** | Enables multi-select mode for bulk actions. |
+| **Saved setup** | Saves the current agents and their switches as a named setup, then loads or deletes saved setups. Loading a setup does not delete other agents. |
+| **More tools → Update templates** | Updates installed agents whose bundled templates have newer versions. It is shown only when updates are available. |
+| **More tools → Fix trackers** | Reruns enabled tracker agents on the last assistant reply using tracker repair behaviour where supported. |
+| **More tools → Activity & companions** | Opens the Companion dashboard. |
+| **More tools → Move trackers to companions** | Converts inline tracker agents to Companion execution using automatic operation and panel display. |
+| **More tools → Import agents** | Imports one or more agents from a JSON file. |
+| **More tools → Export agents** | Exports all installed agents to a file. |
+| **More tools → Reset bundled agents** | Restores bundled agents to their original template settings. Custom agents are not affected. |
 
-The list is divided into **All**, **Quick Access**, **Pre**, **Post**, and **Companions** tabs. Quick Access shows agents that have been pinned with **Pin to Quick Toggles**. Pre and Post show Inline agents that participate in those generation phases. The Companions tab shows agents using Companion execution.
+The panel has two views: **Manage agents** (the agent list) and **Connections & defaults** (the shared settings described below). On phones these appear as buttons instead of a dropdown.
+
+The list is divided into **All**, **Pinned**, **Before reply**, **After reply**, and **Companions** tabs. Pinned shows agents that have been pinned with **Pin this agent**. Before reply and After reply show Inline agents that participate in those generation phases. The Companions tab shows agents using Companion execution.
 
 The search box filters agents by text, while the category selector filters them as Tracker, Randomizer, Content, Companion, or Custom. These filters only change what is visible in the list. They do not modify or disable agents.
 
-The **Agent Tokens** display reports the token count associated with active agent prompts. Separate helper requests, Companion input, and generated output can add more usage beyond this displayed value.
+The **Prompt tokens** display reports the token count associated with active agent prompts. Separate helper requests, Companion input, and generated output can add more usage beyond this displayed value.
 
 Pressing **Select** allows several agents to be changed together. The bulk controls can enable or disable selected agents, set their injection role to System or User, allow selected post-generation agents to process Companion output, convert agents to Companion execution, edit shared properties, or delete them. Bulk Edit changes only the properties selected in its dialog.
 
-### Global Connection and Execution Settings
+### Connections & Defaults
 
-**Default Connection Profile** selects the connection used when an agent makes a model request and has no profile set in its own editor. Leaving it on **Use selected connection profile** makes ICA follow the active Connection Manager profile. I.e. if you're currently using GLM as your main model, the agent will use GLM to deploy agents that edit the before and/or after main model responses.
+Open this view with **Connections & defaults** at the top of the Agents panel.
 
-**Companion Connection Profile** provides a separate default for Companion requests. An individual Companion’s own Connection Profile takes priority. If it has no override, ICA uses the Companion profile; if no Companion profile is selected, it falls back to the normal ICA default connection.
+**Default connection profile** selects the connection used when an agent makes a model request and has no profile set in its own editor. Leaving it on **Current connection** makes ICA follow the active Connection Manager profile. I.e. if you're currently using GLM as your main model, the agent will use GLM to deploy agents that edit the before and/or after main model responses.
 
-**Append Agents Execution** controls post-generation agents whose prompt-pass mode is **Append generated content**. **Parallel mode** starts compatible append agents together and is faster, but it may create several simultaneous API requests. **Sequential mode** runs them one at a time in ascending Order and is less likely to encounter concurrency or rate limits, but it could take longer depending on the speed of your LLM.
+**Companion connection profile** provides a separate default for Companion requests. Its empty option, **Default connection**, uses the ICA default above. An individual Companion’s own Connection Profile takes priority. If it has no override, ICA uses the Companion profile; if no Companion profile is selected, it falls back to the normal ICA default connection.
 
-**Companion Execution** independently controls whether Companion agents run in parallel or sequentially. In **parallel mode**, independent Companions can run at the same time. In **sequential mode**, they run one after another. Companion dependencies and batching can still alter how a particular set is grouped or delayed. E.g. you may batch Scene Tracker and Time Tracker together and each can be fed each other's context. They will both appear at the same time after generation, but this may take longer as more tokens are used.
+Under **Execution rhythm**, **Append agents** controls post-generation agents whose prompt-pass mode is **Append generated content**. **Run together** starts compatible append agents together and is faster, but it may create several simultaneous API requests. **Run one at a time** runs them one at a time in ascending Order and is less likely to encounter concurrency or rate limits, but it could take longer depending on the speed of your LLM.
 
-**Run Companions Alongside Post-Gen Passes** starts Companions while post-generation processing is still running. This is faster, but those Companions receive the main reply before post-generation passes finish editing it. Leave this disabled when a Companion must analyze the final rewritten response.
+**Companion agents** independently controls whether Companion agents run together or one at a time. With **Run together**, independent Companions can run at the same time. With **Run one at a time**, they run one after another in Order. Companion dependencies and batching can still alter how a particular set is grouped or delayed. E.g. you may batch Scene Tracker and Time Tracker together and each can be fed each other's context. They will both appear at the same time after generation, but this may take longer as more tokens are used.
 
-**Helper Prefill Messages** adds reusable role-based text to helper-model requests. Blocks can begin with `[system]`, `[user]`, or `[assistant]`. Any text before the first header is treated as Assistant content. This is an advanced setting and can usually remain empty. Placing anything here may prevent models that don't accept prefills from running (e.g. Claude Opus 4.6+, Gemini 3.6 Flash and so on in the future).
+**Run companions alongside post-generation passes** starts Companions while post-generation processing is still running. This is faster, but those Companions receive the main reply before post-generation passes finish editing it. Leave this disabled when a Companion must analyze the final rewritten response.
 
-**Separate Agents Between Individual and Group Chats** keeps separate enabled-agent sets for individual chats and group chats. The agents themselves are not duplicated; only their enabled state is separated.
+**Helper prefill messages** adds reusable role-based text to helper-model requests. Blocks can begin with `[system]`, `[user]`, or `[assistant]`. Any text before the first header is treated as Assistant content. This is an advanced setting and can usually remain empty. Placing anything here may prevent models that don't accept prefills from running (e.g. Claude Opus 4.6+, Gemini 3.6 Flash and so on in the future).
 
-**Allow prompt pass toast notifications** is the master switch for notifications from prompt-based post-generation passes. An individual agent’s own notification option must also be enabled. By default, this is on.
+**Keep individual and group chat switches separate** keeps separate enabled-agent sets for individual chats and group chats. The agents themselves are not duplicated; only their enabled state is separated.
 
-**View main LLM output before pre-generation intercept** is an advanced display option related to intercept processing. It is mainly useful while testing or debugging intercept behavior and can remain disabled for ordinary use.
+**Show prompt pass notifications** is the master switch for notifications from prompt-based post-generation passes. An individual agent’s own notification option must also be enabled. By default, this is on.
 
-**Enable Pawthfinder submodule** enables or disables Pawthfinder-related functionality without disabling the rest of ICA.
+**Show main output before an intercept pass** is an advanced display option related to intercept processing. It is mainly useful while testing or debugging intercept behavior and can remain disabled for ordinary use.
 
-**Reset Bundled Agents to Defaults** restores bundled agents to their original template configuration. It does not reset custom agents. Export any bundled agent you have substantially customized before using this command.
+**Companion panel button** chooses how the Companion panel opens: a **Floating side button** or a **Top bar button**.
+
+**Enable Pawthfinder submodule** enables or disables Pawthfinder-related functionality without disabling the rest of ICA. **Open Pawthfinder** opens its full settings panel.
+
+**More tools → Reset bundled agents** restores bundled agents to their original template configuration. It does not reset custom agents. Export any bundled agent you have substantially customized before using this command.
 
 ## Agent Editor
 
-The agent editor contains the prompt and all settings that control the agent’s behavior.
+The agent editor contains the prompt and all settings that control the agent’s behaviour. It is split into tabs: **Basics**, **Instructions & model**, **When it runs**, **Reply changes**, **Companion output**, and **Regex**.
 
 ### Basic Agent Settings
 
 **Name** is the label shown in the agent list, Companion interfaces, and related status displays. **Description** is a short explanation shown in the list. **Category** organizes the agent as a Tracker, Randomizer, Content agent, Companion, or Custom agent. Tracker classification also enables certain tracker-specific repair behavior.
 
-**Phase** selects Pre-generation, Post-generation, or Both. It is mainly used by Inline execution to determine where the agent participates. **Execution** selects Inline or Companion behavior. Inline agents can inject, intercept, apply regex, or process the reply. Companions run separately and save notes.
+**Run timing** selects **Before reply**, **After reply**, or **Before and after**. It is mainly used by Inline agents to determine where the agent participates. **Where results go** selects **Prompt or reply** (Inline) or **Companion note** (Companion). Inline agents can inject, intercept, apply regex, or process the reply. Companions run separately and save notes beside the reply.
 
-**Pin to Quick Toggles** adds the agent to Quick Access so it can be found and toggled more easily.
+**Pin this agent** adds the agent to the Pinned tab so it can be found and toggled more easily.
 
 ### Prompt and Model Settings
 
@@ -76,13 +84,13 @@ The **Prompt** field contains the agent’s main instructions. A clear prompt sh
 
 **Connection Profile** overrides the extension default for this agent’s AI refinement, intercepts, prompt-based post-generation processing, and Companion requests. **Model Override** specifies a model name instead of the profile’s configured model. Leave Model Override empty to use the model selected by the profile.
 
-The **Preview** button shows the prompt after supported macros have been replaced. A macro is a placeholder such as `{{char}}`, `{{user}}`, or `{{random::first::second}}` that SillyBunny resolves using current chat information. Some generation stages provide additional macros for the current or original message. Preview is the best way to confirm what the LLM will parse from the agent.
+The **Preview** button shows the prompt after supported macros have been replaced. A macro is a placeholder such as `{{char}}`, `{{user}}`, or `{{random::first::second}}` that Neconyan resolves using current chat information. Some generation stages provide additional macros for the current or original message. Preview is the best way to confirm what the LLM will parse from the agent.
 
 **Refine** asks an AI model to rewrite or improve the prompt. Review the result before saving, especially when the prompt requires an exact tracker format. **Fullscreen** expands the prompt editor.
 
-## Companion Settings
+## Companion Output
 
-The Companion Settings section appears when Execution is set to Companion. Companions run after the main reply and store a separate result. The Display setting decides whether that result appears beneath the reply, in the Companion panel, or only as hidden context.
+The **Companion output** tab appears when Where results go is set to Companion note. Companions run after the main reply and store a separate result. The Display setting decides whether that result appears beneath the reply, in the Companion panel, or only as hidden context.
 
 **AI Maker** creates a draft Companion prompt from a description. **Preview Feedback** shows the notes that the Companion would inject into the next main generation when feedback is enabled.
 
@@ -91,7 +99,7 @@ The Companion Settings section appears when Execution is set to Companion. Compa
 | Option                 | Meaning                                                                                                                                         |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Order**              | Controls visual ordering and sequential processing order. Lower values run earlier.                                                             |
-| **Trigger**            | Selects automatic execution after matching replies or manual-only execution.                                                                    |
+| **Trigger**            | **After matching replies** runs automatically; **Only when I run it** is manual-only.                                                                    |
 | **Display**            | Shows the result as a note card, in the Tracker panel, or as a hidden feedback note.                                                            |
 | **Format**             | Treats the result as Markdown, safe HTML, or plain text.                                                                                        |
 | **Context Messages**   | Sets the minimum number of recent valid chat messages included in the Companion request.                                                        |
@@ -99,9 +107,9 @@ The Companion Settings section appears when Execution is set to Companion. Compa
 | **History Depth**      | Sets how many earlier meaningful notes from the same Companion are included when Include prior notes is enabled.                                |
 | **Max Tokens**         | Sets the maximum output-token request for the Companion result.                                                                                 |
 
-**Order** is used when Companion Execution is Sequential. A Companion with Order 10 runs before one with Order 20. The drawer also displays Companions in this order, and rearranging them with the drawer’s drag handles updates the stored Order values. In Parallel mode, independent Companions may begin together, so Order does not by itself force one to finish before another. Modifying the dependency for each agent should be used when one result must wait for another. (E.g. Level Up Companion is dependent on the User-based Stats Generator agent, so Level Up Companion will show up after the latter is updated).
+**Order** is used when **Companion agents** is set to **Run one at a time**. A Companion with Order 10 runs before one with Order 20. The drawer also displays Companions in this order, and rearranging them with the drawer’s drag handles updates the stored Order values. With **Run together**, independent Companions may begin together, so Order does not by itself force one to finish before another. Modifying the dependency for each agent should be used when one result must wait for another. (E.g. Level Up Companion is dependent on the User-based Stats Generator agent, so Level Up Companion will show up after the latter is updated).
 
-**Trigger** can be Auto or Manual. An Auto Companion runs after eligible replies when ICA and the agent are enabled, its conditions match, it is not hidden from automatic execution, and its minimum context threshold has been reached. A Manual Companion runs only through controls such as Play, Regenerate, Regenerate All, or the Companion dashboard.
+**Trigger** can be **After matching replies** (automatic) or **Only when I run it** (manual). An automatic Companion runs after eligible replies when ICA and the agent are enabled, its conditions match, it is not hidden from automatic execution, and its minimum context threshold has been reached. A manual Companion runs only through controls such as Play, Regenerate, Regenerate All, or the Companion dashboard.
 
 **Display** has three choices. **Show note card** places a result beneath the assistant message it belongs to. **Tracker panel only** places its current state in the slide-out Companion panel. **Hidden feedback note** stores the result without rendering it as a card or panel section. A hidden-display result can still be used as feedback, retained context, shared Companion context, or dependency input.
 
@@ -122,7 +130,7 @@ For example, Context Messages 10 and Min Context Tokens 12000 means the Companio
 
 ### Companion Context Sources
 
-The Companion can receive several optional context sections. **Include character card** supplies descriptive card fields such as description, personality, scenario, system instructions, and creator notes. The character greeting and example dialogue are not included in this Companion section. **Include persona** supplies the active user persona. **Include World Info** performs a World Info scan and includes activated lore. **Include Author’s Note** includes the active chat or default Author’s Note. **Include System Prompt** includes the active main system prompt. (I.e. the default System Prompt field in SillyBunny.)
+The Companion can receive several optional context sections. **Include character card** supplies descriptive card fields such as description, personality, scenario, system instructions, and creator notes. The character greeting and example dialogue are not included in this Companion section. **Include persona** supplies the active user persona. **Include World Info** performs a World Info scan and includes activated lore. **Include Author’s Note** includes the active chat or default Author’s Note. **Include System Prompt** includes the active main system prompt. (I.e. the default System Prompt field in Neconyan.)
 
 > [!NOTE]
 > Enabling every source increases the input token size and can also expose the Companion to instructions that are irrelevant to its task. A simple state tracker may only need recent messages and its prior note. A lore analysis tool may only need the character card and World Info.
@@ -141,7 +149,7 @@ The Companion can receive several optional context sections. **Include character
 
 ### Feeding Notes Into Future Generations
 
-**Feed recent notes into future generations** inserts completed Companion notes into later main-model prompts as auxiliary context. The notes use the agent’s Position, Depth, Role, and World Info scan settings from the Pre-Generation section.
+**Feed recent notes into future generations** inserts completed Companion notes into later main-model prompts as auxiliary context. The notes use the agent’s Position, Depth, Role, and World Info scan settings from the **When it runs** tab.
 
 **Feedback Depth** controls how many recent meaningful notes are injected. A value of 1 uses the latest meaningful note. A larger value includes more previous notes.
 
@@ -162,7 +170,7 @@ Batching reduces request count when several agents use the same model and contex
 
 This is useful when one agent produces state that another agent should analyze. A Scene Tracker can send its current scene state to Plot Compass, for example. Context sharing is one-directional; selecting Plot Compass as a recipient does not automatically send Plot Compass output back to the Scene Tracker.
 
-**Re-run After These Companions Update** creates a **dependency**. When a selected Companion produces changed output, the dependent Companion reruns. **Delay until selected Companions finish** makes the dependent Companion wait when its dependency is already scheduled in the same processing pass. Without the delay option, both agents may initially run together and the dependent agent may rerun after the dependency changes.
+**Re-run After These Companions Update** creates a **dependency**. When a selected Companion produces changed output, the dependent Companion reruns. **Delay until selected companions finish** makes the dependent Companion wait when its dependency is already scheduled in the same processing pass. Without the delay option, both agents may initially run together and the dependent agent may rerun after the dependency changes.
 
 Large dependency chains create additional requests and increase total completion time.
 
@@ -180,13 +188,13 @@ Tracker agents can expose a Custom Tracker Builder. The **Tracker Format Example
 
 **Generate Kit** asks AI to create the tracker prompt, extraction pattern, and formatting configuration. Review the generated prompt and regex before using it in an important chat, particularly when the tracker depends on exact opening and closing tags.
 
-## Pre-Generation Settings
+## When It Runs (Pre-Generation)
 
-Pre-generation settings control how an Inline prompt or Companion feedback is placed into model context.
+The **When it runs** tab controls how an Inline prompt or Companion feedback is placed into model context.
 
 ### Mode and Intercepts
 
-**Inject prompt into context** adds the agent prompt directly to the normal main-model request. It does not require a separate helper request. This mode is suitable for writing rules, behavior instructions, point-of-view controls, and other prompts the main model should follow while producing its reply. This is similar to a Chat Completions' preset modularity in SillyBunny.
+**Inject prompt into context** adds the agent prompt directly to the normal main-model request. It does not require a separate helper request. This mode is suitable for writing rules, behavior instructions, point-of-view controls, and other prompts the main model should follow while producing its reply. This is similar to a Chat Completions' preset modularity in Neconyan.
 
 **Run agent to modify outgoing context** makes a separate intercept request. Intercepts are more complex and consume additional tokens, but they can transform assembled context or process generated output.
 
@@ -216,7 +224,7 @@ An agent can contain one or more SillyTavern-style regex scripts. These scripts 
 
 Regex can alter both content and formatting. Test new scripts on expendable messages and keep a backup of your current agents before making extensive changes.
 
-## Post-Generation Actions
+## Reply Changes (Post-Generation)
 
 **Use this agent prompt as a post-generation prompt pass** makes a separate model request after the main response is generated. In **Rewrite current message** mode, the result replaces the current response, so the agent must return the complete desired message. In **Append generated content** mode, the original response is kept and the new result is added after it.
 
@@ -234,13 +242,13 @@ When Companion processing is enabled, **Companion targets** limits the action to
 
 **Trigger Keywords** is a comma-separated list used to limit activation to matching content. Leaving it blank allows the agent to run without a keyword requirement.
 
-**Generation Types** decide which SillyBunny actions can trigger the agent. Normal applies to ordinary assistant responses. Continue applies when extending an existing response. Impersonate applies to generated user or persona text. Quiet applies to background generations used by supported features.
+**Generation Types** decide which Neconyan actions can trigger the agent. Normal applies to ordinary assistant responses. Continue applies when extending an existing response. Impersonate applies to generated user or persona text. Quiet applies to background generations used by supported features.
 
 ## Companion Panel
 
 The Companion panel is a slide-out drawer used by Companions whose Display setting is **Tracker panel only**. Open it by clicking the floating Companion handle or selecting **Companion Panel** from the Extensions menu.
 
-The floating handle can be dragged to the left, right, top, or bottom edge of the viewport. It snaps to the nearest edge and saves its position. It is hidden when ICA is globally disabled, when no relevant panel Companion or stored panel state is available, or while Conversation Mode controls the interface.
+The floating handle can be dragged to the left, right, top, or bottom edge of the viewport. It snaps to the nearest edge and saves its position. It is hidden when ICA is globally disabled, when no relevant panel Companion or stored panel state is available, or while Conversation Mode controls the interface. You can also hide it yourself with the panel's **Hide the floating button** control and bring the panel back through **Companion Panel** in the Extensions menu, or switch **Companion panel button** to **Top bar button** in Connections & defaults.
 
 Enabled panel-mode Companions can appear before they have generated a result. In that case, their section displays **No state yet**. Stored panel-mode results can also remain visible when their original agent is no longer available.
 
@@ -295,17 +303,17 @@ The Companion dashboard is opened with **Companions** in the main ICA toolbar. I
 
 The dashboard displays installed Companions together with their trigger, display, format, batching, feedback, and recent token information. Each Companion can be enabled or disabled, run on the latest message, edited, or converted back to Inline execution. Eligible Inline agents appear in a separate section and can be converted to Companion execution.
 
-The dashboard toolbar includes **Run All on Last Message**, **Companion Panel**, **New Companion**, and **AI Maker**. It also shows recent Companion notes and can jump to the message that owns a selected note.
+The dashboard toolbar includes **Run enabled companions**, **Open live panel**, **Create companion**, and **Draft with AI**. It also shows recent Companion notes and can jump to the message that owns a selected note.
 
 ## Importing, Exporting, Updating, and Resetting
 
 Import accepts agent JSON files. Imported agents may include prompts, model settings, conditions, Companion configuration, regex, and template references. Review an imported agent before enabling it because it may add model requests or modify generated messages.
 
-Export All saves the current agent collection. Export before extensive edits, template updates, conversions, or resets.
+**Export agents** saves the current agent collection. Export before extensive edits, template updates, conversions, or resets.
 
-Update All refreshes installed agents backed by newer bundled templates. ICA preserves several user-specific properties during bundled updates, including enabled state, favorites, profile overrides, model overrides, Companion configuration, and Order where applicable. Review updated prompts and regex afterward.
+**Update templates** refreshes installed agents backed by newer bundled templates. ICA preserves several user-specific properties during bundled updates, including enabled state, favorites, profile overrides, model overrides, Companion configuration, and Order where applicable. Review updated prompts and regex afterward.
 
-Reset Bundled Agents to Defaults restores template-backed agents to their bundled configuration. Custom agents are not affected.
+**Reset bundled agents** restores template-backed agents to their bundled configuration. Custom agents are not affected.
 
 ## Storage and Recovery
 
