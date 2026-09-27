@@ -25,6 +25,7 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
             const clientY = Object.getOwnPropertyDescriptor(window.Touch.prototype, 'clientY').get;
             Object.defineProperty(window.Touch.prototype, 'clientY', { get() { return clientY.call(this) - viewport.offsetTop; } });
             const elementFromPoint = document.elementFromPoint.bind(document);
+            window.pawLayoutElementFromPoint = elementFromPoint;
             document.elementFromPoint = (x, y) => elementFromPoint(x, y + viewport.offsetTop);
         });
         const page = await account.open({ workspace: conversation, timeout: 60000 });
@@ -53,6 +54,7 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
                 for (const record of records) for (const pop of record.addedNodes) {
                     if (pop.className !== 'neconyan-send-nya') continue;
                     window.pawSounds.push(pop.textContent);
+                    const originalParent = pop.parentElement;
                     const start = window.performance.now();
                     const frame = () => {
                         const rect = pop.getBoundingClientRect();
@@ -61,13 +63,24 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
                         const range = document.createRange();
                         range.selectNodeContents(pop);
                         const text = range.getBoundingClientRect();
+                        pop.style.pointerEvents = 'auto';
+                        const paintedAbove = [0.25, 0.5, 0.75].every(fraction => {
+                            // Rects use Chromium's layout coordinates, even when
+                            // the touch hit-test above simulates Safari's viewport.
+                            const hitTest = window.pawLayoutElementFromPoint || document.elementFromPoint.bind(document);
+                            const hit = hitTest(text.left + text.width * fraction, text.top + text.height / 2);
+                            return hit === pop || pop.contains(hit);
+                        });
+                        pop.style.pointerEvents = 'none';
                         window.pawFrames.push({
                             elapsed: window.performance.now() - start,
                             opacity: Number(window.getComputedStyle(pop).opacity),
                             connected: pop.isConnected,
                             clipped: clipper(pop),
+                            paintedAbove,
+                            host: originalParent.id,
                             sendHidden: document.querySelector(sendSelector).getClientRects().length === 0,
-                            moved: pop.isConnected && pop.parentElement !== document.querySelector(sendSelector).parentElement,
+                            moved: pop.isConnected && pop.parentElement !== originalParent,
                             left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,
                             width: rect.width, height: rect.height,
                             textLeft: text.left, textRight: text.right, textTop: text.top, textBottom: text.bottom,
@@ -131,6 +144,7 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
         expect(['nya!', 'mrrp?', 'mrrah', 'mew', 'purr']).toContain(sounds[0]);
         const visible = frames.filter(frame => frame.connected && frame.opacity >= 0.5 && frame.width > 0 && frame.height > 0);
         expect(visible.length).toBeGreaterThan(0);
+        expect(visible.every(frame => frame.host === (conversation ? 'sb_conversation_stage' : 'form_sheld'))).toBe(true);
         const viewport = page.viewportSize();
         expect(visible.some(frame => frame.left >= 0 && frame.top >= frame.viewportTop && frame.right <= viewport.width && frame.bottom <= frame.viewportBottom)).toBe(true);
         // The first visible frame is the anchored one: its bottom edge sits at
@@ -143,6 +157,7 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
         expect(frames.filter(frame => frame.moved)).toEqual([]);
         // Nothing on the ancestor chain may clip the pop away.
         expect(visible.some(frame => !frame.clipped)).toBe(true);
+        expect(visible.filter(frame => !frame.clipped && !frame.paintedAbove)).toEqual([]);
         // The sound's own text must hug its box, sit centred on the paw and
         // stay clear above it; a squeezed box would slide it under the buttons.
         const textFrames = visible.filter(frame => frame.textWidth > 0 && frame.textHeight > 0);

@@ -44,11 +44,11 @@ export function popNya(anchor, { reduced = reducedMotion.matches, random = Math.
         pop.style.setProperty(property, value, 'important');
     }
     // Roleplay hides the paw behind Stop while sending, which would hide a pop
-    // inside it too. Host it in the paw's row instead, placed by comparing the
-    // paw and the row: both rects share one coordinate system, so whatever the
-    // keyboard has done to the viewport cancels out. Measure from the row's
+    // inside it too. Use the outer composer, above the controls' nested stacking
+    // layers. Both rects share one coordinate system, so whatever the keyboard
+    // has done to the viewport cancels out. Measure from the composer's
     // right and bottom edges, the end where Stop takes the paw's slot.
-    const host = anchor.parentElement || anchor;
+    const host = anchor.closest?.('#form_sheld, #sb_conversation_stage') || anchor.parentElement || anchor;
     const hostStyle = window.getComputedStyle(host);
     if (hostStyle.position === 'static') host.style.position = 'relative';
     const box = host.getBoundingClientRect();

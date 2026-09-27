@@ -991,6 +991,12 @@ button.ica--card-pill--version-update {
     outline: none;
 }
 
+.ica--choice-row { width: 100%; min-height: 44px; }
+.ica--choice-line:focus-visible {
+    outline: 2px solid var(--neco-ginger, var(--SmartThemeQuoteColor));
+    outline-offset: 2px;
+}
+
 .ica--companion-body > :first-child {
     margin-top: 0;
 }

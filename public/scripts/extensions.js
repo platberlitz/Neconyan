@@ -9,7 +9,7 @@ import { addLocaleData, getCurrentLocale, t } from './i18n.js';
 import { debounce_timeout } from './constants.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { SimpleMutex } from './util/SimpleMutex.js';
-import { loadStylesheetAsync, prefetchAsset } from './dynamic-styles.js';
+import { loadStylesheetAsync } from './dynamic-styles.js';
 import { createExtensionScriptLoadError, formatExtensionLoadError } from './extension-load-errors.js';
 import {
     EXTENSION_BOOT_ACTIVATION_ACTION,
@@ -111,24 +111,12 @@ let bundledOptInSettingsLoaded = false;
 
 const sortManifestsByOrder = (a, b) => parseInt(a.loading_order) - parseInt(b.loading_order) || String(a.display_name).localeCompare(String(b.display_name));
 const sortManifestsByName = (a, b) => String(a.display_name).localeCompare(String(b.display_name)) || parseInt(a.loading_order) - parseInt(b.loading_order);
-let extensionPrefetchToken = 0;
 
 /**
  * Holds manifest data for each extension.
  * @type {Record<string, object>}
  */
 let manifests = {};
-
-const extensionSecondaryPrefetchAssets = Object.freeze({
-    gallery: [
-        { path: 'nanogallery2.woff.min.css', as: 'style' },
-        { path: 'jquery.nanogallery2.min.js', as: 'script' },
-    ],
-    tts: [
-        { path: 'kokoro-worker.js', as: 'script' },
-        { path: 'lib/kokoro.web.js', as: 'script' },
-    ],
-});
 
 /**
  * Checks if the extension is officially supported by its URL pattern.
@@ -176,55 +164,6 @@ function getExtensionAssetVersion() {
 
 function getExtensionAssetUrl(name, assetPath) {
     return `/scripts/extensions/${name}/${assetPath}?v=${getExtensionAssetVersion()}`;
-}
-
-function scheduleIdleTask(callback, timeout = 4000) {
-    if ('requestIdleCallback' in window) {
-        return window.requestIdleCallback(callback, { timeout });
-    }
-
-    return window.setTimeout(callback, Math.min(timeout, 1000));
-}
-
-function prefetchExtensionAsset(name, assetPath, as) {
-    if (!assetPath) {
-        return;
-    }
-
-    try {
-        prefetchAsset(getExtensionAssetUrl(name, assetPath), { as });
-    } catch (error) {
-        console.debug('Could not prefetch extension asset', name, assetPath, error);
-    }
-}
-
-function scheduleExtensionAssetPrefetch() {
-    const connection = navigator.connection;
-    if (connection?.saveData || ['slow-2g', '2g'].includes(connection?.effectiveType)) {
-        return;
-    }
-
-    const token = ++extensionPrefetchToken;
-
-    scheduleIdleTask(() => {
-        if (token !== extensionPrefetchToken) {
-            return;
-        }
-
-        for (const [name, manifest] of Object.entries(manifests)) {
-            if (isExtensionDisabled(name)) {
-                continue;
-            }
-
-            prefetchExtensionAsset(name, manifest.js, 'script');
-            prefetchExtensionAsset(name, manifest.css, 'style');
-
-            const secondaryAssets = extensionSecondaryPrefetchAssets[name] ?? [];
-            for (const asset of secondaryAssets) {
-                prefetchExtensionAsset(name, asset.path, asset.as);
-            }
-        }
-    });
 }
 
 export function cancelDebouncedMetadataSave() {
@@ -2218,8 +2157,6 @@ export async function loadExtensionSettings(settings, versionChanged, enableAuto
         saveSettingsDebounced();
     }
     bundledOptInSettingsLoaded = true;
-
-    scheduleExtensionAssetPrefetch();
 
     maybeShowMoonlitEchoesMovedNotice();
     if (versionChanged && enableAutoUpdate) {

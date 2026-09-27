@@ -1254,6 +1254,8 @@ describe('companion tracker panel', () => {
         expect(companionUi.insertChoiceIntoMessageInput).toHaveBeenCalledWith('B) Stay here');
         expect(panelElement.removeClass).not.toHaveBeenCalled();
         expect(panelElement.attr).not.toHaveBeenCalledWith('aria-hidden', 'true');
+        choiceHandler.call({ textContent: '33. Keep this number', dataset: { icaChoiceText: '3. 3. Keep this number' } }, lockedEvent);
+        expect(companionUi.insertChoiceIntoMessageInput).toHaveBeenLastCalledWith('3. 3. Keep this number');
     });
 
     test('keeps card and hidden companions out of the tracker panel', async () => {

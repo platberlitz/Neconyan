@@ -1,6 +1,6 @@
-/* global document, window, WheelEvent, PageTransitionEvent, getComputedStyle */
+/* global document, window, WheelEvent, PageTransitionEvent */
 import { expect, test } from '@playwright/test';
-import { getChatScrollSnapshot, installSyntheticLongChat, openReadyChat, waitForAnimationFrames } from './chat-scroll-regression-helpers.js';
+import { acknowledgeSettingsSave, getChatScrollSnapshot, installSyntheticLongChat, openReadyChat, waitForAnimationFrames } from './chat-scroll-regression-helpers.js';
 
 test.setTimeout(60_000);
 test.use({ serviceWorkers: 'block' });
@@ -36,7 +36,7 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
     test.describe(`chat reopening at ${viewport.width}px`, () => {
         test.use({ viewport, isMobile: viewport.width < 768, hasTouch: viewport.width < 768 });
         test.beforeEach(async ({ page }) => {
-            await page.route('**/api/settings/save', route => route.fulfill({ json: { version: Date.now() } }));
+            await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
             await page.route('**/api/conversation/save', route => route.fulfill({ json: {} }));
             await openReadyChat(page);
             await installSyntheticLongChat(page, { messageCount: 96, visibleCount: 24 });

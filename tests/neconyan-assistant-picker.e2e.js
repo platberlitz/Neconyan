@@ -1,4 +1,5 @@
 /* global window */
+import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 
@@ -75,7 +76,7 @@ for (const width of [320, 390, 1280]) {
     test.describe(`assistant layout at ${width}px`, () => {
         test.use({ viewport: { width, height: 900 }, isMobile: width < 768, hasTouch: width < 768 });
         test('library controls remain clickable through their decorations', async ({ page }, testInfo) => {
-            await page.route('**/api/settings/save', route => route.fulfill({ json: { version: Date.now() } }));
+            await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
             await page.goto('/', { waitUntil: 'domcontentloaded' });
             await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 45000 });
             const headers = await page.evaluate(() => window.SillyTavern.getContext().getRequestHeaders());
@@ -120,7 +121,7 @@ for (const width of [320, 390, 1280]) {
             test(`${tone} has readable choices and contained controls`, async ({ page }, testInfo) => {
                 const filename = tone === 'Dark' ? 'Neconyan Calico Dark.json' : 'Neconyan Calico.json';
                 const { name, ...theme } = JSON.parse(readFileSync(new URL(`../default/content/themes/${filename}`, import.meta.url), 'utf8'));
-                await page.route('**/api/settings/save', route => route.fulfill({ json: { version: Date.now() } }));
+                await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
                 await page.route('**/api/settings/get', async route => {
                     const response = await route.fetch();
                     const data = await response.json();

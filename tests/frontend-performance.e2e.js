@@ -13,7 +13,9 @@ async function waitForResourceStability(page) {
     let stableSamples = 0;
 
     await expect.poll(async () => {
-        const resourceCount = await page.evaluate(() => globalThis.performance.getEntriesByType('resource').length);
+        // Retained jobs keep polling after startup; only static assets settle.
+        const resourceCount = await page.evaluate(() => globalThis.performance.getEntriesByType('resource')
+            .filter(entry => !new globalThis.URL(entry.name).pathname.startsWith('/api/')).length);
         stableSamples = resourceCount > 0 && resourceCount === previousCount ? stableSamples + 1 : 0;
         previousCount = resourceCount;
         return stableSamples;
@@ -26,7 +28,7 @@ async function waitForResourceStability(page) {
 test.describe('frontend performance smoke', () => {
     test('mobile shell exposes core performance marks and bounded assets', async ({ page }) => {
         await page.setViewportSize({ width: 390, height: 844 });
-        await page.addInitScript(() => globalThis.performance.setResourceTimingBufferSize(1000));
+        await page.addInitScript(() => globalThis.performance.setResourceTimingBufferSize(2000));
         await page.goto('/', { waitUntil: 'domcontentloaded' });
         await page.waitForLoadState('load', { timeout: 60000 });
         await page.waitForFunction(() => {
@@ -63,17 +65,23 @@ test.describe('frontend performance smoke', () => {
             return {
                 title: browserGlobal.document.title,
                 hasShell: Boolean(browserGlobal.SillyBunnyShell),
-                resourceCount: resources.length,
+                assetCount: resources.filter(entry => !new browserGlobal.URL(entry.name).pathname.startsWith('/api/')).length,
                 jsBytes,
                 cssBytes,
                 fontRequests,
                 coreAssetBytes,
+                optionalSpeechRequests: resources.filter(entry => /\/tts\/(?:kokoro-worker|lib\/kokoro.web)\.js/.test(entry.name)).length,
+                extensionPrefetches: browserGlobal.document.querySelectorAll('link[rel="prefetch"][href*="/scripts/extensions/"]').length,
             };
         }, coreAssetPaths);
 
-        expect(snapshot.title).toBe('SillyBunny');
+        expect(snapshot.title).toBe('Neconyan');
         expect(snapshot.hasShell).toBe(true);
-        expect(snapshot.resourceCount).toBeLessThan(700);
+        // Native tools now include more modules than the old SillyBunny fixture.
+        // Keep the measured cold start bounded without truncating its timing buffer.
+        expect(snapshot.assetCount).toBeLessThan(1000);
+        expect(snapshot.optionalSpeechRequests).toBe(0);
+        expect(snapshot.extensionPrefetches).toBe(0);
         expect(snapshot.jsBytes).toBeGreaterThan(0);
         expect(snapshot.jsBytes).toBeLessThan(12 * 1024 * 1024);
         expect(snapshot.cssBytes).toBeGreaterThan(0);

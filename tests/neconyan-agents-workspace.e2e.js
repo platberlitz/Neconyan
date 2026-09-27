@@ -1,7 +1,7 @@
 /* global window, document */
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
-import { trackNavigationErrors } from './chat-scroll-regression-helpers.js';
+import { acknowledgeSettingsSave, trackNavigationErrors } from './chat-scroll-regression-helpers.js';
 
 test.use({ serviceWorkers: 'block' });
 test.setTimeout(180000);
@@ -268,7 +268,7 @@ for (const width of [1280, 1024, 997, 768, 390, 393, 320]) {
 
         test('light surfaces keep Manage, Library and Editor readable', async ({ page }, info) => {
             const { name, ...theme } = JSON.parse(readFileSync(new URL('../default/content/themes/Neconyan Calico.json', import.meta.url), 'utf8'));
-            await page.route('**/api/settings/save', route => route.fulfill({ json: { version: Date.now() } }));
+            await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
             await page.route('**/api/settings/get', async route => {
                 const response = await route.fetch();
                 const data = await response.json();

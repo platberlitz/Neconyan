@@ -34,7 +34,7 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             await page.addScriptTag({ content: [
                 declarations('../public/scripts/utils.js', ['escapeHtml']),
                 declarations('../public/scripts/chats.js', ['encodeStyleTags', 'decodeStyleTags']),
-                declarations(`${companionPath}companion-ui.js`, ['sanitizeCompanionHtml', 'CHOICE_LINE_RE', 'buildChoiceButtonHtml', 'wrapChoiceSegment', 'decorateChoiceLines']),
+                declarations(`${companionPath}companion-ui.js`, ['sanitizeCompanionHtml', 'CHOICE_PREFIX_RE', 'CHOICE_LINE_RE', 'extractChoiceText', 'buildChoiceButtonHtml', 'wrapChoiceSegment', 'decorateStyledChoiceRows', 'decorateChoiceLines']),
             ].join('\n') });
         });
 

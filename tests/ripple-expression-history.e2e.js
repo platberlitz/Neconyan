@@ -1,4 +1,5 @@
 /* global window, document, getComputedStyle */
+import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -29,7 +30,7 @@ async function fixture(page) {
     });
     await page.route('**/api/settings/save', async route => {
         settings = requestJson(route.request());
-        await route.fulfill({ json: { version: Date.now() } });
+        await acknowledgeSettingsSave(route);
     });
     await page.route('**/api/characters/all', route => route.fulfill({ json: [character] }));
     await page.route('**/api/characters/chats', route => route.fulfill({ json: [{ file_name: character.chat, message_count: 1 }] }));

@@ -1,5 +1,6 @@
+/* global window */
 import { expect, test as base } from '@playwright/test';
-import { dismissOnboardingIfPresent } from './chat-scroll-regression-helpers.js';
+import { acknowledgeSettingsSave, dismissOnboardingIfPresent } from './chat-scroll-regression-helpers.js';
 import { testSetup } from './frontend/frontent-test-utils.js';
 
 const definition = Array.from({ length: 120 }, (_, index) => `Character definition line ${index + 1}.`).join('\n');
@@ -44,16 +45,16 @@ async function touchMoveIsCanceled(textarea, deltaY) {
 test.describe('expanded editor touch handling', () => {
     test.beforeEach(async ({ page }) => {
         let settingsVersion = Date.now();
-        await page.route('**/api/settings/save', route => route.fulfill({ status: 200, json: { version: ++settingsVersion } }));
+        await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route, ++settingsVersion));
         await testSetup.awaitST({ page });
         await dismissOnboardingIfPresent(page);
         const setupDialogClose = page.getByRole('button', { name: 'Close dialog', exact: true });
         if (await setupDialogClose.isVisible()) {
             await setupDialogClose.click();
         }
-        await page.getByRole('button', { name: 'Open character management', exact: true }).click();
-        await page.getByTitle('Create New Character', { exact: true }).click();
-        await page.getByRole('tab', { name: 'Definitions', exact: true }).click();
+        await page.evaluate(() => window.NeconyanShell.openTab('characters', 'characters'));
+        await page.getByRole('button', { name: 'Create character', exact: true }).click();
+        await page.getByRole('tab', { name: 'Basics', exact: true }).click();
         await page.locator('#description_textarea').fill(definition);
         await page.locator('.editor_maximize[data-for="description_textarea"]').click();
         await expect(page.locator('.maximized_textarea')).toBeVisible();

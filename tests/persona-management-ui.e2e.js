@@ -1,6 +1,6 @@
 /* global window */
 import { devices, expect, test } from '@playwright/test';
-import { openPersonaEditor, openQuietChatForSmoke } from './chat-scroll-regression-helpers.js';
+import { acknowledgeSettingsSave, openPersonaEditor, openQuietChatForSmoke } from './chat-scroll-regression-helpers.js';
 
 test.setTimeout(60000);
 
@@ -15,7 +15,7 @@ for (const width of [320, 390, 1280]) {
 
         test('collapses each note independently without changing active notes', async ({ page }, testInfo) => {
             let settingsVersion = Date.now();
-            await page.route('**/api/settings/save', route => route.fulfill({ status: 200, json: { version: ++settingsVersion } }));
+            await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route, ++settingsVersion));
             await openQuietChatForSmoke(page, { selectCharacter: false });
             await page.evaluate(async () => {
                 const { power_user } = await import('/scripts/power-user.js');

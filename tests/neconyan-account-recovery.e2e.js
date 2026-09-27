@@ -1,4 +1,5 @@
 /* global window */
+import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
 import { expect, test } from '@playwright/test';
 
 test.use({ viewport: { width: 320, height: 900 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
@@ -6,7 +7,7 @@ test.use({ viewport: { width: 320, height: 900 }, isMobile: true, hasTouch: true
 test('account loading failure is visible and the next attempt opens the profile', async ({ page }) => {
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(error.message));
-    await page.route('**/api/settings/save', route => route.fulfill({ json: { version: Date.now() } }));
+    await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 45000 });
 

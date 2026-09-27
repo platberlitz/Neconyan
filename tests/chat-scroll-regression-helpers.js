@@ -2,6 +2,16 @@
 
 export const APP_URL = process.env.NECONYAN_TEST_BASE_URL || process.env.SILLYBUNNY_TEST_BASE_URL || '/';
 
+/** Acknowledge a layout-only settings save using the current browser/server contract. */
+export function acknowledgeSettingsSave(route, version = Date.now()) {
+    const settings = route.request().postDataJSON();
+    return route.fulfill({ status: 200, json: {
+        result: 'ok',
+        version: Math.max(version, (settings._version || 0) + 1),
+        settingsRevision: (settings._settingsRevision || 0) + 1,
+    } });
+}
+
 export async function openPersonaEditor(page, section = 'prompt') {
     const edit = page.locator('#persona_workspace_tab_edit');
     if (await edit.isVisible()) await edit.click();

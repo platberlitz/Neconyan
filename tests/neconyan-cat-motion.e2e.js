@@ -1,4 +1,5 @@
 /* global document, window, MouseEvent */
+import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
 import { gunzipSync } from 'node:zlib';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
@@ -159,7 +160,7 @@ for (const tone of ['Dark', 'Light']) {
     test(`${tone} native controls and cat motion preferences`, async ({ page }, testInfo) => {
         const filename = tone === 'Dark' ? 'Neconyan Calico Dark.json' : 'Neconyan Calico.json';
         const { name, ...theme } = JSON.parse(readFileSync(new URL(`../default/content/themes/${filename}`, import.meta.url), 'utf8'));
-        await page.route('**/api/settings/save', route => route.fulfill({ status: 200, json: { version: Date.now() } }));
+        await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
         await page.route('**/api/settings/get', async route => {
             const response = await route.fetch();
             const data = await response.json();
@@ -254,7 +255,7 @@ test('one loading cat remains visible through the early-to-popup handoff', async
     const settingsGate = new Promise(resolve => { releaseSettings = resolve; });
     await page.route(/\/script\.js(?:\?|$)/, async route => { await scriptGate; await route.continue(); });
     await page.route('**/api/settings/get', async route => { await settingsGate; await route.continue(); });
-    await page.route('**/api/settings/save', route => route.fulfill({ status: 200, json: { version: Date.now() } }));
+    await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
     try {
         await page.goto('/', { waitUntil: 'commit' });
         await expect(page.locator('#preloader .neconyan-startup-cat')).toBeVisible();
@@ -289,7 +290,7 @@ for (const width of [320, 390]) {
                 test.skip(browserName !== 'chromium', 'Held touch input is checked through Chromium.');
                 const filename = tone === 'Dark' ? 'Neconyan Calico Dark.json' : 'Neconyan Calico.json';
                 const { name, ...theme } = JSON.parse(readFileSync(new URL(`../default/content/themes/${filename}`, import.meta.url), 'utf8'));
-                await page.route('**/api/settings/save', route => route.fulfill({ json: { version: Date.now() } }));
+                await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
                 await page.route('**/api/settings/get', async route => {
                     const response = await route.fetch();
                     const data = await response.json();

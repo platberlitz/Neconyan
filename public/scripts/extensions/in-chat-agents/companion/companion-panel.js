@@ -1384,7 +1384,7 @@ export function initCompanionPanel() {
     $('#ica--tracker-panel').on('click', '.ica--tpanel-agent-body .ica--choice-line', function (event) {
         event.preventDefault();
         event.stopPropagation();
-        const inserted = insertChoiceIntoMessageInput(this.textContent);
+        const inserted = insertChoiceIntoMessageInput(this.dataset?.icaChoiceText ?? this.textContent);
         if (inserted && !panelLocked) {
             closeCompanionPanel();
         }

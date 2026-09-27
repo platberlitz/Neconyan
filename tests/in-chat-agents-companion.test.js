@@ -169,6 +169,7 @@ describe('companion card ui', () => {
         globalThis.document = {
             addEventListener: jest.fn(),
             querySelector: jest.fn(() => null),
+            querySelectorAll: jest.fn(() => []),
         };
         jqueryObject = {};
         Object.assign(jqueryObject, {
@@ -628,12 +629,13 @@ describe('companion card ui', () => {
         ]));
     });
 
-    test('re-renders every remaining message when one is deleted', async () => {
+    test('re-renders every remaining displayed message when one is deleted', async () => {
         const { initCompanionCardUi } = await importCompanionUi();
         chat.push(
             { name: 'Assistant', mes: 'first', is_user: false, is_system: false },
             { name: 'Assistant', mes: 'second', is_user: false, is_system: false },
         );
+        globalThis.document.querySelectorAll.mockReturnValue([0, 1].map(index => ({ getAttribute: () => String(index) })));
 
         initCompanionCardUi();
         globalThis.$.mockClear();

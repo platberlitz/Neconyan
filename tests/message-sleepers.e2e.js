@@ -1,7 +1,7 @@
 /* global document, window, getComputedStyle */
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
-import { openQuietChatForSmoke } from './chat-scroll-regression-helpers.js';
+import { acknowledgeSettingsSave, openQuietChatForSmoke } from './chat-scroll-regression-helpers.js';
 
 const styles = ['flatchat', 'bubblechat', 'documentstyle', 'echostyle', 'whisperstyle', 'hushstyle', 'ripplestyle', 'tidestyle'];
 const hopper = '/scripts/extensions/third-party/Neconyan-Hopper/src/ui.js';
@@ -40,7 +40,7 @@ async function checkPet(page, animal, touch) {
     // The twitch frame lasts 240ms, so record src changes instead of racing them.
     await animal.evaluate(img => {
         img.__petLog = [];
-        new MutationObserver(() => img.__petLog.push(img.getAttribute('src'))).observe(img, { attributes: true, attributeFilter: ['src'] });
+        new window.MutationObserver(() => img.__petLog.push(img.getAttribute('src'))).observe(img, { attributes: true, attributeFilter: ['src'] });
     });
     const twitched = () => animal.evaluate(img => img.__petLog.splice(0).some(src => /-twitch\.webp$/.test(src)));
     if (touch) await animal.tap({ position: { x: 48, y: 25 } });
@@ -65,7 +65,7 @@ for (const width of [393, 1280]) {
     test.describe(`sleeping animals at ${width}px`, () => {
         test.use({ viewport: { width, height: width === 393 ? 852 : 900 }, hasTouch: width === 393 });
         test('survive all styles, edits, history, Story and terminal', async ({ page }, info) => {
-            await page.route('**/api/settings/save', route => route.fulfill({ json: { version: Date.now() } }));
+            await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
             await openQuietChatForSmoke(page);
             await page.evaluate(async () => {
                 const context = window.SillyTavern.getContext();
@@ -141,7 +141,7 @@ for (const width of [393, 1280]) {
         });
 
         test('Conversation and nested Meower authors use their own animals', async ({ page }, info) => {
-            await page.route('**/api/settings/save', route => route.fulfill({ json: { version: Date.now() } }));
+            await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
             // Exercise the real private renderers without creating a saved social timeline.
             await page.route(`**${hopper}`, async route => {
                 const response = await route.fetch();

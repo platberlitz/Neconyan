@@ -1,4 +1,5 @@
 /* global document, window, getComputedStyle */
+import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 
@@ -55,7 +56,7 @@ for (const width of [1280, 390, 320]) {
                         data.settings = JSON.stringify(settings);
                         await route.fulfill({ response, json: data });
                     });
-                    await page.route('**/api/settings/save', route => route.fulfill({ json: { version: Date.now() } }));
+                    await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
                 }
                 await page.goto('/', { waitUntil: 'domcontentloaded' });
                 await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
@@ -65,7 +66,7 @@ for (const width of [1280, 390, 320]) {
                 await page.waitForFunction(() => document.querySelector('[data-assistant-picker]')?.dataset.assistantBusy !== 'true');
                 await page.locator('#send_textarea').fill('Keep my roleplay draft.');
                 if (width < 769) await page.locator('#sb-hamburger').click();
-                await page.locator(`#neconyan-workspace-rail [data-neconyan-chat-mode="conversation"]`).click();
+                await page.locator('#neconyan-workspace-rail [data-neconyan-chat-mode="conversation"]').click();
                 await expect(page.locator('#sb_conversation_stage')).toBeVisible();
                 const header = page.locator('#sb_conversation_header');
                 await header.getByRole('button', { name: 'New branch', exact: true }).click();

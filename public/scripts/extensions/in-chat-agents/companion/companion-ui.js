@@ -434,6 +434,32 @@ function wrapChoiceSegment(segment) {
     return buildChoiceButtonHtml(segment);
 }
 
+/** Give bundled choice rows real controls after the message sanitiser has run. */
+function decorateStyledChoiceRows(container) {
+    if (!container) return;
+    for (const row of container.querySelectorAll('div.pura-choice, div.custom-pura-choice')) {
+        if (row.closest('button, a') || row.querySelector('button, a, input, select, textarea, details')) continue;
+        const label = row.cloneNode(true);
+        const badge = label.firstElementChild;
+        let prefix = '';
+        if (badge && /^(?:\d+|[a-z])[.):]?$/i.test(badge.textContent.trim())) {
+            prefix = badge.textContent.trim().replace(/[.):]$/, '') + '. ';
+            badge.remove();
+        }
+        if (!label.textContent.trim()) continue;
+        const text = prefix + label.textContent;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `${row.className} ica--choice-line ica--choice-row`;
+        button.title = 'Put this choice in the message box';
+        button.setAttribute('aria-label', extractChoiceText(text));
+        button.dataset.icaChoiceText = text;
+        if (row.hasAttribute('style')) button.setAttribute('style', row.getAttribute('style'));
+        while (row.firstChild) button.appendChild(row.firstChild);
+        row.replaceWith(button);
+    }
+}
+
 /**
  * Wraps choice-looking lines in real buttons so they are tappable everywhere (iOS included).
  * Three passes cover the shapes companion output takes: proper markdown lists; enumerated
@@ -448,6 +474,7 @@ export function decorateChoiceLines(html) {
 
     const container = document.createElement('div');
     container.innerHTML = html;
+    decorateStyledChoiceRows(container);
 
     for (const item of container.querySelectorAll('ol > li')) {
         if (!item.querySelector('button, a, ul, ol') && item.textContent.trim()) {
@@ -514,7 +541,6 @@ export function insertChoiceIntoMessageInput(rawText) {
     const current = String(textarea.value ?? '');
     textarea.value = current.trim() ? `${current.replace(/\s+$/, '')}\n${choice}` : choice;
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    globalThis.$?.(textarea).trigger('input');
     textarea.focus({ preventScroll: true });
     toastr.success('Added to the message box.');
     return true;
@@ -566,6 +592,8 @@ export function renderCompanionResultsForMessage(messageIndex) {
     if (!messageElement.length) {
         return;
     }
+    const textElement = messageElement.find('.mes_text').first();
+    decorateStyledChoiceRows(textElement[0]);
 
     const entries = holdsReadableCompanionResults(message) ? getRenderableCompanionEntries(message) : [];
     let ledger = messageElement.find('.ica--companion-ledger');
@@ -577,7 +605,6 @@ export function renderCompanionResultsForMessage(messageIndex) {
 
     if (!ledger.length) {
         ledger = $('<div class="ica--companion-ledger" aria-label="Companion notes"></div>');
-        const textElement = messageElement.find('.mes_text').first();
         if (textElement.length) {
             textElement.after(ledger);
         } else {
@@ -591,8 +618,10 @@ export function renderCompanionResultsForMessage(messageIndex) {
 }
 
 function renderAllCompanionResults() {
-    for (let index = 0; index < chat.length; index++) {
-        renderCompanionResultsForMessage(index);
+    // Older messages receive their notes when the host loads that page.
+    for (const element of document.querySelectorAll('#chat > .mes[mesid]')) {
+        const index = Number(element.getAttribute('mesid'));
+        if (Number.isInteger(index) && index >= 0) renderCompanionResultsForMessage(index);
     }
 }
 
@@ -951,7 +980,7 @@ export function initCompanionCardUi() {
     $(document).on('click', '.ica--choice-line', function (event) {
         event.preventDefault();
         event.stopPropagation();
-        insertChoiceIntoMessageInput(this.textContent);
+        insertChoiceIntoMessageInput(this.dataset?.icaChoiceText ?? this.textContent);
     });
     document.addEventListener('toggle', event => {
         if (event.target?.classList?.contains('ica--companion-card')) {

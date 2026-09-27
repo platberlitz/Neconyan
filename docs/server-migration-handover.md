@@ -4,7 +4,9 @@
 
 The owner requested a main release, a self-contained Android APK and staging prepared
 for 1.0.1. The release base is the latest verified GitHub staging commit
-`76a90f18a7d2e620e0903c0297a1a0e12dc80158`. A local `main` branch now exists.
+`76a90f18a7d2e620e0903c0297a1a0e12dc80158`. Main was created and its initial release
+preparation pushed as `86b5475f5`. The owner subsequently requested the latest fixes
+be committed and pushed to staging first; further release work now follows that order.
 This task does not deploy the Oracle service; older deployment notes below are historical.
 
 - Fixed the shared sprite archive/restore copy for Node 26, retaining exclusive
@@ -27,9 +29,32 @@ This task does not deploy the Oracle service; older deployment notes below are h
   import and PNG export preserved the exact character data. Final review corrections
   cover server preferences, custom global extensions and private startup verification.
   No APK has been published. Physical ARM devices and iOS/WebKit remain unverified.
+- The pre-release Agent review restores bundled CYOA and skill-check rows as real
+  accessible buttons after sanitisation, both in replies and companion notes. Click,
+  touch and keyboard insert once into the draft without sending. All four full-app
+  choice cases and six companion DOM cases passed, with desktop and phone screenshots
+  inspected and 44-pixel choice targets checked.
+- Paw sounds now sit in the outer composer, above the nested control layers. All five
+  browser cases passed paint order, position, busy sending and Stop-button checks,
+  including simulated Safari keyboard coordinates. This is not direct iOS verification.
+- Agent refreshes now visit displayed messages rather than searching the whole chat.
+  In the same synthetic 10,000-message browser test with 24 displayed, seven-sample
+  median refresh time fell from 1,154 ms to 9.6 ms; lookups fell from 10,000 to 24.
+  Loading older messages still decorates their choices. The broader startup review
+  removed an unnecessary extension prefetch pass, including the unused Kokoro engine;
+  that pass accounted for 100 requests and 1.63 MiB of encoded response bodies.
+- After these changes, all 352 unit suites pass (4,635 tests, two skipped), root lint,
+  changed-test lint, budgets and production build pass. The unchanged server suite's
+  earlier passing result remains applicable. Old browser fixtures now acknowledge
+  settings revisions and use current character controls; all three touch-editor cases
+  pass. The startup smoke checks actual static assets, excludes retained-job API polling
+  from its stability wait, and no longer truncates timings at 1,000 entries. Its corrected
+  case passes separately. All 19 Agent workspace and full companion-interface cases
+  pass, including saved setups, failed saves, retry, and widths from 320 to 1280 pixels.
 
-Next: finish the Android correction checks and signed APKs, publish the verified main
-release, then advance staging to 1.0.1. Keep signing material and generated artefacts
+Next: push the reviewed fixes to staging first, finish Android update preservation
+and signed APK verification, publish the verified main release, then advance staging
+to 1.0.1. Keep signing material and generated artefacts
 out of Git. Reuse the passing common-code checks while those files stay unchanged.
 
 ## Status and authority

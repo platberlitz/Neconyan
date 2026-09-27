@@ -138,6 +138,18 @@ describe('paw send button', () => {
         }
     });
 
+    test('the sound escapes the inner controls layer through the outer composer', () => {
+        const outer = { ...sendRow, append: jest.fn() };
+        const anchor = {
+            ...sendButton,
+            closest: selector => selector === '#form_sheld, #sb_conversation_stage' ? outer : null,
+        };
+        const pop = sendNya.popNya(anchor);
+        expect(outer.append).toHaveBeenCalledWith(pop);
+        expect(pop.style).toMatchObject(ABOVE_PAW);
+        expect(appended).toHaveLength(0);
+    });
+
     test('the pop asks for its natural size despite the phone sheet', () => {
         // The phone sheets pin every right-rail child to the action square with
         // !important; the pop must outrank that or its text slides sideways.

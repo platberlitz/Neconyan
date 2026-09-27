@@ -1,13 +1,14 @@
 // @ts-check
 /* global document, window, getComputedStyle */
 /* eslint-disable playwright/no-conditional-in-test, playwright/no-conditional-expect -- Fixed viewport cases exercise different responsive layouts. */
+import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
 import { test, expect } from '@playwright/test';
 
 test.use({ hasTouch: true, serviceWorkers: 'block', reducedMotion: 'reduce' });
 test.setTimeout(90_000);
 
 test.beforeEach(async ({ page }) => {
-    await page.route('**/api/settings/save', route => route.fulfill({ json: { version: Date.now() } }));
+    await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
     await page.setViewportSize({ width: 393, height: 852 });
     await page.goto('/');
     await expect(page.locator('body')).toHaveClass(/neconyan-rail-ready/, { timeout: 60_000 });
