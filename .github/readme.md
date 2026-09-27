@@ -5,9 +5,9 @@
 </p>
 
 > [!NOTE]
-> All of the code here is LLM-generated or LLM-assisted, but every prompt and agent that ships with Neconyan is human-made.
+> All the code here is LLM-generated or LLM-assisted, but every prompt and agent that ships with Neconyan is human-made.
 
-Neconyan is my cat-themed fork of [SillyTavern](https://github.com/SillyTavern/SillyTavern) and [SillyBunny](https://github.com/SillyBunnyTeam/SillyBunny) for chatting and roleplaying with AI characters, on desktop or on your phone. You bring the model, either a local backend or an API key, since no model access or credits come with it.
+Neconyan is my cat-themed fork of [SillyTavern](https://github.com/SillyTavern/SillyTavern) and [SillyBunny](https://github.com/SillyBunnyTeam/SillyBunny) for chatting and roleplaying with AI characters, on desktop or your phone. You bring the model, either a local backend or an API key, since no model access or credits come with it.
 
 If you want SillyTavern with everything working exactly like upstream, use [SillyBunny](https://github.com/SillyBunnyTeam/SillyBunny) instead. I only pull in the upstream bits I want, so some things look and behave differently here, and some extensions might not work.
 
@@ -18,9 +18,9 @@ If you want SillyTavern with everything working exactly like upstream, use [Sill
 - **It keeps going when you leave.** Almost everything runs on the server now, so you can send a message on your phone, switch apps or lock the screen, and the reply will be sitting there when you come back. A few things still need the page open, like in-browser WebLLM models and Kokoro voices.
 - **It's actually made for phones.** Proper labelled tabs, a bottom chat bar and a sliding menu, not the desktop layout squished down.
 - **Four ways to chat.** Classic Roleplay, messenger-style Conversation, a social timeline called Meower, and Story Mode for long-form writing.
-- **Memory that remembers.** [Mewmory](../docs/mewmory.md) keeps track of your story, the NPCs you've met and what they said, so you're not re-explaining everything 200 messages later.
+- **Story memory.** [Mewmory](../docs/mewmory.md) keeps track of your story, the NPCs you've met and what they said, so you're not re-explaining everything 200 messages later.
 - **The good stuff comes built in.** Agents, Chat Archive, Quick Image Gen, Guided Generations, BotSearcher and a few more, each with their own settings. [Here's the full list and who made them.](../docs/neconyan-native-tools.md)
-- **Little helpers.** Miso, Taro and Nori are assistants that can help you set things up, and the short First paws tour walks you through the basics.
+- **Little helpers.** Miso, Taro and Nori can use tool calls to create characters with portraits, edit lorebooks and adjust presets or agents. The short First paws tour walks you through the basics.
 - **It's cute.** Calico themes, cats napping on your messages and a pixel cat on Home. That was the whole point, really.
 - **Your files are still your files.** It reads the same character cards, chats, lorebooks and presets as SillyTavern, and there's no telemetry.
 
@@ -107,7 +107,7 @@ The launcher checks what you've got installed and sets everything up for you.
 <details>
 <summary><b>Picking Node.js or Bun yourself</b></summary>
 
-Every system also has a Node.js launcher and a Bun launcher, if you'd rather choose:
+Every system also has separate Node.js and Bun launchers, if you'd rather choose:
 
 | System | Node.js | Bun |
 | --- | --- | --- |
@@ -150,7 +150,7 @@ Bun 1.3.14 or newer works too: install the dependencies, then run `bun run start
 
 ### Coming from SillyTavern or SillyBunny?
 
-Most of your characters, chats, lorebooks, personas and presets should come across fine, but I can't promise everything will, and extensions that rely on SillyTavern's page layout might need fixing. So:
+Most of your characters, chats, lorebooks, personas and presets should come across fine, but I can't promise everything will, and extensions that rely on SillyTavern's page layout might need fixing.
 
 - **Back up your old install first**, and keep that backup until you've checked everything works.
 - **Give Neconyan its own data folder.** Never point two apps at the same one.
@@ -160,7 +160,7 @@ Neconyan makes its own `config.yaml` and `data/` folder the first time it runs. 
 <details>
 <summary><b>For developers</b></summary>
 
-`main` is the release snapshot and `staging` is where work happens. I keep them as two separate checkouts, `Neconyan` on `main` and `Neconyan-draft` on `staging`, and test in the draft before anything gets promoted.
+`main` holds release snapshots and `staging` is where work happens. Use a separate checkout and data folder for testing, so your everyday chats stay out of it.
 
 ```sh
 npm run lint
@@ -170,7 +170,7 @@ npm --prefix tests install
 npm --prefix tests run test:unit
 ```
 
-Browser tests live in `tests/` and run against a throwaway server: set `NECONYAN_TEST_BASE_URL` to its address (the default is `http://127.0.0.1:4433`). Build the frontend before testing, and restart the server after rebuilding. Screenshots, test reports, build output and local runtime folders stay out of commits.
+Browser tests live in `tests/` and run against a throwaway server: set `NECONYAN_TEST_BASE_URL` to its address (the default is `http://127.0.0.1:4433`). Build the frontend before testing, and restart the server after rebuilding. Temporary screenshots, test reports, build output and local runtime folders stay out of commits.
 
 </details>
 

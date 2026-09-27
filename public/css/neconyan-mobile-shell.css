@@ -1,6 +1,22 @@
 /* Neconyan mobile shell foundation: final sheet contract for modal drawers.
  * Keep this at the end of the shell sheet so it beats older mobile drawer rules. */
 @media screen and (max-width: 768px) {
+    /* Story paragraphs open their editor on tap. Keep the idle action row out of the
+       prose on touch screens, while revealing it when a keyboard user focuses it. */
+    body.neconyan.sbstory #chat .mes:not(.smallSysMes) .ch_name:not(:focus-within) .mes_buttons {
+        position: absolute;
+        inline-size: 1px;
+        block-size: 1px;
+        min-block-size: 0;
+        overflow: hidden;
+        clip-path: inset(50%);
+    }
+
+    body.neconyan.sbstory #chat .mes:not(.smallSysMes) .ch_name:focus-within {
+        float: none;
+        min-width: 100%;
+    }
+
     body.neconyan.sbterm {
         --sb-topbar-primary-height: max(44px, calc(var(--sb-topbar-primary-height-base) * var(--sb-topbar-scale-active)));
     }

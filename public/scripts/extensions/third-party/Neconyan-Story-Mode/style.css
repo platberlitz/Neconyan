@@ -381,12 +381,29 @@ body.sbstory #chat .mes[data-sbstory-join] .mes_text > p:first-child {
     margin-top: 0 !important;
 }
 
-body.sbstory #chat .mes:has(+ .mes[data-sbstory-join]) {
+/* Matches the manuscript rule's :not() chain, which would otherwise keep its bottom padding. */
+body.sbstory #chat .mes:not(.smallSysMes):not(.displayNone):not([hidden]):has(+ .mes[data-sbstory-join]) {
     padding-bottom: 0 !important;
 }
 
 body.sbstory #chat .mes:has(+ .mes[data-sbstory-join]) .mes_text > p:last-child {
     margin-bottom: 0 !important;
+}
+
+/* Sleepers perch on the first and newest blocks only, so the story in between runs without their 44px gaps. */
+body.sbstory #chat .mes:not(:nth-child(1 of .mes), .last_mes) > .neconyan-message-sleeper {
+    display: none;
+}
+
+body.sbstory #chat .mes.mes.mes[mesid]:not(:nth-child(1 of .mes), .last_mes) {
+    margin-top: 0 !important;
+}
+
+/* Deep Swipe re-shows its arrows and counters on every user block with inline !important display,
+   so clipping (which also drops their hit area) is what keeps them to the last block here. */
+body.sbstory #chat .mes.mes:not(.smallSysMes):not(.last_mes) :is(.swipe_left, .swipeRightBlock, .deep-swipe-left, .deep-swipe-right) {
+    display: none !important;
+    clip-path: inset(50%);
 }
 
 /* ---------------------------------------------------------------- editing inside the manuscript */
