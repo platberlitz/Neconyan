@@ -5,7 +5,7 @@ import { getChatImageTokenCost } from '../../public/scripts/chat-prompt-tokens.j
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { registerHandler } from '../jobs/runner.js';
 import { getJob, setJobResume } from '../jobs/store.js';
-import { assertRoleplaySourceLocked } from './roleplay-source.js';
+import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay-source.js';
 import { runChatProfile } from './service.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { applyRoleplayJobEffect, assertRoleplayCandidateOwner, completeRoleplayCandidateJob, readRoleplayJobResult } from '../roleplay-jobs.js';
@@ -325,9 +325,10 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     let scanContributions = contributions.extensions.filter(prompt => prompt.scan).map(prompt => prompt.content);
     const boundMaterial = request.serverPrompt ? promptBackend(directories, request.binding) : null;
     if (boundMaterial) boundMaterial.power = { ...request.worldInfo?.promptSettings, ...boundMaterial.power };
+    let characterScope = {};
     const boundMacroSnapshot = snapshot => ({ ...snapshot,
         system: { ...snapshot.system, model: request.modelOverride || boundMaterial?.profile?.model || '' },
-        extra: { ...snapshot.extra, ...(boundMaterial && { powerUser: { ...boundMaterial.power,
+        extra: { ...snapshot.extra, ...characterScope, ...(boundMaterial && { powerUser: { ...boundMaterial.power,
             instruct: boundMaterial.instruct ?? boundMaterial.power?.instruct, context: boundMaterial.context ?? boundMaterial.power?.context },
         mainApi: !boundMaterial.backend || boundMaterial.backend === 'chat' ? 'openai'
             : boundMaterial.backend === 'text' ? 'textgenerationwebui' : boundMaterial.backend }) } });
@@ -349,6 +350,17 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             throw roleplayError('ROLEPLAY_INVALID', 'World Info must belong to the admitted Roleplay source.', 409);
         }
         assertRoleplayWorldInfoCurrent(base, request.worldInfo);
+        if (request.serverPrompt) characterScope = withRoleplayAccount(base, account, lease => {
+            assertRoleplaySourceLocked(lease, source, { effect });
+            const character = readRoleplayEntityLocked(lease, 'character', request.worldInfo.avatar);
+            if (roleplayHash({ instanceId: character.instanceId, revision: character.revision, rawHash: character.rawHash })
+                !== roleplayHash(request.worldInfo.character)) {
+                throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The captured Roleplay character changed.', 409);
+            }
+            // Output transformations need the same protected speaker as the prompt,
+            // including when replaying an already accepted request.
+            return { characterAvatar: request.worldInfo.avatar, character: character.data?.data ?? character.data };
+        });
         if (request.serverPrompt) acceptedMacros = boundMacroSnapshot(savedRoleplayMacroSnapshot(request.worldInfo, initialRecords));
         if (!Array.isArray(request.worldInfo.hookPolicy?.pathfinder)
             || request.worldInfo.hookPolicy.pathfinder.length && (!request.serverPrompt || !request.worldInfo.pathfinder)) {

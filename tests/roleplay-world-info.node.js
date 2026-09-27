@@ -840,6 +840,47 @@ test('a bound account image reaches the native Custom request with image budget 
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Saw the image');
 });
 
+for (const [group, allowed] of [[false, 'Elsewhere.png'], [false, 'Nova.png'], [true, 'Nova.png']]) {
+    test(`native ${group ? 'group' : 'solo'} output uses captured character scope with ${allowed} transformations allowed`, async t => {
+        const f = fixture(t, group);
+        f.records[1].extra = {};
+        fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+        fs.writeFileSync(path.join(f.scope.directories.characters, 'Nova.png'), writeCard(png, JSON.stringify({
+            name: 'Nova', description: 'Original', data: { extensions: { regex_scripts: [
+                { findRegex: '/raw/g', replaceString: 'scoped', placement: [2], markdownOnly: false },
+            ] } },
+        })));
+        fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ _settingsRevision: 1,
+            main_api: 'openai', active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
+            oai_settings: { ...blankChatControls, chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000',
+                custom_model: 'fixture', openai_max_context: 4096 },
+            power_user: { custom_stopping_strings: '[]' },
+            extension_settings: { character_allowed_regex: [allowed] },
+        }));
+        const binding = captureGenerationBinding(f.scope.directories, { kind: 'active' }, { settingsRevision: 1 });
+        const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+        const source = f.source();
+        const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 4000, serverPrompt: true });
+        const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'native-character-regex', effect: 'append', source,
+            request: { binding, serverPrompt: true, messages: [], maxTokens: 24, characterName: 'Nova', worldInfo } });
+        releaseJob(f.scope.directories, jobId);
+        let calls = 0;
+        await runReply({ job: getJob(f.scope.directories, jobId), directories: f.scope.directories,
+            owner: f.scope.owner, signal: new AbortController().signal }, {
+            generate: options => {
+                assert.equal(options.macroEnvironment.extra.characterAvatar, 'Nova.png');
+                assert.equal(options.macroEnvironment.extra.character.extensions.regex_scripts.length, 1);
+                return runChatProfile({ ...options, fetch: async () => {
+                    calls++;
+                    return new Response(JSON.stringify({ choices: [{ message: { content: 'raw output' } }] }));
+                } });
+            },
+        });
+        assert.equal(calls, 1);
+        assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, allowed === 'Nova.png' ? 'scoped output' : 'raw output');
+    });
+}
+
 test('gallery selection skips unselected images and reserves image tokens before provider work', async t => {
     const f = fixture(t);
     f.records[1].extra = {};

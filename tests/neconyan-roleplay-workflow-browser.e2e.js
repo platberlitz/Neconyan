@@ -79,6 +79,7 @@ for (const phone of [false, true]) {
             companion: { trigger: 'auto', includeWorldInfo: false } }));
         app.provider.mode.reply = () => ({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: ANSWER } }] });
         const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
+            saved.extension_settings.character_allowed_regex = ['Another character.png'];
             saved.extension_settings.inChatAgents = { globalSettings: { enabled: true, connectionProfile: 'durable',
                 separateRecentChats: false, hiddenCompanionAgentIds: agents.slice(9).map(agent => agent.id),
                 companionExecutionMode: 'parallel', companionConcurrentWithPostGen: true } };
