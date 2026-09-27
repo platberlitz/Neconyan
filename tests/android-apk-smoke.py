@@ -112,7 +112,10 @@ if args.update_webview:
         time.sleep(1)
     else:
         raise AssertionError('The unsupported WebView did not show its update screen')
-    assert 'Open WebView settings' in screen and 'Close Neconyan' in screen
+    Path('android-window.xml').write_text(screen)
+    labels = {node.get('text', '').casefold() for node in ET.fromstring(screen).iter('node')}
+    # Android's native button theme can capitalise the displayed labels.
+    assert {'open webview settings', 'close neconyan'}.issubset(labels), labels
     assert adb('shell', 'test ! -f /data/user/0/' + package + '/no_backup/launcher.json && echo untouched') == 'untouched'
     # Exercise Back on the native screen before creating any WebView or server.
     adb('shell', 'input', 'keyevent', '4')
