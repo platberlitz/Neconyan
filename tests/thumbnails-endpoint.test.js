@@ -15,6 +15,7 @@ process.chdir(repoRoot);
 setConfigFilePath(path.join(repoRoot, 'default', 'config.yaml'));
 
 const {
+    findPortraitFile,
     generateThumbnail,
     getThumbnailMobileRuntimeSettings,
     getThumbnailRuntimeSettings,
@@ -373,5 +374,57 @@ describe('thumbnail file name resolution', () => {
 
         expect(result.path).toBeNull();
         expect(fs.readdirSync(directories.thumbnailsAvatar, { withFileTypes: true }).filter(entry => entry.isFile())).toEqual([]);
+    });
+});
+
+describe('portrait lookup by written name', () => {
+    const files = ['Miso (Female).png', 'ACTOR  Atlas Hughes.png', 'Alhaitham.png', 'Alhaitham1.png', 'Alex.png', 'Alex1.png', 'Alexander Smith.png', 'Akane  CEO.png', 'notes.txt', 'Seraphina'];
+
+    test('prefers an exact file name', () => {
+        expect(findPortraitFile(files, 'Alhaitham')).toBe('Alhaitham.png');
+        expect(findPortraitFile(files, 'miso (female)')).toBe('Miso (Female).png');
+    });
+
+    test('maps a short name to the current character', () => {
+        expect(findPortraitFile(files, 'Miso', 'Miso (Female)')).toBe('Miso (Female).png');
+    });
+
+    test('matches loosely without the current character', () => {
+        expect(findPortraitFile(files, 'Miso')).toBe('Miso (Female).png');
+        expect(findPortraitFile(files, 'Atlas Hughes')).toBe('ACTOR  Atlas Hughes.png');
+        expect(findPortraitFile(files, 'Atlas')).toBe('ACTOR  Atlas Hughes.png');
+    });
+
+    test('refuses ambiguous or missing names', () => {
+        expect(findPortraitFile(files, 'Smith Jones')).toBeNull();
+        expect(findPortraitFile(files, 'Seraphina')).toBeNull();
+        expect(findPortraitFile(files, 'notes')).toBeNull();
+        expect(findPortraitFile(files, '  ')).toBeNull();
+        expect(findPortraitFile(['Sam Lee.png', 'Sam Park.png'], 'Sam')).toBeNull();
+    });
+
+    test('redirects the endpoint to the avatar thumbnail', async () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'portrait-'));
+        fs.writeFileSync(path.join(root, 'Miso (Female).png'), PNG_FIXTURE);
+        const app = express();
+        app.use((request, _response, next) => {
+            request.user = { profile: { handle: 'portrait-test' }, directories: { characters: root } };
+            next();
+        });
+        app.use('/thumbnail', publicRouter);
+        const server = await new Promise(resolve => {
+            const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
+        });
+        try {
+            const base = `http://127.0.0.1:${server.address().port}/thumbnail/portrait`;
+            const found = await nativeFetch(`${base}?name=Miso&char=${encodeURIComponent('Miso (Female)')}`, { redirect: 'manual' });
+            expect(found.status).toBe(302);
+            expect(found.headers.get('location')).toBe('/thumbnail?type=avatar&file=Miso+%28Female%29.png');
+            expect((await nativeFetch(`${base}?name=Nobody`, { redirect: 'manual' })).status).toBe(404);
+            expect((await nativeFetch(base, { redirect: 'manual' })).status).toBe(400);
+        } finally {
+            await new Promise(resolve => server.close(resolve));
+            fs.rmSync(root, { recursive: true, force: true });
+        }
     });
 });

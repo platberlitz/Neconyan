@@ -426,6 +426,80 @@ publicRouter.get('/', async function (request, response) {
     }
 });
 
+/**
+ * Normalises a display name for loose avatar matching: drops bracketed notes such as
+ * "(Female)", separators and trailing copy numbers ("Akito1").
+ * @param {string} value
+ * @returns {string}
+ */
+function normalisePortraitName(value) {
+    return String(value || '')
+        .normalize('NFKC')
+        .toLowerCase()
+        .replace(/\([^)]*\)|\[[^\]]*\]|\{[^}]*\}/g, ' ')
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .replace(/\s\d+$|(?<=\p{L})\d+$/u, '')
+        .trim()
+        .replace(/\s+/g, ' ');
+}
+
+/**
+ * Finds the character avatar that best matches a name written in a message.
+ * Order: exact file name, the current character when the written name is part of its
+ * name, a loose name match, then a unique whole-word match.
+ * @param {string[]} files Avatar file names in the characters folder
+ * @param {string} name Name written in the message
+ * @param {string} [currentChar] Name of the character in the open chat
+ * @returns {string|null}
+ */
+export function findPortraitFile(files, name, currentChar = '') {
+    const images = files.filter(file => ALLOWED_IMAGE_EXTENSIONS.has(path.extname(file).toLowerCase()));
+    const stem = file => file.slice(0, -path.extname(file).length);
+    const rawName = String(name || '').trim().toLowerCase();
+    const looseName = normalisePortraitName(name);
+    if (!rawName || !looseName) return null;
+
+    const exact = images.find(file => stem(file).toLowerCase() === rawName);
+    if (exact) return exact;
+
+    const hasWords = (haystack, needle) => ` ${haystack} `.includes(` ${needle} `);
+    const rawChar = String(currentChar || '').trim().toLowerCase();
+    const looseChar = normalisePortraitName(currentChar);
+    if (rawChar && looseChar && hasWords(looseChar, looseName)) {
+        const charFile = images.find(file => stem(file).toLowerCase() === rawChar);
+        if (charFile) return charFile;
+    }
+
+    const loose = images.filter(file => normalisePortraitName(stem(file)) === looseName);
+    if (loose.length) {
+        return loose.sort((a, b) => a.length - b.length || a.localeCompare(b))[0];
+    }
+
+    const words = images.filter(file => hasWords(normalisePortraitName(stem(file)), looseName));
+    return words.length === 1 ? words[0] : null;
+}
+
+/**
+ * Redirects to the thumbnail of the character whose name best matches `name`.
+ * Lets tracker cards and other regex output show a portrait from a name alone.
+ */
+publicRouter.get('/portrait', async function (request, response) {
+    try {
+        const { name, char, preset } = request.query;
+        if (typeof name !== 'string' || !name.trim() || name.length > 200) return response.sendStatus(400);
+        const files = await fs.promises.readdir(request.user.directories.characters);
+        const file = findPortraitFile(files, name, typeof char === 'string' ? char : '');
+        if (!file) return response.sendStatus(404);
+        const query = new URLSearchParams({ type: 'avatar', file });
+        if (preset === 'mobile') query.set('preset', 'mobile');
+        response.setHeader('Cache-Control', 'private, max-age=60');
+        return response.redirect(302, `${request.baseUrl}?${query}`);
+    } catch (error) {
+        console.error('Failed resolving portrait', error);
+        return response.sendStatus(500);
+    }
+});
+
 export const router = express.Router();
 router.use(publicRouter);
 router.use(apiRouter);
