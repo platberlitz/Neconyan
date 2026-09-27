@@ -56,6 +56,11 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
                     const start = window.performance.now();
                     const frame = () => {
                         const rect = pop.getBoundingClientRect();
+                        // The pop's box can be squeezed by the composer sheets, so
+                        // measure the sound's own text as well as its box.
+                        const range = document.createRange();
+                        range.selectNodeContents(pop);
+                        const text = range.getBoundingClientRect();
                         window.pawFrames.push({
                             elapsed: window.performance.now() - start,
                             opacity: Number(window.getComputedStyle(pop).opacity),
@@ -65,6 +70,8 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
                             moved: pop.isConnected && pop.parentElement !== document.querySelector(sendSelector).parentElement,
                             left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,
                             width: rect.width, height: rect.height,
+                            textLeft: text.left, textRight: text.right, textTop: text.top, textBottom: text.bottom,
+                            textWidth: text.width, textHeight: text.height,
                             viewportTop: window.visualViewport.offsetTop,
                             viewportBottom: window.visualViewport.offsetTop + window.visualViewport.height,
                         });
@@ -136,6 +143,15 @@ for (const { phone, conversation, safariKeyboard = false } of cases) {
         expect(frames.filter(frame => frame.moved)).toEqual([]);
         // Nothing on the ancestor chain may clip the pop away.
         expect(visible.some(frame => !frame.clipped)).toBe(true);
+        // The sound's own text must hug its box, sit centred on the paw and
+        // stay clear above it; a squeezed box would slide it under the buttons.
+        const textFrames = visible.filter(frame => frame.textWidth > 0 && frame.textHeight > 0);
+        expect(textFrames.length).toBeGreaterThan(0);
+        const text = textFrames[0];
+        expect(text.textWidth).toBeLessThanOrEqual(text.width + 2);
+        expect(Math.abs(text.textBottom - buttonBox.y)).toBeLessThan(14);
+        expect(Math.abs((text.textLeft + text.textRight) / 2 - (buttonBox.x + buttonBox.width / 2))).toBeLessThan(14);
+        expect(textFrames.some(frame => frame.textLeft >= 0 && frame.textRight <= viewport.width)).toBe(true);
         // Roleplay swaps the paw for Stop as soon as sending starts; the pop
         // must outlive the paw rather than vanish with it.
         if (!conversation) expect(visible.some(frame => frame.sendHidden)).toBe(true);

@@ -25,9 +25,24 @@ export function popNya(anchor, { reduced = reducedMotion.matches, random = Math.
         font: '400 20px/1 var(--sb-font-display, var(--mainFontFamily, sans-serif))',
         color: 'var(--neco-ginger, var(--sb-accent, var(--SmartThemeQuoteColor)))',
         textShadow: '0 0 2px var(--neco-surface, var(--SmartThemeBlurTintColor)), 0 1px 3px var(--neco-surface, var(--SmartThemeBlurTintColor))',
-        transform: 'translateX(50%)',
-        opacity: '0',
+        transform: reduced ? 'translateX(50%)' : 'translateX(50%) translateY(0) scale(0.6)',
+        // Visible from the start. The float below is decoration; whether the
+        // browser manages to paint it must never decide whether the sound shows.
+        opacity: '1',
     });
+    // The composer sheets pin every right-rail child to the action square
+    // (width/height !important), which would stretch the pop's box and shove a
+    // long sound sideways under the buttons. Inline important outranks those.
+    for (const [property, value] of [
+        ['width', 'max-content'],
+        ['min-width', '0'],
+        ['max-width', 'none'],
+        ['height', 'auto'],
+        ['min-height', '0'],
+        ['max-height', 'none'],
+    ]) {
+        pop.style.setProperty(property, value, 'important');
+    }
     // Roleplay hides the paw behind Stop while sending, which would hide a pop
     // inside it too. Host it in the paw's row instead, placed by comparing the
     // paw and the row: both rects share one coordinate system, so whatever the
@@ -45,34 +60,36 @@ export function popNya(anchor, { reduced = reducedMotion.matches, random = Math.
 
     const drift = Math.round((random() - 0.5) * 36);
     const tilt = Math.round((random() - 0.5) * 24);
-    const frames = reduced
-        ? [{ opacity: 1 }, { opacity: 1, offset: 0.5 }, { opacity: 0 }]
-        : [
-            { opacity: 0, transform: 'translateX(50%) translateY(0) scale(0.6) rotate(0deg)' },
-            { opacity: 1, transform: `translateX(50%) translateY(-6px) scale(1.15) rotate(${tilt / 2}deg)`, offset: 0.18 },
-            { opacity: 1, transform: `translateX(calc(50% + ${drift / 2}px)) translateY(-20px) scale(1) rotate(${tilt}deg)`, offset: 0.6 },
-            { opacity: 0, transform: `translateX(calc(50% + ${drift}px)) translateY(-34px) scale(0.95) rotate(${tilt}deg)` },
-        ];
+    const frames = [
+        { transform: 'translateX(50%) translateY(0) scale(0.6) rotate(0deg)' },
+        { transform: `translateX(50%) translateY(-6px) scale(1.15) rotate(${tilt / 2}deg)`, offset: 0.18 },
+        { transform: `translateX(calc(50% + ${drift / 2}px)) translateY(-20px) scale(1) rotate(${tilt}deg)`, offset: 0.6 },
+        { transform: `translateX(calc(50% + ${drift}px)) translateY(-34px) scale(0.95) rotate(${tilt}deg)` },
+    ];
     let done = false;
+    let fadeTimer;
     let cleanupTimer;
     const finish = () => {
         if (done) return;
         done = true;
+        clearTimeout(fadeTimer);
         clearTimeout(cleanupTimer);
         activePops -= 1;
         pop.remove();
     };
-    // Sending can occupy the main thread. Start both clocks at the next paint so
-    // the fallback cannot remove the pop before its animation becomes visible.
+    // Sending can occupy the main thread long enough that the float animation is
+    // already over by the first paint. The fade and the removal run on timers
+    // instead of the animation clock, so a missed frame still shows the sound.
     window.requestAnimationFrame(() => {
-        if (typeof pop.animate === 'function') {
-            const animation = pop.animate(frames, { duration: reduced ? 700 : 900, easing: 'ease-out', fill: 'forwards' });
-            animation.addEventListener('finish', finish);
-            animation.addEventListener('cancel', finish);
-        } else {
-            pop.style.opacity = '1';
+        if (!reduced && typeof pop.animate === 'function') {
+            pop.animate(frames, { duration: 900, easing: 'ease-out', fill: 'forwards' })
+                .addEventListener('cancel', finish);
         }
-        cleanupTimer = setTimeout(finish, 1200);
+        fadeTimer = setTimeout(() => {
+            pop.style.transition = 'opacity 240ms linear';
+            pop.style.opacity = '0';
+        }, reduced ? 520 : 760);
+        cleanupTimer = setTimeout(finish, reduced ? 860 : 1120);
     });
     return pop;
 }

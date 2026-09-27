@@ -7,7 +7,14 @@ function createElement(tag) {
     const listeners = new Map();
     const element = {
         tagName: tag.toUpperCase(),
-        style: {},
+        style: {
+            priorities: {},
+            setProperty(name, value, priority) {
+                const key = name.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+                this[key] = value;
+                if (priority) this.priorities[key] = priority;
+            },
+        },
         attributes: {},
         className: '',
         textContent: '',
@@ -19,11 +26,11 @@ function createElement(tag) {
             element.options = options;
             return {
                 addEventListener: (type, handler) => listeners.set(type, handler),
-                finish: () => listeners.get('finish')?.(),
+                cancel: () => listeners.get('cancel')?.(),
             };
         }),
     };
-    element.animation = () => ({ finish: () => listeners.get('finish')?.() });
+    element.animation = () => ({ cancel: () => listeners.get('cancel')?.() });
     return element;
 }
 
@@ -109,7 +116,12 @@ describe('paw send button', () => {
         expect(['nya!', 'mrrp?', 'mrrah', 'mew', 'purr']).toContain(pop.textContent);
         expect(pop.className).toBe('neconyan-send-nya');
         expect(pop.attributes['aria-hidden']).toBe('true');
-        expect(pop.style).toMatchObject({ ...ABOVE_PAW, pointerEvents: 'none', transform: 'translateX(50%)' });
+        expect(pop.style).toMatchObject({
+            ...ABOVE_PAW,
+            pointerEvents: 'none',
+            opacity: '1',
+            transform: 'translateX(50%) translateY(0) scale(0.6)',
+        });
         expect(sendRow.style).toMatchObject({ position: 'relative' });
         paint();
         expect(pop.options.duration).toBe(900);
@@ -124,6 +136,20 @@ describe('paw send button', () => {
         } finally {
             sendRow.computed.position = 'static';
         }
+    });
+
+    test('the pop asks for its natural size despite the phone sheet', () => {
+        // The phone sheets pin every right-rail child to the action square with
+        // !important; the pop must outrank that or its text slides sideways.
+        const pop = sendNya.popNya(sendButton);
+        expect(pop.style).toMatchObject({
+            width: 'max-content',
+            maxWidth: 'none',
+            height: 'auto',
+            maxHeight: 'none',
+        });
+        expect(pop.style.priorities.width).toBe('important');
+        expect(pop.style.priorities.maxHeight).toBe('important');
     });
 
     for (const [index, sound] of ['nya!', 'mrrp?', 'mrrah', 'mew', 'purr'].entries()) {
@@ -144,10 +170,10 @@ describe('paw send button', () => {
         expect(pop.removed).toBe(true);
     });
 
-    test('finishing the animation removes the pop and releases its slot only once', () => {
+    test('cancelling the float removes the pop and releases its slot only once', () => {
         const pop = sendNya.popNya(sendButton);
         paint();
-        pop.animation().finish();
+        pop.animation().cancel();
         expect(pop.removed).toBe(true);
         jest.advanceTimersByTime(1200);
         appended.length = 0;
@@ -226,11 +252,14 @@ describe('paw send button', () => {
         expect(appended).toHaveLength(0);
     });
 
-    test('reduced motion fades in place without movement', () => {
+    test('reduced motion shows the sound in place and removes it without movement', () => {
         const pop = sendNya.popNya(sendButton, { reduced: true });
         paint();
-        expect(pop.options.duration).toBe(700);
-        expect(pop.frames.every(frame => !('transform' in frame))).toBe(true);
+        expect(pop.animate).not.toHaveBeenCalled();
+        expect(pop.style.transform).toBe('translateX(50%)');
+        expect(pop.removed).toBe(false);
+        jest.advanceTimersByTime(900);
+        expect(pop.removed).toBe(true);
     });
 
     test('rapid presses are capped so the screen never fills with pops', () => {
