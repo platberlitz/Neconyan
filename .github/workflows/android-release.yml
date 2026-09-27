@@ -107,12 +107,12 @@ jobs:
           target: default
           ram-size: 4096M
           heap-size: 512M
-          disk-size: 8192M
+          disk-size: 4096M
           disable-animations: true
           script: python3 tests/android-apk-smoke.py --serial emulator-5554 --release --apk release/*-android-x86_64.apk
       - name: Capture emulator log on failure
         if: failure()
-        run: adb logcat -d > android-logcat.txt
+        run: timeout 20s adb -s emulator-5554 logcat -d > android-logcat.txt 2>&1 || true
       - name: Upload emulator diagnostics
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -61,10 +61,11 @@ async function mockNativeSettings(page, { tone = 'dark', resetTerminal = false, 
         let bytes = route.request().postDataBuffer();
         if (route.request().headers()['content-encoding'] === 'gzip') bytes = gunzipSync(bytes);
         const payload = JSON.parse(bytes.toString());
-        settings = { ...payload, _version: Math.max(Date.now(), Number(payload._version || 0) + 1) };
+        settings = { ...payload, _version: Math.max(Date.now(), Number(payload._version || 0) + 1),
+            _settingsRevision: Number(payload._settingsRevision || 0) + 1 };
         state.lastSaved = settings;
         state.saves++;
-        await route.fulfill({ json: { version: settings._version } });
+        await route.fulfill({ json: { result: 'ok', version: settings._version, settingsRevision: settings._settingsRevision } });
     });
     return state;
 }
@@ -1130,6 +1131,7 @@ test('saved theme fonts remain local when an explicit font override is cleared',
     await expect(page.locator('body')).toHaveCSS('font-family', /Nunito/);
     await expectLoadedFont(page, 'Nunito');
     await expect.poll(() => fixture.saves).toBeGreaterThan(beforeClear);
+    expect(await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }))).toBe(true);
     expect(fixture.lastSaved.power_user.google_font).toBe('');
     expect(fixture.lastSaved.extension_settings.CTSI.entries.mainFont).toBe('Figtree');
     const beforeReload = fixture.reads;

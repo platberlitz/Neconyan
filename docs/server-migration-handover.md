@@ -9,6 +9,11 @@ the Pura and Ethereal tracker themes added during this release work. Preserve th
 commit and the later Agent fixes. The earlier release notes below are historical
 checkpoints, not instructions to reset staging. Main remains at `86b5475f5`.
 
+The first candidate was committed and pushed to staging as
+`e294394c9b62188b47bf0c6c3f5411921b7e36ec`. Android validation run `36334373139`
+and the eight-part browser run `36334373000` test that exact commit.
+Neither main promotion nor release publication has taken place.
+
 - Automatic and manual captions now compare the same settings fingerprint, excluding
   save counters and account bookkeeping. All 42 caption tests pass. All six desktop
   and phone browser cases pass for captions, translation, Pawthfinder, speech, image
@@ -41,7 +46,12 @@ checkpoints, not instructions to reset staging. Main remains at `86b5475f5`.
 - The new manual Android validation workflow builds from a clean commit, records the
   embedded source and frontend hashes, verifies both signed APKs and 16 KiB native
   alignment, and exercises the signed app on Android 11 and 15 emulators. Its first
-  remote run is still required. The owner authorised a fresh signing key because the
+   remote build passed, including signature, source-content and alignment checks.
+   The signed app passed Android 15 startup, private login, background operation,
+   process-death recovery and reinstallation. Android 11 did not reach installation:
+   the hosted runner had 8,684 MB free but its requested emulator disk needed 9,830 MB.
+   The follow-up uses a 4 GiB disk and bounds failure-log collection to 20 seconds;
+   Android 11 still requires a successful rerun. The owner authorised a fresh signing key because the
   desktop key was unavailable. The new key and password are stored outside Git and
   in encrypted repository secrets. Older desktop-signed test installations require
   backup and reinstallation; future releases must retain the new key.
@@ -57,8 +67,13 @@ Node heap after exhausting the default 2 GiB limit. Root lint, changed-test lint
 frontend budgets and a fresh frontend build pass. The dependency audit reports eight
 moderate advisories and no high or critical advisories. Focused browser checks do not
 replace a fresh complete browser run. The complete browser rerun, Android validation
-and release publication are still in progress. Commit and push the verified changes
-to staging first, promote the
+and release publication are still in progress. A later native-tools fixture repair
+now supplies the required settings revision and verifies that the real client accepts
+the save. All seven focused font and draft-preservation cases pass at desktop and
+both phone widths. It accompanies the Android runner correction in the next staging
+checkpoint.
+
+Commit and push each verified follow-up to staging first, promote the
 exact verified commit to main, publish 1.0.0, then advance staging to 1.0.1. This task
 does not deploy or restart the Oracle service.
 
