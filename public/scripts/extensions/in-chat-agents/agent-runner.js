@@ -126,6 +126,8 @@ const POST_MAIN_GENERATION_INTERCEPT_TIMING = 'post-main-generation';
 let pendingGenerationSnapshot = null;
 let internalPromptTransformDepth = 0;
 let isGenerationInProgress = false;
+// Retain ownership through saved-reply rendering; only the next main generation replaces it.
+let isNativeRoleplayGeneration = false;
 let generationStopRequested = false;
 const deferredPostProcessingQueue = new Map();
 let deferredPostProcessingTimeout = null;
@@ -4190,6 +4192,7 @@ function onGenerationStarted(generationType, options, dryRun) {
     releaseToolAgentRegistrations();
 
     currentMainGenerationType = normalizeGenerationType(generationType);
+    isNativeRoleplayGeneration = Boolean(options?.nativeRoleplay);
     resetChatBackupSequence();
     isGenerationInProgress = true;
     generationStartChatId = getCurrentSnapshotChatId();
@@ -4233,9 +4236,10 @@ function onGenerationEnded(_chatLength, generationContext) {
     clearPathfinderRetrievalToast();
     releaseToolAgentRegistrations();
 
-    if (stoppedGenerationRunId === postProcessingGenerationRunId) {
+    if (isNativeRoleplayGeneration || stoppedGenerationRunId === postProcessingGenerationRunId) {
         isGenerationInProgress = false;
         lastMainGenerationEndedAt = Date.now();
+        if (isNativeRoleplayGeneration) pendingGenerationSnapshot = null;
         clearLatestAssistantPostProcessingFallback();
         clearPostGenerationRecoveryCheck();
         clearMissedGenerationEndRecoveryCheck();
@@ -4306,7 +4310,7 @@ function onGenerationStopped(generationContext) {
  * @param {boolean} dryRun
  */
 async function onGenerationAfterCommands(generationType, options, dryRun) {
-    if (options?.isAuxiliaryGeneration || normalizeGenerationType(generationType) === 'quiet') {
+    if (options?.nativeRoleplay || options?.isAuxiliaryGeneration || normalizeGenerationType(generationType) === 'quiet') {
         return;
     }
 
@@ -4439,6 +4443,7 @@ async function onGenerationAfterCommands(generationType, options, dryRun) {
  * @param {{ generationType: string, activeAgentIds: string[], chatId: string } | null} activationSnapshot
  */
 async function processReceivedMessage(messageIndex, generationType, activationSnapshot = null, retryAttempt = 0) {
+    if (isNativeRoleplayGeneration) return;
     const message = chat[messageIndex];
     if (!message || message.is_user || message.is_system) {
         return;
@@ -4729,7 +4734,7 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
 }
 
 async function onMessageReceived(messageIndex, generationType, generationContext = null) {
-    if (!areAgentsGloballyEnabled()) {
+    if (isNativeRoleplayGeneration || !areAgentsGloballyEnabled()) {
         return;
     }
 

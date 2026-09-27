@@ -8223,7 +8223,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             setGenerationProgress(0);
             generation_started = new Date();
         }
-        const requestControls = { suppressUserMessage, suppressAutoContinue, maxOutputTokens, responseLength, preserveReasoningBudget };
+        const requestControls = { suppressUserMessage, suppressAutoContinue, maxOutputTokens, responseLength, preserveReasoningBudget, nativeRoleplay: Boolean(nativeRoleplay) };
 
         // Prevent generation from shallow characters
         await unshallowCharacter(this_chid);

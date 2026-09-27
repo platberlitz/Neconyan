@@ -7,8 +7,10 @@ const MAX_MANUAL_RESULT_BYTES = Math.floor(1.6 * 1024 * 1024);
 const MAX_NOTE_CODE_UNITS = 65536;
 
 /** Reserve worst-case escaped note text before any model or companion call is accepted. */
-export function captureCompanionCapacity(agents, records, source, { agentContext = false, trigger = 'normal' } = {}) {
-    const selected = agents.filter(agent => isNativeCompanion(agent) && agent.prompt.trim());
+export function captureCompanionCapacity(agents, records, source, { agentContext = false, trigger = 'normal', hiddenIds = [] } = {}) {
+    const hidden = new Set(hiddenIds);
+    // Automatic runs skip hidden Companions; explicit manual selections can still run them.
+    const selected = agents.filter(agent => isNativeCompanion(agent) && agent.prompt.trim() && (agentContext || !hidden.has(agent.id)));
     const index = source.message?.index;
     const originalHost = Number.isSafeInteger(index) && index >= 0 ? records[index + 1] : null;
     const host = agentContext || trigger === 'continue' ? originalHost : null;

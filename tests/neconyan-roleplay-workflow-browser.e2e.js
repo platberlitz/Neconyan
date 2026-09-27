@@ -1,5 +1,6 @@
 /* global window */
 import { expect } from '@playwright/test';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -71,6 +72,37 @@ async function terminal(account, id) {
 
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
+
+    test(`${viewport} hidden Companions do not block a named Roleplay reply with a false capacity error`, async ({ app }, info) => {
+        const agents = Array.from({ length: 31 }, (_, index) => ({ id: `capacity-${index}`, name: `Capacity ${index}`,
+            enabled: true, category: 'companion', execution: 'companion', phase: 'pre', prompt: `TASK_CAPACITY_${index}`,
+            companion: { trigger: 'auto', includeWorldInfo: false } }));
+        app.provider.mode.reply = () => ({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: ANSWER } }] });
+        const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
+            saved.extension_settings.inChatAgents = { globalSettings: { enabled: true, connectionProfile: 'durable',
+                separateRecentChats: false, hiddenCompanionAgentIds: agents.slice(9).map(agent => agent.id),
+                companionExecutionMode: 'parallel', companionConcurrentWithPostGen: true } };
+        } });
+        const native = owned(app);
+        await fs.mkdir(native.directories.inChatAgents, { recursive: true });
+        await Promise.all(agents.map(agent => fs.writeFile(path.join(native.directories.inChatAgents, `${agent.id}.json`), JSON.stringify(agent))));
+        const locator = await savedChat(account, `Companion capacity ${viewport}`);
+        const page = await account.open({ workspace: false, readyTimeout: 120000 });
+        await openChat(page, locator);
+        const submitted = page.waitForResponse(acceptedSubmission);
+        await page.locator('#send_textarea').fill('Generate with the visible Companions.');
+        await page.locator('#send_textarea').press('Enter');
+        const response = await submitted;
+        expect(response.status(), await response.text()).toBe(202);
+        const accepted = await response.json();
+        await account.settled(accepted.jobId);
+        await expect(page.locator('#chat .mes').last()).toContainText(ANSWER, { timeout: 30000 });
+        await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating()), { timeout: 30000 }).toBe(false);
+        const result = readRoleplayChat(native.scope, locator).records.at(-1);
+        expect(Object.keys(result.extra.inChatAgentCompanionResults).sort()).toEqual(agents.slice(0, 9).map(agent => agent.id).sort());
+        expect(app.provider.calls).toHaveLength(10);
+        await page.screenshot({ path: info.outputPath('companion-capacity-reply.png') });
+    });
 
     test(`${viewport} a named Roleplay reply from the browser completes once, closes its page and reopens without replaying`, async ({ app, browser }, info) => {
         app.provider.mode.reply = () => ({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: ANSWER } }] });

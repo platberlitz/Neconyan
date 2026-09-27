@@ -1027,6 +1027,42 @@ describe('in-chat agent post-processing runner', () => {
         expect(generateQuietPrompt).not.toHaveBeenCalled();
     });
 
+    test('leaves native Roleplay processing to the server and resumes browser processing on the next legacy generation', async () => {
+        const companionAgent = createCompanionAgent();
+        enabledAgents = [companionAgent];
+        chat.push({ mes: 'Question', name: 'User', is_user: true, extra: {} });
+        const runCompanionStage = jest.fn(async () => []);
+        const injectCompanionFeedbackPrompts = jest.fn();
+        const runCompanionAgentOnMessage = jest.fn(async () => ({ status: 'done', content: 'manual note' }));
+        const { initAgentRunner, registerCompanionRuntime, runAgentOnMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        registerCompanionRuntime({ runCompanionStage, injectCompanionFeedbackPrompts, runCompanionAgentOnMessage });
+        initAgentRunner();
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', { nativeRoleplay: true }, false);
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', { nativeRoleplay: true }, false);
+        // Auxiliary events must not change who owns the main generation.
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'quiet', { isAuxiliaryGeneration: true }, false);
+        chat.push({ mes: 'Server reply', name: 'Assistant', is_user: false, extra: {} });
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 1, 'normal');
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length);
+        await eventSource.emit(eventTypes.CHARACTER_MESSAGE_RENDERED, 1, 'normal');
+        expect(injectCompanionFeedbackPrompts).not.toHaveBeenCalled();
+        expect(runCompanionStage).not.toHaveBeenCalled();
+        expect(generateQuietPrompt).not.toHaveBeenCalled();
+        expect(chat[1].extra).toEqual({});
+
+        await runAgentOnMessage(companionAgent.id, 1);
+        expect(runCompanionAgentOnMessage).toHaveBeenCalledTimes(1);
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+        chat.push({ mes: 'Browser reply', name: 'Assistant', is_user: false, extra: {} });
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length);
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 2, 'normal');
+        expect(injectCompanionFeedbackPrompts).toHaveBeenCalledTimes(1);
+        expect(runCompanionStage).toHaveBeenCalledWith(expect.objectContaining({ messageIndex: 2 }));
+    });
+
     test('routes manual companion runs through registered runtime', async () => {
         const companionAgent = createCompanionAgent({ companion: { trigger: 'manual' } });
         enabledAgents = [companionAgent];

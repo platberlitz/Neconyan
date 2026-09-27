@@ -7,6 +7,8 @@ import { fixture } from './roleplay-transactions-fixture.js';
 const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
 const { captureRoleplaySource } = await import('../src/generation/roleplay-source.js');
 const { captureRoleplayWorldInfo } = await import('../src/generation/world-info.js');
+const { captureCompanionCapacity } = await import('../src/generation/companion-capacity.js');
+const { captureRoleplayWorkflowCapacity } = await import('../src/generation/roleplay-workflow-capacity.js');
 const { captureChatProfile } = await import('../src/generation/profiles.js');
 const { admitRoleplayJob } = await import('../src/roleplay-jobs.js');
 const { releaseJob, getJob, updateJob, recoverJobs } = await import('../src/jobs/store.js');
@@ -69,6 +71,39 @@ function paid(label, callback) {
 test('an oversized bound Companion set refuses admission before any model or chat change', t => {
     const agents = Array.from({ length: 27 }, (_, index) => companion(`capacity-${index}`));
     assert.throws(() => prepared(t, agents), { code: 'ROLEPLAY_COMPANION_CAPACITY', status: 507 });
+});
+
+test('hidden Companions do not reserve automatic workflow capacity or call a model', async t => {
+    const agents = Array.from({ length: 31 }, (_, index) => companion(`capacity-${index}`));
+    const hiddenIds = agents.slice(9).map(agent => agent.id);
+    const f = prepared(t, agents, { global: { hiddenCompanionAgentIds: hiddenIds,
+        companionExecutionMode: 'parallel', companionConcurrentWithPostGen: true } });
+    assert.equal(f.worldInfo.companionCapacity.companionCount, 9);
+    const capacity = captureRoleplayWorkflowCapacity(f.scope, f.account, f.source,
+        { companionBytes: f.worldInfo.companionCapacity.requiredBytes });
+    assert.equal(capacity.maxTurns, 16);
+    const calls = [];
+    await f.run({ generate: paid('main', 'Main reply'), generateAgent: paid('agent', options => {
+        const task = JSON.stringify(options.messages).match(/TASK_CAPACITY-\d+/)?.[0];
+        calls.push(task);
+        return { text: `Note for ${task}` };
+    }) });
+    assert.deepEqual(calls.sort(), agents.slice(0, 9).map(agent => `TASK_${agent.id.toUpperCase()}`).sort());
+    assert.deepEqual(Object.keys(f.rows().at(-1).extra.inChatAgentCompanionResults).sort(), agents.slice(0, 9).map(agent => agent.id).sort());
+});
+
+test('hidden Companions still reserve explicit manual runs and retained notes', () => {
+    const agents = [companion('hidden')], source = { message: { index: 0 } };
+    const hiddenIds = ['hidden'];
+    assert.equal(captureCompanionCapacity(agents, [], source, { hiddenIds }), null);
+    const manual = captureCompanionCapacity(agents, [], source, { hiddenIds, agentContext: true });
+    assert.equal(manual.companionCount, 1);
+    const existing = { hidden: { status: 'done', content: 'Retained note' } };
+    const records = [{}, { extra: { inChatAgentCompanionResults: existing } }];
+    const continued = captureCompanionCapacity(agents, records, source, { hiddenIds, trigger: 'continue' });
+    assert.equal(continued.companionCount, 0);
+    assert.equal(continued.baselineBytes, Buffer.byteLength(JSON.stringify(existing)));
+    assert.ok(continued.requiredBytes > continued.baselineBytes);
 });
 
 test('native companions see the processed reply, saved lore, original notes and bound extra cards, then run their own post passes', async t => {

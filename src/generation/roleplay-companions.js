@@ -161,7 +161,7 @@ export async function runRoleplayCompanions(context, options) {
     const messages = preparedRecords.slice(1);
     const hostResults = getActiveCompanionResults(messages.at(-1));
     const capacity = captureCompanionCapacity(all, records, snapshot.source, { agentContext: Boolean(snapshot.agentContext),
-        trigger: snapshot.global?.trigger });
+        trigger: snapshot.global?.trigger, hiddenIds: snapshot.agents.hiddenIds });
     if (roleplayHash(capacity) !== roleplayHash(snapshot.companionCapacity ?? null)) {
         throw fail('The admitted Companion result capacity differs from its saved source.');
     }

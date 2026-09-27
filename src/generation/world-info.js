@@ -290,7 +290,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                 characterAvatars: source.locator.group ? members.map(member => member.avatar) : [avatar],
                 ...agentHistorySources(saved.records), forcedIds: agentIds }) : null;
         const companionCapacity = agents ? captureCompanionCapacity(readRoleplayAgentsLocked(lease, agents), saved.records,
-            source, { agentContext, trigger }) : null;
+            source, { agentContext, trigger, hiddenIds: agents.hiddenIds }) : null;
         const tools = nativeBindingVersion && serverPrompt && !agentContext
             ? captureRoleplayToolBindings(lease, source, avatar, character.data, agents, savedSettings) : null;
         const selected = books(base.directories, [...Object.values(names).flat(), ...(pathfinder?.books ?? []), ...(tools?.pathfinder?.books ?? [])]);
