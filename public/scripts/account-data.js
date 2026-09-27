@@ -31,6 +31,8 @@ export function downloadAccountBackup(record, owner = getCurrentUserHandle()) {
 export async function mountAccountDataWork(container, { signal } = {}) {
     const client = await getOperationClient();
     const owner = getCurrentUserHandle();
+    const isCurrent = () => !signal?.aborted && owner === getCurrentUserHandle();
+    const showError = target => error => { if (isCurrent()) target.textContent = error.message; };
     const wrapper = document.createElement('div'); wrapper.className = 'flex-container flexFlowColumn';
     const select = document.createElement('select'); select.className = 'text_pole'; select.setAttribute('aria-label', 'Saved account backups');
     const download = document.createElement('button'); download.type = 'button'; download.className = 'menu_button'; download.textContent = 'Download saved backup'; download.style.display = 'none';
@@ -38,16 +40,21 @@ export async function mountAccountDataWork(container, { signal } = {}) {
     const status = document.createElement('div'); status.setAttribute('role', 'status');
     wrapper.append(select, stop, download, status); container.append(wrapper);
     mountOperationRecovery(wrapper, { signal, onError: error => { status.textContent = error.message; } });
-    let controller; let selected;
+    let controller; let selected; let refreshing = false;
     const refresh = async () => {
-        if (controller || signal?.aborted) return;
-        const records = await client.list('account-backup');
-        const current = select.value;
-        select.replaceChildren(new Option('Choose a saved account backup', ''), ...records.map(record => new Option(`${new Date(record.createdAt).toLocaleString()} · ${record.state}`, record.key)));
-        select.value = current;
+        if (controller || refreshing || !isCurrent()) return;
+        refreshing = true;
+        try {
+            const records = await client.list('account-backup');
+            if (!isCurrent() || controller) return;
+            const current = select.value;
+            select.replaceChildren(new Option('Choose a saved account backup', ''), ...records.map(record => new Option(`${new Date(record.createdAt).toLocaleString()} · ${record.state}`, record.key)));
+            select.value = current;
+            status.textContent = '';
+        } finally { refreshing = false; }
     };
     signal?.addEventListener('abort', () => controller?.abort(), { once: true });
-    select.addEventListener('focus', () => { void refresh().catch(error => { status.textContent = error.message; }); });
+    select.addEventListener('focus', () => { void refresh().catch(showError(status)); });
     stop.addEventListener('click', () => controller?.abort('user-stop'));
     download.addEventListener('click', () => downloadAccountBackup(selected, owner));
     select.addEventListener('change', async () => {
@@ -60,19 +67,25 @@ export async function mountAccountDataWork(container, { signal } = {}) {
             download.style.display = '';
         } catch (error) { status.textContent = error.cancelled ? 'Backup stopped.' : error.message; } finally { controller = null; select.disabled = false; stop.style.display = 'none'; }
     });
-    await refresh();
+    void refresh().catch(showError(status));
     const resets = document.createElement('select'); resets.className = 'text_pole'; resets.setAttribute('aria-label', 'Saved account resets');
     const resetStatus = document.createElement('div'); resetStatus.setAttribute('role', 'status');
     const reload = document.createElement('button'); reload.type = 'button'; reload.className = 'menu_button'; reload.textContent = 'Reload reset account'; reload.style.display = 'none';
     wrapper.append(resets, resetStatus, reload);
+    let refreshingResets = false;
     const refreshResets = async () => {
-        if (signal?.aborted) return;
-        const records = await client.list('account-reset');
-        const current = resets.value;
-        resets.replaceChildren(new Option('Choose a saved account reset', ''), ...records.map(record => new Option(`${new Date(record.createdAt).toLocaleString()} · ${record.state}`, record.key)));
-        resets.value = current;
+        if (refreshingResets || resets.disabled || !isCurrent()) return;
+        refreshingResets = true;
+        try {
+            const records = await client.list('account-reset');
+            if (!isCurrent() || resets.disabled) return;
+            const current = resets.value;
+            resets.replaceChildren(new Option('Choose a saved account reset', ''), ...records.map(record => new Option(`${new Date(record.createdAt).toLocaleString()} · ${record.state}`, record.key)));
+            resets.value = current;
+            resetStatus.textContent = '';
+        } finally { refreshingResets = false; }
     };
-    resets.addEventListener('focus', () => { void refreshResets().catch(error => { resetStatus.textContent = error.message; }); });
+    resets.addEventListener('focus', () => { void refreshResets().catch(showError(resetStatus)); });
     resets.addEventListener('change', async () => {
         if (!resets.value) return;
         resets.disabled = true;
@@ -83,5 +96,5 @@ export async function mountAccountDataWork(container, { signal } = {}) {
         } catch (error) { resetStatus.textContent = error.message; } finally { resets.disabled = false; }
     });
     reload.addEventListener('click', () => { if (owner === getCurrentUserHandle()) location.reload(); });
-    await refreshResets();
+    void refreshResets().catch(showError(resetStatus));
 }

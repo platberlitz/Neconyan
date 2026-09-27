@@ -16,6 +16,10 @@ async function dismissOnboardingIfPresent(page) {
 
 async function installScreenshotMessage(page, messageText) {
     await page.evaluate(async (text) => {
+        const { power_user } = await import('/scripts/power-user.js');
+        power_user.chat_truncation = 50;
+        const { hideWelcomeHome } = await import('/scripts/welcome-screen.js');
+        hideWelcomeHome();
         const context = window.SillyTavern.getContext();
         const chatElement = document.querySelector('#chat');
         if (!chatElement) {
@@ -111,6 +115,8 @@ async function installScreenshotMessage(page, messageText) {
         gradientQuote.style.webkitBackgroundClip = 'text';
         gradientQuote.style.backgroundClip = 'text';
         gradientQuote.style.webkitTextFillColor = 'transparent';
+        // An inherited opaque text shadow would cover the gradient being measured.
+        gradientQuote.style.textShadow = 'none';
         gradientQuote.textContent = 'This quote should just fit the source line.';
         quoteLine.appendChild(gradientQuote);
 
@@ -209,6 +215,8 @@ async function readScreenshotPixelStats(page, download) {
         for (let y = 0; y < canvas.height; y++) {
             let hasGradient = false;
             let hasMarker = false;
+            let hasReasoningHeader = false;
+            let hasReasoningTitle = false;
             let markerRun = 0;
             let companionMetaRun = 0;
             let companionTitleRun = 0;
@@ -241,12 +249,12 @@ async function readScreenshotPixelStats(page, download) {
                     markerRun = 0;
                 }
                 if (alpha > 200 && red < 30 && green > 220 && blue > 220) {
+                    hasReasoningHeader = true;
                     reasoningLeft = Math.min(reasoningLeft, x);
                     reasoningRight = Math.max(reasoningRight, x);
                 }
                 if (alpha > 200 && red > 220 && green >= 70 && green <= 180 && blue < 40) {
-                    reasoningTitleTop = Math.min(reasoningTitleTop, y);
-                    reasoningTitleBottom = Math.max(reasoningTitleBottom, y);
+                    hasReasoningTitle = true;
                 }
                 if (alpha > 200 && red > 220 && green < 40 && blue >= 80 && blue <= 190) {
                     reasoningIconPixels++;
@@ -263,6 +271,11 @@ async function readScreenshotPixelStats(page, download) {
                 } else {
                     companionMetaRun = 0;
                 }
+            }
+            // Measure the title inside its cyan header, not orange cat artwork elsewhere.
+            if (hasReasoningHeader && hasReasoningTitle) {
+                reasoningTitleTop = Math.min(reasoningTitleTop, y);
+                reasoningTitleBottom = Math.max(reasoningTitleBottom, y);
             }
             if (hasGradient && hasMarker) overlappingColorRows++;
         }
@@ -314,7 +327,7 @@ async function installHangingCloneImage(page) {
 test.describe('desktop message screenshots', () => {
     test.setTimeout(120000);
 
-    test('exports message and wand screenshots with modern colors', async ({ page }) => {
+    test('exports message and wand screenshots with modern colors', async ({ page }, info) => {
         const screenshotErrors = [];
         page.on('console', message => {
             if (message.type() === 'error' && /screenshot|html2canvas|unsupported color/i.test(message.text())) {
@@ -326,6 +339,7 @@ test.describe('desktop message screenshots', () => {
         await page.waitForFunction('document.getElementById("preloader") === null', { timeout: 0 });
         await dismissOnboardingIfPresent(page);
         await installScreenshotMessage(page, 'single screenshot oklch regression');
+        await page.locator('#chat .mes[mesid="0"]').screenshot({ path: info.outputPath('source-message.png') });
         await page.evaluate(() => {
             const imageSource = Object.getOwnPropertyDescriptor(window.HTMLImageElement.prototype, 'src');
             if (!imageSource?.get || !imageSource.set) {
@@ -346,6 +360,7 @@ test.describe('desktop message screenshots', () => {
         });
 
         const singleDownload = await exportScreenshotFromMessage(page, 0, 0, 0);
+        await singleDownload.saveAs(info.outputPath('exported-message.png'));
         expect(singleDownload.suggestedFilename()).toContain('message-0.png');
         const { bluePixels, companionMetaWidth, companionTitleWidth, darkPixels, endMarkerPixels, endMarkerWidth, markerPixels, overlappingColorRows, reasoningIconPixels, reasoningTitleHeight, reasoningWidth, redPixels, totalPixels, width } = await readScreenshotPixelStats(page, singleDownload);
         expect(darkPixels).toBeGreaterThan(totalPixels * 0.2);

@@ -268,7 +268,7 @@ test('uses the host drawer and wand markup and tears the extension down cleanly'
     // Theme rules written for the shared header markup must reach the debugger header too.
     const toggle = page.locator('#sbdbg-settings > .inline-drawer-toggle.inline-drawer-header');
     await expect(toggle).toHaveJSProperty('tagName', 'DIV');
-    await expect(toggle.locator(':scope > b')).toHaveText('Bunny Debugger');
+    await expect(toggle.locator(':scope > b')).toHaveText('Neconyan Debugger');
     await expect(toggle.locator(':scope > div.inline-drawer-icon.fa-circle-chevron-down.down')).toHaveCount(1);
     await expect(toggle).toHaveCSS('font-family', 'cursive');
     await expect(toggle).toHaveCSS('min-height', '42px');

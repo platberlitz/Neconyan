@@ -7,7 +7,7 @@ export function requestJson(request) {
 }
 
 /** Layout tests still exercise the browser's real read and save receipt validation. */
-export function createMockRoleplayStore(account) {
+export function createMockRoleplayStore(account, { realReads = false } = {}) {
     const chats = new Map();
     const groups = new Map();
     const receipts = new Map();
@@ -75,7 +75,12 @@ export function createMockRoleplayStore(account) {
             let receipt = receipts.get(evidence.operationKey);
             if (!receipt) {
                 const key = JSON.stringify(locatorFor(route, body));
-                const saved = snapshot(body.chat, chats.get(key));
+                let previous = chats.get(key);
+                // Layout-only saves can follow a genuine server read, including a reload.
+                if (realReads && JSON.stringify(previous?.source) !== JSON.stringify(evidence.source)) {
+                    previous = evidence.source ? { source: evidence.source } : undefined;
+                }
+                const saved = snapshot(body.chat, previous);
                 chats.set(key, saved);
                 receipt = { ok: true, integrity: saved.integrity, roleplay: { account: evidence.account,
                     operationKey: evidence.operationKey, changed: saved.changed, source: saved.source } };

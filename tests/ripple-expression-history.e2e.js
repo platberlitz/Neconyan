@@ -1,5 +1,6 @@
 /* global window, document, getComputedStyle */
 import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
+import { createMockRoleplayStore } from './roleplay-browser-fixture.js';
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -14,7 +15,8 @@ const second = '/characters/Expression Cat/joy-2.png?t=2';
 
 async function fixture(page) {
     let envelope, settings;
-    const state = { saved: null, saves: 0, modelCalls: [], errors: [] };
+    const storage = createMockRoleplayStore(() => envelope.roleplayAccount);
+    const state = { saved: null, saves: 0, modelCalls: [], errors: [], groups: [], storage };
     const character = { name: 'Expression Cat', avatar: 'expression-cat.png', chat: 'expression-chat', first_mes: 'Legacy greeting',
         mes_example: '', shallow: false, tags: [], data: { name: 'Expression Cat', first_mes: 'Legacy greeting', description: '', extensions: {} } };
     page.on('pageerror', error => state.errors.push(error.message));
@@ -23,7 +25,7 @@ async function fixture(page) {
         settings ??= JSON.parse(envelope.settings);
         settings.firstRun = false;
         settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', 'NeconyanTutorialIndex.v1': '0' };
-        Object.assign(settings.power_user, theme, { theme: theme.name, chat_display: 6, waifuMode: true });
+        Object.assign(settings.power_user, theme, { theme: theme.name, chat_display: 6, waifuMode: true, chat_truncation: 50 });
         settings.extension_settings.expressions = { ...settings.extension_settings.expressions, api: 99, showDefault: true };
         settings.extension_settings.disabledExtensions = (settings.extension_settings.disabledExtensions ?? []).filter(id => !['regex', 'expressions'].includes(id));
         await route.fulfill({ json: { ...envelope, settings: JSON.stringify(settings) } });
@@ -31,16 +33,17 @@ async function fixture(page) {
     await page.route('**/api/settings/save', async route => {
         settings = requestJson(route.request());
         await acknowledgeSettingsSave(route);
+        settings._settingsRevision = Number(settings._settingsRevision || 0) + 1;
     });
     await page.route('**/api/characters/all', route => route.fulfill({ json: [character] }));
     await page.route('**/api/characters/chats', route => route.fulfill({ json: [{ file_name: character.chat, message_count: 1 }] }));
     await page.route('**/api/characters/edit-attribute', route => route.fulfill({ json: {} }));
-    await page.route('**/api/groups/all', route => route.fulfill({ json: [] }));
-    await page.route('**/api/chats/get', route => route.fulfill({ json: state.saved ?? [] }));
+    await page.route('**/api/groups/all', route => storage.readGroups(route, state.groups));
+    await page.route('**/api/chats/get', route => storage.read(route));
     await page.route('**/api/chats/save', async route => {
         state.saved = requestJson(route.request()).chat;
         state.saves++;
-        await route.fulfill({ json: {} });
+        await storage.save(route);
     });
     await page.route('**/api/sprites/get?**', route => route.fulfill({ json: [{ label: 'joy', path: first }, { label: 'joy', path: second }] }));
     await page.route(url => url.pathname.startsWith('/characters/'), route => route.fulfill({ path: avatar }));
@@ -187,17 +190,18 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
                 is_user: false, is_system: false, mes: `Group reply ${index}`, send_date: Date.now(), extra: {},
             }));
             await page.route('**/api/chats/group/info', route => route.fulfill({ json: {} }));
-            await page.route('**/api/chats/group/get', route => route.fulfill({ json: [{ chat_metadata: { tainted: true } }, ...groupMessages] }));
-            await page.route('**/api/chats/group/save', route => route.fulfill({ json: {} }));
-            await page.route('**/api/groups/edit', route => route.fulfill({ json: {} }));
+            await page.route('**/api/chats/group/get', route => state.storage.read(route, [{ chat_metadata: { tainted: true } }, ...groupMessages]));
+            await page.route('**/api/chats/group/save', route => state.storage.save(route));
+            await page.route('**/api/groups/edit', route => state.storage.saveGroup(route));
+            state.groups.push({ id: 'expression-group', name: 'Expression group', members: ['expression-cat.png', 'other-cat.png'],
+                disabled_members: [], chat_id: 'group-history', chats: ['group-history'], chat_metadata: {}, past_metadata: {} });
             await page.evaluate(async () => {
                 const core = await import('/script.js');
-                const { groups, openGroupById } = await import('/scripts/group-chats.js');
+                const { getGroups, openGroupById } = await import('/scripts/group-chats.js');
                 const { extension_settings } = await import('/scripts/extensions.js');
                 extension_settings.expressions.api = 99;
                 core.characters.push({ ...structuredClone(core.characters[0]), avatar: 'other-cat.png' });
-                groups.push({ id: 'expression-group', name: 'Expression group', members: ['expression-cat.png', 'other-cat.png'],
-                    disabled_members: [], chat_id: 'group-history', chats: ['group-history'], chat_metadata: {}, past_metadata: {} });
+                await getGroups();
                 await openGroupById('expression-group', { switchMenu: false });
                 await core.recordMessageExpression(core.captureExpressionTarget(core.chat[0]), '/characters/Expression Cat/joy-1.png?t=1');
             });

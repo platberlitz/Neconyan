@@ -9,6 +9,7 @@ import { dismissOpenDialogIfPresent, openQuietChatForSmoke, waitForAnimationFram
 // Run with: NECONYAN_TEST_BASE_URL=http://127.0.0.1:<port> npx playwright test topbar-extension-adoption.e2e.js
 
 test.describe.configure({ mode: 'serial' });
+test.setTimeout(120000);
 
 const IPHONE_VIEWPORT = { width: 390, height: 844 };
 
@@ -70,8 +71,8 @@ function getAdoptionSnapshot(page) {
             Math.round(titleRect.top + titleRect.height / 2),
         );
 
-        const hitTest = (id) => {
-            const element = document.getElementById(id);
+        const hitTest = (route) => {
+            const element = document.querySelector(`#neconyan-workspace-rail [data-neconyan-route="${route}"]`);
             const rect = element.getBoundingClientRect();
             const hit = document.elementFromPoint(
                 Math.round(rect.left + rect.width / 2),
@@ -87,8 +88,8 @@ function getAdoptionSnapshot(page) {
             buttonWidth: button.getBoundingClientRect().width,
             viewportWidth: window.innerWidth,
             titleBlocked: Boolean(button.contains(titleHit)),
-            homeHittable: hitTest('sb-home-toggle'),
-            charactersHittable: hitTest('sb-character-toggle'),
+            homeHittable: hitTest('home'),
+            charactersHittable: hitTest('characters'),
         };
     });
 }
@@ -132,7 +133,7 @@ test.describe('third-party top-bar button adoption', () => {
 
         const badge = await page.evaluate(() => {
             const chevron = document.querySelector('.charlib-chevron-badge');
-            const proxy = document.getElementById('sb-character-toggle');
+            const proxy = document.querySelector('#neconyan-workspace-rail [data-neconyan-route="characters"]');
             const rect = chevron.getBoundingClientRect();
 
             return {
@@ -149,6 +150,19 @@ test.describe('third-party top-bar button adoption', () => {
         expect(badge.width).toBeGreaterThan(0);
         expect(badge.height).toBeGreaterThan(0);
         expect(badge.copies).toBe(1);
+
+        // Badges adopted before the workspace rail exists must move with it too.
+        await page.evaluate(() => {
+            const chevron = document.querySelector('.charlib-chevron-badge');
+            window.__earlyCharacterBadge = chevron;
+            document.getElementById('sb-character-toggle').appendChild(chevron);
+            window.dispatchEvent(new Event('neconyan:rail-ready'));
+        });
+        await expect.poll(() => page.evaluate(() => {
+            const button = document.querySelector('#neconyan-workspace-rail [data-neconyan-route="characters"]');
+            return button.contains(window.__earlyCharacterBadge)
+                && document.querySelectorAll('.charlib-chevron-badge').length === 1;
+        })).toBe(true);
     });
 
     test('makes a plain non-drawer extension button clickable in the top strip', async ({ page }) => {

@@ -4,7 +4,7 @@
 
 ### 28 September continuation: validation in progress
 
-The current base is staging `16687a0285b65ca9dcdd3f76c5bb66a5472f5063`, including
+This release work started from staging `16687a0285b65ca9dcdd3f76c5bb66a5472f5063`, including
 the Pura and Ethereal tracker themes added during this release work. Preserve that
 commit and the later Agent fixes. The earlier release notes below are historical
 checkpoints, not instructions to reset staging. Main remains at `86b5475f5`.
@@ -18,12 +18,52 @@ The runner and settings-fixture follow-up is pushed as `b94a0e9`; Android run
 The screen check added in `adc2988` then exposed a separate Android 11 startup
 failure. Diagnostics from `d573c77`, run `36338862101`, identify its stock WebView
 83.0.4103.120 rejecting top-level await and logical assignment syntax. Android 15
-loads the interface with WebView 124.0.6367.219. The next candidate checks for
+loads the interface with WebView 124.0.6367.219. The app now checks for
 WebView 124 before starting the server and gives native update instructions.
 Its Android 11 test checks that screen first, then updates the emulator with the
 WebView from the Android 15 SDK image and repeats the full acceptance checks.
-That updated-WebView run is pending; do not report Android 11 interface acceptance
-until it passes.
+That updated-WebView acceptance passed in run `36341009250` at `e50a6af`.
+The guard is pushed in `71d2f29`. Its first Android 11 run reached the native update
+screen but the test compared mixed-case labels against Android's uppercase buttons.
+The test correction is pushed in `0a36b87`. Its next run stopped while exporting
+the SDK WebView. Bounded export retries and diagnostics in `e50a6af` completed
+successfully. All four jobs passed: signed build, SDK fixture, Android 11 and Android
+15. Android 11 verifies the old-WebView update screen before installing the fixture;
+both versions then verify the visible workspace and the server lifecycle checks.
+These are emulator results, not physical ARM64 device results.
+
+The web follow-up includes these further fixes:
+
+- Account opens without waiting for the backup and reset history requests. Both run
+  independently; failures appear in their own status areas. The held-request browser
+  test confirms the profile opens within one second and Close remains usable.
+- An Agent's Edit menu now appears above the category selector instead of losing
+  clicks to it. Desktop and phone hit-testing and the real editor workflow pass.
+- Archive searches use a distinct saved-request scope for each query. Previously a
+  new query could reuse an older request whose acceptance was still pending. All 15
+  archive browser cases pass, including that race, cancellation, retained results,
+  mention filters and desktop/phone controls.
+- Character badges move to the visible Characters button. The browser check also
+  verifies that a badge attached before the workspace rail exists moves across as
+  the same node, with no duplicate.
+- Mode selection closes navigation before waiting for the selected view to open.
+  Finishing an earlier selection no longer closes navigation the user reopened.
+  Held-activation tests and the phone mode/draft workflow pass.
+- Screenshot capture preserves the natural height of nested content wrappers when
+  Chromium reflows fonts in its export document. Fixed-height content still keeps
+  its declared size. Modern-colour exports, text reflow, end markers, range/wand
+  downloads, desktop and Android area limits, unfinished-image recovery and the
+  stalled-render deadline pass; WebKit is unavailable on this machine.
+
+The first candidate's complete browser run finished with 994 passes, 72 failures
+and nine skips. Follow-up tests have corrected obsolete save receipts,
+hidden-control assumptions and shared test
+data. Protected solo/group edit retries and stale-write refusal now pass on both
+layouts. The closed-page phone backup check and all three character-library layouts
+also pass. NanoGPT routing persistence, Ripple expression history, Pawthfinder's
+conditional saves and Stop handling, assistant-copy preservation, the extension
+catalogue, Termeownal and the visible character badges pass their follow-up checks.
+These focused results do not replace a complete run of the next candidate.
 
 - Automatic and manual captions now compare the same settings fingerprint, excluding
   save counters and account bookkeeping. All 42 caption tests pass. All six desktop
@@ -59,7 +99,7 @@ until it passes.
   alignment, and exercises the signed app on Android 11 and 15 emulators. Remote
   builds pass signature, source-content and alignment checks. Both Android versions
   pass private login, background operation, process-death recovery and reinstallation;
-  only Android 15 has passed the visible-interface check so far. The runner uses a
+  both now pass the visible-interface check with WebView 124. The runner uses a
   4 GiB emulator disk after an 8 GiB request exhausted its available storage.
   The owner authorised a fresh signing key because the
   desktop key was unavailable. The new key and password are stored outside Git and

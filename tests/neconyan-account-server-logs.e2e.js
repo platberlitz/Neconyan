@@ -7,6 +7,7 @@ import { gunzipSync } from 'node:zlib';
 const screenshotDir = fileURLToPath(new URL('../output/playwright/neconyan-audit/account-server-reviewed', import.meta.url));
 mkdirSync(screenshotDir, { recursive: true });
 const lightTheme = JSON.parse(readFileSync(new URL('../default/content/themes/Neconyan Calico.json', import.meta.url), 'utf8'));
+const serverPanelRequested = new WeakSet();
 
 test.use({ viewport: { width: 320, height: 900 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
 test.setTimeout(120000);
@@ -75,10 +76,13 @@ async function installFailClosedRoutes(page, { light = false, delayLogs = false,
         if (request.headers()['content-encoding'] === 'gzip') body = gunzipSync(body);
         const payload = JSON.parse(body.toString());
         const version = Math.max(Date.now(), Number(payload._version || 0) + 1);
-        storedSettings = { ...payload, _version: version };
-        await route.fulfill({ json: { version } });
+        const settingsRevision = Number(payload._settingsRevision || 0) + 1;
+        storedSettings = { ...payload, _version: version, _settingsRevision: settingsRevision };
+        await route.fulfill({ json: { result: 'ok', version, settingsRevision } });
     });
     await page.route('**/api/users/me', route => route.fulfill({ json: { ...accountFixture, password } }));
+    await page.route('**/api/operations/records?*', route => route.fulfill({ json: [] }));
+    await page.route('**/api/operations/recovery', route => route.fulfill({ json: [] }));
     for (const pattern of [
         '**/api/users/reset*',
         '**/api/users/backup*',
@@ -97,6 +101,11 @@ async function installFailClosedRoutes(page, { light = false, delayLogs = false,
     await page.route('**/api/server-admin/**', async route => {
         const endpoint = new URL(route.request().url()).pathname;
         if (endpoint === '/api/server-admin/status') {
+            // The startup update notice must not consume a panel's planned failure.
+            if (!serverPanelRequested.has(page)) {
+                await route.fulfill({ status: 403, json: { error: 'Automatic update checks are disabled in this fixture.' } });
+                return;
+            }
             statusRequests++;
             if ((serverMode === 'retry' && statusRequests === 2) || (serverMode === 'initial-503' && statusRequests === 1)) {
                 await route.fulfill({ status: 503, json: { error: 'Server status is temporarily unavailable.' } });
@@ -198,10 +207,15 @@ async function openSettings(page) {
     await dismissOptionalQigDialog(page);
 }
 
+async function openServer(page) {
+    serverPanelRequested.add(page);
+    await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'server'));
+}
+
 test('account profile keeps identity facts, hooks, current avatar, and touch targets', async ({ page }) => {
     await installFailClosedRoutes(page);
     await openSettings(page);
-    await page.locator('.sb-settings-category-select').selectOption('cache-account');
+    await page.locator('.sb-settings-tab-btn[data-tab="cache-account"]').click();
     await page.locator('#account_button').click();
 
     const popup = page.locator('dialog.popup:visible');
@@ -244,7 +258,7 @@ test('account profile keeps identity facts, hooks, current avatar, and touch tar
 test('Server keeps dirty update state visible and source details collapsed', async ({ page }) => {
     await installFailClosedRoutes(page);
     await openSettings(page);
-    await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'server'));
+    await openServer(page);
 
     const panel = page.locator('#sb-shell-panel-right-server');
     await expect(panel.locator('.sb-server-summary-grid')).toContainText('Runtime');
@@ -256,6 +270,7 @@ test('Server keeps dirty update state visible and source details collapsed', asy
     await expect(panel.locator('.sb-server-source-details')).toContainText('Tracking');
     await expect(panel.locator('.sb-server-action', { hasText: 'Update & Restart' })).toBeDisabled();
     const restart = panel.getByRole('button', { name: 'Restart server', exact: true });
+    await restart.scrollIntoViewIfNeeded();
     await expect(restart).toBeInViewport();
     const restartBounds = await restart.boundingBox();
     expect(restartBounds.y + restartBounds.height).toBeLessThanOrEqual(900);
@@ -363,7 +378,7 @@ test('Pause Live keeps an in-flight response from rewriting selected output', as
     await pauseButton.click();
     await expect(pauseButton).toHaveAttribute('aria-pressed', 'true');
     await page.waitForTimeout(600);
-    expect(await output.textContent()).toBe(before);
+    await expect.poll(() => output.textContent()).toBe(before);
     await expect(output).not.toContainText('Started Neconyan.');
 
     await pauseButton.click();
@@ -374,7 +389,7 @@ test('Pause Live keeps an in-flight response from rewriting selected output', as
 test('Server disables stale Update authority after a failed status refresh and recovers', async ({ page }) => {
     await installFailClosedRoutes(page, { serverMode: 'retry' });
     await openSettings(page);
-    await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'server'));
+    await openServer(page);
     const panel = page.locator('#sb-shell-panel-right-server');
     const update = panel.getByRole('button', { name: 'Update & Restart', exact: true });
     const refresh = panel.getByRole('button', { name: 'Check for updates', exact: true });
@@ -391,7 +406,7 @@ test('Server disables stale Update authority after a failed status refresh and r
 test('Server handles initial status failure while configuration is still loading and retries', async ({ page }) => {
     await installFailClosedRoutes(page, { serverMode: 'initial-503' });
     await openSettings(page);
-    await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'server'));
+    await openServer(page);
     const panel = page.locator('#sb-shell-panel-right-server');
     await expect(panel.locator('.sb-server-pill')).toHaveText('Unavailable');
     await expect(panel.getByRole('button', { name: 'Update & Restart', exact: true })).toBeDisabled();
@@ -425,14 +440,14 @@ test('Logs report legacy clipboard failure, clean up, and allow retry', async ({
 test('Account shows no-password state and guards Backup re-entry and failed-download retry', async ({ page }) => {
     await installFailClosedRoutes(page, { password: false });
     let backupRequests = 0;
-    await page.route('**/api/users/backup', async route => {
+    await page.route('**/api/operations/submit', async route => {
         backupRequests++;
-        expect(route.request().postDataJSON()).toEqual({ handle: 'neco-user' });
+        expect(route.request().postDataJSON()).toMatchObject({ kind: 'account-backup', handle: 'neco-user' });
         await new Promise(resolve => setTimeout(resolve, 400));
-        await route.fulfill({ status: 503, json: { error: 'Backup temporarily unavailable.' } });
+        await route.fulfill({ status: 503, json: { error: 'Backup temporarily unavailable.', notAccepted: true } });
     });
     await openSettings(page);
-    await page.locator('.sb-settings-category-select').selectOption('cache-account');
+    await page.locator('.sb-settings-tab-btn[data-tab="cache-account"]').click();
     await page.locator('#account_button').click();
     const popup = page.locator('dialog.popup:visible');
     await expect(popup.locator('.noPassword')).toHaveText('Not set');
@@ -480,7 +495,7 @@ for (const width of [1280, 390, 320]) {
     for (const tone of ['dark', 'light']) {
         test.describe(`visual matrix ${tone} ${width}px`, () => {
             test.use({ viewport: { width, height: 900 }, isMobile: width < 768, hasTouch: width < 768 });
-            test(`captures Account, Settings, Server, and Logs`, async ({ page }) => {
+            test('captures Account, Settings, Server, and Logs', async ({ page }) => {
                 await installFailClosedRoutes(page, { light: tone === 'light' });
                 await openSettings(page);
                 const capture = async surface => {
@@ -508,7 +523,7 @@ for (const width of [1280, 390, 320]) {
                 await assertSurfaceGeometry(page, 'account', width < 768);
                 await page.locator('dialog.popup:visible').getByRole('button', { name: 'Close', exact: true }).click();
 
-                await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'server'));
+                await openServer(page);
                 await expect(page.locator('#sb-shell-panel-right-server .sb-server-summary-grid')).toContainText('Runtime');
                 await assertPillContrast(page.locator('#sb-shell-panel-right-server'));
                 await capture('server');

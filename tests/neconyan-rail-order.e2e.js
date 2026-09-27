@@ -97,7 +97,11 @@ for (const phone of [false, true]) {
                 if (route.request().headers()['content-encoding'] === 'gzip') bytes = gunzipSync(bytes);
                 const payload = JSON.parse(bytes.toString());
                 stored = payload.accountStorage[key] ?? stored;
-                await route.fulfill({ json: { version: Number(payload._version || 0) + 1 } });
+                await route.fulfill({ json: {
+                    result: 'ok',
+                    version: Number(payload._version || 0) + 1,
+                    settingsRevision: Number(payload._settingsRevision || 0) + 1,
+                } });
             });
             await ready(page);
             expect(await order(page, 'primary')).toEqual(['model', 'home', 'characters', 'agents', 'mewmory', 'lorebooks', 'extensions']);

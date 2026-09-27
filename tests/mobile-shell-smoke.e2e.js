@@ -1,6 +1,6 @@
 /* global document, getComputedStyle, localStorage, requestAnimationFrame, window */
 import { expect, test } from '@playwright/test';
-import { openQuietChatForSmoke, waitForAnimationFrames } from './chat-scroll-regression-helpers.js';
+import { openQuietChatForSmoke, selectSampleCharacter, waitForAnimationFrames } from './chat-scroll-regression-helpers.js';
 
 // Mobile shell smoke pack: pins the current open/close contracts of the
 // SillyBunny mobile shell (drawers, hamburger nav, chat tools, character
@@ -369,6 +369,7 @@ test.describe('mobile shell smoke at iPhone 390x844', () => {
     });
 
     test('every primary chat surface stays inside the document viewport', async ({ page }) => {
+        await selectSampleCharacter(page);
         const detachedAutocompleteErrors = [];
         page.on('pageerror', error => {
             if (error.message.includes('Cannot read properties of null (reading \'getBoundingClientRect\')')) {
@@ -389,7 +390,10 @@ test.describe('mobile shell smoke at iPhone 390x844', () => {
             await page.evaluate(tab => window.SillyBunnyShell.openTab('left', tab), tabId);
             await checkpoint(`Workspace · ${tabId}`);
         }
-        const textareaFullscreenToggle = page.locator('#left-nav-panel .ica--textarea-fullscreen-toggle').first();
+        const agentView = page.locator('#ica--workspaceSelect');
+        if (await agentView.isVisible()) await agentView.selectOption('connections');
+        else await page.locator('.ica--workspace-tab[data-workspace-view="connections"]').click();
+        const textareaFullscreenToggle = page.locator('#ica--panel-connections .ica--textarea-fullscreen-toggle').first();
         await expect(textareaFullscreenToggle).toBeVisible();
         await textareaFullscreenToggle.click();
         await expect(page.locator('dialog.popup[open] textarea.maximized_textarea')).toBeVisible();

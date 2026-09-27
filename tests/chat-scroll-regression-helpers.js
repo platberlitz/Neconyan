@@ -1,4 +1,5 @@
 /* global document, HTMLElement, requestAnimationFrame, window, WheelEvent */
+import { createMockRoleplayStore } from './roleplay-browser-fixture.js';
 
 export const APP_URL = process.env.NECONYAN_TEST_BASE_URL || process.env.SILLYBUNNY_TEST_BASE_URL || '/';
 
@@ -189,12 +190,13 @@ async function waitForChatRenderIdle(page, { idleMs = 750, timeoutMs = 30000, wa
 }
 
 export async function openReadyChat(page, { chatSaveDelayMs = 0, selectCharacter = true } = {}) {
+    const storage = createMockRoleplayStore(() => null, { realReads: true });
     await page.route('**/api/chats/save', async route => {
         if (chatSaveDelayMs > 0) {
             await new Promise(resolve => setTimeout(resolve, chatSaveDelayMs));
         }
 
-        await route.fulfill({ status: 200, json: {} });
+        await storage.save(route);
     });
 
     await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
@@ -232,13 +234,14 @@ async function quietChatForSmoke(page) {
 
 export async function openQuietChatForSmoke(page, options = {}) {
     const { chatSaveDelayMs = 0, selectCharacter = true } = options;
+    const storage = createMockRoleplayStore(() => null, { realReads: true });
 
     await page.route('**/api/chats/save', async route => {
         if (chatSaveDelayMs > 0) {
             await new Promise(resolve => setTimeout(resolve, chatSaveDelayMs));
         }
 
-        await route.fulfill({ status: 200, json: {} });
+        await storage.save(route);
     });
 
     await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });

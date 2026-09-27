@@ -1,5 +1,7 @@
 /* global document, window */
-import { expect, test } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+import { expect } from '@playwright/test';
+import { test } from './neconyan-conversation-durable-fixture.js';
 import { trackNavigationErrors } from './chat-scroll-regression-helpers.js';
 
 test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
@@ -7,7 +9,9 @@ test.setTimeout(180000);
 
 async function ready(page, navigate) {
     await navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
-    await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+    await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 60000 });
+    const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
+    if (await skip.isVisible()) await skip.click();
     await expect(page.locator('#ica--run-status')).not.toHaveText('Ready', { timeout: 45000 });
 }
 
@@ -36,7 +40,10 @@ async function edit(page, name, input, before, after, { cancel = false } = {}) {
     return page.evaluate(async () => JSON.parse(await window.assistantToolResult));
 }
 
-test('an active assistant reviews and persists real lorebook, agent, preset and visible character edits', async ({ page }, info) => {
+test('an active assistant reviews and persists real lorebook, agent, preset and visible character edits', async ({ app }, info) => {
+    const account = await app.account();
+    const page = await account.context.newPage();
+    await page.route('**/api/server-admin/status', route => route.fulfill({ status: 403, json: {} }));
     page.setDefaultTimeout(20000);
     const { errors, navigate } = trackNavigationErrors(page);
     await page.route(/\/api\/.*\/(?:generate|generate-quiet)(?:\?|$)/, route => route.fulfill({ status: 503, json: { error: 'Model generation is disabled in this fixture.' } }));
@@ -45,7 +52,6 @@ test('an active assistant reviews and persists real lorebook, agent, preset and 
     const api = page.request;
     const headers = await page.evaluate(() => window.SillyTavern.getContext().getRequestHeaders());
     const readSettings = async () => (await api.post('/api/settings/get', { headers, data: {} })).json();
-    const original = JSON.parse((await readSettings()).settings);
     const suffix = Date.now();
     const book = ` Assistant book ${suffix}`;
     const agentId = `assistant-agent-${suffix}`;
@@ -80,7 +86,11 @@ test('an active assistant reviews and persists real lorebook, agent, preset and 
             await ToolManager.registerFunctionToolsOpenAI(payload);
             return (payload.tools || []).map(tool => tool.function.name).filter(name => name.startsWith('Neconyan_Assistant_'));
         });
-        await expect.poll(async () => (await toolNames()).length).toBe(13);
+        await expect.poll(toolNames).toEqual(expect.arrayContaining([
+            'ListLorebooks', 'ListLorebookEntries', 'ReadLorebookEntry', 'EditLorebookEntry',
+            'ListAgents', 'ReadAgent', 'EditAgent', 'ListModelPresets', 'ReadModelPreset', 'EditModelPreset',
+            'ListCharacters', 'CreateCharacter', 'ReadCharacter', 'EditCharacter',
+        ].map(name => `Neconyan_Assistant_${name}`)));
         expect(await invoke(page, 'ListLorebooks')).toMatchObject({ books: expect.arrayContaining([{ name: book }]) });
         const entries = await invoke(page, 'ListLorebookEntries', { book });
         expect(entries.entries).toHaveLength(1);
@@ -124,27 +134,21 @@ test('an active assistant reviews and persists real lorebook, agent, preset and 
         expect(errors).toEqual([]);
     } finally {
         await page.close();
-        await api.post('/api/worldinfo/delete', { headers, data: { name: book } });
-        await api.post('/api/in-chat-agents/delete', { headers, data: { id: agentId } });
-        for (const name of [baselineName, presetName]) await api.post('/api/presets/delete', { headers, data: { name, apiId: 'openai' } });
-        if (avatar) await api.post('/api/characters/delete', { headers, data: { avatar_url: avatar, delete_chats: true } });
-        const current = JSON.parse((await readSettings()).settings);
-        for (const key of ['main_api', 'oai_settings', 'active_character', 'active_group']) current[key] = original[key];
-        expect((await api.post('/api/settings/save', { headers, data: current })).ok()).toBe(true);
     }
 });
 
 test.describe('Assistant update on touch screens', () => {
     test.use({ hasTouch: true });
-    test('installs an updated copy from Home while keeping the old card and chat', async ({ page }, info) => {
+    test('installs an updated copy from Home while keeping the old card and chat', async ({ app }, info) => {
+        const account = await app.account({ phone: true });
+        const page = await account.context.newPage();
+        await page.route('**/api/server-admin/status', route => route.fulfill({ status: 403, json: {} }));
         page.setDefaultTimeout(20000);
         const { errors, navigate } = trackNavigationErrors(page);
         await page.setViewportSize({ width: 1280, height: 1000 });
         await ready(page, navigate);
         const api = page.request;
         const headers = await page.evaluate(() => window.SillyTavern.getContext().getRequestHeaders());
-        const readSettings = async () => JSON.parse((await (await api.post('/api/settings/get', { headers, data: {} })).json()).settings);
-        const original = await readSettings();
         const catalog = await (await api.get('/api/characters/assistants')).json();
         const variant = catalog.personalities.flatMap(personality => personality.variants.map(variant => ({ ...variant, name: personality.name }))).find(variant => variant.installed.length === 0);
         expect(variant, 'this disposable profile needs one unused assistant variant').toBeTruthy();
@@ -159,7 +163,13 @@ test.describe('Assistant update on touch screens', () => {
             avatar = await created.text();
             const originalCardBytes = await (await api.get(`/characters/${encodeURIComponent(avatar)}`)).body();
             const chatTarget = { avatar_url: avatar, file_name: 'Kept old chat' };
-            expect((await api.post('/api/chats/save', { headers, data: { ...chatTarget, chat: [{ chat_metadata: {} }, { name: 'Old assistant', is_user: false, mes: 'Keep this old chat.' }] } })).ok()).toBe(true);
+            const emptyChat = await api.post('/api/chats/get', { headers, data: { ...chatTarget, allow_create: true } });
+            expect(emptyChat.ok(), await emptyChat.text()).toBe(true);
+            const vacancy = JSON.parse(emptyChat.headers()['x-neconyan-roleplay']);
+            expect((await api.post('/api/chats/save', { headers, data: {
+                ...chatTarget, chat: [{ chat_metadata: {} }, { name: 'Old assistant', is_user: false, mes: 'Keep this old chat.' }],
+                roleplay: { account: vacancy.account, vacancy: vacancy.vacancy, operationKey: randomUUID() },
+            } })).ok()).toBe(true);
             await ready(page, navigate);
             const update = page.locator(`[data-assistant-update][data-assistant-id="${variant.id}"]`);
             await expect(update).toBeVisible();
@@ -197,11 +207,14 @@ test.describe('Assistant update on touch screens', () => {
             }, updatedAvatar);
             expect((await (await api.get(`/characters/${encodeURIComponent(avatar)}`)).body()).equals(originalCardBytes)).toBe(true);
             const old = await (await api.post('/api/characters/get', { headers, data: { avatar_url: avatar } })).json();
-            expect(old.data).toMatchObject({ description: 'My edited assistant instructions', extensions: { foreign: 'keep old metadata', neconyan_assistant: { version: 1 } } });
+            expect(old.data).toMatchObject({ description: 'My edited assistant instructions', extensions: { foreign: 'keep old metadata', neconyan_assistant: { version: 0 } } });
             const oldChat = await (await api.post('/api/chats/get', { headers, data: chatTarget })).json();
             expect(oldChat.some(message => message.mes === 'Keep this old chat.')).toBe(true);
             const revised = await (await api.post('/api/characters/get', { headers, data: { avatar_url: updatedAvatar } })).json();
-            expect(revised.data.extensions.neconyan_assistant).toMatchObject({ id: variant.id, version: 2 });
+            expect(catalog.version).toBeGreaterThan(0);
+            expect(revised.data.extensions.neconyan_assistant).toMatchObject({ id: variant.id, version: catalog.version });
+            // Selection publishes the avatar before its new chat and extension setup finish.
+            await expect(page.locator('body')).not.toHaveClass(/neconyan-home-visible/, { timeout: 30000 });
             await page.setViewportSize({ width: 1280, height: 1000 });
             await page.locator('#neconyan-workspace-rail [data-neconyan-route="home"]').click();
             await expect(page.locator('[data-neconyan-cat]')).toBeVisible();
@@ -209,16 +222,6 @@ test.describe('Assistant update on touch screens', () => {
             expect(errors).toEqual([]);
         } finally {
             await page.close();
-            if (updatedAvatar) await api.post('/api/characters/delete', { headers, data: { avatar_url: updatedAvatar, delete_chats: true } });
-            if (avatar) await api.post('/api/characters/delete', { headers, data: { avatar_url: avatar, delete_chats: true } });
-            const current = await readSettings();
-            current.extension_settings.expressionOverrides = original.extension_settings.expressionOverrides;
-            for (const key of ['active_character', 'active_group']) current[key] = original[key];
-            for (const key of ['assistant', 'neconyanAssistantVariant']) {
-                if (original.accountStorage[key] === undefined) delete current.accountStorage[key];
-                else current.accountStorage[key] = original.accountStorage[key];
-            }
-            expect((await api.post('/api/settings/save', { headers, data: current })).ok()).toBe(true);
         }
     });
 });

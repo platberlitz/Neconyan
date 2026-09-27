@@ -1882,6 +1882,7 @@ function ensureNeconyanRail() {
     globalThis.NeconyanNativeTools?.mount?.();
     initializeNeconyanHome(rail);
     document.body.classList.add('neconyan-rail-ready');
+    window.dispatchEvent(new Event('neconyan:rail-ready'));
     setNeconyanRailCollapsed(isNeconyanRailCollapsed());
     void refreshNeconyanRail();
 }

@@ -34,7 +34,8 @@ export async function fetchArchiveInventory(ctx, scope, signal, onPage = null) {
 
 export async function searchArchive(_ctx, query, signal, onProgress) {
     const client = await getOperationClient();
-    const record = await client.run('archive-search', { query }, { scope: 'archive:search', signal, onProgress });
+    // Retain retries of this query without replaying a different unfinished search.
+    const record = await client.run('archive-search', { query }, { scope: `archive:search:${query}`, signal, onProgress });
     return { rows: rowsFrom(record), errors: record.result.errors };
 }
 

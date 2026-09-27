@@ -1,8 +1,10 @@
 /* global document, window */
+import { createHash } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { dismissOnboardingIfPresent, dismissOpenDialogIfPresent } from './chat-scroll-regression-helpers.js';
 
 test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.setTimeout(120000);
 
 const MANUAL_BOOK = 'Pathfinder test memory';
 const ATTACHED_BOOK = 'Attached Pathfinder lorebook with a long name '.repeat(4).trim();
@@ -14,6 +16,7 @@ async function openSettings(page, baseURL) {
     const books = new Map([MANUAL_BOOK, ATTACHED_BOOK].map(name => [name, {
         entries: { 0: { uid: 0, comment: 'Saved summary', content: 'Saved memory.', key: ['summary'], disable: false, constant: false } },
     }]));
+    const bookRevision = name => createHash('sha256').update(JSON.stringify(books.get(name))).digest('hex');
     await page.route('**/*', async route => {
         const request = route.request();
         const url = new URL(request.url());
@@ -38,15 +41,16 @@ async function openSettings(page, baseURL) {
             const name = request.postDataJSON().name;
             if (books.has(name)) {
                 state.reads.push(name);
-                return route.fulfill({ json: books.get(name) });
+                return route.fulfill({ json: books.get(name), headers: { 'X-World-Info-Revision': bookRevision(name) } });
             }
         }
         if (url.pathname === '/api/worldinfo/edit') {
-            const { name, data } = request.postDataJSON();
+            const { name, data, revision } = request.postDataJSON();
             state.writes.push({ name, data });
             if (state.failBookWrite) return route.fulfill({ status: 503, json: {} });
+            if (revision !== bookRevision(name)) return route.fulfill({ status: 409, json: { error: 'The lorebook changed.' } });
             books.set(name, data);
-            return route.fulfill({ json: { ok: true, name } });
+            return route.fulfill({ json: { ok: true, name, revision: bookRevision(name) } });
         }
         // Browser tests never send inference, secrets, or mutations to a real service.
         if (url.pathname.startsWith('/api/backends/')) return route.fulfill({ json: { data: [] } });
@@ -87,6 +91,8 @@ async function openSettings(page, baseURL) {
         ctx.chat.splice(0, ctx.chat.length, { mes: 'The test characters reach the harbour.', name: 'Test character', is_user: false });
         world.world_names.splice(0, world.world_names.length, manualBook, attachedBook);
         const CMRS = ctx.ConnectionManagerRequestService;
+        ctx.extensionSettings.connectionManager ??= {};
+        ctx.extensionSettings.connectionManager.profiles = [{ id: 'pf-test-profile', name: 'Pathfinder test profile', api: 'custom' }];
         CMRS.getSupportedProfiles = () => [{ id: 'pf-test-profile', name: 'Pathfinder test profile' }];
         CMRS.sendRequest = async (_profile, messages, _tokens, { signal }) => {
             const response = await fetch('/__pathfinder-test-generation', { method: 'POST', body: JSON.stringify(messages), signal });

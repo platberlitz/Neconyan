@@ -283,7 +283,10 @@ for (const phone of [false, true]) {
                 if (retryAttempts.length === 1) await route.abort('failed');
                 else await route.fulfill({ response });
             });
-            const acknowledgedRetry = page.waitForResponse(response => response.url().endsWith(savePath) && response.status() === 200);
+            // Opening the chat may save metadata too. Only this edit's acknowledgement
+            // proves that the deliberately lost response was retried successfully.
+            const acknowledgedRetry = page.waitForResponse(response => response.url().endsWith(savePath) && response.status() === 200
+                && JSON.parse(saveBody(response.request())).chat[2]?.mes === 'Edited in the real interface.');
             await message.locator('.mes_edit').click();
             await page.locator('#curEditTextarea').fill('Edited in the real interface.');
             await message.locator('.mes_edit_done').click();
@@ -298,11 +301,22 @@ for (const phone of [false, true]) {
             await expect.poll(() => read(sourceTarget).records?.[2]?.mes).toBe('Edited in the real interface.');
 
             const stalePage = await open(chatName);
+            // Opening a group can persist its metadata. Capture the source after that
+            // save settles, before the other tab makes the conflicting edit.
+            expect(await stalePage.evaluate(async () => (await import('/script.js')).flushPendingChatSavesForNavigation())).toBe(true);
+            const staleRead = await account.context.request.post(group ? '/api/chats/group/get' : '/api/chats/get', {
+                headers: account.headers,
+                data: group ? { id: chatName } : { avatar_url: account.avatar, file_name: chatName },
+            });
+            expect(staleRead.ok()).toBe(true);
+            const staleSource = JSON.parse(staleRead.headers()['x-neconyan-roleplay']).source;
+            expect(staleSource.instanceId).toBe(retryResult.roleplay.source.instanceId);
             const staleMessage = stalePage.locator('#chat .mes[mesid="1"]');
             const confirmedText = 'Explicitly confirmed stale-tab edit.';
             await staleMessage.locator('.mes_edit').click();
             await stalePage.locator('#curEditTextarea').fill(confirmedText);
-            const newerResponse = page.waitForResponse(response => response.url().endsWith(savePath) && response.status() === 200);
+            const newerResponse = page.waitForResponse(response => response.url().endsWith(savePath) && response.status() === 200
+                && JSON.parse(saveBody(response.request())).chat[2]?.mes === 'Newer edit from the first tab.');
             await message.locator('.mes_edit').click();
             await page.locator('#curEditTextarea').fill('Newer edit from the first tab.');
             await message.locator('.mes_edit_done').click();
@@ -319,7 +333,7 @@ for (const phone of [false, true]) {
             expect(refusal.error).toBe('integrity');
             expect(refusal.roleplay.source).toEqual(newer.roleplay.source);
             expect(staleAttempts).toHaveLength(1);
-            expect(staleAttempts[0].roleplay.source).toEqual(retryResult.roleplay.source);
+            expect(staleAttempts[0].roleplay.source).toEqual(staleSource);
             expect(read(sourceTarget).records[2].mes).toBe('Newer edit from the first tab.');
             const popup = stalePage.locator('dialog[open]').filter({ has: stalePage.locator('.popup-input') });
             await expect(popup).toBeVisible();

@@ -106,12 +106,13 @@ test('kitty clouds remain visible behind Home, Characters and Conversation', asy
     await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 45000 });
     const layer = await page.locator('body').evaluate(body => {
         const style = window.getComputedStyle(body, '::before');
-        return { image: style.backgroundImage, opacity: style.opacity, pointerEvents: style.pointerEvents };
+        return { image: style.backgroundImage, opacity: style.opacity, pointerEvents: style.pointerEvents,
+            tone: document.documentElement.dataset.neconyanCalicoTone };
     });
-    expect(layer.image).toContain('kitty-clouds.webp');
-    expect(Number(layer.opacity)).toBe(0.5);
+    expect(layer.image).toContain(layer.tone === 'dark' ? 'kitty-clouds-dark.webp' : 'kitty-clouds.webp');
+    expect(Number(layer.opacity)).toBe(0.67);
     expect(layer.pointerEvents).toBe('none');
-    await expect(page.locator('#top-bar')).toHaveCSS('background-color', /(?:,\s*|\/\s*)0\.72\)$/);
+    await expect(page.locator('#top-bar')).toHaveCSS('background-color', /(?:,\s*|\/\s*)0\.9\)$/);
     await expect(page.locator('#sb-topbar-inner')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await expect(page.locator('.neconyan-home-intro')).toHaveCSS('background-color', /(?:,\s*|\/\s*)0\.9\)$/);
     await expect(page.locator('[data-neconyan-cat]')).toHaveAttribute('src', /neconyan-pixel-cat-rest\.webp/);
@@ -327,15 +328,55 @@ for (const width of [320, 390]) {
                 const contrasts = await mobileRail.locator('.neconyan-rail-button').evaluateAll(items => items.map(item => {
                     const foreground = window.getComputedStyle(item).color;
                     const layer = window.getComputedStyle(item, '::before');
-                    const background = layer.display === 'none' ? window.getComputedStyle(item).backgroundColor : layer.backgroundColor;
-                    const luminance = colour => {
-                        const channels = colour.match(/[\d.]+/g).slice(0, 3).map(Number).map(value => value / 255).map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
-                        return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+                    const canvas = document.createElement('canvas');
+                    canvas.width = canvas.height = 1;
+                    const context = canvas.getContext('2d');
+                    const luminance = bytes => [...bytes].slice(0, 3).map(value => value / 255)
+                        .map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4)
+                        .reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0);
+                    const gradientStops = image => {
+                        if (image === 'none') return [];
+                        if (!/^linear-gradient\(/.test(image)) throw new Error(`Unsupported contrast background: ${image}`);
+                        let depth = 0; let start = 0;
+                        const stops = []; const contents = image.slice(image.indexOf('(') + 1, -1);
+                        for (let index = 0; index <= contents.length; index++) {
+                            if (contents[index] === '(') depth++;
+                            if (contents[index] === ')') depth--;
+                            if (index === contents.length || (contents[index] === ',' && depth === 0)) {
+                                const colour = contents.slice(start, index).trim().replace(/(?:\s+-?[\d.]+(?:%|px)){1,2}$/, '');
+                                if (window.CSS.supports('color', colour)) stops.push(colour);
+                                start = index + 1;
+                            }
+                        }
+                        if (!stops.length) throw new Error(`Missing contrast gradient colours: ${image}`);
+                        return stops;
                     };
-                    const ink = luminance(foreground);
-                    const surface = luminance(background);
-                    return { ratio: (Math.max(ink, surface) + 0.05) / (Math.min(ink, surface) + 0.05), opacity: layer.opacity };
+                    const ancestors = [];
+                    for (let node = item; node; node = node.parentElement) ancestors.unshift(window.getComputedStyle(node));
+                    if (layer.display !== 'none' && layer.content !== 'none') ancestors.push(layer);
+                    // Transparent buttons inherit the painted surface. Check every gradient stop,
+                    // rather than interpreting transparency as an opaque black background.
+                    let surfaces = ['#fff'];
+                    for (const style of ancestors) {
+                        const stops = gradientStops(style.backgroundImage);
+                        surfaces = surfaces.flatMap(surface => (stops.length ? stops : [null]).map(stop => {
+                            context.fillStyle = surface; context.fillRect(0, 0, 1, 1);
+                            context.fillStyle = style.backgroundColor; context.fillRect(0, 0, 1, 1);
+                            if (stop) { context.fillStyle = stop; context.fillRect(0, 0, 1, 1); }
+                            return `rgb(${[...context.getImageData(0, 0, 1, 1).data].slice(0, 3).join(',')})`;
+                        }));
+                        surfaces = [...new Set(surfaces)];
+                    }
+                    const ratios = surfaces.map(surface => {
+                        context.fillStyle = surface; context.fillRect(0, 0, 1, 1);
+                        const background = luminance(context.getImageData(0, 0, 1, 1).data);
+                        context.fillStyle = foreground; context.fillRect(0, 0, 1, 1);
+                        const ink = luminance(context.getImageData(0, 0, 1, 1).data);
+                        return (Math.max(ink, background) + .05) / (Math.min(ink, background) + .05);
+                    });
+                    return { label: item.textContent, foreground, surfaces, ratio: Math.min(...ratios), opacity: layer.opacity };
                 }));
+                await testInfo.attach('navigation-contrast', { contentType: 'application/json', body: JSON.stringify(contrasts) });
                 expect(contrasts.length).toBeGreaterThan(0);
                 for (const contrast of contrasts) {
                     expect(contrast.opacity).toBe('1');

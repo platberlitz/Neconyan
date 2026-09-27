@@ -3381,30 +3381,39 @@ async function evaluateWithEngineAndVariables(page, input, variables) {
 
         // Get the SillyTavern context for variable access
         const ctx = SillyTavern.getContext();
+        const { chat_metadata } = await import('./script.js');
+        const { extension_settings } = await import('./scripts/extensions.js');
+        const previousLocal = chat_metadata.variables;
+        const previousGlobal = extension_settings.variables.global;
 
-        // Pre-set local variables
-        if (variables.local) {
-            for (const [key, value] of Object.entries(variables.local)) {
-                ctx.variables.local.set(key, value);
+        // An empty fixture means no variables, including values saved by earlier tests.
+        try {
+            if (variables.local) {
+                chat_metadata.variables = {};
+                for (const [key, value] of Object.entries(variables.local)) {
+                    ctx.variables.local.set(key, value);
+                }
             }
-        }
-        // Pre-set global variables
-        if (variables.global) {
-            for (const [key, value] of Object.entries(variables.global)) {
-                ctx.variables.global.set(key, value);
+            if (variables.global) {
+                extension_settings.variables.global = {};
+                for (const [key, value] of Object.entries(variables.global)) {
+                    ctx.variables.global.set(key, value);
+                }
             }
+
+            /** @type {import('../../public/scripts/macros/engine/MacroEnvBuilder.js').MacroEnvRawContext} */
+            const rawEnv = {
+                content: input,
+                name1Override: 'User',
+                name2Override: 'Character',
+            };
+            const env = MacroEnvBuilder.buildFromRawEnv(rawEnv);
+
+            return await MacroEngine.evaluate(input, env);
+        } finally {
+            chat_metadata.variables = previousLocal;
+            extension_settings.variables.global = previousGlobal;
         }
-
-        /** @type {import('../../public/scripts/macros/engine/MacroEnvBuilder.js').MacroEnvRawContext} */
-        const rawEnv = {
-            content: input,
-            name1Override: 'User',
-            name2Override: 'Character',
-        };
-        const env = MacroEnvBuilder.buildFromRawEnv(rawEnv);
-
-        const output = await MacroEngine.evaluate(input, env);
-        return output;
     }, { input, variables });
 
     return result;

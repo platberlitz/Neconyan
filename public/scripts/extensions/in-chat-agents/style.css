@@ -3210,7 +3210,7 @@ body.neconyan .ica--standalone-title { display: none; }
 
 .ica--card-secondary-actions {
     position: absolute;
-    z-index: 4;
+    z-index: 11;
     right: 0;
     bottom: calc(100% + 4px);
     min-width: 190px;

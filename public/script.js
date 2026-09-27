@@ -13862,6 +13862,13 @@ async function renderMessageScreenshotCanvas(startId, endId) {
         surface.querySelectorAll('.mes').forEach(updateMessageSleeperPosition);
         await inlineMessageScreenshotImages(surface);
         const iconFontStyle = await getMessageScreenshotIconFontStyle();
+        // Preserve which boxes size themselves to their content before html2canvas replaces
+        // their natural heights with pixels. Nested wrappers must grow when SVG fonts reflow.
+        for (const element of surface.querySelectorAll('*')) {
+            if (element.computedStyleMap?.().get('height')?.toString() === 'auto') {
+                element.setAttribute('data-nn-screenshot-auto-height', '');
+            }
+        }
         const mobileCapture = isMobile();
         const preferredScale = mobileCapture ? 1 : Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
         const pixelBudget = mobileCapture ? 4_000_000 : 16_000_000;
@@ -13882,7 +13889,7 @@ async function renderMessageScreenshotCanvas(startId, endId) {
                 // Foreign-object fonts can reflow after html2canvas freezes computed heights and grid tracks.
                 clonedSurface.style.height = 'auto';
                 clonedSurface
-                    .querySelectorAll('.mes, .mes_block, .mes_text, .mes_reasoning, :is(.mes_text, .mes_reasoning) :is(p, blockquote, li, ul, ol, .dc-gradient-text)')
+                    .querySelectorAll('[data-nn-screenshot-auto-height], .mes, .mes_block, .mes_text, .mes_reasoning, :is(.mes_text, .mes_reasoning) :is(p, blockquote, li, ul, ol, .dc-gradient-text)')
                     .forEach(element => element.style.height = 'auto');
                 clonedSurface.querySelectorAll('.mes').forEach(element => element.style.gridTemplateRows = 'auto');
                 clonedSurface

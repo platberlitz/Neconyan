@@ -833,6 +833,11 @@ async function activateNeconyanMode(mode) {
             return false;
         }
 
+        // Respond to this selection now. A drawer reopened during asynchronous activation
+        // belongs to a newer user action and must not be closed when activation finishes.
+        closeWorkspace();
+        closeMobileNav();
+
         if (targetMode === 'roleplay' && getActualNeconyanMode() === 'conversation') {
             // Conversation hands its character back to Roleplay: close the workspace and select
             // that character so its latest roleplay chat loads. The generic close path bails out
@@ -844,8 +849,6 @@ async function activateNeconyanMode(mode) {
             if (index >= 0 && String(this_chid) !== String(index)) {
                 await selectCharacterById(index);
             }
-            closeWorkspace();
-            closeMobileNav();
             globalThis.NeconyanWelcome?.concealHome?.();
             globalThis.document?.body?.classList.remove('neconyan-home-visible');
             document.getElementById('send_textarea')?.focus?.({ preventScroll: false });
@@ -864,7 +867,6 @@ async function activateNeconyanMode(mode) {
 
         let activated = false;
         if (targetMode === 'roleplay') {
-            closeWorkspace();
             document.getElementById('send_textarea')?.focus?.({ preventScroll: false });
             activated = true;
         } else if (targetMode === 'conversation') {
@@ -904,8 +906,6 @@ async function activateNeconyanMode(mode) {
         if (activated) {
             globalThis.NeconyanWelcome?.concealHome?.();
             globalThis.document?.body?.classList.remove('neconyan-home-visible');
-            closeWorkspace();
-            closeMobileNav();
             queueNeconyanModeSync();
         }
         return activated;
@@ -10942,13 +10942,15 @@ function describeCharacterBadge(node, index) {
  */
 function syncCharacterToggleBadges() {
     const drawerIcon = getNativeCharacterDrawerIcon();
-    const proxyButton = document.getElementById('sb-character-toggle');
+    const legacyButton = document.getElementById('sb-character-toggle');
+    const proxyButton = document.querySelector('#neconyan-workspace-rail [data-neconyan-route="characters"]') ?? legacyButton;
 
     if (!(drawerIcon instanceof HTMLElement) || !(proxyButton instanceof HTMLElement)) {
         return;
     }
 
-    const iconNodes = Array.from(drawerIcon.children);
+    const iconNodes = [...(legacyButton && legacyButton !== proxyButton
+        ? legacyButton.querySelectorAll(`:scope > [${TOPBAR_ADOPTED_MARKER_ATTRIBUTE}='true']`) : []), ...drawerIcon.children];
     const hostNodes = Array.from(proxyButton.querySelectorAll(`:scope > [${TOPBAR_ADOPTED_MARKER_ATTRIBUTE}='true']`));
     const iconBadges = iconNodes.map((node, index) => describeCharacterBadge(node, index));
     const hostBadges = hostNodes.map((node, index) => describeCharacterBadge(node, `host-${index}`));
@@ -10972,6 +10974,7 @@ function syncCharacterToggleBadges() {
         'sb-has-adopted-badge',
         proxyButton.querySelector(`:scope > [${TOPBAR_ADOPTED_MARKER_ATTRIBUTE}='true']`) !== null,
     );
+    if (legacyButton !== proxyButton) legacyButton?.classList.remove('sb-has-adopted-badge');
 }
 
 function syncTopbarExtensionSlotEmptyState() {
@@ -11055,6 +11058,8 @@ function bindTopbarExtensionAdoption() {
         return;
     }
 
+    window.addEventListener('neconyan:rail-ready', bindTopbarExtensionAdoption);
+
     if (!(nnState.topbarExtensions.observer instanceof MutationObserver)) {
         nnState.topbarExtensions.observer = new MutationObserver(() => queueTopbarExtensionAdoption());
     }
@@ -11066,7 +11071,7 @@ function bindTopbarExtensionAdoption() {
     // childList only: extensions inject direct children, and subtree on #top-bar would fire on
     // every chatbar and search re-render inside #sb-topbar-stack. The slot itself is watched so a
     // control that removes itself flips the empty flag back and the slot stops holding a gap.
-    for (const target of [getCanonicalTopSettingsHolder(), document.getElementById('top-bar'), getNativeCharacterDrawerIcon(), getTopbarExtensionSlot()]) {
+    for (const target of [getCanonicalTopSettingsHolder(), document.getElementById('top-bar'), getNativeCharacterDrawerIcon(), getTopbarExtensionSlot(), document.querySelector('#neconyan-workspace-rail [data-neconyan-route="characters"]')]) {
         if (target instanceof HTMLElement) {
             observer.observe(target, { childList: true });
         }

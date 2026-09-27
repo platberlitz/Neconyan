@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { expect, test } from '@playwright/test';
 import { trackNavigationErrors } from './chat-scroll-regression-helpers.js';
+import { createMockRoleplayStore } from './roleplay-browser-fixture.js';
 
 test.use({ serviceWorkers: 'block' });
 test.setTimeout(180000);
@@ -245,21 +246,24 @@ test.describe('Editor surfaces and composer density', () => {
         await page.evaluate(() => window.NeconyanShell.activateMode('roleplay'));
         const input = page.locator('#send_textarea');
         const form = page.locator('#send_form');
+        // Optional extension actions have their own 44px row above the input.
+        const inputRow = page.locator('#nonQRFormItems');
         await expect(input).toBeVisible();
         for (const width of [1280, 768, 390, 320]) {
             await page.setViewportSize({ width, height: 900 });
             await input.fill('');
-            await expect.poll(async () => (await form.boundingBox()).height).toBeLessThanOrEqual(90);
+            await expect.poll(async () => (await inputRow.boundingBox()).height).toBeLessThanOrEqual(90);
             const emptyHeight = (await form.boundingBox()).height;
             expect((await input.boundingBox()).width).toBeGreaterThanOrEqual(100);
             await page.screenshot({ path: info.outputPath(`composer-empty-${width}.png`) });
             await input.fill('One short line');
-            await expect.poll(async () => (await form.boundingBox()).height).toBeLessThanOrEqual(90);
+            await expect.poll(async () => (await inputRow.boundingBox()).height).toBeLessThanOrEqual(90);
             await input.fill('Line one\nLine two\nLine three\nLine four\nLine five\nLine six');
             await expect.poll(async () => (await form.boundingBox()).height).toBeGreaterThan(emptyHeight + 20);
             await expect(input).toHaveValue(/Line six$/);
             await page.screenshot({ path: info.outputPath(`composer-multiline-${width}.png`) });
             await input.fill('');
+            await page.evaluate(async () => (await import('/script.js')).setOnlineStatus('no_connection'));
             const connect = form.getByRole('button', { name: 'Connect a model', exact: true });
             await expect(connect).toBeVisible();
             await connect.tap();
@@ -319,15 +323,15 @@ test('Built-in Extensions omits Included Tools while their settings remain searc
     await page.getByRole('button', { name: 'Built-in', exact: true }).click();
     const entries = page.locator('.sb-extension-master-item');
     await expect(entries).toHaveCount(10);
-    for (const name of ['BotSearcher', 'Dialogue Colors', 'Preset Tools', 'Prompt Tags', 'Time Machine', 'Meower', 'Story Mode', 'Pathfinder']) {
+    for (const name of ['BotSearcher', 'Dialogue Colors', 'Preset Tools', 'Prompt Tags', 'Time Machine', 'Meower', 'Story Mode', 'Pawthfinder']) {
         await expect(entries.filter({ hasText: new RegExp(`^${name}$`) })).toHaveCount(0);
     }
     for (const name of ['TTS', 'Quick Reply', 'Quick Image Gen', 'Vector Storage']) {
         await expect(entries.filter({ hasText: new RegExp(`^${name}$`) })).toHaveCount(1);
     }
-    // Pathfinder keeps its settings page through the Included Tools route.
+    // Pawthfinder keeps its settings page through the Included Tools route.
     await page.evaluate(() => {
-        const definition = window.NeconyanNativeTools.getDefinitions().find(tool => tool.label === 'Pathfinder');
+        const definition = window.NeconyanNativeTools.getDefinitions().find(tool => tool.id === 'pathfinder');
         window.NeconyanNativeTools.openSettings(definition);
     });
     await expect(page.locator('#user-settings-block')).toHaveAttribute('data-sb-active-tab', 'included-tool');
@@ -557,13 +561,13 @@ test('Extensions separates third-party panels and reveals hidden built-in search
     const thirdParty = page.locator('button[data-extensions-scope="third-party"]');
     const builtIn = page.locator('button[data-extensions-scope="built-in"]');
     const masters = page.locator('.sb-extension-master-item');
+    const search = page.getByRole('searchbox', { name: 'Find an extension', exact: true });
     await expect(thirdParty).toHaveAttribute('aria-pressed', 'true');
     await expect(masters).toHaveCount(3);
     await expect(page.locator('#builtin-fixture')).toBeHidden();
-    await masters.filter({ hasText: /^Local fixture$/ }).click();
     await expect(page.locator('#local-fixture-0')).toBeVisible();
     await expect(page.locator('#local-fixture-1')).toBeVisible();
-    await expect(page.locator('#global-fixture-0')).toBeHidden();
+    await expect(page.locator('#global-fixture-0')).toBeVisible();
     const drawerToggle = page.locator('#local-fixture-0 .inline-drawer-icon');
     await expect(drawerToggle).toHaveAttribute('aria-expanded', 'true');
     await page.locator('#local-fixture-0-input').fill('Keep this setting.');
@@ -585,14 +589,14 @@ test('Extensions separates third-party panels and reveals hidden built-in search
     await page.keyboard.press('Enter');
     await expect(drawerToggle).toHaveAttribute('aria-expanded', 'false');
     await expect(page.locator('#local-fixture-0-input')).toBeHidden();
-    await masters.filter({ hasText: /^Global fixture$/ }).click();
+    await search.fill('Global fixture');
     await expect(page.locator('#global-fixture-0')).toBeVisible();
     await expect(page.locator('#local-fixture-0')).toBeHidden();
-    await masters.filter({ hasText: /^No settings fixture$/ }).click();
+    await search.fill('No settings fixture');
     await expect(page.locator('.sb-extensions-empty')).toContainText('No settings are available');
     await expect(page.locator('#global-fixture-0')).toBeHidden();
+    await search.clear();
     await builtIn.click();
-    await masters.filter({ hasText: /^Built-in fixture$/ }).click();
     await expect(page.locator('#builtin-fixture-input')).toBeVisible();
     await expect(page.locator('#local-fixture-late')).toBeHidden();
     await thirdParty.click();
@@ -606,27 +610,31 @@ test('Extensions separates third-party panels and reveals hidden built-in search
     await page.locator('label[for="builtin-fixture-input"]').click();
     await expect(page.locator('#builtin-fixture-input')).toBeFocused();
     await thirdParty.click();
-    await masters.filter({ hasText: /^Local fixture$/ }).click();
+    await search.fill('Local fixture');
     await expect(drawerToggle).toHaveAttribute('aria-expanded', 'false');
     await expect(page.locator('#local-fixture-0-input')).toBeHidden();
     await expect(page.locator('#local-fixture-0-input')).toHaveValue('Keep this setting.');
     expect(await page.evaluate(() => window.localFixtureInput === document.getElementById('local-fixture-0-input'))).toBe(true);
     const pinSaved = page.waitForResponse(response => response.url().endsWith('/api/settings/save') && response.ok());
-    await page.getByRole('button', { name: 'Pin Local fixture', exact: true }).click();
+    await page.locator('#local-fixture-0').getByRole('button', { name: 'Pin Local fixture', exact: true }).click();
     await expect(masters.first()).toHaveText('Local fixture');
-    await expect(page.getByRole('button', { name: 'Unpin Local fixture', exact: true })).toBeFocused();
+    await expect(page.locator('#local-fixture-0').getByRole('button', { name: 'Unpin Local fixture', exact: true })).toBeFocused();
     await pinSaved;
+    await search.clear();
+    await expect(masters).toHaveCount(3);
+    await expect(masters.first()).toHaveText('Local fixture');
     await safety.navigate(() => page.reload({ waitUntil: 'domcontentloaded' }));
     await expect(page.locator('#local-fixture-0-input')).toBeAttached({ timeout: 60000 });
     await page.evaluate(() => window.NeconyanShell.openTab('right', 'extensions'));
     await expect(masters.first()).toHaveText('Local fixture');
-    // Phones drop the picker: every extension in the active scope is listed as its own drawer.
+    // Both layouts keep the filtered panels together, with pins surviving reload.
     await page.setViewportSize({ width: 390, height: 900 });
     await expect(page.locator('.sb-extensions-select')).toBeHidden();
     await expect(page.locator('.sb-extension-mobile-pin')).toBeHidden();
     await expect(page.locator('#local-fixture-0-input')).toBeAttached();
-    await expect(page.locator('#extensions_settings > :not([hidden]), #extensions_settings2 > :not([hidden])').first()).toBeVisible();
-    expect(await page.locator('#extensions_settings > :not([hidden]), #extensions_settings2 > :not([hidden])').count()).toBeGreaterThan(1);
+    for (const id of ['local-fixture-0', 'local-fixture-1', 'global-fixture-0']) {
+        await expect(page.locator(`#${id}`)).toBeVisible();
+    }
 });
 
 for (const width of [1280, 390, 320]) {
@@ -852,7 +860,7 @@ test.describe('native import report', () => {
         await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
         await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
         await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'settings'));
-        await page.locator('.sb-settings-category-select').selectOption('system-device');
+        await page.locator('.sb-settings-tab-btn[data-tab="system-device"]').click();
         const section = page.locator('#SillyTavernImportSection');
         if (!await page.locator('#sb-import-path-input').isVisible()) await section.locator('.inline-drawer-toggle').first().click();
         await page.locator('#sb-import-path-input').fill('/example/SillyTavern');
@@ -932,7 +940,8 @@ for (const width of [393, 1280]) {
         test.use({ viewport: { width, height: width === 393 ? 852 : 900 }, isMobile: width === 393, hasTouch: width === 393 });
         for (const tone of ['dark', 'light']) {
             test(`native Termeownal UI preserves navigation, drafts and ${tone} theme colours`, async ({ page }, info) => {
-                await page.route('**/api/chats/save', route => route.fulfill({ json: { result: 'ok' } }));
+                const storage = createMockRoleplayStore(() => null, { realReads: true });
+                await page.route('**/api/chats/save', route => storage.save(route));
                 await mockNativeSettings(page, { resetTerminal: true, tone });
                 await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
                 await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
@@ -1100,6 +1109,13 @@ test.describe('Conversation and native view transitions', () => {
         await openConversation();
         await expect(page.locator('.sbtw-shell')).toBeHidden();
         await checkDrafts();
+        // The connection shortcut belongs to the disconnected notice, not every conversation.
+        await page.evaluate(async () => {
+            const { setOnlineStatus } = await import('/script.js');
+            const settings = window.SillyTavern.getContext().extensionSettings;
+            if (settings.connectionManager) settings.connectionManager.profiles = [];
+            setOnlineStatus('no_connection');
+        });
         await page.locator('[data-sb-conversation-action="open-connections"]').click();
         await expect(page.locator('#left-nav-panel')).toHaveAttribute('data-sb-active-tab', 'api');
         await checkDrafts();

@@ -61,7 +61,8 @@ test('memory corrections and expression actions fit phone, tablet and desktop wi
             }
         }).toPass({ timeout: 10_000 });
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-        await actions.screenshot({ path: testInfo.outputPath(`mewmory-${width}.png`) });
+        // The live memory view may replace this row while capturing the image.
+        await page.screenshot({ path: testInfo.outputPath(`mewmory-${width}.png`) });
     }
 
     // Keep the real controls exposed while the extension polls for a saved chat.

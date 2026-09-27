@@ -85,17 +85,16 @@ for (const width of [320, 390, 1280]) {
             await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 45000 });
             await page.evaluate(() => window.SillyBunnyShell.openTab('characters', 'characters'));
             const importButton = page.locator('#character_import_button');
-            const decoration = importButton.locator('.neconyan-whiskers');
-            await expect(importButton).toBeVisible({ visible: width >= 768 });
+            // Import's retained host control is hidden in both current layouts.
+            await expect(importButton).toBeHidden();
+            const createButton = page.locator('#rm_button_create');
+            await expect(createButton).toBeVisible();
+            const decoration = createButton.locator('.neconyan-whiskers');
             await expect(decoration).toHaveCSS('pointer-events', 'none');
-            const bounds = await decoration.evaluate(element => {
-                const own = element.getBoundingClientRect();
-                const parent = element.parentElement.getBoundingClientRect();
-                return { x: Math.abs(own.x - parent.x), y: Math.abs(own.y - parent.y), width: Math.abs(own.width - parent.width), height: Math.abs(own.height - parent.height) };
-            });
-            for (const difference of Object.values(bounds)) expect(difference).toBeLessThanOrEqual(2);
+            // The compact library toolbar deliberately hides its decorations.
+            await expect(decoration).toBeHidden();
             await Promise.all([page.waitForEvent('filechooser'), importButton.dispatchEvent('click')]);
-            await page.locator('#rm_button_create').click();
+            await createButton.click();
             await expect(page.locator('#avatar-and-name-block')).toBeVisible();
             await expect(page.locator('#rm_button_back > span')).toHaveText('Cancel');
             await expect(page.locator('#create_button_label > span')).toHaveText('Create character');

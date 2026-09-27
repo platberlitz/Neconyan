@@ -1,6 +1,19 @@
 /* global document, window */
-import { expect, test } from '@playwright/test';
-import { APP_URL, dismissOnboardingIfPresent, dismissOpenDialogIfPresent, waitForAnimationFrames } from './chat-scroll-regression-helpers.js';
+import { expect } from '@playwright/test';
+import { test as disposableTest } from './neconyan-conversation-durable-fixture.js';
+import { dismissOnboardingIfPresent, dismissOpenDialogIfPresent, waitForAnimationFrames } from './chat-scroll-regression-helpers.js';
+
+// Routing choices are saved and reloaded, so each case owns its server-side settings too.
+const test = disposableTest.extend({
+    baseURL: async ({ app }, use) => use(app.url),
+    page: async ({ app, viewport, hasTouch }, use) => {
+        const account = await app.account({ phone: hasTouch });
+        const page = await account.context.newPage();
+        if (viewport) await page.setViewportSize(viewport);
+        await use(page);
+    },
+});
+test.setTimeout(120000);
 
 test.describe.configure({ mode: 'default' });
 test.use({ serviceWorkers: 'block' });
@@ -75,6 +88,12 @@ async function openApi(page) {
     if (await welcomeSave.isVisible()) await welcomeSave.click();
     await dismissOpenDialogIfPresent(page);
     await page.waitForFunction(async () => (await import('/script.js')).settingsReady);
+    await expect(page.locator('body')).toHaveClass(/neconyan-rail-ready/, { timeout: 60000 });
+    const tour = page.locator('#neconyan-tour-coachmark');
+    if (await tour.isVisible()) {
+        await tour.locator('[data-tour-coach-skip]').click();
+        await expect(tour).toBeHidden();
+    }
     await page.waitForFunction(() => typeof window.SillyBunnyShell?.openTab === 'function');
     await page.evaluate(() => window.SillyBunnyShell.openTab('left', 'api'));
     await expect(page.locator('#main_api')).toBeVisible();
@@ -104,7 +123,7 @@ async function connectNanoGpt(page) {
 
 async function setupNanoGpt(page, baseURL) {
     const routes = await installRoutes(page, baseURL);
-    await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
+    await page.goto(baseURL, { waitUntil: 'domcontentloaded' });
     await openApi(page);
     await page.addLocatorHandler(page.locator('#qig-setup-wizard'), async wizard => {
         await wizard.getByRole('button', { name: 'Skip', exact: true }).click();
@@ -146,7 +165,7 @@ async function toggleProvider(page, mobile, kind, label, remove = false) {
         await expect(option).toBeEnabled();
         await option.click();
     }
-    await page.getByRole('heading', { name: 'API', exact: true, level: 2 }).locator('..').click({ position: { x: 8, y: 8 } });
+    await page.getByRole('heading', { name: 'Connections', exact: true, level: 2 }).locator('..').click({ position: { x: 8, y: 8 } });
 }
 
 async function expectRouting(page, allowed, ignored, payg) {
@@ -266,7 +285,7 @@ for (const mobile of [false, true]) {
         });
 
         test('provider controls preserve restrictions through discovery, reload and removal', async ({ page, baseURL }, testInfo) => {
-            test.setTimeout(90000);
+            test.setTimeout(180000);
             const routes = await setupNanoGpt(page, baseURL);
             const billing = page.locator('#nanogpt_billing_warning');
             const warning = page.locator('#nanogpt_provider_warning');

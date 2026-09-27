@@ -229,6 +229,8 @@ describe('Neconyan workspace rail behavior', () => {
 
     test('Story accepts chats without an avatar and aborts stale or busy transitions', async () => {
         const opened = [];
+        let navigationOpen = true;
+        let workspaceOpen = true;
         const context = vm.createContext({
             normalizeNeconyanMode: value => value, neconyanModeTask: null,
             chat: [{ mes: 'Temporary chat' }], getCurrentChatId: () => '',
@@ -239,7 +241,7 @@ describe('Neconyan workspace rail behavior', () => {
             promptForNeconyanCharacter: () => { throw new Error('An avatar is not required for a manuscript.'); },
             isNeconyanModeBusy: () => false, closeActiveNeconyanMode: async () => true,
             getNeconyanModeLifecycle: () => ({ setEnabled: async enabled => { opened.push(enabled); return true; } }),
-            closeWorkspace() {}, closeMobileNav() {}, queueNeconyanModeSync() {},
+            closeWorkspace() { workspaceOpen = false; }, closeMobileNav() { navigationOpen = false; }, queueNeconyanModeSync() {},
         });
         vm.runInContext(tabsSource.match(/^async function activateNeconyanMode\([\s\S]*?^}/m)[0], context);
         expect(await context.activateNeconyanMode('story')).toBe(true);
@@ -247,11 +249,18 @@ describe('Neconyan workspace rail behavior', () => {
         context.isNeconyanModeBusy = () => false;
         let finish;
         context.getNeconyanModeLifecycle = () => ({ setEnabled: () => new Promise(resolve => { finish = resolve; }) });
+        navigationOpen = workspaceOpen = true;
         const pending = context.activateNeconyanMode('story');
         await Promise.resolve();
+        expect(navigationOpen).toBe(false);
+        expect(workspaceOpen).toBe(false);
+        // A drawer opened during a slow mode change belongs to the newer user action.
+        navigationOpen = workspaceOpen = true;
         expect(await context.activateNeconyanMode('roleplay')).toBe(false);
         finish(true);
         expect(await pending).toBe(true);
+        expect(navigationOpen).toBe(true);
+        expect(workspaceOpen).toBe(true);
         context.chat = [];
         expect(await context.activateNeconyanMode('story')).toBe(false);
         context.getNeconyanModeLifecycle = () => ({ open: async () => true });

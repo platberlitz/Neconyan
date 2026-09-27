@@ -118,7 +118,10 @@ for (const width of [320, 1280]) {
                     },
                 );
                 await context.printMessages();
+                await (await import('/scripts/welcome-screen.js')).hideWelcomeHome();
             });
+
+            await expect(page.locator('#chat')).toBeVisible();
 
             await page.evaluate(() => document.getElementById('option_select_chat')?.click());
             await expect(page.locator('#select_chat_div .select_chat_block')).toHaveCount(2);
@@ -268,7 +271,7 @@ for (const width of [320, 1280]) {
             // top edge and height, so the columns read as rows instead of a staggered list.
             const actionRowAlignment = await extras.evaluate(element => {
                 const items = [...element.children].filter(item => {
-                    const style = getComputedStyle(item);
+                    const style = window.getComputedStyle(item);
                     const rect = item.getBoundingClientRect();
                     return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 1 && rect.height > 1;
                 }).map(item => item.getBoundingClientRect());
@@ -334,11 +337,12 @@ for (const width of [320, 1280]) {
             await textarea.fill('keep this draft');
             await page.locator('#send_form').evaluate(element => element.classList.add('no-connection'));
             const connect = page.locator('#neconyan_connect_button');
-            // Phones show icon squares: the label is hidden and the button is a 44px tap target. Desktop keeps the labelled pill.
+            // Both composer layouts use icon squares with an accessible name.
             const phone = width < 769;
-            await expect(page.locator('#options_button .neconyan-action-label')).toBeVisible({ visible: !phone });
+            await expect(page.locator('#options_button .neconyan-action-label')).toBeHidden();
+            await expect(page.locator('#options_button')).toHaveAccessibleName('Chat tools');
             const optionsBox = await page.locator('#options_button').boundingBox();
-            expect(optionsBox.width).toBeLessThanOrEqual(phone ? 46 : 320);
+            expect(optionsBox.width).toBeLessThanOrEqual(phone ? 46 : 64);
             expect(optionsBox.height).toBeLessThanOrEqual(phone ? 46 : 64);
             expect(optionsBox.height).toBeGreaterThanOrEqual(38);
             const composerClipping = await page.locator('#leftSendForm .neconyan-action-label').evaluateAll(labels => labels.filter(label => {

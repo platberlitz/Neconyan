@@ -17,9 +17,8 @@ const publicRoot = path.resolve(extensionRoot, '..', '..', '..');
 
 let baseUrl;
 let server;
+const operationStates = new WeakMap();
 
-const ARCHIVE_CURSOR = 'a'.repeat(64);
-const ORPHAN_CURSOR = 'b'.repeat(64);
 const FIRST_READ_TOKEN = 'c'.repeat(64);
 const SECOND_READ_TOKEN = 'd'.repeat(64);
 const FIRST_ORPHAN_HASH = 'e'.repeat(64);
@@ -33,6 +32,27 @@ test.use({
     isMobile: true,
 });
 
+test.beforeEach(async ({ page }) => {
+    const state = { records: new Map(), cancelled: [], submissions: [] };
+    operationStates.set(page, state);
+    await page.route('**/api/operations/recovery', route => fulfillJson(route, []));
+    await page.route('**/api/operations/records?*', route => fulfillJson(route, [...state.records.values()]));
+    await page.route('**/api/operations/records/*', route => fulfillJson(route,
+        state.records.get(decodeURIComponent(new URL(route.request().url()).pathname.split('/').at(-1)))));
+    await page.route('**/api/jobs/*', route => {
+        const id = new URL(route.request().url()).pathname.split('/').at(-1);
+        const record = state.records.get(id);
+        return record ? fulfillJson(route, { id, state: record.state }) : route.fulfill({ status: 404 });
+    });
+    await page.route('**/api/jobs/*/cancel', route => {
+        const id = new URL(route.request().url()).pathname.split('/').at(-2);
+        const record = state.records.get(id);
+        record.state = 'cancelled';
+        state.cancelled.push(id);
+        return fulfillJson(route, { job: { id, state: 'cancelled' } });
+    });
+});
+
 test.beforeAll(async () => {
     server = http.createServer(async (request, response) => {
         try {
@@ -40,6 +60,14 @@ test.beforeAll(async () => {
             if (url.pathname === '/') {
                 response.setHeader('Content-Type', 'text/html; charset=utf-8');
                 response.end(fixtureHtml(url.searchParams.has('long'), url.searchParams.has('duplicate-characters')));
+                return;
+            }
+            // Isolate the host, while retaining the real operations and job clients.
+            if (url.pathname === '/public/script.js' || url.pathname === '/public/scripts/user.js') {
+                response.setHeader('Content-Type', 'text/javascript');
+                response.end(url.pathname.endsWith('/script.js')
+                    ? 'export const getRequestHeaders = () => ({"Content-Type":"application/json"});'
+                    : 'export const getCurrentUserHandle = () => "archive-fixture";');
                 return;
             }
             const asset = url.pathname.startsWith('/extension/')
@@ -116,7 +144,7 @@ test('shows a resilient label with at least a 44px mobile touch target', async (
 
 test('owns the popup frame spacing and keeps mobile controls inside the viewport', async ({ page }) => {
     await routeOrganization(page);
-    await page.route('**/api/chats/archive/inventory', route => fulfillJson(route, archivePage([
+    await routeOperation(page, 'archive-inventory', route => fulfillJson(route, archivePage([
         linkedRow('a-long-chat-name-that-must-wrap-without-widening-the-popup'),
     ], null, null, 1)));
 
@@ -278,15 +306,15 @@ test('keeps a balanced master-detail workspace on desktop', async ({ page }) => 
             },
         },
     });
-    await page.route('**/api/files/upload', async route => {
+    await routeOperation(page, 'archive-organization', async route => {
         const body = route.request().postDataJSON();
-        organizationUploads.push(JSON.parse(Buffer.from(body.data, 'base64').toString('utf8')));
-        await fulfillJson(route, { path: body.name });
+        organizationUploads.push(body.organization);
+        await fulfillJson(route, { organization: body.organization, revision: String(organizationUploads.length) });
     });
-    await page.route('**/api/chats/archive/inventory', route => fulfillJson(route, archivePage([
+    await routeOperation(page, 'archive-inventory', route => fulfillJson(route, archivePage([
         linkedRow('desktop-chat'),
     ], null, null, 1)));
-    await page.route('**/api/chats/export', async route => {
+    await routeOperation(page, 'archive-export', async route => {
         await exportGate;
         await fulfillJson(route, {
             result: [
@@ -487,7 +515,7 @@ test('keeps desktop filters visible and organization management full width when 
             '["character","Alice","favorite-chat"]': { favorite: true },
         },
     });
-    await page.route('**/api/chats/archive/inventory', route => fulfillJson(route, archivePage([
+    await routeOperation(page, 'archive-inventory', route => fulfillJson(route, archivePage([
         linkedRow('favorite-chat'),
         linkedRow('ordinary-chat'),
     ], null, null, 2)));
@@ -625,8 +653,8 @@ test('keeps desktop filters visible and organization management full width when 
 
 test('keeps organization load recovery contextual to Manage organization', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.route('**/user/files/_sbca_organization.json', route => route.fulfill({ status: 503 }));
-    await page.route('**/api/chats/archive/inventory', route => fulfillJson(route, archivePage([
+    await page.route('**/api/operations/archive/organization', route => route.fulfill({ status: 503 }));
+    await routeOperation(page, 'archive-inventory', route => fulfillJson(route, archivePage([
         linkedRow('organization-error-chat'),
     ], null, null, 1)));
 
@@ -645,7 +673,7 @@ test('synchronizes the viewer Favorite action after organization loads', async (
     let releaseOrganization;
     const organizationGate = new Promise(resolve => { releaseOrganization = resolve; });
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.route('**/user/files/_sbca_organization.json', async route => {
+    await page.route('**/api/operations/archive/organization', async route => {
         await organizationGate;
         const organization = {
             version: 1,
@@ -657,16 +685,12 @@ test('synchronizes the viewer Favorite action after organization loads', async (
                 '["character","Alice","delayed-organization-chat"]': { favorite: true },
             },
         };
-        await route.fulfill({
-            status: 200,
-            contentType: 'application/json; charset=utf-8',
-            body: Buffer.from(JSON.stringify(organization)).toString('base64'),
-        });
+        await fulfillJson(route, { organization, revision: 'initial' });
     });
-    await page.route('**/api/chats/archive/inventory', route => fulfillJson(route, archivePage([
+    await routeOperation(page, 'archive-inventory', route => fulfillJson(route, archivePage([
         linkedRow('delayed-organization-chat'),
     ], null, null, 1)));
-    await page.route('**/api/chats/export', route => fulfillJson(route, {
+    await routeOperation(page, 'archive-export', route => fulfillJson(route, {
         result: JSON.stringify({ chat_metadata: {} }),
     }));
 
@@ -710,10 +734,10 @@ test('preserves focus and organizer geometry across the desktop-mobile breakpoin
             },
         },
     });
-    await page.route('**/api/chats/archive/inventory', route => fulfillJson(route, archivePage([
+    await routeOperation(page, 'archive-inventory', route => fulfillJson(route, archivePage([
         linkedRow('breakpoint-chat'),
     ], null, null, 1)));
-    await page.route('**/api/chats/export', route => fulfillJson(route, {
+    await routeOperation(page, 'archive-export', route => fulfillJson(route, {
         result: JSON.stringify({ chat_metadata: {} }),
     }));
 
@@ -787,11 +811,11 @@ test('shows saved views only when available and applies the selected view', asyn
             '["character","Alice","favorite-saved-view-chat"]': { favorite: true },
         },
     });
-    await page.route('**/api/chats/archive/inventory', route => fulfillJson(route, archivePage([
+    await routeOperation(page, 'archive-inventory', route => fulfillJson(route, archivePage([
         linkedRow('favorite-saved-view-chat'),
         linkedRow('ordinary-saved-view-chat'),
     ], null, null, 2)));
-    await page.route('**/api/chats/search', route => {
+    await routeOperation(page, 'archive-search', route => {
         searchRequests++;
         return fulfillJson(route, []);
     });
@@ -827,7 +851,7 @@ test('keeps the tablet and Safari popup layout bounded', async ({ page }) => {
     await expect(page.locator('html')).toHaveAttribute('data-archive-ready', 'true');
     await page.locator('body').evaluate(body => body.classList.add('safari'));
     await routeOrganization(page);
-    await page.route('**/api/chats/archive/inventory', route => fulfillJson(route, archivePage([
+    await routeOperation(page, 'archive-inventory', route => fulfillJson(route, archivePage([
         linkedRow('tablet-chat'),
     ], null, null, 1)));
 
@@ -855,7 +879,7 @@ test('keeps the tablet and Safari popup layout bounded', async ({ page }) => {
     expect(layout.viewportFit).toBe(true);
 });
 
-test('renders the first archive page and progress before the next page resolves', async ({ page }) => {
+test('waits for a saved inventory before displaying rows or searching content', async ({ page }) => {
     let inventoryRequests = 0;
     let searchRequests = 0;
     let releaseSecondPage;
@@ -863,17 +887,13 @@ test('renders the first archive page and progress before the next page resolves'
     const secondPageStarted = new Promise(resolve => { markSecondPageStarted = resolve; });
     const secondPageGate = new Promise(resolve => { releaseSecondPage = resolve; });
     await routeOrganization(page);
-    await page.route('**/api/chats/archive/inventory', async route => {
+    await routeOperation(page, 'archive-inventory', async route => {
         inventoryRequests++;
-        if (inventoryRequests === 1) {
-            await fulfillJson(route, archivePage([linkedRow('first')], ARCHIVE_CURSOR, null, 2));
-            return;
-        }
         markSecondPageStarted();
         await secondPageGate;
-        await fulfillJson(route, archivePage([linkedRow('second')], null, null, 2));
+        await fulfillJson(route, archivePage([linkedRow('first'), linkedRow('second')], null, null, 2));
     });
-    await page.route('**/api/chats/search', route => {
+    await routeOperation(page, 'archive-search', route => {
         searchRequests++;
         return fulfillJson(route, []);
     });
@@ -881,8 +901,7 @@ test('renders the first archive page and progress before the next page resolves'
     await openArchive(page);
     await secondPageStarted;
 
-    await expect(page.locator('.sbca-filename')).toHaveText(['first']);
-    await expect(page.locator('.sbca-status')).toContainText('1 of 2 indexed chat files');
+    await expect(page.locator('.sbca-filename')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Cancel' })).toBeEnabled();
     await expect(page.getByText('second', { exact: true })).toHaveCount(0);
     await page.getByRole('combobox', { name: 'Search indexed chats' }).fill('second');
@@ -893,6 +912,7 @@ test('renders the first archive page and progress before the next page resolves'
     await expect(page.locator('.sbca-filename')).toHaveText(['second']);
     await expect.poll(() => searchRequests).toBe(1);
     await expect(page.getByRole('button', { name: 'Refresh' })).toBeEnabled();
+    expect(inventoryRequests).toBe(1);
 });
 
 test('automatically combines indexed metadata and message-content search results', async ({ page }) => {
@@ -903,7 +923,7 @@ test('automatically combines indexed metadata and message-content search results
     const staleSearchStarted = new Promise(resolve => { markStaleSearchStarted = resolve; });
     const staleSearchGate = new Promise(resolve => { releaseStaleSearch = resolve; });
     await routeOrganization(page);
-    await page.route('**/api/chats/archive/inventory', route => {
+    await routeOperation(page, 'archive-inventory', route => {
         inventoryRequests++;
         if (inventoryRequests > 1) {
             return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'refresh failed' }) });
@@ -913,7 +933,7 @@ test('automatically combines indexed metadata and message-content search results
             linkedRow('unrelated'),
         ], null, null, 2));
     });
-    await page.route('**/api/chats/search', async route => {
+    await routeOperation(page, 'archive-search', async route => {
         searchRequests++;
         if (route.request().postDataJSON().query === 'stale') {
             markStaleSearchStarted();
@@ -928,7 +948,7 @@ test('automatically combines indexed metadata and message-content search results
             return;
         }
         expect(route.request().postDataJSON()).toMatchObject({
-            avatar_url: 'Alice.png',
+            kind: 'archive-search',
             query: 'needle',
         });
         await fulfillJson(route, [{
@@ -951,6 +971,9 @@ test('automatically combines indexed metadata and message-content search results
     await expect(page.locator('.sbca-filename')).toHaveText(['needle-metadata']);
 
     await expect.poll(() => searchRequests).toBe(2);
+    const searches = operationStates.get(page).submissions.filter(body => body.kind === 'archive-search');
+    expect(searches.map(body => body.query)).toEqual(['stale', 'needle']);
+    expect(searches[0].key).not.toBe(searches[1].key);
     releaseStaleSearch();
     await expect.poll(async () => (await page.locator('.sbca-filename').allTextContents()).sort()).toEqual([
         'content-match',
@@ -975,26 +998,26 @@ test('automatically combines indexed metadata and message-content search results
     await expect(page.locator('.sbca-selection-count')).toHaveText('2 selected');
 });
 
-test('fuzzy-matches character mentions and scopes automatic content search', async ({ page }) => {
+test('fuzzy-matches character mentions and filters saved content search results', async ({ page }) => {
     let searchRequests = 0;
-    const searchedAvatars = [];
+    const searchedQueries = [];
     await routeOrganization(page);
-    await page.route('**/api/chats/archive/inventory', route => fulfillJson(route, archivePage([
+    await routeOperation(page, 'archive-inventory', route => fulfillJson(route, archivePage([
         linkedRow('ordinary-chat'),
     ], null, null, 1)));
-    await page.route('**/api/chats/search', async route => {
+    await routeOperation(page, 'archive-search', async route => {
         searchRequests++;
-        searchedAvatars.push(route.request().postDataJSON().avatar_url);
+        searchedQueries.push(route.request().postDataJSON().query);
         expect(route.request().postDataJSON()).toMatchObject({
             query: 'needle',
         });
-        await fulfillJson(route, route.request().postDataJSON().avatar_url === 'Alice.png' ? [{
+        await fulfillJson(route, [{
             file_name: 'mentioned-content-match',
             file_size: '2 KB',
             message_count: 2,
             last_mes: 2_000,
             preview_message: 'needle in message content',
-        }] : []);
+        }]);
     });
 
     await page.goto(`${baseUrl}/?duplicate-characters`);
@@ -1035,7 +1058,8 @@ test('fuzzy-matches character mentions and scopes automatic content search', asy
     expect(searchRequests).toBe(0);
     await search.fill('@"Path\\\\Finder" needle');
     await expect.poll(() => searchRequests).toBe(1);
-    expect(searchedAvatars).toEqual(['Path.png']);
+    expect(searchedQueries).toEqual(['needle']);
+    await expect(page.locator('.sbca-filename')).toHaveCount(0);
     await search.fill('@Alce');
     await expect(mentionMenu).toBeVisible();
     await search.press('ArrowDown');
@@ -1048,96 +1072,70 @@ test('fuzzy-matches character mentions and scopes automatic content search', asy
     expect(searchRequests).toBe(1);
 
     await search.fill('@Alice needle');
-    await expect.poll(() => searchRequests).toBe(3);
-    expect(searchedAvatars.sort()).toEqual(['Alice-copy.png', 'Alice.png', 'Path.png']);
+    await expect.poll(() => searchRequests).toBe(2);
+    expect(searchedQueries).toEqual(['needle', 'needle']);
     await expect(page.locator('.sbca-filename')).toHaveText(['mentioned-content-match']);
 });
 
-test('cancels an incremental archive load, releases its cursor, and ignores the late page', async ({ page }) => {
-    const releases = [];
+test('cancels an accepted refresh and retains its record and the previous rows', async ({ page }) => {
     let inventoryRequests = 0;
     let searchRequests = 0;
-    let releaseLatePage;
     let markLatePageStarted;
     const latePageStarted = new Promise(resolve => { markLatePageStarted = resolve; });
-    const latePageGate = new Promise(resolve => { releaseLatePage = resolve; });
+    let pending;
     await routeOrganization(page);
-    await page.route('**/api/chats/archive/release', async route => {
-        releases.push(route.request().postDataJSON());
-        await route.fulfill({ status: 204 });
-    });
-    await page.route('**/api/chats/archive/inventory', async route => {
+    await routeOperation(page, 'archive-inventory', async route => {
         inventoryRequests++;
         if (inventoryRequests === 1) {
-            await fulfillJson(route, archivePage([linkedRow('kept')], ARCHIVE_CURSOR, null, 2));
+            await fulfillJson(route, archivePage([linkedRow('kept')], null, null, 1));
             return;
         }
+        pending = await route.acceptPending();
         markLatePageStarted();
-        await latePageGate;
-        await fulfillJson(route, archivePage([linkedRow('late')], null, null, 2));
     });
-    await page.route('**/api/chats/search', route => {
+    await routeOperation(page, 'archive-search', route => {
         searchRequests++;
         return fulfillJson(route, []);
     });
 
     await openArchive(page);
+    await expect(page.locator('.sbca-filename')).toHaveText(['kept']);
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
     await latePageStarted;
     await expect(page.locator('.sbca-filename')).toHaveText(['kept']);
     await page.getByRole('combobox', { name: 'Search indexed chats' }).fill('kept');
     await new Promise(resolve => setTimeout(resolve, SEARCH_CONTENT_DEBOUNCE_MS + 50));
     expect(searchRequests).toBe(0);
     await page.getByRole('button', { name: 'Cancel' }).click();
-    await expect.poll(() => releases).toContainEqual({ cursor: ARCHIVE_CURSOR });
+    await expect.poll(() => operationStates.get(page).cancelled).toContain(pending.key);
     await expect.poll(() => searchRequests).toBe(1);
-    releaseLatePage();
+    expect(operationStates.get(page).records.get(pending.key).state).toBe('cancelled');
 
     await expect(page.locator('.sbca-filename')).toHaveText(['kept']);
     await expect(page.getByText('late', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Refresh' })).toBeEnabled();
 });
 
-test('stops an orphan scan, releases its token and cursor, and rolls back partial rows', async ({ page }) => {
-    const releases = [];
+test('stops accepted orphan work without displaying an incomplete result', async ({ page }) => {
     let orphanRequests = 0;
     let searchRequests = 0;
-    let releaseLatePage;
     let markLatePageStarted;
     const latePageStarted = new Promise(resolve => { markLatePageStarted = resolve; });
-    const latePageGate = new Promise(resolve => { releaseLatePage = resolve; });
+    let pending;
     await routeOrganization(page);
-    await page.route('**/api/chats/archive/release', async route => {
-        releases.push(route.request().postDataJSON());
-        await route.fulfill({ status: 204 });
-    });
-    await page.route('**/api/chats/search', route => {
+    await routeOperation(page, 'archive-search', route => {
         searchRequests++;
         return fulfillJson(route, []);
     });
-    await page.route('**/api/chats/archive/inventory', async route => {
+    await routeOperation(page, 'archive-inventory', async route => {
         const body = route.request().postDataJSON();
         if (body.scope === 'archive') {
             await fulfillJson(route, archivePage([linkedRow('linked')], null, null, 1));
             return;
         }
         orphanRequests++;
-        if (orphanRequests === 1) {
-            await fulfillJson(route, archivePage(
-                [orphanRow('partial-orphan', FIRST_ORPHAN_HASH)],
-                ORPHAN_CURSOR,
-                FIRST_READ_TOKEN,
-                2,
-            ));
-            return;
-        }
+        pending = await route.acceptPending();
         markLatePageStarted();
-        await latePageGate;
-        await fulfillJson(route, archivePage(
-            [orphanRow('late-orphan', SECOND_ORPHAN_HASH)],
-            null,
-            FIRST_READ_TOKEN,
-            2,
-        ));
     });
 
     await openArchive(page);
@@ -1147,19 +1145,18 @@ test('stops an orphan scan, releases its token and cursor, and rolls back partia
     await latePageStarted;
     await new Promise(resolve => setTimeout(resolve, SEARCH_CONTENT_DEBOUNCE_MS + 50));
     expect(searchRequests).toBe(0);
-    await expect(page.getByText('partial-orphan', { exact: true })).toBeVisible();
-    await expect(page.locator('.sbca-status')).toContainText('1 of 2 indexed chat files');
+    await expect(page.getByText('partial-orphan', { exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Stop scan' }).click();
-    await expect.poll(() => releases).toContainEqual({ token: FIRST_READ_TOKEN, cursor: ORPHAN_CURSOR });
-    releaseLatePage();
+    await expect.poll(() => operationStates.get(page).cancelled).toContain(pending.key);
+    expect(operationStates.get(page).records.get(pending.key).state).toBe('cancelled');
+    expect(orphanRequests).toBe(1);
 
     await expect(page.getByText('partial-orphan', { exact: true })).toHaveCount(0);
     await expect(page.getByText('late-orphan', { exact: true })).toHaveCount(0);
     await expect.poll(() => searchRequests).toBe(1);
 });
 
-test('replaces orphan scan tokens and views the active orphan through the archive namespace', async ({ page }) => {
-    const releases = [];
+test('retains completed orphan scans and reads the active saved result', async ({ page }) => {
     const viewedUrls = [];
     const dataMaidRequests = [];
     let orphanScans = 0;
@@ -1169,11 +1166,7 @@ test('replaces orphan scan tokens and views the active orphan through the archiv
         }
     });
     await routeOrganization(page);
-    await page.route('**/api/chats/archive/release', async route => {
-        releases.push(route.request().postDataJSON());
-        await route.fulfill({ status: 204 });
-    });
-    await page.route('**/api/chats/archive/view?**', async route => {
+    await page.route('**/api/operations/records/*/archive/*', async route => {
         viewedUrls.push(route.request().url());
         await route.fulfill({
             status: 200,
@@ -1184,7 +1177,7 @@ test('replaces orphan scan tokens and views the active orphan through the archiv
             ].join('\n'),
         });
     });
-    await page.route('**/api/chats/archive/inventory', async route => {
+    await routeOperation(page, 'archive-inventory', async route => {
         const body = route.request().postDataJSON();
         if (body.scope === 'archive') {
             await fulfillJson(route, archivePage([linkedRow('linked')], null, null, 1));
@@ -1200,10 +1193,13 @@ test('replaces orphan scan tokens and views the active orphan through the archiv
     await openArchive(page);
     await page.getByRole('button', { name: 'Find orphaned files' }).click();
     await expect(page.getByText('old-orphan', { exact: true })).toBeVisible();
+    const firstKey = [...operationStates.get(page).records.values()].find(record => record.result?.rows?.[0]?.archive_hash === FIRST_ORPHAN_HASH).key;
     await page.getByRole('button', { name: 'Rescan orphaned files' }).click();
     await expect(page.getByText('current-orphan', { exact: true })).toBeVisible();
     await expect(page.getByText('old-orphan', { exact: true })).toHaveCount(0);
-    await expect.poll(() => releases).toContainEqual({ token: FIRST_READ_TOKEN });
+    const secondKey = [...operationStates.get(page).records.values()].find(record => record.result?.rows?.[0]?.archive_hash === SECOND_ORPHAN_HASH).key;
+    expect(operationStates.get(page).records.get(firstKey).state).toBe('completed');
+    expect(secondKey).not.toBe(firstKey);
 
     await page.getByText('current-orphan', { exact: true }).click();
     await expect(page.locator('.sbca-viewer-content')).toContainText('orphan body');
@@ -1227,16 +1223,43 @@ test('replaces orphan scan tokens and views the active orphan through the archiv
     expect(mobileDetail.noHorizontalOverflow).toBe(true);
     expect(viewedUrls).toHaveLength(1);
     const viewed = new URL(viewedUrls[0]);
-    expect(viewed.pathname).toBe('/api/chats/archive/view');
-    expect(viewed.searchParams.get('token')).toBe(SECOND_READ_TOKEN);
-    expect(viewed.searchParams.get('hash')).toBe(SECOND_ORPHAN_HASH);
+    expect(viewed.pathname).toBe(`/api/operations/records/${secondKey}/archive/${SECOND_ORPHAN_HASH}`);
     expect(dataMaidRequests).toEqual([]);
 });
 
 async function routeOrganization(page, organization = null) {
-    await page.route('**/user/files/_sbca_organization.json', route => organization
-        ? fulfillJson(route, organization)
-        : route.fulfill({ status: 404 }));
+    await page.route('**/api/operations/archive/organization', route => fulfillJson(route, { organization, revision: 'initial' }));
+    await routeOperation(page, 'archive-organization', route => fulfillJson(route, { revision: 'saved' }));
+}
+
+async function routeOperation(page, kind, handler) {
+    const state = operationStates.get(page);
+    await page.route('**/api/operations/submit', route => {
+        const body = route.request().postDataJSON();
+        if (body.kind !== kind) return route.fallback();
+        state.submissions.push(body);
+        const operationRoute = {
+            request: () => route.request(),
+            fulfill: async response => {
+                if ((response.status ?? 200) !== 200) return route.fulfill(response);
+                let result = response.json ?? JSON.parse(response.body);
+                if (kind === 'archive-search' && Array.isArray(result)) {
+                    result = { rows: result.map(row => ({ ...linkedRow(row.file_name.replace(/\.jsonl$/, '')),
+                        ...row, mes: row.preview_message ?? row.mes })), errors: 0 };
+                }
+                const record = { key: body.key, kind, label: kind, createdAt: Date.now(), state: 'completed', result };
+                state.records.set(body.key, record);
+                await route.fulfill({ json: { record } });
+            },
+            acceptPending: async () => {
+                const record = { key: body.key, jobId: body.key, kind, label: kind, createdAt: Date.now(), state: 'running' };
+                state.records.set(body.key, record);
+                await route.fulfill({ json: { record } });
+                return record;
+            },
+        };
+        return handler(operationRoute);
+    });
 }
 
 async function openArchive(page) {
@@ -1387,7 +1410,7 @@ function fixtureHtml(useLongLabel, duplicateCharacters = false) {
                 };
             },
         };
-        const { activate } = await import('/extension/index.js');
+        const { activate } = await import('/public/scripts/extensions/neconyan-chats-archive/index.js');
         await activate();
         document.documentElement.dataset.archiveReady = 'true';
     </script>
