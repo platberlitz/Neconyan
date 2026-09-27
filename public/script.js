@@ -16362,6 +16362,8 @@ export async function saveMetadata(options = {}) {
 export async function saveChatConditional(options = {}) {
     try {
         cancelDebouncedChatSave();
+        // This save already captures the current metadata; do not repeat it when its timer fires.
+        cancelDebouncedMetadataSave();
 
         setChatSaveActive(true);
 

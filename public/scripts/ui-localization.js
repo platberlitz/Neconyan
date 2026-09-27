@@ -1,9 +1,14 @@
 // Localise known UI captions only, never editable values or user-authored messages.
 const controls = 'button,summary,label,option,[role="tab"],.menu_button,.sb-shell-title,.sb-shell-description';
 const userText = '[data-i18n-ignore],.mes_text,.mes_reasoning,.sb-conversation-message-text,.ch_name,.name_text,pre,code,textarea,[contenteditable="true"]';
+const nonEmptyDictionaries = new WeakSet();
 
 export function localizeControls(root, dictionary) {
     if (!root?.querySelectorAll) return;
+    if (!nonEmptyDictionaries.has(dictionary)) {
+        if (!Object.keys(dictionary).length) return;
+        nonEmptyDictionaries.add(dictionary);
+    }
     const elements = [...root.querySelectorAll(controls)];
     if (root.matches?.(controls)) elements.unshift(root);
     for (const element of elements) {

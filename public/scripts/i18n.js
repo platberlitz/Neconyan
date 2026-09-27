@@ -8,6 +8,7 @@ const localeFile = String(overrideLanguage || navigator.language || navigator.us
 var langs;
 // Don't change to let/const! It will break module loading.
 var localeData;
+let hasLocaleData = false;
 
 function getStoredLanguage() {
     try {
@@ -68,6 +69,7 @@ export function addLocaleData(localeId, data) {
         // Overrides for default locale data are not allowed
         if (!Object.hasOwn(localeData, key)) {
             localeData[key] = value;
+            hasLocaleData = true;
         }
     }
 }
@@ -77,6 +79,7 @@ export function addLocaleData(localeId, data) {
  * @type {MutationObserver}
  */
 const observer = new MutationObserver(mutations => {
+    if (!hasLocaleData) return;
     mutations.forEach(mutation => {
         mutation.addedNodes.forEach(node => {
             if (node.nodeType === Node.ELEMENT_NODE && node instanceof Element) {
@@ -327,6 +330,7 @@ function addLanguagesToDropdown() {
 export async function initLocales() {
     langs = await fetch('/locales/lang.json').then(response => response.json());
     localeData = await getLocaleData(localeFile);
+    hasLocaleData = Object.keys(localeData).length > 0;
     document.documentElement.lang = localeFile;
     applyLocale();
     addLanguagesToDropdown();

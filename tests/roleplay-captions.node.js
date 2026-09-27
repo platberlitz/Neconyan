@@ -103,6 +103,31 @@ test('a saved local caption enters history and lore, then commits with its compl
         generate: async ({ beforeDispatch, messages }) => { beforeDispatch(); assert.match(JSON.stringify(messages), /a ruby on a desk/); return { text: 'A second answer.' }; } });
 });
 
+test('caption dispatch accepts saved settings bookkeeping and subsequent bookkeeping-only changes', async t => {
+    const f = prepared(t, { mutate: settings => {
+        settings._version = 1;
+        settings._settingsRevision = 'saved-revision';
+        settings.accountStorage = { welcome: true };
+        settings.extension_settings.sillybunny_conversation = { enabled: true };
+    } });
+    f.settings._version = 2;
+    f.settings._settingsRevision = 'next-revision';
+    f.settings.accountStorage.welcome = false;
+    f.settings.extension_settings.sillybunny_conversation.enabled = false;
+    fs.writeFileSync(f.settingsFile, JSON.stringify(f.settings));
+    let calls = 0;
+    await f.run({ localCaption: async () => { calls++; return 'a ruby'; } });
+    assert.equal(calls, 1);
+    assert.equal(readRoleplayChat(f.f.scope, f.f.locator).records[1].extra.media[0].captioned, true);
+});
+
+test('changed caption instructions refuse before dispatch', async t => {
+    const f = prepared(t);
+    f.settings.extension_settings.caption.prompt = 'Use different instructions.';
+    fs.writeFileSync(f.settingsFile, JSON.stringify(f.settings));
+    await assert.rejects(f.run({ localCaption: () => assert.fail('Changed instructions reached the provider.') }), /changed|differs/);
+});
+
 test('empty uploaded messages and selected gallery items receive only their own caption', async t => {
     const f = prepared(t, { blank: true, gallery: true, caption: { template: '{{char}} sees {{caption}}' } });
     assert.equal(f.worldInfo.captions.items[0].mediaIndex, 1);

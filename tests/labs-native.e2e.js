@@ -247,6 +247,7 @@ for (const phone of [false, true]) {
     test(`${phone ? 'phone' : 'desktop'} complete scene comparisons continue across presets and turns with every page closed`, async ({ app, browser }) => {
         const account = await app.account({ phone });
         const presets = path.join(app.directory, 'data/default-user/OpenAI Settings');
+        await fs.copyFile(path.join(presets, 'Pura\'s Director Preset 16.0.json'), path.join(presets, 'Default.json'));
         await fs.copyFile(path.join(presets, 'Pura\'s Director Preset 16.0.json'), path.join(presets, 'Moon fixture.json'));
         app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: 'A saved scene reply.' } }] };
         app.provider.mode.hold = MODEL;

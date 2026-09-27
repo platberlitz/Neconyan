@@ -154,12 +154,13 @@ function agentAction(action) {
 }
 
 async function refreshSavedAgents(ids) {
+    // The agent write is acknowledged already. Show it before saving note metadata.
+    renderAgentList();
     for (const id of ids) {
         refreshRegexSnapshotsForAgent(id);
         await syncCompanionChatHistoryConfig(getAgentById(id));
     }
     syncToolAgentRegistrations();
-    renderAgentList();
     refreshCompanionPanel();
     updateCompanionButtonVisibility();
 }
@@ -3038,6 +3039,16 @@ function getFilteredAgentList(allAgents = sortAgentsByOrder(getVisibleInChatAgen
     return agents;
 }
 
+function syncAgentSelection() {
+    for (const card of document.querySelectorAll('#ica--agentList .ica--agent-card')) {
+        const selected = selectedAgentIds.has(card.dataset.agentId);
+        card.classList.toggle('ica--selected', selected);
+        const checkbox = card.querySelector('.ica--card-select');
+        if (checkbox) checkbox.checked = selected;
+    }
+    updateBulkBar();
+}
+
 function renderAgentList() {
     if (!applyingAgentSetup && selectedAgentSetupId && ['saved', 'modified'].includes(document.getElementById('ica--setupStatus')?.dataset.tone)) showAgentSetupMatch();
     const container = $('#ica--agentList');
@@ -3223,22 +3234,20 @@ function renderAgentList() {
                     } else {
                         selectedAgentIds.add(agent.id);
                     }
-                    updateBulkBar();
-                    renderAgentList();
+                    syncAgentSelection();
                     return;
                 }
                 openEditor(agent.id);
             });
 
-            card.find('.ica--card-select').on('click change', function (event) {
+            card.find('.ica--card-select').on('click', event => event.stopPropagation()).on('change', function (event) {
                 event.stopPropagation();
                 if ($(this).prop('checked')) {
                     selectedAgentIds.add(agent.id);
                 } else {
                     selectedAgentIds.delete(agent.id);
                 }
-                updateBulkBar();
-                renderAgentList();
+                syncAgentSelection();
             });
 
             card.find('.ica--card-drag-handle').on('click', stopEvent);
@@ -6448,13 +6457,12 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         for (const agent of getFilteredAgentList()) {
             selectedAgentIds.add(agent.id);
         }
-        updateBulkBar();
-        renderAgentList();
+        syncAgentSelection();
     });
 
     $('#ica--bulkClear').on('click', () => {
         selectedAgentIds.clear();
-        renderAgentList();
+        syncAgentSelection();
     });
     for (const [selector, view] of [['#ica--bulkSettings', 'settings'], ['#ica--bulkConnect', 'connections']]) {
         $(selector).on('click', agentAction(async function () {

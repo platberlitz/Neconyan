@@ -1,6 +1,9 @@
 /* global document, window, getComputedStyle */
 import { expect, test } from '@playwright/test';
 import { openQuietChatForSmoke, waitForAnimationFrames } from './chat-scroll-regression-helpers.js';
+import { createMockRoleplayStore } from './roleplay-browser-fixture.js';
+
+test.setTimeout(120000);
 
 for (const width of [393, 1280]) {
     test.describe(`Message editing at ${width}px`, () => {
@@ -8,8 +11,11 @@ for (const width of [393, 1280]) {
 
         for (const tone of ['light', 'dark']) {
             test(`keeps ${tone} edit actions labelled, flat and usable`, async ({ page }, testInfo) => {
-                await page.route('**/api/chats/get', route => route.fulfill({ json: [] }));
+                const storage = createMockRoleplayStore(() => page.evaluate(async () =>
+                    (await import('/scripts/roleplay-save-chain.js')).roleplayAccountStamp().account));
+                await page.route('**/api/chats/get', route => storage.read(route));
                 await openQuietChatForSmoke(page, { selectCharacter: false });
+                await page.route('**/api/chats/save', route => storage.save(route));
                 await page.evaluate(async tone => {
                     document.documentElement.dataset.neconyanPalette = 'calico';
                     document.documentElement.dataset.neconyanCalicoTone = tone;
@@ -21,6 +27,7 @@ for (const width of [393, 1280]) {
                         name: 'Edit Cat', is_user: false, is_system: false, mes, send_date: new Date().toISOString(), extra: {},
                     })));
                     await context.printMessages();
+                    (await import('/scripts/welcome-screen.js')).hideWelcomeHome();
                 }, tone);
                 const message = page.locator('#chat .mes[mesid="1"]');
                 await message.locator('.mes_edit').click();

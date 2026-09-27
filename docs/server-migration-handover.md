@@ -2,6 +2,68 @@
 
 ## Release preparation: 1.0.0
 
+### 28 September continuation: validation in progress
+
+The current base is staging `16687a0285b65ca9dcdd3f76c5bb66a5472f5063`, including
+the Pura and Ethereal tracker themes added during this release work. Preserve that
+commit and the later Agent fixes. The earlier release notes below are historical
+checkpoints, not instructions to reset staging. Main remains at `86b5475f5`.
+
+- Automatic and manual captions now compare the same settings fingerprint, excluding
+  save counters and account bookkeeping. All 42 caption tests pass. All six desktop
+  and phone browser cases pass for captions, translation, Pawthfinder, speech, image
+  generation and interrupted paid work across closed pages and server restarts.
+- Individual Agent settings and shared on/off switches use one conditional record
+  save rather than a complete setup transaction. Concurrent edits still refuse the
+  save. Selection updates existing cards, retaining keyboard focus. Both full browser
+  cases pass; the measured phone history switch fell from 2,813 ms to 536 ms in the
+  development preview. Multi-record recovery remains covered by the setup tests.
+- Accepted jobs and newly available worker slots trigger immediate dispatch. A shared
+  account-scoped event connection prompts browsers to read saved state immediately,
+  with polling retained if the connection fails. Events contain no job contents.
+  Real browser checks measured cancellation readback below one second on desktop and
+  phone; unit and HTTP tests cover account isolation, shared connections and recovery.
+- Startup no longer scans new controls for an empty translation dictionary. Keyboard
+  observers batch affected subtrees and avoid rescanning the page for unrelated class
+  changes. Original tab order and live translations pass real browser checks. Phone
+  sheets skip desktop-only resize measurements. Further startup and panel profiling
+  remains open; development-preview timings are not physical-phone measurements.
+- Prompt variables no longer schedule whole-chat or settings saves when their value
+  has not changed. Explicit chat saves also clear the redundant metadata-save timer.
+  Browser checks pass for exact Undo restoration, failed-save Retry and group Undo.
+- Phone opening now batches drawer measurements before style writes and removes
+  duplicate opening-frame measurements. Rapidly closing a sheet cannot reopen it on
+  the following frame. Desktop and phone geometry and focus checks pass. The latest
+  preview measured job readback at 121-173 ms and Settings first paint at 379-432 ms;
+  first opening of the phone Agents sheet still took 2.29 seconds.
+- Reading server update status preserves local and staged files. Remote checks are
+  coalesced, and update notices dismiss after eight seconds unless hovered or focused.
+- The new manual Android validation workflow builds from a clean commit, records the
+  embedded source and frontend hashes, verifies both signed APKs and 16 KiB native
+  alignment, and exercises the signed app on Android 11 and 15 emulators. Its first
+  remote run is still required. The owner authorised a fresh signing key because the
+  desktop key was unavailable. The new key and password are stored outside Git and
+  in encrypted repository secrets. Older desktop-signed test installations require
+  backup and reinstallation; future releases must retain the new key.
+
+The earlier eight-way browser run had 120 failures and 927 passes. Several fixtures
+predated protected chat-save receipts and current control labels; genuine caption and
+update-notice failures were also found. Four repaired browser cases now pass for the
+current page title, first group chat and closed-page scene comparisons on desktop and
+phone. The isolated lorebook/persona workflow also passes saved edits, connections,
+reload and layouts at 1280, 390 and 320 pixels. All 1,431 server tests pass on the current changes. The full unit run passes
+355 suites, with 4,668 tests passing and two skipped; the serial run required a 4 GiB
+Node heap after exhausting the default 2 GiB limit. Root lint, changed-test lint,
+frontend budgets and a fresh frontend build pass. The dependency audit reports eight
+moderate advisories and no high or critical advisories. Focused browser checks do not
+replace a fresh complete browser run. The complete browser rerun, Android validation
+and release publication are still in progress. Commit and push the verified changes
+to staging first, promote the
+exact verified commit to main, publish 1.0.0, then advance staging to 1.0.1. This task
+does not deploy or restart the Oracle service.
+
+### Earlier release checkpoints
+
 The owner requested a main release, a self-contained Android APK and staging prepared
 for 1.0.1. The release base is the latest verified GitHub staging commit
 `76a90f18a7d2e620e0903c0297a1a0e12dc80158`. Main was created and its initial release

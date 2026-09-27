@@ -9,6 +9,12 @@ for (const width of [393, 1280]) {
         test.use({ viewport: { width, height: width === 393 ? 852 : 900 }, hasTouch: width === 393, isMobile: width === 393 });
         test('history, filtered batches, links and quick settings persist without opening the editor', async ({ page }, info) => {
             const errors = [];
+            const timings = {};
+            const storageRequests = [];
+            page.on('request', request => {
+                const path = new URL(request.url()).pathname;
+                if (path.startsWith('/api/in-chat-agents/') || path === '/api/settings/get') storageRequests.push(path);
+            });
             page.on('pageerror', error => errors.push(error.message));
             await page.route(/\/api\/.*\/(?:generate|generate-quiet)(?:\?|$)/, route => route.fulfill({ status: 503, json: { error: 'Generation disabled during UI verification.' } }));
             await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -44,8 +50,12 @@ for (const width of [393, 1280]) {
                 await page.locator('#ica--search').fill(prefix);
                 const cards = page.locator('#ica--agentList .ica--agent-card');
                 const first = cards.filter({ has: page.locator(`.ica--card-name:text-is("${prefix} 0")`) });
+                storageRequests.length = 0;
+                const historyStart = Date.now();
                 await first.getByRole('button', { name: 'Keep in history', exact: true }).click();
                 await expect(first.getByRole('button', { name: 'In chat history', exact: true })).toHaveAttribute('aria-pressed', 'true');
+                timings.history = { milliseconds: Date.now() - historyStart, requests: [...storageRequests] };
+                expect(storageRequests.filter(path => path.startsWith('/api/in-chat-agents/'))).toEqual(['/api/in-chat-agents/save']);
                 expect(await page.evaluate(async id => {
                     const companion = await import('/scripts/extensions/in-chat-agents/companion/companion-runner.js');
                     return window.SillyTavern.getContext().chat.some(message => companion.getCompanionResults(message)[id]?.includeInChatHistory);
@@ -71,7 +81,16 @@ for (const width of [393, 1280]) {
                 await page.locator('#ica--selectMode').click();
                 await page.locator('#ica--agentTabs [data-tab="companion"]').click();
                 await page.locator('#ica--search').fill(`${prefix} 0`);
+                await first.evaluate(card => { card.dataset.selectionIdentity = 'retained'; });
+                const selectionStart = Date.now();
                 await page.locator('#ica--bulkSelectAll').click();
+                await expect(first).toHaveAttribute('data-selection-identity', 'retained');
+                await expect(first.locator('.ica--card-select')).toBeChecked();
+                timings.selectShown = { milliseconds: Date.now() - selectionStart };
+                await first.locator('.ica--card-select').uncheck();
+                await expect(first).toHaveAttribute('data-selection-identity', 'retained');
+                await expect(first.locator('.ica--card-select')).toBeFocused();
+                await first.locator('.ica--card-select').check();
                 await page.locator('#ica--search').fill(`${prefix} 1`);
                 await page.locator('#ica--bulkSelectAll').click();
                 await expect(page.locator('#ica--bulkCount')).toHaveText('2 selected');
@@ -159,6 +178,8 @@ for (const width of [393, 1280]) {
                 await page.keyboard.press('Escape');
                 expect(errors).toEqual([]);
             } finally {
+                await info.attach('interaction-timings', { body: JSON.stringify(timings, null, 2), contentType: 'application/json' });
+                console.log(`ICA ${width}px: ${JSON.stringify(timings)}`);
                 await page.evaluate(async ids => {
                     const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
                     const companion = await import('/scripts/extensions/in-chat-agents/companion/companion-runner.js');

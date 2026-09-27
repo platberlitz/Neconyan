@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { acquireChatFileLock } from '../chat-file-lock.js';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { fsyncDirectorySync } from '../util.js';
+import { notifyJobsChanged } from './notifications.js';
 
 export const JOB_SCHEMA = 1;
 export const JOB_LIMIT = 200;
@@ -270,9 +271,14 @@ export function mutateJobs(directories, mutate) {
     const release = acquireChatFileLock(storePath(directories));
     try {
         const store = readStore(directories);
+        const previousOwner = Object.values(store.jobs)[0]?.owner;
+        const queued = new Set(Object.values(store.jobs).filter(job => job.state === 'queued').map(job => job.id));
         const result = mutate(store);
         if (result?.changed === false) return result;
         const written = writeStore(directories, store, result?.job?.id);
+        const jobs = Object.values(written.jobs);
+        const owner = result?.job?.owner ?? jobs[0]?.owner ?? previousOwner;
+        if (owner) notifyJobsChanged({ owner, queued: jobs.some(job => job.state === 'queued' && !queued.has(job.id)) });
         return { ...result, revision: written.revision };
     } finally {
         release();

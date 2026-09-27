@@ -1,4 +1,5 @@
 import { serverEvents } from '../server-events.js';
+import { subscribeJobsChanged } from './notifications.js';
 import {
     getJob,
     listJobs,
@@ -21,6 +22,8 @@ const knownOwners = new Set();
 let timer = null;
 let ticking = false;
 let cursor = 0;
+let requestDispatch = null;
+let dispatchRequested = false;
 
 /** Remember an owner seen by an endpoint so the dispatcher can find their jobs. */
 export function noteOwner(owner) {
@@ -154,6 +157,7 @@ async function runJob(job) {
         await settleQuietly(() => serverEvents.emit('job-status-failed', { owner: job.owner, message: error?.message ?? 'Job could not be read.' }));
     } finally {
         serverEvents.emit('job-updated', { id: job.id, owner: job.owner });
+        requestDispatch?.();
     }
 }
 
@@ -261,6 +265,10 @@ async function tick() {
         if (dispatched > 0) cursor = (start + 1) % owners.length;
     } finally {
         ticking = false;
+        if (dispatchRequested) {
+            dispatchRequested = false;
+            requestDispatch?.();
+        }
     }
 }
 
@@ -282,6 +290,21 @@ export function startJobsRunner({ directoriesFor, owners, recoverWaiting = null 
     setDirectoriesResolver(directoriesFor);
     waitingResolver = recoverWaiting;
     let stopped = false;
+    let ready = false;
+    let wake = null;
+    const dispatchSoon = () => {
+        if (stopped || !ready || wake) return;
+        wake = setImmediate(() => {
+            wake = null;
+            if (ticking) { dispatchRequested = true; return; }
+            void tick().catch(error => console.error('[Jobs] Dispatch failed:', error));
+        });
+    };
+    requestDispatch = dispatchSoon;
+    const unsubscribe = subscribeJobsChanged(({ owner, queued }) => {
+        noteOwner(owner);
+        if (queued) dispatchSoon();
+    });
     // Recover each owner's saved work, then let the interval dispatch. Recovery
     // of one owner never prevents the others from being reconciled.
     void (async () => {
@@ -302,6 +325,8 @@ export function startJobsRunner({ directoriesFor, owners, recoverWaiting = null 
             serverEvents.emit('job-runner-recovery-failed', { message: error?.message ?? 'Recovery failed.' });
         } finally {
             if (!stopped) {
+                ready = true;
+                dispatchSoon();
                 timer = setInterval(() => { void tick().catch(error => console.error('[Jobs] Scan failed:', error)); }, CONCURRENCY.pollIntervalMs);
                 timer.unref();
             }
@@ -309,6 +334,9 @@ export function startJobsRunner({ directoriesFor, owners, recoverWaiting = null 
     })().catch(error => console.error('[Jobs] Startup failed:', error));
     return () => {
         stopped = true;
+        unsubscribe();
+        if (wake) clearImmediate(wake);
+        if (requestDispatch === dispatchSoon) requestDispatch = null;
         if (timer) clearInterval(timer);
         timer = null;
         for (const controller of controllers.values()) controller.abort();

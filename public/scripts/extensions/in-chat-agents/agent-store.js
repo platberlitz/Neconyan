@@ -1948,11 +1948,14 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
     return operation;
 }
 
-/** Use the existing recoverable setup operation for a batch, without changing other agents or global settings. */
+/** A single record is already atomic; reserve setup recovery for multi-record changes. */
 export function saveAgentBatch(snapshots, name = 'Agent changes') {
     if (getAgentLibraryErrors().length || hasPendingAgentRecovery()) return Promise.reject(new Error('Load a complete agent library or finish setup recovery before making batch changes.'));
     const changes = snapshots.map(snapshot => normalizeAgent(structuredClone(snapshot)));
     if (!changes.length) return Promise.resolve(false);
+    if (changes.length === 1) {
+        return saveAgent(changes[0], { isCurrent: () => areAgentsLoaded() && !getAgentLibraryErrors().length && !hasPendingAgentRecovery() }).then(() => true);
+    }
     const expected = new Map(changes.map(agent => [agent.id, structuredClone(storedRecords.agent.get(agent.id) ?? null)]));
     return applyAgentSetupPreset({ id: uuidv4(), name, version: 1, agents: changes, globalSettings: {} }, {
         updateAgents: previous => {
@@ -1978,6 +1981,13 @@ export function captureAgentSaveGuard(ids = []) {
 
 export function saveAgentEnabledState(ids, enabled, scope = getActiveAgentChatScope()) {
     const selected = new Set(ids);
+    if (selected.size === 1 && !globalSettings.separateRecentChats) {
+        const agent = getAgentById([...selected][0]);
+        if (!agent) return Promise.reject(new Error('An agent was removed. Reload the list before retrying.'));
+        return saveAgent({ ...agent, enabled: Boolean(enabled) }, {
+            isCurrent: () => areAgentsLoaded() && !globalSettings.separateRecentChats && !getAgentLibraryErrors().length && !hasPendingAgentRecovery(),
+        }).then(() => true);
+    }
     const unchanged = captureAgentSaveGuard(ids);
     return applyAgentSetupPreset({ id: uuidv4(), name: 'Agent switches', version: 1, agents: [], globalSettings: {} }, {
         isCurrent: captureAgentSaveGuard(),

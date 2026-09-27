@@ -160,6 +160,8 @@ for (const phone of [false, true]) {
             return completion('Native media reply.');
         };
         const account = await app.account({ phone, activeConnection: true, tts: true, configureSettings: settings => {
+            // This case enables Pathfinder's native tools as well as its lorebook passes.
+            Object.assign(settings.oai_settings, { function_calling: true, custom_prompt_post_processing: '' });
             settings.extension_settings.caption = { source: 'multimodal', multimodal_api: 'custom', multimodal_model: 'caption-fixture', auto_mode: true };
             settings.extension_settings.translate = { auto_mode: 'both', provider: 'libre', target_language: 'fr', internal_language: 'en' };
             settings.extension_settings.inChatAgents = { globalSettings: { enabled: true, pathfinderEnabled: true } };

@@ -11,6 +11,7 @@ import { retainConversationAutomaticAcceptance } from '../generation/conversatio
 import { decideJobApproval, readJobApproval } from '../generation/job-approvals.js';
 import { closeUnstartedRoleplayWorkflow } from '../generation/roleplay-workflow-cancellation.js';
 import { readRoleplayPreview, subscribeRoleplayPreview } from '../generation/roleplay-preview.js';
+import { subscribeJobsChanged } from '../jobs/notifications.js';
 
 export const router = express.Router();
 
@@ -49,6 +50,29 @@ router.get('/capacity', (request, response) => {
     } catch (error) {
         return fail(response, error);
     }
+});
+
+// One data-free change stream per browser account, shared by all its observers.
+// The browser still fetches each saved job through the normal account checks.
+router.get('/events', (request, response) => {
+    try {
+        const { owner } = directoriesFor(request);
+        response.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store, no-transform', 'X-Accel-Buffering': 'no' });
+        response.flushHeaders();
+        let pending = null;
+        const send = text => {
+            if (response.destroyed || response.writableEnded) return;
+            if (response.writableLength > 64 * 1024) { response.end(); return; }
+            try { response.write(text); response.flush?.(); } catch { response.end(); }
+        };
+        const unsubscribe = subscribeJobsChanged(change => {
+            if (change.owner !== owner || pending) return;
+            pending = setTimeout(() => { pending = null; send('data: {}\n\n'); }, 25);
+        });
+        const keepalive = setInterval(() => send(': keepalive\n\n'), 15000);
+        response.once('close', () => { clearInterval(keepalive); clearTimeout(pending); unsubscribe(); });
+        send('data: {}\n\n');
+    } catch (error) { return fail(response, error); }
 });
 
 router.get('/:id', (request, response) => {

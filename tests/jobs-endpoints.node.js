@@ -15,7 +15,7 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-jobs-http-'));
 globalThis.DATA_ROOT = root;
 
 const { router: jobsRouter } = await import('../src/endpoints/jobs.js');
-const { JOB_INTENT_LIMIT_BYTES, JOB_INTENT_MAX_BYTES, acceptJob, attachOwnedChild, getJob } = await import('../src/jobs/store.js');
+const { JOB_INTENT_LIMIT_BYTES, JOB_INTENT_MAX_BYTES, acceptJob, attachOwnedChild, getJob, updateJob } = await import('../src/jobs/store.js');
 const { roleplayHash, roleplayAccountStamp, initialiseRoleplayAccount } = await import('../src/roleplay-store.js');
 const { publishRoleplayPreview, subscribeRoleplayPreview } = await import('../src/generation/roleplay-preview.js');
 const { registerHandler, setDirectoriesResolver, abortJob, testExports: runner } = await import('../src/jobs/runner.js');
@@ -78,7 +78,7 @@ test('native Conversation, Roleplay and media work cannot bypass its own accepta
 test('stale browser account headers refuse every job route before accessing the new account', async () => {
     const { job } = await (await submit('bob', { key: 'stale-tab' })).json();
     const before = await (await request('GET', '/api/jobs/list', { account: 'bob' })).json();
-    for (const [method, suffix] of [['GET', '/list'], ['GET', '/capacity'], ['GET', `/${job.id}`], ['GET', `/${job.id}/result`], ['GET', `/${job.id}/preview`],
+    for (const [method, suffix] of [['GET', '/list'], ['GET', '/events'], ['GET', '/capacity'], ['GET', `/${job.id}`], ['GET', `/${job.id}/result`], ['GET', `/${job.id}/preview`],
         ['POST', '/submit'], ['POST', `/${job.id}/cancel`], ['POST', `/${job.id}/dismiss`], ['POST', `/${job.id}/retry`]]) {
         const response = await request(method, '/api/jobs' + suffix, { account: 'bob', headers: { 'X-Neconyan-Account': 'alice' },
             body: method === 'POST' ? { type: 'roleplay', submissionKey: 'blocked', intent: {} } : undefined });
@@ -86,6 +86,25 @@ test('stale browser account headers refuse every job route before accessing the 
         assert.equal((await response.json()).error, 'account_changed');
     }
     assert.deepEqual(await (await request('GET', '/api/jobs/list', { account: 'bob', headers: { 'X-Neconyan-Account': 'bob' } })).json(), before);
+});
+
+test('change streams announce only the signed-in account and never carry job content', async () => {
+    const controller = new AbortController();
+    const response = await fetch(url + '/api/jobs/events', {
+        headers: { 'X-Account': 'alice', 'X-Neconyan-Account': 'alice' }, signal: controller.signal,
+    });
+    const reader = response.body.getReader();
+    try {
+        assert.match(response.headers.get('content-type'), /text\/event-stream/);
+        assert.equal(new TextDecoder().decode((await reader.read()).value), 'data: {}\n\n');
+        await submit('bob', { key: 'private-change', intent: { private: 'must never appear' } });
+        const pending = reader.read();
+        assert.equal(await Promise.race([pending.then(() => 'received'), new Promise(resolve => setTimeout(() => resolve('quiet'), 60))]), 'quiet');
+        const { job } = await (await submit('alice', { key: 'visible-change' })).json();
+        updateJob(aliceDirs, job.id, { state: 'completed', result: { private: 'also not streamed' } });
+        assert.equal(new TextDecoder().decode((await pending).value), 'data: {}\n\n');
+        assert.equal(getJob(aliceDirs, job.id).state, 'completed');
+    } finally { controller.abort(); reader.releaseLock(); }
 });
 
 test('an oversized or ill-typed job request cannot crash the server', async () => {

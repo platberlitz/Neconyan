@@ -33,6 +33,22 @@ if (CSS.supports('selector(:has(*))')) {
     interactableSelectors.push('#extensionsMenu div:has(.extensionsMenuExtensionButton)');
 }
 
+let interactableSelector = interactableSelectors.join(',');
+let descendantStateClasses = getDescendantStateClasses();
+const scrollResetContainers = new WeakSet();
+
+function getDescendantStateClasses() {
+    return new Set(['disabled', 'not_focusable', ...interactableSelectors
+        .filter(selector => selector !== '.interactable' && selector !== '.custom_interactable').flatMap(selector =>
+            [...selector.matchAll(/\.([\w-]+)/g)].map(match => match[1]))]);
+}
+
+function classChangeAffectsDescendants(mutation) {
+    const before = new Set((mutation.oldValue || '').split(/\s+/));
+    const after = mutation.target.classList;
+    return [...new Set([...before, ...after])].some(name => before.has(name) !== after.contains(name) && descendantStateClasses.has(name));
+}
+
 export const INTERACTABLE_CONTROL_CLASS = 'interactable';
 export const CUSTOM_INTERACTABLE_CONTROL_CLASS = 'custom_interactable';
 
@@ -44,36 +60,49 @@ export const DISABLED_CONTROL_CLASS = 'disabled';
  * @type {MutationObserver}
  */
 const observer = new MutationObserver(mutations => {
+    const roots = new Set();
+    const classes = new Map();
     mutations.forEach(mutation => {
         if (mutation.type === 'childList') {
-            mutation.addedNodes.forEach(handleNodeChange);
+            mutation.addedNodes.forEach(node => { if (node instanceof Element) roots.add(node); });
         }
         if (mutation.type === 'attributes') {
             const target = mutation.target;
-            if (mutation.attributeName === 'class' && target instanceof Element) {
-                handleNodeChange(target);
+            if (mutation.attributeName === 'class' && target instanceof Element && !classes.has(target)) {
+                classes.set(target, mutation);
             }
         }
     });
+    for (const [target, mutation] of classes) {
+        if (classChangeAffectsDescendants(mutation)) roots.add(target);
+        else if (!roots.has(target)) handleNodeChange(target, false);
+    }
+    for (const root of roots) {
+        if (!root.isConnected) continue;
+        let parent = root.parentElement;
+        while (parent && !roots.has(parent)) parent = parent.parentElement;
+        if (!parent) handleNodeChange(root);
+    }
 });
 
 /**
  * Function to handle node changes (added or modified nodes)
  * @param {Element} node
+ * @param {boolean} descendants
  */
-function handleNodeChange(node) {
+function handleNodeChange(node, descendants = true) {
     if (node.nodeType === Node.ELEMENT_NODE && node instanceof Element) {
         // Handle keyboard interactables
         if (isKeyboardInteractable(node)) {
             makeKeyboardInteractable(node);
         }
-        initializeInteractables(node);
+        if (descendants) initializeInteractables(node);
 
         // Handle scroll reset containers
         if (node.classList.contains('scroll-reset-container')) {
             applyScrollResetBehavior(node);
         }
-        initializeScrollResetBehaviors(node);
+        if (descendants) initializeScrollResetBehaviors(node);
     }
 }
 
@@ -88,6 +117,7 @@ function handleNodeChange(node) {
  */
 export function registerInteractableType(interactableSelector, { disabledByDefault = false, notFocusableByDefault = false } = {}) {
     interactableSelectors.push(interactableSelector);
+    refreshInteractableSelectors();
 
     const interactables = document.querySelectorAll(interactableSelector);
 
@@ -101,6 +131,11 @@ export function registerInteractableType(interactableSelector, { disabledByDefau
     makeKeyboardInteractable(...interactables);
 }
 
+function refreshInteractableSelectors() {
+    interactableSelector = interactableSelectors.join(',');
+    descendantStateClasses = getDescendantStateClasses();
+}
+
 /**
  * Checks if the given control is a keyboard-enabled interactable.
  *
@@ -109,7 +144,7 @@ export function registerInteractableType(interactableSelector, { disabledByDefau
  */
 export function isKeyboardInteractable(control) {
     // Check if this control matches any of the selectors
-    return interactableSelectors.some(selector => control.matches(selector));
+    return control.matches(interactableSelector);
 }
 
 /**
@@ -152,7 +187,9 @@ export function makeKeyboardInteractable(...interactables) {
                 interactable.setAttribute('tabindex', tabIndex);
             }
         } else {
-            interactable.setAttribute('data-original-tabindex', interactable.getAttribute('tabindex'));
+            if (interactable.hasAttribute('tabindex')) {
+                interactable.setAttribute('data-original-tabindex', interactable.getAttribute('tabindex'));
+            }
             interactable.removeAttribute('tabindex');
         }
     });
@@ -175,8 +212,7 @@ function initializeInteractables(element = document) {
  * @returns {HTMLElement[]} An array containing all the interactables that match the given selectors
  */
 function getAllInteractables(element) {
-    // Query each selector individually and combine all to a big array to return
-    return [].concat(...interactableSelectors.map(selector => Array.from(element.querySelectorAll(`${selector}`))));
+    return Array.from(element.querySelectorAll(interactableSelector));
 }
 
 /**
@@ -184,6 +220,8 @@ function getAllInteractables(element) {
  * @param {Element} container - The container
  */
 const applyScrollResetBehavior = (container) => {
+    if (scrollResetContainers.has(container)) return;
+    scrollResetContainers.add(container);
     container.addEventListener('focusout', (e) => {
         setTimeout(() => {
             const focusedElement = document.activeElement;
@@ -255,6 +293,7 @@ export function initKeyboard() {
         childList: true,
         subtree: true,
         attributes: true,
+        attributeOldValue: true,
         attributeFilter: ['class'],
     });
 

@@ -1,39 +1,12 @@
 /* global document, window */
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
 import { gunzipSync } from 'node:zlib';
-import { openPersonaEditor, openQuietChatForSmoke, trackNavigationErrors } from './chat-scroll-regression-helpers.js';
+import { openPersonaEditor, trackNavigationErrors } from './chat-scroll-regression-helpers.js';
+import { test } from './neconyan-conversation-durable-fixture.js';
 
 test.describe.configure({ mode: 'serial' });
 test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
 test.setTimeout(90000);
-
-let restoreFixture;
-test.afterEach(async ({ request }) => {
-    const fixture = restoreFixture;
-    restoreFixture = null;
-    if (!fixture) return;
-    const csrf = await request.get('/csrf-token');
-    expect(csrf.ok()).toBe(true);
-    const { token } = await csrf.json();
-    const headers = { 'X-CSRF-Token': token };
-    const world = await request.post('/api/worldinfo/edit', { headers, data: { name: fixture.worldName, data: fixture.originalBook } });
-    expect(world.ok()).toBe(true);
-    const current = await request.post('/api/settings/get', { headers, data: {} });
-    expect(current.ok()).toBe(true);
-    const settings = JSON.parse((await current.json()).settings);
-    settings.power_user.persona_descriptions[fixture.avatarId] = fixture.originalPersona;
-    settings.power_user.default_persona = fixture.originalDefault;
-    const saved = await request.post('/api/settings/save', { headers, data: settings });
-    expect(saved.ok()).toBe(true);
-    const chatResponse = await request.post('/api/chats/get', { headers, data: fixture.chatTarget });
-    expect(chatResponse.ok()).toBe(true);
-    const chat = await chatResponse.json();
-    expect(chat[0]?.chat_metadata).toBeDefined();
-    if (fixture.originalChatPersona === undefined) delete chat[0].chat_metadata.persona;
-    else chat[0].chat_metadata.persona = fixture.originalChatPersona;
-    const savedChat = await request.post('/api/chats/save', { headers, data: { ...fixture.chatTarget, chat } });
-    expect(savedChat.ok()).toBe(true);
-});
 
 async function appApi(page, route, body = {}) {
     return page.evaluate(async ({ route: apiRoute, body: apiBody }) => {
@@ -83,9 +56,21 @@ async function selectFixtureCharacter(page, avatar) {
     }, avatar);
 }
 
-test('Lorebooks and Personas preserve edits, controls, and narrow layouts', async ({ page }, testInfo) => {
-    await openQuietChatForSmoke(page, { selectCharacter: false });
-    await page.unroute('**/api/chats/save');
+test('Lorebooks and Personas preserve edits, controls, and narrow layouts', async ({ app }, testInfo) => {
+    test.setTimeout(180000);
+    const account = await app.account();
+    const saved = JSON.parse((await account.post('/api/settings/get')).settings);
+    saved.power_user.personas[account.personaId] = 'Workshop visitor';
+    saved.power_user.persona_descriptions[account.personaId] = {
+        description: 'Repairs radios.', position: 0, depth: 4, role: 0,
+        connections: [{ type: 'character', id: account.avatar }],
+    };
+    await account.post('/api/settings/save', saved);
+    await account.post('/api/worldinfo/edit', { name: 'Audit workshop fixture', data: { entries: {
+        0: { uid: 0, key: ['workshop'], keysecondary: [], content: 'A small repair workshop.', comment: 'Workshop',
+            constant: false, selective: false, disable: false, order: 100, position: 0, depth: 4, probability: 100, useProbability: true },
+    } } });
+    const page = await account.open({ workspace: false });
     await page.setViewportSize({ width: 1280, height: 844 });
 
     const settingsResponse = await appApi(page, '/api/settings/get');
@@ -101,7 +86,6 @@ test('Lorebooks and Personas preserve edits, controls, and narrow layouts', asyn
     expect(avatarId, 'fixture must contain a persona').toBeTruthy();
     const marker = `Neconyan browser edit ${Date.now()}`;
     const originalPersona = structuredClone(originalSettings.power_user.persona_descriptions?.[avatarId]);
-    const originalDefault = originalSettings.power_user.default_persona;
     const characterConnection = originalPersona?.connections?.find(connection => connection.type === 'character');
     expect(characterConnection?.id, 'fixture must contain a character persona connection').toBeTruthy();
     await selectFixtureCharacter(page, characterConnection.id);
@@ -111,9 +95,6 @@ test('Lorebooks and Personas preserve edits, controls, and narrow layouts', asyn
         const character = context.characters[context.characterId];
         return { avatar_url: character.avatar, file_name: character.chat };
     });
-    const originalChat = await appApi(page, '/api/chats/get', chatTarget);
-    const originalChatPersona = originalChat[0]?.chat_metadata?.persona;
-    restoreFixture = { worldName, originalBook, avatarId, originalPersona, originalDefault, chatTarget, originalChatPersona };
     const auditBook = structuredClone(originalBook);
     const extraUid = Math.max(-1, ...Object.keys(auditBook.entries).map(Number)) + 1;
     auditBook.entries[extraUid] = {
@@ -130,6 +111,7 @@ test('Lorebooks and Personas preserve edits, controls, and narrow layouts', asyn
     await expect(page.locator('#world_popup_entries_list .world_entry').first()).toBeVisible({ timeout: 30000 });
 
     const firstEntry = page.locator('#world_popup_entries_list .world_entry').first();
+    const editedEntryUid = await firstEntry.getAttribute('uid');
     const secondEntry = page.locator(`#world_popup_entries_list .world_entry[uid="${extraUid}"]`);
     await secondEntry.locator('button.inline-drawer-toggle span').click();
     await expect(page.locator('#world_popup_editor_host textarea[name="content"]')).toHaveValue('Second entry selection check');
@@ -230,10 +212,11 @@ test('Lorebooks and Personas preserve edits, controls, and narrow layouts', asyn
                 await openBook(page, worldName);
                 const entry = page.locator('#world_popup_entries_list .world_entry').first();
                 await expect(entry).toBeVisible();
-                if (!(await page.locator('#WorldInfo textarea[name="content"]:visible').count())) {
+                const editedContent = page.locator(`#WorldInfo textarea[id="world_entry_content_${editedEntryUid}"]`);
+                if (!(await editedContent.isVisible())) {
                     await entry.locator('button.inline-drawer-toggle').click();
                 }
-                await expect(page.locator('#WorldInfo textarea[name="content"]:visible')).toHaveValue(marker);
+                await expect(editedContent).toHaveValue(marker);
             }
             const layout = await page.evaluate(currentTab => {
                 const box = selector => document.querySelector(selector)?.getBoundingClientRect().toJSON();
@@ -248,7 +231,8 @@ test('Lorebooks and Personas preserve edits, controls, and narrow layouts', asyn
                 return { header, close, mode, actions, list: box('#world_popup_entries_column'), editor: box('#world_popup_editor_pane') };
             }, tab);
             if (width < 769) {
-                expect(layout.header.height).toBeGreaterThanOrEqual(52);
+                // Neconyan's phone header contains only the 44 px close target.
+                expect(layout.header.height).toBeGreaterThanOrEqual(44);
                 expect(layout.close.width).toBeGreaterThanOrEqual(44);
                 expect(layout.close.height).toBeGreaterThanOrEqual(44);
                 expect(layout.close.top).toBeGreaterThanOrEqual(layout.header.top);

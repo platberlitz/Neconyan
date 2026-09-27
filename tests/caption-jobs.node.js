@@ -30,7 +30,8 @@ function prepared(t, { video = false, api, caption = {}, blank = false, selected
     f.records[1].extra = { media_display: 'gallery', media_index: selectedMedia,
         media: [{ url: '/user/images/photo.png', type: 'image', source: 'generated' }, selected] };
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
-    const settings = { power_user: {}, oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1', vertexai_express: true },
+    const settings = { _version: 'fixture', _settingsRevision: 1, accountStorage: { epoch: 1 },
+        power_user: {}, oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1', vertexai_express: true },
         extension_settings: { caption: { auto_mode: false, source: api ? 'multimodal' : 'local', multimodal_api: api || 'openai', multimodal_model: 'fixture', ...caption },
             connectionManager: { profiles: [{ id: 'main', api: 'custom', model: 'fixture', 'api-url': 'http://127.0.0.1:18000/v1' }] } } };
     fs.writeFileSync(path.join(directories.root, 'settings.json'), JSON.stringify(settings));
@@ -50,6 +51,8 @@ test('a manual caption atomically changes only its selected saved media and keep
     const f = prepared(t);
     const request = f.capture();
     const { jobId, context } = f.admit(request);
+    f.settings._settingsRevision++;
+    fs.writeFileSync(path.join(f.directories.root, 'settings.json'), JSON.stringify(f.settings));
     let calls = 0;
     const original = structuredClone(f.records);
     const result = await runCaptionJob(context(), { localCaption: async () => {

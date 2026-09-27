@@ -12,6 +12,22 @@ export async function isGitRepository(git) {
     return Boolean(await git.checkIsRepo().catch(() => false));
 }
 
+/** Share remote checks between clients without caching local edits or branch state. */
+export function createRemoteRefresh({ interval = 60_000, now = Date.now } = {}) {
+    let pending = null;
+    let refreshedAt = -Infinity;
+    return async (git, { force = false } = {}) => {
+        if (pending) return pending;
+        if (!force && now() - refreshedAt < interval) return;
+        pending = Promise.resolve().then(() => git.fetch()).then(() => { refreshedAt = now(); });
+        try {
+            await pending;
+        } finally {
+            pending = null;
+        }
+    };
+}
+
 export function getRemoteBranchDisplayName(remoteBranch) {
     const branch = String(remoteBranch ?? '').trim();
 

@@ -20,6 +20,7 @@ function createContext(status) {
     const context = vm.createContext({
         nnUpdateToastChecking: false,
         nnUpdateToastTimer: 1,
+        document: { hidden: false },
         NN_UPDATE_TOAST_STORAGE_KEY: 'neconyan:update-toast-commit',
         localStorage: { getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, value) },
         requestServerAdmin: async () => {
@@ -65,5 +66,45 @@ describe('update toast', () => {
         expect(extract('showUpdateToast')).toContain('openShell(\'right\', \'server\')');
         expect(tabsSource).toContain('NN_UPDATE_TOAST_INTERVAL_MS = 30 * 60 * 1000');
         expect(toastCss).toContain('@media (prefers-reduced-motion: reduce) { .nn-update-toast { animation: none; } }');
+    });
+
+    test('does not make update requests from hidden tabs', async () => {
+        const { context, shown } = createContext({ repository: { isRepo: true, remoteCommit: 'abc1234', behind: 1 } });
+        context.document.hidden = true;
+        let requests = 0;
+        context.requestServerAdmin = () => { requests++; };
+        await context.checkForNeconyanUpdate();
+        expect(requests).toBe(0);
+        expect(shown).toEqual([]);
+        expect(context.nnUpdateToastChecking).toBe(false);
+    });
+
+    test('dismisses after eight seconds, protecting hover and keyboard focus and cancelling on close', () => {
+        let callback;
+        let removed = false;
+        let hovered = false;
+        let focused = false;
+        const toast = { matches: () => hovered, contains: () => focused, remove: () => { removed = true; } };
+        const context = vm.createContext({
+            NN_UPDATE_TOAST_DURATION_MS: 8000,
+            nnUpdateToastDismissTimer: null,
+            document: { activeElement: null, getElementById: () => toast },
+            setTimeout: (fn, delay) => { expect(delay).toBe(8000); callback = fn; return 1; },
+            clearTimeout: () => { callback = null; },
+        });
+        vm.runInContext([extract('dismissUpdateToast'), extract('scheduleUpdateToastDismissal')].join('\n'), context);
+        context.scheduleUpdateToastDismissal(toast);
+        hovered = true;
+        callback();
+        expect(removed).toBe(false);
+        hovered = false;
+        focused = true;
+        callback();
+        expect(removed).toBe(false);
+        focused = false;
+        callback();
+        expect(removed).toBe(true);
+        expect(callback).toBeNull();
+        expect(context.nnUpdateToastDismissTimer).toBeNull();
     });
 });

@@ -1,5 +1,6 @@
 /* global globalThis */
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
+import { ReadableStream } from 'node:stream/web';
 
 const CSRF_HEADERS = { 'Content-Type': 'application/json', 'X-CSRF-Token': 'csrf-value' };
 // Restore the real fetch afterwards. Deleting it leaks into later test files,
@@ -80,7 +81,8 @@ describe('browser jobs observer snapshot callbacks', () => {
 
     test('onSnapshot runs on every poll while onUpdate runs only when the job JSON changes', async () => {
         let call = 0;
-        globalThis.fetch = jest.fn(async () => {
+        globalThis.fetch = jest.fn(async url => {
+            if (url.endsWith('/events')) return jsonResponse(null, 404);
             call += 1;
             return jsonResponse({ job: { id: 'job-1', state: call < 3 ? 'queued' : 'completed' } });
         });
@@ -109,6 +111,50 @@ describe('browser jobs observer snapshot callbacks', () => {
         observeJob('job-1', { intervalMs: 1, signal: controller.signal, onSnapshot: () => {} });
         await wait(30);
         expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    test('observers share one change stream and read completed snapshots without advancing the polling clock', async () => {
+        let feed;
+        let state = 'running';
+        let streamSignal;
+        let streamHeaders;
+        const body = new ReadableStream({ start(controller) { feed = controller; } });
+        globalThis.fetch = jest.fn(async (url, options) => {
+            if (url.endsWith('/events')) {
+                streamSignal = options.signal;
+                streamHeaders = options.headers;
+                return { ok: true, headers: new Map([['content-type', 'text/event-stream']]), body };
+            }
+            return jsonResponse({ job: { id: url.split('/').pop(), state } });
+        });
+        const { observeJob } = await import('../public/scripts/jobs.js');
+        const completed = [];
+        const stops = ['first', 'second'].map(id => observeJob(id, {
+            intervalMs: 60_000, onDone: job => completed.push(job.id),
+        }));
+        try {
+            await wait(20);
+            state = 'completed';
+            feed.enqueue(new TextEncoder().encode('data: {}\n\n'));
+            await wait(40);
+            expect(completed.sort()).toEqual(['first', 'second']);
+            expect(globalThis.fetch.mock.calls.filter(([url]) => url.endsWith('/events'))).toHaveLength(1);
+            expect(streamHeaders['X-Neconyan-Account']).toBe('alice');
+            expect(streamSignal.aborted).toBe(true);
+        } finally { stops.forEach(stop => stop()); feed.close(); }
+    });
+
+    test('a failed terminal snapshot readback retries before signalling completion', async () => {
+        globalThis.fetch = jest.fn(async () => jsonResponse({ job: { id: 'job-1', state: 'completed' } }));
+        const { observeJob } = await import('../public/scripts/jobs.js');
+        const onSnapshot = jest.fn().mockRejectedValueOnce(new Error('Readback unavailable')).mockResolvedValue(undefined);
+        const onDone = jest.fn();
+        const stop = observeJob('job-1', { intervalMs: 1, onSnapshot, onDone });
+        try {
+            await wait(40);
+            expect(onSnapshot).toHaveBeenCalledTimes(2);
+            expect(onDone).toHaveBeenCalledTimes(1);
+        } finally { stop(); }
     });
 
     test('a completed job stops polling and does not read again', async () => {

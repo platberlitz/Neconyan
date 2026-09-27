@@ -69,6 +69,24 @@ Keep the keystore and its password backed up outside the repository. Losing the
 key prevents compatible updates to installed copies. Never publish or commit it.
 The debug app uses a separate application ID and does not share release data.
 
+### Release builds
+
+I build the release from a clean commit. From the repository root, run
+`node scripts/build-android-payload.js --release` before the signed Gradle build.
+That rebuilds the frontend and records the commit, package version and frontend
+manifest checksum inside the server payload. It refuses uncommitted changes.
+
+The manual 'Android Release Validation' workflow does this on staging or main.
+It builds both signed APKs, checks their signatures and 16 KiB native alignment,
+and packages the same commit as a source ZIP. Its downloaded artefacts include
+the provenance report and `SHA256SUMS`. The Android 11 and 15 emulator jobs install
+the signed x86_64 APK and check private authentication, background operation,
+process-death recovery and data retention after reinstalling it.
+
+The first official release uses a fresh signing key. Earlier desktop-signed test
+APKs need an exported backup and a reinstall; Android won't accept an update signed
+with a different key. Future official APKs must keep this release key.
+
 The server runtime is the full Android build of
 [Node.js Mobile 24.21.0-0](https://github.com/fogtape/nodejs-mobile/releases/tag/v24.21.0-0),
 pinned by SHA-256 in `prepare-runtime.sh`. Its source and mobile patches are in

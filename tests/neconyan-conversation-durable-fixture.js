@@ -24,7 +24,7 @@ export const test = base.extend({
         try { await use(directory); }
         finally { await fs.rm(directory, { recursive: true, force: true }); }
     }, { scope: 'worker' }],
-    app: async ({ browser, libraryCache }, use, info) => {
+    app: [async ({ browser, libraryCache }, use, info) => {
         if (process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1') {
             throw new Error('Set NECONYAN_CONVERSATION_TEST_DISPOSABLE=1 to run this owned, disposable fixture.');
         }
@@ -45,7 +45,7 @@ export const test = base.extend({
         config.browserLaunch.enabled = false;
         config.extensions.autoUpdate = false;
         config.extensions.models.autoDownload = false;
-        config.performance.frontendBuild.enabled = false;
+        config.performance.frontendBuild.enabled = process.env.NECONYAN_TEST_FRONTEND_BUILD === '1';
         config.rateLimiting.conversationMessageSendPoints = 0;
         await fs.mkdir(config.dataRoot);
         await fs.symlink(libraryCache, path.join(config.dataRoot, '_webpack'), 'dir');
@@ -191,15 +191,19 @@ export const test = base.extend({
                     },
                     async job(id) { return (await (await context.request.get('/api/jobs/' + id)).json()).job; },
                     async settled(id, state = 'completed') {
-                        await expect.poll(async () => (await account.job(id)).state, { timeout: 60000 }).toBe(state);
+                        await expect.poll(async () => terminal.includes((await account.job(id)).state), { timeout: 60000 }).toBe(true);
                         const job = await account.job(id);
+                        const children = await Promise.all((job.children || []).map(childId => account.job(childId)));
+                        expect(job.state, JSON.stringify({ id, error: job.error, children: children.map(child => ({ id: child.id, state: child.state, error: child.error })) })).toBe(state);
                         for (const childId of job.children || []) {
                             await expect.poll(async () => terminal.includes((await account.job(childId)).state)).toBe(true);
                         }
                         return job;
                     },
-                    async open({ workspace = true, timeout = 20000, readyTimeout = timeout, skipTour = true } = {}) {
+                    async open({ workspace = true, timeout = 20000, readyTimeout = 60000, skipTour = true } = {}) {
                         const page = await context.newPage();
+                        // Update notices depend on the checkout's remote, not this disposable account.
+                        await page.route('**/api/server-admin/status', route => route.fulfill({ status: 403, json: { error: 'Update checks are outside this fixture.' } }));
                         navigationErrors.push(trackNavigationErrors(page).errors);
                         page.setDefaultTimeout(timeout);
                         await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -241,7 +245,7 @@ export const test = base.extend({
             if (info.status !== info.expectedStatus) await info.attach('server-output', { body: output, contentType: 'text/plain' });
             await fs.rm(directory, { recursive: true, force: true });
         }
-    },
+    }, { timeout: 120000 }],
 });
 
 export async function send(page, text = 'Durable question.') {

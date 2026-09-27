@@ -85,10 +85,10 @@ export function readAgentCollection(directory, kind = 'agent', base = null) {
             const stored = recordFile(directory, kind, file.slice(0, -5));
             if (!stored) throw storageError(409, 'The agent record disappeared.');
             const record = stored.record;
-            if (!validate(record, kind) || `${record.id}.json` !== file) throw new Error('Invalid record or mismatched file identifier.');
+            if (`${record.id}.json` !== file) throw new Error('Invalid record or mismatched file identifier.');
             if (Object.hasOwn(revisions, record.id)) throw new Error('Duplicate record identifier.');
             records.push(record);
-            Object.defineProperty(revisions, record.id, { value: agentRecordRevision(record), enumerable: true });
+            Object.defineProperty(revisions, record.id, { value: stored.revision, enumerable: true });
         } catch (error) {
             errors.push({ file, message: error.status === 409 ? 'The saved record needs recovery and was kept.' : 'Invalid or oversized saved record.' });
         }

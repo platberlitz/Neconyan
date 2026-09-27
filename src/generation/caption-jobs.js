@@ -2,7 +2,7 @@ import path from 'node:path';
 import { registerHandler } from '../jobs/runner.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { admitRoleplayJob, applyRoleplayJobEffect, readRoleplayJobResult } from '../roleplay-jobs.js';
-import { roleplayError, roleplayHash, readRoleplayFile, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
+import { roleplayError, roleplayHash, roleplaySettingsHash, readRoleplayFile, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
 import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay-source.js';
 import { captureSavedRoleplayImages, selectSavedRoleplayPersona } from './world-info.js';
 import { captureRoleplayCaptions, prepareRoleplayCaptions } from './roleplay-captions.js';
@@ -44,7 +44,7 @@ export function captureCaptionRequest(base, account, source, { avatar, mediaInde
             variables: { local: saved.records[0].chat_metadata?.variables ?? {}, global: settings.extension_settings?.variables?.global ?? {} },
             extra: { character: { ...card, avatar }, characterAvatar: avatar, chat: saved.records.slice(1), chatMetadata: saved.records[0].chat_metadata ?? {} } };
         const snapshot = { account: { accountId: account.accountId, dataEpoch: account.dataEpoch }, source, avatar, images, captions,
-            experimentalMacroEngine: Boolean(settings.power_user?.experimental_macro_engine), settingsHash: roleplayHash(settings) };
+            experimentalMacroEngine: Boolean(settings.power_user?.experimental_macro_engine), settingsHash: roleplaySettingsHash(settings) };
         const request = { worldInfo: snapshot, macros };
         if (Buffer.byteLength(JSON.stringify(request)) > 2 * 1024 * 1024) throw fail('The selected caption input exceeds its saved limit.');
         return request;

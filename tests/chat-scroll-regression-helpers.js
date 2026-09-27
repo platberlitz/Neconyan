@@ -111,7 +111,7 @@ async function waitForChatRenderIdle(page, { idleMs = 750, timeoutMs = 30000, wa
     await page.waitForFunction(() => {
         return typeof window.SillyTavern?.getContext === 'function'
             && document.querySelector('#chat') instanceof HTMLElement;
-    }, { timeout: 10000 });
+    }, undefined, { timeout: 10000 });
 
     await page.evaluate(async ({ idleMs: stableIdleMs, timeoutMs: stableTimeoutMs, waitForImages: shouldWaitForImages }) => {
         await new Promise((resolve, reject) => {
@@ -198,7 +198,7 @@ export async function openReadyChat(page, { chatSaveDelayMs = 0, selectCharacter
     });
 
     await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction('document.getElementById("preloader") === null', { timeout: 0 });
+    await page.waitForFunction('document.getElementById("preloader") === null', undefined, { timeout: 60000 });
     await dismissOnboardingIfPresent(page);
     await dismissOpenDialogIfPresent(page);
     if (selectCharacter) {
@@ -242,7 +242,7 @@ export async function openQuietChatForSmoke(page, options = {}) {
     });
 
     await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction('document.getElementById("preloader") === null', { timeout: 0 });
+    await page.waitForFunction('document.getElementById("preloader") === null', undefined, { timeout: 60000 });
     await quietChatForSmoke(page);
     await dismissOnboardingIfPresent(page);
     await dismissOpenDialogIfPresent(page);

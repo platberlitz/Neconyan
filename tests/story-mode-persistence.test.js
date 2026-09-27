@@ -30,6 +30,7 @@ function saveContext(group = false) {
         saveChat: jest.fn(async () => true),
         saveGroupChat: jest.fn(async () => true),
         cancelDebouncedChatSave: jest.fn(),
+        cancelDebouncedMetadataSave: jest.fn(),
         setChatSaveActive: jest.fn(),
         saveTokenCache: jest.fn(async () => {}),
         saveItemizedPrompts: jest.fn(async () => {}),

@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
+import { createMockRoleplayStore } from './roleplay-browser-fixture.js';
 
 const outputDir = fileURLToPath(new URL('../output/playwright/neconyan-audit/undo-reviewed', import.meta.url));
 mkdirSync(outputDir, { recursive: true });
@@ -40,10 +41,13 @@ async function openUndoFixture(page, { light = false, group = false } = {}) {
     }));
     const groups = [{ id: 'undo-group', name: 'Undo Group', members: characters.map(c => c.avatar), disabled_members: [], chat_id: 'undo-group-chat', chats: ['undo-group-chat'], chat_metadata: {}, generation_mode: 0, activation_strategy: 0, allow_self_responses: false }];
     let envelopePromise, settings;
+    const storage = createMockRoleplayStore(async () => (await envelopePromise).roleplayAccount);
     await page.route('**/api/settings/get', async route => {
         const envelope = await (envelopePromise ??= route.fetch().then(r => r.json()));
         if (!settings) {
             settings = JSON.parse(envelope.settings);
+            settings.active_character = '';
+            settings.active_group = '';
             // Automatic filesystem snapshots are outside this mocked chat fixture.
             settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
             if (light) {
@@ -55,8 +59,8 @@ async function openUndoFixture(page, { light = false, group = false } = {}) {
     });
     await page.route('**/api/settings/save', async route => {
         const payload = requestJson(route.request());
-        settings = { ...payload, _version: Math.max(Date.now(), Number(payload._version || 0) + 1) };
-        await route.fulfill({ json: { version: settings._version } });
+        settings = { ...payload, _version: Math.max(Date.now(), Number(payload._version || 0) + 1), _settingsRevision: Number(payload._settingsRevision || 0) + 1 };
+        await route.fulfill({ json: { result: 'ok', version: settings._version, settingsRevision: settings._settingsRevision } });
     });
     await page.route('**/api/characters/all', route => route.fulfill({ json: characters }));
     await page.route('**/api/characters/chats', route => {
@@ -64,10 +68,10 @@ async function openUndoFixture(page, { light = false, group = false } = {}) {
         return route.fulfill({ json: character ? [{ file_name: character.chat, last_mes: Date.now(), message_count: 0 }] : [] });
     });
     await page.route('**/api/characters/edit-attribute', route => route.fulfill({ json: {} }));
-    await page.route('**/api/groups/all', route => route.fulfill({ json: group ? groups : [] }));
-    await page.route('**/api/groups/edit', route => route.fulfill({ json: {} }));
-    await page.route('**/api/chats/get', route => route.fulfill({ json: [] }));
-    await page.route('**/api/chats/group/get', route => route.fulfill({ json: [{ chat_metadata: {}, user_name: 'unused', character_name: 'unused' }] }));
+    await page.route('**/api/groups/all', route => storage.readGroups(route, group ? groups : []));
+    await page.route('**/api/groups/edit', route => storage.saveGroup(route));
+    await page.route('**/api/chats/get', route => storage.read(route));
+    await page.route('**/api/chats/group/get', route => storage.read(route, [{ chat_metadata: {}, user_name: 'unused', character_name: 'unused' }]));
     await page.route('**/api/chats/group/info', route => route.fulfill({ json: { file_name: 'undo-group-chat', message_count: 0 } }));
     await page.route(/\/thumbnail\?/, async route => {
         if (new URL(route.request().url()).searchParams.get('type') === 'avatar') await route.fulfill({ path: avatarImage });
@@ -80,7 +84,8 @@ async function openUndoFixture(page, { light = false, group = false } = {}) {
             const behavior = state.nextSave;
             state.nextSave = null;
             if (behavior?.delay) await new Promise(resolve => setTimeout(resolve, behavior.delay));
-            await route.fulfill({ status: behavior?.status || 200, json: behavior?.status ? { error: 'Test save unavailable' } : {} });
+            if (behavior?.status) await route.fulfill({ status: behavior.status, json: { error: 'Test save unavailable' } });
+            else await storage.save(route);
         });
     }
     await page.route('**/api/server-admin/**', route => route.fulfill({ status: 403, json: { error: 'Server administration is disabled in Undo tests.' } }));
@@ -95,7 +100,7 @@ async function openUndoFixture(page, { light = false, group = false } = {}) {
         });
     }
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => window.SillyTavern?.getContext && !document.getElementById('preloader'), { timeout: 60000 });
+    await page.waitForFunction(() => window.SillyTavern?.getContext && !document.getElementById('preloader'), undefined, { timeout: 60000 });
     await page.waitForFunction(() => window.SillyTavern.getContext().characters.some(character => character.avatar === 'undo-cat-0.png'));
     await page.evaluate(async useGroup => {
         const context = window.SillyTavern.getContext();
@@ -192,6 +197,7 @@ test('native message Undo restores exact content, later edits, prompts, editor, 
     await expect(confirmation).toContainText('Are you sure you want to delete this message?');
     await confirmation.getByRole('button', { name: 'Delete Message', exact: true }).click();
     await expect(page.locator('#chat .mes[mesid]')).toHaveCount(3);
+    await settleDeletion(page);
 
     await page.evaluate(async () => {
         const context = window.SillyTavern.getContext();
@@ -245,7 +251,8 @@ test('slow failed restore stays available and Retry saves without reinserting', 
     await deleteSingle(page);
     await settleDeletion(page);
     state.saveRequests.length = 0;
-    state.nextSave = { status: 503, delay: 9500 };
+    // A definitive refusal permits a new save; transport errors retry the same operation automatically.
+    state.nextSave = { status: 422, delay: 9500 };
     const action = page.locator('.neconyan-undo-action');
     await action.click();
     await expect(action).toBeDisabled();

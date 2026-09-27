@@ -1,6 +1,7 @@
 import { describe, expect, jest, test } from '@jest/globals';
 
 import {
+    createRemoteRefresh,
     getBranchDisplayNames,
     getGeneratedInstallChangePaths,
     getRemoteBranchesFromSummary,
@@ -12,6 +13,35 @@ import {
 } from '../src/server-admin-git.js';
 
 describe('server admin git helpers', () => {
+    test('shares simultaneous remote fetches and reuses only recent successful checks', async () => {
+        let time = 0;
+        let finish;
+        const refresh = createRemoteRefresh({ interval: 100, now: () => time });
+        const git = { fetch: jest.fn(() => new Promise(resolve => { finish = resolve; })) };
+        const first = refresh(git);
+        const second = refresh(git);
+        await Promise.resolve();
+        expect(git.fetch).toHaveBeenCalledTimes(1);
+        finish();
+        await Promise.all([first, second]);
+        await refresh(git);
+        expect(git.fetch).toHaveBeenCalledTimes(1);
+        git.fetch.mockResolvedValue(undefined);
+        await refresh(git, { force: true });
+        expect(git.fetch).toHaveBeenCalledTimes(2);
+        time = 101;
+        await refresh(git);
+        expect(git.fetch).toHaveBeenCalledTimes(3);
+    });
+
+    test('retries after a failed remote fetch', async () => {
+        const refresh = createRemoteRefresh();
+        const git = { fetch: jest.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(undefined) };
+        await expect(refresh(git)).rejects.toThrow('offline');
+        await refresh(git);
+        expect(git.fetch).toHaveBeenCalledTimes(2);
+    });
+
     test('accepts linked worktrees as Git repositories', async () => {
         const git = {
             checkIsRepo: jest.fn(async () => true),

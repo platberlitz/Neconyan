@@ -57,6 +57,7 @@ export function setLocalVariable(name, value, args = {}) {
         chat_metadata.variables = {};
     }
 
+    const previousValue = chat_metadata.variables[name];
     if (args.index !== undefined) {
         try {
             let localVariable = JSON.parse(chat_metadata.variables[name] ?? 'null');
@@ -79,7 +80,10 @@ export function setLocalVariable(name, value, args = {}) {
     } else {
         chat_metadata.variables[name] = value;
     }
-    saveMetadataDebounced();
+    const storedValue = chat_metadata.variables[name];
+    if (storedValue !== previousValue || (storedValue !== null && typeof storedValue === 'object')) {
+        saveMetadataDebounced();
+    }
     return value;
 }
 
@@ -111,6 +115,7 @@ export function setGlobalVariable(name, value, args = {}) {
         throw new Error('Variable name cannot be empty or undefined.');
     }
 
+    const previousValue = extension_settings.variables.global[name];
     if (args.index !== undefined) {
         try {
             let globalVariable = JSON.parse(extension_settings.variables.global[name] ?? 'null');
@@ -133,7 +138,10 @@ export function setGlobalVariable(name, value, args = {}) {
     } else {
         extension_settings.variables.global[name] = value;
     }
-    saveSettingsDebounced();
+    const storedValue = extension_settings.variables.global[name];
+    if (storedValue !== previousValue || (storedValue !== null && typeof storedValue === 'object')) {
+        saveSettingsDebounced();
+    }
     return value;
 }
 

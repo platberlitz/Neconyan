@@ -155,6 +155,29 @@ async function storeRuntime({ loaded = true } = {}) {
 }
 
 describe('Agent setup apply and recovery', () => {
+    test('one-agent quick settings use one conditional write without copying the entire setup', async () => {
+        const runtime = await storeRuntime();
+        const changed = { ...runtime.store.getAgentById('a'), modelOverride: 'quick-model' };
+        await runtime.store.saveAgentBatch([changed], 'Agent settings');
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+        expect(runtime.settingsSave).not.toHaveBeenCalled();
+        expect(runtime.store.getAgentById('a').modelOverride).toBe('quick-model');
+        expect(runtime.agents.get('extra')).toEqual(runtime.initial[1]);
+        expect(runtime.presets.size).toBe(0);
+    });
+
+    test('a shared one-agent switch writes once and preserves a concurrent server edit', async () => {
+        const runtime = await storeRuntime();
+        await runtime.store.saveAgentEnabledState(['a'], false);
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+        expect(runtime.settingsSave).not.toHaveBeenCalled();
+        expect(runtime.agents.get('a').enabled).toBe(false);
+        runtime.agents.get('a').prompt = 'Edited elsewhere';
+        await expect(runtime.store.saveAgentEnabledState(['a'], true)).rejects.toThrow('Concurrent record change');
+        expect(runtime.store.getAgentById('a').enabled).toBe(false);
+        expect(runtime.agents.get('a').prompt).toBe('Edited elsewhere');
+    });
+
     test('scoped enable changes commit with settings and preserve the other scope', async () => {
         const runtime = await storeRuntime();
         runtime.store.setGlobalSettings({ separateRecentChats: true, scopedEnabledAgentIdsInitialized: true, enabledAgentIdsByChatType: { individual: ['a'], group: ['a', 'extra'] } });

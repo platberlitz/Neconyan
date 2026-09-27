@@ -44,12 +44,12 @@ test('a group created in the library opens and saves its first chat', async ({ p
     await expect(page.getByRole('button', { name: `Open chat with ${characterName}`, exact: true })).toBeVisible();
 
     await page.getByRole('tab', { name: 'Groups', exact: true }).click();
-    await page.getByRole('button', { name: 'Create group', exact: true }).click();
+    await page.locator('#rm_button_group_chats').click();
     await page.getByRole('textbox', { name: 'Group name', exact: true }).fill(groupName);
     await page.locator('#rm_group_filter').fill(characterName);
     await page.locator('#rm_group_add_members .group_member').filter({ hasText: characterName }).getByRole('button', { name: /Add$/ }).click();
     const groupResponse = page.waitForResponse(response => response.url().endsWith('/api/groups/create'));
-    await page.getByRole('button', { name: 'Create group', exact: true }).click();
+    await page.locator('#rm_group_submit').click();
     const createdGroup = await groupResponse;
     expect(createdGroup.ok()).toBe(true);
     const group = await createdGroup.json();

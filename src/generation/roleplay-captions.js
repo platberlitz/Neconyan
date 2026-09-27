@@ -4,7 +4,7 @@ import { createMacroEnvironment } from '../macros/index.js';
 import { providerNotDispatched, providerStep, readArtifact, unresolvedProviderStep, writeArtifact } from '../jobs/artifacts.js';
 import { setJobResume } from '../jobs/store.js';
 import { readBinaryArtifact, writeBinaryArtifact } from '../jobs/binary-artifacts.js';
-import { readRoleplayFile, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
+import { readRoleplayFile, roleplayHash, roleplaySettingsHash, withRoleplayAccount } from '../roleplay-store.js';
 import { abortableSleep } from '../../public/scripts/extensions/quick-image-gen/lib/hosted-provider.js';
 import { captionError, captionLocalImage, MAX_CAPTION_BYTES, prepareCaptionRequest, readCaptionResponse,
     resolveCaptionConfiguration, sendCaptionRequest, validateCaption } from './caption-transports.js';
@@ -69,7 +69,7 @@ function currentConfiguration(base, snapshot) {
             const saved = readRoleplayFile(path.join(base.directories.root, 'settings.json'), 8 * 1024 * 1024);
             settings = saved && JSON.parse(saved.bytes.toString('utf8'));
         } catch { throw captionError('The saved caption settings are unavailable.', 'ROLEPLAY_CAPTION_SOURCE_CHANGED'); }
-        if (!settings || roleplayHash(settings) !== snapshot.settingsHash
+        if (!settings || roleplaySettingsHash(settings) !== snapshot.settingsHash
             || roleplayHash(settings.extension_settings?.caption ?? {}) !== snapshot.captions.optionsHash) {
             throw captionError('The caption settings changed after admission.', 'ROLEPLAY_CAPTION_SOURCE_CHANGED');
         }

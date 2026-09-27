@@ -1,7 +1,8 @@
-"""Install a debug APK on an explicitly selected emulator and check local data recovery.
+"""Install an APK on an explicitly selected emulator and check local data recovery.
 
 python3 tests/android-apk-smoke.py --adb PATH --serial emulator-5554 --apk PATH
-The debug application ID isolates this test from the official app and its data.
+Debug builds use their separate application ID. --release requires a disposable,
+root-capable emulator and checks the official signed application instead.
 """
 import argparse
 import http.cookiejar
@@ -15,10 +16,11 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--adb', default='adb')
 parser.add_argument('--serial', required=True)
 parser.add_argument('--apk', required=True)
+parser.add_argument('--release', action='store_true', help='Check the signed app on a disposable root-capable emulator')
 args = parser.parse_args()
 if not args.serial.startswith('emulator-'):
     parser.error('This destructive lifecycle check is restricted to an emulator.')
-package = 'io.github.platberlitz.neconyan.debug'
+package = 'io.github.platberlitz.neconyan' + ('' if args.release else '.debug')
 
 
 def adb(*command):
@@ -34,7 +36,10 @@ def connect():
     failure = None
     while time.monotonic() < deadline:
         try:
-            credentials = json.loads(adb('shell', 'run-as', package, 'cat', 'no_backup/launcher.json'))
+            if args.release:
+                credentials = json.loads(adb('shell', 'cat', '/data/user/0/' + package + '/no_backup/launcher.json'))
+            else:
+                credentials = json.loads(adb('shell', 'run-as', package, 'cat', 'no_backup/launcher.json'))
             port = adb('forward', 'tcp:0', 'tcp:' + str(credentials['port']))
             origin = 'http://127.0.0.1:' + port
             client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
@@ -57,6 +62,10 @@ def connect():
     raise RuntimeError('Android server did not start: ' + str(failure))
 
 
+if args.release:
+    adb('root')
+    adb('wait-for-device')
+    assert adb('shell', 'id', '-u') == '0', 'Signed app acceptance needs a root-capable disposable emulator'
 print(adb('install', '-r', args.apk), flush=True)
 if int(adb('shell', 'getprop', 'ro.build.version.sdk')) >= 33:
     adb('shell', 'pm', 'grant', package, 'android.permission.POST_NOTIFICATIONS')

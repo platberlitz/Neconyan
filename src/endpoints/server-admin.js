@@ -11,7 +11,7 @@ import simpleGit from 'simple-git';
 import { APP_NAME, formatRuntimeLabel, isBunRuntime, isNativeTermuxEnvironment } from '../runtime.js';
 import {
     getBranchDisplayNames,
-    getGeneratedInstallChangePaths,
+    createRemoteRefresh,
     getRemoteBranchesFromSummary,
     getStatusDisplayBranch,
     NON_GIT_REPOSITORY_MESSAGE,
@@ -57,6 +57,7 @@ const GIT_OPTIONS = Object.freeze({
     config: ['gc.auto=0', 'maintenance.auto=false'],
 });
 const RESTART_RESPONSE_DELAY_MS = 200;
+const refreshRepositoryRemote = createRemoteRefresh();
 const CHAT_COMPLETION_CONFIG_DEFAULTS = Object.freeze({
     claude: Object.freeze({
         enableSystemPromptCache: false,
@@ -543,26 +544,6 @@ async function restoreAutoStash(git, { reason = 'after update failure' } = {}) {
     }
 }
 
-async function restoreGeneratedInstallFileChanges(git, gitStatus) {
-    const generatedPaths = getGeneratedInstallChangePaths(gitStatus?.files);
-
-    if (!generatedPaths.length) {
-        return gitStatus;
-    }
-
-    try {
-        await git.raw(['restore', '--staged', '--worktree', '--', ...generatedPaths]);
-    } catch {
-        await git.raw(['reset', 'HEAD', '--', ...generatedPaths]);
-        await git.raw(['checkout', '--', ...generatedPaths]);
-    }
-
-    // Neconyan: Windows launchers can rewrite install metadata while recovering from stale Bun locks.
-    console.info(`Restored generated install file changes before checking for updates: ${generatedPaths.join(', ')}.`);
-
-    return await git.status();
-}
-
 async function runCommand(command, args, options = {}) {
     return await new Promise((resolve, reject) => {
         const child = spawn(command, args, {
@@ -622,7 +603,7 @@ function getInstallCommand() {
     return null;
 }
 
-async function getRepositoryStatus() {
+async function getRepositoryStatus({ refresh = false } = {}) {
     const status = {
         supported: false,
         isRepo: false,
@@ -659,7 +640,7 @@ async function getRepositoryStatus() {
     status.branch = toTrimmedString(await git.revparse(['--abbrev-ref', 'HEAD']).catch(() => ''));
     status.currentCommit = toTrimmedString(await git.revparse(['--short', 'HEAD']).catch(() => ''));
 
-    const gitStatus = await restoreGeneratedInstallFileChanges(git, await git.status());
+    const gitStatus = await git.status();
     status.hasLocalChanges = !gitStatus.isClean();
     status.changedFilesCount = gitStatus.files.length;
     status.changedFiles = gitStatus.files.slice(0, 12).map(file => ({
@@ -677,7 +658,7 @@ async function getRepositoryStatus() {
         return status;
     }
 
-    await git.fetch();
+    await refreshRepositoryRemote(git, { force: refresh });
 
     const [aheadRaw = '0', behindRaw = '0'] = (await git.raw(['rev-list', '--left-right', '--count', `HEAD...${trackingBranch}`]))
         .trim()
@@ -1095,7 +1076,7 @@ router.post('/update', requireAdminMiddleware, async (_request, response) => {
     let git = null;
     let stashed = false;
     try {
-        const repository = await getRepositoryStatus();
+        const repository = await getRepositoryStatus({ refresh: true });
 
         if (!repository.supported) {
             return response.status(400).json({ error: repository.message || 'Git updates are unavailable in this environment.' });

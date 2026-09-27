@@ -3732,6 +3732,7 @@ function syncShellViewportBounds() {
     const root = document.documentElement;
     const viewportSize = getShellViewportSize();
     const topOffset = Math.max(0, Math.round(getResolvedShellTopbarOffset()));
+    const composerKeyboardInset = getComposerKeyboardInset(getLayoutViewportSize(), getVisualViewportSize());
     const setRootViewportProperty = (property, value) => {
         if (root.style.getPropertyValue(property) !== value) {
             root.style.setProperty(property, value);
@@ -3746,7 +3747,6 @@ function syncShellViewportBounds() {
 
     // Neconyan: browser-fixes.js may reset document scroll mid-edit once the
     // legacy shell has moved the focused composer above the keyboard.
-    const composerKeyboardInset = getComposerKeyboardInset(getLayoutViewportSize(), getVisualViewportSize());
     root.classList.toggle('sb-ios-composer-keyboard-inset-active', composerKeyboardInset > 0);
 }
 
@@ -3980,11 +3980,11 @@ function syncMobileShellDrawerBounds() {
     const viewportSize = mobileViewport ? getShellViewportSize() : null;
     const baseTopOffset = mobileViewport ? getResolvedShellTopbarOffset() : 0;
 
-    for (const drawer of drawers) {
+    const decisions = drawers.map(drawer => {
         const isOpen = drawer.classList.contains('openDrawer');
         const drawerStyles = mobileViewport && isOpen ? window.getComputedStyle(drawer) : null;
 
-        applyMobileDrawerBoundsDecision(drawer, nnMobileShellLifecycle.drawerBounds.resolveBounds({
+        return nnMobileShellLifecycle.drawerBounds.resolveBounds({
             isMobileViewport: mobileViewport,
             isOpen,
             isViewportBound: drawer.dataset.sbMobileViewportBound === 'true',
@@ -3992,8 +3992,9 @@ function syncMobileShellDrawerBounds() {
             viewportTop: viewportSize?.top ?? 0,
             baseTopOffset,
             shellGap: drawerStyles ? Number.parseFloat(drawerStyles.getPropertyValue('--sb-mobile-shell-gap')) || 0 : 0,
-        }));
-    }
+        });
+    });
+    drawers.forEach((drawer, index) => applyMobileDrawerBoundsDecision(drawer, decisions[index]));
 }
 
 let nnMobileShellDrawerBoundsFrameId = 0;
@@ -4426,9 +4427,6 @@ function syncDesktopShellSizing() {
             continue;
         }
 
-        const dimensions = getDesktopShellDimensions(shellKey);
-        const bounds = getDesktopShellResizeBounds(shellKey);
-
         if (isMobileViewport()) {
             clearDesktopShellSize(root);
             root.classList.remove('sb-shell-can-resize');
@@ -4453,7 +4451,8 @@ function syncDesktopShellSizing() {
             continue;
         }
 
-        const { width } = dimensions;
+        const { width } = getDesktopShellDimensions(shellKey);
+        const bounds = getDesktopShellResizeBounds(shellKey);
         let sizeToApply = {
             width,
             height: bounds.defaultHeight,
@@ -4538,6 +4537,10 @@ function syncShellResizeHandleValue(shellKey, size) {
     }
 
     if (!size) {
+        if (!root?.classList.contains('sb-shell-can-resize')) {
+            if (handle.tabIndex !== -1) handle.tabIndex = -1;
+            return;
+        }
         configureShellResizeHandle(handle, shellKey);
         return;
     }
@@ -8801,10 +8804,10 @@ function syncTopbarEditCardButton() {
         return;
     }
     const visible = document.body.classList.contains('neconyan')
-        && !isLandingPageVisible()
         && getActualNeconyanMode() === 'roleplay'
-        && hasActiveCharacterChat();
-    button.hidden = !visible;
+        && hasActiveCharacterChat()
+        && !isLandingPageVisible();
+    if (button.hidden === visible) button.hidden = !visible;
 }
 
 function bindNeconyanTopbarStateEvents() {
@@ -12144,7 +12147,9 @@ async function requestServerAdmin(endpoint, body = {}, { signal } = {}) {
 
 const NN_UPDATE_TOAST_STORAGE_KEY = 'neconyan:update-toast-commit';
 const NN_UPDATE_TOAST_INTERVAL_MS = 30 * 60 * 1000;
+const NN_UPDATE_TOAST_DURATION_MS = 8000;
 let nnUpdateToastTimer = null;
+let nnUpdateToastDismissTimer = null;
 let nnUpdateToastChecking = false;
 
 function readNotifiedUpdateCommit() {
@@ -12164,7 +12169,20 @@ function rememberNotifiedUpdateCommit(commit) {
 }
 
 function dismissUpdateToast() {
+    clearTimeout(nnUpdateToastDismissTimer);
+    nnUpdateToastDismissTimer = null;
     document.getElementById('nn-update-toast')?.remove();
+}
+
+function scheduleUpdateToastDismissal(toast) {
+    clearTimeout(nnUpdateToastDismissTimer);
+    nnUpdateToastDismissTimer = setTimeout(() => {
+        if (toast.matches(':hover') || toast.contains(document.activeElement)) {
+            scheduleUpdateToastDismissal(toast);
+            return;
+        }
+        dismissUpdateToast();
+    }, NN_UPDATE_TOAST_DURATION_MS);
 }
 
 let nnUpdateToastStyles = null;
@@ -12212,10 +12230,11 @@ async function showUpdateToast(repository) {
     });
     toast.querySelector('.nn-update-toast-close').addEventListener('click', dismissUpdateToast);
     document.body.append(toast);
+    scheduleUpdateToastDismissal(toast);
 }
 
 async function checkForNeconyanUpdate() {
-    if (nnUpdateToastChecking) return;
+    if (nnUpdateToastChecking || document.hidden) return;
     nnUpdateToastChecking = true;
     try {
         const status = await requestServerAdmin('/api/server-admin/status');
@@ -16289,14 +16308,12 @@ function openShell(shellKey, tabId = null) {
 
     if (!shellRoot.classList.contains('openDrawer')) {
         forceDrawerState(shellRoot, true, shellConfig.hostIconSelector);
-        syncMobileShellDrawerBounds();
+        // Apply phone bounds once before the next paint, rather than measuring
+        // the newly opened panel repeatedly between style writes.
+        if (!isMobileViewport()) syncMobileShellDrawerBounds();
         queueMobileShellDrawerBoundsSync();
         window.requestAnimationFrame(() => {
-            if (!isDrawerActuallyOpen(shellRoot)) {
-                forceDrawerState(shellRoot, true, shellConfig.hostIconSelector);
-            }
-            syncMobileShellDrawerBounds();
-            queueMobileShellDrawerBoundsSync();
+            if (!shellRoot.classList.contains('openDrawer')) return;
             syncDesktopShellSizing();
             focusShellPanel(shellKey);
         });
@@ -16481,17 +16498,23 @@ function buildShell(shellKey) {
         event.stopPropagation();
     };
 
+    let navIndicatorsFrame = null;
     const updateNavScrollIndicators = () => {
-        const { canScrollLeft, canScrollRight } = nnMobileShellLifecycle.nav.resolveScrollIndicators({
-            scrollLeft: nav.scrollLeft,
-            clientWidth: nav.clientWidth,
-            scrollWidth: nav.scrollWidth,
-        });
+        if (navIndicatorsFrame !== null || !shellRoot.classList.contains('openDrawer')) return;
+        navIndicatorsFrame = window.requestAnimationFrame(() => {
+            navIndicatorsFrame = null;
+            if (!shellRoot.classList.contains('openDrawer')) return;
+            const { canScrollLeft, canScrollRight } = nnMobileShellLifecycle.nav.resolveScrollIndicators({
+                scrollLeft: nav.scrollLeft,
+                clientWidth: nav.clientWidth,
+                scrollWidth: nav.scrollWidth,
+            });
 
-        navWrapper.classList.toggle('sb-can-scroll-left', canScrollLeft);
-        navWrapper.classList.toggle('sb-can-scroll-right', canScrollRight);
-        navScrollLeft.disabled = !canScrollLeft;
-        navScrollRight.disabled = !canScrollRight;
+            navWrapper.classList.toggle('sb-can-scroll-left', canScrollLeft);
+            navWrapper.classList.toggle('sb-can-scroll-right', canScrollRight);
+            if (navScrollLeft.disabled === canScrollLeft) navScrollLeft.disabled = !canScrollLeft;
+            if (navScrollRight.disabled === canScrollRight) navScrollRight.disabled = !canScrollRight;
+        });
     };
 
     nav.addEventListener('scroll', updateNavScrollIndicators, { passive: true });

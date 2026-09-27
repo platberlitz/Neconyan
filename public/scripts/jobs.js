@@ -1,14 +1,77 @@
 /**
  * Browser observer for server-owned jobs. It never runs generation, schedules
  * work or performs workflow effects: it submits an intent, then reads the
- * authoritative saved snapshot. Polling is the fallback transport; a streaming
- * transport can be added later without changing this contract.
+ * authoritative saved snapshot. A shared stream announces saved changes;
+ * polling remains the fallback when streaming is unavailable.
  */
 import { getRequestHeaders } from '../script.js';
 import { getCurrentUserHandle } from './user.js';
 
 const DEFAULT_INTERVAL_MS = 1500;
 const MAX_INTERVAL_MS = 15000;
+const changeStreams = new Map();
+
+function subscribeJobChanges(base, account, listener) {
+    const key = JSON.stringify([base, account]);
+    let stream = changeStreams.get(key);
+    if (!stream) {
+        const controller = new AbortController();
+        stream = { controller, listeners: new Set(), connected: false };
+        changeStreams.set(key, stream);
+        const notify = () => {
+            for (const callback of stream.listeners) callback();
+        };
+        void (async () => {
+            let reader;
+            try {
+                checkAccount(account);
+                const response = await fetch(endpoint(base, '/events'), {
+                    credentials: 'same-origin', signal: controller.signal,
+                    headers: { ...getRequestHeaders(), 'X-Neconyan-Account': account, Accept: 'text/event-stream' },
+                });
+                checkAccount(account);
+                if (!response.ok || !response.headers?.get('content-type')?.includes('text/event-stream') || !response.body?.getReader) {
+                    await response.body?.cancel?.();
+                    return;
+                }
+                stream.connected = true;
+                reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                while (!controller.signal.aborted) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    checkAccount(account);
+                    buffer += decoder.decode(value, { stream: true });
+                    let boundary;
+                    while ((boundary = buffer.indexOf('\n\n')) >= 0) {
+                        const frame = buffer.slice(0, boundary);
+                        buffer = buffer.slice(boundary + 2);
+                        if (frame.startsWith('data:')) notify();
+                    }
+                    if (buffer.length > 4096) throw new Error('Invalid job change stream.');
+                }
+            } catch { /* Polling reads back saved state after a disconnect or unsupported stream. */ } finally {
+                const shouldRefresh = stream.connected && !controller.signal.aborted;
+                stream.connected = false;
+                controller.abort();
+                reader?.releaseLock();
+                if (shouldRefresh) notify();
+            }
+        })();
+    }
+    stream.listeners.add(listener);
+    return {
+        connected: () => stream.connected,
+        stop: () => {
+            stream.listeners.delete(listener);
+            if (!stream.listeners.size) {
+                stream.controller.abort();
+                changeStreams.delete(key);
+            }
+        },
+    };
+}
 
 function endpoint(base, suffix) {
     return `${base}/api/jobs${suffix}`;
@@ -80,6 +143,9 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
     let timer = null;
     let delay = intervalMs;
     let previous = null;
+    let changes = null;
+    let reading = false;
+    let dirty = false;
 
     // stop(reason) tells the caller why polling ended; 'missing' means the job
     // record was pruned before a terminal snapshot could be read back.
@@ -87,16 +153,28 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
         if (stopped) return;
         stopped = true;
         if (timer) clearTimeout(timer);
+        changes?.stop();
         signal?.removeEventListener('abort', onAbort);
         onStop?.(reason);
     };
 
     const onAbort = () => stop('aborted');
 
-    const schedule = () => { if (!stopped && !signal?.aborted) timer = setTimeout(tickOnce, delay); };
+    const schedule = () => {
+        if (!stopped && !signal?.aborted) timer = setTimeout(tickOnce, dirty ? 0 : delay);
+    };
+    const changed = () => {
+        dirty = true;
+        if (stopped || reading) return;
+        if (timer) clearTimeout(timer);
+        schedule();
+    };
 
     const tickOnce = async () => {
         if (stopped || signal?.aborted) return;
+        if (reading) { dirty = true; return; }
+        reading = true;
+        dirty = false;
         try {
             const body = await getJob(id, { base, account });
             if (stopped || signal?.aborted) return;
@@ -114,16 +192,19 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
                 // A terminal job stops the job poll, but a failed readback must
                 // still be retried, so only stop once the snapshot succeeded.
                 if (TERMINAL.has(job.state)) { stop('done'); await onDone?.(job); return; }
+                changes ??= subscribeJobChanges(base, account, changed);
             }
-            delay = Math.min(MAX_INTERVAL_MS, Math.round(delay * 1.3));
+            delay = changes?.connected() ? MAX_INTERVAL_MS : intervalMs;
         } catch (error) {
             if (error.message === 'account_changed') { stop('account_changed'); return; }
             // A job record that no longer exists can never complete, so retrying
             // it forever only leaks an observer and blocks callers that wait on it.
             if (error.status === 404) { stop('missing'); return; }
             delay = Math.min(MAX_INTERVAL_MS, Math.round(delay * 1.5));
+        } finally {
+            reading = false;
+            schedule();
         }
-        schedule();
     };
 
     if (signal?.aborted) return stop;
