@@ -7,10 +7,12 @@ root-capable emulator and checks the official signed application instead.
 import argparse
 import http.cookiejar
 import json
+from pathlib import Path
 import subprocess
 import time
 import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--adb', default='adb')
@@ -24,11 +26,33 @@ package = 'io.github.platberlitz.neconyan' + ('' if args.release else '.debug')
 
 
 def adb(*command):
-    return subprocess.check_output([args.adb, '-s', args.serial, *command], text=True).strip()
+    return subprocess.check_output([args.adb, '-s', args.serial, *command], text=True, timeout=30).strip()
 
 
 def start():
     adb('shell', 'am', 'start', '-n', package + '/io.github.platberlitz.neconyan.MainActivity')
+
+
+def wait_for_workspace():
+    deadline = time.monotonic() + 120
+    last = ''
+    failure = None
+    while time.monotonic() < deadline:
+        try:
+            adb('shell', 'uiautomator', 'dump', '/data/local/tmp/neconyan-window.xml')
+            last = adb('shell', 'cat', '/data/local/tmp/neconyan-window.xml')
+            labels = {node.get(attribute, '') for node in ET.fromstring(last).iter('node')
+                      for attribute in ('text', 'content-desc')}
+            if labels.intersection({'Meowlcome to Neconyan~', 'First paws: connect a model'}):
+                print('The Android app displays its loaded Home screen or introductory tour.', flush=True)
+                return
+        except (subprocess.SubprocessError, ET.ParseError) as error:
+            failure = error
+        time.sleep(1)
+    Path('android-window.xml').write_text(last)
+    with open('android-screen.png', 'wb') as screenshot:
+        subprocess.run([args.adb, '-s', args.serial, 'exec-out', 'screencap', '-p'], stdout=screenshot, timeout=20, check=False)
+    raise AssertionError('The Android workspace did not become visible: ' + str(failure or 'Home and tour controls were absent'))
 
 
 def connect():
@@ -73,6 +97,7 @@ adb('shell', 'am', 'force-stop', package)
 start()
 request, token, port, origin = connect()
 try:
+    wait_for_workspace()
     try:
         urllib.request.urlopen(urllib.request.Request(origin + '/api/settings/get', data=b'{}'), timeout=10)
         raise AssertionError('Private server accepted an unauthenticated settings request')

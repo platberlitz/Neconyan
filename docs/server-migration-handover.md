@@ -13,6 +13,10 @@ The first candidate was committed and pushed to staging as
 `e294394c9b62188b47bf0c6c3f5411921b7e36ec`. Android validation run `36334373139`
 and the eight-part browser run `36334373000` test that exact commit.
 Neither main promotion nor release publication has taken place.
+The runner and settings-fixture follow-up is pushed as `b94a0e9`; Android run
+`36337607593` is validating its smaller emulator disk. A further acceptance check
+now waits for the actual Android Home screen or tour and retains a screenshot and
+the visible-control tree on failure. That screen check still needs a remote run.
 
 - Automatic and manual captions now compare the same settings fingerprint, excluding
   save counters and account bookkeeping. All 42 caption tests pass. All six desktop
