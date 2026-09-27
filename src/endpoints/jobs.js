@@ -9,6 +9,7 @@ import { startOperation } from '../mewmory/operations.js';
 import { retryConversationRoot } from '../generation/conversation-jobs.js';
 import { retainConversationAutomaticAcceptance } from '../generation/conversation-effects.js';
 import { decideJobApproval, readJobApproval } from '../generation/job-approvals.js';
+import { closeUnstartedRoleplayWorkflow } from '../generation/roleplay-workflow-cancellation.js';
 
 export const router = express.Router();
 
@@ -167,6 +168,7 @@ router.post('/:id/cancel', async (request, response) => {
             pending.push(...(current.children ?? []));
             abortJob(id);
         }
+        closeUnstartedRoleplayWorkflow({ owner, directories, job: getJob(directories, job.id) });
         return response.json({ job: requested.job });
     } catch (error) {
         return fail(response, error);

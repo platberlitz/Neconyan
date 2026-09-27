@@ -12,7 +12,7 @@ const { captureRoleplayWorkflowRequest, admitRoleplayWorkflowJob, runRoleplayWor
 const { acceptRoleplayNamedWorkflow, readRoleplayWorkflowReceipt } = await import('../src/generation/roleplay-acceptance.js');
 const { captureRoleplayNamedWorkflow, assertRoleplayNamedWorkflow, roleplayWorkflowContributions,
     ROLEPLAY_WORKFLOW_NAMES } = await import('../src/generation/roleplay-workflow-named.js');
-const { getJob, releaseJob, setJobState } = await import('../src/jobs/store.js');
+const { getJob, releaseJob, setJobState, requestCancellation, updateJob } = await import('../src/jobs/store.js');
 const { providerStep, readArtifact } = await import('../src/jobs/artifacts.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
 const { getRoleplaySourceMessageRevision } = await import('../public/scripts/neconyan-conversation/roleplay-source.js');
@@ -101,6 +101,41 @@ function saved(t, { settingsRevision = 7, powerUser = null } = {}) {
     return { dirs, account, owner: f.scope.owner, locator: f.locator, scope: f.scope, source: f.source,
         records, revision, request, body, readback: key => readRoleplayWorkflowReceipt(request(), key), run };
 }
+
+for (const prepared of [false, true]) {
+    test(`stopping a named reply ${prepared ? 'after' : 'before'} child preparation releases the chat without generating`, async t => {
+        const f = saved(t);
+        const before = f.records();
+        const accepted = await acceptRoleplayNamedWorkflow(f.request(), f.body('roleplay.reply'));
+        if (prepared) {
+            updateJob(f.dirs, accepted.jobId, { state: 'running', attempt: 1 });
+            await runRoleplayWorkflowJob({ owner: f.owner, directories: f.dirs, job: getJob(f.dirs, accepted.jobId),
+                signal: new AbortController().signal });
+        }
+        requestCancellation(f.dirs, accepted.jobId, { reason: 'user_cancelled' });
+        const receipt = f.readback(accepted.key);
+        assert.equal(receipt.state, 'closed');
+        assert.deepEqual(receipt.result, { cancelled: true, providerDispatched: false, chatChanged: false });
+        assert.deepEqual(f.readback(accepted.key), receipt);
+        assert.deepEqual(f.records(), before);
+        const next = await acceptRoleplayNamedWorkflow(f.request(), f.body('roleplay.reply', { key: 'after-stop' }));
+        assert.equal(next.created, true);
+    });
+}
+
+test('a cancelled candidate that started retains its receipt for reviewed recovery', async t => {
+    const f = saved(t);
+    const accepted = await acceptRoleplayNamedWorkflow(f.request(), f.body('roleplay.reply'));
+    updateJob(f.dirs, accepted.jobId, { state: 'running', attempt: 1 });
+    const waiting = await runRoleplayWorkflowJob({ owner: f.owner, directories: f.dirs, job: getJob(f.dirs, accepted.jobId),
+        signal: new AbortController().signal });
+    updateJob(f.dirs, waiting.childJobId, { state: 'running', attempt: 1, startedAt: Date.now() });
+    requestCancellation(f.dirs, accepted.jobId);
+    setJobState(f.dirs, waiting.childJobId, 'cancelled');
+    assert.equal(f.readback(accepted.key).state, 'accepted');
+    await assert.rejects(acceptRoleplayNamedWorkflow(f.request(), f.body('roleplay.reply', { key: 'after-started-stop' })),
+        { code: 'MEDIA_TARGET_BUSY' });
+});
 
 test('a named reply appends one message, keeps the old chat until it is durable and replays without paying', async t => {
     const f = saved(t);

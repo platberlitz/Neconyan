@@ -15,12 +15,13 @@
 import sanitize from 'sanitize-filename';
 import { normalizeLocator } from '../mewmory/store.js';
 import { roleplayAccountBase, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
-import { releaseJob } from '../jobs/store.js';
+import { getJob, releaseJob } from '../jobs/store.js';
 import { captureRoleplaySourceLocked, readRoleplayChatLocked } from './roleplay-source.js';
 import { captureGenerationBinding, getChatProfileContextLimit } from './profiles.js';
 import { readNativeMediaJobResultForOwner } from './media-jobs.js';
 import { captureRoleplayNamedWorkflow, ROLEPLAY_WORKFLOW_NAMES } from './roleplay-workflow-named.js';
 import { admitRoleplayWorkflowJob, captureRoleplayWorkflowRequest } from './roleplay-workflow.js';
+import { closeUnstartedRoleplayWorkflow } from './roleplay-workflow-cancellation.js';
 import { getRoleplaySourceMessageRevision } from '../../public/scripts/neconyan-conversation/roleplay-source.js';
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -297,7 +298,10 @@ export function readRoleplayWorkflowReceipt(request, key) {
     const { base } = submissionScope(request);
     const operationKey = typeof key === 'string' ? key.trim() : '';
     if (!operationKey || operationKey.length > MAX_KEY_LENGTH) throw invalid('Invalid workflow key.');
-    const receipt = readNativeMediaJobResultForOwner(base, { operationKey });
+    let receipt = readNativeMediaJobResultForOwner(base, { operationKey });
+    if (receipt?.state === 'accepted' && closeUnstartedRoleplayWorkflow({ ...base, job: getJob(base.directories, receipt.jobId) })) {
+        receipt = readNativeMediaJobResultForOwner(base, { operationKey });
+    }
     return { key: operationKey, accepted: Boolean(receipt), state: receipt?.state ?? null,
         jobId: receipt?.jobId ?? null, result: receipt?.result ?? null };
 }

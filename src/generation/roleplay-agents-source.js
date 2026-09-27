@@ -27,6 +27,9 @@ export function captureRoleplayAgents(lease, settings, { group = false, serverPr
     const ids = global.enabledAgentIdsByChatType?.[group ? 'group' : 'individual'] ?? [];
     if (!Array.isArray(ids)) throw fail('The saved Agent enablement scope is invalid.');
     const agents = [], historyAgents = [], extraCharacters = new Map();
+    // Reuse a shared connection only during this synchronous capture. The next
+    // capture must read it again so edits still invalidate accepted work.
+    const bindings = new Map();
     const hiddenIds = Array.isArray(global.hiddenCompanionAgentIds) ? [...new Set(global.hiddenCompanionAgentIds.filter(id => typeof id === 'string'))] : [];
     for (const raw of library.records) {
         const enabled = !disabled && (forcedIds.includes(raw.id) || (scoped ? ids.includes(raw.id) : raw.enabled));
@@ -40,7 +43,10 @@ export function captureRoleplayAgents(lease, settings, { group = false, serverPr
             const profileId = agent.connectionProfile || (isNativeCompanion(agent) ? global.companionConnectionProfile : '')
                 || global.connectionProfile || extensions.connectionManager?.selectedProfile || '';
             if (typeof profileId !== 'string') throw fail('An Agent model connection is invalid.');
-            if (profileId) binding = { kind: 'profile', ...captureChatProfile(scope.directories, profileId) };
+            if (profileId) {
+                if (!bindings.has(profileId)) bindings.set(profileId, captureChatProfile(scope.directories, profileId));
+                binding = { kind: 'profile', ...bindings.get(profileId) };
+            }
         }
         const profile = extensions.connectionManager?.profiles?.find(item => item.id === binding?.profileId);
         const reference = { id: agent.id, revision: roleplayHash(raw), rawHash: file.rawHash, physical: file.physical, binding,

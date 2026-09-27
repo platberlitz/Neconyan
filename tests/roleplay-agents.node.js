@@ -53,6 +53,25 @@ function modelResponse(handler) {
     };
 }
 
+test('Agents sharing a connection read it once per capture and still reject later settings changes', t => {
+    const f = prepared(t, Array.from({ length: 12 }, (_, index) => ({ id: `companion-${index}`, enabled: true,
+        category: 'companion', prompt: 'Write a note' })), { connectionProfile: 'main' });
+    const filename = path.join(f.directories.root, 'settings.json');
+    const original = fs.readFileSync;
+    let reads = 0;
+    t.mock.method(fs, 'readFileSync', function (file, ...args) {
+        if (file === filename) reads++;
+        return original.call(this, file, ...args);
+    });
+    const policy = f.locked(lease => captureRoleplayAgents(lease, f.settings));
+    assert.equal(policy.agents.length, 12);
+    assert.equal(reads, 1, 'one shared connection read rather than a settings-file read per Agent');
+    assert.ok(policy.agents.every(agent => agent.binding.fingerprint === policy.agents[0].binding.fingerprint));
+    f.settings.extension_settings.connectionManager.profiles[0].model = 'changed-model';
+    fs.writeFileSync(filename, JSON.stringify(f.settings));
+    assert.throws(() => f.locked(lease => readRoleplayAgentsLocked(lease, policy)), { code: 'ROLEPLAY_AGENT_SOURCE_CHANGED' });
+});
+
 test('Agent activation and scoped pre-prompts freeze probability, keywords and macros before any model call', t => {
     const f = prepared(t, [
         { id: 'scan', enabled: true, prompt: '{{agentName}} for {{char}} {{getvar::count}}', name: 'Scanner', injection: { order: 1, scan: true }, conditions: { triggerProbability: 50, triggerKeywords: ['Answer'] } },
