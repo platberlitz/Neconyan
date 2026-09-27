@@ -14,6 +14,7 @@ const saved = [];
 const reloads = [];
 const activations = [];
 let settingsPending = false;
+let generating = false;
 const saveSettings = jest.fn(async () => {
     settingsPending = false;
     settingsRevision += 1;
@@ -66,6 +67,8 @@ jest.unstable_mockModule('../public/script.js', () => ({
     saveChatConditional: async options => { saved.push(options); return true; },
     saveSettings,
     reloadCurrentChat: async () => { reloads.push(chat.length); },
+    isGenerating: () => generating,
+    isChatSaving: false,
     deactivateSendButtons: () => activations.push('busy'),
     activateSendButtons: () => activations.push('idle'),
     willRunNativeRoleplayWorkflow: (type, options = {}) => nativeEligible && !options.skipNativeRoleplay,
@@ -94,6 +97,7 @@ beforeEach(() => {
     accountStamp = { accountId: 'a-1', dataEpoch: 1 };
     settingsRevision = 4;
     settingsPending = false;
+    generating = false;
     for (const key of Object.keys(extensionPrompts)) delete extensionPrompts[key];
     for (const key of Object.keys(extensionSettings)) delete extensionSettings[key];
     interceptors.length = 0;
@@ -294,6 +298,40 @@ test('an accepted job the page never sees is read back from its receipt after a 
     await workflows.resumeNativeRoleplayWorkflowObservation();
     expect(reloads).toEqual([2]);
     expect(requests.filter(entry => entry.url.includes('/workflow/receipt'))[0].url).toContain('key=key-7');
+    await Promise.all([workflows.resumeNativeRoleplayWorkflowObservation(), workflows.resumeNativeRoleplayWorkflowObservation()]);
+    expect(reloads).toEqual([2]);
+});
+
+test('concurrent tab resumes adopt a completed reply once and leave later generation alone', async () => {
+    listJobs.mockResolvedValue([{ id: 'done-resume', type: 'media.roleplay-workflow', state: 'completed',
+        intent: { media: { operationKey: 'key-resume' }, source: { locator: { chat: 'roleplay', avatar: 'nova.png', group: false } },
+            request: { named: { name: 'roleplay.reply' } } } }]);
+    receiptHandler = async () => {
+        await settle();
+        return response(200, { accepted: true, state: 'closed', jobId: 'done-resume', result: {} });
+    };
+    generating = true;
+    await workflows.resumeNativeRoleplayWorkflowObservation();
+    expect(reloads).toEqual([]);
+    generating = false;
+    await Promise.all([workflows.resumeNativeRoleplayWorkflowObservation(), workflows.resumeNativeRoleplayWorkflowObservation()]);
+    expect(reloads).toEqual([2]);
+});
+
+test('an active completion joins a pending tab read without being suppressed as background work', async () => {
+    const locator = { chat: 'roleplay', avatar: 'nova.png', group: false };
+    listJobs.mockResolvedValue([{ id: 'joined', type: 'media.roleplay-workflow', state: 'completed',
+        intent: { media: { operationKey: 'key-joined' }, source: { locator }, request: { named: { name: 'roleplay.reply' } } } }]);
+    let release;
+    receiptHandler = () => new Promise(resolve => { release = () => resolve(response(200, { accepted: true, state: 'closed', jobId: 'joined', result: {} })); });
+    const passive = workflows.resumeNativeRoleplayWorkflowObservation();
+    await waitFor(() => release);
+    generating = true;
+    workflows.observeRoleplayWorkflowJob('joined', { key: 'key-joined', name: 'roleplay.reply', locator, account });
+    const active = observers.get('joined').onStop('done');
+    release();
+    await Promise.all([active, passive]);
+    expect(reloads).toEqual([2]);
 });
 
 test('a busy native lane keeps the browser path unless the host already committed the change', async () => {

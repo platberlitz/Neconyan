@@ -570,7 +570,8 @@ export function collectPanelAgentStates() {
 }
 
 function hasCompanionPanelLauncherContent() {
-    if (isConversationModeActive() || !areAgentsGloballyEnabled()) {
+    // Pausing runs or recovering a setup must not hide readable Companion notes.
+    if (isConversationModeActive()) {
         return false;
     }
 

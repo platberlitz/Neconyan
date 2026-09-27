@@ -238,7 +238,9 @@ export function roleplayWorkflowResultFacts(workflow, { before = null, after = n
     }
     if (workflow.effect === 'replace') {
         const current = message.mes;
-        if (typeof current !== 'string' || current === before[messageIndex + 1]?.mes) return null;
+        // The protected candidate proves the replacement, even if the model repeats
+        // the previous wording. Text equality is not evidence of a changed result.
+        if (typeof current !== 'string') return null;
         return { replaced: true, length: current.length };
     }
     const swipes = Array.isArray(message.swipes) ? message.swipes : [];

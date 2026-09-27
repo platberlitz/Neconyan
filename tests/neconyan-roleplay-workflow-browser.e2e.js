@@ -1,4 +1,4 @@
-/* global window */
+/* global window, document */
 import { expect } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -72,6 +72,120 @@ async function terminal(account, id) {
 
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
+
+    test(`${viewport} Agents can be switched off during setup recovery and the Companion paw stays available`, async ({ app }, info) => {
+        const agent = { id: 'controls-companion', name: 'Controls companion', enabled: true, category: 'companion',
+            execution: 'companion', prompt: 'Keep a note.', companion: { displayMode: 'panel' } };
+        const account = await app.account({ configureSettings(saved) {
+            saved.extension_settings.inChatAgents = { globalSettings: { enabled: true, separateRecentChats: false } };
+        }, phone });
+        const native = owned(app);
+        await fs.mkdir(path.join(native.directories.inChatAgents, 'presets'), { recursive: true });
+        await fs.writeFile(path.join(native.directories.inChatAgents, `${agent.id}.json`), JSON.stringify(agent));
+        await fs.writeFile(path.join(native.directories.inChatAgents, 'presets', 'controls-recovery.json'), JSON.stringify({
+            id: 'controls-recovery', name: 'Recovery before controls', version: 1, recoveryFor: 'controls', agents: [agent], globalSettings: { enabled: true },
+        }));
+        const page = await account.open({ workspace: false, readyTimeout: 120000 });
+        await page.evaluate(() => window.SillyBunnyShell.openTab('left', 'agents'));
+        const toggle = page.locator('#ica--globalEnabled');
+        await expect(toggle).toHaveText('Agents On', { timeout: 30000 });
+        await expect(page.locator('#ica--run-status')).toHaveText('Agent setup or library needs recovery');
+        await page.evaluate(async () => (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).setCompanionPanelLauncher('topbar'));
+        const paw = page.locator('#ica--tracker-panel-topbar');
+        await expect(paw).toBeVisible();
+        await toggle.click();
+        await expect(toggle).toHaveText('Agents Off');
+        const saved = await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }));
+        expect(saved).toBe(true);
+        expect(JSON.parse((await account.post('/api/settings/get')).settings).extension_settings.inChatAgents.globalSettings.enabled).toBe(false);
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 120000 });
+        await page.evaluate(() => window.SillyBunnyShell.openTab('left', 'agents'));
+        await expect(toggle).toHaveText('Agents Off', { timeout: 30000 });
+        await expect(paw).toBeVisible();
+        const geometry = await paw.boundingBox();
+        expect(geometry.width).toBeGreaterThan(0);
+        expect(geometry.height).toBeGreaterThan(0);
+        expect(geometry.x).toBeGreaterThanOrEqual(0);
+        expect(geometry.x + geometry.width).toBeLessThanOrEqual(phone ? 393 : 1280);
+        await paw.click();
+        await expect(page.locator('#ica--tracker-panel')).toHaveAttribute('aria-hidden', 'false');
+        await expect(page.locator('#ica--tracker-panel')).toContainText('Controls companion');
+        await expect(page.locator('[data-action="panel-regenerate-all"]')).toBeDisabled();
+        expect(app.provider.calls).toHaveLength(0);
+        await page.screenshot({ path: info.outputPath('agent-controls.png') });
+    });
+
+    test(`${viewport} returning to a completed workflow does not reload over a pending chat save`, async ({ app }) => {
+        app.provider.mode.reply = () => ({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: ANSWER } }] });
+        const account = await app.account({ phone, activeConnection: true });
+        const native = owned(app);
+        const locator = await savedChat(account, `Readback save ${viewport}`);
+        const page = await account.open({ workspace: false, readyTimeout: 120000 });
+        await openChat(page, locator);
+        const submitted = page.waitForResponse(acceptedSubmission);
+        await page.locator('#send_textarea').fill('One reply before returning to the tab.');
+        await page.locator('#send_textarea').press('Enter');
+        const accepted = await (await submitted).json();
+        await account.settled(accepted.jobId);
+        await expect(page.locator('#chat .mes').last()).toContainText(ANSWER, { timeout: 30000 });
+        await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating()), { timeout: 30000 }).toBe(false);
+
+        try {
+            await page.evaluate(() => {
+                window.readbackTestFetch = window.fetch;
+                window.fetch = async (...args) => {
+                    const response = await window.readbackTestFetch(...args);
+                    if (String(args[0]).endsWith('/api/chats/save') && !window.readbackSaveArrived) {
+                        window.readbackSaveArrived = true;
+                        await new Promise(resolve => { window.releaseReadbackSave = resolve; });
+                    }
+                    return response;
+                };
+                window.pendingReadbackTestSave = import('/script.js').then(core => core.saveChatConditional({ throwOnError: true }));
+            });
+            await page.waitForFunction(() => window.readbackSaveArrived);
+            await page.evaluate(async () => {
+                const workflows = await import('/scripts/neconyan-conversation/roleplay-workflows.js');
+                await Promise.all([workflows.resumeNativeRoleplayWorkflowObservation(), workflows.resumeNativeRoleplayWorkflowObservation()]);
+            });
+            await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
+            await expect(page.locator('#toast-container').filter({ hasText: 'Could not load chat data' })).toHaveCount(0);
+        } finally {
+            await page.evaluate(async () => {
+                window.releaseReadbackSave?.();
+                await window.pendingReadbackTestSave;
+                window.fetch = window.readbackTestFetch;
+            });
+        }
+        expect(app.provider.calls).toHaveLength(1);
+        // Both replacement controls must preserve the saved reply until the server
+        // accepts and completes its replacement, including after a tab resume.
+        for (const action of ['regenerate', 'swipe']) {
+            let beforeSubmission;
+            await page.route('**/api/roleplay/workflow/submit', route => {
+                beforeSubmission = readRoleplayChat(native.scope, locator).records.at(-1);
+                return route.continue();
+            });
+            const replacement = page.waitForResponse(acceptedSubmission);
+            if (action === 'regenerate') {
+                await page.evaluate(() => document.querySelector('#option_regenerate').click());
+            } else {
+                await page.locator('#chat .mes').last().locator('.swipe_right').click();
+            }
+            const response = await replacement;
+            expect(response.status(), await response.text()).toBe(202);
+            const replacementJob = await terminal(account, (await response.json()).jobId);
+            const children = await Promise.all((replacementJob.children ?? []).map(id => account.job(id)));
+            expect(replacementJob.state, JSON.stringify({ action, error: replacementJob.error,
+                children: children.map(job => ({ state: job.state, error: job.error })) })).toBe('completed');
+            await expect(page.locator('#chat .mes').last()).toContainText(ANSWER, { timeout: 30000 });
+            await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating()), { timeout: 30000 }).toBe(false);
+            expect(beforeSubmission.mes).toBe(ANSWER);
+            await page.unroute('**/api/roleplay/workflow/submit');
+        }
+        expect(app.provider.calls).toHaveLength(3);
+    });
 
     test(`${viewport} hidden Companions do not block a named Roleplay reply with a false capacity error`, async ({ app }, info) => {
         const agents = Array.from({ length: 31 }, (_, index) => ({ id: `capacity-${index}`, name: `Capacity ${index}`,

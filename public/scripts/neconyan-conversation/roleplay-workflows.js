@@ -11,7 +11,7 @@
  * instead of paying twice, and a reopened page reattaches to the accepted job and
  * reads its permanent receipt back rather than submitting anything again.
  */
-import { activateSendButtons, chat, deactivateSendButtons, extension_prompts, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, reloadCurrentChat, saveChatConditional, saveSettings, substituteParams, willRunNativeRoleplayWorkflow } from '../../script.js';
+import { activateSendButtons, chat, deactivateSendButtons, extension_prompts, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, isChatSaving, isGenerating, reloadCurrentChat, saveChatConditional, saveSettings, substituteParams, willRunNativeRoleplayWorkflow } from '../../script.js';
 import { activeGenerationInterceptors } from '../extensions.js';
 import { cancelJob, listJobs, observeJob, TERMINAL } from '../jobs.js';
 import { roleplayAccountStamp } from '../roleplay-save-chain.js';
@@ -28,6 +28,8 @@ const STORY_DIRECTION_DEPTH = 0;
 const observed = new Map();
 const pending = new Map();
 const waiters = new Map();
+const adopted = new Map();
+const reading = new Map();
 let busyName = null;
 let currentJobId = null;
 
@@ -257,7 +259,26 @@ function announce(detail) {
  * reloaded from the server that wrote it, and the named control adopts its facts.
  * A receipt that is not closed yet is retried, never resubmitted.
  */
-async function readback(key, name, { locator, account }) {
+function readback(key, name, options) {
+    const id = JSON.stringify([options.account, key]);
+    if (adopted.has(id)) {
+        const receipt = adopted.get(id);
+        settleFinished(key, receipt);
+        return Promise.resolve(receipt);
+    }
+    const existing = reading.get(id);
+    if (existing) {
+        if (!options.passive) existing.options.passive = false;
+        return existing.promise;
+    }
+    const shared = { options: { ...options } };
+    shared.promise = readbackReceipt(key, name, shared.options, id).finally(() => reading.delete(id));
+    reading.set(id, shared);
+    return shared.promise;
+}
+
+async function readbackReceipt(key, name, options, id) {
+    const { locator, account } = options;
     for (let attempt = 0; attempt < 12; attempt += 1) {
         const receipt = await readReceipt(key, account);
         if (receipt.accepted && receipt.state !== 'closed') {
@@ -268,11 +289,19 @@ async function readback(key, name, { locator, account }) {
             settleFinished(key, null);
             return null;
         }
+        // Returning to a tab must not clear an editor that is saving or generating.
+        // The active job's own observer still adopts its newly completed reply.
+        if (account !== getCurrentUserHandle()) {
+            settleFinished(key, null);
+            return null;
+        }
+        if (options.passive && (busyName || isGenerating() || isChatSaving)) return null;
         const current = currentLocator();
         const sameGroup = locator?.group && !getCurrentCharAvatar()
             && String(getCurrentChatId() || '').replace(/\.jsonl$/, '') === locator.chat;
         if (sameGroup || (current && locator && current.chat === locator.chat && current.avatar === locator.avatar)) {
             await reloadCurrentChat();
+            adopted.set(id, receipt);
         }
         announce({ key, name, state: receipt.state, result: receipt.result ?? null, jobId: receipt.jobId });
         settleFinished(key, receipt);
@@ -528,7 +557,9 @@ export async function resumeNativeRoleplayWorkflowObservation() {
             finished = { key, name, locator };
         }
     }
-    if (finished) await readback(finished.key, finished.name, { locator, account }).catch(() => {});
+    if (finished && !busyName && !isGenerating() && !isChatSaving) {
+        await readback(finished.key, finished.name, { locator, account, passive: true }).catch(() => {});
+    }
 }
 
 let initialised = false;

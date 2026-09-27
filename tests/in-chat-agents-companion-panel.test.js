@@ -587,7 +587,7 @@ describe('companion tracker panel', () => {
         expect(html).toContain('No companion agents are enabled');
     });
 
-    test('handle visibility follows global enablement and available state', async () => {
+    test('keeps readable panel content accessible while Agent runs are paused or blocked', async () => {
         const panel = await importPanel();
         expect(panel.shouldShowCompanionPanelHandle()).toBe(false);
 
@@ -595,7 +595,8 @@ describe('companion tracker panel', () => {
         expect(panel.shouldShowCompanionPanelHandle()).toBe(true);
 
         globallyEnabled = false;
-        expect(panel.shouldShowCompanionPanelHandle()).toBe(false);
+        expect(panel.shouldShowCompanionPanelHandle()).toBe(true);
+        expect(panel.buildPanelHtml()).toContain('data-action="panel-regenerate-all" title="Regenerate every companion on the last reply" aria-label="Regenerate all companions" disabled');
     });
 
     test('defaults the launcher to the floating button and normalises unknown values', async () => {
@@ -622,7 +623,7 @@ describe('companion tracker panel', () => {
         expect(panel.buildPanelHtml()).not.toContain('panel-hide-handle');
 
         globallyEnabled = false;
-        expect(panel.shouldShowCompanionPanelTopbarButton()).toBe(false);
+        expect(panel.shouldShowCompanionPanelTopbarButton()).toBe(true);
         globallyEnabled = true;
 
         expect(panel.setCompanionPanelLauncher('handle')).toBe('handle');

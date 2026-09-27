@@ -1180,7 +1180,7 @@ function refreshGenerationUi(active = isAgentGenerationActive()) {
 }
 
 function updateGlobalAgentToggle() {
-    const enabled = areAgentsGloballyEnabled();
+    const enabled = getGlobalSettings().enabled !== false;
     const button = $('#ica--globalEnabled');
     button.toggleClass('active', enabled);
     button.attr('aria-pressed', String(enabled));
@@ -1189,6 +1189,22 @@ function updateGlobalAgentToggle() {
         : 'Agents are disabled. Click to re-enable In-Chat Agents.');
     button.find('span').text(enabled ? 'Agents On' : 'Agents Off');
     updateAgentOverview();
+}
+
+function toggleGlobalAgents() {
+    const enabled = getGlobalSettings().enabled === false;
+    setGlobalSettings({ enabled });
+    if (!enabled) cancelPathfinderSummary();
+    persistExtensionState();
+    updateGlobalAgentToggle();
+    syncToolAgentRegistrations();
+    updateFixTrackersButtonVisibility();
+    updateCompanionButtonVisibility();
+    if (enabled && !areAgentsGloballyEnabled()) {
+        toastr.warning('Agents are switched on, but the saved setup or library needs recovery. Check Saved setups.');
+    } else {
+        toastr.info(enabled ? 'In-Chat Agents enabled.' : 'In-Chat Agents disabled.');
+    }
 }
 
 function populateSeparateRecentChatsToggle() {
@@ -2956,10 +2972,11 @@ function updateAgentOverview(agentList = getVisibleInChatAgents()) {
 
     const active = isAgentGenerationActive();
     const enabled = areAgentsGloballyEnabled();
+    const blocked = !enabled && getGlobalSettings().enabled !== false;
     const feedback = lastManualRunFeedback && isCurrentAgentWorkspace(lastManualRunFeedback.identity) ? lastManualRunFeedback : null;
     const status = active
         ? (enabled ? 'Running an agent…' : 'Running; future runs paused')
-        : feedback ? feedback.text : !enabled ? 'Agents paused'
+        : feedback ? feedback.text : blocked ? 'Agent setup or library needs recovery' : !enabled ? 'Agents paused'
             : enabledCount ? 'Ready for the next reply' : 'No automatic agents enabled';
     const scope = getGlobalSettings().separateRecentChats ? getAgentChatScopeLabel().toLowerCase() : 'all chats';
     const hasReply = getLastAssistantMessageIndex() >= 0;
@@ -2970,7 +2987,7 @@ function updateAgentOverview(agentList = getVisibleInChatAgents()) {
     }
     for (const button of document.querySelectorAll('#ica--agentList .ica--btn-run, #ica--agentList .ica--btn-run-target')) {
         button.dataset.runTitle ||= button.title;
-        const reason = !enabled ? 'Enable Agents to run this action.'
+        const reason = blocked ? 'Resolve the saved setup or library recovery before running this action.' : !enabled ? 'Enable Agents to run this action.'
             : !hasReply && button.classList.contains('ica--btn-run') ? 'Open a chat with an assistant reply first.' : '';
         button.disabled = Boolean(reason);
         button.title = reason || button.dataset.runTitle;
@@ -6306,17 +6323,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     initCompanionPanel();
 
     // Wire up toolbar
-    $('#ica--globalEnabled').on('click', () => {
-        const enabled = !areAgentsGloballyEnabled();
-        setGlobalSettings({ enabled });
-        if (!enabled) cancelPathfinderSummary();
-        persistExtensionState();
-        updateGlobalAgentToggle();
-        syncToolAgentRegistrations();
-        updateFixTrackersButtonVisibility();
-        updateCompanionButtonVisibility();
-        toastr.info(enabled ? 'In-Chat Agents enabled.' : 'In-Chat Agents disabled.');
-    });
+    $('#ica--globalEnabled').on('click', toggleGlobalAgents);
     $('#ica--addAgent').on('click', agentAction(() => openEditor()));
     $('#ica--pathfinderSettings').on('click', () => {
         void openPathfinder();

@@ -8146,7 +8146,7 @@ function consumePendingUserMessageExtra(message) {
     pendingUserMessageExtra = null;
 }
 
-export async function Generate(type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, jsonSchema = null, depth = 0, suppressUserMessage = false, cacheScope = null, preserveLastMessage = false, companionHistoryTarget = null, suppressAutoContinue = false, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, skipNativeRoleplay = false } = {}, dryRun = false) {
+export async function Generate(type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, jsonSchema = null, depth = 0, suppressUserMessage = false, cacheScope = null, preserveLastMessage = false, companionHistoryTarget = null, suppressAutoContinue = false, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, skipNativeRoleplay = false, preparedNativeRoleplay = null } = {}, dryRun = false) {
     if (!dryRun && signal?.aborted) return;
 
     // Neconyan: keep cancellation and terminal cleanup attached to this invocation,
@@ -8214,7 +8214,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         // Neconyan Stage 9: one decision for this call site, taken before the host
         // touches the chat, so the destructive browser steps and the server workflow
         // cannot disagree about who owns this generation.
-        const nativeRoleplay = dryRun ? null : await nativeRoleplayWorkflowFor(type, { automatic_trigger, force_name2,
+        const nativeRoleplay = dryRun ? null : preparedNativeRoleplay ?? await nativeRoleplayWorkflowFor(type, { automatic_trigger, force_name2,
             quiet_prompt, force_chid, jsonSchema, depth, suppressUserMessage, preserveLastMessage, cacheScope, signal, skipNativeRoleplay });
         // A replacement the server owns is durable before the browser forgets the old
         // text, so the host must not delete the message it is about to replace.
@@ -17409,6 +17409,24 @@ export async function swipe(event, direction, { source, repeated, message = chat
                 await endSwipe();
                 return;
             } else if (overswipe == OVERSWIPE_BEHAVIOR.REGENERATE) {
+                // Decide before blanking the saved reply or advancing its swipe id.
+                // The server owns the replacement, including a refused or failed run.
+                chat[mesId].swipe_id = originalSwipeId;
+                const target = chat[mesId];
+                const generationAtStart = chatGeneration;
+                const native = mesId === chat.length - 1 ? await nativeRoleplayWorkflowFor('swipe', generationOptions ?? {}) : null;
+                if (chat[mesId] !== target || chatGeneration !== generationAtStart) {
+                    swipeState = SWIPE_STATE.NONE;
+                    showSwipeButtons();
+                    return;
+                }
+                if (native) {
+                    is_send_press = true;
+                    generation = Generate('swipe', { ...generationOptions, preparedNativeRoleplay: native });
+                    await endSwipe();
+                    return;
+                }
+                chat[mesId].swipe_id = newSwipeId;
                 //Regenerate the message
                 clearMessageData(chat[mesId]);
                 let run_generate = true;

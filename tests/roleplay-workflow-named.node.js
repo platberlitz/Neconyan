@@ -204,6 +204,19 @@ test('a named correction replaces one message and leaves the rest of the chat al
         [['guided_prompt', 1, 1, 'system', true]]);
 });
 
+test('regeneration completes and releases the chat when the model repeats the saved wording', async t => {
+    const f = saved(t);
+    const before = f.records();
+    const regenerated = await f.run('roleplay.correct', { text: 'Answer' });
+    assert.equal(regenerated.result.status, 'completed');
+    assert.deepEqual(regenerated.result.named, { replaced: true, length: 'Answer'.length });
+    assert.equal(regenerated.calls.count, 1);
+    assert.deepEqual(f.records().map(record => record.mes), before.map(record => record.mes));
+    assert.equal(f.readback(regenerated.accepted.key).state, 'closed');
+    const next = await acceptRoleplayNamedWorkflow(f.request(), f.body('roleplay.swipe', { key: 'after-repeated-wording' }));
+    assert.equal(next.created, true);
+});
+
 test('a named Story passage contributes its saved rules and direction, and Guided contributes its own prompt', async t => {
     const f = saved(t);
     const story = await f.run('story.passage', { intent: { prompt: { rules: 'Write as a co-author.', rulesDepth: 1,

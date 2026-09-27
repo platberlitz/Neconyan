@@ -157,7 +157,7 @@ describe('agent workbench state', () => {
             lastManualRunFeedback: null,
             isAgentGenerationActive: () => state.active,
             areAgentsGloballyEnabled: () => state.enabled,
-            getGlobalSettings: () => ({ separateRecentChats: false }),
+            getGlobalSettings: () => ({ enabled: state.enabled, separateRecentChats: false }),
             getAgentChatScopeLabel: () => 'Individual chats',
         });
         vm.runInContext(getFunction('updateAgentOverview'), runtime);
@@ -171,6 +171,33 @@ describe('agent workbench state', () => {
         state.enabled = true;
         runtime.updateAgentOverview(agents);
         expect(elements.get('#ica--run-status').textContent).toBe('Ready for the next reply');
+    });
+
+    test('the master switch persists off even when recovery blocks Agent execution', () => {
+        const settings = { enabled: true };
+        const messages = [];
+        const labels = [];
+        const button = { toggleClass() {}, attr() {}, find: () => ({ text: value => labels.push(value) }) };
+        const runtime = vm.createContext({
+            $: () => button,
+            getGlobalSettings: () => settings,
+            areAgentsGloballyEnabled: () => false,
+            setGlobalSettings: update => Object.assign(settings, update),
+            persistExtensionState() {}, cancelPathfinderSummary() {}, updateAgentOverview() {},
+            syncToolAgentRegistrations() {}, updateFixTrackersButtonVisibility() {}, updateCompanionButtonVisibility() {},
+            toastr: { info: text => messages.push(['info', text]), warning: text => messages.push(['warning', text]) },
+        });
+        vm.runInContext([getFunction('updateGlobalAgentToggle'), getFunction('toggleGlobalAgents')].join('\n'), runtime);
+        runtime.updateGlobalAgentToggle();
+        expect(labels.at(-1)).toBe('Agents On');
+        runtime.toggleGlobalAgents();
+        expect(settings.enabled).toBe(false);
+        expect(labels.at(-1)).toBe('Agents Off');
+        expect(messages.at(-1)).toEqual(['info', 'In-Chat Agents disabled.']);
+        runtime.toggleGlobalAgents();
+        expect(settings.enabled).toBe(true);
+        expect(labels.at(-1)).toBe('Agents On');
+        expect(messages.at(-1)[0]).toBe('warning');
     });
 });
 
