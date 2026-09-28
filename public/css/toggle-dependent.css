@@ -445,7 +445,6 @@ body.movingUI .drag-grabber {
     justify-content: center;
 }
 
-body.movingUI #sheld,
 body.movingUI .drawer-content,
 body.movingUI #expression-holder,
 body.movingUI .zoomed_avatar,

@@ -556,9 +556,7 @@ export function dragElement($elmnt) {
     const elmntName = $elmnt.attr('id');
     const stateKey = getMovingUIStateKey(elmntName);
     const elmntNameEscaped = $.escapeSelector(elmntName);
-    const headerSelector = elmntName === 'sheld'
-        ? '#sheldheader, #sb_conversation_header'
-        : `#${elmntNameEscaped}header`;
+    const headerSelector = `#${elmntNameEscaped}header`;
 
     // Helper: Save position/size to state and emit events
     function savePositionAndSize() {
@@ -717,12 +715,10 @@ export function dragElement($elmnt) {
         observer.disconnect();
     }
 
-    // Setup event listeners using event delegation to support dynamic header elements like #sb_conversation_header
+    // Event delegation keeps dynamically created header elements draggable.
     $(document).off('mousedown', headerSelector).on('mousedown', headerSelector, (e) => {
         if (!canUseMovingUI() || $elmnt.is('#right-nav-panel.pinnedOpen, #right-nav-panel.sb-character-editor-fullscreen')) return;
-        const isHeader = $(e.target).closest('#sb_conversation_header').length > 0;
-        const isInteractive = $(e.target).closest('button, input, select, textarea, [role="button"], a, i').length > 0;
-        if ($(e.target).hasClass('drag-grabber') || (isHeader && !isInteractive)) {
+        if ($(e.target).hasClass('drag-grabber')) {
             actionType = 'drag';
             isMouseDown = true;
             didMove = false;
@@ -764,7 +760,8 @@ export function dragElement($elmnt) {
 export async function initMovingUI() {
     if (!isMobile() && power_user.movingUI === true) {
         console.debug('START MOVING UI');
-        dragElement($('#sheld'));
+        // Neconyan: #sheld is docked between the workspace rail and the top
+        // bar. Dragging it pinned the chat over the rail in every mode.
         dragElement($('#left-nav-panel'));
         dragElement($('#right-nav-panel'));
         // Neconyan: World Info is embedded in the Characters panel now; the

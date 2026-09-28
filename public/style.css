@@ -974,8 +974,8 @@ body .panelControlBar {
     position: unset;
 }
 
-#sheldheader:active {
-    cursor: grabbing;
+#sheldheader {
+    display: none;
 }
 
 .pull-tab {

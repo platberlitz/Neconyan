@@ -1227,8 +1227,9 @@ body.neconyan .sb-extensions-layout {
 body.neconyan :is(.sb-settings-nav-column, .sb-settings-detail, .sb-extensions-master, .sb-extension-detail) {
     min-width: 0;
 }
-body.neconyan .sb-settings-nav-column,
-body.neconyan .sb-extensions-master {
+/* Only the settings navigator sticks: the extensions master sits above the panels and has no
+   background, so pinning it let panels scroll visibly underneath. */
+body.neconyan .sb-settings-nav-column {
     align-self: start;
     position: -webkit-sticky;
     position: sticky;

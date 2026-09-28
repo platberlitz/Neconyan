@@ -3027,6 +3027,8 @@ export function loadMovingUIState() {
     const targets = new Set([...appliedMovingUIElements, ...Object.keys(states).flatMap(targetIds)]);
     targets.forEach(id => resetMovableStyles(id));
     appliedMovingUIElements.clear();
+    // #sheld is docked by the Neconyan shell; drop positions saved before it stopped being movable.
+    if (power_user.movingUIState) delete power_user.movingUIState.sheld;
     if (canUseMovingUI() && matchesMovingUIViewport(power_user.movingUIViewport, getMovingUIViewport())) {
         console.debug('loading movingUI state');
         let hasOffscreenPanel = false;
