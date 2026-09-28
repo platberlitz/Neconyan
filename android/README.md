@@ -101,11 +101,15 @@ pinned by SHA-256 in `prepare-runtime.sh`. Its source and mobile patches are in
 that release's linked recipe commit; the original Node.js licence and notices are
 included in the APK as `assets/NODE-LICENSE.txt`. Neconyan remains AGPL-3.0.
 
-Android 11 is the minimum because protected storage needs the real file creation
-times returned by `statx`. The embedded runtime targets older Android releases and
-otherwise substitutes a changing timestamp. A small linked binding supplies the
-real timestamp for Neconyan's synchronous BigInt file observations, including in
-worker threads. Startup verifies a real file rename before accepting any work.
+Android 11 is the minimum because protected storage reads file identity through
+`statx`. The embedded runtime targets older Android releases and otherwise
+substitutes a changing timestamp for the file creation time. A small linked
+binding supplies the real creation time for Neconyan's synchronous BigInt file
+observations, including in worker threads. Most phones format their data
+partition as f2fs without creation times; there the creation time is a constant
+zero and file identity rests on the device and inode numbers, as it does on
+desktop filesystems without creation times. Startup verifies a real file rename
+before accepting any work.
 
 ## Verification
 

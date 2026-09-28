@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/hotfix/')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
