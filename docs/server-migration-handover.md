@@ -2,6 +2,32 @@
 
 ## Release preparation: 1.0.0
 
+### 28 September: 1.0.0 republished with the rename
+
+Neconyan 1.0.0 is published at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.0.0. The annotated tag
+`v1.0.0` points at `a3ea905442c94a7d990acb1b069b5bbe6c6ca114`, which holds
+the rename in `843bc83` and the 16-batch browser workflow in `a3ea905`. The
+repository is public again. Main was deleted briefly, then recreated at
+`a3ea905` and set back as the default branch; creating it did not trigger a
+README mirror commit.
+
+Android run `36432817753` on `a3ea905` passed the WebView fixture, the signed
+build and the Android 11 and Android 15 emulator checks. The release assets are
+that run's artifact: both signed APKs, the source zip, `SHA256SUMS` and
+`provenance.json`. `sha256sum -c SHA256SUMS` and
+`scripts/verify-android-release.py --commit a3ea905... --version 1.0.0` passed,
+both APKs carry signing certificate SHA-256
+`49ed1e770b8a5269a008ed0d4763dd19a499377e35c85eec798c554178c4826c`, and the
+files downloaded back from the release matched the checksums. The owner chose
+to skip the browser run for this release; a local run of the 23 browser files
+the rename touched passed apart from two timing failures that also happen on the
+commit before the rename.
+
+The live service now sets `NECONYAN_USE_BUN=1` and `NECONYAN_BUN_SMOL=0`
+instead of the old `SILLYBUNNY_*` names; systemd was reloaded without a
+restart. Staging moves to `1.0.1` for the next release.
+
 ### 28 September: 1.0.0 published, then pulled
 
 Neconyan 1.0.0 was briefly published with the annotated tag `v1.0.0` on
