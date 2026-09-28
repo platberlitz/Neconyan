@@ -42,6 +42,26 @@ start_neconyan() {
     exec $PREFIX bun server.js --listen "$@"
 }
 
+# Restore the extensions baked into the image. The third-party folder is
+# usually a volume that hides them, and the server imports some of them
+# directly. Only folders the image ships are replaced; other extensions an
+# admin installed there are left alone.
+sync_bundled_extensions() {
+    local PREFIX="$1"
+    local SOURCE_DIR="bundled-extensions"
+    local TARGET_DIR="public/scripts/extensions/third-party"
+
+    [ -d "$SOURCE_DIR" ] || return 0
+
+    for source in "$SOURCE_DIR"/*; do
+        [ -d "$source" ] || continue
+        name=$(basename "$source")
+        if ! { $PREFIX rm -rf "$TARGET_DIR/$name" && $PREFIX cp -R "$source" "$TARGET_DIR/$name"; }; then
+            echo "Warning: Could not restore bundled extension '$name' into $TARGET_DIR." >&2
+        fi
+    done
+}
+
 # Dirs that MUST be present at this point (e.g for volumeless docker runs).
 # Please update list, if in the future a related perm issue appear.
 CORE_DIRS="config data plugins public/scripts/extensions/third-party backups"
@@ -118,6 +138,8 @@ else
     # Relying solely on the user configuring their host permissions correctly.
     EXEC_PREFIX=""
 fi
+
+sync_bundled_extensions "$EXEC_PREFIX"
 
 # Calling function with the determined prefix
 start_neconyan "$EXEC_PREFIX" "$@"

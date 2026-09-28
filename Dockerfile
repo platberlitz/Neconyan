@@ -29,6 +29,14 @@ RUN \
   chown -R bun:bun config data plugins public/scripts/extensions/third-party backups && \
   ln -s "./config/config.yaml" "config.yaml"
 
+# Keep a pristine copy of the bundled extensions. The third-party folder is
+# usually a volume, which hides the image's copy; the entrypoint restores
+# these on every start so server imports (e.g. Neconyan-Hopper) resolve.
+RUN \
+  mkdir -p bundled-extensions && \
+  cp -a public/scripts/extensions/third-party/. bundled-extensions/ && \
+  rm -f bundled-extensions/.gitkeep
+
 # Pre-compile public libraries
 RUN \
   echo "*** Run Webpack ***" && \

@@ -12,7 +12,24 @@
 /docker/data
 /docker/plugins
 /docker/dist
-/public/scripts/extensions/third-party
+
+# --- Extensions (keep only the ones Neconyan ships; see src/neconyan-native-extensions.js) ---
+/public/scripts/extensions/third-party/*
+!/public/scripts/extensions/third-party/ChatCompletionTabs
+!/public/scripts/extensions/third-party/MacroEnhanced
+!/public/scripts/extensions/third-party/Neconyan-BotSearcher
+!/public/scripts/extensions/third-party/Neconyan-Deep-Swipe
+!/public/scripts/extensions/third-party/Neconyan-Hopper
+!/public/scripts/extensions/third-party/Neconyan-Lorebook-Distiller
+!/public/scripts/extensions/third-party/Neconyan-Preset-Tools
+!/public/scripts/extensions/third-party/Neconyan-PromptTags
+!/public/scripts/extensions/third-party/Neconyan-Prompting-Lab
+!/public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes
+!/public/scripts/extensions/third-party/Neconyan-Story-Mode
+!/public/scripts/extensions/third-party/Neconyan-Terminal-UI
+!/public/scripts/extensions/third-party/Neconyan-Time-Machine
+!/public/scripts/extensions/third-party/Neconyan-WorldInfo-Lab
+!/public/scripts/extensions/third-party/sillytavern-character-colors
 
 # --- Plugins (keep only package files) ---
 /plugins/*
