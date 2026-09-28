@@ -356,6 +356,8 @@ test.describe('third-party top-bar button adoption', () => {
 
         await page.locator('#sb-hamburger').click();
         await expect(page.locator('body')).toHaveClass(/neconyan-rail-drawer-open/);
+        // The drawer class lands before its slide-in finishes; wait for the rail to be hittable.
+        await expect.poll(async () => (await getAdoptionSnapshot(page)).charactersHittable).toBe(true);
         const snapshot = await getAdoptionSnapshot(page);
 
         expect(snapshot.inSlot).toBe(true);
