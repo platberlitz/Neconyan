@@ -5,7 +5,7 @@ import {
     collectSoloConversationMemorySummary,
 } from '../public/scripts/neconyan-conversation/memory-utils.js';
 
-describe('sillybunny conversation memory utils', () => {
+describe('neconyan conversation memory utils', () => {
     test('collects the active solo memory summary for a character', () => {
         const store = {
             char_a: {

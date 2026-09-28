@@ -39,8 +39,6 @@ import { requestGracefulExit } from '../shutdown.js';
 import { getServerBootId } from '../server-boot-marker.js';
 import {
     LAUNCHER_ENV as RESTART_LAUNCHER_ENV,
-    LEGACY_LAUNCHER_ENV as RESTART_LEGACY_LAUNCHER_ENV,
-    LEGACY_SUPERVISED_ENV as RESTART_LEGACY_SUPERVISED_ENV,
     RESTART_EXIT_CODE,
     SERVER_PLUGIN_PREPARE_LEASE_MS,
     SERVER_PLUGIN_UPDATE_EXIT_CODE,
@@ -375,7 +373,7 @@ function applyChatCompletionConfigState(document, settings) {
 function getZipUpdatePayload(stagedUpdate) {
     const payload = {
         parentPid: process.pid,
-        supervisorPid: (process.env[RESTART_SUPERVISED_ENV] ?? process.env[RESTART_LEGACY_SUPERVISED_ENV]) === '1' ? process.ppid : null,
+        supervisorPid: process.env[RESTART_SUPERVISED_ENV] === '1' ? process.ppid : null,
         installDir: serverDirectory,
         stagingRoot: stagedUpdate.stagingRoot,
         releaseRoot: stagedUpdate.releaseRoot,
@@ -386,11 +384,8 @@ function getZipUpdatePayload(stagedUpdate) {
         // process starts a fresh supervisor after the old process tree exits.
         envPatch: {
             NECONYAN_SKIP_BROWSER_AUTO_LAUNCH: '1',
-            SILLYBUNNY_SKIP_BROWSER_AUTO_LAUNCH: '1',
             [RESTART_SUPERVISED_ENV]: '',
-            [RESTART_LEGACY_SUPERVISED_ENV]: '',
             [RESTART_LAUNCHER_ENV]: '',
-            [RESTART_LEGACY_LAUNCHER_ENV]: '',
         },
         visibleRelaunch: process.platform === 'win32',
     };
@@ -418,8 +413,8 @@ function getServerPluginUpdatePayload(stagedUpdate) {
 }
 
 function isManagedRestart() {
-    return (process.env[RESTART_LAUNCHER_ENV] ?? process.env[RESTART_LEGACY_LAUNCHER_ENV]) === '1'
-        || (process.env[RESTART_SUPERVISED_ENV] ?? process.env[RESTART_LEGACY_SUPERVISED_ENV]) === '1';
+    return process.env[RESTART_LAUNCHER_ENV] === '1'
+        || process.env[RESTART_SUPERVISED_ENV] === '1';
 }
 
 function scheduleRestart(response, { reloadSupervisor = false } = {}) {
@@ -433,7 +428,7 @@ function scheduleRestart(response, { reloadSupervisor = false } = {}) {
 
     response.once('finish', () => {
         setTimeout(() => {
-            const canReloadSupervisor = (process.env[RESTART_LAUNCHER_ENV] ?? process.env[RESTART_LEGACY_LAUNCHER_ENV]) === '1';
+            const canReloadSupervisor = process.env[RESTART_LAUNCHER_ENV] === '1';
             const exitCode = reloadSupervisor && canReloadSupervisor ? SUPERVISOR_RELOAD_EXIT_CODE : RESTART_EXIT_CODE;
             if (reloadSupervisor && !canReloadSupervisor) {
                 console.info('Restarting the server with the updated code now. The lightweight supervisor process keeps its current code until the next full stop/start; launching through Start.bat or start.sh lets updates reload it automatically.');

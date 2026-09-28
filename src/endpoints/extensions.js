@@ -150,7 +150,7 @@ async function ensureExtensionRepo(extensionPath, isGlobal = false) {
         return false;
     }
 
-    const snapshotPath = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-ext-'));
+    const snapshotPath = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-ext-'));
 
     try {
         copyDirectoryContents(extensionPath, snapshotPath);
@@ -165,7 +165,7 @@ async function ensureExtensionRepo(extensionPath, isGlobal = false) {
 
         copyDirectoryContents(snapshotPath, extensionPath);
         await git.raw(['config', 'user.name', 'Neconyan']);
-        await git.raw(['config', 'user.email', 'sillybunny@local']);
+        await git.raw(['config', 'user.email', 'neconyan@local']);
         await git.add('.');
 
         const status = await git.status();
@@ -235,7 +235,7 @@ async function checkIfRepoIsUpToDate(extensionPath) {
     }
 
     // Only treat the repo as outdated when the remote has commits we do not have yet.
-    // Bundled extensions can legitimately be ahead of upstream because SillyBunny patches them locally.
+    // Bundled extensions can legitimately be ahead of upstream because Neconyan patches them locally.
     const [, behindRaw = '0'] = (await git.raw(['rev-list', '--left-right', '--count', `HEAD...${trackingBranch}`]))
         .trim()
         .split(/\s+/);
@@ -727,7 +727,7 @@ router.post('/sync', async (request, response) => {
             return response.status(400).send(`Bad Request: ${extensionNameSanitized} sync source must be ${syncConfig.repo}.`);
         }
 
-        const metadataPath = path.join(os.tmpdir(), `sillybunny-${extensionNameSanitized}-${Date.now()}.env`);
+        const metadataPath = path.join(os.tmpdir(), `neconyan-${extensionNameSanitized}-${Date.now()}.env`);
         try {
             const { stdout, stderr } = await execFileAsync('bash', [syncConfig.script, '--metadata-file', metadataPath], {
                 cwd: process.cwd(),

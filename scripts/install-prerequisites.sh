@@ -34,7 +34,6 @@ TERMUX_PREFIX_DEFAULT='/data/data/com.termux/files/usr'
 TERMUX_PREFIX="${PREFIX:-$TERMUX_PREFIX_DEFAULT}"
 TERMUX_GLIBC_ROOT="${GLIBC_ROOT:-$TERMUX_PREFIX/glibc}"
 TERMUX_BUN_WRAPPER_MARKER='Neconyan Termux Bun wrapper'
-TERMUX_BUN_WRAPPER_LEGACY_MARKER='SillyBunny Termux Bun wrapper'
 # Pinned to bun-termux-manager v1.0.1. This script is piped into bash, so it is
 # tracked by commit rather than by branch.
 TERMUX_BUN_MANAGER_COMMIT='b9f47733b0198d59dc9775a487a8a731cde322cb'
@@ -286,7 +285,7 @@ install_termux_bun_manager() {
 is_termux_bun_wrapper() {
     local bun_path="$BUN_INSTALL_DIR/bin/bun"
 
-    [[ -f "$bun_path" ]] && grep -aqE "$TERMUX_BUN_WRAPPER_MARKER|$TERMUX_BUN_WRAPPER_LEGACY_MARKER" "$bun_path"
+    [[ -f "$bun_path" ]] && grep -aqF "$TERMUX_BUN_WRAPPER_MARKER" "$bun_path"
 }
 
 configure_termux_bun_wrapper() {

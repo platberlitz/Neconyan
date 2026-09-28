@@ -1884,13 +1884,12 @@ function updateUpdateAllButtonVisibility() {
     button.attr('title', `Update ${outdatedCount} agent(s) whose bundled template has a newer version`);
 }
 
-const neconyanAgents = Object.assign(globalThis.NeconyanAgents || globalThis.SillyBunnyAgents || {}, {
+const neconyanAgents = Object.assign(globalThis.NeconyanAgents || {}, {
     getEnabledAgents,
     openPathfinder: (...args) => openPathfinder(...args),
     mountPathfinderSettings: (...args) => mountPathfinderSettings(...args),
 });
 globalThis.NeconyanAgents = neconyanAgents;
-globalThis.SillyBunnyAgents = neconyanAgents;
 
 function getComparableAgentSnapshot(agent) {
     const snapshot = structuredClone(agent || {});
@@ -2128,7 +2127,7 @@ async function migrateCyoaChoiceRegexCleanupToSavedAgents() {
 }
 
 async function migrateBundledTemplateMetadataToSavedAgents() {
-    let migratedCount = 0;
+    const changes = [];
 
     for (const agent of getAgents().map(agent => structuredClone(agent))) {
         if (shouldSkipBundledTemplateMigrations(agent)) {
@@ -2150,11 +2149,12 @@ async function migrateBundledTemplateMetadataToSavedAgents() {
 
         agent.author = desiredAuthor;
         agent.sourceTemplateId = agent.sourceTemplateId || template.id;
-        await saveAgent(agent);
-        migratedCount++;
+        changes.push(agent);
     }
 
-    return migratedCount;
+    // One write for the whole library instead of one per agent.
+    await saveAgentBatch(changes, 'Bundled agent credits');
+    return changes.length;
 }
 
 function shouldMigrateBundledTrackerPromptPass(agent, template) {

@@ -8,7 +8,7 @@ import {
     setConversationThreadUnreadCount,
 } from '../public/scripts/neconyan-conversation/notification-utils.js';
 
-describe('sillybunny conversation notification utils', () => {
+describe('neconyan conversation notification utils', () => {
     test('normalizes positive unread counts only', () => {
         expect(normalizeConversationUnreadCount('3')).toBe(3);
         expect(normalizeConversationUnreadCount(0)).toBe(0);

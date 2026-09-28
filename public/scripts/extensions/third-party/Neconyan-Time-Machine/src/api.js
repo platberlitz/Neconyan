@@ -300,7 +300,7 @@ export async function captureEverything(onProgress = () => {}) {
         const settings = ctx().extensionSettings;
         settings[MODULE_NAME] = structuredClone(result.module);
         settings.character_attachments = isPlainObject(settings.character_attachments) ? settings.character_attachments : {};
-        settings.character_attachments['__SillyBunny-Card-Time-Machine__'] = structuredClone(result.attachments ?? []);
+        settings.character_attachments['__Neconyan-Card-Time-Machine__'] = structuredClone(result.attachments ?? []);
         core.adoptServerSettingsWrite({ account, previousVersion: result.previousVersion, version: result.version, settingsRevision: result.settingsRevision });
     }
     return { taken: result.taken ?? 0, skipped: result.skipped ?? 0, failed: 0, removed: result.removed ?? 0 };

@@ -3,7 +3,7 @@ import { getPreviewString, saveTtsProviderSettings, sanitizeId } from './index.j
 
 export { OpenAITtsProvider };
 
-// SillyBunny: expose OpenAI's browser-playable response formats instead of forcing MP3.
+// Neconyan: expose OpenAI's browser-playable response formats instead of forcing MP3.
 const OPENAI_TTS_RESPONSE_FORMATS = [
     { value: 'wav', label: 'WAV' },
     { value: 'mp3', label: 'MP3' },

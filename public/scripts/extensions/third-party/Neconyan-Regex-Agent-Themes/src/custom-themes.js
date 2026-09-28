@@ -9,7 +9,9 @@ import { THEME_BY_SLUG } from './themes/index.js';
 import { STOCK_THEME } from './constants.js';
 
 // This is a persisted format identifier, not a display name.
-export const CUSTOM_THEME_FORMAT = 'sillybunny-regex-agent-themes';
+export const CUSTOM_THEME_FORMAT = 'neconyan-regex-agent-themes';
+// Files exported before the rename still import.
+const LEGACY_CUSTOM_THEME_FORMAT = 'sillybunny-regex-agent-themes';
 export const CUSTOM_THEME_VERSION = 1;
 export const CUSTOM_THEME_LIMITS = Object.freeze({
     fileBytes: 256 * 1024,
@@ -530,7 +532,7 @@ export function prepareCustomThemeImport(payload, rawExisting = {}) {
         if (byteLength(serialized) > CUSTOM_THEME_LIMITS.fileBytes) {
             throw new ThemeValidationError('export', `must be smaller than ${CUSTOM_THEME_LIMITS.fileBytes} bytes.`);
         }
-        if (![CUSTOM_THEME_FORMAT, 'neconyan-regex-agent-themes'].includes(payload.format) || payload.version !== CUSTOM_THEME_VERSION) {
+        if (![CUSTOM_THEME_FORMAT, LEGACY_CUSTOM_THEME_FORMAT].includes(payload.format) || payload.version !== CUSTOM_THEME_VERSION) {
             throw new ThemeValidationError('export', 'uses an unsupported format or version.');
         }
         const existing = validateCustomThemeMap(rawExisting).themes;

@@ -16,7 +16,7 @@ const activeLocks = new Set();
 export function getChatFileLockPath(filePath) {
     const resolvedPath = path.resolve(filePath);
     const lockKey = process.platform === 'win32' ? resolvedPath.toLowerCase() : resolvedPath;
-    return path.join(path.dirname(filePath), `.sillybunny-chat-${crypto.createHash('sha256').update(lockKey).digest('hex')}.lock`);
+    return path.join(path.dirname(filePath), `.neconyan-chat-${crypto.createHash('sha256').update(lockKey).digest('hex')}.lock`);
 }
 
 export function acquireChatFileLock(filePath) {

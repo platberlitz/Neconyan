@@ -27,11 +27,11 @@ function mockWritableTarget() {
 }
 
 function createTargetPath() {
-    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-atomic-'));
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-atomic-'));
     return path.join(tempRoot, 'example.jsonl');
 }
 
-const RECOVERY_SUFFIX = '.sillybunny-write-recovery';
+const RECOVERY_SUFFIX = '.neconyan-write-recovery';
 
 /**
  * Strands a recovery record for a card whose interrupted write left bytes matching neither snapshot,
@@ -170,7 +170,7 @@ describe('tryWriteFileSync atomic fallback', () => {
         fs.writeFileSync(filePath, 'original-card-content', 'utf8');
         const unlinkSync = fs.unlinkSync.bind(fs);
         const unlinkSpy = jest.spyOn(fs, 'unlinkSync').mockImplementation((target) => {
-            if (String(target).endsWith('.sillybunny-write-recovery')) {
+            if (String(target).endsWith('.neconyan-write-recovery')) {
                 throw createWindowsFileLockError('EPERM');
             }
             return unlinkSync(target);
@@ -372,7 +372,7 @@ describe('tryWriteFileSync atomic fallback', () => {
         fs.writeFileSync(filePath, 'before', 'utf8');
         const checked = fs.statSync(filePath, { bigint: true });
         jest.spyOn(crypto, 'randomBytes').mockReturnValue(Buffer.alloc(8, 1));
-        const tempPath = path.join(path.dirname(filePath), `.sillybunny-write-${process.pid}.${Buffer.alloc(8, 1).toString('hex')}.tmp`);
+        const tempPath = path.join(path.dirname(filePath), `.neconyan-write-${process.pid}.${Buffer.alloc(8, 1).toString('hex')}.tmp`);
         fs.linkSync(filePath, tempPath);
 
         expect(() => tryWriteFileSync(filePath, 'after', 'utf8', {
@@ -419,7 +419,7 @@ describe('tryWriteFileSync atomic fallback', () => {
         fs.writeFileSync(secondPath, 'second-original', 'utf8');
         const unlinkSync = fs.unlinkSync.bind(fs);
         const unlinkSpy = jest.spyOn(fs, 'unlinkSync').mockImplementation((target) => {
-            if (String(target).endsWith('.sillybunny-write-recovery')) {
+            if (String(target).endsWith('.neconyan-write-recovery')) {
                 throw createWindowsFileLockError('EPERM');
             }
             return unlinkSync(target);
@@ -441,7 +441,7 @@ describe('tryWriteFileSync atomic fallback', () => {
         fs.writeFileSync(filePath, 'original-card-content', 'utf8');
         const unlinkSync = fs.unlinkSync.bind(fs);
         const unlinkSpy = jest.spyOn(fs, 'unlinkSync').mockImplementation((target) => {
-            if (String(target).endsWith('.sillybunny-write-recovery')) {
+            if (String(target).endsWith('.neconyan-write-recovery')) {
                 throw createWindowsFileLockError('EPERM');
             }
             return unlinkSync(target);
@@ -459,7 +459,7 @@ describe('tryWriteFileSync atomic fallback', () => {
         fs.writeFileSync(filePath, 'original-card-content', 'utf8');
         const unlinkSync = fs.unlinkSync.bind(fs);
         const unlinkSpy = jest.spyOn(fs, 'unlinkSync').mockImplementation((target) => {
-            if (String(target).endsWith('.sillybunny-write-recovery')) {
+            if (String(target).endsWith('.neconyan-write-recovery')) {
                 throw createWindowsFileLockError('EPERM');
             }
             return unlinkSync(target);

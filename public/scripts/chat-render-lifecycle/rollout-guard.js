@@ -1,4 +1,4 @@
-export const CHAT_RENDER_LIFECYCLE_ROLLOUT_KEY = 'sillybunny.chatRenderLifecycle.enabled';
+export const CHAT_RENDER_LIFECYCLE_ROLLOUT_KEY = 'neconyan.chatRenderLifecycle.enabled';
 export const CHAT_RENDER_LIFECYCLE_ROUTE = Object.freeze({
     BOTTOM_SCROLL: 'bottom-scroll',
     INITIAL_LOAD: 'initial-load',

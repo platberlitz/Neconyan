@@ -161,12 +161,11 @@ export function prefetchAsset(href, { as = 'fetch', rel = 'prefetch', type = '' 
     return link;
 }
 
-const neconyanAssets = Object.assign(window.NeconyanAssets ?? window.SillyBunnyAssets ?? {}, {
+const neconyanAssets = Object.assign(window.NeconyanAssets ?? {}, {
     loadStylesheetAsync,
     prefetchAsset,
 });
 window.NeconyanAssets = neconyanAssets;
-window.SillyBunnyAssets = neconyanAssets;
 
 /**
  * An observer that will check if any new stylesheets are added to the head

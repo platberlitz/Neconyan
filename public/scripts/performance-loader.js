@@ -26,9 +26,7 @@ function scheduleIdleWork(callback) {
 }
 
 window.NeconyanLoadStylesheet = activateDeferredStyles;
-window.SillyBunnyLoadStylesheet = activateDeferredStyles;
 window.NeconyanLoadWideFontFallbacks = loadWideFontFallbacks;
-window.SillyBunnyLoadWideFontFallbacks = loadWideFontFallbacks;
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => scheduleIdleWork(activateDeferredStyles), { once: true });

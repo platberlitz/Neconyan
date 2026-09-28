@@ -148,7 +148,7 @@ test('kitty clouds remain visible behind Home, Characters and Conversation', asy
     await miso.locator('[data-assistant-open]').click();
     await page.waitForFunction(() => document.querySelector('[data-assistant-picker]')?.dataset.assistantBusy !== 'true');
     await page.locator('#send_textarea').fill('Keep this draft while checking the background.');
-    await page.evaluate(() => window.SillyBunnyShell.openTab('characters', 'characters'));
+    await page.evaluate(() => window.NeconyanShell.openTab('characters', 'characters'));
     await page.locator('#neconyan-workspace-rail [data-neconyan-chat-mode="conversation"]').click();
     await page.evaluate(() => window.NeconyanShell.closeWorkspace());
     await expect(page.locator('#sb_conversation_stage')).toBeVisible();

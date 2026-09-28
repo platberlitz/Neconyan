@@ -29,7 +29,7 @@ async function prepared(t, { group = false } = {}) {
         extension_settings: { connectionManager: { profiles: [{ id: 'main', api: 'custom', model: 'fixture', 'api-url': 'http://127.0.0.1:5000/v1' }] },
             'quick-image-gen': { provider: 'together', togetherKey: 'private-key', togetherModel: 'image-fixture', seed: 4,
                 style: 'none', appendQuality: false, useSTStyle: false },
-            sillybunny_conversation: { version: 1, settings: { connection_profile: 'main', image_gen_enabled: true, image_gen_cooldown: 0 },
+            neconyan_conversation: { version: 1, settings: { connection_profile: 'main', image_gen_enabled: true, image_gen_cooldown: 0 },
                 groups: group ? [{ id: groupId, personaId: '', members: ['Nova.png', 'Kit.png'], disabled_members: [],
                     conversation_settings: {}, createdAt: 1, updatedAt: 1 }] : [], reminders: [],
                 characters: { [thread]: { settings: {}, activeBranchId: 'main', branches: { main: branch } } } } } };
@@ -56,7 +56,7 @@ test('new Conversation images bind the accepted account and checkpoint before pa
         return new Response(JSON.stringify({ data: [{ b64_json: png.toString('base64') }] }), { headers: { 'Content-Type': 'application/json' } });
     } });
     assert.equal(await generate(f.context(), f.snapshot, 'A selfie in a coat', f.snapshot.speaker), true);
-    const stored = JSON.parse(fs.readFileSync(f.filename, 'utf8')).extension_settings.sillybunny_conversation;
+    const stored = JSON.parse(fs.readFileSync(f.filename, 'utf8')).extension_settings.neconyan_conversation;
     assert.equal(stored.characters[f.thread].branches.main.messages.length, 2);
     assert.ok(stored.characters[f.thread].branches.main.messages[1].extra.image_url.startsWith('/user/images/'));
     assert.equal(await generate(f.context(), f.snapshot, 'A selfie in a coat', f.snapshot.speaker), true);
@@ -68,8 +68,8 @@ test('a Conversation history edit or disabled selected group speaker prevents pa
         for (const group of [false, true]) {
             const f = await prepared(t, { group });
             if (legacy) delete f.snapshot.quickImageGenAccount;
-            if (group) f.settings.extension_settings.sillybunny_conversation.groups[0].disabled_members = ['Kit.png'];
-            else f.settings.extension_settings.sillybunny_conversation.characters[f.thread].branches.main.messages[0].mes = 'Edited after acceptance.';
+            if (group) f.settings.extension_settings.neconyan_conversation.groups[0].disabled_members = ['Kit.png'];
+            else f.settings.extension_settings.neconyan_conversation.characters[f.thread].branches.main.messages[0].mes = 'Edited after acceptance.';
             fs.writeFileSync(f.filename, JSON.stringify(f.settings));
             const generate = createConversationImageGenerator({ fetchImpl: () => assert.fail('changed image source reached its provider') });
             await assert.rejects(generate(f.context(), f.snapshot, 'A selfie', f.snapshot.speaker), error => error.status === 409);

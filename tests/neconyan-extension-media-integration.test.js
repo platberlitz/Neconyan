@@ -10,7 +10,7 @@ import { normalizeProviderResult } from '../public/scripts/extensions/quick-imag
 import { buildTextAIRequestMessages } from '../public/scripts/extensions/quick-image-gen/lib/prompt-pipeline.js';
 import { MAX_IMAGE_BYTES } from '../public/scripts/extensions/quick-image-gen/lib/security.js';
 
-const capabilityRegistryKey = Symbol.for('sillybunny.extensionCapabilities');
+const capabilityRegistryKey = Symbol.for('neconyan.extensionCapabilities');
 const qigSource = readFileSync(fileURLToPath(new URL('../public/scripts/extensions/quick-image-gen/index.js', import.meta.url)), 'utf8');
 const bridgeSource = readFileSync(fileURLToPath(new URL('../public/scripts/extensions/expressions/expression-sprite-bridge.js', import.meta.url)), 'utf8');
 

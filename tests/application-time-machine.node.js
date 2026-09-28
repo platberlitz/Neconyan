@@ -11,7 +11,7 @@ const { getJob } = await import('../src/jobs/store.js');
 const { write: writeCard } = await import('../src/character-card-parser.js');
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
-const MODULE = 'SillyBunnyCardTimeMachine';
+const MODULE = 'NeconyanCardTimeMachine';
 
 function prepared(t, module = { keepPerTarget: 1 }) {
     const f = fixture(t, false, 'fixture');
@@ -46,7 +46,7 @@ test('one accepted snapshot job saves every snapshot and the index after the pag
     assert.equal(saved.extension_settings.other.kept, true);
     assert.equal(saved._version, 4);
     assert.equal(p.blobs().length, p.total);
-    assert.equal(saved.extension_settings.character_attachments['__SillyBunny-Card-Time-Machine__'].length, p.total);
+    assert.equal(saved.extension_settings.character_attachments['__Neconyan-Card-Time-Machine__'].length, p.total);
     const character = JSON.parse(fs.readFileSync(path.join(p.dirs.files, rows.find(row => row.target === 'nova.png').name), 'utf8'));
     assert.equal(character.data.data.description, 'An astronaut.');
     assert.equal(character.data.chat, undefined);

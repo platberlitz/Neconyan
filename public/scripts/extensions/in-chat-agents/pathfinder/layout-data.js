@@ -1,4 +1,4 @@
-export const LAYOUT_KEY = 'sillybunny_pathfinder';
+export const LAYOUT_KEY = 'neconyan_pathfinder';
 const MAX_NODES = 2048;
 const MAX_DEPTH = 32;
 const MAX_SIZE = 262144;

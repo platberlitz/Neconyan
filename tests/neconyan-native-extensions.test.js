@@ -90,7 +90,7 @@ describe('Neconyan native extension catalog', () => {
     test('keeps legacy IDs and native runtime aliases deduplicated', () => {
         expect(getNativeExtension('third-party/Neconyan-Story-Mode')?.version).toBe('0.2.4');
         expect(getNativeExtension('Neconyan-Hopper')?.displayName).toBe('Meower');
-        expect(getNativeExtension('SillyBunny-Terminal-UI')?.displayName).toBe('Termeownal UI');
+        expect(getNativeExtension('Neconyan-Terminal-UI')?.displayName).toBe('Termeownal UI');
         expect(getNativeExtension('third-party/Neconyan-Debugger')?.runtimeId).toBe('neconyan-debugger');
         expect(getNativeExtension('neconyan-debugger')?.displayName).toBe('Debugger');
         expect(getNativeExtension('SillyTavern-ChatCompletionTabs')?.displayName).toBe('Chat Completion Tabs');

@@ -47,7 +47,7 @@ describe('entity date added endpoints', () => {
     });
 
     beforeEach(() => {
-        tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-date-added-endpoints-'));
+        tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-date-added-endpoints-'));
         const accountRoot = path.join(tempRoot, 'date-added-test-user');
         directories = {
             root: accountRoot,

@@ -38,7 +38,7 @@ describe('settings version guard', () => {
     const branchWrap = (version, revision, branch) => ({
         _version: version,
         _settingsRevision: revision,
-        extension_settings: { sillybunny_conversation: { characters: { 'nova.png': { branches: { main: branch } } } } },
+        extension_settings: { neconyan_conversation: { characters: { 'nova.png': { branches: { main: branch } } } } },
     });
 
     const canonicalCopy = value => JSON.parse(JSON.stringify(value));
@@ -46,17 +46,17 @@ describe('settings version guard', () => {
     test('authoritative automatic history can be copied to branches and groups but new automatic content is refused', () => {
         const message = { id: 'auto1', role: 'character', mes: 'Ping', extra: { conversation_mode_auto: true } };
         const current = branchWrap(1, 1, { createdAt: 1, messages: [message] });
-        current.extension_settings.sillybunny_conversation.automation = { mode: 'server' };
+        current.extension_settings.neconyan_conversation.automation = { mode: 'server' };
         for (const options of [{ conversationOnly: true }]) {
             const incoming = canonicalCopy(current);
-            const chars = incoming.extension_settings.sillybunny_conversation.characters;
+            const chars = incoming.extension_settings.neconyan_conversation.characters;
             chars['nova.png'].branches.fork = { createdAt: 2, memorySummary: 'Copied memory', messages: [canonicalCopy(message)] };
             chars['group:g1:nova.png'] = { branches: { main: canonicalCopy(chars['nova.png'].branches.fork) } };
             const result = prepareSettingsSave(incoming, current, options);
             expect(result.ok).toBe(true);
             // Legacy whole-settings writers still cannot replace managed Conversation history.
             expect(prepareSettingsSave(incoming, current)).toMatchObject({ ok: false, conversationConflict: true });
-            expect(result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.fork.memorySummary).toBe('Copied memory');
+            expect(result.settings.extension_settings.neconyan_conversation.characters['nova.png'].branches.fork.memorySummary).toBe('Copied memory');
             chars['nova.png'].branches.fork.messages[0].mes = 'New browser result';
             expect(prepareSettingsSave(incoming, current, options)).toMatchObject({ ok: false, conversationConflict: true });
             chars['nova.png'].branches.fork.messages[0] = { ...message, id: 'new-auto' };
@@ -72,28 +72,28 @@ describe('settings version guard', () => {
         const original = { createdAt: 1, messages, readThrough: 'old unsafe id', unread: 0, messageEditRevision: 3, messageContentHash: getConversationMessagesHash(messages) };
         const current = branchWrap(5, 1, original);
         const result = prepareSettingsSave(canonicalCopy(current), current, { conversationOnly: true });
-        const branch = result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main;
+        const branch = result.settings.extension_settings.neconyan_conversation.characters['nova.png'].branches.main;
         expect(branch.messageEditRevision).toBe(3);
         expect(branch.readThrough).toBe(branch.messages[0].id);
         expect(branch.unread).toBe(0);
         expect(branch.messageContentHash).toBe(getConversationMessagesHash(branch.messages));
         const edited = canonicalCopy(result.settings);
-        edited.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main.messages[0].mes = 'Changed text';
+        edited.extension_settings.neconyan_conversation.characters['nova.png'].branches.main.messages[0].mes = 'Changed text';
         const changed = prepareSettingsSave(edited, result.settings, { conversationOnly: true });
-        expect(changed.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main.messageEditRevision).not.toBe(3);
+        expect(changed.settings.extension_settings.neconyan_conversation.characters['nova.png'].branches.main.messageEditRevision).not.toBe(3);
     });
 
     test('stale summary timers cannot replace native memory on surviving branches or threads', () => {
         const memory = { memorySummary: 'Server memory', memoryMessageCount: 2, memoryUpdatedAt: 7, memorySummaryThrough: 'last' };
         const current = branchWrap(2, 1, { createdAt: 1, messages: [{ id: 'last', mes: 'Hello' }], ...memory });
-        Object.assign(current.extension_settings.sillybunny_conversation.characters['nova.png'], memory);
+        Object.assign(current.extension_settings.neconyan_conversation.characters['nova.png'], memory);
         const incoming = canonicalCopy(current);
-        const thread = incoming.extension_settings.sillybunny_conversation.characters['nova.png'];
+        const thread = incoming.extension_settings.neconyan_conversation.characters['nova.png'];
         thread.memorySummary = thread.branches.main.memorySummary = 'Stale browser summary';
         for (const options of [{ conversationOnly: true }, {}]) {
             const result = prepareSettingsSave(incoming, current, options);
             expect(result.ok).toBe(true);
-            const saved = result.settings.extension_settings.sillybunny_conversation.characters['nova.png'];
+            const saved = result.settings.extension_settings.neconyan_conversation.characters['nova.png'];
             expect(saved).toMatchObject(memory);
             expect(saved.branches.main).toMatchObject(memory);
         }
@@ -108,7 +108,7 @@ describe('settings version guard', () => {
         for (const options of [{ conversationOnly: true }, { restoreSnapshot: true }, {}]) {
             const result = prepareSettingsSave(incoming, current, options);
             expect(result.ok).toBe(true);
-            const branch = result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main;
+            const branch = result.settings.extension_settings.neconyan_conversation.characters['nova.png'].branches.main;
             expect(branch.unread).toBe(1);
             expect(branch.readThrough).toBe(branch.messages[1].id);
             expect(branch.messages.map(message => message.mes)).toEqual(['Read', '', 'Unread']);
@@ -121,36 +121,36 @@ describe('settings version guard', () => {
         const current = branchWrap(2, 1, { createdAt: 1, messages: [] });
         const protectedState = { automation: { mode: 'server', timeZone: 'Asia/Manila', acknowledgement: { account: 'alice', settingsRevision: 1 } },
             serverOperations: { job: { at: 1 } }, groupAsideLastSent: { aside: 1 }, runtimeStatusOverrides: { speaker: { status: 'online' } } };
-        Object.assign(current.extension_settings.sillybunny_conversation, protectedState);
+        Object.assign(current.extension_settings.neconyan_conversation, protectedState);
         const forged = canonicalCopy(current);
-        forged.extension_settings.sillybunny_conversation.automation = { mode: 'browser' };
+        forged.extension_settings.neconyan_conversation.automation = { mode: 'browser' };
         expect(prepareSettingsSave(forged, current).ok).toBe(false);
         for (const options of [{ conversationOnly: true }, { restoreSnapshot: true }]) {
             const result = prepareSettingsSave(forged, current, options);
-            expect(result.settings.extension_settings.sillybunny_conversation).toMatchObject(protectedState);
+            expect(result.settings.extension_settings.neconyan_conversation).toMatchObject(protectedState);
         }
         const reset = prepareSettingsSave({ _version: 2, _settingsRevision: 1, extension_settings: {} }, current, { restoreSnapshot: true });
-        expect(reset.settings.extension_settings.sillybunny_conversation).toEqual(protectedState);
+        expect(reset.settings.extension_settings.neconyan_conversation).toEqual(protectedState);
         expect(reset.settingsRevision).toBe(2);
     });
 
     test('only acknowledged new-client general saves refresh the background binding revision', () => {
         const current = branchWrap(3, 1, { createdAt: 1, messages: [] });
-        current.extension_settings.sillybunny_conversation.automation = { mode: 'server', timeZone: 'UTC' };
+        current.extension_settings.neconyan_conversation.automation = { mode: 'server', timeZone: 'UTC' };
         const incoming = { _version: 3, _settingsRevision: 1, _conversationOmitted: true, extension_settings: {} };
         const result = prepareSettingsSave(incoming, current, { acknowledgeAccount: 'alice' });
-        expect(result.settings.extension_settings.sillybunny_conversation.automation).toEqual({ mode: 'server', timeZone: 'UTC', acknowledgement: { account: 'alice', settingsRevision: 2 } });
-        expect(prepareSettingsSave(canonicalCopy(current), current, { acknowledgeAccount: 'alice' }).settings.extension_settings.sillybunny_conversation.automation.acknowledgement).toBeUndefined();
-        expect(current.extension_settings.sillybunny_conversation.automation.acknowledgement).toBeUndefined();
+        expect(result.settings.extension_settings.neconyan_conversation.automation).toEqual({ mode: 'server', timeZone: 'UTC', acknowledgement: { account: 'alice', settingsRevision: 2 } });
+        expect(prepareSettingsSave(canonicalCopy(current), current, { acknowledgeAccount: 'alice' }).settings.extension_settings.neconyan_conversation.automation.acknowledgement).toBeUndefined();
+        expect(current.extension_settings.neconyan_conversation.automation.acknowledgement).toBeUndefined();
     });
 
     test('server ownership refuses stale automatic appends but permits manual images and historical imports', () => {
         const original = { createdAt: 1, messages: [{ id: 'first', role: 'user', mes: 'Hello' }], unread: 0 };
         const current = branchWrap(1, 0, original);
-        current.extension_settings.sillybunny_conversation.automation = { mode: 'server', timeZone: 'UTC' };
+        current.extension_settings.neconyan_conversation.automation = { mode: 'server', timeZone: 'UTC' };
         const incoming = canonicalCopy(current);
         const extra = { conversation_mode_auto: true };
-        incoming.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main.messages.push({ id: 'stale', role: 'character', mes: 'Browser reply', extra });
+        incoming.extension_settings.neconyan_conversation.characters['nova.png'].branches.main.messages.push({ id: 'stale', role: 'character', mes: 'Browser reply', extra });
         expect(prepareSettingsSave(incoming, current, { conversationOnly: true })).toMatchObject({ ok: false, conversationConflict: true });
         expect(prepareSettingsSave(incoming, current)).toMatchObject({ ok: false, conversationConflict: true });
         expect(prepareSettingsSave(incoming, current, { restoreSnapshot: true }).ok).toBe(true);
@@ -161,17 +161,17 @@ describe('settings version guard', () => {
 
     test('stale reminder status cannot undo firing or forget an accepted automatic occurrence', () => {
         const current = branchWrap(2, 1, { createdAt: 1, messages: [] });
-        const store = current.extension_settings.sillybunny_conversation;
+        const store = current.extension_settings.neconyan_conversation;
         store.automation = { mode: 'server', acceptedOccurrences: { hashed: 'job-id' } };
         store.reminders = [{ id: 'reminder', triggerAt: 123, text: 'Tea', fired: true, firedAt: 234 }];
         const incoming = canonicalCopy(current);
-        incoming.extension_settings.sillybunny_conversation.reminders = [{ id: 'reminder', triggerAt: 123, text: 'Tea', fired: false }];
-        delete incoming.extension_settings.sillybunny_conversation.automation;
+        incoming.extension_settings.neconyan_conversation.reminders = [{ id: 'reminder', triggerAt: 123, text: 'Tea', fired: false }];
+        delete incoming.extension_settings.neconyan_conversation.automation;
         for (const options of [{ conversationOnly: true }, { restoreSnapshot: true }]) {
             const result = prepareSettingsSave(incoming, current, options);
             expect(result.ok).toBe(true);
-            expect(result.settings.extension_settings.sillybunny_conversation.reminders[0]).toMatchObject({ fired: true, firedAt: 234 });
-            expect(result.settings.extension_settings.sillybunny_conversation.automation).toEqual(store.automation);
+            expect(result.settings.extension_settings.neconyan_conversation.reminders[0]).toMatchObject({ fired: true, firedAt: 234 });
+            expect(result.settings.extension_settings.neconyan_conversation.automation).toEqual(store.automation);
         }
     });
 
@@ -179,7 +179,7 @@ describe('settings version guard', () => {
         const messages = [{ id: 'first', mes: 'First' }, { id: 'second', mes: 'Second' }];
         const original = { createdAt: 'same', messages, messageEditRevision: 3, messageContentHash: getConversationMessagesHash(messages) };
         const current = branchWrap(5, 1, original);
-        const branch = result => result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main;
+        const branch = result => result.settings.extension_settings.neconyan_conversation.characters['nova.png'].branches.main;
         const omitted = { createdAt: 'same', messageEditRevision: 3, messageContentHash: getConversationMessagesHash([]) };
         const removed = prepareSettingsSave(branchWrap(5, 1, omitted), current, { conversationOnly: true });
         expect(branch(removed).messageEditRevision).toBe(6);
@@ -190,11 +190,11 @@ describe('settings version guard', () => {
         expect(restored).toMatchObject({ version: 6, settingsRevision: 2 });
         expect(branch(restored).messageEditRevision).toBe(6);
         const deleted = canonicalCopy(current);
-        deleted.extension_settings.sillybunny_conversation.characters['nova.png'].branches = {};
+        deleted.extension_settings.neconyan_conversation.characters['nova.png'].branches = {};
         const deletion = prepareSettingsSave(deleted, current, { conversationOnly: true });
         const recreated = prepareSettingsSave(branchWrap(6, 1, { ...original, messages: [{ mes: 'Recreated' }] }), deletion.settings, { conversationOnly: true });
         expect(branch(recreated).messageEditRevision).toBe(7);
-        expect(current.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main).toEqual(original);
+        expect(current.extension_settings.neconyan_conversation.characters['nova.png'].branches.main).toEqual(original);
     });
 
     test('message revisions distinguish trusted retention from deletion and ignore forged counters', () => {
@@ -203,7 +203,7 @@ describe('settings version guard', () => {
         const current = branchWrap(5, 1, original);
         const retained = [...messages.slice(2), { id: '250', mes: 'Message 250' }, { id: '251', mes: 'Message 251' }];
         const incoming = branchWrap(5, 1, { ...original, messages: retained, messageEditRevision: 0, messageContentHash: 'forged' });
-        const branch = result => result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main;
+        const branch = result => result.settings.extension_settings.neconyan_conversation.characters['nova.png'].branches.main;
         const trusted = branch(prepareSettingsSave(incoming, current, { conversationOnly: true, trustedConversationAppend: true }));
         expect(trusted.messageEditRevision).toBe(3);
         expect(trusted.messageContentHash).toBe(getConversationMessagesHash(retained));
@@ -211,7 +211,7 @@ describe('settings version guard', () => {
         const metadata = branchWrap(5, 1, { ...original, preview: 'Only a preview', messageEditRevision: 99 });
         expect(branch(prepareSettingsSave(metadata, current, { conversationOnly: true })).messageEditRevision).toBe(3);
         const edited = canonicalCopy(current);
-        edited.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main.messages[0].mes = 'Raw file edit';
+        edited.extension_settings.neconyan_conversation.characters['nova.png'].branches.main.messages[0].mes = 'Raw file edit';
         expect(branch(prepareSettingsSave(incoming, edited, { trustedConversationEffects: true })).messageEditRevision).toBe(6);
         const replaced = branchWrap(5, 1, { ...original, createdAt: 2, messageEditRevision: 99 });
         expect(branch(prepareSettingsSave(replaced, current, { conversationOnly: true })).messageEditRevision).toBe(6);
@@ -234,7 +234,7 @@ describe('settings version guard', () => {
 
         const result = prepareSettingsSave(incoming, current);
         expect(result).toMatchObject({ ok: true, version: 8, settingsRevision: 2 });
-        expect(result.settings.extension_settings.sillybunny_conversation).toEqual(current.extension_settings.sillybunny_conversation);
+        expect(result.settings.extension_settings.neconyan_conversation).toEqual(current.extension_settings.neconyan_conversation);
         expect(result.settings._conversationOmitted).toBeUndefined();
     });
 
@@ -244,7 +244,7 @@ describe('settings version guard', () => {
 
         expect(prepareSettingsSave(incoming, current)).toMatchObject({ ok: false, currentVersion: 3, conversationConflict: true });
 
-        const untouched = prepareSettingsSave(branchWrap(3, 0, current.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main), current);
+        const untouched = prepareSettingsSave(branchWrap(3, 0, current.extension_settings.neconyan_conversation.characters['nova.png'].branches.main), current);
         expect(untouched).toMatchObject({ ok: true, version: 4 });
     });
 
@@ -255,31 +255,31 @@ describe('settings version guard', () => {
         const result = prepareSettingsSave(incoming, current);
         expect(result).toMatchObject({ ok: true, version: 10, settingsRevision: 5 });
         expect(result.settings.username).toBe('New');
-        expect(result.settings.extension_settings.sillybunny_conversation).toEqual(current.extension_settings.sillybunny_conversation);
+        expect(result.settings.extension_settings.neconyan_conversation).toEqual(current.extension_settings.neconyan_conversation);
 
         const mismatched = prepareSettingsSave({ ...incoming, _settingsRevision: 3 }, current);
         expect(mismatched).toEqual({ ok: false, currentVersion: 9 });
     });
 
     test('only native server effects may change Conversation completion receipts', () => {
-        const wrap = branch => ({ _version: 2, _settingsRevision: 0, extension_settings: { sillybunny_conversation: { characters: { 'nova.png': { branches: { main: branch } } } } } });
+        const wrap = branch => ({ _version: 2, _settingsRevision: 0, extension_settings: { neconyan_conversation: { characters: { 'nova.png': { branches: { main: branch } } } } } });
         const receipt = { createdAt: 123, messages: [], serverOperations: { completed: { effects: { first: 'saved' } } } };
         const forging = wrap({ createdAt: 123, messages: [], serverOperations: { forged: true } });
-        const branch = result => result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main;
+        const branch = result => result.settings.extension_settings.neconyan_conversation.characters['nova.png'].branches.main;
         expect(branch(prepareSettingsSave(forging, wrap(receipt), { conversationOnly: true })).serverOperations).toEqual(receipt.serverOperations);
         expect(branch(prepareSettingsSave(forging, wrap({ createdAt: 456, messages: [] }), { conversationOnly: true }))).not.toHaveProperty('serverOperations');
         expect(branch(prepareSettingsSave(forging, wrap(receipt), { trustedConversationEffects: true })).serverOperations).toEqual({ forged: true });
-        expect(forging.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main.serverOperations).toEqual({ forged: true });
+        expect(forging.extension_settings.neconyan_conversation.characters['nova.png'].branches.main.serverOperations).toEqual({ forged: true });
     });
 
     test('a general save that keeps Conversation unchanged does not conflict', () => {
         const current = branchWrap(3, 0, { createdAt: 1, messages: [{ id: 'server', mes: 'Saved reply' }], serverOperations: { job: {} } });
-        const incoming = { _version: 3, _settingsRevision: 0, username: 'New', extension_settings: { sillybunny_conversation: canonicalCopy(current.extension_settings.sillybunny_conversation) } };
+        const incoming = { _version: 3, _settingsRevision: 0, username: 'New', extension_settings: { neconyan_conversation: canonicalCopy(current.extension_settings.neconyan_conversation) } };
 
         const result = prepareSettingsSave(incoming, current);
         expect(result).toMatchObject({ ok: true, version: 4, settingsRevision: 1 });
         expect(result.settings.username).toBe('New');
-        expect(result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main.serverOperations).toEqual({ job: {} });
+        expect(result.settings.extension_settings.neconyan_conversation.characters['nova.png'].branches.main.serverOperations).toEqual({ job: {} });
     });
 
     test('only the server may consume or forge pending presentation claims', () => {
@@ -288,12 +288,12 @@ describe('settings version guard', () => {
         const forged = { createdAt: 123, messages: [{ id: 'server', mes: 'one' }], serverOperations: { job: {} }, pendingPresentations: { forged: true } };
 
         const result = prepareSettingsSave(branchWrap(5, 1, forged), current, { conversationOnly: true });
-        const branch = result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main;
+        const branch = result.settings.extension_settings.neconyan_conversation.characters['nova.png'].branches.main;
         expect(result).toMatchObject({ ok: true, version: 6 });
         expect(branch.pendingPresentations).toEqual({ server: { at: 1, narration: null } });
 
         const emptied = prepareSettingsSave(branchWrap(5, 1, { createdAt: 123, messages: [{ id: 'server', mes: 'one' }], serverOperations: { job: {} } }), current, { conversationOnly: true });
-        expect(emptied.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main.pendingPresentations).toEqual({ server: { at: 1, narration: null } });
+        expect(emptied.settings.extension_settings.neconyan_conversation.characters['nova.png'].branches.main.pendingPresentations).toEqual({ server: { at: 1, narration: null } });
     });
 
     /* eslint-disable playwright/no-standalone-expect -- Jest test.each callbacks are test bodies. */
@@ -309,7 +309,7 @@ describe('settings version guard', () => {
         if (action === 'edit') incoming.messages[1].mes = 'Edited';
         else incoming.messages.splice(1, 1);
         const result = prepareSettingsSave(branchWrap(1, 0, incoming), branchWrap(1, 0, original), { conversationOnly: true });
-        const branch = result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main;
+        const branch = result.settings.extension_settings.neconyan_conversation.characters['nova.png'].branches.main;
         expect(branch.readThrough).toBe('read');
         expect(branch.unread).toBe(action === 'edit' ? 2 : 1);
         expect(branch.pendingPresentations).toEqual({ b: { at: 2 } });
@@ -322,7 +322,7 @@ describe('settings version guard', () => {
         const edited = { createdAt: 123, messages: [{ id: 'server', mes: 'edited' }], serverOperations: { forged: true }, automationClaims: { forged: true } };
 
         const result = prepareSettingsSave(branchWrap(5, 1, edited), current, { conversationOnly: true });
-        const branch = result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main;
+        const branch = result.settings.extension_settings.neconyan_conversation.characters['nova.png'].branches.main;
         expect(result).toMatchObject({ ok: true, version: 6 });
         expect(branch.messages).toEqual([{ id: 'server', mes: 'edited' }]);
         expect(branch.serverOperations).toEqual(withReceipts.serverOperations);
@@ -331,11 +331,11 @@ describe('settings version guard', () => {
 
     test('an explicit Conversation save may delete a branch and its records', () => {
         const current = branchWrap(5, 1, { createdAt: 123, messages: [{ id: 'server' }], serverOperations: { job: {} } });
-        const emptied = { _version: 5, _settingsRevision: 1, extension_settings: { sillybunny_conversation: { characters: { 'nova.png': { branches: {} } } } } };
+        const emptied = { _version: 5, _settingsRevision: 1, extension_settings: { neconyan_conversation: { characters: { 'nova.png': { branches: {} } } } } };
 
         const result = prepareSettingsSave(emptied, current, { conversationOnly: true });
         expect(result).toMatchObject({ ok: true, version: 6 });
-        expect(result.settings.extension_settings.sillybunny_conversation.characters['nova.png'].branches).toEqual({});
+        expect(result.settings.extension_settings.neconyan_conversation.characters['nova.png'].branches).toEqual({});
     });
 
     test('a general save cannot wipe store-level receipts or bookkeeping', () => {
@@ -343,7 +343,7 @@ describe('settings version guard', () => {
             _version: 6,
             _settingsRevision: 1,
             extension_settings: {
-                sillybunny_conversation: {
+                neconyan_conversation: {
                     serverOperations: { effect: { at: 1 } },
                     groupAsideLastSent: { key: 5 },
                     runtimeStatusOverrides: { speaker: { status: 'offline' } },
@@ -354,11 +354,11 @@ describe('settings version guard', () => {
         const incoming = {
             _version: 6,
             _settingsRevision: 1,
-            extension_settings: { sillybunny_conversation: { characters: {}, serverOperations: { forged: true } } },
+            extension_settings: { neconyan_conversation: { characters: {}, serverOperations: { forged: true } } },
         };
 
         const result = prepareSettingsSave(incoming, current, { conversationOnly: true });
-        const conversation = result.settings.extension_settings.sillybunny_conversation;
+        const conversation = result.settings.extension_settings.neconyan_conversation;
         expect(result).toMatchObject({ ok: true, version: 7 });
         expect(conversation.serverOperations).toEqual({ effect: { at: 1 } });
         expect(conversation.groupAsideLastSent).toEqual({ key: 5 });
@@ -366,8 +366,8 @@ describe('settings version guard', () => {
     });
 
     test('a deleted last managed branch still blocks a destructive general save', () => {
-        const current = { _version: 4, _settingsRevision: 0, extension_settings: { sillybunny_conversation: { serverOperations: { effect: { at: 1 } }, characters: { 'nova.png': { branches: {} } } } } };
-        const incoming = { _version: 4, _settingsRevision: 0, extension_settings: { sillybunny_conversation: { characters: { 'nova.png': { branches: {} } } } } };
+        const current = { _version: 4, _settingsRevision: 0, extension_settings: { neconyan_conversation: { serverOperations: { effect: { at: 1 } }, characters: { 'nova.png': { branches: {} } } } } };
+        const incoming = { _version: 4, _settingsRevision: 0, extension_settings: { neconyan_conversation: { characters: { 'nova.png': { branches: {} } } } } };
 
         expect(prepareSettingsSave(incoming, current)).toMatchObject({ ok: false, currentVersion: 4, conversationConflict: true });
     });

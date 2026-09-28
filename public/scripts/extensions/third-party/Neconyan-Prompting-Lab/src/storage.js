@@ -1,4 +1,4 @@
-import { DB_NAME } from './constants.js';
+import { LEGACY_DB_NAME } from './constants.js';
 import { createPromptingStorage } from './storage-core.js';
 import { getLabClient } from '../../../../labs-client.js';
 
@@ -14,7 +14,7 @@ async function ready() {
     const owner = getCurrentUserHandle();
     if (!migrated.has(owner)) {
         const migration = (async () => {
-            const legacy = globalThis.localforage?.createInstance?.({ name: DB_NAME });
+            const legacy = globalThis.localforage?.createInstance?.({ name: LEGACY_DB_NAME });
             if (!legacy) throw new Error('The browser record store is not ready. Its records have been retained.');
             const ownershipKey = 'prompting-legacy-owner';
             const claimed = localStorage.getItem(ownershipKey);

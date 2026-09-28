@@ -588,7 +588,7 @@ async function moduleWorker({ newChat = false } = {}) {
 
         const force = !!context.groupId;
 
-        // SillyBunny divergence: the agent classifier is asynchronous. If it has not
+        // Neconyan divergence: the agent classifier is asynchronous. If it has not
         // produced a result yet, leave this message unprocessed
         // so the next poll retries instead of flickering to the fallback expression.
         if (usingAgent && !expression) {
@@ -602,7 +602,7 @@ async function moduleWorker({ newChat = false } = {}) {
         if (needsSprite && inSpriteGeneration) return;
         shouldUpdateLastMessage = await sendExpressionCall(spriteFolderName, expression, { force, vnMode, target });
 
-        // SillyBunny divergence: optionally generate missing sprites via Quick Image Gen.
+        // Neconyan divergence: optionally generate missing sprites via Quick Image Gen.
         // This runs after the expression is displayed so it never blocks the UI update.
         if (needsSprite && !inSpriteGeneration) {
             setExpressionGenerationBusy(true);
@@ -2096,7 +2096,7 @@ export async function getExpressionLabel(text, expressionsApi = extension_settin
                 const emotionResponse = await generateWebLlmChatPrompt(messages);
                 return parseLlmResponse(emotionResponse, expressionsList);
             }
-            // SillyBunny divergence: In-Chat Agent companion classifier.
+            // Neconyan divergence: In-Chat Agent companion classifier.
             // Reads the emotion the companion agent already classified for the latest
             // assistant reply instead of making a blocking API call here.
             case EXPRESSION_API.agent: {

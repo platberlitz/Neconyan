@@ -4,7 +4,7 @@ import { getQueuedChatSaveAbortReason } from '../public/scripts/chat-save-guard.
 describe('Issue #340 — Chat Cloning & Queued Save Lifecycle Guards', () => {
     describe('Bug mechanism (why unpatched code clones chats)', () => {
         test('unpatched dequeue has no generation guard and would allow stale saves to proceed', () => {
-            // In unpatched SillyBunny, getDebouncedChatSaveAbortReason only guarded the debounce timer.
+            // In unpatched Neconyan, getDebouncedChatSaveAbortReason only guarded the debounce timer.
             // Once a save entered chatSaveQueue, saveChatImmediately had NO guard for generation or entity drift.
             const scheduledState = {
                 generation: 1,

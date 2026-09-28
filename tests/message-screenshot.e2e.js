@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
-const APP_URL = process.env.NECONYAN_TEST_BASE_URL || process.env.SILLYBUNNY_TEST_BASE_URL || '/';
+const APP_URL = process.env.NECONYAN_TEST_BASE_URL || '/';
 
 async function dismissOnboardingIfPresent(page) {
     const onboardingDialog = page.locator('dialog[open]:has(.onboarding)').first();

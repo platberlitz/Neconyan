@@ -185,7 +185,7 @@ describe('calculateClaudeBudgetTokens', () => {
 
         test('max returns "max"', () => expect(mod.calculateClaudeBudgetTokens(8192, 'max', true, true)).toBe('max'));
 
-        // SillyBunny: every adaptive model gets the picked rung, so one that rejects it errors
+        // Neconyan: every adaptive model gets the picked rung, so one that rejects it errors
         // instead of quietly dropping to a shallower one.
         test('xhigh returns "xhigh"', () => expect(mod.calculateClaudeBudgetTokens(8192, 'xhigh', true, true)).toBe('xhigh'));
 

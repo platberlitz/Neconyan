@@ -84,29 +84,18 @@ function hasUsableBash() {
 const describeShell = hasUsableBash() ? describe : describe.skip;
 
 /** Runs run_server with a stubbed runtime; returns the argv it would have used. */
-function runServer({ runtimeKind = 'bun', smol, canonicalSmol, args = [] } = {}) {
+function runServer({ runtimeKind = 'bun', smol, args = [] } = {}) {
     const env = { ...process.env, TEST_RUNTIME_KIND: runtimeKind };
-    delete env.NECONYAN_BUN_SMOL;
-    if (canonicalSmol !== undefined) env.NECONYAN_BUN_SMOL = canonicalSmol;
     if (smol === undefined) {
-        delete env.SILLYBUNNY_BUN_SMOL;
+        delete env.NECONYAN_BUN_SMOL;
     } else {
-        env.SILLYBUNNY_BUN_SMOL = smol;
+        env.NECONYAN_BUN_SMOL = smol;
     }
     return execFileSync('bash', [harnessPath, ...args], { env, encoding: 'utf8' }).trim();
 }
 
 describeShell('start.sh run_server --smol gating', () => {
-    test('prefers canonical flags and exports the same decision to old child processes', () => {
-        expect(runServer({ canonicalSmol: '0', smol: '1' })).toBe('server.js');
-        expect(runServer({ canonicalSmol: '1', smol: '0' })).toBe('--smol server.js');
-        const normalization = startShSource.split('\n').filter(line => /^export (?:NECONYAN|SILLYBUNNY)_/.test(line) && !line.includes('LAUNCHER')).join('\n');
-        const env = { ...process.env, NECONYAN_BUN_SMOL: '0', SILLYBUNNY_BUN_SMOL: '1', NECONYAN_AUTO_UPDATE: '0', SILLYBUNNY_AUTO_UPDATE: '1' };
-        const result = execFileSync('bash', ['-c', `${normalization}\nprintf '%s ' "$NECONYAN_BUN_SMOL" "$SILLYBUNNY_BUN_SMOL" "$NECONYAN_AUTO_UPDATE" "$SILLYBUNNY_AUTO_UPDATE"`], { env, encoding: 'utf8' });
-        expect(result.trim()).toBe('0 0 0 0');
-    });
-
-    test('Docker runs the same Bun arguments with canonical, legacy and conflicting options', () => {
+    test('Docker runs the same Bun arguments as start.sh', () => {
         mkdirSync(path.join(harnessDir, 'config'), { recursive: true });
         writeFileSync(path.join(harnessDir, 'config/config.yaml'), '');
         writeFileSync(path.join(harnessDir, 'bun'), '#!/bin/sh\nprintf "%s\\n" "$*"\n', { mode: 0o755 });
@@ -116,14 +105,14 @@ describeShell('start.sh run_server --smol gating', () => {
             extractShellFunction(dockerEntrypointSource, 'start_neconyan'),
             'start_neconyan "" "$@"',
         ].join('\n'));
-        for (const [canonical, legacy, expected] of [
-            ['1', '0', '--smol server.js --listen --port 9000'],
-            ['0', '1', 'server.js --listen --port 9000'],
-            [undefined, '1', '--smol server.js --listen --port 9000'],
+        for (const [smol, expected] of [
+            ['1', '--smol server.js --listen --port 9000'],
+            ['0', 'server.js --listen --port 9000'],
+            [undefined, 'server.js --listen --port 9000'],
         ]) {
-            const env = { ...process.env, PATH: harnessDir + path.delimiter + process.env.PATH, SILLYBUNNY_BUN_SMOL: legacy };
+            const env = { ...process.env, PATH: harnessDir + path.delimiter + process.env.PATH };
             delete env.NECONYAN_BUN_SMOL;
-            if (canonical !== undefined) env.NECONYAN_BUN_SMOL = canonical;
+            if (smol !== undefined) env.NECONYAN_BUN_SMOL = smol;
             const output = execFileSync('bash', [dockerHarness, '--port', '9000'], { cwd: harnessDir, env, encoding: 'utf8' });
             expect(output.trim().split('\n').at(-1)).toBe(expected);
         }
@@ -133,7 +122,7 @@ describeShell('start.sh run_server --smol gating', () => {
         expect(runServer()).toBe('server.js');
     });
 
-    test('adds --smol when SILLYBUNNY_BUN_SMOL is truthy', () => {
+    test('adds --smol when NECONYAN_BUN_SMOL is truthy', () => {
         for (const value of ['1', 'true', 'yes', 'on', 'TRUE', 'On']) {
             expect(runServer({ smol: value })).toBe('--smol server.js');
         }
@@ -163,7 +152,7 @@ describeShell('start.sh run_server --smol gating', () => {
 // silently drops the flag.
 describe('launcher parity', () => {
     test('start.sh warns when the flag is set but Node.js was selected', () => {
-        expect(startShSource).toMatch(/is_truthy "\$\{NECONYAN_BUN_SMOL:-\$\{SILLYBUNNY_BUN_SMOL:-\}\}" && \[\[ "\$runtime_kind" == node \]\]/);
+        expect(startShSource).toMatch(/is_truthy "\$\{NECONYAN_BUN_SMOL:-\}" && \[\[ "\$runtime_kind" == node \]\]/);
     });
 
     test('Start.bat accepts the same spellings as is_truthy', () => {
@@ -228,7 +217,7 @@ describe('launcher parity', () => {
     test('the Docker entrypoint gates --smol on the same accepted values', () => {
         expect(dockerEntrypointSource).toMatch(/^\s*1\|true\|yes\|on\)/m);
         expect(startShSource).toMatch(/^\s*1\|true\|yes\|on\)/m);
-        expect(dockerEntrypointSource).toMatch(/is_truthy "\$\{NECONYAN_BUN_SMOL:-\$\{SILLYBUNNY_BUN_SMOL:-\}\}"/);
+        expect(dockerEntrypointSource).toMatch(/is_truthy "\$\{NECONYAN_BUN_SMOL:-\}"/);
         expect(dockerEntrypointSource).toMatch(/exec \$PREFIX bun --smol server\.js --listen "\$@"/);
     });
 

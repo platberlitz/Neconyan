@@ -427,7 +427,7 @@ describe('Agent setup apply and recovery', () => {
     test('a later import failure rolls back earlier copies and a retry installs exactly one linked set', async () => {
         const runtime = await storeRuntime();
         const globals = structuredClone(runtime.store.getGlobalSettings());
-        const pack = { format: 'sillybunny-inchat-agents', version: 1, agents: [
+        const pack = { format: 'neconyan-inchat-agents', version: 1, agents: [
             { id: 'tpl-first', name: 'Imported first', prompt: 'first', enabled: true, companion: { dependencies: ['second'] } },
             { id: 'second', name: 'Imported second', prompt: 'second', enabled: true, companion: { contextRecipientAgentIds: ['tpl-first'] } },
         ] };
@@ -486,7 +486,7 @@ describe('Agent setup apply and recovery', () => {
         ])).rejects.toThrow('Kit write failed');
         expect([...runtime.agents.values()]).toEqual(runtime.initial);
         const writes = runtime.writes.length;
-        await expect(runtime.store.importAgents({ format: 'sillybunny-inchat-agents', agents: [{ id: 'same' }, { id: 'same' }] })).rejects.toThrow('repeats agent identifier');
+        await expect(runtime.store.importAgents({ format: 'neconyan-inchat-agents', agents: [{ id: 'same' }, { id: 'same' }] })).rejects.toThrow('repeats agent identifier');
         expect(runtime.writes).toHaveLength(writes);
         expect(runtime.presets.size).toBe(0);
     });

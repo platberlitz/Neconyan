@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { EMBED_KEY, EMBED_VERSION } from '../../public/scripts/extensions/third-party/Neconyan-Prompting-Lab/src/constants.js';
+import { EMBED_KEY, EMBED_VERSION, LEGACY_EMBED_KEY } from '../../public/scripts/extensions/third-party/Neconyan-Prompting-Lab/src/constants.js';
 import { adoptEmbeddedCases, readEmbeddedValue, stripForEmbedding } from '../../public/scripts/extensions/third-party/Neconyan-Prompting-Lab/src/embed.js';
 import { readRoleplayFile, roleplayHash, roleplayLease, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
 import { readRoleplayEntityLocked } from '../generation/roleplay-source.js';
@@ -23,7 +23,8 @@ export async function capturePromptingEmbed(base, account, input) {
         if (entity.changed) saveRoleplayAccount(lease);
         return entity;
     });
-    const stored = source.data.data?.extensions?.[EMBED_KEY] ?? source.data.extensions?.[EMBED_KEY];
+    const stored = source.data.data?.extensions?.[EMBED_KEY] ?? source.data.extensions?.[EMBED_KEY]
+        ?? source.data.data?.extensions?.[LEGACY_EMBED_KEY] ?? source.data.extensions?.[LEGACY_EMBED_KEY];
     if (Number(stored?.v) > EMBED_VERSION) throw labError('The character carries newer Prompting Lab data.');
     if (input.operation === 'adopt') return { operation: 'adopt', revision: database.revision, suite,
         cases: adoptEmbeddedCases(readEmbeddedValue(stored), input.avatar, { safetyProblem: () => null }) };
@@ -69,6 +70,7 @@ export function runPromptingEmbedApply(context, plan, { afterCardPublication } =
             card.data ??= {};
             card.data.extensions ??= {};
             card.data.extensions[EMBED_KEY] = plan.payload;
+            delete card.data.extensions[LEGACY_EMBED_KEY];
             const original = readRoleplayFile(path.join(scope.directories.characters, plan.avatar), 64 * 1024 * 1024);
             bytes = writeCard(original.bytes, JSON.stringify(card));
             const rawHash = bytesHash(bytes);

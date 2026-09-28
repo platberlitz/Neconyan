@@ -617,7 +617,7 @@ export function getCookieSessionName() {
     // Get server hostname and hash it to generate a session suffix
     const hostname = os.hostname() || 'localhost';
     const suffix = crypto.createHash('sha256').update(hostname).digest('hex').slice(0, 8);
-    return `session-sillybunny-${suffix}`;
+    return `session-neconyan-${suffix}`;
 }
 
 export function getSessionCookieAge() {

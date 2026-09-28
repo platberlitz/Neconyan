@@ -79,7 +79,7 @@ describe('thumbnail file name resolution', () => {
 
     beforeEach(() => {
         global.fetch = fetchWithFileSupport;
-        tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-thumbnails-'));
+        tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-thumbnails-'));
         directories = {
             root: tempRoot,
             avatars: path.join(tempRoot, 'User Avatars'),

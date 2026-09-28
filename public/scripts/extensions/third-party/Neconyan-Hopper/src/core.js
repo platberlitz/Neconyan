@@ -1,7 +1,7 @@
 // Pure logic: no host calls, no DOM. Everything here is unit-testable with plain objects.
 
-export const SETTINGS_KEY = 'SillyBunny-TwitterLike';
-export const EXT_PROMPT_KEY = 'SillyBunny-TwitterLike';
+export const SETTINGS_KEY = 'Neconyan-TwitterLike';
+export const EXT_PROMPT_KEY = 'Neconyan-TwitterLike';
 export const BODY_CLASS = 'sbtw';
 
 export const KIND_PERSONA = 'persona';

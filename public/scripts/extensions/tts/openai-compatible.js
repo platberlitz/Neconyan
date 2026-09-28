@@ -4,7 +4,7 @@ import { getPreviewString, saveTtsProviderSettings } from './index.js';
 
 export { OpenAICompatibleTtsProvider };
 
-// SillyBunny: expose OpenAI-compatible response formats instead of forcing MP3.
+// Neconyan: expose OpenAI-compatible response formats instead of forcing MP3.
 const OPENAI_COMPATIBLE_TTS_RESPONSE_FORMATS = [
     { value: 'wav', label: 'WAV' },
     { value: 'mp3', label: 'MP3' },

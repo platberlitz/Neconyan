@@ -108,12 +108,12 @@ test('caption dispatch accepts saved settings bookkeeping and subsequent bookkee
         settings._version = 1;
         settings._settingsRevision = 'saved-revision';
         settings.accountStorage = { welcome: true };
-        settings.extension_settings.sillybunny_conversation = { enabled: true };
+        settings.extension_settings.neconyan_conversation = { enabled: true };
     } });
     f.settings._version = 2;
     f.settings._settingsRevision = 'next-revision';
     f.settings.accountStorage.welcome = false;
-    f.settings.extension_settings.sillybunny_conversation.enabled = false;
+    f.settings.extension_settings.neconyan_conversation.enabled = false;
     fs.writeFileSync(f.settingsFile, JSON.stringify(f.settings));
     let calls = 0;
     await f.run({ localCaption: async () => { calls++; return 'a ruby'; } });

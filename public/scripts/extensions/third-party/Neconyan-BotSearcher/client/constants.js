@@ -20,7 +20,7 @@ export const PLUGIN_BASE = `/api/plugins/${PLUGIN_ID}`;
 export const EXTENSION_PATH = `third-party/${EXTENSION_NAME}`;
 
 /** Key under context.extensionSettings. */
-export const SETTINGS_KEY = 'SillyBunnyBotSearcher';
+export const SETTINGS_KEY = 'NeconyanBotSearcher';
 
 /** DOM ids we own. Unique so the extensions-drawer deduper cannot mistake them for someone else's. */
 export const DOM_IDS = Object.freeze({

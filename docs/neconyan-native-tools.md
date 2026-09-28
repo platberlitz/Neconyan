@@ -28,7 +28,7 @@ These are the source revisions used for the native integration. Neconyan adds lo
 
 | Tool | Version | Author | Licence metadata | Source revision |
 | --- | --- | --- | --- | --- |
-| Preset Tools | 1.5.4 | SillyBunny | Not declared in source metadata | [5a6d0733](https://github.com/SillyBunnyTeam/SillyBunny/tree/5a6d0733fddbfde6dc55b9e81d804d824b7a61ba) |
+| Preset Tools | 1.5.4 | Neconyan | Not declared in source metadata | [5a6d0733](https://github.com/SillyBunnyTeam/SillyBunny/tree/5a6d0733fddbfde6dc55b9e81d804d824b7a61ba) |
 | Chat Completion Tabs | 1.0.0 | Rivelle | Not declared in source metadata | [5a6d0733](https://github.com/SillyBunnyTeam/SillyBunny/tree/5a6d0733fddbfde6dc55b9e81d804d824b7a61ba) |
 | Dialogue Colors | 6.1.3 | platberlitz | Not declared in source metadata | [5af56565](https://github.com/platberlitz/sillytavern-character-colors/tree/5af565658bc223a74e99d025670db6835dd83682) |
 | Termeownal UI | 2.4.0 | platberlitz | AGPL-3.0 | [16d1540c](https://github.com/SillyBunnyTeam/SillyBunny-Terminal-UI/tree/16d1540c6b88d97a9519725d89b04e1f7164bd1a) |
@@ -36,8 +36,8 @@ These are the source revisions used for the native integration. Neconyan adds lo
 | Prompt Tags | 1.0.0 | platberlitz | MIT | [20a0ef20](https://github.com/platberlitz/SillyBunny-PromptTags/tree/20a0ef20c4ed9d2c81a5e4a893501462a6f39183) |
 | Regex Agent Themes | 1.0.1 | platberlitz | AGPL-3.0 | [3c8e708f](https://github.com/SillyBunnyTeam/SillyBunny-Regex-Agent-Themes/tree/3c8e708f8c86e77a92f23526c738e87c82df98c9) |
 | Macro Enhanced | 0.3.0 | platberlitz | Not declared in source metadata | [1b56c631](https://github.com/SillyBunnyTeam/SillyBunny-MacroEnhanced/tree/1b56c631a1d3f5f2c3548f0189f7f72a299c4f68) |
-| World Info Lab | 0.3.0 | SillyBunnyTeam | AGPL-3.0 | [dd71ab5f](https://github.com/SillyBunnyTeam/SillyBunny-WorldInfo-Lab/tree/dd71ab5fdc5aabb56ad88e0a836c52f7f9a5c3eb) |
-| Prompting Lab | 0.3.0 | SillyBunnyTeam | AGPL-3.0 | [a2754760](https://github.com/SillyBunnyTeam/SillyBunny-Prompting-Lab/tree/a27547601af7fe2b07f77af6ddea72c89062f47f) |
+| World Info Lab | 0.3.0 | NeconyanTeam | AGPL-3.0 | [dd71ab5f](https://github.com/SillyBunnyTeam/SillyBunny-WorldInfo-Lab/tree/dd71ab5fdc5aabb56ad88e0a836c52f7f9a5c3eb) |
+| Prompting Lab | 0.3.0 | NeconyanTeam | AGPL-3.0 | [a2754760](https://github.com/SillyBunnyTeam/SillyBunny-Prompting-Lab/tree/a27547601af7fe2b07f77af6ddea72c89062f47f) |
 | Debugger | 0.1.1 | platberlitz | Not declared in source metadata | [e85bc651](https://github.com/platberlitz/SillyBunny-Debugger/tree/e85bc651d2ef5e061943e8292884a0f6c12509ae) |
 | Chat Archive | 0.4.0 | platberlitz | AGPL-3.0 | [a1d0fa75](https://github.com/platberlitz/SillyBunny-Chats-Archive/tree/a1d0fa757f64ff9cebeda63c6539ae7c6c89e27d) |
 | Lorebook Distiller | 0.1.0 | platberlitz | AGPL-3.0 | [237ea54d](https://github.com/platberlitz/SillyBunny-Lorebook-Distiller/tree/237ea54d6f94e731d4b918f9c445e1b78fa2dcf6) |

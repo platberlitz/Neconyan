@@ -30,7 +30,7 @@ test('a group created in the library opens and saves its first chat', async ({ p
     let headers;
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => window.SillyBunnyShell && !document.getElementById('preloader'));
+    await page.waitForFunction(() => window.NeconyanShell && !document.getElementById('preloader'));
     headers = await page.evaluate(async () => (await import('/script.js')).getRequestHeaders());
     await page.getByRole('button', { name: 'Characters', exact: true }).click();
     await page.getByRole('button', { name: 'Create character', exact: true }).click();

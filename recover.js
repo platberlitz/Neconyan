@@ -6,7 +6,7 @@ const userPassword = process.argv[3];
 const configPath = './config.yaml';
 
 if (!userAccount) {
-    console.error('A tool for recovering lost SillyBunny accounts. Uses a "dataRoot" setting from config.yaml file.');
+    console.error('A tool for recovering lost Neconyan accounts. Uses a "dataRoot" setting from config.yaml file.');
     console.error('Usage: bun recover.js [account] (password)');
     console.error('Example: bun recover.js admin password');
     process.exit(1);

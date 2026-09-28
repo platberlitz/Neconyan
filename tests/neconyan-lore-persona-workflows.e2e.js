@@ -22,7 +22,7 @@ async function appApi(page, route, body = {}) {
 }
 
 async function openWorkspace(page, tab) {
-    await page.evaluate(target => window.SillyBunnyShell.openTab('characters', target), tab);
+    await page.evaluate(target => window.NeconyanShell.openTab('characters', target), tab);
     await expect(page.locator('#right-nav-panel')).toHaveAttribute('data-menu-type', tab);
 }
 
@@ -293,7 +293,7 @@ test('Lorebooks and Personas preserve edits, controls, and narrow layouts', asyn
 
     for (const width of [1280, 390]) {
         await page.setViewportSize({ width, height: 844 });
-        await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'settings'));
+        await page.evaluate(() => window.NeconyanShell.openTab('right', 'settings'));
         const shell = page.locator('.sb-shell-root-right.openDrawer');
         await expect(shell).toBeVisible();
         const header = await shell.locator('.sb-shell-header').boundingBox();

@@ -15,7 +15,7 @@ import { getServerPluginReleaseDigest, SERVER_PLUGIN_RELEASE_MARKER } from '../s
 const tempDirectories = [];
 
 function createFixture({ preservePaths = ['.cursor-key'] } = {}) {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-server-plugin-helper-'));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-server-plugin-helper-'));
     tempDirectories.push(root);
     const pluginsRoot = path.join(root, 'plugins');
     const pluginPath = path.join(pluginsRoot, 'ExamplePlugin');
@@ -33,7 +33,7 @@ function createFixture({ preservePaths = ['.cursor-key'] } = {}) {
     fs.writeFileSync(path.join(releaseRoot, 'package.json'), JSON.stringify({
         name: 'example-server-plugin',
         version: '2.0.0',
-        sillybunny: {
+        neconyan: {
             serverPlugin: {
                 id: 'example-server-plugin',
                 preservePaths,

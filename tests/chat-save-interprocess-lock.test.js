@@ -18,7 +18,7 @@ afterEach(() => {
 
 describe('chat save interprocess lock', () => {
     test.each(['legacy', 'native-first', 'native-second'])('keeps the lock through a complete save and rejects the stale process (%s)', async mode => {
-        tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-chat-process-lock-'));
+        tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-chat-process-lock-'));
         const chatDirectory = path.join(tempRoot, 'chats');
         const backupDirectory = path.join(tempRoot, 'backups');
         const chatFile = path.join(chatDirectory, 'chat.jsonl');

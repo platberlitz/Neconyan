@@ -14,7 +14,7 @@ const require = createRequire(import.meta.url);
 const lockfile = require('proper-lockfile');
 
 export const SERVER_PLUGIN_UPDATE_API_VERSION = 1;
-export const SERVER_PLUGIN_RELEASE_MARKER = '.sillybunny-release.json';
+export const SERVER_PLUGIN_RELEASE_MARKER = '.neconyan-release.json';
 export const SERVER_PLUGIN_UPDATE_DIRECTORY = '.server-plugin-updates';
 export const SERVER_PLUGIN_BACKUP_DIRECTORY = '.server-plugin-backups';
 export const SERVER_PLUGIN_UPDATE_MUTEX = '.transaction-mutex';
@@ -24,7 +24,7 @@ const DIRECTORY_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const PLUGIN_ID_PATTERN = /^[a-z0-9_-]+$/;
 
 export function getServerPluginMetadata(packageJson) {
-    return packageJson?.neconyan?.serverPlugin ?? packageJson?.sillybunny?.serverPlugin ?? null;
+    return packageJson?.neconyan?.serverPlugin ?? null;
 }
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const MAX_COMMAND_OUTPUT = 32 * 1024;
@@ -630,7 +630,7 @@ function validateTargetPackage(installed, targetPackage, targetVersion, releaseR
 
     const pluginId = String(getServerPluginMetadata(targetPackage)?.id ?? '').trim();
     if (!PLUGIN_ID_PATTERN.test(pluginId)) {
-        fail(422, 'invalid_package', 'Release package.json must declare a valid sillybunny.serverPlugin.id.');
+        fail(422, 'invalid_package', 'Release package.json must declare a valid neconyan.serverPlugin.id.');
     }
 
     const lockPath = path.join(releaseRoot, 'package-lock.json');
@@ -673,7 +673,7 @@ export async function stageServerPluginRelease({
     runCommand = runServerPluginCommand,
     allowFileRepositories = false,
     platform = process.platform,
-    lockOwnerPid = (process.env.NECONYAN_SUPERVISED ?? process.env.SILLYBUNNY_SUPERVISED) === '1' ? process.ppid : process.pid,
+    lockOwnerPid = process.env.NECONYAN_SUPERVISED === '1' ? process.ppid : process.pid,
 } = {}) {
     const version = String(targetVersion ?? '').trim();
     const pluginDirectoryName = String(directoryName ?? '').trim();

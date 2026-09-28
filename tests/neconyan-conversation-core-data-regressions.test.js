@@ -105,7 +105,7 @@ describe('Conversation core persisted data regressions', () => {
             branches: { main: { id: 'main', messages: [{ id: 'group-message' }], updatedAt: 20 } },
             settings: {},
         };
-        extensionSettings.sillybunny_conversation = createStore({
+        extensionSettings.neconyan_conversation = createStore({
             groups: [group],
             characters: {
                 'persona:persona-a.png:disabled.png': {
@@ -135,7 +135,7 @@ describe('Conversation core persisted data regressions', () => {
             disabled_members: ['disabled.png'],
             conversation_settings: {},
         };
-        extensionSettings.sillybunny_conversation = createStore({ groups: [group] });
+        extensionSettings.neconyan_conversation = createStore({ groups: [group] });
 
         expect(getConversationGroupThreadAnchor(group, { personaId: 'persona-a.png' })).toMatchObject({
             avatar: 'enabled.png',
@@ -167,7 +167,7 @@ describe('Conversation core persisted data regressions', () => {
             },
             settings: {},
         });
-        extensionSettings.sillybunny_conversation = createStore({
+        extensionSettings.neconyan_conversation = createStore({
             groups: [group],
             characters: {
                 'persona:persona-a.png:group:group-a:disabled.png': makeThread('from-disabled', 2, 10),
@@ -202,7 +202,7 @@ describe('Conversation core persisted data regressions', () => {
             memoryUpdatedAt: 123,
             settings: {},
         };
-        extensionSettings.sillybunny_conversation = createStore({
+        extensionSettings.neconyan_conversation = createStore({
             characters: { 'persona:persona-a.png:char.png': threadStore },
         });
 
@@ -223,7 +223,7 @@ describe('Conversation core persisted data regressions', () => {
             },
             settings: {},
         };
-        extensionSettings.sillybunny_conversation = createStore({
+        extensionSettings.neconyan_conversation = createStore({
             characters: { 'persona:persona-a.png:char.png': threadStore },
         });
 

@@ -15,7 +15,7 @@ import { getEnabledThirdPartyExtensions } from '../public/scripts/extensions/nec
 
 const extensionRoot = new URL('../public/scripts/extensions/neconyan-debugger/', import.meta.url);
 
-describe('SillyBunny Debugger', () => {
+describe('Neconyan Debugger', () => {
     test('bounds capture without inspecting application objects', () => {
         const ring = createRing(3);
         for (let value = 1; value <= 5; value += 1) ring.push(value);
@@ -215,7 +215,7 @@ describe('SillyBunny Debugger', () => {
         const bundle = await readFile(new URL('lib/eruda.js', extensionRoot));
         const hash = createHash('sha256').update(bundle).digest('hex');
 
-        expect(hash).toBe('caff41e30297b7893be28c5365cc2e74152644becf91ebd9aaead454498bc00f');
+        expect(hash).toBe('4dbf7cee811ab79fc0926e3b5fee5d121826c128eb21f13e32e2002db7194469');
         await expect(import('../public/scripts/extensions/neconyan-debugger/index.js')).resolves.toBeDefined();
     });
 });

@@ -2023,7 +2023,7 @@ function isContextUnlockConfigurable(source = oai_settings.chat_completion_sourc
 }
 
 function isMaxContextUnlockedForSource(settings = oai_settings) {
-    // SillyBunny keeps most OpenAI-compatible sources unlocked; expose model limits only where users requested them.
+    // Neconyan keeps most OpenAI-compatible sources unlocked; expose model limits only where users requested them.
     return !isContextUnlockConfigurable(settings.chat_completion_source) || !!settings.max_context_unlocked;
 }
 

@@ -15,7 +15,7 @@ import {
 const tempDirectories = [];
 
 function createUserRoot() {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-last-chat-'));
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-last-chat-'));
     tempDirectories.push(directory);
     return directory;
 }

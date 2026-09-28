@@ -10,7 +10,7 @@ export function escapeRegex(string) {
     return String(string ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// SillyBunny: filter action blocks before quote extraction so quoted actions remain excluded from dialogue-only narration.
+// Neconyan: filter action blocks before quote extraction so quoted actions remain excluded from dialogue-only narration.
 export function filterTtsAsterisks(text, { narrateDialoguesOnly = false, passAsterisks = false } = {}) {
     if (passAsterisks) {
         return text;
@@ -21,7 +21,7 @@ export function filterTtsAsterisks(text, { narrateDialoguesOnly = false, passAst
         : text.replaceAll('*', '').trim();
 }
 
-// SillyBunny: discard semantic blocks before quote extraction without dropping dialogue wrapped in presentation tags.
+// Neconyan: discard semantic blocks before quote extraction without dropping dialogue wrapped in presentation tags.
 export function stripTtsTaggedBlocks(text, { preserveFormatting = false } = {}) {
     const formattingTags = new Set([
         'b', 'big', 'em', 'font', 'i', 'mark', 's', 'small', 'span', 'strike', 'strong', 'sub', 'sup', 'u',
@@ -235,7 +235,7 @@ export function prepareTtsNarrationText(text, tts = {}, {
         passAsterisks: tts.pass_asterisks,
     });
 
-    // SillyBunny: Strip tag markup before quote extraction so wrappers preserve dialogue without narrating attributes.
+    // Neconyan: Strip tag markup before quote extraction so wrappers preserve dialogue without narrating attributes.
     if (tts.narrate_quoted_only) {
         if (tts.skip_tags) {
             result = stripTtsTaggedBlocks(result, { preserveFormatting: true });

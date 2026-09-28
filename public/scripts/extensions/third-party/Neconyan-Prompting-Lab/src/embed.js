@@ -1,4 +1,6 @@
-import { EMBED_KEY, EMBED_VERSION } from './constants.js';
+import { EMBED_KEY, EMBED_VERSION, LEGACY_EMBED_KEY } from './constants.js';
+
+const embeddedTests = extensions => extensions?.[EMBED_KEY] ?? extensions?.[LEGACY_EMBED_KEY];
 import { ctxOf, getContext } from './host.js';
 import { migrateCase, newId, normalizeCase, validateAssertion } from './schema.js';
 
@@ -26,7 +28,7 @@ export function readEmbeddedCases(hostRef, avatar) {
     if (index < 0) {
         return [];
     }
-    return readEmbeddedValue(context?.characters?.[index]?.data?.extensions?.[EMBED_KEY]);
+    return readEmbeddedValue(embeddedTests(context?.characters?.[index]?.data?.extensions));
 }
 
 export function readEmbeddedValue(stored) {
@@ -103,7 +105,7 @@ export function findCharactersWithTests(hostRef = getContext) {
     const context = ctxOf(hostRef);
     const found = [];
     for (const character of context?.characters ?? []) {
-        const stored = character?.data?.extensions?.[EMBED_KEY];
+        const stored = embeddedTests(character?.data?.extensions);
         const count = Array.isArray(stored?.cases) ? stored.cases.length : 0;
         if (count) {
             found.push({

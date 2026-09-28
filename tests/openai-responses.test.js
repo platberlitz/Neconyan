@@ -64,7 +64,7 @@ describe('OpenAI Responses integration', () => {
 
         upstream = new MockServer({ port: 3001, host: '127.0.0.1' });
         await upstream.start();
-        const userRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-openai-responses-'));
+        const userRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-openai-responses-'));
         tempDirs.push(userRoot);
         userDirectories = {
             root: userRoot,

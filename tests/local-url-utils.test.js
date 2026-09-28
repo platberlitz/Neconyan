@@ -10,7 +10,7 @@ describe('isLikelyLocalServerUrl', () => {
         ['http://10.0.0.2:5000/v1'],
         ['http://192.168.1.20:5000/v1'],
         ['http://172.20.0.2:5000/v1'],
-        ['http://sillybunny.local:5000/v1'],
+        ['http://neconyan.local:5000/v1'],
     ];
 
     for (const [serverUrl] of localServerUrls) {

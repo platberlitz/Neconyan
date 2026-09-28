@@ -782,6 +782,12 @@ function getAgentTemplateName(value) {
     return String(value ?? '').trim().toLowerCase();
 }
 
+// Bundled agents saved before the rename carry the old credit until the credit migration rewrites them.
+function getBundledAgentAuthor(value) {
+    const author = String(value ?? '').trim().toLowerCase();
+    return author === 'sillybunny' ? 'neconyan' : author;
+}
+
 function isLikelyBundledAgentTemplateMatch(agent, template) {
     const agentName = getAgentTemplateName(agent?.name);
     const templateName = getAgentTemplateName(template?.name);
@@ -789,8 +795,8 @@ function isLikelyBundledAgentTemplateMatch(agent, template) {
         return false;
     }
 
-    const agentAuthor = String(agent?.author ?? '').trim().toLowerCase();
-    const templateAuthor = String(template?.author ?? '').trim().toLowerCase();
+    const agentAuthor = getBundledAgentAuthor(agent?.author);
+    const templateAuthor = getBundledAgentAuthor(template?.author);
     if (!agentAuthor || !templateAuthor || agentAuthor !== templateAuthor) {
         return false;
     }
@@ -841,12 +847,12 @@ export function isBundledPathfinderAgentSnapshot(agent, templates = []) {
 
     const agentName = String(agent?.name ?? '').trim().toLowerCase();
     const agentPrompt = String(agent?.prompt ?? '').trim();
-    const agentAuthor = String(agent?.author ?? '').trim().toLowerCase();
+    const agentAuthor = getBundledAgentAuthor(agent?.author);
     const category = normalizeAgentCategory(agent?.category, agent?.sourceTemplateId, agent?.name);
     return agentName === 'pathfinder' &&
         category === 'tool' &&
         agentPrompt === '' &&
-        (agentAuthor === 'sillybunny' || hasPathfinderToolMetadata(agent));
+        (agentAuthor === 'neconyan' || hasPathfinderToolMetadata(agent));
 }
 
 function cloneSettings(settings = {}) {
@@ -2150,7 +2156,8 @@ export async function importAgents(data) {
         throw new Error('Unrecognized agent format');
     }
 
-    if (data.format === 'sillybunny-inchat-agents' && Array.isArray(data.agents)) {
+    // Packs exported before the rename used the old format name.
+    if (['neconyan-inchat-agents', 'sillybunny-inchat-agents'].includes(data.format) && Array.isArray(data.agents)) {
         if (data.version !== undefined && Number(data.version) !== 1) {
             throw new Error(`Unsupported agent pack version: ${String(data.version)}`);
         }
@@ -2244,7 +2251,7 @@ export async function installAgentGroup(group, snapshots) {
  */
 export function exportAllAgents() {
     return {
-        format: 'sillybunny-inchat-agents',
+        format: 'neconyan-inchat-agents',
         version: 1,
         agents,
     };

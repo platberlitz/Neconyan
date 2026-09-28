@@ -63,7 +63,7 @@ export function normalizeWorldInfoPosition(position, positions) {
 }
 
 /**
- * Normalizes character-book entry positions into SillyTavern/SillyBunny World Info position IDs.
+ * Normalizes character-book entry positions into SillyTavern/Neconyan World Info position IDs.
  *
  * Character cards commonly store positions as CC/ST strings such as `before_char` or `after_char`.
  * Imported World Info entries must use numeric position IDs; leaving the strings intact prevents

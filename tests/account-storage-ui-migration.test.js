@@ -39,7 +39,7 @@ describe('account storage UI migration', () => {
             ['pathfinder-summary-memory-state', '{"title":"Exact legacy summary"}'],
             ['st--inputHistory', '["first","second"]'],
             ['card_scripts_confirmed', 'true'],
-            ['sillybunny.chatRenderLifecycle.enabled', 'false'],
+            ['neconyan.chatRenderLifecycle.enabled', 'false'],
         ];
         const localStorage = createLocalStorage(legacyValues);
         globalThis.localStorage = localStorage;
@@ -62,7 +62,7 @@ describe('account storage UI migration', () => {
         }));
         expect(localStorage.values).toEqual(new Map([
             ['card_scripts_confirmed', 'true'],
-            ['sillybunny.chatRenderLifecycle.enabled', 'false'],
+            ['neconyan.chatRenderLifecycle.enabled', 'false'],
         ]));
         expect(saveSettingsDebounced).toHaveBeenCalledTimes(1);
     });

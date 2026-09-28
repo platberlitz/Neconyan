@@ -13,14 +13,14 @@ import { initConfig } from './config-init.js';
  * @property {string} configPath Path to the config file
  * @property {string} dataRoot Data root directory
  * @property {number} port Port number
- * @property {boolean} listen If SillyBunny is listening on all network interfaces
+ * @property {boolean} listen If Neconyan is listening on all network interfaces
  * @property {string} listenAddressIPv6 IPv6 address to listen to
  * @property {string} listenAddressIPv4 IPv4 address to listen to
  * @property {boolean|string} enableIPv4 If enable IPv4 protocol ("auto" is also allowed)
  * @property {boolean|string} enableIPv6 If enable IPv6 protocol ("auto" is also allowed)
  * @property {boolean} dnsPreferIPv6 If prefer IPv6 for DNS
  * @property {number} heartbeatInterval Interval in seconds to write a heartbeat file. 0 to disable.
- * @property {boolean} browserLaunchEnabled If automatically launch SillyBunny in the browser
+ * @property {boolean} browserLaunchEnabled If automatically launch Neconyan in the browser
  * @property {string} browserLaunchHostname Browser launch hostname
  * @property {number} browserLaunchPort Browser launch port override (-1 is use server port)
  * @property {boolean} browserLaunchAvoidLocalhost If avoid using 'localhost' for browser launch in auto mode

@@ -381,8 +381,8 @@ export function prepareSettingsSave(incomingSettings, currentSettings = {}, { tr
 
     const version = currentVersion + 1;
     if (!Number.isSafeInteger(version)) throw new Error('Settings version limit reached.');
-    const currentConversation = currentSettings.extension_settings?.sillybunny_conversation;
-    const incomingConversation = incomingSettings.extension_settings?.sillybunny_conversation;
+    const currentConversation = currentSettings.extension_settings?.neconyan_conversation;
+    const incomingConversation = incomingSettings.extension_settings?.neconyan_conversation;
     let settingsRevision = currentRevision;
     let settings;
 
@@ -401,7 +401,7 @@ export function prepareSettingsSave(incomingSettings, currentSettings = {}, { tr
                 ...incomingSettings,
                 extension_settings: {
                     ...incomingSettings.extension_settings,
-                    sillybunny_conversation: restored,
+                    neconyan_conversation: restored,
                 },
             }
             : incomingSettings;
@@ -413,7 +413,7 @@ export function prepareSettingsSave(incomingSettings, currentSettings = {}, { tr
             ...incomingSettings,
             extension_settings: {
                 ...(incomingSettings.extension_settings || {}),
-                sillybunny_conversation: currentConversation,
+                neconyan_conversation: currentConversation,
             },
         };
     } else if ((isConversationManaged(currentConversation) && conversationChanged(incomingConversation, currentConversation))
@@ -434,7 +434,7 @@ export function prepareSettingsSave(incomingSettings, currentSettings = {}, { tr
                 ...incomingSettings,
                 extension_settings: {
                     ...incomingSettings.extension_settings,
-                    sillybunny_conversation: restored,
+                    neconyan_conversation: restored,
                 },
             };
         }
@@ -445,17 +445,17 @@ export function prepareSettingsSave(incomingSettings, currentSettings = {}, { tr
         delete settings._conversationOmitted;
     }
 
-    const conversation = settings.extension_settings?.sillybunny_conversation;
+    const conversation = settings.extension_settings?.neconyan_conversation;
     if (conversation && conversation !== currentConversation) {
         settings = { ...settings, extension_settings: { ...settings.extension_settings,
-            sillybunny_conversation: stampConversationMessages(conversation, currentConversation, trustedConversationEffects || trustedConversationAppend, version) } };
-        const validation = validateStoreStructure(settings.extension_settings.sillybunny_conversation, { strictMessages: false });
+            neconyan_conversation: stampConversationMessages(conversation, currentConversation, trustedConversationEffects || trustedConversationAppend, version) } };
+        const validation = validateStoreStructure(settings.extension_settings.neconyan_conversation, { strictMessages: false });
         if (!validation.valid) throw Object.assign(new Error(validation.error), { status: 400 });
     }
 
     if (acknowledgeAccount && incomingSettings._conversationOmitted === true && conversation?.automation?.mode === 'server') {
         settings = { ...settings, extension_settings: { ...settings.extension_settings,
-            sillybunny_conversation: { ...settings.extension_settings.sillybunny_conversation,
+            neconyan_conversation: { ...settings.extension_settings.neconyan_conversation,
                 automation: { ...conversation.automation, acknowledgement: { account: acknowledgeAccount, settingsRevision } } } } };
     }
 

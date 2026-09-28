@@ -403,8 +403,7 @@ async function highlightLaunchpadItem(extensionId) {
     return Boolean(extensionId) && openShellTab('right:extensions');
 }
 
-globalThis.NeconyanShell = /** @type {any} */ (globalThis.NeconyanShell || globalThis.SillyBunnyShell || {});
-globalThis.SillyBunnyShell = globalThis.NeconyanShell;
+globalThis.NeconyanShell = /** @type {any} */ (globalThis.NeconyanShell || {});
 globalThis.NeconyanShell.highlightLaunchpadItem = highlightLaunchpadItem;
 
 /**

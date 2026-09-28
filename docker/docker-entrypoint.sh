@@ -1,8 +1,7 @@
 #!/bin/sh
 
-NECONYAN_BUN_SMOL="${NECONYAN_BUN_SMOL:-${SILLYBUNNY_BUN_SMOL:-}}"
+NECONYAN_BUN_SMOL="${NECONYAN_BUN_SMOL:-}"
 export NECONYAN_BUN_SMOL
-export SILLYBUNNY_BUN_SMOL="$NECONYAN_BUN_SMOL"
 
 # Mirrors is_truthy in start.sh so NECONYAN_* flags accept the same spellings
 # in containers as they do under the shell launchers.
@@ -32,7 +31,7 @@ start_neconyan() {
     $PREFIX bun run init
 
     # Start the server
-    if is_truthy "${NECONYAN_BUN_SMOL:-${SILLYBUNNY_BUN_SMOL:-}}"; then
+    if is_truthy "${NECONYAN_BUN_SMOL:-}"; then
         # Bun grows the JSC heap freely while RAM looks plentiful, which reads as
         # a leak under a container memory cap. --smol trades throughput for much
         # more aggressive GC.

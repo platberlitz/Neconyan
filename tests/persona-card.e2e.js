@@ -36,7 +36,7 @@ for (const width of [393, 1280]) {
                 };
                 setPersonaDescription();
                 if (!await saveSettings(0, { returnResult: true })) throw new Error('Fixture save failed');
-                window.SillyBunnyShell.openTab('characters', 'persona');
+                window.NeconyanShell.openTab('characters', 'persona');
                 return user_avatar;
             });
             await expect(page.locator('#PersonaManagement')).toBeVisible();
@@ -144,7 +144,7 @@ test('rejects malformed cards and avatar paths without creating personas', async
 test('keeps imported details available and reports a failed settings save', async ({ page }) => {
     await openQuietChatForSmoke(page, { selectCharacter: false });
     await dismissTour(page);
-    await page.evaluate(() => window.SillyBunnyShell.openTab('characters', 'persona'));
+    await page.evaluate(() => window.NeconyanShell.openTab('characters', 'persona'));
     await openPersonaBrowser(page);
     await page.locator('#persona_search_bar').fill('Nothing matches this search');
     const image = await fs.readFile(new URL('../public/img/user-default.png', import.meta.url));

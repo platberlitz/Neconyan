@@ -44,7 +44,7 @@ function installExtensionModuleMocks() {
     }));
 
     jest.unstable_mockModule('../public/script.js', () => ({
-        CLIENT_VERSION: 'SillyBunny:v1.7.1',
+        CLIENT_VERSION: 'Neconyan:v1.7.1',
         animation_duration: 0,
         eventSource: { emit: jest.fn(async () => {}) },
         event_types: { EXTENSIONS_FIRST_LOAD: 'extensions_first_load', EXTENSION_SETTINGS_LOADED: 'extension_settings_loaded' },

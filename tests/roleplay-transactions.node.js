@@ -988,7 +988,7 @@ for (const changed of ['valid', 'missing', 'replacement', 'journal', 'payload'])
             fs.copyFileSync(f.filename, f.filename + '.new');
             fs.renameSync(f.filename + '.new', f.filename);
         }
-        if (changed === 'journal') fs.writeFileSync(f.filename + '.sillybunny-write-recovery', 'unrelated evidence');
+        if (changed === 'journal') fs.writeFileSync(f.filename + '.neconyan-write-recovery', 'unrelated evidence');
         if (changed === 'payload') fs.unlinkSync(path.join(roleplayStoreDirectory(f.scope), 'pending', pending.id, 'chat.after.jsonl'));
         const before = fs.existsSync(f.filename) ? fs.readFileSync(f.filename) : null;
         assert.throws(() => reconcileSingleChatWrite(f.scope, 'first', host));
@@ -1337,7 +1337,7 @@ test('a create cannot adopt journal evidence from another chat', t => {
     const pending = pauseBeforeWrite(f, input);
     const journal = writeJournal(f);
     const filename = path.join(path.dirname(f.filename), 'New.jsonl');
-    fs.renameSync(journal.filename, filename + '.sillybunny-write-recovery');
+    fs.renameSync(journal.filename, filename + '.neconyan-write-recovery');
     assert.throws(() => reconcileSingleChatWrite(f.scope, 'new', host), { code: 'ROLEPLAY_RECOVERY_REQUIRED' });
     assert.equal(fs.existsSync(filename), false);
     assert.deepEqual(readRoleplayAccount(f.scope).pending, pending);

@@ -10,6 +10,7 @@ import { assertUntrackedRoleplayFiles, createRoleplayDirectory, inspectRoleplayF
 import { commitRoleplayLifecycleLocked, commitSingleChatWriteLocked } from '../roleplay-lifecycle.js';
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { prepareSettingsSave, getSettingsVersion } from '../settings-version.js';
+import { migrateLegacySettingsNames } from '../legacy-name-migration.js';
 import { ENTITY_DATE_ADDED_FILE, mergeImportedEntityDateAdded } from '../entity-date-added.js';
 import { ENTITY_LAST_CHAT_FILE, mergeImportedEntityLastChat } from '../entity-last-chat.js';
 import { fsyncDirectorySync } from '../util.js';
@@ -89,6 +90,8 @@ export function prepareImportValue(context, file, index) {
         const existing = current ? object(current.bytes, `current ${file.relative}`) : {};
         let result = incoming;
         if (file.relative === 'settings.json') {
+            // Settings exported before the rename arrive with the old key names.
+            migrateLegacySettingsNames(incoming);
             const prepared = prepareSettingsSave({ ...incoming, _version: getSettingsVersion(existing) }, existing, { restoreSnapshot: true });
             if (!prepared.ok) throw operationError('The imported settings conflict with protected saved work. No account files were replaced.');
             result = prepared.settings;

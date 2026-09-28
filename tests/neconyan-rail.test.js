@@ -131,7 +131,6 @@ describe('Neconyan workspace rail behavior', () => {
         const initialize = tabsSource.match(/^function initChatAvatarVariables\([\s\S]*?^}/m)[0];
         vm.runInNewContext(`${initialize}\ninitChatAvatarVariables();`, context);
         expect(context.window.updateNeconyanChatAvatars).toBe(context.updateChatAvatarVariables);
-        expect(context.window.updateSillyBunnyChatAvatars).toBe(context.window.updateNeconyanChatAvatars);
     });
 
     test('keeps the native tool list flat, live, and individually expandable', () => {

@@ -18,7 +18,7 @@ const rekeyTransactions = new WeakMap();
 
 function acquireRecoveryStateLock(target) {
     assertRecoveryDirectory(target, { create: true });
-    return acquireChatFileLock(path.join(target.recoveryDirectory, '.sillybunny-recovery-state'));
+    return acquireChatFileLock(path.join(target.recoveryDirectory, '.neconyan-recovery-state'));
 }
 
 function isPlainObject(value) {

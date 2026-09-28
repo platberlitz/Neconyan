@@ -6,7 +6,7 @@ import {
     parseScheduleResponse,
 } from '../public/scripts/neconyan-conversation/schedule-utils.js';
 
-describe('sillybunny conversation schedule utils', () => {
+describe('neconyan conversation schedule utils', () => {
     test('repairs generated JSON and normalizes schedule blocks', () => {
         const schedule = parseScheduleResponse(`
             \`\`\`json

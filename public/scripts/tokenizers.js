@@ -699,7 +699,7 @@ export async function countTokensOpenAIAsync(messages, full = false) {
 
 /**
  * Counts several messages in one request and stores the results in the token cache.
- * SillyBunny addition: countTokensOpenAIAsync is awaited once per message by its callers,
+ * Neconyan addition: countTokensOpenAIAsync is awaited once per message by its callers,
  * so on a remotely hosted server each message costs a full round trip. Priming the cache
  * first collapses those into a single request; every entry it writes is the same value the
  * unbatched path would have cached. Failures are swallowed - callers then count individually.

@@ -53,7 +53,7 @@ async function killAt(f, input, boundary, { filename = f.filename, memory, recon
         for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
             if (!entry.isDirectory()) continue;
             const filename = path.join(directory, entry.name);
-            if (/^\.sillybunny-chat-[a-f0-9]{64}\.lock$/.test(entry.name)) {
+            if (/^\.neconyan-chat-[a-f0-9]{64}\.lock$/.test(entry.name)) {
                 const old = new Date(Date.now() - 600000);
                 fs.utimesSync(filename, old, old);
                 aged++;

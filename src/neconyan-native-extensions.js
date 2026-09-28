@@ -57,7 +57,6 @@ export const NECONYAN_NATIVE_EXTENSIONS = Object.freeze([
         pinnedRevision: '16d1540c6b88d97a9519725d89b04e1f7164bd1a',
         license: 'AGPL-3.0',
         licenseFiles: [],
-        legacyIds: ['SillyBunny-Terminal-UI'],
     },
     {
         directory: 'Neconyan-BotSearcher',
@@ -71,8 +70,6 @@ export const NECONYAN_NATIVE_EXTENSIONS = Object.freeze([
         license: 'AGPL-3.0',
         licenseFiles: ['LICENSE'],
         serverId: 'neconyan-botsearcher',
-        legacyIds: ['SillyBunny-BotSearcher', 'sillybunny-botsearcher'],
-        legacyServerIds: ['sillybunny-botsearcher'],
         serverEntry: 'server/index.js',
     },
     {
@@ -86,7 +83,6 @@ export const NECONYAN_NATIVE_EXTENSIONS = Object.freeze([
         pinnedRevision: '20a0ef20c4ed9d2c81a5e4a893501462a6f39183',
         license: 'MIT',
         licenseFiles: ['LICENSE'],
-        legacyIds: ['SillyBunny-PromptTags'],
     },
     {
         directory: 'Neconyan-Regex-Agent-Themes',
@@ -99,7 +95,6 @@ export const NECONYAN_NATIVE_EXTENSIONS = Object.freeze([
         pinnedRevision: '3c8e708f8c86e77a92f23526c738e87c82df98c9',
         license: 'AGPL-3.0',
         licenseFiles: ['LICENSE'],
-        legacyIds: ['SillyBunny-Regex-Agent-Themes'],
     },
     {
         directory: 'MacroEnhanced',
@@ -112,7 +107,7 @@ export const NECONYAN_NATIVE_EXTENSIONS = Object.freeze([
         pinnedRevision: '1b56c631a1d3f5f2c3548f0189f7f72a299c4f68',
         license: null,
         licenseFiles: [],
-        legacyIds: ['SillyBunny-MacroEnhanced', 'Neconyan-MacroEnhanced'],
+        legacyIds: ['Neconyan-MacroEnhanced'],
     },
     {
         directory: 'Neconyan-WorldInfo-Lab',
@@ -125,7 +120,6 @@ export const NECONYAN_NATIVE_EXTENSIONS = Object.freeze([
         pinnedRevision: 'dd71ab5fdc5aabb56ad88e0a836c52f7f9a5c3eb',
         license: 'AGPL-3.0',
         licenseFiles: ['LICENSE'],
-        legacyIds: ['SillyBunny-WorldInfo-Lab'],
     },
     {
         directory: 'Neconyan-Prompting-Lab',
@@ -138,7 +132,6 @@ export const NECONYAN_NATIVE_EXTENSIONS = Object.freeze([
         pinnedRevision: 'a27547601af7fe2b07f77af6ddea72c89062f47f',
         license: 'AGPL-3.0',
         licenseFiles: ['LICENSE'],
-        legacyIds: ['SillyBunny-Prompting-Lab'],
     },
     {
         directory: 'Neconyan-Debugger',
@@ -153,7 +146,7 @@ export const NECONYAN_NATIVE_EXTENSIONS = Object.freeze([
         licenseFiles: [],
         runtimeDirectory: 'neconyan-debugger',
         runtimeId: 'neconyan-debugger',
-        legacyIds: ['SillyBunny-Debugger', 'sillybunny-debugger', 'Neconyan-Debugger'],
+        legacyIds: ['Neconyan-Debugger'],
     },
     {
         directory: 'Neconyan-Chats-Archive',
@@ -168,7 +161,7 @@ export const NECONYAN_NATIVE_EXTENSIONS = Object.freeze([
         licenseFiles: [],
         runtimeDirectory: 'neconyan-chats-archive',
         runtimeId: 'neconyan-chats-archive',
-        legacyIds: ['SillyBunny-Chats-Archive', 'sillybunny-chats-archive', 'Neconyan-Chats-Archive'],
+        legacyIds: ['Neconyan-Chats-Archive'],
     },
     {
         directory: 'Neconyan-Lorebook-Distiller',
@@ -181,7 +174,6 @@ export const NECONYAN_NATIVE_EXTENSIONS = Object.freeze([
         pinnedRevision: '237ea54d6f94e731d4b918f9c445e1b78fa2dcf6',
         license: 'AGPL-3.0',
         licenseFiles: [],
-        legacyIds: ['SillyBunny-Lorebook-Distiller'],
     },
     {
         directory: 'Neconyan-Time-Machine',
@@ -194,7 +186,6 @@ export const NECONYAN_NATIVE_EXTENSIONS = Object.freeze([
         pinnedRevision: 'b9ec088a76480f014fc01e5cc9f78d36d897fc86',
         license: 'AGPL-3.0',
         licenseFiles: [],
-        legacyIds: ['SillyBunny-Time-Machine'],
     },
     {
         directory: 'Neconyan-Deep-Swipe',
@@ -207,7 +198,6 @@ export const NECONYAN_NATIVE_EXTENSIONS = Object.freeze([
         pinnedRevision: '16d4bd5b9a9f1c7e128166e3338f3f248c258b78',
         license: null,
         licenseFiles: [],
-        legacyIds: ['SillyBunny-Deep-Swipe'],
     },
     {
         directory: 'Neconyan-Story-Mode',
@@ -220,7 +210,6 @@ export const NECONYAN_NATIVE_EXTENSIONS = Object.freeze([
         pinnedRevision: '0a61c14ba0673f80e042c68dfb9b2dadf3d8ced9',
         license: 'AGPL-3.0',
         licenseFiles: ['LICENSE'],
-        legacyIds: ['SillyBunny-Story-Mode'],
     },
     {
         directory: 'Neconyan-Hopper',
@@ -233,7 +222,6 @@ export const NECONYAN_NATIVE_EXTENSIONS = Object.freeze([
         pinnedRevision: 'e7374c14a8cb1c87712c93f65666058fd4efa076',
         license: 'AGPL-3.0',
         licenseFiles: ['LICENSE'],
-        legacyIds: ['SillyBunny-Hopper'],
         serverId: 'hopper',
         serverEntry: 'server/index.js',
     },

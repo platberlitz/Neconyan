@@ -104,7 +104,7 @@ export class ButtonUi {
 
     renderBar() {
         if (!this.dom) {
-            // SillyBunny: integrations (guided-generations, mobile shell) may move the bar
+            // Neconyan: integrations (guided-generations, mobile shell) may move the bar
             // to other hosts; drop any stale instance so the id stays unique when re-rendering.
             document.querySelectorAll('#qr--bar').forEach((el) => el.remove());
             let buttonHolder;

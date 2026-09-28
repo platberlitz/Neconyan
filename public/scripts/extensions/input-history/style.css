@@ -65,7 +65,7 @@
 }
 #send_form:has(.stih--history),
 .gg-action-buttons-container:has(> .stih--buttons .stih--history) {
-  /* SillyBunny: the composer-bound history menu opens upward and must not
+  /* Neconyan: the composer-bound history menu opens upward and must not
      create scrollable overflow below the chat input. */
   overflow: visible;
 }

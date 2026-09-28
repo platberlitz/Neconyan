@@ -10,7 +10,7 @@ import {
     safeParseThread,
 } from '../public/scripts/neconyan-conversation/thread-store-utils.js';
 
-describe('sillybunny conversation thread store utils', () => {
+describe('neconyan conversation thread store utils', () => {
     test('normalizes legacy messages with deterministic ids', () => {
         expect(normalizeConversationStoredMessage({ role: 'user', mes: 'hello', created_at: 1234 }, 2, 9999)).toEqual({
             role: 'user',

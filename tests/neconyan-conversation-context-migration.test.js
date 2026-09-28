@@ -59,7 +59,7 @@ describe('conversation persona migration', () => {
             text: 'Keep this',
             triggerAt: 1234,
         };
-        extensionSettings.sillybunny_conversation = {
+        extensionSettings.neconyan_conversation = {
             characters: {},
             groups: [],
             reminders: [reminder],
@@ -122,7 +122,7 @@ describe('conversation persona migration', () => {
     test('reads an explicitly captured persona and branch instead of the active persona branch', () => {
         const branchA = { id: 'branch-a', messages: [{ id: 'a' }] };
         const branchB = { id: 'branch-b', messages: [{ id: 'b' }] };
-        extensionSettings.sillybunny_conversation = {
+        extensionSettings.neconyan_conversation = {
             characters: {
                 'persona:persona-a.png:char.png': {
                     activeBranchId: 'branch-a',

@@ -89,15 +89,16 @@ describe('frontend asset manifest rewriting', () => {
         expect(FRONTEND_ASSET_PREFIX).toBe('/frontend-assets/');
     });
 
-    test('redirects legacy source asset paths without dropping query strings', () => {
+    test('redirects legacy extension paths without dropping query strings', () => {
         const redirects = [];
         const next = () => redirects.push('next');
-        redirectLegacyFrontendAsset({ method: 'GET', path: '/scripts/sillybunny-tabs.js', url: '/scripts/sillybunny-tabs.js?v=old' }, {
+        const legacyPath = '/scripts/extensions/third-party/BunnyPresetTools/index.js';
+        redirectLegacyFrontendAsset({ method: 'GET', path: legacyPath, url: `${legacyPath}?v=old` }, {
             redirect: (status, target) => redirects.push([status, target]),
         }, next);
-        expect(redirects).toEqual([[307, '/scripts/neconyan-tabs.js?v=old']]);
+        expect(redirects).toEqual([[307, '/scripts/extensions/third-party/Neconyan-Preset-Tools/index.js?v=old']]);
 
-        redirectLegacyFrontendAsset({ method: 'POST', path: '/scripts/sillybunny-tabs.js', url: '/scripts/sillybunny-tabs.js' }, {}, next);
+        redirectLegacyFrontendAsset({ method: 'POST', path: legacyPath, url: legacyPath }, {}, next);
         expect(redirects.at(-1)).toBe('next');
     });
 

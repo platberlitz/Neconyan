@@ -54,7 +54,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
-    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-base64-writes-'));
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-base64-writes-'));
     directories = {
         root: tempRoot,
         files: path.join(tempRoot, 'files'),

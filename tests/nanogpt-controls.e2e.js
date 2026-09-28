@@ -94,8 +94,8 @@ async function openApi(page) {
         await tour.locator('[data-tour-coach-skip]').click();
         await expect(tour).toBeHidden();
     }
-    await page.waitForFunction(() => typeof window.SillyBunnyShell?.openTab === 'function');
-    await page.evaluate(() => window.SillyBunnyShell.openTab('left', 'api'));
+    await page.waitForFunction(() => typeof window.NeconyanShell?.openTab === 'function');
+    await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
     await expect(page.locator('#main_api')).toBeVisible();
 }
 

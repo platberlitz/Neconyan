@@ -24,7 +24,7 @@ describe('core message transparency wiring', () => {
     ].join('\n');
 
     test('loads the native chat stylesheet during chat-display setup so default chat styles get core transparency', () => {
-        expect(indexSource).not.toContain('id="sillybunny-native-chat-styles"');
+        expect(indexSource).not.toContain('id="neconyan-native-chat-styles"');
         expect(powerUserSource).toContain("const NATIVE_CHAT_STYLE_STYLESHEET_HREF = 'css/neconyan-chat-styles.css?v=20260918e';");
         expect(powerUserSource).toContain('ensureNativeChatStyleStylesheet();');
     });

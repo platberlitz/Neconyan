@@ -1317,7 +1317,7 @@ export function initRossMods() {
                 }
             }
 
-            // SillyBunny removes the legacy left-panel pin, so Escape always closes this shell.
+            // Neconyan removes the legacy left-panel pin, so Escape always closes this shell.
             if ($('#left-nav-panel').is(':visible')) {
                 $('#leftNavDrawerIcon').trigger('click');
                 return;

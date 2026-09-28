@@ -59,7 +59,7 @@ const CC_COMMANDS = [
     // Do not fix; CC needs to set the API twice because it could be overridden by the preset
     'api',
     'secret-id',
-    // SillyBunny: re-select the Custom endpoint profile by name after the secret (secret ids are shared between
+    // Neconyan: re-select the Custom endpoint profile by name after the secret (secret ids are shared between
     // endpoint profiles) and before the URL/model so the recorded values win over the endpoint profile's.
     'custom-endpoint-profile',
     'api-url',
@@ -69,7 +69,7 @@ const CC_COMMANDS = [
     'stop-strings',
     'start-reply-with',
     'reasoning-template',
-    // SillyBunny: persist Chat Completion reasoning and request behavior in connection profiles.
+    // Neconyan: persist Chat Completion reasoning and request behavior in connection profiles.
     'request-reasoning',
     'reasoning-effort',
     'verbosity',
@@ -618,7 +618,7 @@ function getCustomEndpointProfileSecretId(mode) {
         return '';
     }
 
-    // SillyBunny: Custom endpoint profiles bind to their saved preset secret, not the active fallback key.
+    // Neconyan: Custom endpoint profiles bind to their saved preset secret, not the active fallback key.
     return String(selected_custom_endpoint_preset?.secretId ?? '').trim();
 }
 
@@ -631,7 +631,7 @@ function syncAppliedCustomEndpointProfileSecret(mode, secretId) {
         return;
     }
 
-    // SillyBunny: Custom status/model fetches read the selected preset secret after profile apply.
+    // Neconyan: Custom status/model fetches read the selected preset secret after profile apply.
     syncCustomEndpointPresetSelectionBySecretId(secretId);
 }
 
@@ -757,7 +757,7 @@ function getWorldInfoActiveCount() {
 }
 
 function enrichProfileSnapshot(profile) {
-    // SillyBunny: include fork-only connection summary fields so exported profile
+    // Neconyan: include fork-only connection summary fields so exported profile
     // snapshots still reflect the active shell state when reopened later.
     profile['active-agents'] = getActiveAgentsSummary();
     profile.samplers = getSamplerSummary();
@@ -1013,7 +1013,7 @@ async function applyConnectionProfile(profile) {
                 argument = tier === '' ? 'default' : tier;
             }
             const allowEmpty = ALLOW_EMPTY.includes(command);
-            // SillyBunny: a profile without a proxy value means "no proxy". Reset the
+            // Neconyan: a profile without a proxy value means "no proxy". Reset the
             // proxy preset instead of skipping, otherwise the previous profile's proxy
             // stays active and leaks into requests made under this profile.
             if (command === 'proxy' && !argument && !profile.exclude?.includes(command)) {
@@ -1025,7 +1025,7 @@ async function applyConnectionProfile(profile) {
             try {
                 const args = getNamedArguments(allowEmpty ? { force: 'true' } : {});
                 const commandPromise = SlashCommandParser.commands[command].callback(args, argument);
-                // SillyBunny: profile application triggers UI handlers that queue partial settings saves.
+                // Neconyan: profile application triggers UI handlers that queue partial settings saves.
                 // Keep persistence centralized in the explicit save after the full profile is applied.
                 cancelDebounce(saveSettingsDebounced);
                 try {

@@ -2,18 +2,6 @@
 setlocal enabledelayedexpansion
 pushd %~dp0
 
-REM Canonical options take precedence; export aliases for older child processes.
-if not defined NECONYAN_AUTO_UPDATE set "NECONYAN_AUTO_UPDATE=!SILLYBUNNY_AUTO_UPDATE!"
-set "SILLYBUNNY_AUTO_UPDATE=!NECONYAN_AUTO_UPDATE!"
-if not defined NECONYAN_USE_NODE set "NECONYAN_USE_NODE=!SILLYBUNNY_USE_NODE!"
-set "SILLYBUNNY_USE_NODE=!NECONYAN_USE_NODE!"
-if not defined NECONYAN_USE_BUN set "NECONYAN_USE_BUN=!SILLYBUNNY_USE_BUN!"
-set "SILLYBUNNY_USE_BUN=!NECONYAN_USE_BUN!"
-if not defined NECONYAN_BUN_SMOL set "NECONYAN_BUN_SMOL=!SILLYBUNNY_BUN_SMOL!"
-set "SILLYBUNNY_BUN_SMOL=!NECONYAN_BUN_SMOL!"
-if not defined NECONYAN_SKIP_BROWSER_AUTO_LAUNCH set "NECONYAN_SKIP_BROWSER_AUTO_LAUNCH=!SILLYBUNNY_SKIP_BROWSER_AUTO_LAUNCH!"
-set "SILLYBUNNY_SKIP_BROWSER_AUTO_LAUNCH=!NECONYAN_SKIP_BROWSER_AUTO_LAUNCH!"
-
 set "PATH=%USERPROFILE%\.bun\bin;%ProgramFiles%\nodejs;%ProgramFiles(x86)%\nodejs;%APPDATA%\npm;%LocalAppData%\Volta\bin;%USERPROFILE%\scoop\shims;%ProgramFiles%\Git\cmd;%ProgramFiles(x86)%\Git\cmd;%LocalAppData%\Programs\Git\cmd;%PATH%"
 set "_need_git=0"
 set "_auto_update=1"
@@ -118,7 +106,6 @@ if "%_need_git%"=="0" if "%_auto_update%"=="1" (
 set NODE_ENV=production
 set NODE_NO_WARNINGS=1
 set NECONYAN_LAUNCHER=1
-set SILLYBUNNY_LAUNCHER=1
 set "_dependency_profile=!_server_runtime!-production"
 if exist node_modules\eslint\package.json set "_dependency_profile=!_server_runtime!-development"
 
@@ -227,7 +214,6 @@ if "!_server_exit!"=="75" (
     echo.
     echo [Neconyan] Restarting server...
     set NECONYAN_SKIP_BROWSER_AUTO_LAUNCH=1
-    set SILLYBUNNY_SKIP_BROWSER_AUTO_LAUNCH=1
     goto server_loop
 )
 

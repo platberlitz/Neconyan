@@ -7352,8 +7352,8 @@ export function initWorldInfo() {
         });
 
         $('#world_editor_select, #world_info')
-            .off('select2:open.sillybunnyWorldInfoGeometry')
-            .on('select2:open.sillybunnyWorldInfoGeometry', function () {
+            .off('select2:open.neconyanWorldInfoGeometry')
+            .on('select2:open.neconyanWorldInfoGeometry', function () {
                 window.requestAnimationFrame(() => syncWorldInfoSelect2DropdownGeometry(this));
             });
 

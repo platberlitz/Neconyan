@@ -53,7 +53,7 @@ describe('World Info endpoints', () => {
     let uploadsPath;
 
     beforeAll(async () => {
-        uploadsPath = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-world-info-uploads-'));
+        uploadsPath = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-world-info-uploads-'));
         const app = express();
         app.use(express.json());
         app.use(multer({ storage: createUploadStorage(uploadsPath) }).single('avatar'));
@@ -69,7 +69,7 @@ describe('World Info endpoints', () => {
     });
 
     beforeEach(() => {
-        tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-world-info-endpoints-'));
+        tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-world-info-endpoints-'));
         const root = path.join(tempRoot, 'world-info-test');
         directories = { ...Object.fromEntries(Object.entries(USER_DIRECTORY_TEMPLATE).map(([key, value]) => [key, path.join(root, value)])), root };
         for (const folder of Object.values(directories)) fs.mkdirSync(folder, { recursive: true });

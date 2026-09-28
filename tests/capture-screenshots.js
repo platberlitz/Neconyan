@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 /**
- * SillyBunny Screenshot Capture Script (Hardened State-Machine Version)
+ * Neconyan Screenshot Capture Script (Hardened State-Machine Version)
  *
  * Automates screenshot capture for desktop and mobile viewports.
  * Uses a robust drawer state-machine to handle complex desktop/mobile overlays.
- * Requires the SillyBunny server to be running on port 4433.
+ * Requires the Neconyan server to be running on port 4433.
  */
 
 import { chromium } from 'playwright';
@@ -214,7 +214,7 @@ const sections = [
             await ensureOnlyOpen(page, 'none');
             // openGlobalSearch is the shell's own entry point; the topbar proxy icon is
             // rebuilt by a MutationObserver and goes stale mid-run.
-            await page.evaluate('globalThis.SillyBunnyShell?.openGlobalSearch?.({ focusInput: true })');
+            await page.evaluate('globalThis.NeconyanShell?.openGlobalSearch?.({ focusInput: true })');
             await page.waitForSelector('#sb-universal-search.is-open', { timeout: 10000 });
             await page.locator('#sb-universal-search input[type="search"]').fill(searchQuery);
             await page.waitForSelector('#sb-universal-search-results.is-visible', { timeout: 10000 });
@@ -262,7 +262,7 @@ async function captureScreenshots(viewportType) {
     });
 
     try {
-        // Navigate to SillyBunny
+        // Navigate to Neconyan
         console.log(`   Navigating to ${baseURL}...`);
         await page.goto(baseURL, { waitUntil: 'networkidle', timeout: 30000 });
 
@@ -272,7 +272,7 @@ async function captureScreenshots(viewportType) {
 
         // Capture each section
         for (const section of sections) {
-            const filename = `sillybunny-ui-${viewportType}-${section.name}-v${version}.png`;
+            const filename = `neconyan-ui-${viewportType}-${section.name}-v${version}.png`;
             const filepath = join(screenshotsDir, filename);
 
             console.log(`   Capturing ${section.description}...`);
@@ -309,7 +309,7 @@ async function captureScreenshots(viewportType) {
 }
 
 async function main() {
-    console.log('🐰 SillyBunny Screenshot Capture Tool');
+    console.log('🐰 Neconyan Screenshot Capture Tool');
     console.log(`   Version: ${version}`);
     console.log(`   Output: ${screenshotsDir}`);
 
@@ -320,7 +320,7 @@ async function main() {
             throw new Error(`Server returned ${response.status}`);
         }
     } catch (error) {
-        console.error(`\n❌ Error: SillyBunny server is not running on ${baseURL}`);
+        console.error(`\n❌ Error: Neconyan server is not running on ${baseURL}`);
         console.error('   Please start the server first: bun run start');
         process.exit(1);
     }

@@ -3,7 +3,6 @@ import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 
 import {
-    LEGACY_SUPERVISOR_SHUTDOWN_MESSAGE,
     RESTART_EXIT_CODE,
     runSupervisor,
     SERVER_PLUGIN_PREPARE_LEASE_MS,
@@ -98,9 +97,9 @@ describe('server supervisor', () => {
 
     test('shouldSupervise lets launchers wrap one built-in supervisor', () => {
         expect(shouldSupervise({})).toBe(true);
-        expect(shouldSupervise({ SILLYBUNNY_LAUNCHER: '1' })).toBe(true);
-        expect(shouldSupervise({ SILLYBUNNY_SUPERVISED: '1' })).toBe(false);
-        expect(shouldSupervise({ SILLYBUNNY_LAUNCHER: '', SILLYBUNNY_SUPERVISED: '' })).toBe(true);
+        expect(shouldSupervise({ NECONYAN_LAUNCHER: '1' })).toBe(true);
+        expect(shouldSupervise({ NECONYAN_SUPERVISED: '1' })).toBe(false);
+        expect(shouldSupervise({ NECONYAN_LAUNCHER: '', NECONYAN_SUPERVISED: '' })).toBe(true);
     });
 
     test('marks the child as supervised and forwards runtime flags', async () => {
@@ -114,9 +113,9 @@ describe('server supervisor', () => {
         expect(command).toBe('bun');
         expect(args).toEqual(['--smol', 'server.js', '--listen']);
         expect(options.stdio).toEqual(['inherit', 'inherit', 'inherit', 'ipc']);
-        expect(options.env.SILLYBUNNY_SUPERVISED).toBe('1');
+        expect(options.env.NECONYAN_SUPERVISED).toBe('1');
         expect(options.env[SERVER_PLUGIN_UPDATE_SUPERVISOR_API_ENV]).toBe(SERVER_PLUGIN_UPDATE_SUPERVISOR_API_VERSION);
-        expect(options.env.SILLYBUNNY_SKIP_BROWSER_AUTO_LAUNCH).toBeUndefined();
+        expect(options.env.NECONYAN_SKIP_BROWSER_AUTO_LAUNCH).toBeUndefined();
         expect(exitFn).toHaveBeenCalledWith(0);
     });
 
@@ -145,9 +144,9 @@ describe('server supervisor', () => {
         await runSupervisor({ argv: ['node', 'server.js'], execArgv: [], spawnFn, exitFn });
 
         expect(spawnFn).toHaveBeenCalledTimes(3);
-        expect(spawnFn.mock.calls[0][2].env.SILLYBUNNY_SKIP_BROWSER_AUTO_LAUNCH).toBeUndefined();
-        expect(spawnFn.mock.calls[1][2].env.SILLYBUNNY_SKIP_BROWSER_AUTO_LAUNCH).toBe('1');
-        expect(spawnFn.mock.calls[2][2].env.SILLYBUNNY_SKIP_BROWSER_AUTO_LAUNCH).toBe('1');
+        expect(spawnFn.mock.calls[0][2].env.NECONYAN_SKIP_BROWSER_AUTO_LAUNCH).toBeUndefined();
+        expect(spawnFn.mock.calls[1][2].env.NECONYAN_SKIP_BROWSER_AUTO_LAUNCH).toBe('1');
+        expect(spawnFn.mock.calls[2][2].env.NECONYAN_SKIP_BROWSER_AUTO_LAUNCH).toBe('1');
         expect(exitFn).toHaveBeenCalledWith(0);
     });
 
@@ -453,16 +452,16 @@ describe('server supervisor', () => {
     }
 
     for (const announced of [true, false]) {
-        test(`uses graceful legacy shutdown for an old child with startup announcement: ${announced}`, async () => {
+        test(`uses graceful shutdown whether or not the child announced startup: ${announced}`, async () => {
             const { children, spawnFn } = createSpawnPlan(['manual']);
             const exitFn = jest.fn();
             const pluginUpdate = createPluginUpdateOperations();
             const run = runSupervisor({ argv: ['node', 'server.js'], execArgv: [], spawnFn, exitFn, pluginUpdate });
             await tick();
-            if (announced) children[0].emit('message', { type: 'sillybunny:server-startup:ready', plugins: [] });
+            if (announced) children[0].emit('message', { type: SERVER_STARTUP_READY_MESSAGE, plugins: [] });
             try {
                 process.emit('SIGTERM');
-                expect(children[0].send).toHaveBeenCalledWith(LEGACY_SUPERVISOR_SHUTDOWN_MESSAGE, expect.any(Function));
+                expect(children[0].send).toHaveBeenCalledWith(SUPERVISOR_SHUTDOWN_MESSAGE, expect.any(Function));
                 expect(children[0].kill).not.toHaveBeenCalled();
             } finally {
                 children[0].exitCode = 0;
@@ -472,7 +471,7 @@ describe('server supervisor', () => {
         });
     }
 
-    test('acknowledges an old child using its prepare and cancel protocol', async () => {
+    test('acknowledges prepare and cancel requests from the child', async () => {
         const { children, spawnFn } = createSpawnPlan(['manual']);
         const pluginUpdate = createPluginUpdateOperations();
         const run = runSupervisor({ argv: ['node', 'server.js'], execArgv: [], spawnFn, exitFn: jest.fn(), pluginUpdate });
@@ -480,8 +479,8 @@ describe('server supervisor', () => {
         const payload = updatePayload();
         try {
             for (const action of ['prepare', 'cancel']) {
-                children[0].emit('message', { type: `sillybunny:server-plugin-update:${action}`, requestId: action, payload });
-                expect(children[0].send).toHaveBeenCalledWith({ type: 'sillybunny:server-plugin-update:response', requestId: action, ok: true }, expect.any(Function));
+                children[0].emit('message', { type: `neconyan:server-plugin-update:${action}`, requestId: action, payload });
+                expect(children[0].send).toHaveBeenCalledWith({ type: 'neconyan:server-plugin-update:response', requestId: action, ok: true }, expect.any(Function));
             }
             expect(pluginUpdate.validate).toHaveBeenCalledWith(payload);
             expect(pluginUpdate.discardPrepared).toHaveBeenCalledWith(payload);

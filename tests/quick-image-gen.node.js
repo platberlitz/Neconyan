@@ -1396,7 +1396,7 @@ test('a Conversation image resumes from its saved provider result without paying
     const branch = { id: 'main', name: 'Main', createdAt: 1, messages: [{ id: 'm1', role: 'user', name: 'User', mes: 'Hello' }] };
     fs.writeFileSync(path.join(directories.root, 'settings.json'), JSON.stringify({
         _version: 0,
-        extension_settings: { 'quick-image-gen': togetherSettings, sillybunny_conversation: {
+        extension_settings: { 'quick-image-gen': togetherSettings, neconyan_conversation: {
             version: 1, settings: {}, groups: [], reminders: [],
             characters: { 'nova.png': { settings: {}, activeBranchId: 'main', branches: { main: branch } } },
         } },
@@ -1421,7 +1421,7 @@ test('a Conversation image resumes from its saved provider result without paying
         settingsFingerprint: snapshot.quickImageGenSettingsFingerprint,
         fetch: async () => { calls++; return jsonResponse({ data: [{ b64_json: PNG_BASE64 }] }); } });
     const changed = JSON.parse(fs.readFileSync(path.join(directories.root, 'settings.json'), 'utf8'));
-    changed.extension_settings.sillybunny_conversation.characters['nova.png'].branches.main.sessionMarkers = { image_at: Date.now() };
+    changed.extension_settings.neconyan_conversation.characters['nova.png'].branches.main.sessionMarkers = { image_at: Date.now() };
     fs.writeFileSync(path.join(directories.root, 'settings.json'), JSON.stringify(changed));
     assert.equal(await generateImage(context, snapshot, '', speaker), true);
     assert.equal(calls, 1);
@@ -1430,7 +1430,7 @@ test('a Conversation image resumes from its saved provider result without paying
     assert.equal(await generateImage(context, snapshot, '', speaker), true);
     assert.equal(calls, 1);
     assert.equal(JSON.parse(fs.readFileSync(path.join(directories.root, 'settings.json'), 'utf8'))
-        .extension_settings.sillybunny_conversation.characters['nova.png'].branches.main.messages.length, 2);
+        .extension_settings.neconyan_conversation.characters['nova.png'].branches.main.messages.length, 2);
 });
 
 test('image prompt builder and keyword detector match the browser policy', () => {

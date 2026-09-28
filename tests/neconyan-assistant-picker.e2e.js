@@ -83,7 +83,7 @@ for (const width of [320, 390, 1280]) {
             expect((await page.request.post('/api/characters/assistants/install', { headers, data: { id: 'miso-male' } })).ok()).toBe(true);
             await page.reload({ waitUntil: 'domcontentloaded' });
             await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 45000 });
-            await page.evaluate(() => window.SillyBunnyShell.openTab('characters', 'characters'));
+            await page.evaluate(() => window.NeconyanShell.openTab('characters', 'characters'));
             const importButton = page.locator('#character_import_button');
             // Import's retained host control is hidden in both current layouts.
             await expect(importButton).toBeHidden();

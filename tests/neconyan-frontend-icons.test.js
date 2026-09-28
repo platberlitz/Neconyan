@@ -72,7 +72,6 @@ test('selected assistant icons update immediately and unread badges cannot resto
     // Another account cannot inherit the previous account's choices or invalid values.
     account = { 'neconyanAssistantGender:nori': 'invalid' };
     expect(['miso', 'taro', 'nori'].map(id => context.getAssistantGender(id))).toEqual(['neutral', 'neutral', 'neutral']);
-    expect(context.window.SillyBunnyFrontendIcon).toBe(context.window.NeconyanFrontendIcon);
     context.window.NeconyanFrontendIcon.apply('unknown');
     expect(link.href).toBe('/img/neconyan-icon-192.png');
 });

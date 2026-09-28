@@ -15,7 +15,7 @@ const {
     stripSpeakerPrefixText,
 } = await import('../public/scripts/neconyan-conversation/partners-utils.js');
 
-describe('sillybunny conversation partner utils', () => {
+describe('neconyan conversation partner utils', () => {
     test('parses configured partner avatar lists', () => {
         expect(parseAvatarList(' ada.png, , grace.png ,')).toEqual(['ada.png', 'grace.png']);
     });

@@ -25,7 +25,7 @@ if (typeof Array.prototype.indexOf === 'function') {
 
 /**
  * Checks if event tracing is enabled.
- * SillyBunny: iOS WebKit private browsing throws on localStorage access, which
+ * Neconyan: iOS WebKit private browsing throws on localStorage access, which
  * would otherwise abort the whole emit and every startup stage awaiting it.
  * @returns {boolean} True if event tracing is enabled
  */

@@ -53,7 +53,7 @@ export function createChatSaveConfirmer({ context, metadataOnly = false, ...opti
     const character = context?.characters?.[context?.characterId];
     const avatar = character?.avatar;
     const name = character?.name;
-    // SillyBunny divergence: both chat types use headers; exclude only the
+    // Neconyan divergence: both chat types use headers; exclude only the
     // host's rotating top-level integrity token when confirming metadata.
     const serializeMetadata = value => value && typeof value === "object" && !Array.isArray(value)
         ? JSON.stringify({ ...value, integrity: undefined })

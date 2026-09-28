@@ -13,7 +13,7 @@ import { createMewmoryProvider } from './mewmory-provider.js';
 import { trackNavigationErrors } from './chat-scroll-regression-helpers.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-export const STORE = 'sillybunny_conversation';
+export const STORE = 'neconyan_conversation';
 export const MODEL = 'conversation-fixture';
 export const REPLY = 'Durable first reply. [reminder: 1h | Durable reminder]\n\nDurable second reply. [schedule_update: status="dnd" activity="fixture rest" duration="1h"]';
 const terminal = ['completed', 'cancelled', 'failed', 'interrupted', 'conflict'];

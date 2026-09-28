@@ -162,7 +162,7 @@ describe('In-Chat Agent prompt inspection', () => {
         const buildEnd = openaiSource.indexOf('\n    /**', buildStart);
         const buildSource = openaiSource.slice(buildStart, buildEnd);
 
-        expect(RUNTIME_AGENTS_IDENTIFIER).toBe('sillybunnyRuntimeAgents');
+        expect(RUNTIME_AGENTS_IDENTIFIER).toBe('neconyanRuntimeAgents');
         expect(rowSource).toContain('>Agents</a>');
         expect(rowSource).toContain('prompt-manager-inspect-action');
         expect(rowSource).toContain('prompt-manager-runtime-row');

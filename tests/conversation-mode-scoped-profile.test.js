@@ -221,10 +221,10 @@ describe('conversation mode scoped connection profile', () => {
         expect(welcomeSource).toContain('setConversationWelcomeOpeningSuppressed(false)');
     });
 
-    test('exposes Conversation REST discovery on both supported API base paths', () => {
+    test('exposes Conversation REST discovery on one API base path', () => {
         expect(serverStartupSource).toContain('app.use(\'/api/neconyan-conversation\', neconyanConversationRouter)');
-        expect(serverStartupSource).toContain('app.use(\'/api/sillybunny-conversation\', neconyanConversationRouter)');
-        expect(serverStartupSource).toContain('app.use(\'/api/sillybunny/conversation\', neconyanConversationRouter)');
+        expect(serverStartupSource).not.toContain('/api/neconyan/conversation');
+        expect(serverStartupSource).not.toContain('sillybunny');
     });
 
     test('connects Conversation messages to the existing TTS extension', () => {

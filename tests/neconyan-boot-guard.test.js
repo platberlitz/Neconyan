@@ -214,7 +214,7 @@ function addPreloader(document) {
     return preloader;
 }
 
-describe('SillyBunny boot guard', () => {
+describe('Neconyan boot guard', () => {
     test('stays hidden when the browser is not iOS WebKit', () => {
         const { document, listeners, timers, window } = createBootGuardHarness({
             maxTouchPoints: 0,
@@ -227,7 +227,7 @@ describe('SillyBunny boot guard', () => {
         expect(listeners.has('error')).toBe(false);
         expect(listeners.has('unhandledrejection')).toBe(false);
 
-        window.SillyBunnyBootGuard.showFailure('boom');
+        window.NeconyanBootGuard.showFailure('boom');
 
         expect(preloader.querySelector('button')).toBeNull();
     });
@@ -240,7 +240,7 @@ describe('SillyBunny boot guard', () => {
         dialog.appendChild(new FakeElement('div', { id: 'loader' }));
         document.appendChild(new FakeElement('div', { className: '_poly_dialog_overlay' }));
 
-        window.SillyBunnyBootGuard.showFailure('boom');
+        window.NeconyanBootGuard.showFailure('boom');
 
         expect(document.querySelector('dialog')).toBeNull();
         expect(document.getElementById('loader')).toBeNull();
@@ -274,7 +274,7 @@ describe('SillyBunny boot guard', () => {
         const { document, window } = createBootGuardHarness();
         addPreloader(document);
 
-        window.SillyBunnyBootGuard.showFailure('boom');
+        window.NeconyanBootGuard.showFailure('boom');
 
         const preloader = document.getElementById('preloader');
         const dismissButton = preloader.querySelectorAll('button').find(button => button.textContent === 'Continue anyway');
@@ -396,7 +396,7 @@ describe('SillyBunny boot guard', () => {
         expect(preloader.querySelector('pre')).toBeNull();
     });
 
-    test('still blames SillyBunny when a core request failed alongside a third-party one', () => {
+    test('still blames Neconyan when a core request failed alongside a third-party one', () => {
         const { document, listeners, timers, window } = createBootGuardHarness();
         const preloader = addPreloader(document);
         const initialTimerCount = timers.length;

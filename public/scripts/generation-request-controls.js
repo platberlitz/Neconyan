@@ -137,7 +137,7 @@ export function limitGenerationProse(text, maxOutputTokens, template, reasoningP
         content = content.slice(0, -partialTagLength);
     }
 
-    // SillyBunny/ponytail: four characters per prose token; use a local tokenizer if exact accounting is needed.
+    // Neconyan/ponytail: four characters per prose token; use a local tokenizer if exact accounting is needed.
     const maxCharacters = cap * 4;
     let accepted = content.slice(0, maxCharacters);
     if (accepted.length < content.length && /[\uD800-\uDBFF]$/.test(accepted)) {

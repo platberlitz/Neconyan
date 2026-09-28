@@ -6,7 +6,7 @@
 
 Neconyan 1.0.0 was briefly published with the annotated tag `v1.0.0` on
 `303b792b8736ccf55d57aabe2bf07b5b3707511d`. The owner wanted the whole
-SillyBunny rename inside 1.0.0, so the release and the GitHub tag were deleted
+Neconyan rename inside 1.0.0, so the release and the GitHub tag were deleted
 the same day. Staging keeps version `1.0.0`; the rename, with first-start
 migrations for every saved old name, lands on staging, and 1.0.0 is rebuilt and
 republished from there. Main is still `8f567b1`, the README mirror workflow's

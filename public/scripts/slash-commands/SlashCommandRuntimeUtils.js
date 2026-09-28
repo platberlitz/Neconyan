@@ -13,7 +13,7 @@ export function isTrueBoolean(arg) {
 /**
  * Reads a stored variable value, converting it to a number where that is lossless.
  *
- * SillyBunny diverges from upstream here: upstream returns Number(value) for anything
+ * Neconyan diverges from upstream here: upstream returns Number(value) for anything
  * numeric-looking, which rewrites '00' to 0 and '0.50' to 0.5 on every read. The stored
  * value is fine; only the read loses the text. Converting only when the number renders
  * back to the same characters keeps every genuinely numeric value behaving as before.

@@ -69,7 +69,7 @@ describe('chat integrity rotation', () => {
 
     test('rotates integrity on save and rejects stale second writers', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-integrity-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-integrity-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -104,7 +104,7 @@ describe('chat integrity rotation', () => {
 
     test('rejects the second writer after a slugless chat receives its first integrity value', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-slugless-stale-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-slugless-stale-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -121,7 +121,7 @@ describe('chat integrity rotation', () => {
 
     test('keeps forced-overwrite safety backup distinct from the same-second post-save backup', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-integrity-force-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-integrity-force-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -151,7 +151,7 @@ describe('chat integrity rotation', () => {
 
     test('creates a pre-write backup before every valid overwrite', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-integrity-prewrite-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-integrity-prewrite-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -177,7 +177,7 @@ describe('chat integrity rotation', () => {
 
     test('skips duplicate post-save backups when only chat integrity changes', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-integrity-duplicate-backup-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-integrity-duplicate-backup-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -214,7 +214,7 @@ describe('chat integrity rotation', () => {
 
     test('skips duplicate pre-write backups when on-disk content is unchanged', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-integrity-prewrite-dedup-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-integrity-prewrite-dedup-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -257,7 +257,7 @@ describe('chat integrity rotation', () => {
 
     test('defers regular chat backups until a final non-deferred save', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-integrity-defer-backup-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-integrity-defer-backup-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -304,7 +304,7 @@ describe('chat integrity rotation', () => {
 
     test('preserves pre-turn baseline and avoids ring eviction across multi-pass agent sequences (#373)', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-integrity-agent-ring-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-integrity-agent-ring-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -353,7 +353,7 @@ describe('chat integrity rotation', () => {
 
     test('abandoned deferred sequence does not suppress pre-write backup for subsequent user edits (#373)', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-abandoned-seq-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-abandoned-seq-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -396,7 +396,7 @@ describe('chat integrity rotation', () => {
 
     test('leaves a semantically unchanged noncanonical chat untouched and returns its disk integrity', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-unchanged-save-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-unchanged-save-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -430,7 +430,7 @@ describe('chat integrity rotation', () => {
     test('preserves an existing chat file identity during a genuine shorter save', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
         const { createCharacterChatTarget } = await import('../src/chat-recovery.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-identity-save-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-identity-save-'));
         const chatsDirectory = path.join(tempDir, 'chats');
         const backupDir = path.join(tempDir, 'backups');
         const owner = 'Test Card';
@@ -474,7 +474,7 @@ describe('chat integrity rotation', () => {
     test('rejects an in-place save when the checked bytes change without changing identity', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
         const { createCharacterChatTarget, getChatRecoveryPaths } = await import('../src/chat-recovery.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-content-race-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-content-race-'));
         const chatsDirectory = path.join(tempDir, 'chats');
         const backupDir = path.join(tempDir, 'backups');
         const owner = 'Test Card';
@@ -510,7 +510,7 @@ describe('chat integrity rotation', () => {
 
     test('rejects a new chat save when another writer creates the checked path', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-create-race-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-create-race-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -540,7 +540,7 @@ describe('chat integrity rotation', () => {
     test('keeps a newer recovery snapshot when a rejected save sees an invalid active file', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
         const { createCharacterChatTarget, getChatRecoveryPaths, writeLatestChatSnapshot } = await import('../src/chat-recovery.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-recovery-race-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-recovery-race-'));
         const chatsDirectory = path.join(tempDir, 'chats');
         const backupDir = path.join(tempDir, 'backups');
         const owner = 'Test Card';
@@ -578,7 +578,7 @@ describe('chat integrity rotation', () => {
     test('serializes cooperating saves after expected hash validation', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
         const { createCharacterChatTarget, getChatRecoveryPaths } = await import('../src/chat-recovery.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-cooperating-race-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-cooperating-race-'));
         const chatsDirectory = path.join(tempDir, 'chats');
         const backupDir = path.join(tempDir, 'backups');
         const owner = 'Test Card';
@@ -636,7 +636,7 @@ describe('chat integrity rotation', () => {
     test('replaces only the selected path when a chat has a hard-link alias', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
         const { createCharacterChatTarget } = await import('../src/chat-recovery.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-hardlink-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-hardlink-'));
         const chatsDirectory = path.join(tempDir, 'chats');
         const backupDir = path.join(tempDir, 'backups');
         const owner = 'Test Card';
@@ -668,7 +668,7 @@ describe('chat integrity rotation', () => {
     test('recovers the complete new chat after an interrupted identity-preserving write', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
         const { createCharacterChatTarget, getChatRecoveryPaths, loadActiveChatWithRecovery } = await import('../src/chat-recovery.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-interrupted-save-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-interrupted-save-'));
         const chatsDirectory = path.join(tempDir, 'chats');
         const backupDir = path.join(tempDir, 'backups');
         const owner = 'Test Card';
@@ -708,7 +708,7 @@ describe('chat integrity rotation', () => {
 
     test('keeps a concurrent writer valid after an unchanged save', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-unchanged-cas-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-unchanged-cas-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -750,7 +750,7 @@ describe('chat integrity rotation', () => {
 
     test('resyncs a stale writer whose payload matches the file without writing', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-unchanged-stale-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-unchanged-stale-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -781,7 +781,7 @@ describe('chat integrity rotation', () => {
 
     test('accepts a stale writer that only appends to the chat on disk', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-stale-append-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-stale-append-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -809,7 +809,7 @@ describe('chat integrity rotation', () => {
 
     test('rejects a stale append that would overwrite newer chat metadata', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-stale-metadata-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-stale-metadata-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -836,7 +836,7 @@ describe('chat integrity rotation', () => {
 
     test('reports an unloaded chat save as destructive rather than as an integrity mismatch', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-unloaded-save-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-unloaded-save-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -862,7 +862,7 @@ describe('chat integrity rotation', () => {
 
     test('still rejects a stale writer that rewrites an existing message', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-stale-divergent-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-stale-divergent-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -886,7 +886,7 @@ describe('chat integrity rotation', () => {
 
     test('still rejects a stale writer when the existing chat body is corrupt', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-corrupt-stale-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-corrupt-stale-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -910,7 +910,7 @@ describe('chat integrity rotation', () => {
 
     test('still rejects a stale writer when the existing chat starts with a byte-order mark', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-bom-stale-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-bom-stale-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -933,7 +933,7 @@ describe('chat integrity rotation', () => {
 
     test('skips a forced overwrite that would rewrite identical content', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-unchanged-forced-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-unchanged-forced-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -966,7 +966,7 @@ describe('chat integrity rotation', () => {
 
     test('keeps an unchanged legacy chat slugless until its first genuine edit', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-unchanged-legacy-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-unchanged-legacy-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -1010,7 +1010,7 @@ describe('chat integrity rotation', () => {
 
     test('keeps the regular backup when a deferred session ends on an unchanged save', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-unchanged-deferred-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-unchanged-deferred-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -1050,7 +1050,7 @@ describe('chat integrity rotation', () => {
     test('refreshes exact recovery snapshots for deferred saves and restores missing active files', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
         const { createCharacterChatTarget, getChatRecoveryPaths, loadActiveChatWithRecovery } = await import('../src/chat-recovery.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-recovery-save-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-recovery-save-'));
         const chatsDirectory = path.join(tempDir, 'chats');
         const backupDirectory = path.join(tempDir, 'backups');
         const owner = 'Test Card';
@@ -1083,7 +1083,7 @@ describe('chat integrity rotation', () => {
     test('saves valid chats when the exact recovery directory is unavailable', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
         const { CHAT_RECOVERY_DIRECTORY, createCharacterChatTarget } = await import('../src/chat-recovery.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-recovery-unavailable-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-recovery-unavailable-'));
         const chatsDirectory = path.join(tempDir, 'chats');
         const backupDirectory = path.join(tempDir, 'backups');
         const owner = 'Test Card';
@@ -1118,7 +1118,7 @@ describe('chat integrity rotation', () => {
 
     test('treats load-time media, swipe, and derived metadata normalization as unchanged', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-load-normalization-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-load-normalization-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -1166,7 +1166,7 @@ describe('chat integrity rotation', () => {
 
     test('persists derived metadata when an explicit rename flush requests it', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-derived-metadata-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-derived-metadata-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -1210,7 +1210,7 @@ describe('chat integrity rotation', () => {
 
     test('keeps distinct pre-write backups for rapid overwrites in the same second', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-integrity-prewrite-rapid-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-integrity-prewrite-rapid-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -1251,7 +1251,7 @@ describe('chat integrity rotation', () => {
 
     test('rejects a suspicious shrink without overwriting the existing chat', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-integrity-shrink-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-integrity-shrink-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -1278,7 +1278,7 @@ describe('chat integrity rotation', () => {
 
     test('still overwrites a shrunken chat when the client forces the save', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-integrity-shrink-forced-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-integrity-shrink-forced-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);
@@ -1309,7 +1309,7 @@ describe('chat integrity rotation', () => {
 
     test('rejects invalid save payloads without overwriting an existing chat', async () => {
         const { trySaveChat } = await import('../src/endpoints/chats.js');
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-chat-integrity-invalid-'));
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-chat-integrity-invalid-'));
         const chatFile = path.join(tempDir, 'chat.jsonl');
         const backupDir = path.join(tempDir, 'backups');
         await fs.mkdir(backupDir);

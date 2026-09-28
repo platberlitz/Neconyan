@@ -34,7 +34,7 @@ const defaultSettings = {
 
 /** @type {Boolean}*/
 let isReady = false;
-// SillyBunny divergence: shared in-flight init promise; resets on rejection.
+// Neconyan divergence: shared in-flight init promise; resets on rejection.
 let initPromise = null;
 /** @type {Function[]}*/
 let executeQueue = [];
@@ -187,7 +187,7 @@ async function doInit() {
     const qrContainer = document.querySelector('#qr_container');
     const settingsDrawer = await manager.render();
     if (qrContainer && settingsDrawer) {
-        // SillyBunny: clear stale settings roots before reattaching Quick Reply.
+        // Neconyan: clear stale settings roots before reattaching Quick Reply.
         qrContainer.querySelectorAll('#qr--settings').forEach(node => {
             if (node !== settingsDrawer) {
                 node.remove();
@@ -352,7 +352,7 @@ eventSource.on(event_types.GROUP_CHAT_CREATED, (...args) => executeIfReadyElseQu
 
 const onBeforeGeneration = async (_generationType, _options = {}, isDryRun = false) => {
     if (isDryRun) {
-        // SillyBunny: prompt previews and topbar token refreshes legitimately use dry-runs,
+        // Neconyan: prompt previews and topbar token refreshes legitimately use dry-runs,
         // so keep this at debug level instead of spamming the normal log stream.
         debug('Before-generation hook skipped due to dryRun.');
         return;

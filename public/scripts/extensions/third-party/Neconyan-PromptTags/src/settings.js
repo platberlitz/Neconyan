@@ -857,8 +857,7 @@ export function setChatProfile(reference) {
 export function exportProfiles() {
     const settings = getSettings();
     return JSON.stringify({
-        // Keep the public file-format identifier stable across host renames.
-        format: 'sillybunny-prompt-tags',
+        format: 'neconyan-prompt-tags',
         version: EXPORT_VERSION,
         activeProfile: settings.activeProfile,
         activeProfileId: settings.activeProfileId,
@@ -947,7 +946,8 @@ export function importProfiles(json) {
     }
 
     if (!isPlainObject(parsed)
-        || !['sillybunny-prompt-tags', 'neconyan-prompt-tags'].includes(parsed.format)
+        // Files exported before the rename used the old format name.
+        || !['neconyan-prompt-tags', 'sillybunny-prompt-tags'].includes(parsed.format)
         || ![1, EXPORT_VERSION].includes(parsed.version)
         || !hasOwn(parsed, 'profiles')
         || !isPlainObject(parsed.profiles)) {

@@ -28,8 +28,8 @@ function loadPlaywright() {
 
 const { chromium, devices } = loadPlaywright();
 const outputDir = path.join(repoRoot, 'output', 'performance');
-const baseUrl = process.env.NECONYAN_PERF_URL || process.env.SILLYBUNNY_PERF_URL || 'http://127.0.0.1:4433';
-const outputPath = process.env.NECONYAN_PERF_OUTPUT || process.env.SILLYBUNNY_PERF_OUTPUT || path.join(outputDir, `frontend-${Date.now()}.json`);
+const baseUrl = process.env.NECONYAN_PERF_URL || 'http://127.0.0.1:4433';
+const outputPath = process.env.NECONYAN_PERF_OUTPUT || path.join(outputDir, `frontend-${Date.now()}.json`);
 const mobileProfile = devices['Pixel 5'];
 const defaultProfileNames = Object.freeze(['mobile', 'desktop']);
 const resourceTimingBufferSize = 2000;
@@ -499,7 +499,7 @@ async function settlePage(page, delayMs = 0) {
 
 async function captureInstrumentationSnapshot(page) {
     return await page.evaluate(() => {
-        const metrics = globalThis.__sillyBunnyPerfInstrumentation;
+        const metrics = globalThis.__neconyanPerfInstrumentation;
         return metrics ? JSON.parse(JSON.stringify(metrics)) : null;
     }).catch(() => null);
 }
@@ -572,7 +572,7 @@ function installResourceTimingBuffer(size) {
 
 function installPerformanceInstrumentation() {
     const browserGlobal = globalThis;
-    if (browserGlobal.__sillyBunnyPerfInstrumentation) {
+    if (browserGlobal.__neconyanPerfInstrumentation) {
         return;
     }
 
@@ -602,7 +602,7 @@ function installPerformanceInstrumentation() {
         },
     };
 
-    Object.defineProperty(browserGlobal, '__sillyBunnyPerfInstrumentation', {
+    Object.defineProperty(browserGlobal, '__neconyanPerfInstrumentation', {
         configurable: false,
         enumerable: false,
         value: metrics,
@@ -756,10 +756,10 @@ async function readBudgetFile(budgetPath) {
 export async function run({
     url = baseUrl,
     output = outputPath,
-    profileNames = parseProfileNames(process.env.NECONYAN_PERF_PROFILES || process.env.NECONYAN_PERF_PROFILE || process.env.SILLYBUNNY_PERF_PROFILES || process.env.SILLYBUNNY_PERF_PROFILE),
-    serviceWorkers = (process.env.NECONYAN_PERF_SERVICE_WORKERS || process.env.SILLYBUNNY_PERF_SERVICE_WORKERS) === 'allow' ? 'allow' : 'block',
-    instrumentation = ['1', 'true', 'on'].includes(String(process.env.NECONYAN_PERF_INSTRUMENTATION || process.env.SILLYBUNNY_PERF_INSTRUMENTATION).toLowerCase()),
-    budgetPath = process.env.NECONYAN_PERF_BUDGET || process.env.SILLYBUNNY_PERF_BUDGET || '',
+    profileNames = parseProfileNames(process.env.NECONYAN_PERF_PROFILES || process.env.NECONYAN_PERF_PROFILE),
+    serviceWorkers = process.env.NECONYAN_PERF_SERVICE_WORKERS === 'allow' ? 'allow' : 'block',
+    instrumentation = ['1', 'true', 'on'].includes(String(process.env.NECONYAN_PERF_INSTRUMENTATION).toLowerCase()),
+    budgetPath = process.env.NECONYAN_PERF_BUDGET || '',
 } = {}) {
     await fs.mkdir(path.dirname(output), { recursive: true });
 

@@ -19,7 +19,7 @@ function extensionDisabled(hostRef) {
     const disabled = ctxOf(hostRef)?.extensionSettings?.disabledExtensions;
     return Array.isArray(disabled) && disabled.some((name) => {
         const normalized = String(name ?? '').trim().replace(/^third-party[\\/]/i, '').toLowerCase();
-        return ['sillybunny-prompttags', 'neconyan-prompttags', 'prompttags'].includes(normalized);
+        return ['neconyan-prompttags', 'prompttags'].includes(normalized);
     });
 }
 

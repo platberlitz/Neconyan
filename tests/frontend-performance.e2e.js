@@ -36,7 +36,7 @@ test.describe('frontend performance smoke', () => {
             return browserGlobal.document.readyState === 'complete'
                 && browserGlobal.document.getElementById('preloader') === null
                 && typeof browserGlobal.SillyTavern?.getContext === 'function'
-                && Boolean(browserGlobal.SillyBunnyShell);
+                && Boolean(browserGlobal.NeconyanShell);
         }, null, { timeout: 60000 });
         await waitForResourceStability(page);
 
@@ -64,7 +64,7 @@ test.describe('frontend performance smoke', () => {
 
             return {
                 title: browserGlobal.document.title,
-                hasShell: Boolean(browserGlobal.SillyBunnyShell),
+                hasShell: Boolean(browserGlobal.NeconyanShell),
                 assetCount: resources.filter(entry => !new browserGlobal.URL(entry.name).pathname.startsWith('/api/')).length,
                 jsBytes,
                 cssBytes,
@@ -77,7 +77,7 @@ test.describe('frontend performance smoke', () => {
 
         expect(snapshot.title).toBe('Neconyan');
         expect(snapshot.hasShell).toBe(true);
-        // Native tools now include more modules than the old SillyBunny fixture.
+        // Native tools now include more modules than the old Neconyan fixture.
         // Keep the measured cold start bounded without truncating its timing buffer.
         expect(snapshot.assetCount).toBeLessThan(1000);
         expect(snapshot.optionalSpeechRequests).toBe(0);

@@ -23,7 +23,7 @@ async function importSecrets() {
 }
 
 function createUserDirectories() {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-secrets-'));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-secrets-'));
     const backups = path.join(root, 'backups');
     fs.mkdirSync(backups, { recursive: true });
     tempDirs.push(root);

@@ -586,9 +586,6 @@ export function getNeconyanFrontendIconSrc({ absolute = false } = {}) {
     return absolute ? `/${src}` : src;
 }
 
-// Keep the named export used by third-party code while Neconyan owns the implementation.
-export const getSillyBunnyFrontendIconSrc = getNeconyanFrontendIconSrc;
-
 export let system_avatar = getNeconyanFrontendIconSrc();
 export const comment_avatar = 'img/quill.png';
 export const default_user_avatar = 'img/user-default.png';
@@ -626,13 +623,12 @@ function applyNeconyanFrontendIcon(iconId = getStoredNeconyanFrontendIcon()) {
     }
 }
 
-const neconyanFrontendIcon = Object.assign(window.NeconyanFrontendIcon || window.SillyBunnyFrontendIcon || {}, {
+const neconyanFrontendIcon = Object.assign(window.NeconyanFrontendIcon || {}, {
     getId: getStoredNeconyanFrontendIcon,
     getSrc: ({ absolute = true } = {}) => getNeconyanFrontendIconSrc({ absolute }),
     apply: applyNeconyanFrontendIcon,
 });
 window.NeconyanFrontendIcon = neconyanFrontendIcon;
-window.SillyBunnyFrontendIcon = neconyanFrontendIcon;
 window.addEventListener('neconyan:assistant-gender-changed', () => applyNeconyanFrontendIcon());
 
 if (document.readyState === 'loading') {
@@ -12903,7 +12899,7 @@ export async function getSettings(initLoaderHandle = null) {
         bindRoleplayAccount(data.inChatAgentAccount, data.roleplayAccount);
         settings = JSON.parse(data.settings);
         lastServerSettingsVersion = normalizeSettingsVersion(settings._version);
-        const conversationBaseline = structuredClone(settings.extension_settings?.sillybunny_conversation ?? {});
+        const conversationBaseline = structuredClone(settings.extension_settings?.neconyan_conversation ?? {});
         const conversationVersion = lastServerSettingsVersion;
         lastServerSettingsRevision = normalizeSettingsRevision(settings._settingsRevision);
         const downloadedGenerationSettings = {
@@ -13309,11 +13305,11 @@ export async function clearFrontendCache({ skipConfirmation = false, saveBeforeC
             // Neconyan: on iOS WebKit the controlling service worker stays attached to this
             // page after unregister() until the page unloads. Without an explicit purge the SW
             // re-fills its caches during the reload navigation, undoing the clear. We message
-            // the controller to delete both current and legacy caches before unregistering.
+            // the controller to delete its caches before unregistering.
             const controller = globalThis.navigator.serviceWorker.controller;
             if (controller) {
                 await new Promise((resolve) => {
-                    const channels = [new MessageChannel(), new MessageChannel()];
+                    const channel = new MessageChannel();
                     let settled = false;
                     const timeout = globalThis.setTimeout(() => {
                         // Best-effort: don't block the clear if the SW doesn't respond in time.
@@ -13324,17 +13320,14 @@ export async function clearFrontendCache({ skipConfirmation = false, saveBeforeC
                         if (settled) return;
                         settled = true;
                         globalThis.clearTimeout(timeout);
-                        channels.forEach(channel => channel.port1.close());
-                        if ((event?.data?.type === 'NN_CLEAR_CACHES_DONE' || event?.data?.type === 'SB_CLEAR_CACHES_DONE') && !event.data.ok) {
+                        channel.port1.close();
+                        if (event?.data?.type === 'NN_CLEAR_CACHES_DONE' && !event.data.ok) {
                             console.warn('[Cache] Service worker reported a partial cache purge failure.');
                         }
                         resolve();
                     };
-                    channels.forEach(channel => { channel.port1.onmessage = finish; });
-                    // The current protocol is first. The legacy request carries its own
-                    // port so an older active worker can acknowledge before it is removed.
-                    controller.postMessage({ type: 'NN_CLEAR_CACHES' }, [channels[0].port2]);
-                    controller.postMessage({ type: 'SB_CLEAR_CACHES' }, [channels[1].port2]);
+                    channel.port1.onmessage = finish;
+                    controller.postMessage({ type: 'NN_CLEAR_CACHES' }, [channel.port2]);
                 });
             }
 
@@ -13377,7 +13370,6 @@ export async function clearFrontendCache({ skipConfirmation = false, saveBeforeC
 
 if (typeof window !== 'undefined') {
     window.NeconyanClearFrontendCache = clearFrontendCache;
-    window.SillyBunnyClearFrontendCache = clearFrontendCache;
 }
 
 async function clearAllCacheAndReload() {
@@ -13702,7 +13694,7 @@ async function renderMessageScreenshotWithBoundedSvg(html2canvas, surface, captu
         return await html2canvas(surface, captureOptions);
     }
 
-    const svgMarker = '__sillybunny_html2canvas_foreign_object__';
+    const svgMarker = '__neconyan_html2canvas_foreign_object__';
     const markedSvgDataUrl = `data:image/svg+xml;charset=utf-8,${svgMarker}`;
     const existingCloneContainers = new Set(document.querySelectorAll('.html2canvas-container'));
     let serializedSvg = '';
@@ -15512,7 +15504,7 @@ export function select_rm_info(type, charId, previousCharId = null) {
     if (!keepNeconyanImportTab) {
         selectRightMenuWithAnimation('rm_characters_block');
     } else {
-        document.dispatchEvent(new CustomEvent('sillybunny:character-import-tab-preserve'));
+        document.dispatchEvent(new CustomEvent('neconyan:character-import-tab-preserve'));
     }
 
     // Set a timeout so multiple flashes don't overlap

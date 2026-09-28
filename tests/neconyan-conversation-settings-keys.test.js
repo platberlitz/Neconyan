@@ -8,7 +8,7 @@ import {
     THREAD_CONVERSATION_SETTINGS_KEYS,
 } from '../public/scripts/neconyan-conversation/constants.js';
 
-describe('sillybunny conversation settings keys', () => {
+describe('neconyan conversation settings keys', () => {
     test('scopes custom instructions and connection profile globally', () => {
         expect(GLOBAL_CONVERSATION_SETTINGS_KEYS).toEqual([
             'idle_action',

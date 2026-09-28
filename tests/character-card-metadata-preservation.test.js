@@ -74,7 +74,7 @@ describe('character card metadata preservation', () => {
     }
 
     beforeEach(() => {
-        tempRoot = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-card-metadata-')), 'card-metadata-test-user');
+        tempRoot = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-card-metadata-')), 'card-metadata-test-user');
         directories = {
             root: tempRoot,
             backups: path.join(tempRoot, 'backups'),
@@ -151,7 +151,7 @@ describe('character card metadata preservation', () => {
             const uppercasePath = path.join(directories.characters, 'Alice.PNG');
             fs.renameSync(originalPath, uppercasePath);
             addAncillaryChunks(uppercasePath);
-            const alternateStreamPath = `${uppercasePath}:sillybunny-metadata-test`;
+            const alternateStreamPath = `${uppercasePath}:neconyan-metadata-test`;
             fs.writeFileSync(alternateStreamPath, 'preserve this stream', 'utf8');
             const cardBefore = fs.readFileSync(uppercasePath);
             const statBefore = fs.statSync(uppercasePath, { bigint: true });
@@ -214,8 +214,8 @@ describe('character card metadata preservation', () => {
     });
 
     for (const format of ['native', 'imported']) {
-        const extensions = { foreign: { kept: true }, sillybunny_pathfinder: { version: 1, tree: { id: 'root', children: [{ id: 'place' }] } } };
-        const entryExtensions = { foreign: 'entry metadata', sillybunny_pathfinder: { version: 1, nodeId: 'place' } };
+        const extensions = { foreign: { kept: true }, neconyan_pathfinder: { version: 1, tree: { id: 'root', children: [{ id: 'place' }] } } };
+        const entryExtensions = { foreign: 'entry metadata', neconyan_pathfinder: { version: 1, nodeId: 'place' } };
         const originalData = { name: 'Lore', extensions, foreign: 'original book metadata', entries: [{ id: 74, keys: ['place'], content: 'A place', extensions: entryExtensions, foreign: 'original entry metadata' }] };
         const book = {
             extensions, entries: { 42: { uid: 42, key: ['place'], content: 'A place', extensions: entryExtensions } },

@@ -388,11 +388,10 @@ describe('Meower prompt defaults', () => {
         expect(fredoka).not.toContain('font-style: italic');
     });
 
-    test('purges caches through both current and legacy service-worker protocols', () => {
+    test('purges caches through the service-worker protocol', () => {
         expect(scriptSource).toContain("controller.postMessage({ type: 'NN_CLEAR_CACHES' }");
-        expect(scriptSource).toContain("controller.postMessage({ type: 'SB_CLEAR_CACHES' }");
         expect(scriptSource).toContain("event?.data?.type === 'NN_CLEAR_CACHES_DONE'");
-        expect(scriptSource).toContain("event?.data?.type === 'SB_CLEAR_CACHES_DONE'");
+        expect(scriptSource).not.toContain('SB_CLEAR_CACHES');
     });
 
     test('new profiles default the message chrome toggles to on', () => {

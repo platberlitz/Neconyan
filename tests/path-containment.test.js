@@ -5,7 +5,7 @@ import path from 'node:path';
 import { isPathInside } from '../src/path-containment.js';
 
 describe('path containment', () => {
-    const parentPath = path.resolve(os.tmpdir(), 'sillybunny-path-containment', 'parent');
+    const parentPath = path.resolve(os.tmpdir(), 'neconyan-path-containment', 'parent');
 
     test('accepts normalized descendants, including dot-prefixed names', () => {
         expect(isPathInside(parentPath, path.join(parentPath, 'nested', 'file.txt'))).toBe(true);

@@ -18,7 +18,7 @@ for (const title of ['phone sign-in', 'desktop sign-in']) {
                 options: { protocol: 'ctap2', ctap2Version: 'ctap2_0', transport: 'internal', automaticPresenceSimulation: true, isUserVerified: true, hasResidentKey: true, hasUserVerification: true },
             });
             const openSettings = async () => {
-                await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'settings'));
+                await page.evaluate(() => window.NeconyanShell.openTab('right', 'settings'));
                 await page.locator('.sb-settings-tab-btn[data-tab="cache-account"]').click();
                 await expect(page.locator('#passkey_controls')).toBeVisible();
             };

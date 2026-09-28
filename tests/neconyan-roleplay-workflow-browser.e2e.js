@@ -145,7 +145,7 @@ for (const phone of [false, true]) {
             id: 'controls-recovery', name: 'Recovery before controls', version: 1, recoveryFor: 'controls', agents: [agent], globalSettings: { enabled: true },
         }));
         const page = await account.open({ workspace: false, readyTimeout: 120000 });
-        await page.evaluate(() => window.SillyBunnyShell.openTab('left', 'agents'));
+        await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
         const toggle = page.locator('#ica--globalEnabled');
         await expect(toggle).toHaveText('Agents On', { timeout: 30000 });
         await expect(page.locator('#ica--run-status')).toHaveText('Agent setup or library needs recovery');
@@ -159,7 +159,7 @@ for (const phone of [false, true]) {
         expect(JSON.parse((await account.post('/api/settings/get')).settings).extension_settings.inChatAgents.globalSettings.enabled).toBe(false);
         await page.reload({ waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 120000 });
-        await page.evaluate(() => window.SillyBunnyShell.openTab('left', 'agents'));
+        await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
         await expect(toggle).toHaveText('Agents Off', { timeout: 30000 });
         await expect(paw).toBeVisible();
         const geometry = await paw.boundingBox();

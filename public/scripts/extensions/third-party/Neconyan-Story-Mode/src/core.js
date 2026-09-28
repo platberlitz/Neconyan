@@ -3,7 +3,7 @@
  * so every function is exercised by test/core.test.js.
  */
 
-export const SETTINGS_KEY = 'SillyBunny-Story-Mode';
+export const SETTINGS_KEY = 'Neconyan-Story-Mode';
 /** chat_metadata key: { enabled } */
 export const CHAT_KEY = 'story_mode';
 /** message.extra key: { cuts: number[], revision: string } */

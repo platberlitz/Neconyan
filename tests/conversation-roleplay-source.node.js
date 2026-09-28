@@ -9,7 +9,7 @@ import { setConfigFilePath } from '../src/util.js';
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 
 const { SETTINGS_FILE } = await import('../src/constants.js');
-const CONVERSATION_STORE_KEY = 'sillybunny_conversation';
+const CONVERSATION_STORE_KEY = 'neconyan_conversation';
 const { acceptConversationAside, registerConversationReplyJob } = await import('../src/generation/conversation-jobs.js');
 const { getJob } = await import('../src/jobs/store.js');
 const { testExports: { runJob }, setDirectoriesResolver } = await import('../src/jobs/runner.js');

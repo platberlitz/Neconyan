@@ -19,9 +19,9 @@ function getCacheControlFor(requestPath) {
 describe('frontend asset fallback headers', () => {
     test('redirects known native aliases without hijacking similarly named personal extensions', () => {
         for (const [source, target] of [
-            ['third-party/SillyBunny-MacroEnhanced/index.js', 'third-party/MacroEnhanced/index.js'],
+            ['third-party/Neconyan-MacroEnhanced/index.js', 'third-party/MacroEnhanced/index.js'],
             ['third-party/BunnyPresetTools/content.js', 'third-party/Neconyan-Preset-Tools/content.js'],
-            ['sillybunny-debugger/src/ui.js', 'neconyan-debugger/src/ui.js'],
+            ['third-party/Neconyan-Debugger/src/ui.js', 'neconyan-debugger/src/ui.js'],
         ]) {
             const redirect = jest.fn();
             const next = jest.fn();
@@ -31,10 +31,12 @@ describe('frontend asset fallback headers', () => {
             expect(next).not.toHaveBeenCalled();
         }
         for (const pathname of [
-            '/scripts/extensions/third-party/SillyBunny-CustomTool/index.js',
+            '/scripts/extensions/third-party/Neconyan-CustomTool/index.js',
             '/scripts/extensions/third-party/BunnyPresetToolsCustom/content.js',
-            '/scripts/sillybunny-personal.js',
-            '/css/sillybunny-personal.css',
+            '/scripts/neconyan-personal.js',
+            '/css/neconyan-personal.css',
+            '/scripts/neconyan-tabs.js',
+            '/scripts/neconyan-conversation/index.js',
         ]) {
             const redirect = jest.fn();
             const next = jest.fn();

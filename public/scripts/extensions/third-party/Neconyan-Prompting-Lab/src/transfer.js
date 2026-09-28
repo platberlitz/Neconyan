@@ -1,5 +1,6 @@
 import {
     EXPORT_FORMAT,
+    LEGACY_EXPORT_FORMAT,
     EXPORT_VERSION,
     MAX_EXPORT_BYTES,
     MAX_EXPORT_WITH_BASELINES_BYTES,
@@ -204,7 +205,7 @@ export function parseImport(text, { regex } = {}) {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
         throw new Error('That file does not contain a Prompting Lab suite.');
     }
-    if (payload.format !== EXPORT_FORMAT && payload.format !== 'neconyan-prompting-lab') {
+    if (payload.format !== EXPORT_FORMAT && payload.format !== LEGACY_EXPORT_FORMAT) {
         throw new Error('That file was not made by Prompting Lab.');
     }
     const version = Number(payload.version);

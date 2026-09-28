@@ -46,7 +46,7 @@ function writeActive(target, data) {
 }
 
 beforeEach(() => {
-    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-chat-recovery-'));
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-chat-recovery-'));
     chatsDirectory = path.join(tempRoot, 'chats');
     groupChatsDirectory = path.join(tempRoot, 'group chats');
     backupDirectory = path.join(tempRoot, 'backups');

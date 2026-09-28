@@ -14,7 +14,7 @@ let router;
 let scheduleServerPluginUpdate;
 
 beforeAll(async () => {
-    configDirectory = fs.mkdtempSync(`${os.tmpdir()}/sillybunny-plugin-admin-`);
+    configDirectory = fs.mkdtempSync(`${os.tmpdir()}/neconyan-plugin-admin-`);
     const configPath = `${configDirectory}/config.yaml`;
     fs.writeFileSync(configPath, 'enableServerPlugins: true\n');
     const { setConfigFilePath } = await import('../src/util.js');

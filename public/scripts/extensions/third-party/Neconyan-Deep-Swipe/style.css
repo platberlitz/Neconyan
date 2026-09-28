@@ -681,7 +681,7 @@ body:not(.swipeAllMessages) .mes .deep-swipe-right {
 }
 
 /* =============================================
-   SILLYBUNNY CHAT STYLES (Echo, Whisper, Hush, Ripple, Tide)
+   NECONYAN CHAT STYLES (Echo, Whisper, Hush, Ripple, Tide)
 
    These layouts move the native swipe controls into a bottom-right cluster,
    but scope that only to .last_mes - the one message Deep Swipe never draws

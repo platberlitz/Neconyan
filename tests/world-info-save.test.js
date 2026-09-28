@@ -475,7 +475,7 @@ describe('shared World Info saves', () => {
         created.content = 'Created externally';
         delete external.entries[1];
         external.entries[2].content = 'External update';
-        external.extensions.sillybunny_pathfinder = { version: 1, tree: { id: 'root', children: [] } };
+        external.extensions.neconyan_pathfinder = { version: 1, tree: { id: 'root', children: [] } };
 
         await expect(context.saveWorldInfo('Lore', external, true)).resolves.toBe('Lore');
         await input.edit(8);
@@ -750,10 +750,10 @@ describe('shared World Info saves', () => {
         const external = await host.context.loadWorldInfo('Lore');
         delete external.entries[1];
         host.context.deleteWIOriginalDataValue(external, '1');
-        external.entries[3] = { uid: 3, content: 'New', extensions: { sillybunny_pathfinder: { version: 1, nodeId: 'node' } } };
+        external.entries[3] = { uid: 3, content: 'New', extensions: { neconyan_pathfinder: { version: 1, nodeId: 'node' } } };
         external.originalData.entries.push({ id: 3, content: 'New', extensions: external.entries[3].extensions });
         external.originalDataUidMap[3] = 2;
-        external.extensions.sillybunny_pathfinder = external.originalData.extensions.sillybunny_pathfinder = { version: 1, tree: { id: 'root' } };
+        external.extensions.neconyan_pathfinder = external.originalData.extensions.neconyan_pathfinder = { version: 1, tree: { id: 'root' } };
         await host.context.saveWorldInfo('Lore', external, true);
         native.entries[0].content = 'Native draft';
         host.context.setWIOriginalDataValue(native, 0, 'content', 'Native draft');
@@ -790,7 +790,7 @@ describe('World Info lifecycle coordination', () => {
         context.name = 'Lore';
         context.data = await context.loadWorldInfo('Lore');
         const external = await context.loadWorldInfo('Lore');
-        external.extensions.sillybunny_pathfinder = { version: 1, tree: { id: 'root' } };
+        external.extensions.neconyan_pathfinder = { version: 1, tree: { id: 'root' } };
         await context.saveWorldInfo('Lore', external, true);
         context.data.entries[0].depth = 6;
         host.books.set('Copy', { entries: {}, extensions: { obsolete: true } });
@@ -814,8 +814,8 @@ describe('World Info lifecycle coordination', () => {
         const host = createHost();
         await host.context.loadWorldInfo('Lore');
         const characterBook = {
-            extensions: { foreign: true, sillybunny_pathfinder: { version: 1, tree: { id: 'root' } } },
-            entries: [{ id: 42, content: 'Imported', extensions: { sillybunny_pathfinder: { version: 1, nodeId: 'root' } } }],
+            extensions: { foreign: true, neconyan_pathfinder: { version: 1, tree: { id: 'root' } } },
+            entries: [{ id: 42, content: 'Imported', extensions: { neconyan_pathfinder: { version: 1, nodeId: 'root' } } }],
         };
         await host.context.importWorldInfo(new File([JSON.stringify({ spec: 'lorebook_v3', data: characterBook })], 'Lore.json'));
         const saved = host.books.get('Lore');
@@ -857,7 +857,7 @@ describe('World Info lifecycle coordination', () => {
         const host = createHost();
         const staleEditor = await host.context.loadWorldInfo('Lore');
         const external = await host.context.loadWorldInfo('Lore');
-        external.extensions.sillybunny_pathfinder = { version: 1, tree: { id: 'root' } };
+        external.extensions.neconyan_pathfinder = { version: 1, tree: { id: 'root' } };
         await host.context.saveWorldInfo('Lore', external, true);
         const held = host.hold('/api/worldinfo/rename');
         const renaming = host.context.renameWorldInfo('Lore', staleEditor);

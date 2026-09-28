@@ -112,7 +112,7 @@ export function capturePromptingContext(base, account, pins, { maxTokens = 300, 
             model: material.profile?.model ?? controls.openai_model ?? '', profileName: material.profile?.name ?? pins.connectionProfileId ?? '',
             presetName: sampler?.name ?? material.profile?.preset ?? '', presets: pins.presets ?? [], personaName: names.user,
             characterName: names.char, characterAvatar: avatar, macroEnhanced: pins.macroEnhanced ?? 'record' },
-        settings: settings.extension_settings?.SillyBunnyPromptingLab ?? {} };
+        settings: settings.extension_settings?.NeconyanPromptingLab ?? {} };
 }
 
 export function promptingMaterial(directories, plan) {

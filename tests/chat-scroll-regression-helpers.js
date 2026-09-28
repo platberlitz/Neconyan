@@ -1,7 +1,7 @@
 /* global document, HTMLElement, requestAnimationFrame, window, WheelEvent */
 import { createMockRoleplayStore } from './roleplay-browser-fixture.js';
 
-export const APP_URL = process.env.NECONYAN_TEST_BASE_URL || process.env.SILLYBUNNY_TEST_BASE_URL || '/';
+export const APP_URL = process.env.NECONYAN_TEST_BASE_URL || '/';
 
 /** Acknowledge a layout-only settings save using the current browser/server contract. */
 export function acknowledgeSettingsSave(route, version = Date.now()) {
@@ -36,7 +36,7 @@ export async function dismissOnboardingIfPresent(page) {
     const dialogText = await openDialog.textContent({ timeout: 1000 }).catch(() => '');
     const onboardingInput = openDialog.locator('textarea.popup-input, input.popup-input, input[type="text"], textarea').first();
     const hasOnboardingInput = await onboardingInput.isVisible().catch(() => false);
-    const isWelcomeDialog = /Welcome to SillyBunny/i.test(dialogText ?? '');
+    const isWelcomeDialog = /Welcome to Neconyan/i.test(dialogText ?? '');
 
     if (!isWelcomeDialog && !hasOnboardingInput) {
         return;

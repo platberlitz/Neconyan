@@ -9,7 +9,7 @@ import { setConfigFilePath } from '../src/util.js';
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 
 const { SETTINGS_FILE, CONVERSATION_STORE_KEY } = await import('../src/constants.js').then(async constants => ({
-    ...constants, CONVERSATION_STORE_KEY: 'sillybunny_conversation',
+    ...constants, CONVERSATION_STORE_KEY: 'neconyan_conversation',
 }));
 const { acceptConversationSchedule, acceptConversationSummary, registerConversationMaintenanceJobs, buildConversationSummaryPrompt, finalizeConversationMaintenanceSubmission } = await import('../src/generation/conversation-maintenance.js');
 const { commitConversationStoreEffect, wasConversationAutomaticOccurrenceAccepted } = await import('../src/generation/conversation-effects.js');

@@ -21,7 +21,7 @@ export function importRelativePath(value) {
     const parts = value.replace(/\/$/, '').split('/');
     if (parts.some(part => !part || part === '.' || part === '..')) return null;
     if (!(parts.length === 1 && ROOT_FILES.includes(parts[0])) && !ROOT_DIRECTORIES.includes(parts[0])) return null;
-    if (parts.at(-1).endsWith(FILE_WRITE_RECOVERY_SUFFIX) || (parts[0] === USER_DIRECTORY_TEMPLATE.extensions && parts.includes('.git'))) return null;
+    if (parts.at(-1).endsWith(FILE_WRITE_RECOVERY_SUFFIX) || parts.at(-1).endsWith('.sillybunny-write-recovery') || (parts[0] === USER_DIRECTORY_TEMPLATE.extensions && parts.includes('.git'))) return null;
     return parts.join('/');
 }
 

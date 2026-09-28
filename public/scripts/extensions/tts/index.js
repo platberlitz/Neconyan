@@ -949,7 +949,7 @@ async function processTtsQueue() {
         passAsterisks: extension_settings.tts.pass_asterisks,
     });
 
-    // SillyBunny: Strip tag markup before quote extraction so wrappers preserve dialogue without narrating attributes.
+    // Neconyan: Strip tag markup before quote extraction so wrappers preserve dialogue without narrating attributes.
     if (extension_settings.tts.narrate_quoted_only) {
         const partJoiner = (ttsProvider?.separator || ' ... ');
         if (extension_settings.tts.skip_tags) {

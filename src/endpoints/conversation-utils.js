@@ -849,8 +849,8 @@ function getUserImageRelativePath(imageUrl) {
         return null;
     }
 
-    const url = new URL(normalizedUrl, 'https://sillybunny.invalid');
-    if (url.origin !== 'https://sillybunny.invalid' || !url.pathname.startsWith('/user/images/')) {
+    const url = new URL(normalizedUrl, 'https://neconyan.invalid');
+    if (url.origin !== 'https://neconyan.invalid' || !url.pathname.startsWith('/user/images/')) {
         return '';
     }
     const relativePath = decodeURIComponent(url.pathname.slice('/user/images/'.length));

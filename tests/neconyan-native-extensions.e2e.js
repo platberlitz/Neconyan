@@ -690,7 +690,7 @@ for (const width of [1280, 390, 320]) {
                 expect(native).toHaveLength(17);
                 expect(new Set(native.map(entry => entry.name)).size).toBe(17);
 
-                await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'extensions'));
+                await page.evaluate(() => window.NeconyanShell.openTab('right', 'extensions'));
                 await page.locator('#extensions_details').click();
                 const catalog = page.locator('dialog.popup:visible .extension_native');
                 await expect(catalog).toHaveCount(17);
@@ -709,7 +709,7 @@ for (const width of [1280, 390, 320]) {
                 await page.locator('#send_textarea').fill('Keep this draft while I explore the native tools.');
                 await expect(page.locator('#chat .mes_text').first()).toHaveCSS('font-family', /Nunito/);
 
-                await page.evaluate(() => window.SillyBunnyShell.openTab('characters', 'characters'));
+                await page.evaluate(() => window.NeconyanShell.openTab('characters', 'characters'));
                 if (width === 320) {
                     for (const tab of ['characters', 'groups', 'world-info', 'persona', 'import']) {
                         await page.evaluate(tab => window.NeconyanShell.openTab('characters', tab), tab);
@@ -737,7 +737,7 @@ for (const width of [1280, 390, 320]) {
                 if (await story.getAttribute('aria-pressed') === 'true') {
                     await (await modeButton(page, width, 'roleplay')).click();
                     await expect(page.locator('body')).not.toHaveClass(/sbstory/);
-                    await page.evaluate(() => window.SillyBunnyShell.openTab('characters', 'characters'));
+                    await page.evaluate(() => window.NeconyanShell.openTab('characters', 'characters'));
                 }
                 await (await modeButton(page, width, 'story')).click();
                 await expect(page.locator('body')).toHaveClass(/sbstory/);
@@ -746,7 +746,7 @@ for (const width of [1280, 390, 320]) {
                 await expect(page.locator('#send_textarea')).toHaveValue('Keep this draft while I explore the native tools.');
                 await page.screenshot({ path: info.outputPath('story-mode.png') });
 
-                await page.evaluate(() => window.SillyBunnyShell.openTab('characters', 'characters'));
+                await page.evaluate(() => window.NeconyanShell.openTab('characters', 'characters'));
                 await (await modeButton(page, width, 'meower')).click();
                 await expect(page.locator('#sheld')).toHaveAttribute('data-sbtw-mode', 'on');
                 await expect(page.locator('.sbtw-shell')).toBeVisible();
@@ -768,7 +768,7 @@ for (const width of [1280, 390, 320]) {
                 await expect(page.locator('#send_textarea')).toHaveValue('Keep this draft while I explore the native tools.');
                 await expect(page.locator('#toast-container .toast')).toHaveCount(0);
                 await page.screenshot({ path: info.outputPath('meower.png') });
-                await page.evaluate(() => window.SillyBunnyShell.openTab('characters', 'characters'));
+                await page.evaluate(() => window.NeconyanShell.openTab('characters', 'characters'));
                 await (await modeButton(page, width, 'story')).click();
                 await expect(page.locator('#sheld')).not.toHaveAttribute('data-sbtw-mode', 'on');
                 await expect(page.locator('#sbstory-bar')).toBeVisible();
@@ -863,7 +863,7 @@ test.describe('native import report', () => {
         page.on('dialog', dialog => dialog.accept());
         await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
         await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
-        await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'settings'));
+        await page.evaluate(() => window.NeconyanShell.openTab('right', 'settings'));
         await page.locator('.sb-settings-tab-btn[data-tab="system-device"]').click();
         const section = page.locator('#SillyTavernImportSection');
         if (!await page.locator('#sb-import-path-input').isVisible()) await section.locator('.inline-drawer-toggle').first().click();
@@ -891,7 +891,7 @@ test.describe('native Termeownal UI', () => {
         await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
         await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
         await expect(page.locator('body')).not.toHaveClass(/(?:^| )sbterm(?: |$)/);
-        await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'extensions'));
+        await page.evaluate(() => window.NeconyanShell.openTab('right', 'extensions'));
         const labels = await page.locator('.sb-extensions-select option').allTextContents();
         expect(labels.filter(label => /^Silly(?:Bunny|Tavern)[-_]/.test(label))).toEqual([]);
         await page.locator('.sb-extensions-scope-button[data-extensions-scope="built-in"]').click();
@@ -904,7 +904,7 @@ test.describe('native Termeownal UI', () => {
                 page.locator('dialog.popup:visible .popup-button-ok').click(),
             ]);
             await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
-            await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'extensions'));
+            await page.evaluate(() => window.NeconyanShell.openTab('right', 'extensions'));
         } else {
             await page.locator('dialog.popup:visible .popup-button-ok').click();
         }
@@ -930,7 +930,7 @@ test.describe('native Termeownal UI', () => {
             if (await enable.count()) await enable.uncheck();
         }
         await expect(page.locator('body')).not.toHaveClass(/(?:^| )sbterm(?: |$)/);
-        await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'extensions'));
+        await page.evaluate(() => window.NeconyanShell.openTab('right', 'extensions'));
         await page.locator('#extensions_details').click();
         await extensionToggle.uncheck();
         await Promise.all([page.waitForEvent('domcontentloaded'), page.locator('dialog.popup:visible .popup-button-ok').click()]);
@@ -1063,7 +1063,7 @@ test.describe('Conversation and native view transitions', () => {
         const errors = safety.errors;
         const requests = safety.modelRequests;
         await mockNativeSettings(page);
-        const openCharacters = () => page.evaluate(() => window.SillyBunnyShell.openTab('characters', 'characters'));
+        const openCharacters = () => page.evaluate(() => window.NeconyanShell.openTab('characters', 'characters'));
         const openConversation = async () => {
             await (await modeButton(page, 320, 'conversation')).click();
             await expect(page.locator('#sb_conversation_stage')).toBeVisible();

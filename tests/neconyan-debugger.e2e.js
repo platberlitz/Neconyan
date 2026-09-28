@@ -87,7 +87,7 @@ test.beforeEach(async ({ page }) => {
 
 test.afterEach(async ({ page }) => {
     await page.evaluate(() => {
-        globalThis.__sillyBunnyDebuggerEruda?.destroy?.();
+        globalThis.__neconyanDebuggerEruda?.destroy?.();
         globalThis.eruda?.destroy?.();
     });
 });
@@ -97,7 +97,7 @@ test('provides a keyboard-operable 44px entry button', async ({ page }) => {
     await page.addScriptTag({ path: bundlePath });
     expect(await page.evaluate(() => typeof globalThis.eruda)).toBe('undefined');
     await page.evaluate(() => {
-        const eruda = globalThis.__sillyBunnyDebuggerEruda;
+        const eruda = globalThis.__neconyanDebuggerEruda;
         eruda.init({ tool: ['console'] });
         globalThis.sbdbgEntryActivations = 0;
         eruda._entryBtn.on('click', () => {
@@ -117,14 +117,14 @@ test('provides a keyboard-operable 44px entry button', async ({ page }) => {
     await expect.poll(() => page.evaluate(() => globalThis.sbdbgEntryActivations)).toBe(1);
 
     await page.evaluate(() => {
-        globalThis.__sillyBunnyDebuggerEruda.hide();
+        globalThis.__neconyanDebuggerEruda.hide();
         globalThis.sbdbgEntryActivations = 0;
     });
     await entry.click();
     await expect.poll(() => page.evaluate(() => globalThis.sbdbgEntryActivations)).toBe(1);
 
     await page.evaluate(() => {
-        globalThis.__sillyBunnyDebuggerEruda.hide();
+        globalThis.__neconyanDebuggerEruda.hide();
         globalThis.sbdbgEntryActivations = 0;
     });
     const bounds = await entry.boundingBox();
@@ -161,7 +161,7 @@ test('keeps the entry button inside the visual viewport', async ({ page }) => {
         globalThis.sbdbgVisualViewportListeners = listenerCounts;
     });
     await page.addScriptTag({ path: bundlePath });
-    await page.evaluate(() => globalThis.__sillyBunnyDebuggerEruda.init({ tool: ['console'] }));
+    await page.evaluate(() => globalThis.__neconyanDebuggerEruda.init({ tool: ['console'] }));
 
     const entry = page.locator('.eruda-entry-btn');
     await expect.poll(async () => {
@@ -183,7 +183,7 @@ test('keeps the entry button inside the visual viewport', async ({ page }) => {
         return bounds.x >= 50 && bounds.y >= 60 && bounds.x + bounds.width <= 210 && bounds.y + bounds.height <= 240;
     }).toBe(true);
 
-    await page.evaluate(() => globalThis.__sillyBunnyDebuggerEruda.destroy());
+    await page.evaluate(() => globalThis.__neconyanDebuggerEruda.destroy());
     expect(await page.evaluate(() => globalThis.sbdbgVisualViewportListeners)).toEqual({ resize: 0, scroll: 0 });
 });
 
@@ -191,7 +191,7 @@ test('shows only the page origin in Eruda Info', async ({ page }) => {
     await page.evaluate(() => globalThis.history.replaceState({}, '', '/private/chat?token=location-secret#private'));
     await page.addScriptTag({ path: bundlePath });
     const locationInfo = await page.evaluate(() => {
-        const eruda = globalThis.__sillyBunnyDebuggerEruda;
+        const eruda = globalThis.__neconyanDebuggerEruda;
         eruda.init({ tool: ['info'] });
         return eruda.get('info').get('Location')();
     });
@@ -204,7 +204,7 @@ test('shows only the page origin in Eruda Info', async ({ page }) => {
 test('cleans tools that fail during initialization', async ({ page }) => {
     await page.addScriptTag({ path: bundlePath });
     const result = await page.evaluate(() => {
-        const eruda = globalThis.__sillyBunnyDebuggerEruda;
+        const eruda = globalThis.__neconyanDebuggerEruda;
         const consoleLog = globalThis.console.log;
         const consoleInit = eruda.Console.prototype.init;
         const networkInit = eruda.Network.prototype.init;
@@ -411,7 +411,7 @@ test('preserves foreign public and private Eruda globals', async ({ page }) => {
 
     await page.evaluate(() => {
         delete globalThis.eruda;
-        Object.defineProperty(globalThis, '__sillyBunnyDebuggerEruda', {
+        Object.defineProperty(globalThis, '__neconyanDebuggerEruda', {
             configurable: true,
             value: { owner: 'foreign-private' },
         });
@@ -419,7 +419,7 @@ test('preserves foreign public and private Eruda globals', async ({ page }) => {
     });
     await page.locator('#sbdbg-menu-item').click();
     await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 50)));
-    expect(await page.evaluate(() => globalThis.__sillyBunnyDebuggerEruda?.owner)).toBe('foreign-private');
+    expect(await page.evaluate(() => globalThis.__neconyanDebuggerEruda?.owner)).toBe('foreign-private');
     await expect(page.locator('script[src*="/lib/eruda.js?load="]')).toHaveCount(0);
     await page.evaluate(() => globalThis.sbdbgLifecycle.deactivate());
 });
@@ -500,7 +500,7 @@ test('captures only shareable console metadata and clears it on disable', async 
 test('stores only redacted Network metadata and can reinitialize cleanly', async ({ page }) => {
     await page.addScriptTag({ path: bundlePath });
     const result = await page.evaluate(async () => {
-        const eruda = globalThis.__sillyBunnyDebuggerEruda;
+        const eruda = globalThis.__neconyanDebuggerEruda;
         eruda.init({ tool: ['network'] });
         document.cookie = 'cookie-name-secret-741=cookie-value-secret-741';
         const method = {
@@ -605,7 +605,7 @@ test('stores only redacted WebSocket metadata and payload markers', async ({ pag
     await page.addScriptTag({ path: bundlePath });
 
     const observed = await page.evaluate(async () => {
-        const eruda = globalThis.__sillyBunnyDebuggerEruda;
+        const eruda = globalThis.__neconyanDebuggerEruda;
         eruda.init({ tool: ['network'] });
         const network = eruda.chobitsu.domain('Network');
         const events = {};

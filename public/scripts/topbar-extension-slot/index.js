@@ -5,7 +5,7 @@ export const TOPBAR_ADOPTION_ATTRIBUTE = 'data-sb-topbar-adopt';
 export const TOPBAR_ADOPTED_MARKER_ATTRIBUTE = 'data-sb-topbar-adopted';
 
 /**
- * The nine upstream drawers that live in #top-settings-holder. SillyBunny relocates or
+ * The nine upstream drawers that live in #top-settings-holder. Neconyan relocates or
  * ghost-hides each of them, so they must never be treated as third-party markup. The same
  * nine ids are enumerated in the hide/inert rules in neconyan-tabs.css; keep both in sync.
  */
@@ -45,7 +45,6 @@ export const TOPBAR_ADOPTION_SKIP_REASON = Object.freeze({
     NOT_ELEMENT: 'not-element',
     NATIVE_DRAWER: 'native-drawer',
     NECONYAN_OWNED: 'neconyan-owned',
-    SILLYBUNNY_OWNED: 'neconyan-owned',
     OPTED_OUT: 'opted-out',
     EXCLUDED_TAG: 'excluded-tag',
     EXCLUDED_CLASS: 'excluded-class',
@@ -70,7 +69,7 @@ export function isNativeTopbarDrawerId(id) {
 
 /**
  * Decides whether a node found in #top-bar or #top-settings-holder should be adopted into
- * the SillyBunny top bar's extension slot.
+ * the Neconyan top bar's extension slot.
  * @param {object} descriptor Descriptor produced by describeTopbarNode().
  * @param {boolean} [descriptor.isElement=false] Whether the node is an Element.
  * @param {string} [descriptor.id=''] Element id.
@@ -78,7 +77,6 @@ export function isNativeTopbarDrawerId(id) {
  * @param {string|string[]} [descriptor.classNames=[]] Class list.
  * @param {string|null} [descriptor.adoptAttribute=null] Value of data-sb-topbar-adopt.
  * @param {boolean} [descriptor.isNeconyanOwned=false] Whether Neconyan created the node.
- * @param {boolean} [descriptor.isSillyBunnyOwned=false] Legacy alias for the ownership flag.
  * @returns {{shouldAdopt: boolean, reason: string}} Verdict and, when skipped, why.
  */
 export function resolveTopbarNodeAdoption({
@@ -88,7 +86,6 @@ export function resolveTopbarNodeAdoption({
     classNames = [],
     adoptAttribute = null,
     isNeconyanOwned = false,
-    isSillyBunnyOwned = false,
 } = {}) {
     if (!isElement) {
         return { shouldAdopt: false, reason: TOPBAR_ADOPTION_SKIP_REASON.NOT_ELEMENT };
@@ -106,7 +103,7 @@ export function resolveTopbarNodeAdoption({
         return { shouldAdopt: false, reason: TOPBAR_ADOPTION_SKIP_REASON.NATIVE_DRAWER };
     }
 
-    if (isNeconyanOwned || isSillyBunnyOwned) {
+    if (isNeconyanOwned) {
         return { shouldAdopt: false, reason: TOPBAR_ADOPTION_SKIP_REASON.NECONYAN_OWNED };
     }
 

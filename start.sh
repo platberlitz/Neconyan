@@ -7,16 +7,11 @@ cd "$SCRIPT_DIR"
 
 # Neconyan names are canonical. Keep the old launcher variables as fallbacks
 # for existing shortcuts and export both names to child processes.
-export NECONYAN_USE_NODE="${NECONYAN_USE_NODE:-${SILLYBUNNY_USE_NODE:-}}"
-export NECONYAN_USE_BUN="${NECONYAN_USE_BUN:-${SILLYBUNNY_USE_BUN:-}}"
-export NECONYAN_TERMUX_RUNTIME="${NECONYAN_TERMUX_RUNTIME:-${SILLYBUNNY_TERMUX_RUNTIME:-auto}}"
-export NECONYAN_AUTO_UPDATE="${NECONYAN_AUTO_UPDATE:-${SILLYBUNNY_AUTO_UPDATE:-1}}"
-export NECONYAN_BUN_SMOL="${NECONYAN_BUN_SMOL:-${SILLYBUNNY_BUN_SMOL:-}}"
-export SILLYBUNNY_USE_NODE="$NECONYAN_USE_NODE"
-export SILLYBUNNY_USE_BUN="$NECONYAN_USE_BUN"
-export SILLYBUNNY_TERMUX_RUNTIME="$NECONYAN_TERMUX_RUNTIME"
-export SILLYBUNNY_AUTO_UPDATE="$NECONYAN_AUTO_UPDATE"
-export SILLYBUNNY_BUN_SMOL="$NECONYAN_BUN_SMOL"
+export NECONYAN_USE_NODE="${NECONYAN_USE_NODE:-}"
+export NECONYAN_USE_BUN="${NECONYAN_USE_BUN:-}"
+export NECONYAN_TERMUX_RUNTIME="${NECONYAN_TERMUX_RUNTIME:-auto}"
+export NECONYAN_AUTO_UPDATE="${NECONYAN_AUTO_UPDATE:-1}"
+export NECONYAN_BUN_SMOL="${NECONYAN_BUN_SMOL:-}"
 
 is_truthy() {
     local value
@@ -332,7 +327,7 @@ fi
 
 "$PACKAGE_MANAGER_CMD" run init
 
-if is_truthy "${NECONYAN_BUN_SMOL:-${SILLYBUNNY_BUN_SMOL:-}}" && [[ "$runtime_kind" == node ]]; then
+if is_truthy "${NECONYAN_BUN_SMOL:-}" && [[ "$runtime_kind" == node ]]; then
     echo "[Neconyan] NECONYAN_BUN_SMOL is set, but Node.js was selected. The Bun --smol flag will be ignored."
     echo "[Neconyan] For Bun with --smol, use ./start-bun.sh (Termux: bash start-termux-bun.sh)."
 fi
@@ -340,7 +335,6 @@ fi
 echo "Entering Neconyan..."
 export NODE_NO_WARNINGS=1
 export NECONYAN_LAUNCHER=1
-export SILLYBUNNY_LAUNCHER=1
 
 restart_exit_code=75
 server_restart_count=0
@@ -348,7 +342,7 @@ server_restart_count=0
 run_server() {
     if [[ "$runtime_kind" == node ]]; then
         "$RUNTIME_CMD" --no-warnings server.js "$@"
-    elif is_truthy "${NECONYAN_BUN_SMOL:-${SILLYBUNNY_BUN_SMOL:-}}"; then
+    elif is_truthy "${NECONYAN_BUN_SMOL:-}"; then
         # Bun grows the JSC heap freely while RAM looks plentiful, so on small
         # hosts RSS sawtooths by more than a gigabyte between collections.
         # --smol trades throughput for much more aggressive GC, matching the
@@ -362,7 +356,6 @@ run_server() {
 while true; do
     if (( server_restart_count > 0 )); then
         export NECONYAN_SKIP_BROWSER_AUTO_LAUNCH=1
-        export SILLYBUNNY_SKIP_BROWSER_AUTO_LAUNCH=1
     fi
 
     if (( ${#server_args[@]} )); then

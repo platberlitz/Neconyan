@@ -22,7 +22,7 @@ describe('Google model request compatibility', () => {
     const tempDirs = [];
 
     beforeAll(async () => {
-        const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-google-model-config-'));
+        const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-google-model-config-'));
         const configPath = path.join(configRoot, 'config.yaml');
         const defaultConfig = fs.readFileSync(fileURLToPath(new URL('../default/config.yaml', import.meta.url)), 'utf8');
         fs.writeFileSync(configPath, defaultConfig);
@@ -31,7 +31,7 @@ describe('Google model request compatibility', () => {
 
         const { router: chatCompletionsRouter } = await import('../src/endpoints/backends/chat-completions.js');
         const { SecretManager, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
-        const userRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-google-model-user-'));
+        const userRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-google-model-user-'));
         tempDirs.push(userRoot);
         const secretManager = new SecretManager({ root: userRoot, backups: userRoot });
         secretManager.writeSecret(SECRET_KEYS.MAKERSUITE, 'google-test-key');

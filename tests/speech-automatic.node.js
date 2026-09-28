@@ -45,7 +45,7 @@ function accountFixture(t, { enabled = true, multiVoice = false } = {}) {
                 multi_voice_enabled: multiVoice, pass_asterisks: true,
                 OpenAI: { model: 'gpt-4o-mini-tts', speed: 1.25, characterInstructions: { Nova: 'Speak as {{char}} to {{user}}.' },
                     voiceMap: multiVoice ? { 'Nova (*Text inside asterisks*)': 'alloy', 'Nova ("Quotes")': 'nova', 'Nova (Other text)': 'echo' } : { Nova: 'nova' } } },
-            sillybunny_conversation: { version: 1, settings: { connection_profile: 'main' }, groups: [], reminders: [],
+            neconyan_conversation: { version: 1, settings: { connection_profile: 'main' }, groups: [], reminders: [],
                 characters: { 'Nova.png': { settings: {}, activeBranchId: 'main', branches: { main: branch } } } },
         },
     };
@@ -127,7 +127,7 @@ test('automatic Conversation speech stays disabled after admission and refuses a
     for (const kind of ['settings', 'messages', 'account']) {
         const f = await conversationFixture(t);
         if (kind === 'settings') f.settings.extension_settings.tts.OpenAI.speed = 2;
-        if (kind === 'messages') f.settings.extension_settings.sillybunny_conversation.characters['Nova.png'].branches.main.messages[0].mes = 'Edited.';
+        if (kind === 'messages') f.settings.extension_settings.neconyan_conversation.characters['Nova.png'].branches.main.messages[0].mes = 'Edited.';
         if (kind === 'account') f.snapshot.speechAccount.dataEpoch = 'another-epoch';
         f.save(f.settings);
         await assert.rejects(createConversationNarrator({ fetchImpl: refuseFetch })(f.context(), f.snapshot, 'Hello.', f.snapshot.speaker, { effectId: 'bubble:reply:0' }));

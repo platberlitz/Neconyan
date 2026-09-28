@@ -196,15 +196,15 @@
 }
 
 html {
-    /* SillyBunny: root transforms rasterize backdrop-filter descendants and can
+    /* Neconyan: root transforms rasterize backdrop-filter descendants and can
        soften their text on high-resolution displays. Keep the document untransformed. */
     height: 100dvh;
-    /* SillyBunny: `clip` (unlike `hidden`) blocks programmatic viewport
+    /* Neconyan: `clip` (unlike `hidden`) blocks programmatic viewport
        scrolling too, so scrollIntoView on search results can't shift the
        fixed-layout app and strand a black bar at the bottom. */
     overflow: hidden;
     overflow: clip;
-    /* SillyBunny: iOS Safari will otherwise rubber-band scroll the whole app
+    /* Neconyan: iOS Safari will otherwise rubber-band scroll the whole app
        (black gap, blank chat) when a drag lands above #chat or touches the
        top-bar, because the shell is positioned fixed-ish and not overflow-y
        scrollable. `none` prevents any scroll chaining off the document. */
@@ -229,18 +229,18 @@ body {
     overflow: hidden;
     overflow: clip;
     color-scheme: only light;
-    /* SillyBunny: paired with html; stops scroll chaining off the document. */
+    /* Neconyan: paired with html; stops scroll chaining off the document. */
     overscroll-behavior: none;
 }
 
-/* SillyBunny: `blur(0px)` still creates compositor layers, so only expose blur filters above zero. */
+/* Neconyan: `blur(0px)` still creates compositor layers, so only expose blur filters above zero. */
 body.sb-theme-blur {
     --SmartThemeBackdropFilter: blur(var(--SmartThemeBlurStrength));
     --SmartThemeBackdropFilter2x: blur(calc(var(--SmartThemeBlurStrength) * 2));
     --SmartThemeBackdropFilterSaturated: blur(var(--SmartThemeBlurStrength)) saturate(110%);
 }
 
-/* SillyBunny: Firefox ignores WebKit scrollbar pseudo-elements. */
+/* Neconyan: Firefox ignores WebKit scrollbar pseudo-elements. */
 * {
     scrollbar-width: thin;
     scrollbar-color: var(--sb-scrollbar-thumb) var(--sb-scrollbar-track);
@@ -370,7 +370,7 @@ table.responsiveTable {
 }
 
 .interactable:focus-visible {
-    /* SillyBunny: keep keyboard rings inside rounded clipped surfaces. */
+    /* Neconyan: keep keyboard rings inside rounded clipped surfaces. */
     outline: none;
     box-shadow: inset 0 0 0 2px var(--color-focus-ring, var(--interactable-outline-color));
 }
@@ -1006,7 +1006,7 @@ body .panelControlBar {
     z-index: 30;
     flex-grow: 1;
     overflow-anchor: none;
-    /* SillyBunny: keep iOS touch rubber-band inside #chat only; paired with
+    /* Neconyan: keep iOS touch rubber-band inside #chat only; paired with
        html/body `overscroll-behavior: none` this blocks the page-level
        overscroll that blanks the whole conversation. */
     overscroll-behavior-y: contain;
@@ -1267,7 +1267,7 @@ body .panelControlBar {
 #extensionsMenu,
 .popup .popper-modal {
     display: flex;
-    /* SillyBunny: fold the hardcoded 29999 into the --sb-z-* scale. Critical tier
+    /* Neconyan: fold the hardcoded 29999 into the --sb-z-* scale. Critical tier
        keeps these menus above zoomed avatars/MovingUI panels (9999) like before. */
     z-index: var(--sb-z-critical, 10000);
     background-color: var(--SmartThemeBlurTintColor);
@@ -1353,7 +1353,7 @@ body .panelControlBar {
     opacity: 1;
 }
 
-/* SillyBunny: extensions may add a wand entry as a <button> so it is reachable by
+/* Neconyan: extensions may add a wand entry as a <button> so it is reachable by
    keyboard and assistive tech. Drop the native chrome, the button font override and
    the mobile touch-target floor so it lays out as the same row as the <div> entries. */
 #extensionsMenu>button {
@@ -1378,7 +1378,7 @@ body .panelControlBar {
     align-items: flex-start;
     contain: layout paint style;
     contain-intrinsic-size: auto 180px;
-    /* SillyBunny: keep chat text denser without collapsing message breathing room. */
+    /* Neconyan: keep chat text denser without collapsing message breathing room. */
     padding: 8px calc(10px * var(--messageMarginScale, 1)) 3px calc(10px * var(--messageMarginScale, 1));
     margin-top: 0;
     width: 100%;
@@ -1653,10 +1653,6 @@ body.hideAllSwipeButtons :is(.swipe_left, .swipe_right),
     box-shadow: 0 0 5px var(--black50a);
 }
 
-img[src*="sillybunny-pixel-logo"] {
-    object-fit: contain;
-}
-
 .bogus_folder_select .avatar,
 .character_select .avatar,
 .avatars_inline .avatar {
@@ -1709,7 +1705,7 @@ img[src*="sillybunny-pixel-logo"] {
 
 .mes_block {
     padding-top: 0;
-    /* SillyBunny: reduce the avatar-to-text gutter for denser chat styles. */
+    /* Neconyan: reduce the avatar-to-text gutter for denser chat styles. */
     padding-left: calc(8px * var(--messageMarginScale, 1));
     width: 100%;
     overflow-x: hidden;
@@ -1720,7 +1716,7 @@ img[src*="sillybunny-pixel-logo"] {
 .mes_reasoning {
     font-family: var(--mainFontFamily, 'Nunito', 'Figtree', 'Noto Sans', sans-serif);
     font-weight: 500;
-    line-height: calc(var(--mainFontSize) + var(--lineSpacingDesktopLeading, .5rem)); /* SillyBunny: line-spacing slider. */
+    line-height: calc(var(--mainFontSize) + var(--lineSpacingDesktopLeading, .5rem)); /* Neconyan: line-spacing slider. */
     max-width: 100%;
     overflow-wrap: anywhere;
 }
@@ -1731,7 +1727,7 @@ img[src*="sillybunny-pixel-logo"] {
 }
 
 .mes_text {
-    /* SillyBunny: let rendered chat text occupy more horizontal space. */
+    /* Neconyan: let rendered chat text occupy more horizontal space. */
     padding: 3px calc(var(--mes-right-spacing) - 6px) 3px 0;
 }
 
@@ -3856,7 +3852,7 @@ grammarly-extension {
 }
 
 .alternate_greeting .alternate_greeting_header.title_restorable {
-    /* SillyBunny: keep Alternate Greeting actions above the textarea instead of inheriting title_restorable's row layout. */
+    /* Neconyan: keep Alternate Greeting actions above the textarea instead of inheriting title_restorable's row layout. */
     flex-direction: column;
     align-items: stretch;
     justify-content: flex-start;
@@ -4155,7 +4151,7 @@ grammarly-extension {
     margin-top: 10px;
     display: flex;
 
-    /* SillyBunny: same clipping as '.popup-controls' -- '#dialogue_popup_holder' hides overflow,
+    /* Neconyan: same clipping as '.popup-controls' -- '#dialogue_popup_holder' hides overflow,
        so the row wraps rather than spilling past it, and the padding keeps the focus ring visible. */
     flex-wrap: wrap;
     justify-content: center;

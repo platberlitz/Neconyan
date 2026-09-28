@@ -21,7 +21,7 @@ import { recoverInterruptedServerPluginUpdates } from '../src/server-plugin-upda
 const tempDirectories = [];
 
 function createTempDirectory() {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-server-plugin-manager-'));
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-server-plugin-manager-'));
     tempDirectories.push(directory);
     return directory;
 }
@@ -56,7 +56,7 @@ function writeRelease(sourcePath, repositoryUrl, version, { preservePaths = [], 
             type: 'git',
             url: repositoryUrl,
         },
-        sillybunny: {
+        neconyan: {
             serverPlugin: {
                 id: 'example-server-plugin',
                 preservePaths,
@@ -67,7 +67,7 @@ function writeRelease(sourcePath, repositoryUrl, version, { preservePaths = [], 
     fs.writeFileSync(path.join(sourcePath, 'package.json'), `${JSON.stringify(packageJson, null, 2)}\n`);
     fs.writeFileSync(path.join(sourcePath, 'package-lock.json'), `${packageLock(packageJson.name, version)}\n`);
     fs.writeFileSync(path.join(sourcePath, 'index.js'), `export const version = '${version}';\n`);
-    fs.writeFileSync(path.join(sourcePath, '.gitignore'), '.cursor-key\nnode_modules/\n.sillybunny-release.json\n');
+    fs.writeFileSync(path.join(sourcePath, '.gitignore'), '.cursor-key\nnode_modules/\n.neconyan-release.json\n');
     if (extraFile) {
         fs.writeFileSync(path.join(sourcePath, extraFile), version);
     }
@@ -91,7 +91,7 @@ function createReleaseRepository({ markerSymlinkTarget = '' } = {}) {
     fs.mkdirSync(sourcePath);
     fs.mkdirSync(pluginsRoot);
     runGit(sourcePath, 'init', '--initial-branch=main');
-    runGit(sourcePath, 'config', 'user.name', 'SillyBunny Tests');
+    runGit(sourcePath, 'config', 'user.name', 'Neconyan Tests');
     runGit(sourcePath, 'config', 'user.email', 'tests@example.invalid');
     runGit(root, 'init', '--bare', remotePath);
 
@@ -103,7 +103,7 @@ function createReleaseRepository({ markerSymlinkTarget = '' } = {}) {
     runGit(root, 'clone', '--branch', 'v1.0.0', '--single-branch', repositoryUrl, pluginPath);
     // The clone inherits nothing from sourcePath, so tests that commit into it need their own
     // identity: CI runners have no global user.name/user.email and git refuses to author there.
-    runGit(pluginPath, 'config', 'user.name', 'SillyBunny Tests');
+    runGit(pluginPath, 'config', 'user.name', 'Neconyan Tests');
     runGit(pluginPath, 'config', 'user.email', 'tests@example.invalid');
     fs.writeFileSync(path.join(pluginPath, '.cursor-key'), 'persistent-secret\n', { mode: 0o600 });
 

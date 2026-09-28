@@ -25,7 +25,7 @@ async function openAgents(page, withChat = false, navigate = action => action())
         const skipTour = page.getByRole('region', { name: 'Neconyan interactive tutorial' }).getByRole('button', { name: 'Skip', exact: true });
         if (await skipTour.isVisible()) await skipTour.click();
     }
-    await page.evaluate(() => window.SillyBunnyShell.openTab('left', 'agents'));
+    await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
     await expect(page.locator('#ica--settings')).toBeVisible({ timeout: 45000 });
 }
 
@@ -286,10 +286,10 @@ for (const width of [1280, 1024, 997, 768, 390, 393, 320]) {
             await openAgents(page);
             await checkClose(page);
             for (const [shell, tab, root] of [['left', 'api', '#left-nav-panel'], ['right', 'settings', '#user-settings-block'], ['right', 'extensions', '#user-settings-block']]) {
-                await page.evaluate(([shell, tab]) => window.SillyBunnyShell.openTab(shell, tab), [shell, tab]);
+                await page.evaluate(([shell, tab]) => window.NeconyanShell.openTab(shell, tab), [shell, tab]);
                 await checkClose(page, root);
             }
-            await page.evaluate(() => window.SillyBunnyShell.openTab('left', 'agents'));
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
             await capture(page, info, 'manage-light');
             await page.locator('#ica--templates').click();
             await expect(page.locator('.ica--template-browser')).toBeVisible();
@@ -443,7 +443,7 @@ test('setup controls wait for a slow agent library and retry a failed initial lo
         await page.goto('/', { waitUntil: 'domcontentloaded' });
         await expect.poll(() => pending).toBe(true);
         await page.waitForFunction(() => typeof window.NeconyanShell?.openTab === 'function');
-        await page.evaluate(() => window.SillyBunnyShell.openTab('left', 'agents'));
+        await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
         await expect(page.locator(`#ica--setupSelect option[value="${preset.id}"]`)).toHaveCount(1, { timeout: 15000 });
         await expect(page.locator('#ica--setupSave')).toBeDisabled();
         await expect(page.locator('#ica--setupLoad')).toBeDisabled();

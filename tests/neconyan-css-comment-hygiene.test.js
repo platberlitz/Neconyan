@@ -19,7 +19,7 @@ function stripCssBlockComments(source) {
     return source.replace(/\/\*[\s\S]*?\*\//g, match => match.replace(/[^\n]/g, ' '));
 }
 
-describe('SillyBunny CSS comment hygiene', () => {
+describe('Neconyan CSS comment hygiene', () => {
     test('ships first-party CSS sheets to guard', () => {
         expect(firstPartyCssFiles.length).toBeGreaterThan(0);
     });

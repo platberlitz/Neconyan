@@ -4,7 +4,7 @@ index 2016537..aebd741 100644
 +++ b/build/webpack.base.js
 @@ -52 +52 @@ module.exports = {
 -    library: 'eruda',
-+    library: '__sillyBunnyDebuggerEruda',
++    library: '__neconyanDebuggerEruda',
 diff --git a/src/Console/Console.js b/src/Console/Console.js
 index 2186431..1607117 100644
 --- a/src/Console/Console.js
@@ -495,7 +495,7 @@ index 3c3f01a..33abad4 100644
 +      this.destroy()
 +      throw e
 @@ -67,0 +73 @@ export default {
-+  sillyBunnyDebuggerBuild: 'eruda-3.4.3-chobitsu-1.8.6-sbdbg',
++  neconyanDebuggerBuild: 'eruda-3.4.3-chobitsu-1.8.6-sbdbg',
 @@ -140 +146,7 @@ export default {
 -    this._devTools.destroy()
 +    if (!this._isInit) return

@@ -16,14 +16,9 @@ import {
     SERVER_PLUGIN_UPDATE_CANCEL_MESSAGE,
     SERVER_PLUGIN_UPDATE_PREPARE_MESSAGE,
     SERVER_PLUGIN_UPDATE_RESPONSE_MESSAGE,
-    LEGACY_SERVER_PLUGIN_UPDATE_CANCEL_MESSAGE,
-    LEGACY_SERVER_PLUGIN_UPDATE_PREPARE_MESSAGE,
-    LEGACY_SERVER_PLUGIN_UPDATE_RESPONSE_MESSAGE,
-    LEGACY_SERVER_STARTUP_READY_MESSAGE,
     SERVER_PLUGIN_UPDATE_SUPERVISOR_API_ENV,
     SERVER_PLUGIN_UPDATE_SUPERVISOR_API_VERSION,
     SERVER_STARTUP_READY_MESSAGE,
-    isServerPluginMessage,
 } from './server-plugin-update-ipc.js';
 import { serverDirectory } from './server-directory.js';
 
@@ -31,11 +26,8 @@ export const RESTART_EXIT_CODE = 75;
 export const SERVER_PLUGIN_UPDATE_EXIT_CODE = 76;
 export const SUPERVISOR_RELOAD_EXIT_CODE = 77;
 export const SUPERVISED_ENV = 'NECONYAN_SUPERVISED';
-export const LEGACY_SUPERVISED_ENV = 'SILLYBUNNY_SUPERVISED';
 export const LAUNCHER_ENV = 'NECONYAN_LAUNCHER';
-export const LEGACY_LAUNCHER_ENV = 'SILLYBUNNY_LAUNCHER';
 export const SUPERVISOR_SHUTDOWN_MESSAGE = 'neconyan:shutdown';
-export const LEGACY_SUPERVISOR_SHUTDOWN_MESSAGE = 'sillybunny:shutdown';
 export const SUPERVISOR_FORCE_KILL_TIMEOUT_MS = 5000;
 export const SERVER_PLUGIN_ACTIVATION_TIMEOUT_MS = 150_000;
 export const SERVER_PLUGIN_PREPARE_LEASE_MS = 2 * 60_000;
@@ -88,7 +80,7 @@ async function stopChildForRollback(child, exitPromise, shutdownMessage) {
  * @returns {boolean} True when a supervisor loop should run
  */
 export function shouldSupervise(env = process.env) {
-    return (env[SUPERVISED_ENV] ?? env[LEGACY_SUPERVISED_ENV]) !== '1';
+    return env[SUPERVISED_ENV] !== '1';
 }
 
 /**
@@ -123,7 +115,6 @@ export async function runSupervisor({
     pluginsRoot = path.join(serverDirectory, 'plugins'),
 } = {}) {
     let child = null;
-    let childShutdownMessage = LEGACY_SUPERVISOR_SHUTDOWN_MESSAGE;
     let shuttingDown = false;
     let forceKillTimer = null;
     let pendingPluginUpdate = null;
@@ -194,7 +185,7 @@ export async function runSupervisor({
 
         if (typeof child.send === 'function' && child.connected !== false) {
             try {
-                child.send(childShutdownMessage, error => error && forceStopChild());
+                child.send(SUPERVISOR_SHUTDOWN_MESSAGE, error => error && forceStopChild());
                 return;
             } catch {
                 // Fall through to the force-stop fallback.
@@ -228,30 +219,22 @@ export async function runSupervisor({
         const env = {
             ...process.env,
             [SUPERVISED_ENV]: '1',
-            [LEGACY_SUPERVISED_ENV]: '1',
             [SERVER_PLUGIN_UPDATE_SUPERVISOR_API_ENV]: SERVER_PLUGIN_UPDATE_SUPERVISOR_API_VERSION,
-            SILLYBUNNY_SERVER_PLUGIN_UPDATE_API: SERVER_PLUGIN_UPDATE_SUPERVISOR_API_VERSION,
         };
         if (!isFirstLaunch) {
             env.NECONYAN_SKIP_BROWSER_AUTO_LAUNCH = '1';
-            env.SILLYBUNNY_SKIP_BROWSER_AUTO_LAUNCH = '1';
         }
 
         try {
             child = spawnFn(argv[0], [...execArgv, ...argv.slice(1)], { stdio: ['inherit', 'inherit', 'inherit', 'ipc'], env });
             const activeChild = child;
-            // Both generations accept the legacy shutdown before announcing their protocol.
-            childShutdownMessage = LEGACY_SUPERVISOR_SHUTDOWN_MESSAGE;
             let resolveStartup;
             const startupPromise = new Promise(resolve => {
                 resolveStartup = resolve;
             });
-            const respond = (requestId, response, requestType = SERVER_PLUGIN_UPDATE_PREPARE_MESSAGE) => {
+            const respond = (requestId, response) => {
                 try {
-                    const responseType = requestType === LEGACY_SERVER_PLUGIN_UPDATE_PREPARE_MESSAGE || requestType === LEGACY_SERVER_PLUGIN_UPDATE_CANCEL_MESSAGE
-                        ? LEGACY_SERVER_PLUGIN_UPDATE_RESPONSE_MESSAGE
-                        : SERVER_PLUGIN_UPDATE_RESPONSE_MESSAGE;
-                    child.send({ type: responseType, requestId, ...response }, () => {
+                    child.send({ type: SERVER_PLUGIN_UPDATE_RESPONSE_MESSAGE, requestId, ...response }, () => {
                         // A disconnect racing this response is handled by the
                         // request lease/cancellation protocol.
                     });
@@ -261,21 +244,16 @@ export async function runSupervisor({
             };
             const onMessage = message => {
                 if (child !== activeChild) return;
-                if ([SERVER_STARTUP_READY_MESSAGE, SERVER_PLUGIN_UPDATE_PREPARE_MESSAGE, SERVER_PLUGIN_UPDATE_CANCEL_MESSAGE].includes(message?.type)) {
-                    childShutdownMessage = SUPERVISOR_SHUTDOWN_MESSAGE;
-                } else if ([LEGACY_SERVER_STARTUP_READY_MESSAGE, LEGACY_SERVER_PLUGIN_UPDATE_PREPARE_MESSAGE, LEGACY_SERVER_PLUGIN_UPDATE_CANCEL_MESSAGE].includes(message?.type)) {
-                    childShutdownMessage = LEGACY_SUPERVISOR_SHUTDOWN_MESSAGE;
-                }
-                if (isServerPluginMessage(message?.type, SERVER_STARTUP_READY_MESSAGE, LEGACY_SERVER_STARTUP_READY_MESSAGE)) {
+                if (message?.type === SERVER_STARTUP_READY_MESSAGE) {
                     resolveStartup({ plugins: Array.isArray(message.plugins) ? message.plugins : [] });
                     return;
                 }
 
-                if (isServerPluginMessage(message?.type, SERVER_PLUGIN_UPDATE_PREPARE_MESSAGE, LEGACY_SERVER_PLUGIN_UPDATE_PREPARE_MESSAGE)) {
+                if (message?.type === SERVER_PLUGIN_UPDATE_PREPARE_MESSAGE) {
                     try {
                         if (pendingPluginUpdate?.transactionId === message.payload?.transactionId) {
                             leasePendingPluginUpdate();
-                            respond(message.requestId, { ok: true }, message.type);
+                            respond(message.requestId, { ok: true });
                             return;
                         }
                         if (pendingPluginUpdate || activatingPluginUpdate) {
@@ -284,14 +262,14 @@ export async function runSupervisor({
                         pluginUpdate.validate(message.payload);
                         pendingPluginUpdate = message.payload;
                         leasePendingPluginUpdate();
-                        respond(message.requestId, { ok: true }, message.type);
+                        respond(message.requestId, { ok: true });
                     } catch (error) {
-                        respond(message.requestId, { ok: false, code: 'invalid_update_handoff', error: error?.message || String(error) }, message.type);
+                        respond(message.requestId, { ok: false, code: 'invalid_update_handoff', error: error?.message || String(error) });
                     }
                     return;
                 }
 
-                if (isServerPluginMessage(message?.type, SERVER_PLUGIN_UPDATE_CANCEL_MESSAGE, LEGACY_SERVER_PLUGIN_UPDATE_CANCEL_MESSAGE)) {
+                if (message?.type === SERVER_PLUGIN_UPDATE_CANCEL_MESSAGE) {
                     try {
                         if (activatingPluginUpdate?.transactionId === message.payload?.transactionId) {
                             throw new Error('Server plugin activation has already started.');
@@ -304,9 +282,9 @@ export async function runSupervisor({
                             // lost after the supervisor accepted ownership.
                             pluginUpdate.discardPrepared?.(message.payload);
                         }
-                        respond(message.requestId, { ok: true }, message.type);
+                        respond(message.requestId, { ok: true });
                     } catch (error) {
-                        respond(message.requestId, { ok: false, code: 'update_cancel_failed', error: error?.message || String(error) }, message.type);
+                        respond(message.requestId, { ok: false, code: 'update_cancel_failed', error: error?.message || String(error) });
                     }
                 }
             };
@@ -333,7 +311,7 @@ export async function runSupervisor({
                             ? 'updated server exited before startup completed'
                             : `plugin ${activatingPluginUpdate.expectedPluginId} did not load`;
                     if (!activation.exit) {
-                        await stopChildForRollback(child, exitPromise, childShutdownMessage);
+                        await stopChildForRollback(child, exitPromise, SUPERVISOR_SHUTDOWN_MESSAGE);
                     }
                     pluginUpdate.rollback(activatingPluginUpdate, reason);
                     console.error(`[Neconyan] Server plugin update rolled back: ${reason}.`);
@@ -355,7 +333,7 @@ export async function runSupervisor({
                         console.error('[Neconyan] The healthy plugin is active, but its update lock requires manual cleanup.');
                     } else if (error?.serverPluginActivationRecorded !== true) {
                         console.error('[Neconyan] Activation could not be recorded; restoring the previous plugin now.');
-                        await stopChildForRollback(child, exitPromise, childShutdownMessage);
+                        await stopChildForRollback(child, exitPromise, SUPERVISOR_SHUTDOWN_MESSAGE);
                         pluginUpdate.rollback(activatingPluginUpdate, 'activation could not be recorded durably');
                         activatingPluginUpdate = null;
                         child.off('message', onMessage);

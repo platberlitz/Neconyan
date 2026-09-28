@@ -13,7 +13,7 @@ const MENU_ITEM_ID = 'sbdbg-menu-item';
 const ENTRY_KEY = 'SBDebugger_showEntry';
 const FETCH_TIMEOUT = 5000;
 const ERUDA_BUILD = 'eruda-3.4.3-chobitsu-1.8.6-sbdbg';
-const ERUDA_BUNDLE_SLOT = '__sillyBunnyDebuggerEruda';
+const ERUDA_BUNDLE_SLOT = '__neconyanDebuggerEruda';
 const ERUDA_TOOLS = ['console', 'elements', 'network', 'info'];
 const LAYOUT_SELECTORS = [
     'body', '#top-bar', '#left-nav-panel', '#right-nav-panel', '#sheld',
@@ -73,7 +73,7 @@ function finishBundleLoad(load, error, instance) {
 }
 
 function acceptBundleInstance(value) {
-    if (value?.neconyanDebuggerBuild !== ERUDA_BUILD && value?.sillyBunnyDebuggerBuild !== ERUDA_BUILD) return;
+    if (value?.neconyanDebuggerBuild !== ERUDA_BUILD) return;
     const load = pendingBundleLoad;
     if (!active || !load || document.currentScript !== load.script) {
         cleanupBundleInstance(value);

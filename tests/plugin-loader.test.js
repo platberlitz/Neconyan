@@ -6,7 +6,7 @@ import path from 'node:path';
 const tempDirs = [];
 
 function createPluginsDirectory() {
-    const pluginsPath = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-plugin-loader-'));
+    const pluginsPath = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-plugin-loader-'));
     tempDirs.push(pluginsPath);
     return pluginsPath;
 }
@@ -144,7 +144,7 @@ describe('plugin loader diagnostics', () => {
         const hiddenPath = path.join(pluginsPath, '.server-plugin-updates');
         fs.mkdirSync(pluginPath);
         fs.mkdirSync(hiddenPath);
-        fs.writeFileSync(path.join(pluginPath, '.sillybunny-release.json'), '{}');
+        fs.writeFileSync(path.join(pluginPath, '.neconyan-release.json'), '{}');
         fs.writeFileSync(path.join(hiddenPath, 'index.mjs'), 'throw new Error("hidden staging code loaded");\n');
         const gitFactory = jest.fn();
         const logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -192,7 +192,7 @@ describe('Neconyan native server ownership', () => {
         await loadPlugins(app, pluginsPath);
         expect(getLoadedServerPluginIds()).toEqual(['neconyan-botsearcher', 'hopper']);
         expect(app.use.mock.calls.map(([route]) => route)).toEqual([
-            '/api/plugins/neconyan-botsearcher', '/api/plugins/sillybunny-botsearcher', '/api/plugins/hopper',
+            '/api/plugins/neconyan-botsearcher', '/api/plugins/hopper',
         ]);
     });
 
@@ -200,7 +200,7 @@ describe('Neconyan native server ownership', () => {
         const pluginsPath = createPluginsDirectory();
         const marker = path.join(pluginsPath, 'duplicate-ran');
         const poison = `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(marker)}, 'imported');`;
-        for (const name of ['Neconyan-Hopper', 'Neconyan-BotSearcher', 'hopper', 'sillybunny-botsearcher']) {
+        for (const name of ['Neconyan-Hopper', 'Neconyan-BotSearcher', 'hopper', 'neconyan-botsearcher']) {
             fs.mkdirSync(path.join(pluginsPath, name));
             fs.writeFileSync(path.join(pluginsPath, name, 'index.mjs'), poison);
         }

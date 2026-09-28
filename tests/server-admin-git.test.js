@@ -52,7 +52,7 @@ describe('server admin git helpers', () => {
     });
 
     test('uses the tracked remote as the display branch for runtime worktrees', () => {
-        expect(getStatusDisplayBranch('runtime/sillybunny-server', 'origin/staging')).toBe('staging');
+        expect(getStatusDisplayBranch('runtime/neconyan-server', 'origin/staging')).toBe('staging');
         expect(getStatusDisplayBranch('feature/admin-git', 'origin/feature/admin-git')).toBe('feature/admin-git');
     });
 
@@ -85,7 +85,7 @@ describe('server admin git helpers', () => {
     });
 
     test('recognizes runtime branches', () => {
-        expect(isRuntimeBranch('runtime/sillybunny-server')).toBe(true);
+        expect(isRuntimeBranch('runtime/neconyan-server')).toBe(true);
         expect(isRuntimeBranch('main')).toBe(false);
     });
 

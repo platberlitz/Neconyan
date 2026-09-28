@@ -44,7 +44,7 @@ describe('destructive chat save rejection', () => {
     let recoveryTarget;
 
     beforeEach(() => {
-        root = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-chat-save-'));
+        root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-chat-save-'));
         chatsDirectory = path.join(root, 'chats');
         backupDirectory = path.join(root, 'backups');
         activeDirectory = path.join(chatsDirectory, OWNER);
@@ -193,7 +193,7 @@ describe('regular chat backup rotation', () => {
     let backupDirectory;
 
     beforeEach(() => {
-        backupDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-backup-rotation-'));
+        backupDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-backup-rotation-'));
     });
 
     afterEach(() => {

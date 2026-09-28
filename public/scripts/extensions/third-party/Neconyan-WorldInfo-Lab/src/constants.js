@@ -1,8 +1,8 @@
 export const EXTENSION_NAME = 'Neconyan-WorldInfo-Lab';
 export const EXTENSION_LABEL = 'World Info Lab';
-export const SETTINGS_KEY = 'SillyBunnyWorldInfoLab';
-export const METADATA_KEY = 'SillyBunnyWorldInfoLab';
-export const HISTORY_KEY = 'SillyBunnyWorldInfoLab.history.v1';
+export const SETTINGS_KEY = 'NeconyanWorldInfoLab';
+export const METADATA_KEY = 'NeconyanWorldInfoLab';
+export const HISTORY_KEY = 'NeconyanWorldInfoLab.history.v1';
 export const SCHEMA_VERSION = 1;
 
 export const SCAN_STATE = Object.freeze({

@@ -202,7 +202,7 @@ export function buildChatCompletionSamplingProfileKey(source, model) {
 
 /**
  * Lists profile keys to try when loading/clearing model sampling profiles.
- * The legacy exact key keeps saved profiles from earlier SillyBunny builds usable.
+ * The exact key keeps saved profiles from earlier builds usable.
  *
  * @param {string} source Chat Completion source
  * @param {string} model Chat Completion model

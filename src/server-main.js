@@ -30,7 +30,7 @@ import { getLoadedServerPlugins, loadPlugins } from './plugin-loader.js';
 import { registerGracefulShutdown } from './shutdown.js';
 import { closeListeningServers } from './server-listen.js';
 import { notifyServerStartup } from './server-plugin-update-ipc.js';
-import { LEGACY_SUPERVISED_ENV, LEGACY_SUPERVISOR_SHUTDOWN_MESSAGE, SUPERVISED_ENV, SUPERVISOR_FORCE_KILL_TIMEOUT_MS, SUPERVISOR_SHUTDOWN_MESSAGE } from './server-supervisor.js';
+import { SUPERVISED_ENV, SUPERVISOR_FORCE_KILL_TIMEOUT_MS, SUPERVISOR_SHUTDOWN_MESSAGE } from './server-supervisor.js';
 import {
     initUserStorage,
     getCookieSecret,
@@ -606,7 +606,7 @@ async function preSetupTasks() {
     if (process.platform === 'win32') {
         process.on('SIGBREAK', () => exitProcess(0));
     }
-    if ((process.env[SUPERVISED_ENV] ?? process.env[LEGACY_SUPERVISED_ENV]) === '1') {
+    if (process.env[SUPERVISED_ENV] === '1') {
         const exitAfterSupervisorDisconnect = () => {
             const forceExitTimer = setTimeout(() => process.exit(1), SUPERVISOR_FORCE_KILL_TIMEOUT_MS);
             forceExitTimer.unref?.();
@@ -617,7 +617,7 @@ async function preSetupTasks() {
             await exitAfterSupervisorDisconnect();
         } else {
             process.on('message', (message) => {
-                if (message === SUPERVISOR_SHUTDOWN_MESSAGE || message === LEGACY_SUPERVISOR_SHUTDOWN_MESSAGE) {
+                if (message === SUPERVISOR_SHUTDOWN_MESSAGE) {
                     exitProcess(0);
                 }
             });
@@ -691,7 +691,7 @@ async function postSetupTasks(result) {
     const browserLaunchHostname = await cliArgs.getBrowserLaunchHostname(result);
     const browserLaunchUrl = cliArgs.getBrowserLaunchUrl(browserLaunchHostname);
     const browserLaunchApp = String(getConfigValue('browserLaunch.browser', 'default') ?? '');
-    const skipBrowserAutoLaunch = (process.env.NECONYAN_SKIP_BROWSER_AUTO_LAUNCH ?? process.env.SILLYBUNNY_SKIP_BROWSER_AUTO_LAUNCH) === '1';
+    const skipBrowserAutoLaunch = process.env.NECONYAN_SKIP_BROWSER_AUTO_LAUNCH === '1';
 
     if (cliArgs.browserLaunchEnabled) {
         if (skipBrowserAutoLaunch) {
@@ -900,6 +900,11 @@ async function migrateConversationOwnership() {
     await migrateConversationAutomaticOwnership({ directoriesFor: getUserDirectories, owners: getAllUserHandles });
 }
 
+async function migrateLegacyAccountNames() {
+    const { migrateLegacyNames } = await import('./legacy-name-migration.js');
+    migrateLegacyNames(await getUserDirectoriesList());
+}
+
 async function initialiseRoleplayStorage() {
     for (const directories of await getUserDirectoriesList()) {
         try {
@@ -915,6 +920,7 @@ async function initialiseRoleplayStorage() {
 initUserStorage(globalThis.DATA_ROOT)
     .then(setDnsResolutionOrder)
     .then(ensurePublicDirectoriesExist)
+    .then(migrateLegacyAccountNames)
     .then(initialiseRoleplayStorage)
     .then(migrateUserData)
     .then(migrateSystemPrompts)

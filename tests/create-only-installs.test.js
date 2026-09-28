@@ -47,7 +47,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
-    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-create-only-'));
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-create-only-'));
     directories = {
         root: tempRoot,
         themes: path.join(tempRoot, 'themes'),

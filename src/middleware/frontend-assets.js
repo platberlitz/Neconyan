@@ -1,33 +1,15 @@
 import express from 'express';
 import { NECONYAN_NATIVE_EXTENSIONS } from '../neconyan-native-extensions.js';
 
-const LEGACY_FRONTEND_ASSET_FILES = new Map([
-    'css/sillybunny-chat-styles.css',
-    'css/sillybunny-conversation.css',
-    'css/sillybunny-mobile-shell.css',
-    'css/sillybunny-paper-theme.css',
-    'css/sillybunny-tabs.css',
-    'css/sillybunny-theme.css',
-    'scripts/sillybunny-boot-guard.js',
-    'scripts/sillybunny-conversation.js',
-    'scripts/sillybunny-custom-css-ai.js',
-    'scripts/sillybunny-settings-tabs.js',
-    'scripts/sillybunny-tabs.js',
-    'scripts/sillybunny-version-map.js',
-].map(source => [source, source.replace('sillybunny-', 'neconyan-')]));
-
-// Only release-owned directories are aliases. Other SillyBunny-* add-ons may
+// Only release-owned directories are aliases. Other Neconyan-* add-ons may
 // be personal extensions and must reach their original authenticated route.
-export const LEGACY_FRONTEND_ASSET_PREFIXES = Object.freeze([
-    ['scripts/sillybunny-conversation/', 'scripts/neconyan-conversation/'],
-    ...NECONYAN_NATIVE_EXTENSIONS.flatMap(extension => {
-        const target = `scripts/extensions/${extension.runtimeDirectory || `third-party/${extension.directory}`}/`;
-        return (extension.legacyIds || []).flatMap(id => [
-            `scripts/extensions/${id}/`,
-            `scripts/extensions/third-party/${id}/`,
-        ]).filter(source => source !== target).map(source => [source, target]);
-    }),
-]);
+export const LEGACY_FRONTEND_ASSET_PREFIXES = Object.freeze(NECONYAN_NATIVE_EXTENSIONS.flatMap(extension => {
+    const target = `scripts/extensions/${extension.runtimeDirectory || `third-party/${extension.directory}`}/`;
+    return (extension.legacyIds || []).flatMap(id => [
+        `scripts/extensions/${id}/`,
+        `scripts/extensions/third-party/${id}/`,
+    ]).filter(source => source !== target).map(source => [source, target]);
+}));
 
 export function redirectLegacyFrontendAsset(request, response, next) {
     if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -36,11 +18,10 @@ export function redirectLegacyFrontendAsset(request, response, next) {
 
     const requestPath = String(request.path ?? '').replace(/^\/+/, '');
     const alias = LEGACY_FRONTEND_ASSET_PREFIXES.find(([legacyPrefix]) => requestPath.startsWith(legacyPrefix));
-    const canonicalPath = LEGACY_FRONTEND_ASSET_FILES.get(requestPath)
-        || (alias && `${alias[1]}${requestPath.slice(alias[0].length)}`);
-    if (!canonicalPath) {
+    if (!alias) {
         return next();
     }
+    const canonicalPath = `${alias[1]}${requestPath.slice(alias[0].length)}`;
 
     return response.redirect(307, `/${canonicalPath}${request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : ''}`);
 }

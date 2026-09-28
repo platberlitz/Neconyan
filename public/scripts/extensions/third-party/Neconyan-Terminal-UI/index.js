@@ -630,7 +630,7 @@ function currentRunState(connection, conversationMode) {
 }
 
 async function conversationStatus(context) {
-    const fallbackProfile = context?.extensionSettings?.sillybunny_conversation?.settings?.connection_profile ?? '';
+    const fallbackProfile = context?.extensionSettings?.neconyan_conversation?.settings?.connection_profile ?? '';
     let profile = fallbackProfile;
     try {
         const { getSettings: getConversationSettings } = await import('/scripts/neconyan-conversation/settings-store.js');

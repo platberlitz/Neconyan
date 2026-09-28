@@ -850,7 +850,7 @@ describe('in-chat agent scoped enabled state', () => {
                 prompt: '',
                 category: 'tool',
                 sourceTemplateId: 'tpl-pathfinder',
-                author: 'SillyBunny',
+                author: 'Neconyan',
                 tools: [{ name: 'Pathfinder_Search' }],
             },
             {
@@ -858,7 +858,7 @@ describe('in-chat agent scoped enabled state', () => {
                 name: 'Pathfinder',
                 prompt: '',
                 category: 'tool',
-                author: 'SillyBunny',
+                author: 'Neconyan',
                 tools: [{ name: 'Pathfinder_Search' }],
             },
             {
@@ -867,7 +867,7 @@ describe('in-chat agent scoped enabled state', () => {
                 prompt: '',
                 category: 'tool',
                 sourceTemplateId: 'tpl-pathfinder',
-                author: 'SillyBunny',
+                author: 'Neconyan',
                 phaseLocked: true,
                 tools: [{ name: 'Pathfinder_Search' }],
             },
@@ -910,7 +910,7 @@ describe('in-chat agent scoped enabled state', () => {
             id: 'tpl-scene-tracker',
             name: 'Scene Tracker',
             prompt: 'bundled scene prompt',
-            author: 'SillyBunny',
+            author: 'Neconyan',
             category: 'companion',
             execution: 'companion',
             version: 1,
@@ -918,7 +918,7 @@ describe('in-chat agent scoped enabled state', () => {
         const base = {
             name: 'Scene Tracker',
             prompt: 'bundled scene prompt',
-            author: 'SillyBunny',
+            author: 'Neconyan',
             category: 'companion',
             execution: 'companion',
             sourceTemplateId: 'tpl-scene-tracker',
@@ -959,7 +959,7 @@ describe('in-chat agent scoped enabled state', () => {
             id: 'tpl-chatroom-companion',
             name: 'Chatroom',
             prompt: 'latest bundled prompt',
-            author: 'SillyBunny',
+            author: 'Neconyan',
             category: 'companion',
             execution: 'companion',
             version: 2,
@@ -981,7 +981,7 @@ describe('in-chat agent scoped enabled state', () => {
             id: 'saved-chatroom',
             name: 'Chatroom',
             prompt: 'old bundled prompt',
-            author: 'SillyBunny',
+            author: 'Neconyan',
             category: 'companion',
             execution: 'companion',
             sourceTemplateId: 'tpl-chatroom-companion',
@@ -1039,7 +1039,7 @@ describe('in-chat agent scoped enabled state', () => {
             id: 'tpl-relationship-lens-companion',
             name: 'Relationship Lens',
             prompt: 'latest relationship prompt',
-            author: 'SillyBunny',
+            author: 'Neconyan',
             category: 'companion',
             execution: 'companion',
             version: 2,
@@ -1054,7 +1054,7 @@ describe('in-chat agent scoped enabled state', () => {
                 id: 'old-relationship-lens',
                 name: 'Relationship Lens',
                 prompt: 'stale relationship prompt',
-                author: 'SillyBunny',
+                author: 'Neconyan',
                 category: 'companion',
                 execution: 'companion',
                 sourceTemplateId: 'tpl-relationship-lens-companion',
@@ -1065,7 +1065,7 @@ describe('in-chat agent scoped enabled state', () => {
                 id: 'duplicate-relationship-lens',
                 name: 'Relationship Lens',
                 prompt: 'another stale prompt',
-                author: 'SillyBunny',
+                author: 'Neconyan',
                 category: 'companion',
                 execution: 'companion',
                 sourceTemplateId: 'tpl-relationship-lens-companion',
@@ -1076,7 +1076,7 @@ describe('in-chat agent scoped enabled state', () => {
                 id: 'locked-relationship-lens',
                 name: 'Relationship Lens',
                 prompt: 'custom locked prompt',
-                author: 'SillyBunny',
+                author: 'Neconyan',
                 category: 'companion',
                 execution: 'companion',
                 sourceTemplateId: 'tpl-relationship-lens-companion',
@@ -1105,7 +1105,7 @@ describe('in-chat agent scoped enabled state', () => {
             id: 'tpl-current-agent',
             name: 'Current Agent',
             prompt: 'current bundled prompt',
-            author: 'SillyBunny',
+            author: 'Neconyan',
             category: 'companion',
             execution: 'companion',
             version: 2,
@@ -1115,7 +1115,7 @@ describe('in-chat agent scoped enabled state', () => {
                 id: 'current-agent',
                 name: 'Current Agent',
                 prompt: 'stale bundled prompt',
-                author: 'SillyBunny',
+                author: 'Neconyan',
                 category: 'companion',
                 execution: 'companion',
                 sourceTemplateId: 'tpl-current-agent',
@@ -1127,7 +1127,7 @@ describe('in-chat agent scoped enabled state', () => {
                 id: 'duplicate-current-agent',
                 name: 'Current Agent',
                 prompt: 'stale bundled prompt',
-                author: 'SillyBunny',
+                author: 'Neconyan',
                 category: 'companion',
                 execution: 'companion',
                 sourceTemplateId: 'tpl-current-agent',
@@ -1262,6 +1262,40 @@ describe('in-chat agent scoped enabled state', () => {
 
         expect(store.findTemplateForAgentSnapshot(agent, templates)).toBeNull();
     });
+
+    test('recognises bundled agents saved with the old SillyBunny credit', async () => {
+        const store = await importStore();
+        const templates = [{
+            id: 'tpl-scene-tracker',
+            name: 'Scene Tracker',
+            prompt: 'new scene wording',
+            author: 'Neconyan',
+            category: 'tracker',
+        }];
+
+        expect(store.findTemplateForAgentSnapshot({
+            id: 'saved-scene',
+            name: 'Scene Tracker',
+            prompt: 'old scene wording',
+            author: 'SillyBunny',
+            category: 'tracker',
+        }, templates)?.id).toBe('tpl-scene-tracker');
+        expect(store.isBundledPathfinderAgentSnapshot({
+            name: 'Pathfinder',
+            category: 'tool',
+            prompt: '',
+            author: 'SillyBunny',
+        })).toBe(true);
+    });
+
+    test('rewrites old bundled credits in one library write', () => {
+        const source = readFileSync(new URL('../public/scripts/extensions/in-chat-agents/index.js', import.meta.url), 'utf8');
+        const start = source.indexOf('async function migrateBundledTemplateMetadataToSavedAgents()');
+        const body = source.slice(start, source.indexOf('\n}\n', start));
+
+        expect(body).toContain("await saveAgentBatch(changes, 'Bundled agent credits');");
+        expect(body).not.toContain('saveAgent(');
+    });
 });
 
 describe('legacy kit migration keeps its source until every write is acknowledged', () => {
@@ -1325,7 +1359,7 @@ describe('imports, kits and reorders are safe to fail', () => {
         const calls = mockFetch();
 
         await expect(store.importAgents({
-            format: 'sillybunny-inchat-agents',
+            format: 'neconyan-inchat-agents',
             version: 1,
             agents: [
                 { id: 'a', name: 'A', prompt: 'prompt a' },
@@ -1343,7 +1377,7 @@ describe('imports, kits and reorders are safe to fail', () => {
         const calls = mockFetch();
 
         await expect(store.importAgents({
-            format: 'sillybunny-inchat-agents',
+            format: 'neconyan-inchat-agents',
             version: 2,
             agents: [{ id: 'a', name: 'A', prompt: 'prompt a' }],
         })).rejects.toThrow('Unsupported agent pack version: 2');
@@ -1356,7 +1390,7 @@ describe('imports, kits and reorders are safe to fail', () => {
         mockFetch();
 
         const imported = await store.importAgents({
-            format: 'sillybunny-inchat-agents',
+            format: 'neconyan-inchat-agents',
             agents: [
                 {
                     id: 'old-tracker',

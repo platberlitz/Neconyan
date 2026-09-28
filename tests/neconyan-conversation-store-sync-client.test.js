@@ -13,13 +13,13 @@ jest.unstable_mockModule('../public/script.js', () => ({
 jest.unstable_mockModule('../public/scripts/extensions.js', () => ({ extension_settings }));
 jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => account }));
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/constants.js', () => ({
-    CONVERSATION_STORE_KEY: 'sillybunny_conversation',
+    CONVERSATION_STORE_KEY: 'neconyan_conversation',
     MAX_THREAD_MESSAGES: 250,
 }));
 
 const storeSync = await import('../public/scripts/neconyan-conversation/store-sync.js');
 
-const KEY = 'sillybunny_conversation';
+const KEY = 'neconyan_conversation';
 const nativeFetch = globalThis.fetch;
 
 function message(id, mes) {

@@ -155,14 +155,14 @@ async function populateProfiles(container) {
     profileSelect.innerHTML = '<option value="">Current profile</option>';
     for (const profile of profiles) {
         const option = document.createElement('option');
-        // SillyBunny: use profile id as the option value so retention survives
+        // Neconyan: use profile id as the option value so retention survives
         // profile renames. Display name is shown to the user. (#529)
         option.value = profile.id;
         option.textContent = profile.name;
         profileSelect.append(option);
     }
 
-    // SillyBunny: resolve the stored value to a valid profile id. Existing
+    // Neconyan: resolve the stored value to a valid profile id. Existing
     // settings may store a legacy profile name instead of an id, so use
     // resolveStoredProfile which accepts both. (#529)
     const storedValue = settings.profileImpersonate1st ?? '';
@@ -482,7 +482,7 @@ export async function init() {
     startFlushGuideButtonUpdates();
     startQrIntegration();
 
-    // SillyBunny: re-populate profile/preset dropdowns when Connection Manager
+    // Neconyan: re-populate profile/preset dropdowns when Connection Manager
     // profiles change, so the UI stays in sync without requiring a manual
     // refresh click. Fixes the race condition where dropdowns populate before
     // Connection Manager data is ready. (#529)

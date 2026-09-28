@@ -45,13 +45,13 @@ test('upgrade ownership is copied before pruning, and damaged settings hold all 
     updateJob(directories, 'filler-0', { label: 'changed' });
     assert.equal(Object.keys(readJobStore(directories).jobs).length, 201);
     assert.throws(() => acceptJob(directories, { owner, type: 'other.task', submissionKey: 'new', intent: {} }), error => error.code === 'JOB_STORE_FULL');
-    fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify({ _version: 1, extension_settings: { sillybunny_conversation: { characters: {}, reminders: [], groups: [] } } }));
+    fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify({ _version: 1, extension_settings: { neconyan_conversation: { characters: {}, reminders: [], groups: [] } } }));
     const revision = readJobStore(directories).revision;
     await migrateConversationAutomaticOwnership(options);
     assert.equal(readJobStore(directories).revision, revision);
     updateJob(directories, 'filler-0', { label: 'migrated' });
     assert.equal(getJob(directories, legacy.id), null);
-    const store = JSON.parse(fs.readFileSync(path.join(root, 'settings.json'), 'utf8')).extension_settings.sillybunny_conversation;
+    const store = JSON.parse(fs.readFileSync(path.join(root, 'settings.json'), 'utf8')).extension_settings.neconyan_conversation;
     assert.equal(wasConversationAutomaticOccurrenceAccepted(store, conversationReminderIdentityKey('legacy-reminder')), true);
     const boot = fs.readFileSync(new URL('../src/server-main.js', import.meta.url), 'utf8');
     assert.ok(boot.indexOf('.then(migrateConversationOwnership)') < boot.indexOf('.then(preSetupTasks)'));
@@ -248,12 +248,12 @@ test('an oversized solo partner list does not stop the scan from invalidating an
     };
     fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify({
         _version: 0, user_avatar: 'p.png',
-        extension_settings: { sillybunny_conversation: store },
+        extension_settings: { neconyan_conversation: store },
     }));
     const result = await scanConversationAutonomy({ directoriesFor: () => ({ root, groups: path.join(root, 'groups'), characters: path.join(root, 'characters') }), owners: [''], now });
     assert.deepEqual(result.invalidated, ['rem1']);
     const saved = JSON.parse(fs.readFileSync(path.join(root, 'settings.json'), 'utf8'));
-    assert.ok(saved.extension_settings.sillybunny_conversation.reminders[0].invalidAt);
+    assert.ok(saved.extension_settings.neconyan_conversation.reminders[0].invalidAt);
     fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -276,13 +276,13 @@ test('an unresolved legacy group does not stop the scan from invalidating an unr
     };
     fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify({
         _version: 0, user_avatar: 'p.png',
-        extension_settings: { sillybunny_conversation: store },
+        extension_settings: { neconyan_conversation: store },
     }));
     // An empty handle keeps the settings autosave (a 10-minute throttle timer)
     // out of the test process.
     const result = await scanConversationAutonomy({ directoriesFor: () => ({ root, groups: path.join(root, 'groups'), characters: path.join(root, 'characters') }), owners: [''], now });
     assert.deepEqual(result.invalidated, ['rem1']);
     const saved = JSON.parse(fs.readFileSync(path.join(root, 'settings.json'), 'utf8'));
-    assert.ok(saved.extension_settings.sillybunny_conversation.reminders[0].invalidAt);
+    assert.ok(saved.extension_settings.neconyan_conversation.reminders[0].invalidAt);
     fs.rmSync(root, { recursive: true, force: true });
 });

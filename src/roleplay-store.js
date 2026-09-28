@@ -48,9 +48,9 @@ export function roleplaySettingsHash(settings) {
     for (const key of ['_version', '_settingsRevision', 'accountStorage']) delete bound[key];
     const extensions = bound.extension_settings;
     if (extensions && typeof extensions === 'object' && !Array.isArray(extensions)
-        && Object.hasOwn(extensions, 'sillybunny_conversation')) {
+        && Object.hasOwn(extensions, 'neconyan_conversation')) {
         bound.extension_settings = { ...extensions };
-        delete bound.extension_settings.sillybunny_conversation;
+        delete bound.extension_settings.neconyan_conversation;
     }
     return roleplayHash(bound);
 }

@@ -1,6 +1,6 @@
 import { DEFAULT_LIMITS } from './allowlist.js';
 
-export const MESSAGE_TYPE = 'sillybunny-card-script:slash';
+export const MESSAGE_TYPE = 'neconyan-card-script:slash';
 export const MESSAGE_VERSION = 1;
 
 export function validateSlashRequestMessage(data, { maxCommandLength = DEFAULT_LIMITS.maxCommandLength } = {}) {

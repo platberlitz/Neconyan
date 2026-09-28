@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const originals = { document: globalThis.document, fetch: globalThis.fetch, CustomEvent: globalThis.CustomEvent, dispatchEvent: globalThis.dispatchEvent, getComputedStyle: globalThis.getComputedStyle, location: globalThis.location };
-afterEach(() => { Object.assign(globalThis, originals); delete globalThis[Symbol.for('sillybunny.extensionCapabilities')]; jest.resetModules(); });
+afterEach(() => { Object.assign(globalThis, originals); delete globalThis[Symbol.for('neconyan.extensionCapabilities')]; jest.resetModules(); });
 
 async function runtime({ assistant = 'miso-male', group = null } = {}) {
     jest.resetModules();
@@ -180,7 +180,7 @@ test('write tools refuse to act until the user confirmed the call in chat', asyn
 
 test('an empty or null avatar prompt creates the card without a generated avatar, and the note and greetings reach the form', async () => {
     const { invoke, context } = await runtime();
-    globalThis[Symbol.for('sillybunny.extensionCapabilities')] = new Map();
+    globalThis[Symbol.for('neconyan.extensionCapabilities')] = new Map();
     expect(await invoke('CreateCharacter', { userConfirmed: true, character: { name: 'Blank prompt' }, avatarPrompt: '' })).toMatchObject({ status: 'success', generatedAvatar: false });
     expect(await invoke('CreateCharacter', { userConfirmed: true, character: { name: 'Null prompt' }, avatarPrompt: null })).toMatchObject({ status: 'success', generatedAvatar: false });
     expect(await invoke('CreateCharacter', { userConfirmed: true, character: { name: 'Spaces' }, avatarPrompt: '   ' })).toMatchObject({ status: 'success', generatedAvatar: false });
@@ -213,7 +213,7 @@ test('character creation uses Quick Image Gen output as the new avatar and rejec
     const { context, invoke } = await runtime();
     globalThis.location = { href: 'http://localhost/', origin: 'http://localhost' };
     const generateImage = jest.fn(async () => ({ url: '/user/images/avatar.png' }));
-    globalThis[Symbol.for('sillybunny.extensionCapabilities')] = new Map([['quick-image-gen', { generateImage }]]);
+    globalThis[Symbol.for('neconyan.extensionCapabilities')] = new Map([['quick-image-gen', { generateImage }]]);
     const createFetch = globalThis.fetch;
     globalThis.fetch = jest.fn(async (url, options) => url === 'http://localhost/user/images/avatar.png'
         ? { ok: true, blob: async () => new Blob(['png fixture'], { type: 'image/png' }) }

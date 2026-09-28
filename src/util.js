@@ -2138,7 +2138,7 @@ export function flattenSchema(schema, api) {
     return flattenedSchema;
 }
 
-export const FILE_WRITE_RECOVERY_SUFFIX = '.sillybunny-write-recovery';
+export const FILE_WRITE_RECOVERY_SUFFIX = '.neconyan-write-recovery';
 export const FILE_WRITE_RECOVERY_MAX_BYTES = Math.ceil(64 * 1024 * 1024 / 3) * 4 + 4096;
 
 /** Inspect bounded legacy evidence without exposing its old bytes for restoration. */
@@ -2271,7 +2271,7 @@ function recoverFileWriteOnceSync(filePath) {
     }
 
     if (!fs.existsSync(filePath)) {
-        const restoreTempPath = path.join(path.dirname(filePath), `.sillybunny-write-${process.pid}.${crypto.randomBytes(8).toString('hex')}.restore`);
+        const restoreTempPath = path.join(path.dirname(filePath), `.neconyan-write-${process.pid}.${crypto.randomBytes(8).toString('hex')}.restore`);
         let restoreTempCreated = false;
         try {
             const restoreDescriptor = fs.openSync(restoreTempPath, 'wx');
@@ -2673,7 +2673,7 @@ export function tryWriteFileSync(filePath, data, options = typeof data === 'stri
         try {
             assertExpectedPathState();
             if (!runWithWindowsRetries(() => {
-                const candidatePath = path.join(directory, `.sillybunny-write-${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`);
+                const candidatePath = path.join(directory, `.neconyan-write-${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`);
                 const targetStats = fs.lstatSync(filePath, { bigint: true });
                 const tempDescriptor = fs.openSync(candidatePath, 'wx', Number(targetStats.mode & 0o777n));
                 tempFilePaths.add(candidatePath);

@@ -49,7 +49,7 @@ describe('Claude 5 backend request handling', () => {
     const tempDirs = [];
 
     beforeAll(async () => {
-        const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-claude-config-'));
+        const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-claude-config-'));
         const configPath = path.join(configRoot, 'config.yaml');
         const defaultConfig = fs.readFileSync(fileURLToPath(new URL('../default/config.yaml', import.meta.url)), 'utf8');
         fs.writeFileSync(configPath, defaultConfig.replace('enableAdaptiveThinking: false', 'enableAdaptiveThinking: true'));
@@ -59,7 +59,7 @@ describe('Claude 5 backend request handling', () => {
         const { SECRET_KEYS, SecretManager } = await import('../src/endpoints/secrets.js');
         const { router: chatCompletionsRouter } = await import('../src/endpoints/backends/chat-completions.js');
 
-        const userRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-claude-sonnet5-'));
+        const userRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-claude-sonnet5-'));
         tempDirs.push(userRoot);
         userDirectories = { root: userRoot, backups: userRoot };
         new SecretManager(userDirectories).writeSecret(SECRET_KEYS.LINKAPI, 'linkapi-test-key');

@@ -6,7 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 const MARKER_VERSION = 1;
-const MARKER_PATH = path.join(process.cwd(), 'node_modules', '.sillybunny-dependencies.json');
+const MARKER_PATH = path.join(process.cwd(), 'node_modules', '.neconyan-dependencies.json');
 const STATE_FILES = [
     'package.json',
     'bun.lock',
@@ -160,7 +160,7 @@ if (command === 'check') {
     const reason = needsInstall(profile);
 
     if (reason) {
-        if (process.env.NECONYAN_DEPENDENCY_DEBUG || process.env.SILLYBUNNY_DEPENDENCY_DEBUG) {
+        if (process.env.NECONYAN_DEPENDENCY_DEBUG) {
             console.log(`Dependency install required: ${reason}.`);
         }
 

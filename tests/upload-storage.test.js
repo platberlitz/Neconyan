@@ -10,7 +10,7 @@ import { createUploadStorage, ensureUploadDirectory } from '../src/middleware/up
 const tempRoots = [];
 
 function createTempRoot() {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-uploads-'));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-uploads-'));
     tempRoots.push(tempRoot);
     return tempRoot;
 }

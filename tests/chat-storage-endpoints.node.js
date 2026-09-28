@@ -286,7 +286,7 @@ test('legacy preflight refuses moved undo evidence naming a protected physical i
     assert.equal((await f.load()).status, 200);
     const journal = writeJournal(f);
     const moved = path.join(path.dirname(f.filename), 'Moved.jsonl');
-    const journalPath = moved + '.sillybunny-write-recovery';
+    const journalPath = moved + '.neconyan-write-recovery';
     fs.unlinkSync(f.filename);
     fs.renameSync(journal.filename, journalPath);
     const before = readRoleplayAccount(f.scope);

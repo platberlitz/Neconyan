@@ -56,7 +56,7 @@ describe('chat render lifecycle index seam', () => {
         expect(CHAT_SCROLL_INTENT.TAIL_APPEND).toBe('tail-append');
         expect(CHAT_SCROLL_ACTION.PIN_BOTTOM).toBe('pin-bottom');
         expect(CHAT_SCROLL_STATE.STREAMING_FOLLOW).toBe('streaming-follow');
-        expect(CHAT_RENDER_LIFECYCLE_ROLLOUT_KEY).toBe('sillybunny.chatRenderLifecycle.enabled');
+        expect(CHAT_RENDER_LIFECYCLE_ROLLOUT_KEY).toBe('neconyan.chatRenderLifecycle.enabled');
         expect(CHAT_RENDER_WINDOW_DEFAULT).toBe(100);
         expect(CHAT_RENDER_WINDOW_MAX).toBe(200);
         expect(CHAT_RENDER_LIFECYCLE_ROUTE.INITIAL_LOAD).toBe('initial-load');

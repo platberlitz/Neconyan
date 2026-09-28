@@ -10,6 +10,7 @@ import { authoringRoute, deleteAuthoringFileLocked, readAuthoringFileLocked, wri
 import { readRoleplayFile } from '../roleplay-store.js';
 import { assertNativeMediaTargetIdle } from '../generation/media-jobs.js';
 import { fsyncDirectorySync } from '../util.js';
+import { migrateLegacyWorldNames } from '../legacy-name-migration.js';
 import {
     appendWorldInfoCommit, deleteWorldInfoHistory, mergeWorldInfoHistory, newWorldInfoHistory,
     readWorldInfoHistory, renameWorldInfoHistory, validateWorldInfoHistory, worldInfoRevision, writeWorldInfoHistory,
@@ -292,12 +293,14 @@ router.post('/import', authoringRoute((request, response, lease) => {
 
         assertNativeMediaTargetIdle(lease, { kind: 'lorebook', id: filename });
 
-        const fileContents = request.body.convertedData ?? fs.readFileSync(pathToUpload, 'utf8');
+        let fileContents = request.body.convertedData ?? fs.readFileSync(pathToUpload, 'utf8');
         const worldContent = tryParse(fileContents);
         if (!isValidWorldInfoData(worldContent)) {
             console.warn(`World Info import rejected: '${requestedName}' is not a valid world info file`);
             return response.status(400).send('Is not a valid world info file');
         }
+        // Books shared before the rename keep Pathfinder and World Info Lab data under the old keys.
+        if (migrateLegacyWorldNames(worldContent)) fileContents = JSON.stringify(worldContent, null, 4);
 
         const pathToNewFile = path.join(request.user.directories.worlds, filename);
         if (request.body.history !== undefined) {

@@ -53,7 +53,7 @@ describe('chat recovery endpoint fallbacks', () => {
         // Jest inherits Node's outer-realm clone. These JSON-only fixtures need clones in the test realm
         // so strict persisted-evidence comparisons check their values rather than VM prototypes.
         jest.spyOn(global, 'structuredClone').mockImplementation(value => JSON.parse(JSON.stringify(value)));
-        tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-chat-recovery-endpoints-'));
+        tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-chat-recovery-endpoints-'));
         const root = path.join(tempRoot, 'recovery-test-user');
         directories = {
             root,

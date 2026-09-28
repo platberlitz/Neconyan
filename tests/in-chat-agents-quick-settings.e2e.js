@@ -44,7 +44,7 @@ for (const width of [393, 1280]) {
                         if (i < 2) companion.setCompanionResult(context.chat[index], store.getAgentById(id), { status: 'done', content: 'A retained test note.' });
                     }
                     await companion.emitCompanionResultsUpdated(index, ids[0]);
-                    window.SillyBunnyShell.openTab('left', 'agents');
+                    window.NeconyanShell.openTab('left', 'agents');
                 }, { ids, prefix });
                 await expect(page.locator('#ica--settings')).toBeVisible();
                 await page.locator('#ica--search').fill(prefix);
@@ -161,7 +161,7 @@ for (const width of [393, 1280]) {
                 await page.screenshot({ path: info.outputPath('agent-shortcuts.png') });
                 await page.reload({ waitUntil: 'domcontentloaded' });
                 await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready') && window.SillyTavern?.getContext);
-                await page.evaluate(() => window.SillyBunnyShell.openTab('left', 'agents'));
+                await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
                 await expect(page.locator('#ica--settings')).toBeVisible();
                 await page.locator('#ica--search').fill(`${prefix} 0`);
                 await expect(first.getByRole('button', { name: 'In chat history', exact: true })).toHaveAttribute('aria-pressed', 'true');

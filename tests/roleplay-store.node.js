@@ -237,7 +237,7 @@ test('a substituted destination link never publishes into another account', t =>
     let substituted = false;
     t.mock.method(fs, 'openSync', (filename, ...args) => {
         if (!substituted && path.dirname(String(filename)) === path.dirname(target)
-            && path.basename(String(filename)).startsWith('.sillybunny-write-') && args[0] === 'wx') {
+            && path.basename(String(filename)).startsWith('.neconyan-write-') && args[0] === 'wx') {
             fs.unlinkSync(target);
             fs.symlinkSync(other, target);
             substituted = true;
@@ -281,7 +281,7 @@ for (const change of ['bytes', 'growth', 'link']) {
         let changed = false;
         t.mock.method(fs, 'openSync', (target, ...args) => {
             if (!changed && path.dirname(String(target)) === path.dirname(filename)
-                && path.basename(String(target)).startsWith('.sillybunny-write-') && args[0] === 'wx') {
+                && path.basename(String(target)).startsWith('.neconyan-write-') && args[0] === 'wx') {
                 changed = true;
                 if (change === 'link') fs.linkSync(filename, alias);
                 else fs.writeFileSync(filename, change === 'growth' ? Buffer.alloc(ROLEPLAY_STORE_MAX_BYTES + 1) : 'changed evidence');

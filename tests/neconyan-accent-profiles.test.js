@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const readSource = (...parts) => readFileSync(path.join(repoRoot, ...parts), 'utf8').replace(/\r\n/g, '\n');
 
-describe('SillyBunny accent color profiles', () => {
+describe('Neconyan accent color profiles', () => {
     const indexSource = readSource('public', 'index.html');
     const powerUserSource = readSource('public', 'scripts', 'power-user.js');
     const themeCssSource = readSource('public', 'css', 'neconyan-theme.css');

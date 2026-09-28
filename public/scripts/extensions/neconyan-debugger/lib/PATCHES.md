@@ -11,7 +11,7 @@ The local patch makes teardown safe for a long-lived Neconyan page:
 - Overlay inspect listeners and active drag/resize listeners are removed during teardown.
 - DOM observation is disabled and closed shadow roots stay in a private `WeakMap`.
 - Eruda removes all Network listeners, bounds its request panel, and preserves console wrappers installed by other code.
-- The browser build exports to `globalThis.__sillyBunnyDebuggerEruda` without creating `globalThis.eruda`.
+- The browser build exports to `globalThis.__neconyanDebuggerEruda` without creating `globalThis.eruda`.
 - The Info tool shows only the current page origin rather than its path, query, fragment, or URL credentials.
 - The floating entry control is a themed, keyboard-operable `Open debugger` button with a visible focus indicator that does not change opacity, a 44x44 CSS-pixel target, and default/drag bounds that follow the visual viewport and all four safe-area insets.
 - Reduced motion disables EntryBtn and debugger-panel transitions and makes panel show/hide immediate. Pending panel transition timers are cleared during teardown.

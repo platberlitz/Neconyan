@@ -456,7 +456,6 @@
         showFailure: showFailure,
     };
     window.NeconyanBootGuard = neconyanBootGuard;
-    window.SillyBunnyBootGuard = neconyanBootGuard;
 
     if (!isBootGuardApplicable) {
         return;

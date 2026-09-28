@@ -1,4 +1,4 @@
-const REGISTRY_KEY = Symbol.for('sillybunny.extensionCapabilities');
+const REGISTRY_KEY = Symbol.for('neconyan.extensionCapabilities');
 
 function getRegistry() {
     let registry = globalThis[REGISTRY_KEY];

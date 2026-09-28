@@ -65,7 +65,7 @@ test('only registered pages render, and the glossary uses current Agents labels'
     for (const label of ['Create agent', 'Browse library', 'Connections &amp; Defaults', 'Companion Output']) {
         assert.ok(html.includes(label), `missing ${label}`);
     }
-    assert.doesNotMatch(glossary, /SillyBunny/);
+    assert.doesNotMatch(glossary, /sillybunny/i);
 });
 
 test('the Agents panel links to the reader page', () => {

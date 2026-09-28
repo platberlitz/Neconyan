@@ -332,7 +332,7 @@ describe('companion tracker panel', () => {
         expect(html).toContain('45');
         expect(html).toContain('No state yet');
 
-        // SillyBunny: the per-companion Play button must remain visible after a companion has
+        // Neconyan: the per-companion Play button must remain visible after a companion has
         // already produced state, otherwise manual companions can only regenerate the first run
         // and never pick up a newer assistant reply from the draggable panel.
         expect(html).toMatch(/<section class="ica--tpanel-agent"[\s\S]*?data-message-index="0"[\s\S]*?data-action="panel-run-latest"[\s\S]*?<\/section>/);

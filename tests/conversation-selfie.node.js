@@ -34,7 +34,7 @@ function prepared(t, { group = false } = {}) {
         extension_settings: { connectionManager: { profiles: [{ id: 'main', api: 'custom', model: 'fixture', 'api-url': 'http://127.0.0.1:5000/v1' }] },
             'quick-image-gen': { provider: 'together', togetherKey: 'private-key', togetherModel: 'image-fixture', seed: 4,
                 style: 'none', appendQuality: false, useSTStyle: false },
-            sillybunny_conversation: { version: 1, settings: { connection_profile: 'main', image_gen_enabled: false, image_gen_cooldown: 0 },
+            neconyan_conversation: { version: 1, settings: { connection_profile: 'main', image_gen_enabled: false, image_gen_cooldown: 0 },
                 groups: group ? [{ id: groupId, personaId: '', members: ['Nova.png', 'Kit.png'], disabled_members: [],
                     conversation_settings: {}, createdAt: 1, updatedAt: 1 }] : [], reminders: [],
                 characters: { [thread]: { settings: {}, activeBranchId: 'main', branches: { main: branch } } } } } };
@@ -43,10 +43,10 @@ function prepared(t, { group = false } = {}) {
     setDirectoriesResolver(() => directories);
     const request = { user: { directories, profile: { handle: f.scope.owner } } };
     const read = () => JSON.parse(fs.readFileSync(filename, 'utf8'));
-    const messages = () => read().extension_settings.sillybunny_conversation.characters[thread].branches.main.messages;
+    const messages = () => read().extension_settings.neconyan_conversation.characters[thread].branches.main.messages;
     const write = mutate => {
         const data = read();
-        mutate(data.extension_settings.sillybunny_conversation, data);
+        mutate(data.extension_settings.neconyan_conversation, data);
         fs.writeFileSync(filename, JSON.stringify(data));
     };
     async function submission({ key = 'selfie-1', speakerAvatar = group ? 'Kit.png' : 'Nova.png', extra = {} } = {}) {
@@ -103,7 +103,7 @@ test('a manual selfie renders, captions and posts once without the page, even af
     assert.equal(paid, 1);
     assert.equal(calls.length, 2);
     assert.deepEqual(narrated, [{ text: 'Rain suits me, right?', speaker: 'Nova.png', effectId: 'selfie' }]);
-    const branch = f.read().extension_settings.sillybunny_conversation.characters[f.thread].branches.main;
+    const branch = f.read().extension_settings.neconyan_conversation.characters[f.thread].branches.main;
     assert.equal(branch.pendingPresentations[posted.id].narration.status, 'ready');
     assert.equal(branch.unread, 1);
 

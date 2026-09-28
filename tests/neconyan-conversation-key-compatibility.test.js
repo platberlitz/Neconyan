@@ -4,7 +4,7 @@ const avatar = 'Nova 100% alt.png';
 const groupId = 'group 50% alpha';
 const personaId = 'Persona 25%: one.png';
 const extensionSettings = {
-    sillybunny_conversation: {
+    neconyan_conversation: {
         version: 1,
         localStorageMigrated: true,
         settings: {},

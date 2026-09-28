@@ -202,14 +202,14 @@ async function dismissOptionalQigDialog(page) {
 async function openSettings(page) {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
-    await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'settings'));
+    await page.evaluate(() => window.NeconyanShell.openTab('right', 'settings'));
     await expect(page.locator('.sb-settings-layout')).toBeVisible();
     await dismissOptionalQigDialog(page);
 }
 
 async function openServer(page) {
     serverPanelRequested.add(page);
-    await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'server'));
+    await page.evaluate(() => window.NeconyanShell.openTab('right', 'server'));
 }
 
 test('account profile keeps identity facts, hooks, current avatar, and touch targets', async ({ page }) => {
@@ -280,7 +280,7 @@ test('Server keeps dirty update state visible and source details collapsed', asy
 test('Logs expose selectable output, preserve it on identical polling, and copy only entries', async ({ page }) => {
     const logsRequestCount = await installFailClosedRoutes(page);
     await openSettings(page);
-    await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'console-logs'));
+    await page.evaluate(() => window.NeconyanShell.openTab('right', 'console-logs'));
 
     const panel = page.locator('#sb-shell-panel-right-console-logs');
     const output = panel.locator('[role="log"]');
@@ -327,7 +327,7 @@ test('Logs expose selectable output, preserve it on identical polling, and copy 
 test('Logs show initial unavailable state and recover on the next refresh', async ({ page }) => {
     await installFailClosedRoutes(page, { logsMode: 'initial-503' });
     await openSettings(page);
-    await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'console-logs'));
+    await page.evaluate(() => window.NeconyanShell.openTab('right', 'console-logs'));
     const panel = page.locator('#sb-shell-panel-right-console-logs');
     const output = panel.locator('[role="log"]');
     const refresh = panel.locator('.sb-console-log-actions button').first();
@@ -342,7 +342,7 @@ test('Logs show initial unavailable state and recover on the next refresh', asyn
 test('Logs distinguish empty output and disable Copy', async ({ page }) => {
     await installFailClosedRoutes(page, { logsMode: 'empty' });
     await openSettings(page);
-    await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'console-logs'));
+    await page.evaluate(() => window.NeconyanShell.openTab('right', 'console-logs'));
     const emptyPanel = page.locator('#sb-shell-panel-right-console-logs');
     await expect(emptyPanel.locator('.sb-server-pill')).toHaveText('Empty');
     await expect(emptyPanel.getByRole('button', { name: 'Copy logs' })).toBeDisabled();
@@ -352,7 +352,7 @@ test('Logs distinguish empty output and disable Copy', async ({ page }) => {
 test('Logs retain previous output after a failed refresh and recover', async ({ page }) => {
     await installFailClosedRoutes(page, { logsMode: 'retained-error' });
     await openSettings(page);
-    await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'console-logs'));
+    await page.evaluate(() => window.NeconyanShell.openTab('right', 'console-logs'));
     const panel = page.locator('#sb-shell-panel-right-console-logs');
     const output = panel.locator('[role="log"]');
     const refresh = panel.locator('.sb-console-log-actions button').first();
@@ -370,7 +370,7 @@ test('Pause Live keeps an in-flight response from rewriting selected output', as
     const delayLogs = new Promise(resolve => { releaseLogs = resolve; });
     await installFailClosedRoutes(page, { delayLogs });
     await openSettings(page);
-    await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'console-logs'));
+    await page.evaluate(() => window.NeconyanShell.openTab('right', 'console-logs'));
 
     const panel = page.locator('#sb-shell-panel-right-console-logs');
     const output = panel.locator('[role="log"]');
@@ -424,7 +424,7 @@ test('Server handles initial status failure while configuration is still loading
 test('Logs report legacy clipboard failure, clean up, and allow retry', async ({ page }) => {
     await installFailClosedRoutes(page);
     await openSettings(page);
-    await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'console-logs'));
+    await page.evaluate(() => window.NeconyanShell.openTab('right', 'console-logs'));
     const panel = page.locator('#sb-shell-panel-right-console-logs');
     await expect(panel.locator('[role="log"]')).toContainText('Started Neconyan.');
     await page.evaluate(() => {
@@ -535,7 +535,7 @@ for (const width of [1280, 390, 320]) {
                 await capture('server');
                 await assertSurfaceGeometry(page, 'server', width < 768);
 
-                await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'console-logs'));
+                await page.evaluate(() => window.NeconyanShell.openTab('right', 'console-logs'));
                 await expect(page.locator('#sb-shell-panel-right-console-logs [role="log"]')).toContainText('Started Neconyan.');
                 await assertPillContrast(page.locator('#sb-shell-panel-right-console-logs'));
                 await capture('logs');

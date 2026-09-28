@@ -920,7 +920,7 @@ test('legacy repeated messages survive concurrent native additions and unrelated
     const account = await app.account();
     const file = path.join(app.directory, 'data/default-user/settings.json');
     const saved = JSON.parse(await fs.readFile(file, 'utf8'));
-    const branch = saved.extension_settings.sillybunny_conversation.characters[account.threadKey].branches.main;
+    const branch = saved.extension_settings.neconyan_conversation.characters[account.threadKey].branches.main;
     branch.messages = [{ role: 'user', mes: 'Repeated legacy message.' }, { role: 'user', mes: 'Repeated legacy message.' }];
     delete branch.messageEditRevision;
     delete branch.messageContentHash;
@@ -1417,7 +1417,7 @@ test('an unrelated save from a stale tab retains native replies and effect recei
     const saved = await account.effects();
     const localMessages = await stale.evaluate(async key => {
         const { extension_settings } = await import('/scripts/extensions.js');
-        return extension_settings.sillybunny_conversation.characters[key].branches.main.messages;
+        return extension_settings.neconyan_conversation.characters[key].branches.main.messages;
     }, account.threadKey);
     expect(localMessages.some(item => item.role === 'character')).toBe(false);
     const request = stale.waitForRequest(request => request.url().endsWith('/api/settings/save'));

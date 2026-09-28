@@ -1,7 +1,7 @@
 /**
  * Macro volatility classification.
  *
- * Vendored verbatim from SillyBunny-MacroEnhanced (src/auditor/volatility.js),
+ * Vendored verbatim from Neconyan-MacroEnhanced (src/auditor/volatility.js),
  * which is AGPL-3.0 licensed, as is this project. It is copied rather than
  * imported because Macro Enhanced is an optional neighbour: it installs under a
  * folder name that does not match its repository, and a hard import would make

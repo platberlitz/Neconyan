@@ -21,7 +21,7 @@ test('account loading failure is visible and the next attempt opens the profile'
             await route.continue();
         }
     });
-    await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'settings'));
+    await page.evaluate(() => window.NeconyanShell.openTab('right', 'settings'));
     await page.locator('.sb-settings-tab-btn[data-tab="cache-account"]').click();
     await page.locator('#account_button').click();
     await expect(page.locator('.toast-error')).toContainText('Could not load your account. Please try again.');
@@ -50,7 +50,7 @@ test('account profile opens while saved-work lists are delayed and reports their
     });
     await page.route('**/api/operations/recovery', route => route.fulfill({ json: [] }));
     try {
-        await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'settings'));
+        await page.evaluate(() => window.NeconyanShell.openTab('right', 'settings'));
         await page.locator('.sb-settings-tab-btn[data-tab="cache-account"]').click();
         await page.locator('#account_button').click();
         const popup = page.locator('dialog.popup:visible');

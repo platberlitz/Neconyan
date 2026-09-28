@@ -7,7 +7,7 @@ import {
     parseCommandArgs,
 } from '../public/scripts/neconyan-conversation/generation-utils.js';
 
-describe('sillybunny conversation generation utils', () => {
+describe('neconyan conversation generation utils', () => {
     test('parses quoted command arguments with lower-cased keys', () => {
         expect(parseCommandArgs('Status="dnd" activity="deep work" duration="1h 15m"')).toEqual({
             status: 'dnd',
@@ -56,7 +56,7 @@ describe('sillybunny conversation generation utils', () => {
         expect(result.selfieRequests).toEqual(['smiling']);
         expect(result.scheduleUpdates).toEqual([]);
         expect(result.reminders).toEqual([]);
-        // SillyBunny: even though the only content was a stripped command, the reply is
+        // Neconyan: even though the only content was a stripped command, the reply is
         // never blanked back to the original text instead.
         expect(result.text.length).toBeGreaterThan(0);
     });

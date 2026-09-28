@@ -1,7 +1,7 @@
 /**
  * Non-blocking bridge from the Expressions extension to Quick Image Gen.
  *
- * SillyBunny divergence: QIG is vendored from an upstream repo, so this file lives
+ * Neconyan divergence: QIG is vendored from an upstream repo, so this file lives
  * outside `quick-image-gen/` and discovers its activated runtime capability.
  * This avoids loading a disabled or second URL identity of the QIG entrypoint.
  */

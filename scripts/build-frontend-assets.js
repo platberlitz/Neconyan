@@ -103,7 +103,7 @@ async function runWebpackCompiler(config) {
 }
 
 async function buildPublicLibBundle() {
-    const temporaryOutputPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sillybunny-public-lib-'));
+    const temporaryOutputPath = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-public-lib-'));
     const config = getPublicLibConfig({
         forceDist: true,
         outputPath: temporaryOutputPath,

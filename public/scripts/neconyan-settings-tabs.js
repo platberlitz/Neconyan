@@ -1102,7 +1102,7 @@ import { accountStorage } from './util/AccountStorage.js';
     }
 
     function normalizeIncludedToolLookup(value) {
-        return normalizeExtensionLookup(value).replace(/^(neconyan|sillybunny)/, '');
+        return normalizeExtensionLookup(value).replace(/^neconyan/, '');
     }
 
     function getNeconyanNativeToolDefinitions() {

@@ -10,7 +10,7 @@ const BAR_ID = 'sbstory-bar';
 const ROW_ID = 'sbstory-transforms';
 const MENU_ITEM_ID = 'sbstory-menu-item';
 const DRAWER_ID = 'sbstory-settings';
-const HINT_KEY = 'SillyBunnyStoryMode_editHintShown';
+const HINT_KEY = 'NeconyanStoryMode_editHintShown';
 
 let bar = null;
 let directionWrap = null;
@@ -1195,7 +1195,7 @@ export function ensureDrawer(handlers) {
         return;
     }
     if (!drawer) {
-        drawer = el('div', { className: 'inline-drawer sbstory-drawer', attrs: { id: DRAWER_ID, 'data-extension-name': 'SillyBunny-Story-Mode' } });
+        drawer = el('div', { className: 'inline-drawer sbstory-drawer', attrs: { id: DRAWER_ID, 'data-extension-name': 'Neconyan-Story-Mode' } });
         // Same markup as every bundled drawer so host and theme CSS style it; the host toggles it on click.
         const toggle = el('div', { className: 'inline-drawer-toggle inline-drawer-header', attrs: { role: 'button', tabindex: '0', 'aria-expanded': 'false', 'aria-controls': `${DRAWER_ID}-content` } });
         // tabindex -1: keyboard.js would otherwise make the icon a second, silent tab stop inside the header button.

@@ -66,7 +66,7 @@ afterEach(() => {
     jest.useRealTimers();
 });
 
-describe('SillyBunny Chats Archive API', () => {
+describe('Neconyan Chats Archive API', () => {
     test('one accepted inventory supplies every display page and preserves late matching metadata', async () => {
         const rows = Array.from({ length: ARCHIVE_PAGE_SIZE }, (_, index) => ({ avatar: 'Scale.png', file_name: `chat-${index}.jsonl`, file_size: '1KB', chat_items: 1, last_mes: index }));
         rows.push({ avatar: 'Scale.png', file_name: 'qualifying.jsonl', file_size: '8MB', chat_items: 900, last_mes: 50_000 });
@@ -133,7 +133,7 @@ describe('SillyBunny Chats Archive API', () => {
     });
 });
 
-describe('SillyBunny Chats Archive core', () => {
+describe('Neconyan Chats Archive core', () => {
     const characters = [
         { avatar: 'Seraphina.png', name: 'Seraphina' },
         { avatar: 'Nahida.png', name: 'Nahida' },
@@ -724,7 +724,7 @@ describe('SillyBunny Chats Archive core', () => {
     });
 });
 
-describe('SillyBunny Chats Archive navigation', () => {
+describe('Neconyan Chats Archive navigation', () => {
     function context() {
         return {
             eventSource: new EventEmitter(),
@@ -770,7 +770,7 @@ describe('SillyBunny Chats Archive navigation', () => {
     });
 });
 
-describe('SillyBunny Chats Archive integration', () => {
+describe('Neconyan Chats Archive integration', () => {
     test('entry point is one host-sized native dialog button, not a fake tab', () => {
         expect(entry).toMatch(/createElement\('button'\)/);
         expect(entry).toMatch(/createElement\('i'\)/);

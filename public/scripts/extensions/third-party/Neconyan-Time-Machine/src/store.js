@@ -10,9 +10,9 @@ import {
     snapshotFileName,
 } from './core.js';
 
-export const MODULE_NAME = 'SillyBunnyCardTimeMachine';
+export const MODULE_NAME = 'NeconyanCardTimeMachine';
 const SETTINGS_VERSION = 1;
-const ATTACHMENT_KEY = '__SillyBunny-Card-Time-Machine__';
+const ATTACHMENT_KEY = '__Neconyan-Card-Time-Machine__';
 const KINDS = new Set(['character', 'lorebook', 'preset']);
 const COMMIT_TIMEOUT = 12_000;
 
@@ -335,7 +335,7 @@ function withBrowserLock(action) {
     // ponytail: Web Locks coordinate tabs in one browser. The persisted commit
     // check fails closed for other devices instead of building a custom leader.
     return globalThis.navigator?.locks?.request
-        ? globalThis.navigator.locks.request('sillybunny-time-machine', async () => action())
+        ? globalThis.navigator.locks.request('neconyan-time-machine', async () => action())
         : action();
 }
 

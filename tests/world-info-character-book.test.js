@@ -416,12 +416,12 @@ describe('convertCharacterBook', () => {
     });
 
     test('native book to card to native roundtrip keeps layout and entry node IDs through UID renumbering', () => {
-        const extensions = { foreign: { nested: ['kept'] }, sillybunny_pathfinder: { version: 1, tree: { id: 'root', children: [{ id: 'place' }] } } };
+        const extensions = { foreign: { nested: ['kept'] }, neconyan_pathfinder: { version: 1, tree: { id: 'root', children: [{ id: 'place' }] } } };
         const native = {
             extensions,
             entries: {
-                7: { uid: 7, displayIndex: 1, content: 'Second', extensions: { foreign: 'seven', sillybunny_pathfinder: { version: 1, nodeId: 'place' } } },
-                42: { uid: 42, displayIndex: 0, content: 'First', extensions: { foreign: 'forty-two', sillybunny_pathfinder: { version: 1, nodeId: 'root' } } },
+                7: { uid: 7, displayIndex: 1, content: 'Second', extensions: { foreign: 'seven', neconyan_pathfinder: { version: 1, nodeId: 'place' } } },
+                42: { uid: 42, displayIndex: 0, content: 'First', extensions: { foreign: 'forty-two', neconyan_pathfinder: { version: 1, nodeId: 'root' } } },
             },
         };
         const card = context.convertWorldInfoToCharacterBook('Lore', native.entries, native.extensions);
@@ -442,8 +442,8 @@ describe('convertCharacterBook', () => {
     test('imported books preserve foreign book and entry metadata alongside Pathfinder metadata', () => {
         const card = {
             name: 'Imported', foreign: 'original book metadata',
-            extensions: { foreign: 'book extension', sillybunny_pathfinder: { version: 1, tree: { id: 'root' } } },
-            entries: [{ id: 91, content: 'Imported entry', foreign: 'original entry metadata', extensions: { foreign: 'entry extension', sillybunny_pathfinder: { version: 1, nodeId: 'root' } } }],
+            extensions: { foreign: 'book extension', neconyan_pathfinder: { version: 1, tree: { id: 'root' } } },
+            entries: [{ id: 91, content: 'Imported entry', foreign: 'original entry metadata', extensions: { foreign: 'entry extension', neconyan_pathfinder: { version: 1, nodeId: 'root' } } }],
         };
         const native = context.convertCharacterBook(card);
         const exported = structuredClone(native.originalData);

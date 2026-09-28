@@ -55,7 +55,7 @@ for (const phone of [false, true]) {
         }
         const navigation = await page.evaluate(async () => {
             const start = performance.now();
-            window.SillyBunnyShell.openTab('left', 'agents');
+            window.NeconyanShell.openTab('left', 'agents');
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
             return performance.now() - start;
         });
@@ -92,7 +92,7 @@ for (const phone of [false, true]) {
         expect(settings.scrollWidth).toBeLessThanOrEqual(settings.width + 1);
         await page.keyboard.press('Escape');
         await page.evaluate(async () => {
-            const shell = window.SillyBunnyShell;
+            const shell = window.NeconyanShell;
             shell.closeWorkspace();
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
             shell.openTab('left', 'agents');

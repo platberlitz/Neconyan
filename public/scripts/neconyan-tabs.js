@@ -4905,7 +4905,6 @@ function scheduleChatAvatarVariableUpdate(delay = 80) {
 
 function initChatAvatarVariables() {
     window.updateNeconyanChatAvatars = updateChatAvatarVariables;
-    window.updateSillyBunnyChatAvatars = updateChatAvatarVariables;
     updateChatAvatarVariables();
 
     if (nnState.chatAvatars.observer instanceof MutationObserver) {
@@ -4954,7 +4953,7 @@ function setShellTheme(themeId, { persist = true } = {}) {
 
 function applyFrontendIcon(iconId = nnState.frontendIcon) {
     const normalizedIconId = normalizeFrontendIcon(iconId);
-    const iconController = window.NeconyanFrontendIcon || window.SillyBunnyFrontendIcon;
+    const iconController = window.NeconyanFrontendIcon;
 
     if (iconController?.apply) {
         iconController.apply(normalizedIconId);
@@ -17832,7 +17831,7 @@ function injectCharacterDrawerControls() {
 
     if (document.documentElement.dataset.sbCharacterImportPreserveBound !== 'true') {
         document.documentElement.dataset.sbCharacterImportPreserveBound = 'true';
-        document.addEventListener('sillybunny:character-import-tab-preserve', () => {
+        document.addEventListener('neconyan:character-import-tab-preserve', () => {
             window.requestAnimationFrame(preserveCharacterImportTab);
         });
     }
@@ -19480,7 +19479,7 @@ function initAll() {
     // Group Advanced Formatting sections into collapsible drawers
     groupAdvancedFormattingIntoDrawers();
 
-    const neconyanShell = /** @type {any} */ (globalThis.NeconyanShell || globalThis.SillyBunnyShell || {});
+    const neconyanShell = /** @type {any} */ (globalThis.NeconyanShell || {});
     globalThis.NeconyanShell = Object.assign(neconyanShell, {
         openExtensionSettings,
         openTab(shellKey, tabId) {
@@ -19609,7 +19608,6 @@ function initAll() {
             return true;
         },
     });
-    globalThis.SillyBunnyShell = globalThis.NeconyanShell;
 }
 
 async function consumeNeconyanRoute() {

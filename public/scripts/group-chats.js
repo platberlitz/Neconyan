@@ -2422,11 +2422,10 @@ async function renameOpenGroup() {
     await editGroup(openGroupId, true, true);
 }
 
-const neconyanShell = /** @type {any} */ (globalThis.NeconyanShell || globalThis.SillyBunnyShell || {});
+const neconyanShell = /** @type {any} */ (globalThis.NeconyanShell || {});
 globalThis.NeconyanShell = Object.assign(neconyanShell, {
     renameOpenGroup,
 });
-globalThis.SillyBunnyShell = globalThis.NeconyanShell;
 
 /**
  * Checks if a character with the given avatar ID is a member of the group.

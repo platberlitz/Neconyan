@@ -485,12 +485,12 @@ export class ConnectionManagerRequestService {
                         model,
                         chat_completion_source: selectedApiMap.source,
                         secret_id: profile['secret-id'],
-                        // SillyBunny: direct profile requests do not run the profile's slash commands,
+                        // Neconyan: direct profile requests do not run the profile's slash commands,
                         // so recover reverse proxy fields from the profile preset or current proxy state.
                         ...reverseProxyFields,
                         custom_prompt_post_processing: profile['prompt-post-processing'],
                         service_tier: getProfileServiceTier(profile),
-                        // SillyBunny: persist profile-scoped reasoning and image request settings through the shared request path.
+                        // Neconyan: persist profile-scoped reasoning and image request settings through the shared request path.
                         ...profileRequestOverrides.overrides,
                         ...overridePayload,
                         __connectionProfileRequestFields: [

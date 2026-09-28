@@ -238,7 +238,7 @@ for (const phone of [false, true]) {
         await account.settled(applied.job.id);
         const { read } = await import('../src/character-card-parser.js');
         const card = JSON.parse(read(await fs.readFile(cardPath)));
-        expect(card.data.extensions.SillyBunnyPromptingLab.cases).toHaveLength(1);
+        expect(card.data.extensions.NeconyanPromptingLab.cases).toHaveLength(1);
         expect(card.data.description).toContain('default-user');
     });
 }

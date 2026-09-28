@@ -123,7 +123,7 @@ test('unsafe ancestor cannot trigger recovery writes or remove recovery evidence
     const f = fixture(t);
     const stats = fs.statSync(f.options.filePath, { bigint: true });
     const original = fs.readFileSync(f.options.filePath);
-    const recoveryPath = f.options.filePath + '.sillybunny-write-recovery';
+    const recoveryPath = f.options.filePath + '.neconyan-write-recovery';
     const record = JSON.stringify({ version: 1, dev: String(stats.dev), ino: String(stats.ino), originalHash: hash(original),
         nextHash: hash('uncompleted'), originalData: original.toString('base64') });
     fs.writeFileSync(recoveryPath, record);
@@ -144,7 +144,7 @@ test('unsafe ancestor cannot trigger recovery writes or remove recovery evidence
 test('post-flush cleanup failure cannot masquerade as an unapplied mutation', t => {
     const f = fixture(t);
     const unlink = fs.unlinkSync;
-    const recoveryPath = f.options.filePath + '.sillybunny-write-recovery';
+    const recoveryPath = f.options.filePath + '.neconyan-write-recovery';
     t.mock.method(fs, 'unlinkSync', (file, ...args) => {
         if (file === recoveryPath) throw new Error('Fixture cleanup failure');
         return unlink(file, ...args);
@@ -350,7 +350,7 @@ test('managed publication uses frozen bytes and integrity through the existing b
     assert.deepEqual(result.file.physical, input.before.physical);
     assert.deepEqual(result.records, input.prepared.records);
     assert.equal(result.records[2].swipes[1], 'Alternative.');
-    assert.equal(fs.existsSync(f.options.filePath + '.sillybunny-write-recovery'), false);
+    assert.equal(fs.existsSync(f.options.filePath + '.neconyan-write-recovery'), false);
     const backup = fs.readdirSync(f.directories.backups).find(name => name.startsWith('chat_pre_write_'));
     assert.equal(fs.readFileSync(path.join(f.directories.backups, backup), 'utf8'), serialize(f.records));
     assert.throws(() => publishNativeChatWrite(input), { code: 'ESTALE' });
@@ -409,7 +409,7 @@ test('managed finalisation cannot introduce changed bytes, a new file or a diffe
 test('managed writes never invoke generic recovery before inspecting an unrelated journal', t => {
     const f = fixture(t);
     const input = managed(f, [...f.records, { mes: 'Must not land' }]);
-    const journal = f.options.filePath + '.sillybunny-write-recovery';
+    const journal = f.options.filePath + '.neconyan-write-recovery';
     const raw = JSON.stringify({ version: 1, dev: input.before.physical.dev, ino: input.before.physical.ino,
         originalHash: input.before.rawHash, nextHash: hash('other'), originalData: input.before.bytes.toString('base64') });
     fs.writeFileSync(journal, raw);
@@ -424,7 +424,7 @@ for (const mode of ['changed', 'unchanged', 'finalisation']) {
         const f = fixture(t);
         const input = managed(f, mode === 'changed' ? [...f.records, { mes: 'New result' }] : f.records);
         if (mode === 'finalisation') input.payloadPath = null;
-        const journal = f.options.filePath + '.sillybunny-write-recovery';
+        const journal = f.options.filePath + '.neconyan-write-recovery';
         fs.writeFileSync(journal, 'Previously classified evidence');
         const observed = readRoleplayFile(journal);
         input.expectedJournal = { rawHash: observed.rawHash, physical: observed.physical };
@@ -437,7 +437,7 @@ for (const mode of ['changed', 'unchanged', 'finalisation']) {
 test('managed journal handoff rejects an identical-byte journal replaced during lock acquisition', t => {
     const f = fixture(t);
     const input = managed(f, [...f.records, { mes: 'Must not land' }]);
-    const journal = f.options.filePath + '.sillybunny-write-recovery';
+    const journal = f.options.filePath + '.neconyan-write-recovery';
     fs.writeFileSync(journal, 'Original evidence');
     input.expectedJournal = readRoleplayFile(journal);
     let replaced = false;
@@ -459,7 +459,7 @@ test('managed journal handoff rejects an identical-byte journal replaced during 
 test('guarded restoration requires the exact journal and never removes it', t => {
     const f = fixture(t);
     const before = readRoleplayFile(f.options.filePath);
-    const journal = f.options.filePath + '.sillybunny-write-recovery';
+    const journal = f.options.filePath + '.neconyan-write-recovery';
     fs.writeFileSync(journal, 'Classified restoration evidence');
     const observed = readRoleplayFile(journal);
     const bytes = Buffer.from(serialize([...f.records, { mes: 'Frozen restored output' }]));
@@ -473,7 +473,7 @@ test('guarded restoration requires the exact journal and never removes it', t =>
 test('guarded restoration rechecks the journal immediately before replacement', t => {
     const f = fixture(t);
     const before = readRoleplayFile(f.options.filePath);
-    const journal = f.options.filePath + '.sillybunny-write-recovery';
+    const journal = f.options.filePath + '.neconyan-write-recovery';
     fs.writeFileSync(journal, 'Original recovery evidence');
     const observed = readRoleplayFile(journal);
     const bytes = Buffer.from(serialize([...f.records, { mes: 'Must not land' }]));
@@ -481,7 +481,7 @@ test('guarded restoration rechecks the journal immediately before replacement', 
     let replaced = false;
     t.mock.method(fs, 'openSync', (filename, flags, ...args) => {
         if (!replaced && flags === 'wx' && path.dirname(String(filename)) === path.dirname(f.options.filePath)
-            && path.basename(String(filename)).startsWith('.sillybunny-write-')) {
+            && path.basename(String(filename)).startsWith('.neconyan-write-')) {
             replaced = true;
             fs.copyFileSync(journal, journal + '.new');
             fs.renameSync(journal + '.new', journal);
@@ -508,7 +508,7 @@ test('managed interrupted write retains its staged after-image without optional 
     assert.throws(() => publishNativeChatWrite(input), error => error.chatWriteUncertain === true && error.integrity === input.prepared.integrity);
     t.mock.restoreAll();
     assert.equal(fs.readFileSync(input.payloadPath, 'utf8'), input.prepared.serialized);
-    assert.equal(fs.existsSync(f.options.filePath + '.sillybunny-write-recovery'), false);
+    assert.equal(fs.existsSync(f.options.filePath + '.neconyan-write-recovery'), false);
     assert.equal(readChatJsonlStrict(f.options.filePath).status, 'corrupt');
 });
 
@@ -538,7 +538,7 @@ for (const code of ['ESTALE', 'EMLINK']) {
             const backups = fs.readdirSync(f.directories.backups).filter(name => name.startsWith('chat_pre_write_'));
             assert.equal(backups.length, 1);
             assert.deepEqual(fs.readFileSync(path.join(f.directories.backups, backups[0])), before.bytes);
-            assert.equal(fs.existsSync(f.options.filePath + '.sillybunny-write-recovery'), false);
+            assert.equal(fs.existsSync(f.options.filePath + '.neconyan-write-recovery'), false);
         });
     }
 }

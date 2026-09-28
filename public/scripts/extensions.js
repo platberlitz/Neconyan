@@ -993,7 +993,7 @@ async function activateExtensions() {
         const displayName = manifest.display_name || name;
         const isDisabled = isExtensionDisabled(name);
         const clientVersionMeetsMinimum = minClientVersion === undefined
-            || versionCompare(extensionCompatibilityVersion, minClientVersion, { mapSillyBunnyToSillyTavern: clientIdentifier !== 'Neconyan' });
+            || versionCompare(extensionCompatibilityVersion, minClientVersion);
         const disabledDependencyNames = Array.isArray(extensionDependencies)
             ? extensionDependencies.filter(dep => isExtensionDisabled(dep))
             : [];

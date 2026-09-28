@@ -21,7 +21,7 @@ async function importHelper({ resolvedProfileId = 'profile-1', result = { applie
     return { helper, run, saveSettings, adoptServerSettingsWrite, getActiveGenerationAcknowledgement, resolveConnectionProfile };
 }
 
-describe('SillyBunny Custom CSS AI helper', () => {
+describe('Neconyan Custom CSS AI helper', () => {
     test('preserves the shared abort-like error export', async () => {
         const { helper } = await importHelper();
 

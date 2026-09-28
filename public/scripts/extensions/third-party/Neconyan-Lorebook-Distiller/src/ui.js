@@ -1,7 +1,7 @@
 import * as api from './api.js';
 import { getLabClient, prepareLabConnection, mountLabRecovery } from '../../../../labs-client.js';
 
-const SETTINGS_KEY = 'SillyBunnyLorebookDistiller';
+const SETTINGS_KEY = 'NeconyanLorebookDistiller';
 const NEW_BOOK = '__sbld_new__';
 const CURRENT_CHAT = '__sbld_current__';
 

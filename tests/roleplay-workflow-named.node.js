@@ -396,7 +396,7 @@ test('a routine page save after acceptance keeps the reply, and a real settings 
     const { result } = await f.run('roleplay.reply', { text: 'Kept through a page save.', beforeTurn: () => edit(settings => ({
         ...settings, _version: 11, _settingsRevision: settings._settingsRevision + 1,
         accountStorage: { 'st--inputHistory': '["Where are you?"]' },
-        extension_settings: { ...settings.extension_settings, sillybunny_conversation: { characters: { nova: { branches: {} } } } },
+        extension_settings: { ...settings.extension_settings, neconyan_conversation: { characters: { nova: { branches: {} } } } },
     })) });
     assert.equal(result.status, 'completed');
     assert.equal(f.records().at(-1).mes, 'Kept through a page save.');

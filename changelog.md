@@ -100,7 +100,7 @@
 
 ## v1.7.0
 
-**SillyBunny version 1.7.0 has released**
+**Neconyan version 1.7.0 has released**
 This update features comprehensive bug fixes all across the board, as well as a new feature, Conversation Mode!
 
 **New: Conversation Mode**
@@ -113,7 +113,7 @@ Conversation Mode supports one-to-one and group chats, images, reminders and sch
 - Fixed compatibility for third-party extensions CharacterLibrary and ST-Copilot. Should be future-proofed for other third-party SillyTavern extensions but it depends. Open an issue on Github for specific extensions and we can take a look.
 - Corrected Claude responses, Gemini thought signatures, Grok dialogue, and SillyTavern version mapping for extensions by hard-coding it to the latest version, 1.18.0.
 - Fixed TTS extension reading the font color tags and HTML tags.
-- Fixed multiple platforms' device issues with starting SillyBunny in either node or bun.
+- Fixed multiple platforms' device issues with starting Neconyan in either node or bun.
 - Corrected some WebKit layout issues.
 - Termux bun launch should now work better due to reordering of how dependencies are found and installed.
 - Fixed UI bugs such as button and tag truncations.
@@ -132,7 +132,7 @@ Conversation Mode supports one-to-one and group chats, images, reminders and sch
 - Sorting by newest added character.
 - Optional disabling of core extensions.
 - New model/provider icons, control labels, model variants, and Kimi K3 partial-prefill support.
-- Opt-in `bun --smol` launcher support on devices that need arguments before the start command. Use `SILLYBUNNY_BUN_SMOL=1 ./start.sh` to launch a small device-friendly SillyBunny.
+- Opt-in `bun --smol` launcher support on devices that need arguments before the start command. Use `NECONYAN_BUN_SMOL=1 ./start.sh` to launch a small device-friendly Neconyan.
 - New agents: Level Up Companion, User-based Stats, and CYOA Choices with Skill Checks.
 
 ### Changed
@@ -142,7 +142,7 @@ Conversation Mode supports one-to-one and group chats, images, reminders and sch
 - Reorganized custom agent templates into content and tracker categories.
 - Changed the default window size to Snap to Chat Width behavior.
 - Main LLM messages by default now output before pre-generation intercept agents change them.
-- Updated non-English README files to reference SillyBunny.
+- Updated non-English README files to reference Neconyan.
 
 ### Improvements
 - Improved Android mobile performance.
@@ -284,7 +284,7 @@ Conversation Mode supports one-to-one and group chats, images, reminders and sch
 - PR #668 (2026-07-15) `fix: Viewport scrolling offscreen in-depth`
 - PR #670 (2026-07-17) `fix(mobile): allow horizontal sliding`
 - PR #675 (2026-07-17) `fix: Start-Node.bat unescaped parentheses causes immediate exit`
-- PR #676 (2026-07-17) `fix: Bun throws EEXIST on mkdir when SillyBunny is installed inside OneDrive`
+- PR #676 (2026-07-17) `fix: Bun throws EEXIST on mkdir when Neconyan is installed inside OneDrive`
 - PR #677 (2026-07-20) `chore: refresh and update Pura's Director Preset to 15.0`
 - PR #678 (2026-07-22) `fix(ios): includes backwards compatibility of viewport fix for old iOS versions`
 - PR #680 (2026-07-22) `feat: Card sorting option based on newest additions (for real)`
@@ -292,7 +292,7 @@ Conversation Mode supports one-to-one and group chats, images, reminders and sch
 - PR #683 (2026-07-24) `chore: enforce LF line endings via .gitattributes`
 - PR #687 (2026-07-25) `fix: issue of being unable to import or rename any preset to any user-deleted bundled default presets`
 - PR #688 (2026-07-25) `fix: characters with spaces show proper thumbnails`
-- PR #689 (2026-07-26) `feat(launcher): gate bun --smol behind SILLYBUNNY_BUN_SMOL`
+- PR #689 (2026-07-26) `feat(launcher): gate bun --smol behind NECONYAN_BUN_SMOL`
 - PR #690 (2026-07-26) `fix: Chat saving issue resolution via hardening`
 - PR #691 (2026-07-26) `fix: WI activation sliders width consistency`
 - PR #692 (2026-07-26) `fix: overlap between favorites bar and Roleplay/Conversation selector`
@@ -362,8 +362,8 @@ This update introduces Companion Agents, sidecar-style auxiliary AI helpers that
 ### Fixed
 - Chat backup count is now capped to 25 by default (`backups.chat.maxTotalBackups`) instead of unlimited, preventing unbounded accumulation over time.
 - Pre-write chat backups now skip writing when the on-disk content is unchanged (duplicate detection), reducing redundant snapshots during rapid save flows like swiping.
-- SillyBunny to SillyTavern version mapping is corrected so extensions check compatibility against the right version.
-- sillybunny-theme media queries now align to the 768px breakpoint instead of 760px.
+- Neconyan to SillyTavern version mapping is corrected so extensions check compatibility against the right version.
+- neconyan-theme media queries now align to the 768px breakpoint instead of 760px.
 - iOS WebKit boot failures are now surfaced instead of failing silently, with hardened frontend boot recovery.
 - Clear cookies and cache now works on iOS WebKit.
 - iOS chat overscroll blanking and keyboard composer displacement are fixed.
@@ -393,8 +393,8 @@ This update introduces Companion Agents, sidecar-style auxiliary AI helpers that
 - PR #402 (2026-06-10) `chore: bump version to 1.6.5`
 - PR #404 (2026-06-10) `chore: route mobile rail and quick-action models through mobile-shell-lifecycle`
 - PR #407 (2026-06-10) `docs: ledger the mobile-styles media gate and canonical breakpoints`
-- PR #408 (2026-06-11) `fix: align sillybunny-theme 760px queries to the 768px breakpoint`
-- PR #410 (2026-06-10) `fix: correct SillyBunny→SillyTavern version mapping for extension compatibility`
+- PR #408 (2026-06-11) `fix: align neconyan-theme 760px queries to the 768px breakpoint`
+- PR #410 (2026-06-10) `fix: correct Neconyan→SillyTavern version mapping for extension compatibility`
 - PR #411 (2026-06-11) `fix: cap chat backups and deduplicate pre-write snapshots`
 - PR #413 (2026-06-11) `fix: surface iOS WebKit boot failures`
 - PR #414 (2026-06-11) `fix: unify graceful shutdown so frontend restart works on Windows`
@@ -463,7 +463,7 @@ Date: 2026-06-10
 This update adds a built-in ZIP auto-updater for non-Git installs, token estimates in the chat selector, serialized chat saves, and a round of mobile, chat-backup, and generation-life-cycle fixes on top of 1.6.3.
 
 ### Added
-- Built-in ZIP auto-update lets non-Git installs check for and apply new SillyBunny releases directly from Customize > Server.
+- Built-in ZIP auto-update lets non-Git installs check for and apply new Neconyan releases directly from Customize > Server.
 - The chat selector now shows an approximate token count for each saved chat so you can see chat sizes at a glance before switching.
 
 ### Improved
@@ -733,7 +733,7 @@ This update keeps the 1.6 series moving with safer chat lifecycle defaults, stro
 - PR #293 (2026-05-31) `chore: update Pura Director Preset agents to v2`
 - PR #294 (2026-06-02) `feat(tts): add OpenAI audio format selection`
 - PR #295 (2026-06-02) `fix: bound rendered chat messages`
-- PR #296 (2026-06-02) `chore: align PR checks with SillyBunny`
+- PR #296 (2026-06-02) `chore: align PR checks with Neconyan`
 - PR #297 (2026-06-02) `fix: fetch current chat completion models`
 - PR #298 (2026-06-02) `fix: refresh edited character avatars`
 - PR #299 (2026-06-02) `fix: align desktop shell tabs with navigation preferences`
@@ -770,11 +770,11 @@ This update consolidates the v1.6.0 staging work since v1.5.3: preset and connec
 
 ### Chat Loading And Search
 - Re-applied chat scroll anchoring across staging and main so scrolling upward no longer skips earlier messages.
-- Disabled native chat scroll anchoring on macOS browsers so it no longer fights SillyBunny's scroll preservation while users scroll through older messages.
+- Disabled native chat scroll anchoring on macOS browsers so it no longer fights Neconyan's scroll preservation while users scroll through older messages.
 - Existing chats now force-scroll to the latest message on initial load across desktop and mobile, while streaming and other non-forced chat scrolling still respect auto-scroll preferences and mobile manual-scroll suppression.
 - Bottom chat navigation now includes go-to-top and go-to-bottom controls for the active chat.
 - Bottom-bar chat search stays synchronized with desktop and mobile chat search controls, searches the full chat data including hidden or not-yet-rendered messages, and reports whether matches are visible, hidden, data-only, or absent.
-- Mobile chat scrolling stays anchored while loading older messages or dragging SillyBunny shell tabs, with tab scrolling constrained horizontally to avoid page jumps.
+- Mobile chat scrolling stays anchored while loading older messages or dragging Neconyan shell tabs, with tab scrolling constrained horizontally to avoid page jumps.
 
 ### Mobile Shell, Bottom Bar, And Streaming
 - Added a mobile-only collapse button that hides or restores the second-row chat actions, preserves 44px touch targets, and remembers the collapsed state across reloads.
@@ -870,16 +870,16 @@ This update adds the Black Orange theme and desktop character drawer tiles, impr
 - Synced the Achievements Tracker and Scene Tracker template catalog entries with their updated source wording, and made bundled template reset recognize saved bundled agents after prompt wording changes.
 
 ### SillyTavern 1.18.0 Compatibility Sync
-SillyBunny incorporates the 1.18.0 compatibility updates while preserving the fork's Bun-first runtime and custom shell.
+Neconyan incorporates the 1.18.0 compatibility updates while preserving the fork's Bun-first runtime and custom shell.
 
-- Kept SillyBunny's Bun-first defaults and port `4444` while updating Node-compatible dependency and lockfile state for the SillyTavern 1.18.0 surface.
+- Kept Neconyan's Bun-first defaults and port `4444` while updating Node-compatible dependency and lockfile state for the SillyTavern 1.18.0 surface.
 - Updated launcher and Electron package files for the new runtime layout.
 - Preserved fork defaults and avoided tracked `data/default-user/**` state.
 - Added account-version session handling, password/recovery hardening, trusted proxy validation, private request filtering, basic-auth rate limiting, forwarded-header helpers, cache busting, and immutable data-root override support.
-- Preserved SillyBunny session auth and HTTPS behavior while adopting compatible upstream hardening.
+- Preserved Neconyan session auth and HTTPS behavior while adopting compatible upstream hardening.
 - Updated OpenRouter, OpenAI, NanoGPT, MiniMax, Workers AI, Kobold/KoboldCpp, NovelAI, Stable Diffusion, tokenizer, speech, vector, and text/chat completion paths.
 - Added Workers AI vector UI controls and fixed OpenRouter PKCE browser encoding.
-- Adopted required upstream 1.18.0 UI and JavaScript compatibility changes without replacing SillyBunny's shell/navigation structure.
+- Adopted required upstream 1.18.0 UI and JavaScript compatibility changes without replacing Neconyan's shell/navigation structure.
 - Added extension lifecycle compatibility, third-party extension warning flow, streaming display utilities, persona slash commands and events, provider settings updates, popup validation, swipe picker updates, and welcome panel templates.
 - Kept mobile and desktop parity in scope for newly merged UI controls, especially settings rows, vector controls, and extension flows.
 - Brought in or updated unit coverage for private request filtering, prompt converters, Tavern card validation, and utility behavior.
@@ -887,17 +887,17 @@ SillyBunny incorporates the 1.18.0 compatibility updates while preserving the fo
 
 ### Themes And Character Drawer
 - Added the Black Orange theme.
-- Added desktop character drawer tile styling for the SillyBunny tabs layout.
+- Added desktop character drawer tile styling for the Neconyan tabs layout.
 
 ### Shell And Moving UI
 - Opening Customize no longer closes an already-open Workspace or Agents shell, and opening Workspace or Agents no longer closes Customize.
-- Moving UI now keeps control of the character drawer position and size instead of being overridden by SillyBunny desktop drawer sizing.
-- Disabled the SillyBunny character drawer resize handle while Moving UI is active so the upstream drag/resize controls remain the single source of truth.
-- Preserved Launchpad highlighting when the SillyBunny shell reinitializes so Moonlit Echoes and Guided Generations toast actions open the correct Launchpad cards.
+- Moving UI now keeps control of the character drawer position and size instead of being overridden by Neconyan desktop drawer sizing.
+- Disabled the Neconyan character drawer resize handle while Moving UI is active so the upstream drag/resize controls remain the single source of truth.
+- Preserved Launchpad highlighting when the Neconyan shell reinitializes so Moonlit Echoes and Guided Generations toast actions open the correct Launchpad cards.
 - Center-aligned checkbox controls and label text across desktop, mobile, OpenAI/API cards, settings cards, theme toggles, chat delete rows, and Pathfinder prompt settings.
 - Aligned Character Author's Note placement controls and Custom API key controls on mobile WebKit.
 - Kept the persona chat mass-delete dialog inside iOS safe areas and tightened its narrow-screen controls so the age input and presets remain reachable on mobile Safari.
-- Bound the mobile chat mass-delete dialog to iOS WebKit's visual viewport, kept the overlay above app chrome during browser toolbar shifts, constrained scrolling to the dialog list, avoided mobile autofocus jumps, aligned checkbox rows, and rotated the SillyBunny shell cache keys so corrected styles load immediately.
+- Bound the mobile chat mass-delete dialog to iOS WebKit's visual viewport, kept the overlay above app chrome during browser toolbar shifts, constrained scrolling to the dialog list, avoided mobile autofocus jumps, aligned checkbox rows, and rotated the Neconyan shell cache keys so corrected styles load immediately.
 - Made active character and chat lorebook toolbar icons glow with the active accent color so linked lorebooks are easier to spot in the character editor.
 - Made Clear cookies & cache expire server-side HttpOnly session cookies as well as browser-visible cookies before reloading.
 - Paused streaming autoscroll while iOS WebKit users touch or momentum-scroll the chat so mid-generation updates no longer snap the view away from the scroll position.
@@ -913,19 +913,19 @@ SillyBunny incorporates the 1.18.0 compatibility updates while preserving the fo
 ### UI Icons And Provider Models
 - Replaced the Badge frontend icon with the pixel-art bunny badge shown in the latest reference image.
 - Restored the Badge frontend icon to the original bunny artwork inside the peach pixel badge frame so the Shell Style preview no longer shows the distorted hand-drawn version.
-- Added a Shell Style option to switch the frontend between the SillyBunny pixel icon and badge icon, including the splash screen, Home panel logo, favicon, and future system avatar messages.
+- Added a Shell Style option to switch the frontend between the Neconyan pixel icon and badge icon, including the splash screen, Home panel logo, favicon, and future system avatar messages.
 - Aligned the Reverse Proxy preset row, Prompt Manager undo action, and OpenAI model favorite button with their neighboring dropdowns on desktop and mobile layouts.
 - Added current OpenAI `gpt-5.5` and `gpt-5.5-pro`, Claude `claude-opus-4-7`, and Z.AI `glm-5.1` / `glm-5v-turbo` model choices to the backend dropdowns.
 - Updated related OpenAI, Claude, and Z.AI capability handling so context, reasoning, media inlining, and Claude sampling rules stay in step with the added models.
 
 ### Settings And Browser Storage
-- Added a dedicated Clear cookies & cache utility action, wired through the cache-busted SillyBunny shell script so stale browser cache does not leave the button inert.
+- Added a dedicated Clear cookies & cache utility action, wired through the cache-busted Neconyan shell script so stale browser cache does not leave the button inert.
 
 ### Pathfinder And Release Metadata
 - Suppressed expected `AbortError` stack traces when Pathfinder sidecar generation is cancelled by its retrieval timeout or a closed client connection.
 - Kept Pathfinder prompt action buttons from collapsing into icon-only controls by wrapping visible button labels in spans.
 - Restored default Pathfinder tool toggles for existing template agents with empty tool definitions and made diagnostics report the last pipeline retrieval result.
-- Added `SILLYBUNNY_USE_BUN=1 bash start.sh` as the launcher override for users who want to force Bun on ARM devices.
+- Added `NECONYAN_USE_BUN=1 bash start.sh` as the launcher override for users who want to force Bun on ARM devices.
 - Kept iOS WebKit chats pinned to the bottom while regenerated replies and post-generation agent refreshes update the latest message.
 - Softened the idle send button glyph so the paper-plane icon no longer reads overly bright across themes.
 - Prevented DeepSeek and other web tokenizers from failing when a Bun/ARM runtime exposes an empty server-side `location.href`.
@@ -971,7 +971,7 @@ SillyBunny incorporates the 1.18.0 compatibility updates while preserving the fo
 - `sync: align runtime init with SillyTavern 1.18`
 - `fix: make OpenAI Responses tests use default config`
 - `docs(changelog): place PR 11 notes under 1.5.3`
-- `9fe08ef chore(sync): align SillyBunny with SillyTavern 1.18 compatibility`
+- `9fe08ef chore(sync): align Neconyan with SillyTavern 1.18 compatibility`
 - `7b6db61 sync: adopt direct SillyTavern 1.18 changes`
 - `2d9c49e sync: align 1.18 security and runtime hardening`
 - `f1f6137 sync: update 1.18 dependency locks`
@@ -991,7 +991,7 @@ This update brings Group Utilities into Launchpad, improves Moonlit Echoes and G
 - Added SB-GroupUtilities to Launchpad optional installs, covering group presence, group greetings, shared group context, and SendAs utilities.
 - Made the legacy Moonlit Echoes migration toast persistent until dismissed or opened, with a Show in Launchpad action that highlights the Moonlit Echoes Theme card.
 - Added a Guided Generations fork notice that directs existing users to the Neconyan-compatible fork in Launchpad.
-- Updated bundled SillyBunny extension version labels to 1.5.2.
+- Updated bundled Neconyan extension version labels to 1.5.2.
 
 ### Pathfinder
 - Pathfinder now includes active chat-bound, character, character extra, and persona lorebooks alongside manually selected lorebooks by default.
@@ -1023,14 +1023,14 @@ This update brings Group Utilities into Launchpad, improves Moonlit Echoes and G
 
 ### Shell And Mobile UI
 - Fixed group speaker controls overflowing to the right when a typing indicator appears by allowing the desktop control row to wrap cleanly.
-- The Bottom Bar Size slider now scales the SillyBunny chatbar and Persona bottom chat controls on mobile instead of only affecting the legacy composer sizing.
+- The Bottom Bar Size slider now scales the Neconyan chatbar and Persona bottom chat controls on mobile instead of only affecting the legacy composer sizing.
 - Background Visibility now supports 100%, refreshes upgraded slider metadata, and keeps composer/chatbar surfaces readable at high visibility.
 - Header, chatbar, composer, bottom chat surfaces, and Clean Minimal mobile drawer/menu panels now use solid layers in no-blur or high-visibility setups to prevent compositor artifacts.
 - Mobile Workspace, navigation, Characters, and Quick Actions drawers now have tighter, more consistent spacing, safer bounds, and solid focused panels while keeping page context visible where intended.
 - Characters drawer right-lock alignment now applies immediately on macOS desktop browsers and stays edge-flush on shorter windows without losing drag/resize behavior.
 - Mobile Characters drawer layouts now use native shell bounds, safe-area gutters, aligned controls, and square avatars that avoid squeezing on narrow iOS-sized viewports.
 - Mobile Top Bar Label option cards are left-aligned so checkbox, title, and helper text read cleanly in one-column settings layouts.
-- Rotated the SillyBunny theme, tabs, and service-worker cache keys so browsers pick up the hardened surface styling immediately.
+- Rotated the Neconyan theme, tabs, and service-worker cache keys so browsers pick up the hardened surface styling immediately.
 
 ## v1.5.1
 
@@ -1056,7 +1056,7 @@ This update restores Prose Polisher coverage for guided impersonation workflows,
 - Aligned shell headers, character drawer padding, welcome headers, and checkbox labels across desktop and mobile breakpoints.
 - Normalized mobile safe-area fallbacks and 44 px tap targets for the composer, bottom chat controls, and welcome recent-chat actions.
 - Cleaned up redundant shell borders, trailing recent-chat stat dividers, and duplicated macOS browser chrome patches.
-- Left-aligned SillyBunny shell drawer eyebrow labels, titles, subtitles, and descriptions across desktop and mobile.
+- Left-aligned Neconyan shell drawer eyebrow labels, titles, subtitles, and descriptions across desktop and mobile.
 - Contained shell close-button focus rings inside rounded borders so highlights no longer bleed past the control edge.
 - Gave mobile Customize, Navigate, and Characters drawers a rounded native sheet treatment with a slide-up entry, handle pill, side gutters, and safe-area-aware header spacing.
 - Stabilized mobile Recent Chats text sizing in WebKit with scoped text-size adjustment, stronger line-clamp bounds, and narrow-screen overflow guards.
@@ -1090,7 +1090,7 @@ This patch focuses on persistence and restart fixes for the new agentic and admi
 - `1f1fdd6 fix(ui): align checkbox layouts across breakpoints`
 - `88ccda0 fix(mobile): normalize safe areas and tap targets`
 - `cf7ea0a fix(ui): clean up borders and browser chrome patches`
-- `bef9327 fix(ui): polish sillybunny shell drawers`
+- `bef9327 fix(ui): polish neconyan shell drawers`
 - `d92f1cf fix(mobile): stabilize recent chats text sizing`
 - `7339d9e fix(mobile): tighten composer bottom spacing`
 - `ce14e54 Revert "docs(changelog): note 1.5.1 chat-bar additions"`
@@ -1112,7 +1112,7 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - Added private per-character DM chats. DMs use participant-limited context, show unread badges on character avatars, can be opened with one tap, force DM mode while inside the private chat, and include Return to Group navigation.
 - Added Auto Mode for scheduled or autonomous group replies, with per-group persistence, configurable delay, context-aware direct-name replies, group-wide prompts, and anti-loop limits so characters do not rapid-fire forever.
 - Added Auto DM for private scheduled messages, including a separate cooldown so background DMs can happen without flooding the user.
-- Added AI-generated 24-hour group schedules. SillyBunny can ask the model to create a full-day routine for the group, keep track of local time, catch up after downtime, and optionally let scheduled characters message when their entry is due.
+- Added AI-generated 24-hour group schedules. Neconyan can ask the model to create a full-day routine for the group, keep track of local time, catch up after downtime, and optionally let scheduled characters message when their entry is due.
 - Improved inter-character conversation prompts so characters can answer, interrupt, agree, disagree, ask questions, or react to other participants instead of only responding to the user.
 - Added an active-speaker typing indicator and clearer mobile group controls.
 - Fixed group chat saving, branching, Recent Chats registration, empty new chats, custom-name reuse, Auto Mode persistence, draft preservation, unread DM alignment, DM tap targeting, and rapid-fire DM auto-replies.
@@ -1124,9 +1124,9 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 
 ### Workspace, Sampling, And Presets
 - Added a unified Sampling menu in the Workspace menu for Chat Completions and Text Completions. This also migrates seed and logit bias information from Chat Completions to a more logical place, and includes a Neutralize Samplers button for Chat Completions.
-- Updated `Pura's Director Preset (SillyBunny)` to version `13.0` and removed the separate SillyTavern variant from bundled content.
+- Updated `Pura's Director Preset (Neconyan)` to version `13.0` and removed the separate SillyTavern variant from bundled content.
 - Added roomier editing tools, including a resizable first-message field, a desktop World Info pop-up editor, expanded context-size presets, Text Completions preset parity, and better advanced definitions editing.
-- Added an OpenRouter/NanoGPT-only `Unlocked Context Size` toggle in Chat Completion token budget settings, preserving SillyBunny's always-unlocked behavior for other providers.
+- Added an OpenRouter/NanoGPT-only `Unlocked Context Size` toggle in Chat Completion token budget settings, preserving Neconyan's always-unlocked behavior for other providers.
 - Fixed preset and settings layout polish, including balanced prompt manager panes, aligned prompt preset controls, equalized Presets dropdown controls, and less-clipped preset action text.
 - Fixed Prompt Manager token attribution so the Main Prompt row shows the Main Prompt text itself instead of inheriting surrounding injected prompt totals.
 
@@ -1155,7 +1155,7 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - Fixed Agents Quick Toggles overflow, Pathfinder control alignment, hidden idle cancel buttons, and Pathfinder log detail layout.
 
 ### UI And Mobile
-- Added a persistent compact mode for the refreshed SillyBunny UI.
+- Added a persistent compact mode for the refreshed Neconyan UI.
 - Reworked the default desktop and mobile UI for more consistent spacing, square icon buttons, aligned drawers, normalized dropdowns, readable highlighted text, and a less cramped composer.
 - Renamed Navigate to Workspace, shortened the primary character shortcut labels to `FAV.` and `ADV.`, and removed deprecated visible Extras wording.
 - Fixed mobile bottom chat controls, send/stop sizing, group avatar spacing, typing indicator alignment, toggle visibility, unread DM badge visibility, avatar refresh flicker, and mobile prompt control alignment.

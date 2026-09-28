@@ -100,7 +100,7 @@ async function getProfileApiType(profileIdentifier) {
         return normalizeApiType();
     }
 
-    // SillyBunny: accept both profile id (new) and profile name (legacy) so
+    // Neconyan: accept both profile id (new) and profile name (legacy) so
     // existing settings migrate transparently. (#529)
     const profile = getProfileById(profileIdentifier) ?? getProfileByName(profileIdentifier);
     if (!profile) {

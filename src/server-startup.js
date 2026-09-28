@@ -134,7 +134,6 @@ export function setupPrivateEndpoints(app) {
     app.use('/api/image-metadata', imageMetadataRouter);
     app.use('/api/server-admin', serverAdminRouter);
     app.use('/api/in-chat-agents', inChatAgentsRouter);
-    // Keep both legacy bases mounted so saved integrations continue to work.
     app.use('/api/neconyan-conversation', neconyanConversationRouter);
     app.use('/api/mewmory', mewmoryRouter);
     app.use('/api/jobs', jobsRouter);
@@ -143,8 +142,6 @@ export function setupPrivateEndpoints(app) {
     app.use('/api/operations', operationsRouter);
     // Named Roleplay workflows are accepted only by their own native routes.
     app.use('/api/roleplay', roleplayRouter);
-    app.use('/api/sillybunny-conversation', neconyanConversationRouter);
-    app.use('/api/sillybunny/conversation', neconyanConversationRouter);
 }
 
 /**

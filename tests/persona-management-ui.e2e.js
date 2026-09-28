@@ -30,7 +30,7 @@ for (const width of [320, 390, 1280]) {
                     activeAppendices: {},
                 };
                 setPersonaDescription();
-                window.SillyBunnyShell.openTab('characters', 'persona');
+                window.NeconyanShell.openTab('characters', 'persona');
             });
             await expect(page.locator('#PersonaManagement')).toBeVisible();
             await openPersonaEditor(page);

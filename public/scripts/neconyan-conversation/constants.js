@@ -87,7 +87,7 @@ export const PERSONA_APPENDICES_DEFAULT_SCOPE_KEY = '__default__';
 
 export const SETTINGS_KEY_PREFIX = 'sb_conv_settings_';
 export const THREAD_KEY_PREFIX = 'sb_conv_thread_';
-export const CONVERSATION_STORE_KEY = 'sillybunny_conversation';
+export const CONVERSATION_STORE_KEY = 'neconyan_conversation';
 export const GROUP_CONVERSATION_STORE_PREFIX = 'group:';
 export const DEFAULT_BRANCH_ID = 'main';
 export const LAST_USER_ACTIVITY_PREFIX = 'sb_conv_last_user_activity_';

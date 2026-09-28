@@ -15,7 +15,7 @@ function describeNode(overrides = {}) {
         tagName: 'DIV',
         classNames: [],
         adoptAttribute: null,
-        isSillyBunnyOwned: false,
+        isNeconyanOwned: false,
         ...overrides,
     };
 }
@@ -46,18 +46,18 @@ describe('topbar extension adoption rules', () => {
 
     test('adopts an extension that uses an sb- id prefix', () => {
         // The previous filter keyed on the id prefix, so any extension picking one was treated as
-        // SillyBunny's own markup and left to stretch across the bar.
+        // Neconyan's own markup and left to stretch across the bar.
         const verdict = resolveTopbarNodeAdoption(describeNode({ id: 'sb-third-party-button' }));
 
         expect(verdict.shouldAdopt).toBe(true);
     });
 
-    test('skips SillyBunny-owned elements regardless of id', () => {
-        const verdict = resolveTopbarNodeAdoption(describeNode({ id: 'anything', isSillyBunnyOwned: true }));
+    test('skips Neconyan-owned elements regardless of id', () => {
+        const verdict = resolveTopbarNodeAdoption(describeNode({ id: 'anything', isNeconyanOwned: true }));
 
         expect(verdict).toEqual({
             shouldAdopt: false,
-            reason: TOPBAR_ADOPTION_SKIP_REASON.SILLYBUNNY_OWNED,
+            reason: TOPBAR_ADOPTION_SKIP_REASON.NECONYAN_OWNED,
         });
     });
 
@@ -85,7 +85,7 @@ describe('topbar extension adoption rules', () => {
     test('an opt-in attribute cannot claim a native drawer or our own element', () => {
         expect(resolveTopbarNodeAdoption(describeNode({ id: 'rightNavHolder', adoptAttribute: 'true' })).shouldAdopt)
             .toBe(false);
-        expect(resolveTopbarNodeAdoption(describeNode({ isSillyBunnyOwned: true, adoptAttribute: 'true' })).shouldAdopt)
+        expect(resolveTopbarNodeAdoption(describeNode({ isNeconyanOwned: true, adoptAttribute: 'true' })).shouldAdopt)
             .toBe(false);
     });
 });
@@ -96,7 +96,7 @@ describe('topbar adoption plan', () => {
             nodes: [
                 describeNode({ key: 'id:rightNavHolder', id: 'rightNavHolder' }),
                 describeNode({ key: 'id:st-gallery-btn', id: 'st-gallery-btn', classNames: ['drawer'] }),
-                describeNode({ key: 'id:sb-topbar-stack', id: 'sb-topbar-stack', isSillyBunnyOwned: true }),
+                describeNode({ key: 'id:sb-topbar-stack', id: 'sb-topbar-stack', isNeconyanOwned: true }),
             ],
             slotChildKeys: [],
         });
@@ -104,7 +104,7 @@ describe('topbar adoption plan', () => {
         expect(plan.adoptKeys).toEqual(['id:st-gallery-btn']);
         expect(plan.skipped).toEqual([
             { key: 'id:rightNavHolder', reason: TOPBAR_ADOPTION_SKIP_REASON.NATIVE_DRAWER },
-            { key: 'id:sb-topbar-stack', reason: TOPBAR_ADOPTION_SKIP_REASON.SILLYBUNNY_OWNED },
+            { key: 'id:sb-topbar-stack', reason: TOPBAR_ADOPTION_SKIP_REASON.NECONYAN_OWNED },
         ]);
     });
 

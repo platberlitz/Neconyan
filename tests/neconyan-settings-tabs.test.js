@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const readSource = (...parts) => readFileSync(path.join(repoRoot, ...parts), 'utf8').replace(/\r\n/g, '\n');
 
-describe('SillyBunny settings theme drawers', () => {
+describe('Neconyan settings theme drawers', () => {
     const indexSource = readSource('public', 'index.html');
     const settingsTabsSource = readSource('public', 'scripts', 'neconyan-settings-tabs.js');
     const shellTabsSource = readSource('public', 'scripts', 'neconyan-tabs.js');

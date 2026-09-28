@@ -52,17 +52,17 @@ test('waypoints use bound deterministic IDs, sync both layouts and refuse unsupp
     const root = searchPathfinderBook('Town', book, hash);
     assert.ok(root.children.some(node => node.name === 'Locations'));
     const created = apply(book, 'pathfinder_create_waypoint', { name: 'North Wing', parent_node_id: root.nodeId }, 'accepted-call');
-    const layout = created.book.extensions.sillybunny_pathfinder;
-    assert.deepEqual(layout, created.book.originalData.extensions.sillybunny_pathfinder);
+    const layout = created.book.extensions.neconyan_pathfinder;
+    assert.deepEqual(layout, created.book.originalData.extensions.neconyan_pathfinder);
     assert.ok(layout.tree.children.some(node => node.name === 'North Wing'));
     const current = searchPathfinderBook('Town', created.book, roleplayHash(created.book));
     const wing = current.children.find(node => node.name === 'North Wing');
     const moved = apply(created.book, 'pathfinder_reorganize', { uid: 1, target_node_id: wing.id });
     assert.ok(moved.book.entries[1].extensions.other === 'untouched');
-    assert.equal(moved.book.entries[1].extensions.sillybunny_pathfinder.nodeId, wing.id ? layout.tree.children.find(node => node.name === 'North Wing').id : '');
-    assert.equal(moved.book.originalData.entries[0].extensions.sillybunny_pathfinder.nodeId, moved.book.entries[1].extensions.sillybunny_pathfinder.nodeId);
+    assert.equal(moved.book.entries[1].extensions.neconyan_pathfinder.nodeId, wing.id ? layout.tree.children.find(node => node.name === 'North Wing').id : '');
+    assert.equal(moved.book.originalData.entries[0].extensions.neconyan_pathfinder.nodeId, moved.book.entries[1].extensions.neconyan_pathfinder.nodeId);
     const corrupted = source();
-    corrupted.extensions.sillybunny_pathfinder = { version: 2, custom: 'do-not-overwrite' };
+    corrupted.extensions.neconyan_pathfinder = { version: 2, custom: 'do-not-overwrite' };
     assert.throws(() => apply(corrupted, 'pathfinder_create_waypoint', { name: 'Unsafe' }), { code: 'PATHFINDER_TOOL_INVALID' });
 });
 
@@ -73,7 +73,7 @@ test('summaries and splits keep fresh card IDs, selected content and saved waypo
     assert.equal(entry.comment, '[Summary] Voyage: Aster');
     assert.equal(entry.content, 'Significance: critical\n\nThe journey changed.');
     assert.deepEqual(entry.key, ['summary', 'critical']);
-    assert.ok(entry.extensions.sillybunny_pathfinder.nodeId.startsWith('arc_'));
+    assert.ok(entry.extensions.neconyan_pathfinder.nodeId.startsWith('arc_'));
     const split = apply(source(), 'pathfinder_merge_split', { action: 'split', uid: 1, content1: 'First half.', content2: 'Second half.' });
     assert.equal(split.book.entries[1].content, 'First half.');
     assert.equal(split.book.entries[0].content, 'Second half.');

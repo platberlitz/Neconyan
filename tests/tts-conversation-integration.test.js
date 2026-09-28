@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
-const capabilityRegistryKey = Symbol.for('sillybunny.extensionCapabilities');
+const capabilityRegistryKey = Symbol.for('neconyan.extensionCapabilities');
 const ttsSource = readFileSync(fileURLToPath(new URL('../public/scripts/extensions/tts/index.js', import.meta.url)), 'utf8');
 
 function getFunctionSource(name) {

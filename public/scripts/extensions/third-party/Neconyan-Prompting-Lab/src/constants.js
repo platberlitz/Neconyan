@@ -1,11 +1,15 @@
 export const EXTENSION_NAME = 'Neconyan-Prompting-Lab';
 export const EXTENSION_LABEL = 'Prompting Lab';
-export const SETTINGS_KEY = 'SillyBunnyPromptingLab';
-export const EMBED_KEY = 'SillyBunnyPromptingLab';
-export const DB_NAME = 'SillyBunnyPromptingLab';
+export const SETTINGS_KEY = 'NeconyanPromptingLab';
+export const EMBED_KEY = 'NeconyanPromptingLab';
+// Character cards shared before the rename carry their tests under this key.
+export const LEGACY_EMBED_KEY = 'SillyBunnyPromptingLab';
+// Browser database written before the server store existed; read once for import.
+export const LEGACY_DB_NAME = 'SillyBunnyPromptingLab';
 
-// Existing exported files use this identifier independently of the host name.
-export const EXPORT_FORMAT = 'sillybunny-prompting-lab';
+export const EXPORT_FORMAT = 'neconyan-prompting-lab';
+// Files exported before the rename still import.
+export const LEGACY_EXPORT_FORMAT = 'sillybunny-prompting-lab';
 export const EXPORT_VERSION = 3;
 
 export const SETTINGS_VERSION = 1;
@@ -70,7 +74,7 @@ export const SECTION_LABEL = Object.freeze({
     dialogueExamples: 'Example messages',
     chatHistory: 'Chat history',
     continueNudge: 'Continue nudge',
-    sillybunnyRuntimeAgents: 'In-chat agents',
+    neconyanRuntimeAgents: 'In-chat agents',
     storyString: 'Story string',
     mesExmString: 'Example messages',
     mesSendString: 'Chat history',

@@ -30,7 +30,7 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             });
             await page.goto('/');
             await expect(page.locator('.neconyan-assistant-row').first()).toBeAttached({ timeout: 60000 });
-            await page.evaluate(() => window.SillyBunnyShell.openTab('right', 'settings'));
+            await page.evaluate(() => window.NeconyanShell.openTab('right', 'settings'));
             await expand(page, '#AppearanceSection > .inline-drawer-header');
             await expand(page, '#sb-interface-drawer > .inline-drawer-header');
             const options = page.locator('[data-sb-frontend-icon-option]');

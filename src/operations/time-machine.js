@@ -13,8 +13,8 @@ import {
     DEFAULT_KEEP_PER_TARGET, DEFAULT_MAX_TOTAL_BYTES, hashOf, isPlainObject, prunePlan, snapshotFileName,
 } from '../../public/scripts/extensions/third-party/Neconyan-Time-Machine/src/core.js';
 
-export const TIME_MACHINE_MODULE = 'SillyBunnyCardTimeMachine';
-const ATTACHMENT_KEY = '__SillyBunny-Card-Time-Machine__';
+export const TIME_MACHINE_MODULE = 'NeconyanCardTimeMachine';
+const ATTACHMENT_KEY = '__Neconyan-Card-Time-Machine__';
 const KINDS = ['character', 'lorebook', 'preset'];
 const SETTINGS_LIMIT = 16 * 1024 * 1024;
 const SOURCE_LIMIT = 64 * 1024 * 1024;

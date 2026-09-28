@@ -22,8 +22,8 @@ describe('chat backup route hardening', () => {
     let baseUrl;
 
     beforeAll(async () => {
-        backupDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-backups-'));
-        outsideDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-backups-outside-'));
+        backupDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-backups-'));
+        outsideDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-backups-outside-'));
 
         const app = express();
         app.use(express.json());

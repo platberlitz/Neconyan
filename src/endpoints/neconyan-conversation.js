@@ -98,7 +98,6 @@ const STORE_SAVE_PAYLOAD_VALIDATED = Symbol('conversationStoreSavePayloadValidat
 export const router = express.Router();
 
 const CONVERSATION_API_BASE_PATH = '/api/neconyan-conversation';
-const CONVERSATION_API_ALIAS_BASE_PATHS = ['/api/sillybunny-conversation', '/api/sillybunny/conversation'];
 const CONVERSATION_API_INFO = {
     feature: 'Conversation Mode',
     primaryPath: {
@@ -138,7 +137,6 @@ const CONVERSATION_API_INFO = {
         summary: 'The REST API can be driven by JSON clients, but it is not the primary in-app Conversation Mode driver.',
         curlDriven: true,
         basePath: CONVERSATION_API_BASE_PATH,
-        aliasBasePaths: CONVERSATION_API_ALIAS_BASE_PATHS,
         endpoints: [
             { method: 'POST', path: '/info', purpose: 'Describe Conversation Mode REST capabilities and caveats.' },
             { method: 'POST', path: '/store/get', purpose: 'Read the Conversation Mode store.' },

@@ -1,5 +1,5 @@
 export const IN_CHAT_AGENT_PROMPT_KEY_PREFIX = 'inchat_agent_';
-export const RUNTIME_AGENTS_IDENTIFIER = 'sillybunnyRuntimeAgents';
+export const RUNTIME_AGENTS_IDENTIFIER = 'neconyanRuntimeAgents';
 
 export function isInChatAgentPromptIdentifier(identifier) {
     return String(identifier ?? '').startsWith(IN_CHAT_AGENT_PROMPT_KEY_PREFIX);

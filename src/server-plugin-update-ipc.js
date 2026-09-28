@@ -5,30 +5,17 @@ export const SERVER_PLUGIN_UPDATE_PREPARE_MESSAGE = 'neconyan:server-plugin-upda
 export const SERVER_PLUGIN_UPDATE_CANCEL_MESSAGE = 'neconyan:server-plugin-update:cancel';
 export const SERVER_PLUGIN_UPDATE_RESPONSE_MESSAGE = 'neconyan:server-plugin-update:response';
 export const SERVER_STARTUP_READY_MESSAGE = 'neconyan:server-startup:ready';
-export const LEGACY_SERVER_PLUGIN_UPDATE_PREPARE_MESSAGE = 'sillybunny:server-plugin-update:prepare';
-export const LEGACY_SERVER_PLUGIN_UPDATE_CANCEL_MESSAGE = 'sillybunny:server-plugin-update:cancel';
-export const LEGACY_SERVER_PLUGIN_UPDATE_RESPONSE_MESSAGE = 'sillybunny:server-plugin-update:response';
-export const LEGACY_SERVER_STARTUP_READY_MESSAGE = 'sillybunny:server-startup:ready';
 export const SERVER_PLUGIN_UPDATE_SUPERVISOR_API_ENV = 'NECONYAN_SERVER_PLUGIN_UPDATE_API';
-export const LEGACY_SERVER_PLUGIN_UPDATE_SUPERVISOR_API_ENV = 'SILLYBUNNY_SERVER_PLUGIN_UPDATE_API';
 export const SERVER_PLUGIN_UPDATE_SUPERVISOR_API_VERSION = '1';
 
-export function isServerPluginMessage(type, canonical, legacy) {
-    return type === canonical || type === legacy;
-}
-
 const IPC_TIMEOUT_MS = 90_000;
-
-function outgoingMessageType(type, env) {
-    return env[SERVER_PLUGIN_UPDATE_SUPERVISOR_API_ENV] != null ? type : type.replace(/^neconyan:/, 'sillybunny:');
-}
 
 export function isServerPluginUpdateSupervised({
     env = process.env,
     send = process.send,
 } = {}) {
-    return (env.NECONYAN_SUPERVISED ?? env.SILLYBUNNY_SUPERVISED) === '1'
-        && (env[SERVER_PLUGIN_UPDATE_SUPERVISOR_API_ENV] ?? env[LEGACY_SERVER_PLUGIN_UPDATE_SUPERVISOR_API_ENV]) === SERVER_PLUGIN_UPDATE_SUPERVISOR_API_VERSION
+    return env.NECONYAN_SUPERVISED === '1'
+        && env[SERVER_PLUGIN_UPDATE_SUPERVISOR_API_ENV] === SERVER_PLUGIN_UPDATE_SUPERVISOR_API_VERSION
         && typeof send === 'function';
 }
 
@@ -53,7 +40,7 @@ async function sendSupervisorRequest(type, payload, {
             error ? reject(error) : resolve(value);
         };
         const onMessage = message => {
-            if (!isServerPluginMessage(message?.type, SERVER_PLUGIN_UPDATE_RESPONSE_MESSAGE, LEGACY_SERVER_PLUGIN_UPDATE_RESPONSE_MESSAGE) || message?.requestId !== requestId) {
+            if (message?.type !== SERVER_PLUGIN_UPDATE_RESPONSE_MESSAGE || message?.requestId !== requestId) {
                 return;
             }
             if (message.ok) {
@@ -69,7 +56,7 @@ async function sendSupervisorRequest(type, payload, {
         processObject.on('message', onMessage);
 
         try {
-            processObject.send({ type: outgoingMessageType(type, processObject.env), requestId, payload }, error => error && finish(error));
+            processObject.send({ type, requestId, payload }, error => error && finish(error));
         } catch (error) {
             finish(error);
         }
@@ -91,7 +78,7 @@ export function notifyServerStartup(plugins, { processObject = process } = {}) {
 
     try {
         processObject.send({
-            type: outgoingMessageType(SERVER_STARTUP_READY_MESSAGE, processObject.env),
+            type: SERVER_STARTUP_READY_MESSAGE,
             plugins: Array.from(plugins ?? [], plugin => ({
                 id: String(plugin?.id ?? ''),
                 directoryPath: String(plugin?.directoryPath ?? ''),

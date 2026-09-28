@@ -44,7 +44,7 @@ async function readRequestJson(request) {
     return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
 }
 
-describe('SillyBunny Conversation REST API', () => {
+describe('Neconyan Conversation REST API', () => {
     /** @type {import('http').Server} */
     let appServer;
     /** @type {import('http').Server} */
@@ -52,7 +52,6 @@ describe('SillyBunny Conversation REST API', () => {
     /** @type {import('../src/users.js').UserDirectoryList} */
     let userDirectories;
     let baseUrl;
-    let aliasBaseUrl;
     let upstreamUrl;
     let upstreamReplyText;
     let upstreamResponseDelayMs;
@@ -119,13 +118,12 @@ describe('SillyBunny Conversation REST API', () => {
             next();
         });
         app.use(resumableGenerationMiddleware);
-        app.use('/api/sillybunny-conversation', router);
-        app.use('/api/sillybunny/conversation', router);
+        app.use('/api/neconyan-conversation', router);
+        app.use('/api/neconyan/conversation', router);
 
         appServer = http.createServer(app);
         const appAddress = await listen(appServer);
-        baseUrl = `http://127.0.0.1:${appAddress.port}/api/sillybunny-conversation`;
-        aliasBaseUrl = `http://127.0.0.1:${appAddress.port}/api/sillybunny/conversation`;
+        baseUrl = `http://127.0.0.1:${appAddress.port}/api/neconyan-conversation`;
     });
 
     beforeEach(() => {
@@ -136,7 +134,7 @@ describe('SillyBunny Conversation REST API', () => {
         upstreamResponseDelayMs = 0;
         upstreamResponseStatus = 200;
 
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-conversation-api-'));
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-conversation-api-'));
         tempDirs.push(root);
         userHandle = path.basename(root);
         userDirectories = {
@@ -170,14 +168,6 @@ describe('SillyBunny Conversation REST API', () => {
 
     async function postJson(endpoint, body) {
         return fetch(`${baseUrl}${endpoint}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-    }
-
-    async function postAliasJson(endpoint, body) {
-        return fetch(`${aliasBaseUrl}${endpoint}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
@@ -1021,7 +1011,6 @@ describe('SillyBunny Conversation REST API', () => {
             type: 'json-rest',
             curlDriven: true,
             basePath: '/api/neconyan-conversation',
-            aliasBasePaths: ['/api/sillybunny-conversation', '/api/sillybunny/conversation'],
         });
         expect(json.restPath.endpoints.map(endpoint => endpoint.path)).toEqual(expect.arrayContaining([
             '/info',
@@ -1030,10 +1019,6 @@ describe('SillyBunny Conversation REST API', () => {
         ]));
         expect(json.caveats.join(' ')).toContain('server worker');
         expect(json.caveats.join(' ')).toContain('Bracket commands are extracted');
-
-        const aliasResponse = await postAliasJson('/info', {});
-        expect(aliasResponse.status).toBe(200);
-        await expect(aliasResponse.json()).resolves.toMatchObject({ feature: 'Conversation Mode' });
     });
 
     test('store/get returns the current Conversation Mode store shape', async () => {

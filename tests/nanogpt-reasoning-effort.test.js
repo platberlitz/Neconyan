@@ -23,7 +23,7 @@ describe('outgoing chat completions', () => {
     const tempDirs = [];
 
     beforeAll(async () => {
-        const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-effort-config-'));
+        const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-effort-config-'));
         const configPath = path.join(configRoot, 'config.yaml');
         const defaultConfig = fs.readFileSync(fileURLToPath(new URL('../default/config.yaml', import.meta.url)), 'utf8');
         fs.writeFileSync(configPath, defaultConfig);
@@ -33,7 +33,7 @@ describe('outgoing chat completions', () => {
         const { router: chatCompletionsRouter } = await import('../src/endpoints/backends/chat-completions.js');
         const { router: textCompletionsRouter } = await import('../src/endpoints/backends/text-completions.js');
         const { SecretManager, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
-        const userRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sillybunny-effort-user-'));
+        const userRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-effort-user-'));
         tempDirs.push(userRoot);
         const secretManager = new SecretManager({ root: userRoot, backups: userRoot });
         secretManager.writeSecret(SECRET_KEYS.NANOGPT, 'nanogpt-test-key');
