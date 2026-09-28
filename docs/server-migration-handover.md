@@ -37,6 +37,31 @@ signed Android build and browser run on the renamed staging commit. Staging's
 Android validation needs GitHub Actions or the signing key. No Oracle
 application deployment or restart was performed.
 
+### 28 September: rename finished for the republished 1.0.0
+
+`843bc83` renames every remaining SillyBunny name in code, tests, launchers and
+docs to Neconyan. README.md and `.github/readme.md` keep their history note, and
+real links to `SillyBunnyTeam/SillyBunny-*` and `platberlitz/SillyBunny-*`
+repositories stay because no Neconyan-named copies exist. The old
+`SILLYBUNNY_*` environment names, the `sillybunny:` supervisor messages, the
+`/api/sillybunny-conversation` routes and the old asset redirects are gone.
+
+`src/legacy-name-migration.js` runs on every start before roleplay storage
+opens. It moves old `extension_settings` keys, the Time Machine card marker,
+disabled add-on entries and `accountStorage` keys in `settings.json`, bumps
+`_version` and `_settingsRevision` so stale tabs cannot write old names back,
+carries the Conversation automation acknowledgement forward, moves old world
+book keys, renames `.sillybunny-write-recovery` journals and deletes old
+temporary and lock files. Imported settings and world books pass through the
+same rules; character cards and old export formats are still read. Bundled
+agents saved with the old credit are rewritten in one library write. On a copy
+of the owner's data the first start moved eight settings blocks and the second
+changed nothing; user content such as `SillyBunnyGuide` stayed untouched.
+
+The browser workflow now runs 16 batches of about 69 tests each instead of 8.
+Each batch still uses one worker because every test shares one server and one
+data folder.
+
 ### 28 September continuation: validation in progress
 
 This release work started from staging `16687a0285b65ca9dcdd3f76c5bb66a5472f5063`, including

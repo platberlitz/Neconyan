@@ -38,8 +38,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     env:
+      RELEASE_E2E_SHARD_TOTAL: 16
       CI: 'true'
       PLAYWRIGHT_HTML_OPEN: never
       NECONYAN_TEST_BASE_URL: http://127.0.0.1:4433
@@ -121,7 +122,7 @@ jobs:
           done
 
           node tests/prepare-release-fixture.js
-          npm run test:e2e --prefix tests -- --workers=1 --shard=${{ matrix.shard }}/8 --reporter=line,html
+          npm run test:e2e --prefix tests -- --workers=1 --shard=${{ matrix.shard }}/$RELEASE_E2E_SHARD_TOTAL --reporter=line,html
 
       - name: Print server log on failure
         if: failure()
