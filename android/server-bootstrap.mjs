@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { serverEvents, EVENT_NAMES } from './src/server-events.js';
+import { verifyAndroidStorage } from './file-stats.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const [privatePath, port, password] = process.argv.slice(2);
@@ -16,21 +17,8 @@ if (process.platform === 'android') process.on('uncaughtExceptionMonitor', error
     } catch { /* The original error still reaches the private server log. */ }
 });
 if (process.platform === 'android') {
-    const native = process._linkedBinding('neconyan_fs');
-    const probe = fs.mkdtempSync(path.join(statePath, '.android-storage-check-'));
-    try {
-        const before = path.join(probe, 'before');
-        const after = path.join(probe, 'after');
-        fs.writeFileSync(before, 'storage-check');
-        const identity = native.physical(before, false);
-        if (!identity || identity.birthtimeNs === '0') throw new Error('This Android filesystem does not expose the creation times required for safe chat storage.');
-        const original = fs.statSync(before, { bigint: true });
-        fs.renameSync(before, after);
-        const renamed = fs.statSync(after, { bigint: true });
-        if (String(original.birthtimeNs) !== identity.birthtimeNs || original.birthtimeNs !== renamed.birthtimeNs || original.ino !== renamed.ino) {
-            throw new Error('Android file identity verification failed. Saved data has been left untouched.');
-        }
-    } finally { fs.rmSync(probe, { recursive: true, force: true }); }
+    const { creationTimes } = verifyAndroidStorage(statePath, process._linkedBinding('neconyan_fs'));
+    if (!creationTimes) console.info('Android storage does not record file creation times; file identity uses device and inode numbers.');
 }
 const configPath = path.join(statePath, 'android-config.yaml');
 const config = YAML.parse(fs.readFileSync(fs.existsSync(configPath) ? configPath : path.join(root, 'default/config.yaml'), 'utf8'));

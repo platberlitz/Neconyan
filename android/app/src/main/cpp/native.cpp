@@ -12,7 +12,8 @@
 #include <sys/sysmacros.h>
 
 // libnode targets Android 24, so libuv compiles out statx and substitutes ctime
-// for birthtime. Android 30+ permits statx; protected writes need its real btime.
+// for birthtime. Android 30+ permits statx. Returns null when the filesystem has
+// no btime (f2fs without inode_crtime); file-stats.mjs then uses a constant zero.
 static void Physical(const v8::FunctionCallbackInfo<v8::Value>& args) {
     auto isolate = args.GetIsolate();
     auto context = isolate->GetCurrentContext();
