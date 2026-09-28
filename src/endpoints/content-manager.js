@@ -2141,6 +2141,28 @@ function parseChubUrl(str) {
     return null;
 }
 
+export const JANNY_CLOUDFLARE_ERROR_CODE = 'janny_cloudflare_blocked';
+const JANNY_CLOUDFLARE_MESSAGE = 'JannyAI\'s Cloudflare check blocked this server. Open BotSearcher, choose JannyAI, press "Open JannyAI login window" and pass the check there, then import the link again. You can also download the card PNG from JannyAI and import the file.';
+
+/**
+ * @param {string} host Lowercase host name
+ * @returns {boolean} True for JannyAI and JanitorAI character hosts
+ */
+export function isJannyImportHost(host) {
+    const value = String(host || '').toLowerCase();
+    return value.includes('janitorai') || value === 'jannyai.com' || value.endsWith('.jannyai.com');
+}
+
+/**
+ * @param {number} status HTTP status from JannyAI
+ * @param {string} body Response body from JannyAI
+ * @returns {boolean} True when the response is a Cloudflare challenge or block
+ */
+export function isJannyCloudflareBlock(status, body) {
+    if (status !== 403 && status !== 503) return false;
+    return /cloudflare|just a moment|cf-chl|challenge-platform/i.test(String(body || ''));
+}
+
 // Warning: Some characters might not exist in JannyAI.me
 async function downloadJannyCharacter(uuid) {
     // This endpoint is being guarded behind Bot Fight Mode of Cloudflare
@@ -2168,7 +2190,12 @@ async function downloadJannyCharacter(uuid) {
             console.error('Janny failed to download', downloadResult);
         }
     } else {
-        console.error('Janny returned error', result.statusText, await result.text());
+        const body = await result.text().catch(() => '');
+        if (isJannyCloudflareBlock(result.status, body)) {
+            console.warn(`JannyAI Cloudflare check blocked the download of ${uuid} (HTTP ${result.status}).`);
+            throw Object.assign(new Error(JANNY_CLOUDFLARE_MESSAGE), { code: JANNY_CLOUDFLARE_ERROR_CODE });
+        }
+        console.error('Janny returned error', result.statusText, body);
     }
 
     throw new Error('Failed to download character');
@@ -2598,7 +2625,7 @@ router.post('/importURL', async (request, response) => {
 
         const isChub = host.includes('chub.ai') || host.includes('characterhub.org');
         const isBotbooru = host === 'botbooru.com' || host === 'www.botbooru.com';
-        const isJannnyContent = host.includes('janitorai');
+        const isJannnyContent = isJannyImportHost(host);
         const isPygmalionContent = host.includes('pygmalion.chat');
         const isAICharacterCardsContent = host.includes('aicharactercards.com');
         const isRisu = host.includes('realm.risuai.net');
@@ -2683,6 +2710,10 @@ router.post('/importURL', async (request, response) => {
         response.set('X-Custom-Content-Type', type);
         return response.send(result.buffer);
     } catch (error) {
+        if (error?.code === JANNY_CLOUDFLARE_ERROR_CODE) {
+            response.set('X-Neconyan-Import-Error', JANNY_CLOUDFLARE_ERROR_CODE);
+            return response.status(502).type('text/plain').send(getErrorMessage(error));
+        }
         console.error('Importing custom content failed', error);
         return response.status(500).type('text/plain').send(getErrorMessage(error));
     }
@@ -2738,6 +2769,10 @@ router.post('/importUUID', async (request, response) => {
         response.set('X-Custom-Content-Type', uuidType);
         return response.send(result.buffer);
     } catch (error) {
+        if (error?.code === JANNY_CLOUDFLARE_ERROR_CODE) {
+            response.set('X-Neconyan-Import-Error', JANNY_CLOUDFLARE_ERROR_CODE);
+            return response.status(502).type('text/plain').send(getErrorMessage(error));
+        }
         console.error('Importing custom content failed', error);
         return response.sendStatus(500);
     }

@@ -263,6 +263,14 @@ export function urlImportReadyMessage(sourceLabel, direct = false) {
         : `Press Enter to review this ${sourceLabel} card before importing.`;
 }
 
+/** Summary of the JannyAI hint shown while JannyAI can supply cards. */
+export const JANNY_CLOUDFLARE_HINT_TITLE = 'JannyAI imports need a Cloudflare check first';
+
+/** Body of the JannyAI hint: what to do before the first import. */
+export function jannyCloudflareHint() {
+    return 'JannyAI sits behind a Cloudflare check that blocks the Neconyan server until someone passes it. Searching works without it. Before importing, press "Open JannyAI login window" below and finish the check in that window on the Neconyan server, then import the card. You can also download the card from JannyAI and open it with "Inspect a card file".';
+}
+
 /** The pasted URL belongs to a source the user has switched off. */
 export function urlImportDisabledMessage(sourceLabel) {
     return `Enable ${sourceLabel} under Extensions > BotSearcher > Sources to import cards from this address.`;
@@ -971,7 +979,7 @@ export function intakeErrorMessage(error, sourceId) {
             return 'The card was not fully inspected, so clean import is unavailable.';
         case 'native_download_failed':
             if (sourceId === 'jannyai') {
-            return 'Neconyan could not download this JannyAI card. Cloudflare may be blocking the native import.';
+            return 'Neconyan could not download this JannyAI card. JannyAI\'s Cloudflare check is probably blocking the server.';
             }
             return 'Neconyan could not download this card from the source.';
         case 'bad_import_url':
@@ -981,7 +989,7 @@ export function intakeErrorMessage(error, sourceId) {
         case 'saucepan_session_expired':
             return 'Your Saucepan.ai login expired. Log in again.';
         case 'janny_login_required':
-            return 'The JannyAI browser session is not logged in.';
+            return 'JannyAI\'s Cloudflare check has not been passed yet. Press "Open JannyAI login window" below, finish the check (and log in if asked), then press Try again.';
         case 'janny_browser_unavailable':
             return 'The optional JannyAI browser bridge is unavailable on this host. Install Playwright and Chromium to enable it.';
         case 'janny_private_capture_failed':

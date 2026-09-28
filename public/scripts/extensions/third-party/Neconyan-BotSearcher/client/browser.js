@@ -23,6 +23,7 @@ import { el, setText, setImgSafe } from './render.js';
 import {
     getSettings, updateSettings, isSourceEnabled, rememberQuery,
     saveNamedSearch, removeNamedSearch, subscribeSettings, MAX_NAMED_SEARCH_NAME,
+    jannyBrowserControl,
 } from './settings.js';
 import { createResultCache } from './cache.js';
 import { showDetail } from './detail.js';
@@ -33,6 +34,8 @@ import {
     emptyResultMessage,
     formatCount,
     formatResultCount,
+    JANNY_CLOUDFLARE_HINT_TITLE,
+    jannyCloudflareHint,
     NAMED_SEARCH_COPY,
     searchErrorMessage,
     searchUnavailableMessage,
@@ -301,6 +304,7 @@ function wireBrowser(popup, health, options) {
         lastBody: null,
         detailSource: null,
         intakeSources: [],
+        jannyNotice: null,
         mergedSorts: null,
     };
 
@@ -361,6 +365,7 @@ function wireBrowser(popup, health, options) {
         dom.go.disabled = Boolean(intent && (!intent.source || !intent.enabled));
         dom.query.setAttribute('enterkeyhint', intent ? 'go' : 'search');
         dom.go.querySelector('i')?.setAttribute('class', intent ? 'fa-solid fa-file-import' : 'fa-solid fa-magnifying-glass');
+        updateJannyNotice(intent ? intent.source : undefined);
         if (!intent) {
             return false;
         }
@@ -821,6 +826,57 @@ function wireBrowser(popup, health, options) {
         }
         dom.filterActions.hidden = declared.length === 0;
         updateFilterBadge();
+        updateJannyNotice();
+    }
+
+    /**
+     * JannyAI answers searches, but its card downloads sit behind a Cloudflare
+     * check that blocks the server until someone passes it in the browser
+     * bridge. Say so before the first import fails, whenever JannyAI can
+     * supply a card: picked as the source, part of a merged search, or a
+     * pasted JannyAI link. Collapsed, so it costs one line until opened.
+     *
+     * @param {any} [urlSource] the source a pasted URL resolved to; undefined
+     *     when the search box holds no URL, null for an unsupported URL
+     */
+    function updateJannyNotice(urlSource) {
+        const janny = sources.find((entry) => entry?.id === 'jannyai');
+        const relevant = urlSource !== undefined
+            ? urlSource?.id === 'jannyai'
+            : state.source?.id === 'jannyai'
+                || (Array.isArray(state.source?.merged) && state.source.merged.some((entry) => entry?.id === 'jannyai'));
+        if (!janny || !relevant) {
+            if (state.jannyNotice) {
+                state.jannyNotice.hidden = true;
+            }
+            return;
+        }
+        if (!state.jannyNotice) {
+            state.jannyNotice = buildJannyNotice(janny);
+            dom.state.before(state.jannyNotice);
+        }
+        state.jannyNotice.hidden = false;
+    }
+
+    function buildJannyNotice(janny) {
+        const notice = el('details', 'sbbs-direct-notice sbbs-janny-notice');
+        const summary = el('summary', undefined, JANNY_CLOUDFLARE_HINT_TITLE);
+        const body = el('p', 'sbbs-janny-notice-text', jannyCloudflareHint());
+        notice.append(summary, body);
+        // The control asks the server for the bridge status as soon as it is
+        // built, so wait until the user opens the hint.
+        notice.addEventListener('toggle', () => {
+            if (!notice.open || notice.querySelector('.sbbs-setting-account')) {
+                return;
+            }
+            const control = jannyBrowserControl('sbbs_browse_janny', health?.capabilities?.jannyBrowser);
+            control.firstElementChild.hidden = true;
+            if (janny.capabilities?.browserImport !== true) {
+                control.hidden = true;
+            }
+            notice.append(control);
+        });
+        return notice;
     }
 
     async function loadVocabulary(source, filters) {

@@ -16,6 +16,7 @@ import { characters, getRequestHeaders, processDroppedFiles, this_chid, user_ava
 import { isMobile } from './RossAscends-mods.js';
 import { collapseNewlines, power_user } from './power-user.js';
 import { debounce_timeout } from './constants.js';
+import { canonicalJannyCharacterUrl, fetchJannyCardThroughBrowser, jannyBridgeGuidance } from './janny-import.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
 import { SlashCommandClosure } from './slash-commands/SlashCommandClosure.js';
 import { getTagsList } from './tags.js';
@@ -2875,9 +2876,26 @@ export async function importFromExternalUrl(url, { preserveFileName = null } = {
 
     if (!request.ok) {
         const responseText = await request.text().catch(() => '');
+        console.error('Custom content import failed', request.status, request.statusText, responseText);
+
+        const jannyUrl = canonicalJannyCharacterUrl(url);
+        if (jannyUrl) {
+            const bridged = await fetchJannyCardThroughBrowser(jannyUrl, getRequestHeaders());
+            if ('file' in bridged) {
+                const extraData = new Map();
+                if (preserveFileName) {
+                    extraData.set(bridged.file, preserveFileName);
+                }
+                await processDroppedFiles([bridged.file], extraData);
+                return;
+            }
+            const guidance = jannyBridgeGuidance(bridged.error);
+            toastr.warning(guidance.message, guidance.title, { timeOut: 20000, extendedTimeOut: 20000 });
+            return;
+        }
+
         const errorMessage = responseText || request.statusText || `HTTP ${request.status}`;
         toastr.info(errorMessage, 'Custom content import failed');
-        console.error('Custom content import failed', request.status, request.statusText, responseText);
         return;
     }
 

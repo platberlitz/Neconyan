@@ -19933,7 +19933,7 @@ jQuery(async function () {
     });
 
     $(document).on('click', '.external_import_button, #external_import_button', async () => {
-        const html = await renderTemplateAsync('importCharacters');
+        const html = await renderTemplateAsync('/scripts/templates/importCharacters.html?v=20260929-janny', {}, true, true, true);
         const input = await callGenericPopup(html, POPUP_TYPE.INPUT, '', { allowVerticalScrolling: true, wider: true, okButton: $('#popup_template').attr('popup-button-import'), rows: 4 });
 
         if (!input) {

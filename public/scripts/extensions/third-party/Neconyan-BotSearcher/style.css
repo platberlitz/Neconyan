@@ -448,6 +448,20 @@
     line-height: 1.45;
 }
 
+.sbbs-direct-notice.sbbs-janny-notice {
+    display: block;
+}
+
+.sbbs-janny-notice > summary {
+    min-height: 32px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.sbbs-janny-notice-text {
+    margin: var(--spacing-sm, 8px) 0;
+}
+
 .sbbs-direct-notice-text {
     flex: 1 1 auto;
     min-width: 0;
@@ -1406,6 +1420,12 @@
     .sbbs-direct-notice-dismiss {
         width: var(--sb-mobile-touch-target, 44px);
         height: var(--sb-mobile-touch-target, 44px);
+    }
+
+    .sbbs-janny-notice > summary {
+        min-height: var(--sb-mobile-touch-target, 44px);
+        padding-block: 12px;
+        box-sizing: border-box;
     }
 
     .sbbs-filter-group {
