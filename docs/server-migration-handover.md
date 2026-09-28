@@ -2,6 +2,20 @@
 
 ## Release preparation: 1.0.0
 
+### 28 September: Android hotfix 1.0.1, staging moves to 1.0.2
+
+The 1.0.0 APK refused to start on real phones: Android formats f2fs without
+file creation times, and startup demanded them. The emulators use ext4, which
+has them. `032aead` on branch `hotfix/android-1.0.1` (cut from `v1.0.0`) uses a
+constant zero creation time on such storage, so file identity rests on device
+and inode as it does on desktop filesystems without creation times. Android run
+`36439112215` passed the signed build and both emulator checks, and Neconyan
+1.0.1 is published at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.0.1 with the annotated
+tag `v1.0.1`. It has not been run on a real phone yet. The hotfix branch is
+merged into staging, which now moves to `1.0.2`. The Android workflow also
+builds `hotfix/*` branches, for the next Android-only fix.
+
 ### 28 September: 1.0.0 republished with the rename
 
 Neconyan 1.0.0 is published at
