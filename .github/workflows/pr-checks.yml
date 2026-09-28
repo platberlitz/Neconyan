@@ -93,6 +93,32 @@ jobs:
       - name: Check Mewmory source and retrieval boundaries
         run: npm run test:mewmory
 
+  run-server-tests:
+    name: ✅ Run Server Tests on PR
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+            ref: ${{ github.event.pull_request.head.sha }}
+            repository: ${{ github.event.pull_request.head.repo.full_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
+        with:
+          node-version: 24
+
+      - name: Install root dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install test dependencies
+        run: npm ci --ignore-scripts --prefix tests
+
+      - name: Run server tests
+        run: node --test --test-concurrency=2 tests/*.node.js
+
   frontend-budgets:
     name: ✅ Check Frontend Assets
     runs-on: ubuntu-latest
