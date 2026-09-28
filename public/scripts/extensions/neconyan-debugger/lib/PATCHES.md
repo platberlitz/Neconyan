@@ -2,7 +2,7 @@
 
 `eruda.js` is built from Eruda 3.4.3 (`50cc399d3b5ff6135515a95e1c97f49eef32745d`) with Chobitsu 1.8.6 (`819b9d01ce56c1cea9491ead50b021ec02d0d5c0`). The checked-in bundle SHA-256 is `caff41e30297b7893be28c5365cc2e74152644becf91ebd9aaead454498bc00f`.
 
-The local patch makes teardown safe for a long-lived SillyBunny page:
+The local patch makes teardown safe for a long-lived Neconyan page:
 
 - Network capture is lifecycle-gated, retains at most 100 requests, clears its redacted body markers on disable, and ignores in-flight work from older activations.
 - Captured HTTP(S) and WS(S) URLs retain only protocol and host, preserve `/` only for a root pathname, replace every other pathname with `/[redacted]`, replace any query with `?[redacted]`, and omit userinfo and fragments. URL parsing uses cleared per-call anchors rather than module-global state.

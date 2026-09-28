@@ -1,6 +1,6 @@
 # Conversation Mode Glossary
 
-Conversation Mode is a separate direct-message workspace for talking to SillyBunny characters outside the normal Roleplay transcript. This reference explains the visible controls, automatic behavior, prompt settings, and stored Conversation data.
+Conversation Mode is a separate direct-message workspace for talking to Neconyan characters outside the normal Roleplay transcript. This reference explains the visible controls, automatic behavior, prompt settings, and stored Conversation data.
 
 ## Opening and Closing Conversation Mode
 
@@ -37,7 +37,7 @@ The Pals panel is the Conversation contact and thread list. It contains solo DMs
 | **Search direct messages** | Filters the visible Pals list by character or group name.                    |
 | **Close**                  | Closes the Pals panel.                                                       |
 
-Selecting a Pal opens that specific solo or group thread. Conversation entries may also appear among recent chats on the SillyBunny welcome screen.
+Selecting a Pal opens that specific solo or group thread. Conversation entries may also appear among recent chats on the Neconyan welcome screen.
 
 Deleting a solo DM through its Pals controls resets its Conversation branches and disables that character’s solo Conversation. Deleting a group DM history resets the corresponding group Conversation history. These actions are different from **New Chat**, which preserves older branches.
 
@@ -80,7 +80,7 @@ Branching from a user message can immediately queue a character response in the 
 
 The Conversation composer contains the message field, reply preview, attachment preview, tools toggle, paperclip, and Send button.
 
-Press Enter to send when the main SillyBunny send-on-enter preference allows it (Desktop is pressing Enter/Return to send, Mobile is press the send button to send). Shift+Enter creates a new line. Files can be selected through the paperclip, pasted from the clipboard, or dropped onto the Conversation workspace. When replying to a specific message, a **Replying to** preview appears above the composer. Press its close button to cancel the targeted reply message without deleting your drafted text.
+Press Enter to send when the main Neconyan send-on-enter preference allows it (Desktop is pressing Enter/Return to send, Mobile is press the send button to send). Shift+Enter creates a new line. Files can be selected through the paperclip, pasted from the clipboard, or dropped onto the Conversation workspace. When replying to a specific message, a **Replying to** preview appears above the composer. Press its close button to cancel the targeted reply message without deleting your drafted text.
 
 The tools toggle shows or hides filters, quick actions, and search. Its visible state is remembered in the local settings.
 
@@ -138,7 +138,7 @@ Search checks message names, roles, text, attachment descriptions, and reply-ref
 
 Conversation messages support up to four attachments. Each file may be up to 25 MB. Supported media includes common image, audio, and video files. Supported document extensions include TXT, Markdown, PDF, EPUB, DOCX, XLSX, PPTX, ODT, ODS, ODP, JSON, and CSV.
 
-Images, audio, and video are rendered directly into the UI. Other attachments are shown as file links. For supported documents, SillyBunny attempts to extract a limited amount of text and add it to the Conversation prompt.
+Images, audio, and video are rendered directly into the UI. Other attachments are shown as file links. For supported documents, Neconyan attempts to extract a limited amount of text and add it to the Conversation prompt.
 
 Attachments are stored on the Conversation message. The Files filter shows messages that contain attachments.
 
@@ -352,7 +352,7 @@ When an override is selected, the system prompt tells the model to prefer that l
 
 ## Image Generation
 
-Conversation Mode image features require the bundled extension, Quick Image Gen, which is modified to be used with SillyBunny.
+Conversation Mode image features require the bundled extension, Quick Image Gen, which is modified to be used with Neconyan.
 
 **Enable chatroom image generation** allows Conversation Mode to request images.
 

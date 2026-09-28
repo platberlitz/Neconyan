@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedAt": "2026-07-25T00:00:00Z",
-  "title": "Design System: SillyBunny",
+  "title": "Design System: Neconyan",
   "extensions": {
     "colorMeta": {
       "warm-signal": {"role": "primary", "displayName": "Warm Signal", "canonical": "#c9c6a8", "source": "--sb-accent", "tonalRamp": ["#2b2a23", "#484633", "#686344", "#8b855c", "#aaa477", "#c9c6a8", "#dddac2", "#f0efdf"]},
@@ -103,7 +103,7 @@
   ],
   "narrative": {
     "northStar": "The Open Page",
-    "overview": "Picture a person writing at night with one conversation open, the rest of the desk cleared away, and a small set of tools within reach when needed. SillyBunny is a product UI, not a showcase surface: the character, messages, and composer own the visual priority. The shell is deliberately quiet so it can recede during active roleplay and become useful on demand.\n\nThe system carries personality through helpful wording, tactile feedback, and a warm signal accent rather than decoration. It makes complexity available without making it ambient: configuration belongs behind the header, sub-category tabs reveal the next layer, and each view has one primary action. The default charcoal theme is only the starting point; every visual token must remain compatible with user themes and SillyTavern data, presets, extensions, and settings.\n\nThe physical scene is a focused writing session on a dim screen, where the user needs comfortable contrast, predictable touch targets, and no panel competing with the conversation. This system rejects UI creep, nested menu spirals, configuration sprawl, bottom bar bloat, mystery meat navigation, desktop-only assumptions, and generic SaaS polish.",
+    "overview": "Picture a person writing at night with one conversation open, the rest of the desk cleared away, and a small set of tools within reach when needed. Neconyan is a product UI, not a showcase surface: the character, messages, and composer own the visual priority. The shell is deliberately quiet so it can recede during active roleplay and become useful on demand.\n\nThe system carries personality through helpful wording, tactile feedback, and a warm signal accent rather than decoration. It makes complexity available without making it ambient: configuration belongs behind the header, sub-category tabs reveal the next layer, and each view has one primary action. The default charcoal theme is only the starting point; every visual token must remain compatible with user themes and SillyTavern data, presets, extensions, and settings.\n\nThe physical scene is a focused writing session on a dim screen, where the user needs comfortable contrast, predictable touch targets, and no panel competing with the conversation. This system rejects UI creep, nested menu spirals, configuration sprawl, bottom bar bloat, mystery meat navigation, desktop-only assumptions, and generic SaaS polish.",
     "keyCharacteristics": [
       "Content-first chat viewport with no unsolicited permanent configuration panels.",
       "Restrained charcoal, linen, and warm-signal palette with user-theme aliases.",

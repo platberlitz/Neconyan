@@ -2,9 +2,9 @@
 echo ========================================================================================================================
 echo WARNING: Cloudflare Tunnel!
 echo ========================================================================================================================
-echo This script downloads and runs the latest cloudflared.exe from Cloudflare to set up an HTTPS tunnel to your SillyBunny!
-echo Using the randomly generated temporary tunnel URL, anyone can access your SillyBunny over the Internet while the tunnel
-echo is active. Keep the URL safe and secure your SillyBunny installation by setting a username and password in config.yaml!
+echo This script downloads and runs the latest cloudflared.exe from Cloudflare to set up an HTTPS tunnel to your Neconyan!
+echo Using the randomly generated temporary tunnel URL, anyone can access your Neconyan over the Internet while the tunnel
+echo is active. Keep the URL safe and secure your Neconyan installation by setting a username and password in config.yaml!
 echo.
 echo See https://docs.sillytavern.app/usage/remoteconnections/ for more details about how to secure your SillyTavern install.
 echo.

@@ -1,31 +1,19 @@
 # Conversation Mode REST API
 
-The Conversation Mode REST API provides JSON endpoints for reading and modifying Conversation Mode stores, groups, threads, and messages. It can also generate and save a character reply through SillyBunny’s existing chat-completion or text-completion backends.
+The Conversation Mode REST API provides JSON endpoints for reading and modifying Conversation Mode stores, groups, threads, and messages. It can also generate and save a character reply through Neconyan’s existing chat-completion or text-completion backends.
 
 The browser now submits Conversation replies and memory work through this router and observes saved jobs. Enabled reminders, schedules, proactive messages and other automatic replies run on the server after ownership is configured. Notifications and audio playback still need an eligible page; supported speech synthesis and reply-image delivery run on the server. WebLLM and bundled browser Kokoro remain explicit page-open exceptions, with no substituted provider.
 
 ## What and Who Is This For?
 
-The Conversation Mode REST API lets other apps, scripts, and bots read or update Conversation Mode without using the SillyBunny interface directly. It is mainly for developers who want to build integrations, external chat clients, import or export tools, or automated workflows. Regular users do not need this API to use Conversation Mode.
+The Conversation Mode REST API lets other apps, scripts, and bots read or update Conversation Mode without using the Neconyan interface directly. It is mainly for developers who want to build integrations, external chat clients, import or export tools, or automated workflows. Regular users do not need this API to use Conversation Mode.
 
 > [!NOTE]
 > This API is part of an in-development feature.
 
 ## Base Path
 
-Primary path:
-
-```text
-/api/sillybunny-conversation
-```
-
-Supported alias:
-
-```text
-/api/sillybunny/conversation
-```
-
-The current browser uses the equivalent path:
+Path:
 
 ```text
 /api/neconyan-conversation
@@ -34,7 +22,7 @@ The current browser uses the equivalent path:
 For a default local installation:
 
 ```text
-http://127.0.0.1:4433/api/sillybunny-conversation
+http://127.0.0.1:4433/api/neconyan-conversation
 ```
 
 All endpoints use `POST`, including read-only operations.
@@ -77,13 +65,13 @@ Normal `/summary/submit` requests contain a `submissionKey` and `target`, plus t
 
 ## Authentication and CSRF
 
-The router uses SillyBunny’s normal private-endpoint authentication. Requests must use a valid browser session, Basic Authentication, or session-auth Bearer token, depending on the server configuration.
+The router uses Neconyan’s normal private-endpoint authentication. Requests must use a valid browser session, Basic Authentication, or session-auth Bearer token, depending on the server configuration.
 
 When CSRF protection is enabled, retrieve a token and preserve the session cookie:
 
 ```bash
 BASE_URL="http://127.0.0.1:4433"
-COOKIE_JAR="./sillybunny.cookies"
+COOKIE_JAR="./neconyan.cookies"
 
 CSRF_TOKEN="$(
   curl -fsS \
@@ -101,13 +89,13 @@ curl -fsS \
   -H "Content-Type: application/json" \
   -H "X-CSRF-Token: $CSRF_TOKEN" \
   -X POST \
-  "$BASE_URL/api/sillybunny-conversation/info" \
+  "$BASE_URL/api/neconyan-conversation/info" \
   --data '{}'
 ```
 
 ## Settings Version
 
-The store mutations listed below require the current SillyBunny settings version. Read-only requests and durable job submissions do not require that client version.
+The store mutations listed below require the current Neconyan settings version. Read-only requests and durable job submissions do not require that client version.
 
 Read `/store/get` for a top-level `version`:
 
@@ -246,7 +234,7 @@ curl -fsS \
   -H "Content-Type: application/json" \
   -H "X-CSRF-Token: $CSRF_TOKEN" \
   -X POST \
-  "$BASE_URL/api/sillybunny-conversation/store/get" \
+  "$BASE_URL/api/neconyan-conversation/store/get" \
   --data '{}'
 ```
 
@@ -436,7 +424,7 @@ Chat generation requires:
 * `generation.payload.model`
 * `generation.payload.chat_completion_source`
 
-The remaining fields use SillyBunny’s existing chat-completion payload format.
+The remaining fields use Neconyan’s existing chat-completion payload format.
 
 ### Text Completion
 

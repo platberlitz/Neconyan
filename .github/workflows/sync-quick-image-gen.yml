@@ -102,9 +102,9 @@ jobs:
             ## Summary
             - Syncs bundled Quick Image Gen from `${{ steps.sync.outputs.repo }}` ref `${{ steps.sync.outputs.ref }}`.
             - Upstream commit: [`${{ steps.sync.outputs.short_commit }}`](https://github.com/platberlitz/sillytavern-image-gen/commit/${{ steps.sync.outputs.commit }}).
-            - Keeps the SillyBunny vendored manifest overrides for `author` and `manifest_version` while taking the rest from upstream.
+            - Keeps the Neconyan vendored manifest overrides for `author` and `manifest_version` while taking the rest from upstream.
 
             ## Notes
             - This PR was opened by the manually triggered Quick Image Gen sync workflow or the upstream repository dispatch hook.
-            - `scripts/sync-quick-image-gen.sh` three-way merges upstream into the bundled copy, which carries SillyBunny divergences (Conversation capability wiring, scoped generation, lifecycle hooks). The merge base is recorded in `scripts/quick-image-gen-sync-state.json`.
+            - `scripts/sync-quick-image-gen.sh` three-way merges upstream into the bundled copy, which carries Neconyan divergences (Conversation capability wiring, scoped generation, lifecycle hooks). The merge base is recorded in `scripts/quick-image-gen-sync-state.json`.
             - If the sync had conflicted, this PR would not exist: the script fails and leaves conflict markers for manual resolution instead of dropping the divergences.

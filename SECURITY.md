@@ -2,7 +2,7 @@
 
 We take the security of this project seriously. If you discover any security vulnerabilities or have concerns regarding the security of this repository, please reach out to us immediately. We appreciate your efforts in responsibly disclosing the issue and will make every effort to address it promptly.
 
-SillyBunny is a local-first SillyTavern fork that handles user chats, character cards, presets, extension files, API keys, cookies, and optional remote provider requests. Treat privacy, local file access, and secret handling as security-sensitive even when a bug is not remote-code-execution severity.
+Neconyan is a local-first SillyTavern fork that handles user chats, character cards, presets, extension files, API keys, cookies, and optional remote provider requests. Treat privacy, local file access, and secret handling as security-sensitive even when a bug is not remote-code-execution severity.
 
 ## Reporting a Vulnerability
 

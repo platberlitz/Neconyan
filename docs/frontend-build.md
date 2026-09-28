@@ -1,6 +1,6 @@
 # Frontend Production Build
 
-SillyBunny normally serves the plain ES modules and stylesheets from `public/`.
+Neconyan normally serves the plain ES modules and stylesheets from `public/`.
 That keeps development readable and close to upstream SillyTavern. The optional
 frontend production build creates minified, fingerprinted assets in
 `dist/frontend/` for release testing and performance checks.
@@ -67,10 +67,10 @@ Run the mobile-oriented smoke measurement against a running server:
 npm run perf:frontend
 ```
 
-Use `SILLYBUNNY_PERF_URL` to point the script at a different port:
+Use `NECONYAN_PERF_URL` to point the script at a different port:
 
 ```sh
-SILLYBUNNY_PERF_URL=http://127.0.0.1:4555 npm run perf:frontend
+NECONYAN_PERF_URL=http://127.0.0.1:4555 npm run perf:frontend
 ```
 
 ## Disable
