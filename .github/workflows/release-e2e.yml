@@ -50,6 +50,11 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      # A commit pushed mid-run would otherwise make the server show its
+      # update toast over whatever a test is measuring.
+      - name: Detach checkout from its upstream
+        run: git branch --unset-upstream 2>/dev/null || true
+
       - name: Setup Node.js
         uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
         with:

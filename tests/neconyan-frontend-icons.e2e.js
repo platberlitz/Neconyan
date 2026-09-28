@@ -52,11 +52,15 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                 expect(geometry.right).toBeLessThanOrEqual(viewport.width);
                 expect(geometry.imageWidth).toBe(192);
                 expect(geometry.rendering).toBe('auto');
-                await page.evaluate(async () => {
-                    const notifications = await import('/scripts/neconyan-conversation/notifications.js');
-                    notifications.updateConversationFaviconBadge(2);
-                });
-                await expect(page.locator('link[rel="icon"]').first()).toHaveAttribute('href', /^data:image\/png/);
+                // The app's own queued indicator refresh can redraw the real
+                // (zero) count over the fake one, so retry until it sticks.
+                await expect(async () => {
+                    await page.evaluate(async () => {
+                        const notifications = await import('/scripts/neconyan-conversation/notifications.js');
+                        notifications.updateConversationFaviconBadge(2);
+                    });
+                    await expect(page.locator('link[rel="icon"]').first()).toHaveAttribute('href', /^data:image\/png/, { timeout: 1000 });
+                }).toPass({ timeout: 10000 });
                 await page.evaluate(async () => {
                     const notifications = await import('/scripts/neconyan-conversation/notifications.js');
                     notifications.updateConversationFaviconBadge(0);
@@ -130,6 +134,8 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             await expect(page.locator('html')).toHaveAttribute('data-neconyan-chat-mode', 'roleplay');
             await expect(page.locator('link[rel="icon"]').first()).toHaveAttribute('href', /assistant-icons\/nori-female\.png\?v=/);
             expect(errors).toEqual([]);
+            // A settings request still in flight at teardown must not fail the test.
+            await page.unrouteAll({ behavior: 'ignoreErrors' });
         });
     });
 }

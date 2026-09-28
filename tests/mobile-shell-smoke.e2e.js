@@ -816,6 +816,8 @@ test.describe('mobile shell smoke at narrow 320x568', () => {
             document.documentElement.setAttribute('data-sb-compact-mode', 'false');
             (await import('/script.js')).setOnlineStatus('Narrow composer fixture connection');
         });
+        // The composer refresh that reveals Send runs on a queued timer.
+        await expect(page.locator('#send_but')).toBeVisible();
         await waitForAnimationFrames(page, 2);
 
         const sendButtonBox = await page.locator('#send_but').boundingBox();

@@ -294,6 +294,12 @@ for (const width of [320, 390]) {
                 const filename = tone === 'Dark' ? 'Neconyan Calico Dark.json' : 'Neconyan Calico.json';
                 const { name, ...theme } = JSON.parse(readFileSync(new URL(`../default/content/themes/${filename}`, import.meta.url), 'utf8'));
                 await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
+                // The update toast would cover the ear this test presses.
+                await page.route('**/api/server-admin/status', async route => {
+                    const response = await route.fetch();
+                    const data = await response.json();
+                    await route.fulfill({ response, json: { ...data, repository: { ...data.repository, behind: 0 } } });
+                });
                 await page.route('**/api/settings/get', async route => {
                     const response = await route.fetch();
                     const data = await response.json();
