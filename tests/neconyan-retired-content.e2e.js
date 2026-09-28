@@ -36,8 +36,12 @@ async function mockSettings(page, tone) {
         let bytes = route.request().postDataBuffer();
         if (route.request().headers()['content-encoding'] === 'gzip') bytes = gunzipSync(bytes);
         const payload = JSON.parse(bytes.toString());
-        settings = { ...payload, _version: Math.max(Date.now(), Number(payload._version || 0) + 1) };
-        await route.fulfill({ json: { version: settings._version } });
+        settings = {
+            ...payload,
+            _version: Math.max(Date.now(), Number(payload._version || 0) + 1),
+            _settingsRevision: Number(payload._settingsRevision || 0) + 1,
+        };
+        await route.fulfill({ json: { result: 'ok', version: settings._version, settingsRevision: settings._settingsRevision } });
     });
 }
 function inventory() {
