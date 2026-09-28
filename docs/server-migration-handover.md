@@ -2,6 +2,40 @@
 
 ## Release preparation: 1.0.0
 
+### 28 September: 1.0.0 published
+
+Neconyan 1.0.0 is published at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.0.0. The annotated tag
+`v1.0.0` points at the release commit `303b792b8736ccf55d57aabe2bf07b5b3707511d`.
+Main is `8f567b1`, the README mirror workflow's commit on top of it, which only
+adds the Android section to `.github/readme.md`. Staging merged it back in
+`07f243f` so the next promotion can fast-forward. Don't move main until the next
+release.
+
+Android run `36379247096` on `303b792` passed all four jobs. The published assets are
+that run's artifact: both signed APKs, the source zip, `SHA256SUMS` and
+`provenance.json`. Before upload, `sha256sum -c SHA256SUMS` and
+`scripts/verify-android-release.py --commit 303b792... --version 1.0.0` passed,
+and an independent APK Signature Scheme v2 check found signing certificate
+SHA-256 `49ed1e770b8a5269a008ed0d4763dd19a499377e35c85eec798c554178c4826c`
+in both APKs. The files downloaded back from the release matched the checksums.
+
+Browser run `36379238931` on `303b792` passed batches 1-6. Batches 7 and 8 failed on
+three test timing problems, not application faults. Staging `0459c5b` fixed them:
+the Send button was measured before it appeared, the app's own favicon refresh
+replaced a test badge, and a mid-run push to main made the update notice cover the
+cat ears. The workflow now removes the checkout's upstream so the server never
+shows that notice during a run. The repository returned to private, so GitHub
+Actions could not rerun. The owner reran the failed batches on his desktop against
+`303b792` with the fixed tests; they passed after one more test-only repair,
+`4b88f52`, which returns a settings revision from the retired-content save mock.
+
+Staging now carries version `1.0.1` in `package.json` and `package-lock.json`.
+Remaining approved staging work is the SillyBunny rename with first-start
+migrations, then splitting the browser workflow into 16 batches. Staging's own
+Android validation needs GitHub Actions or the Oracle-held signing key. No Oracle
+application deployment or restart was performed.
+
 ### 28 September continuation: validation in progress
 
 This release work started from staging `16687a0285b65ca9dcdd3f76c5bb66a5472f5063`, including
