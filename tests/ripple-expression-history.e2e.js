@@ -112,7 +112,9 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
                 core.syncSwipeToMes(1);
                 await core.redisplayChat();
             });
-            await expect(page.locator('#chat .mes[mesid="1"] .neconyan-expression-avatar')).toHaveCount(0);
+            // With classification off, a new swipe inherits the previous message's
+            // expression. Its sibling swipe must retain its own selected image.
+            await expect(page.locator('#chat .mes[mesid="1"] .neconyan-expression-avatar')).toHaveAttribute('src', first, { timeout: 10000 });
             await selectSprite(page, 'joy-1.png');
             await page.evaluate(async () => {
                 const core = await import('/script.js');

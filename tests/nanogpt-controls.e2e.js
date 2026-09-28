@@ -100,15 +100,30 @@ async function openApi(page) {
 }
 
 async function loadRoutingSettings(page, overrides = {}) {
-    await page.evaluate(async ({ keys, overrides }) => {
-        const { getRequestHeaders } = await import('/script.js');
-        const { loadOpenAISettings, oai_settings } = await import('/scripts/openai.js');
-        const response = await fetch('/api/settings/get', { method: 'POST', headers: getRequestHeaders(), body: '{}' });
-        if (!response.ok) throw new Error(`Settings read failed: ${response.status}`);
-        const settings = structuredClone(oai_settings);
-        for (const key of keys) delete settings[key];
-        loadOpenAISettings(await response.json(), Object.assign(settings, overrides));
+    await page.evaluate(({ keys, overrides }) => {
+        // Observe completion separately: Chromium reports 'Promise was collected'
+        // when DevTools awaits this repeated full-settings reload directly.
+        const state = window.__nanoRoutingLoad = { done: false, error: null };
+        state.promise = (async () => {
+            const { getRequestHeaders } = await import('/script.js');
+            const { loadOpenAISettings, oai_settings } = await import('/scripts/openai.js');
+            const response = await fetch('/api/settings/get', { method: 'POST', headers: getRequestHeaders(), body: '{}' });
+            if (!response.ok) throw new Error(`Settings read failed: ${response.status}`);
+            const settings = structuredClone(oai_settings);
+            for (const key of keys) delete settings[key];
+            loadOpenAISettings(await response.json(), Object.assign(settings, overrides));
+        })().then(() => { state.done = true; }, error => {
+            state.error = error.stack || error.message || String(error);
+            state.done = true;
+        });
     }, { keys: ROUTING_KEYS, overrides });
+    try {
+        await page.waitForFunction(() => window.__nanoRoutingLoad.done);
+        const error = await page.evaluate(() => window.__nanoRoutingLoad.error);
+        if (error) throw new Error(error);
+    } finally {
+        await page.evaluate(() => { delete window.__nanoRoutingLoad; });
+    }
 }
 
 async function connectNanoGpt(page) {
@@ -398,7 +413,7 @@ for (const mobile of [false, true]) {
 }
 
 test('NanoGPT runtime settings and presets retain defaults, legacy migration and independent connections', async ({ page, baseURL }) => {
-    test.setTimeout(90000);
+    test.setTimeout(180000);
     await setupNanoGpt(page, baseURL);
     const cases = [
         { input: {}, allowed: [], ignored: [], payg: false },

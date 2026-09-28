@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import { test } from './neconyan-conversation-durable-fixture.js';
+import { acknowledgeActiveSettings, test } from './neconyan-conversation-durable-fixture.js';
 import { instructSettings, promptMessages, expectedPrompts } from './fixtures/text-generation-baseline.js';
 
 test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires an owned disposable server and fake provider.');
@@ -9,14 +9,13 @@ for (const phone of [false, true]) {
     test(`${phone ? 'phone' : 'desktop'} Kobold connection changes invalidate the saved acknowledgement`, async ({ app }) => {
         const account = await app.account({ phone });
         const page = await account.open();
-        const first = await page.evaluate(async () => {
+        await page.evaluate(async () => {
             const core = await import('/script.js');
             const { kai_settings } = await import('/scripts/kai-settings.js');
             core.changeMainAPI('kobold');
             kai_settings.api_server = 'http://127.0.0.1:6001';
-            if (!await core.saveSettings(0, { returnResult: true })) throw new Error('Save failed');
-            return core.getActiveGenerationAcknowledgement();
         });
+        const first = await acknowledgeActiveSettings(page);
         expect(first.settingsRevision).toBeGreaterThan(0);
         const changed = await page.evaluate(async () => {
             const core = await import('/script.js');
@@ -31,19 +30,25 @@ for (const phone of [false, true]) {
     test(`${phone ? 'phone' : 'desktop'} active settings acknowledgement matches the submitted controls`, async ({ app }, info) => {
         const account = await app.account({ phone });
         const page = await account.open();
-        const initial = await page.evaluate(async () => {
+        await page.evaluate(async () => {
             const core = await import('/script.js');
             await core.changeMainAPI('textgenerationwebui');
             const { textgenerationwebui_settings: textgen_settings } = await import('/scripts/textgen-settings.js');
             textgen_settings.type = 'llamacpp';
             textgen_settings.server_urls.llamacpp = 'http://127.0.0.1:6001';
             textgen_settings.api_server = 'http://127.0.0.1:6002';
-            if (!await core.saveSettings(0, { returnResult: true })) throw new Error('Save failed');
-            return core.getActiveGenerationAcknowledgement();
         });
+        const initial = await acknowledgeActiveSettings(page);
         const saved = JSON.parse((await account.post('/api/settings/get')).settings);
         expect(saved.active_generation.serverUrl).toBe('http://127.0.0.1:6002');
         expect(Object.keys(initial).sort()).toEqual(['account', 'settingsRevision']);
+        // This test owns the held save. A delayed startup save must not take its
+        // first-response slot and leave the explicit save behind the following gate.
+        await page.evaluate(async () => {
+            const core = await import('/script.js');
+            const { cancelDebounce } = await import('/scripts/utils.js');
+            cancelDebounce(core.saveSettingsDebounced);
+        });
         let release;
         let releaseFollowing;
         let reached;
@@ -61,7 +66,12 @@ for (const phone of [false, true]) {
             await held;
             await route.fulfill({ response });
         });
-        const saving = page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }));
+        const saving = page.evaluate(async () => {
+            const core = await import('/script.js');
+            const { cancelDebounce } = await import('/scripts/utils.js');
+            cancelDebounce(core.saveSettingsDebounced);
+            return core.saveSettings(0, { returnResult: true });
+        });
         await received;
         const pending = await page.evaluate(async () => {
             try { return (await import('/script.js')).getActiveGenerationAcknowledgement(); }
@@ -79,11 +89,7 @@ for (const phone of [false, true]) {
             current: await page.evaluate(async () => (await import('/scripts/openai.js')).oai_settings.custom_model) }) });
         expect(changed).toContain('Save the active connection');
         releaseFollowing();
-        const acknowledged = await page.evaluate(async () => {
-            const core = await import('/script.js');
-            if (!await core.saveSettings(0, { returnResult: true })) throw new Error('Save failed');
-            return core.getActiveGenerationAcknowledgement();
-        });
+        const acknowledged = await acknowledgeActiveSettings(page);
         expect(acknowledged.settingsRevision).toBeGreaterThan(initial.settingsRevision);
         expect(app.provider.calls).toHaveLength(0);
     });

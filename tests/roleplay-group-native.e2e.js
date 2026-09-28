@@ -3,7 +3,7 @@ import { expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { test } from './neconyan-conversation-durable-fixture.js';
+import { acknowledgeActiveSettings, test } from './neconyan-conversation-durable-fixture.js';
 
 test.setTimeout(240000);
 
@@ -37,11 +37,7 @@ async function openGroup({ account, group }) {
         await groups.openGroupById(id);
     }, group.id);
     await expect(page.locator('#send_textarea')).toBeVisible();
-    expect(await page.evaluate(async () => {
-        const core = await import('/script.js');
-        if (!await core.saveSettings(0, { returnResult: true })) return false;
-        return Boolean(core.getActiveGenerationAcknowledgement());
-    })).toBe(true);
+    await acknowledgeActiveSettings(page);
     return page;
 }
 

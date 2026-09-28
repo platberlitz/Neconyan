@@ -107,6 +107,24 @@ The subsequent full unit run passed 355 suites and 4,673 tests, with two skipped
 Root lint, changed-test lint, frontend limits and a fresh frontend build pass.
 The next staging checkpoint still needs complete browser and Android validation.
 
+The fourth candidate, `85fddc4f58dc9ece919be2b0bce06a151596ba7e`, passed all four
+Android jobs in run `36364659562`. Browser run `36364659643` exposed three settings
+readiness assertions in batch three and an expression timing assumption in batch
+eight. The group replies themselves completed, including the deliberate settings
+race with one model request. The checks now wait for a genuinely settled saved
+confirmation after reopening; the pending-save and edited-controls checks still
+require an immediate refusal. Repeated desktop and phone checks pass.
+
+I also traced the late NanoGPT test failure to Chromium reporting 'Promise was
+collected', which Playwright described as a lost execution context. There was no
+application reload. The fixture now observes completion separately while retaining
+the real settings loads, preset changes, save and reload assertions. The complete
+scenario passes. Ripple now checks the existing offline inheritance from the previous
+message before changing an alternate swipe, and still verifies that the original
+swipe keeps its own expression across reloads. All four repeated desktop and phone
+checks pass. Changed-test lint passes. These test-only changes still need a complete
+browser run and signed Android validation from their committed checkpoint.
+
 - Automatic and manual captions now compare the same settings fingerprint, excluding
   save counters and account bookkeeping. All 42 caption tests pass. All six desktop
   and phone browser cases pass for captions, translation, Pawthfinder, speech, image

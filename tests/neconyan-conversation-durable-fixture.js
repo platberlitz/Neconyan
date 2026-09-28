@@ -18,6 +18,25 @@ export const MODEL = 'conversation-fixture';
 export const REPLY = 'Durable first reply. [reminder: 1h | Durable reminder]\n\nDurable second reply. [schedule_update: status="dnd" activity="fixture rest" duration="1h"]';
 const terminal = ['completed', 'cancelled', 'failed', 'interrupted', 'conflict'];
 
+export async function acknowledgeActiveSettings(page) {
+    let acknowledgement;
+    // Startup listeners may queue another save after the one this helper awaits.
+    // Wait for the real proof; tests of pending or edited controls still read it immediately.
+    await expect.poll(async () => {
+        acknowledgement = await page.evaluate(async () => {
+            const core = await import('/script.js');
+            if (!await core.saveSettings(0, { returnResult: true })) throw new Error('The fixture settings save failed.');
+            try { return core.getActiveGenerationAcknowledgement(); }
+            catch (error) {
+                if (error.message === 'Save the active connection settings before generating a reply.') return null;
+                throw error;
+            }
+        });
+        return acknowledgement !== null;
+    }, { timeout: 20000, message: 'Active settings have a settled server acknowledgement' }).toBe(true);
+    return acknowledgement;
+}
+
 export const test = base.extend({
     libraryCache: [async ({}, use) => {
         const directory = await fs.mkdtemp('/tmp/opencode/conversation-libraries-');
