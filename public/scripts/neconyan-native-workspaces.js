@@ -548,7 +548,7 @@ function renderLorebookLibrary(library) {
     for (const name of visibleNames) {
         const row = element('article', 'neconyan-lorebook-book');
         const open = button('', 'neconyan-lorebook-book-open');
-        open.setAttribute('aria-label', `Open ${name}`);
+        open.setAttribute('aria-label', t`Open ${name}`);
         open.append(element('i', 'fa-solid fa-book-open', ''), element('span', '', name));
         open.addEventListener('click', () => selectLorebook(name));
         const location = element('span', 'neconyan-lorebook-book-location', getLorebookFolderName(metadata, metadata.assignments[name]));

@@ -378,6 +378,7 @@ function buildWelcomeTemplateData(chats, assistantPersonalities = null) {
     const pickerPersonalities = Array.isArray(assistantPersonalities)
         ? assistantPersonalities.map(personality => ({
             ...personality,
+            genderLegend: t`${personality.name} gender`,
             variants: personality.variants.map(variant => ({ ...variant, label: assistantGenderLabel(variant.gender), selected: variant.gender === getAssistantGender(personality.id) })),
             initialPortrait: personality.variants.find(variant => variant.gender === getAssistantGender(personality.id))?.portrait || '',
         }))
@@ -987,7 +988,7 @@ export async function openWelcomeScreen({ force = false, expand = false } = {}) 
 }
 
 function assistantGenderLabel(gender) {
-    return ({ male: 'Male', female: 'Female', neutral: 'Neutral' })[gender] || gender;
+    return ({ male: t`Male`, female: t`Female`, neutral: t`Neutral` })[gender] || gender;
 }
 
 function setAssistantPickerBusy(root, busy) {
@@ -1011,14 +1012,14 @@ function updateAssistantPickerRow(row) {
     if (button instanceof HTMLButtonElement) {
         button.dataset.assistantVariant = variant;
         button.disabled = !selected || row.closest('[data-assistant-picker]')?.dataset.assistantBusy === 'true';
-        button.setAttribute('aria-label', selected ? `Open ${name}, ${assistantGenderLabel(gender)}` : `Choose a gender for ${name}`);
+        button.setAttribute('aria-label', selected ? t`Open ${name}, ${assistantGenderLabel(gender)}` : t`Choose a gender for ${name}`);
     }
     if (portrait instanceof HTMLImageElement && selected?.dataset.portrait) {
         portrait.src = selected.dataset.portrait;
         portrait.alt = `${name}, ${assistantGenderLabel(gender)}`;
     }
-    if (label) label.textContent = selected ? `Open ${name}, ${assistantGenderLabel(gender)}` : 'Choose a gender';
-    if (status) status.textContent = selected ? `${assistantGenderLabel(gender)} selected.` : '';
+    if (label) label.textContent = selected ? t`Open ${name}, ${assistantGenderLabel(gender)}` : t`Choose a gender`;
+    if (status) status.textContent = selected ? t`${assistantGenderLabel(gender)} selected.` : '';
 }
 
 function setAssistantPickerStatus(root, message, error = false) {
@@ -1213,7 +1214,7 @@ async function sendWelcomePanel(chats, expand, requestId, assistantPersonalities
             return;
         }
         const templateData = buildWelcomeTemplateData(chats, assistantPersonalities);
-        const template = await renderTemplateAsync('/scripts/templates/welcomePanelOnboarding.html?v=20260923a', templateData, true, true, true);
+        const template = await renderTemplateAsync('/scripts/templates/welcomePanelOnboarding.html?v=20260928a', templateData, true, true, true);
         if (requestId !== welcomeRequestId) {
             return;
         }

@@ -5525,7 +5525,7 @@ export async function saveToCard() {
         return contextChangedError('The active card or prospective card data changed before it could be saved.');
     }
     if (typeof currentContext.writeExtensionField !== 'function') {
-        const result = importError('card_save_unavailable', 'This SillyTavern version has no immediate, awaitable character-card writer.');
+        const result = importError('card_save_unavailable', 'This Neconyan version has no immediate, awaitable character-card writer.');
         toast.error(result.message);
         return result;
     }

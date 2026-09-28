@@ -1059,8 +1059,8 @@ async function activateExtensions() {
             console.warn(t`Extension "${name}" did not load. Missing required extensions: "${activationState.missingDependencies.join(', ')}"`);
             extensionLoadErrors.add(t`Extension "${displayName}" did not load. Missing required extensions: "${activationState.missingDependencies.join(', ')}"`);
         } else if (activationState.action === EXTENSION_BOOT_ACTIVATION_ACTION.CLIENT_VERSION_UNSUPPORTED) {
-            console.warn(t`Extension "${name}" did not load. Requires ST client version ${minClientVersion}, but the current compatible version is ${extensionCompatibilityVersion}.`);
-            extensionLoadErrors.add(t`Extension "${displayName}" did not load. Requires ST client version ${minClientVersion}, but the current compatible version is ${extensionCompatibilityVersion}.`);
+            console.warn(t`Extension "${name}" did not load. Requires client version ${minClientVersion}, but the current compatible version is ${extensionCompatibilityVersion}.`);
+            extensionLoadErrors.add(t`Extension "${displayName}" did not load. Requires client version ${minClientVersion}, but the current compatible version is ${extensionCompatibilityVersion}.`);
         }
     }
 

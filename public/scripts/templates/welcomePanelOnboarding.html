@@ -25,7 +25,7 @@
             <article class="neconyan-assistant-row" data-assistant-name="{{name}}" data-assistant-personality="{{id}}">
                 <div class="neconyan-assistant-portrait-wrap"><img src="{{initialPortrait}}" alt="{{name}} assistant portrait" width="112" height="152" loading="lazy" decoding="async" data-assistant-portrait></div>
                 <div class="neconyan-assistant-copy"><h3>{{name}}</h3><p class="neconyan-assistant-role">{{role}}</p><p>{{summary}}</p><p class="neconyan-assistant-selection" data-assistant-selection aria-live="polite">Choose Male, Female or Neutral.</p></div>
-                <fieldset class="neconyan-assistant-variants"><legend>{{name}} gender</legend>
+                <fieldset class="neconyan-assistant-variants"><legend>{{genderLegend}}</legend>
                     {{#each variants}}<label for="neconyan-assistant-{{id}}"><input id="neconyan-assistant-{{id}}" type="radio" name="assistant-{{../id}}" value="{{id}}" data-assistant-variant data-gender="{{gender}}" data-portrait="{{portrait}}"{{#if selected}} checked{{/if}}><span>{{label}}</span></label>{{#if updateAvailable}}<button type="button" class="menu_button neconyan-assistant-update" data-assistant-update data-assistant-id="{{id}}" data-assistant-label="{{../name}} ({{label}})" data-assistant-update-avatar="{{installedAvatar}}" aria-label="Install updated {{../name}} ({{label}}) copy">Install updated copy</button>{{/if}}{{/each}}
                 </fieldset>
                 <button type="button" class="menu_button neconyan-assistant-open" data-assistant-open disabled><span data-assistant-action-label>Choose a gender</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>

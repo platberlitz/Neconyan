@@ -32,7 +32,7 @@ import { eventSource, event_types } from './events.js';
 import { extensionNames, findExtension, getExtensionManifest, getExtensionType } from './extensions.js';
 import { getCurrentUserHandle } from './user.js';
 import { getAssistantIconSrc } from './neconyan-assistant-art.js';
-import { t } from './i18n.js';
+import { t, translate } from './i18n.js';
 import {
     MODEL_FILTER_BOTH_VIEWPORTS_SELECTORS,
     MODEL_FILTER_PHONE_ONLY_SELECTORS,
@@ -530,11 +530,7 @@ const NECONYAN_NATIVE_TOOL_DEFINITIONS = Object.freeze([
     { id: 'pathfinder', label: 'Pawthfinder', icon: 'fa-diamond-turn-right', actions: ['settings'], unitOnly: true },
 ]);
 
-const NECONYAN_NATIVE_TOOL_ACTION_LABELS = Object.freeze({
-    open: 'Open',
-    settings: 'Settings',
-    manage: 'Manage extensions',
-});
+const nativeToolActionLabel = actionName => ({ open: t`Open`, settings: t`Settings`, manage: t`Manage extensions` })[actionName];
 
 const NECONYAN_MODE_DEFINITIONS = Object.freeze([
     { id: 'roleplay', label: 'Roleplay', icon: 'fa-masks-theater' },
@@ -671,8 +667,8 @@ function syncNeconyanModeControls() {
         button.classList.toggle('is-active', isActive);
         button.setAttribute('aria-pressed', String(isActive));
         button.title = buttonDefinition
-            ? isActive ? `${definition.label} is active` : `Use ${buttonDefinition.label}`
-            : 'Unavailable mode';
+            ? isActive ? t`${definition.label} is active` : t`Use ${buttonDefinition.label}`
+            : t`Unavailable mode`;
     });
 
     document.querySelectorAll('#sb_character_mode_toggle [data-sb-character-mode]').forEach(button => {
@@ -931,7 +927,7 @@ function createNeconyanModeButton(mode, mobile = false) {
             'data-neconyan-chat-mode': definition.id,
             'aria-pressed': String(getActualNeconyanMode() === definition.id),
             'aria-label': definition.label,
-            title: `Use ${definition.label}`,
+            title: t`Use ${definition.label}`,
         },
     });
     button.append(
@@ -2923,11 +2919,11 @@ function renderNeconyanNativeToolList(host, scope = 'rail') {
         for (const actionName of actionNames) {
             const button = createElement('button', {
                 className: `neconyan-native-tool-action neconyan-native-tool-action-${actionName}`,
-                text: NECONYAN_NATIVE_TOOL_ACTION_LABELS[actionName],
+                text: nativeToolActionLabel(actionName),
                 attrs: {
                     type: 'button',
                     'data-neconyan-native-tool-action': actionName,
-                    'aria-label': `${NECONYAN_NATIVE_TOOL_ACTION_LABELS[actionName]} ${tool.label}`,
+                    'aria-label': actionName === 'settings' ? t`Settings ${tool.label}` : t`Open ${tool.label}`,
                 },
             });
             button.addEventListener('click', () => {
@@ -2950,11 +2946,11 @@ function renderNeconyanNativeToolList(host, scope = 'rail') {
 
         const manage = createElement('button', {
             className: 'neconyan-native-tool-action neconyan-native-tool-action-manage',
-            text: NECONYAN_NATIVE_TOOL_ACTION_LABELS.manage,
+            text: nativeToolActionLabel('manage'),
             attrs: {
                 type: 'button',
                 'data-neconyan-native-tool-action': 'manage',
-                'aria-label': `Manage extensions for ${tool.label}`,
+                'aria-label': t`Manage extensions for ${tool.label}`,
             },
         });
         manage.addEventListener('click', () => {
@@ -5670,8 +5666,8 @@ function updateTopBarBrand() {
     title.textContent = label;
     title.title = label;
     title.setAttribute('aria-label', isTopbarLabelClickCycleEnabled()
-        ? `${label}. Tap to switch the top bar label.`
-        : `${label}. Tap to return to the chat.`);
+        ? t`${label}. Tap to switch the top bar label.`
+        : t`${label}. Tap to return to the chat.`);
     title.classList.toggle('is-chat', isActiveChat);
     brand.dataset.brandState = isActiveChat ? 'chat' : 'idle';
     queueTopbarBrandFit();
@@ -5846,8 +5842,8 @@ function createDesktopQuickActionButton(item) {
         className: 'sb-proxy-button sb-topbar-quick-action',
         attrs: {
             type: 'button',
-            title: `Open ${action.label}`,
-            'aria-label': `Open ${action.label}`,
+            title: t`Open ${action.label}`,
+            'aria-label': t`Open ${action.label}`,
         },
     });
     button.innerHTML = `<i class="fa-solid ${action.icon || NN_MOBILE_QUICK_ACTION_ICON_FALLBACK}" aria-hidden="true"></i><span>${action.label}</span>`;
@@ -10764,7 +10760,7 @@ function buildTopBar() {
             id: 'sb-shortcut-left',
             icon: leftShortcutConfig.icon,
             label: leftShortcutConfig.label,
-            title: `Quick access: ${leftShortcutConfig.label}`,
+            title: t`Quick access: ${translate(leftShortcutConfig.label)}`,
             className: 'sb-proxy-button-icon-only',
         },
         () => activateShortcutTarget(getShortcutTarget('left')),
@@ -10777,7 +10773,7 @@ function buildTopBar() {
             id: 'sb-shortcut-right',
             icon: rightShortcutConfig.icon,
             label: rightShortcutConfig.label,
-            title: `Quick access: ${rightShortcutConfig.label}`,
+            title: t`Quick access: ${translate(rightShortcutConfig.label)}`,
             className: 'sb-proxy-button-icon-only',
         },
         () => activateShortcutTarget(getShortcutTarget('right')),
@@ -10792,7 +10788,7 @@ function buildTopBar() {
                 id: getShortcutButtonId(side),
                 icon: shortcutConfig.icon,
                 label: shortcutConfig.label,
-                title: `Quick access: ${shortcutConfig.label}`,
+                title: t`Quick access: ${translate(shortcutConfig.label)}`,
                 className: 'sb-proxy-button-icon-only sb-desktop-setting',
             },
             () => activateShortcutTarget(getShortcutTarget(side)),
@@ -15012,8 +15008,8 @@ function updateShortcutButton(side) {
     if (span) {
         span.textContent = config.label;
     }
-    button.title = `Quick access: ${config.label}`;
-    button.setAttribute('aria-label', `Quick access: ${config.label}`);
+    button.title = t`Quick access: ${translate(config.label)}`;
+    button.setAttribute('aria-label', t`Quick access: ${translate(config.label)}`);
     button.dataset.sbUniversalSearchTrigger = String(isSearchShortcutTarget(target));
     syncTopbarIconsOnlyDedupe();
     syncShortcutButtonActiveStates();
@@ -17280,12 +17276,12 @@ function updateMobileNavButtonLabel() {
         && overlay.getAttribute('aria-hidden') === 'false';
     const replacement = getMobileNavReplacementTargetConfig();
     const neconyanMenu = document.body?.classList.contains('neconyan');
-    let title = neconyanMenu ? 'Open menu' : 'Open navigation';
+    let title = neconyanMenu ? t`Open menu` : t`Open navigation`;
 
     if (isOpen) {
-        title = neconyanMenu ? 'Close menu' : 'Close navigation';
+        title = neconyanMenu ? t`Close menu` : t`Close navigation`;
     } else if (nnState.mobileNav.replaceQuickActions) {
-        title = `Open ${replacement.label}`;
+        title = t`Open ${replacement.label}`;
     }
 
     button.title = title;
@@ -17302,8 +17298,8 @@ function createMobileQuickActionButton(item) {
         className: 'sb-nav-item',
         attrs: {
             type: 'button',
-            title: `Open ${action.label}`,
-            'aria-label': `Open ${action.label}`,
+            title: t`Open ${action.label}`,
+            'aria-label': t`Open ${action.label}`,
         },
     });
     const icon = createElement('i', {

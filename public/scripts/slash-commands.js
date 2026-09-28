@@ -862,7 +862,7 @@ export function initDefaultSlashCommands() {
         }),
         SlashCommandNamedArgument.fromProps({
             name: 'tags',
-            description: t`Comma-separated list of character card tags (embedded in the card, not ST's folder/filter tags). Use /tag-add for ST tags or /tag-import to import card tags as ST tags.`,
+            description: t`Comma-separated list of character card tags (embedded in the card, not Neconyan's folder/filter tags). Use /tag-add for Neconyan tags or /tag-import to import card tags as Neconyan tags.`,
             typeList: [ARGUMENT_TYPE.STRING],
             isRequired: requiredFields.includes('tags'),
         }),
@@ -875,7 +875,7 @@ export function initDefaultSlashCommands() {
         }),
         SlashCommandNamedArgument.fromProps({
             name: 'avatar',
-            description: t`Avatar image. Use "prompt" to open file picker, or provide a local ST file path (e.g., characters/Name.png, backgrounds/image.png). This can also be the return value from the /imagine command. External URLs are not supported.`,
+            description: t`Avatar image. Use "prompt" to open file picker, or provide a local Neconyan file path (e.g., characters/Name.png, backgrounds/image.png). This can also be the return value from the /imagine command. External URLs are not supported.`,
             typeList: [ARGUMENT_TYPE.STRING],
             isRequired: requiredFields.includes('avatar'),
             enumList: [
@@ -953,10 +953,10 @@ export function initDefaultSlashCommands() {
             </ul>
         </div>
         <div>
-            <strong>${t`Note on tags:`}</strong> ${t`The <code>tags</code> argument sets character card tags (embedded in the character file), not SillyTavern's folder/filter tags. To add ST tags after creation, use <code>/tag-add</code>. To import card tags as ST tags, use <code>/tag-import</code>.`}
+            <strong>${t`Note on tags:`}</strong> ${t`The <code>tags</code> argument sets character card tags (embedded in the character file), not Neconyan's folder/filter tags. To add Neconyan tags after creation, use <code>/tag-add</code>. To import card tags as Neconyan tags, use <code>/tag-import</code>.`}
         </div>
         <div>
-            <strong>${t`Note on avatar:`}</strong> ${t`The <code>avatar</code> argument accepts <code>prompt</code> to open a file picker, or a local ST file path. Supported paths include: <code>characters/Name.png</code>, <code>backgrounds/image.png</code>, <code>User Avatars/avatar.png</code>, <code>assets/category/file.png</code>. This can also be the return value from the /imagine command. External URLs are not supported.`}
+            <strong>${t`Note on avatar:`}</strong> ${t`The <code>avatar</code> argument accepts <code>prompt</code> to open a file picker, or a local Neconyan file path. Supported paths include: <code>characters/Name.png</code>, <code>backgrounds/image.png</code>, <code>User Avatars/avatar.png</code>, <code>assets/category/file.png</code>. This can also be the return value from the /imagine command. External URLs are not supported.`}
         </div>
         <div>
             <strong>${t`Example:`}</strong>
@@ -996,10 +996,10 @@ export function initDefaultSlashCommands() {
             ${t`If no <code>char</code> argument is provided, updates the currently selected character.`}
         </div>
         <div>
-            <strong>${t`Note on tags:`}</strong> ${t`The <code>tags</code> argument sets character card tags (embedded in the PNG), not SillyTavern's folder/filter tags. To add ST tags, use <code>/tag-add</code>. To import card tags as ST tags, use <code>/tag-import</code>.`}
+            <strong>${t`Note on tags:`}</strong> ${t`The <code>tags</code> argument sets character card tags (embedded in the PNG), not Neconyan's folder/filter tags. To add Neconyan tags, use <code>/tag-add</code>. To import card tags as Neconyan tags, use <code>/tag-import</code>.`}
         </div>
         <div>
-            <strong>${t`Note on avatar:`}</strong> ${t`The <code>avatar</code> argument accepts <code>prompt</code> to open a file picker, or a local ST file path. Supported paths: <code>characters/Name.png</code>, <code>backgrounds/image.png</code>, <code>User Avatars/avatar.png</code>, <code>assets/category/file.png</code>. This can also be the return value from the /imagine command. External URLs are not supported.`}
+            <strong>${t`Note on avatar:`}</strong> ${t`The <code>avatar</code> argument accepts <code>prompt</code> to open a file picker, or a local Neconyan file path. Supported paths: <code>characters/Name.png</code>, <code>backgrounds/image.png</code>, <code>User Avatars/avatar.png</code>, <code>assets/category/file.png</code>. This can also be the return value from the /imagine command. External URLs are not supported.`}
         </div>
         <div>
             <strong>${t`Example:`}</strong>

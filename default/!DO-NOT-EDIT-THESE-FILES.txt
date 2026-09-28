@@ -1,4 +1,4 @@
-These are master copies of the default content files and are managed by SillyTavern.
+These are master copies of the default content files and are managed by Neconyan.
 
 Editing any of these files would not only have no effect, but will also cause merge conflicts during update pulls.
 

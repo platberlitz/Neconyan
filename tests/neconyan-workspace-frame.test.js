@@ -72,7 +72,7 @@ describe('Neconyan workspace frame', () => {
         expect(cssSource).toContain('/* The shell toggle ghosts stay hidden while the real controls live in the rail and sheets. */');
         expect(tabsSource).not.toContain('function setTopbarIconsOnly(');
         expect(tabsSource).toContain('const NN_NECONYAN_MOBILE_NAV_CLOSED_ICON = \'fa-bars\';');
-        expect(tabsSource).toContain('let title = neconyanMenu ? \'Open menu\' : \'Open navigation\';');
+        expect(tabsSource).toContain('let title = neconyanMenu ? t`Open menu` : t`Open navigation`;');
         expect(tabsSource).toContain('closeWorkspace,');
     });
 });

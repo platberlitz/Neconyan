@@ -8426,7 +8426,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
 
             if (!pingResult) {
                 unblockGeneration(type);
-                toastr.error(t`Verify that the server is running and accessible.`, t`ST Server cannot be reached`);
+                toastr.error(t`Verify that the server is running and accessible.`, t`Neconyan server cannot be reached`);
                 throw new Error('Server unreachable');
             }
         }

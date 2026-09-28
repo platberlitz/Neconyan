@@ -16,7 +16,7 @@ let isSwiping = false;
 async function executeSTScriptCommand(command) {
     const context = getContext();
     if (typeof context?.executeSlashCommandsWithOptions !== 'function') {
-        throw new Error('SillyTavern slash command execution is not available.');
+        throw new Error('Neconyan slash command execution is not available.');
     }
 
     await context.executeSlashCommandsWithOptions(command);
@@ -72,7 +72,7 @@ async function generateNewSwipe() {
 
         context = getContext();
         if (typeof context?.swipe?.right !== 'function') {
-            alert('Guided Swipe Error: SillyTavern swipe generation API is not available.');
+            alert('Guided Swipe Error: Neconyan swipe generation API is not available.');
             return false;
         }
 

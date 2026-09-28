@@ -1428,7 +1428,7 @@ async function saveLocalStoreBackupNow(localKey, data, errorMessage, settingsCha
         if (!result.cacheSaved) {
             log(`Local cache write failed for ${localKey}: ${result.cacheError?.message || "unknown error"}`);
             qigToast.warning(result.confirmed
-                ? "Saved to your SillyTavern account, but this browser's local cache could not be updated."
+                ? "Saved to your Neconyan account, but this browser's local cache could not be updated."
                 : "Server synchronisation is unconfirmed and this browser's local cache could not be updated. Keep this tab open and retry.");
         }
         if (result.confirmed === false) {
@@ -1439,7 +1439,7 @@ async function saveLocalStoreBackupNow(localKey, data, errorMessage, settingsCha
         return true;
     } catch (error) {
         log(`Server synchronization failed for ${localKey}: ${error.message}`);
-        qigToast.error(errorMessage || "Failed to synchronize settings with SillyTavern.");
+        qigToast.error(errorMessage || "Failed to synchronize settings with Neconyan.");
         return false;
     }
 }
@@ -3117,7 +3117,7 @@ function normalizeBackgroundMode(value) {
 }
 
 const QIG_RELAY_BASE = "/api/plugins/quick-image-gen-relay";
-const CORS_PROXY_BASIC_AUTH_MESSAGE = "SillyTavern basicAuthMode is blocking the CORS proxy for requests that need their own Authorization header. Install the optional Quick Image Gen server plugin (see README), or disable basicAuthMode to use CivitAI/Replicate.";
+const CORS_PROXY_BASIC_AUTH_MESSAGE = "Neconyan basicAuthMode is blocking the CORS proxy for requests that need their own Authorization header. Install the optional Quick Image Gen server plugin (see README), or disable basicAuthMode to use CivitAI/Replicate.";
 
 class CorsProxyBasicAuthError extends Error {
     constructor(url) {
@@ -4558,7 +4558,7 @@ async function loadSettings() {
     const hasUnownedLegacyData = !savedCacheId
         && !localCacheId
         && (hasUnownedSynchronizedData || hasUnownedLegacyReplacementData);
-    const legacySeedApproved = hasUnownedLegacyData && await qigConfirm("Quick Image Gen found legacy browser-only settings that are not linked to a SillyTavern account. Import them into the current server user? They may include API keys and private reference images. Choose Cancel if this browser data belongs to another user.", { okButton: "Import", wide: true });
+    const legacySeedApproved = hasUnownedLegacyData && await qigConfirm("Quick Image Gen found legacy browser-only settings that are not linked to a Neconyan account. Import them into the current server user? They may include API keys and private reference images. Choose Cancel if this browser data belongs to another user.", { okButton: "Import", wide: true });
     const legacySeedDeclined = hasUnownedLegacyData && !legacySeedApproved;
     const maySeedFromLocal = cacheOwnerMatches || legacySeedApproved;
     const quarantinedLegacyCacheKeys = new Set();
@@ -4609,8 +4609,8 @@ async function loadSettings() {
             synchronizedFromServer++;
         }
     }
-    if (synchronizedFromServer > 0) log(`Synchronized ${synchronizedFromServer} setting store(s) from SillyTavern`);
-    if (serverStoresSeeded > 0) log(`Seeded ${serverStoresSeeded} setting store(s) into SillyTavern`);
+    if (synchronizedFromServer > 0) log(`Synchronized ${synchronizedFromServer} setting store(s) from Neconyan`);
+    if (serverStoresSeeded > 0) log(`Seeded ${serverStoresSeeded} setting store(s) into Neconyan`);
     let contextMediaSupported = false;
     try {
         contextMediaLibrary = normalizeContextMediaLibrary(contextMediaLibrary);
@@ -4683,7 +4683,7 @@ async function loadSettings() {
             initialServerSaveSucceeded = true;
         } catch (error) {
             log(`Initial settings synchronization failed: ${error.message}`);
-            qigToast.warning("Quick Image Gen loaded, but synchronized settings could not be saved to SillyTavern yet.");
+            qigToast.warning("Quick Image Gen loaded, but synchronized settings could not be saved to Neconyan yet.");
             saveSettingsDebounced?.();
         }
     } else {
@@ -4813,7 +4813,7 @@ async function persistFilterPoolState(previousState) {
             const failedKeys = result.cacheErrors.map(item => item.localKey).join(", ");
             log(`Filter settings local cache write failed for ${failedKeys}`);
             qigToast.warning(result.confirmed
-                ? "Saved filter settings to your SillyTavern account, but this browser's local cache could not be fully updated."
+                ? "Saved filter settings to your Neconyan account, but this browser's local cache could not be fully updated."
                 : "Filter settings synchronisation is unconfirmed and the browser cache could not be fully updated. Keep this tab open and retry.");
         }
         if (!result.confirmed && result.cacheSaved) qigToast.warning("Filter settings are saved in this browser; server synchronisation is pending.");
@@ -4821,7 +4821,7 @@ async function persistFilterPoolState(previousState) {
     } catch (error) {
         restoreFilterPoolState(previousState);
         log(`Filter settings synchronization failed: ${error.message}`);
-        qigToast.error("Failed to synchronize filter settings with SillyTavern. No changes were saved.");
+        qigToast.error("Failed to synchronize filter settings with Neconyan. No changes were saved.");
         return false;
     }
 }
@@ -6086,12 +6086,12 @@ function getSTStyleSettings(context = getContext?.()) {
         const sd = extension_settings?.sd || extension_settings?.["stable-diffusion"];
         if (!sd) return resolveSTStyleSettings(null, context);
         if (!_stStyleLogged) {
-            log("ST Style: Found SD extension settings, keys: " + Object.keys(sd).filter(k => typeof sd[k] === "string" && sd[k]).join(", "));
+            log("Neconyan Style: Found SD extension settings, keys: " + Object.keys(sd).filter(k => typeof sd[k] === "string" && sd[k]).join(", "));
             _stStyleLogged = true;
         }
         return resolveSTStyleSettings(sd, context);
     } catch (e) {
-        log("ST Style: Error reading settings: " + e.message);
+        log("Neconyan Style: Error reading settings: " + e.message);
         return resolveSTStyleSettings(null, context);
     }
 }
@@ -7020,7 +7020,7 @@ async function generateSceneDescription(s, sceneText, signal, options = {}) {
     if (!selectedScene) return "";
 
     if (signal?.aborted) throw getAbortError(signal);
-    log("Generating plain scene description via SillyTavern LLM...");
+    log("Generating plain scene description via Neconyan LLM...");
     showStatus("🤖 Summarizing scene for image prompt...");
 
     try {
@@ -7142,7 +7142,7 @@ async function generateLLMPrompt(s, basePrompt, signal, options = {}) {
     if (signal?.aborted) throw getAbortError(signal);
 
     // Only show status message when actually generating
-    log("Generating prompt via SillyTavern LLM...");
+    log("Generating prompt via Neconyan LLM...");
     showStatus("🤖 Creating image prompt...");
 
     try {
@@ -10034,7 +10034,7 @@ async function resolveChatInsertImageUrl(entryOrUrl, outputMode = getSettings()?
         return entry.url;
     }
     if (typeof saveBase64AsFile !== "function") {
-        throw new Error("image_url output requires SillyTavern file saving support");
+        throw new Error("image_url output requires Neconyan file saving support");
     }
 
     const savedUrl = normalizeSavedImagePath(await saveImageToServer(entry.url, entry.prompt, entry.negative, {
@@ -10086,7 +10086,7 @@ async function resolveBackgroundImageUrl(entryOrUrl, mode) {
 
     if (typeof saveBase64AsFile !== "function") {
         if (isUrlBasedImageSource(stableCandidate)) return { url: toAbsoluteImageUrl(stableCandidate), path: "" };
-        throw new Error("Locked backgrounds require SillyTavern file saving support");
+        throw new Error("Locked backgrounds require Neconyan file saving support");
     }
 
     const saveCandidate = entry.url && !isUrlBasedImageSource(entry.url) ? entry.url : (entry.sourceUrl || entry.url);
@@ -10152,7 +10152,7 @@ async function setImageAsBackground(entryOrUrl, mode = getSettings()?.background
     assertCommitState();
     const backgroundElement = document.getElementById("bg1");
     const previousBackground = backgroundElement?.style.backgroundImage || "";
-    if (!applyBackgroundCss(cssUrl)) throw new Error("Could not find SillyTavern background element");
+    if (!applyBackgroundCss(cssUrl)) throw new Error("Could not find Neconyan background element");
     const appliedBackground = backgroundElement?.style.backgroundImage || cssUrl;
     try {
         if (normalizedMode === "locked") {
@@ -10168,7 +10168,7 @@ async function setImageAsBackground(entryOrUrl, mode = getSettings()?.background
             rollback: () => {
                 if (backgroundElement && backgroundElement.style.backgroundImage !== appliedBackground) return;
                 if (!applyBackgroundCss(previousBackground)) {
-                    throw new Error("Could not restore the previous SillyTavern background CSS");
+                    throw new Error("Could not restore the previous Neconyan background CSS");
                 }
             },
             message: "Locked background failed and its CSS rollback could not be applied",
@@ -10903,7 +10903,7 @@ async function insertContextMedia(media, {
     });
     const attachment = createContextMediaAttachment(media);
     if (attachment.type === "video" && typeof ctx.appendMediaToMessage !== "function") {
-        throw new Error("Video attachments require a newer SillyTavern media API");
+        throw new Error("Video attachments require a newer Neconyan media API");
     }
     const initialChatLength = chat.length;
     const assertCommitState = (message) => {
@@ -11113,7 +11113,7 @@ async function deleteContextMediaServerPath(path) {
 }
 
 async function uploadContextMediaFiles(files, target) {
-    if (typeof saveBase64AsFile !== "function") throw new Error("SillyTavern media saving is unavailable");
+    if (typeof saveBase64AsFile !== "function") throw new Error("Neconyan media saving is unavailable");
     const selection = validateContextMediaFileSelection(files);
     if (!selection.valid) throw new Error(selection.errors[0] || "Invalid Context Media file selection");
     const accepted = [];
@@ -11205,7 +11205,7 @@ function showContextMediaUrlDialog() {
                 <textarea id="qig-context-media-url-input" rows="8" spellcheck="false" aria-describedby="qig-context-media-url-help" placeholder="https://cdn.example.com/image.webp\nhttps://cdn.example.com/video.mp4"></textarea>
                 <label class="checkbox_label qig-context-media-privacy-consent">
                     <input id="qig-context-media-url-consent" type="checkbox">
-                    <span>I understand that checking and displaying these links contacts each third-party server and may disclose my IP address, browser details, and the SillyTavern page address. QIG requests no-referrer loading, but the host may start a request before applying it.</span>
+                    <span>I understand that checking and displaying these links contacts each third-party server and may disclose my IP address, browser details, and the Neconyan page address. QIG requests no-referrer loading, but the host may start a request before applying it.</span>
                 </label>
                 </div>
                 <div class="qig-context-media-url-actions">
@@ -11292,7 +11292,7 @@ function showContextMediaManager() {
             selectedProfileId = selectedProfile?.id || "";
             const chatId = getContextMediaChatId();
             popupElement.querySelector("#qig-context-media-chat-status").textContent = chatId
-                ? `This chat uses ${activeProfile?.label || "the first available profile"}. Uploads stay on SillyTavern; direct links remain third-party hosted.`
+                ? `This chat uses ${activeProfile?.label || "the first available profile"}. Uploads stay on Neconyan; direct links remain third-party hosted.`
                 : "Open a chat to assign a profile.";
             const libraryRoot = popupElement.querySelector("#qig-context-media-library");
             if (!selectedProfile) {
@@ -11898,7 +11898,7 @@ async function finalizeGeneratedEntry(providerResult, prompt, negative, settings
             ? (finalized.saved ? "saved" : "failed")
             : "not-requested";
         const serverPath = finalized.saved ? normalizeSavedImagePath(finalUrl) : "";
-        if (finalized.saved && !serverPath) throw new Error("SillyTavern returned an invalid saved image path");
+        if (finalized.saved && !serverPath) throw new Error("Neconyan returned an invalid saved image path");
         const stableUrl = serverPath || await persistImageUrl(finalUrl, { signal: options.signal });
         options.commitGuard?.();
         const sourceUrl = blobUrls.has(finalUrl) && stableUrl !== finalUrl ? stableUrl : finalUrl;
@@ -12841,7 +12841,7 @@ async function showPromptReviewStage({
     const Popup = nativePopupModule?.Popup || getContext?.()?.Popup;
     const textType = nativePopupModule?.POPUP_TYPE?.TEXT ?? getContext?.()?.POPUP_TYPE?.TEXT;
     if (typeof Popup !== "function" || !Number.isFinite(textType)) {
-        qigToast.error("Prompt review is unavailable. Reload SillyTavern before trying again.");
+        qigToast.error("Prompt review is unavailable. Reload Neconyan before trying again.");
         return null;
     }
 
@@ -13022,7 +13022,7 @@ async function reviewFinalImagePrompt(prompt, negative, signal, { canGoBack = fa
     return await showPromptReviewStage({
         mode: "final",
         title: "Review Image Prompt",
-        description: "This is the QIG-final prompt after styles, quality tags, ST Style, and Contextual Filters. Wildcards and provider wrappers are applied later.",
+        description: "This is the QIG-final prompt after styles, quality tags, Neconyan Style, and Contextual Filters. Wildcards and provider wrappers are applied later.",
         prompt,
         negative,
         canGoBack,
@@ -15891,14 +15891,14 @@ async function persistCharacterStores(nextSettings, nextRefs, errorMessage) {
                 const failedKeys = result.cacheErrors.map(item => item.localKey).join(", ");
                 log(`Character settings local cache write failed for ${failedKeys}`);
                 qigToast.warning(result.confirmed
-                    ? "Saved character settings to your SillyTavern account, but this browser's local cache could not be fully updated."
+                    ? "Saved character settings to your Neconyan account, but this browser's local cache could not be fully updated."
                     : "Character settings synchronisation is unconfirmed and the browser cache could not be fully updated. Keep this tab open and retry.");
             }
             if (!result.confirmed && result.cacheSaved) qigToast.warning("Character settings are saved in this browser; server synchronisation is pending.");
             return true;
         } catch (error) {
             log(`Character settings synchronization failed: ${error.message}`);
-            qigToast.error(errorMessage || "Failed to synchronize character settings with SillyTavern. No changes were saved.");
+            qigToast.error(errorMessage || "Failed to synchronize character settings with Neconyan. No changes were saved.");
             return false;
         }
     });
@@ -15922,8 +15922,8 @@ function updateCharacterSettingsUI() {
     }
     if (inheritedStatus) {
         inheritedStatus.textContent = inherited
-            ? "SillyTavern character prefixes are inherited for this character."
-            : "No SillyTavern character-specific prefixes are active.";
+            ? "Neconyan character prefixes are inherited for this character."
+            : "No Neconyan character-specific prefixes are active.";
     }
     if (saveButton) {
         saveButton.disabled = !storageKey;
@@ -16433,7 +16433,7 @@ function getConfigurationKeys(recordOrSettings) {
 
 async function commitConfigurationStore(nextStore, {
     activeId = getSettings()?.lastLoadedPresetId || "",
-    errorMessage = "Failed to synchronize configurations with SillyTavern.",
+    errorMessage = "Failed to synchronize configurations with Neconyan.",
 } = {}) {
     if (!await saveLocalStoreBackupNow("qig_configurations", nextStore, errorMessage, { lastLoadedPresetId: activeId })) return false;
     configurations = nextStore;
@@ -16710,7 +16710,7 @@ async function deleteSelectedConfigurationNow() {
     if (!await qigConfirm(`Delete configuration "${removed.name}"?`, { okButton: "Delete" })) return;
     if (!await commitConfigurationStore(configurations.filter(entry => entry?.id !== activeId), {
         activeId: "",
-        errorMessage: "Failed to delete configuration from your SillyTavern account.",
+        errorMessage: "Failed to delete configuration from your Neconyan account.",
     })) return;
     closePalettePresetMenu();
     renderConfigurationSelect();
@@ -18664,7 +18664,7 @@ function createUI() {
                         <div>
                             <label for="qig-nanobanana-key">Gemini API Key</label>
                             <input id="qig-nanobanana-key" type="password" value="${esc(s.nanobananaKey)}" autocomplete="off" placeholder="AI Studio API key">
-                            <small>Stored in SillyTavern extension settings. Save a Configuration if you swap setups often.</small>
+                            <small>Stored in Neconyan extension settings. Save a Configuration if you swap setups often.</small>
                         </div>
                         <div>
                             <label for="qig-nanobanana-model">Model</label>
@@ -18795,7 +18795,7 @@ function createUI() {
                          </div>
                          <label>Timeout (seconds)</label>
                          <input id="qig-comfy-timeout" type="number" value="${esc(s.comfyTimeout || 300)}" min="10" max="1800">
-                         <small>How long SillyTavern waits for ComfyUI to finish before giving up.</small>
+                         <small>How long Neconyan waits for ComfyUI to finish before giving up.</small>
                          <div class="qig-row">
                             <div><label>Output Node IDs</label><input id="qig-comfy-output-nodes" type="text" value="${esc(s.comfyOutputNodeIds || "")}" placeholder="9, 42"><small>Comma-separated. Empty returns images from every output node.</small></div>
                             <div><label>Image Index</label><input id="qig-comfy-output-index" type="number" value="${esc(s.comfyOutputImageIndex ?? -1)}" min="-1" step="1"><small>-1 returns every image; 0 selects the first.</small></div>
@@ -19458,14 +19458,14 @@ function createUI() {
                     <button id="qig-section-context-toggle" type="button" class="qig-collapsible__header qig-section-header-toggle" aria-expanded="${sectionContextExpanded}" aria-controls="qig-section-context-content">
                         <span class="qig-section-header-text">
                             <h3 id="qig-context-heading" class="qig-section-kicker">Context Rules &amp; Media</h3>
-                            <small class="qig-section-subtitle">Apply SillyTavern character overrides, inject library media, and manage contextual filters.</small>
+                            <small class="qig-section-subtitle">Apply Neconyan character overrides, inject library media, and manage contextual filters.</small>
                         </span>
                         <span class="qig-collapsible__icon fa-solid ${collapsed.sectionContext ? "fa-chevron-right" : "fa-chevron-down"}" aria-hidden="true"></span>
                     </button>
                     <div id="qig-section-context-content" class="qig-collapsible__content" ${sectionContextHidden}>
                     <label class="checkbox_label qig-switch-row">
                         <input id="qig-use-st-style" type="checkbox" ${s.useSTStyle !== false ? "checked" : ""}>
-                        <span>Use SillyTavern's Style panel</span>
+                        <span>Use Neconyan's Style panel</span>
                     </label>
                     <small class="qig-muted">Applies its prefix, negative prompt, and character-specific settings.</small>
                     <label class="checkbox_label qig-switch-row">
@@ -19481,7 +19481,7 @@ function createUI() {
                             <button id="qig-save-char-btn" type="button" class="menu_button" title="Save the current QIG prompt, negative prompt, style, size, and references for this character"><span class="fa-solid fa-user-check" aria-hidden="true"></span><span>Save for character</span></button>
                             <button id="qig-reset-char-btn" type="button" class="menu_button" title="Remove this character's QIG override"><span class="fa-solid fa-rotate-left" aria-hidden="true"></span><span>Reset override</span></button>
                         </div>
-                        <small class="qig-muted">QIG overrides save complete defaults for this character. SillyTavern Style prefixes are inherited separately and remain managed by SillyTavern.</small>
+                        <small class="qig-muted">QIG overrides save complete defaults for this character. Neconyan Style prefixes are inherited separately and remain managed by Neconyan.</small>
                     </div>
                     <div class="qig-context-media-panel">
                         <div class="qig-context-media-panel__head">
@@ -19658,7 +19658,7 @@ function createUI() {
                             <option value="inline" ${normalizeOutputMode(s.outputMode) === "inline" ? "selected" : ""}>Inline data URL</option>
                             <option value="image_url" ${normalizeOutputMode(s.outputMode) === "image_url" ? "selected" : ""}>image_url (URL)</option>
                         </select>
-                        <small>Use image_url for URL-based chat media. Inline data can be saved to the ST server automatically.</small>
+                        <small>Use image_url for URL-based chat media. Inline data can be saved to the Neconyan server automatically.</small>
                     </div>
                     <div class="qig-field">
                         <label>Manual insert target</label>
@@ -19676,7 +19676,7 @@ function createUI() {
                 </label>
                 <label class="checkbox_label" style="margin-top:4px;">
                     <input id="qig-save-to-server" type="checkbox" ${s.saveToServer ? "checked" : ""}>
-                    <span>Save images to ST server (persistent)</span>
+                    <span>Save images to Neconyan server (persistent)</span>
                 </label>
                 <label class="checkbox_label" style="margin-left:16px;opacity:${s.saveToServer ? "1" : "0.6"};">
                     <input id="qig-save-to-server-meta" type="checkbox" ${s.saveToServerEmbedMetadata ? "checked" : ""} ${s.saveToServer ? "" : "disabled"}>
@@ -23029,7 +23029,7 @@ function reportInitializationFailure(err) {
         notice.id = "qig-init-error";
         notice.className = "qig-field-error";
         notice.setAttribute("role", "alert");
-        notice.textContent = `Quick Image Gen failed to load: ${detail}. Reload SillyTavern to retry; if it persists, check the browser console and report the error.`;
+        notice.textContent = `Quick Image Gen failed to load: ${detail}. Reload Neconyan to retry; if it persists, check the browser console and report the error.`;
         mount.appendChild(notice);
     } catch (reportError) {
         console.error("[Quick Image Gen] Could not display the initialization failure:", reportError);

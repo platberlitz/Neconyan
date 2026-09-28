@@ -316,7 +316,7 @@ async function viewSecrets() {
     });
 
     if (response.status == 403) {
-        await Popup.show.text(t`Forbidden`, t`To view your API keys here, set the value of allowKeysExposure to true in config.yaml file and restart the SillyTavern server.`);
+        await Popup.show.text(t`Forbidden`, t`To view your API keys here, set the value of allowKeysExposure to true in config.yaml file and restart the Neconyan server.`);
         return;
     }
 
