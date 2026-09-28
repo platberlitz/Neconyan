@@ -1611,8 +1611,6 @@ body.neconyan #right-nav-panel .sb-character-library-primary-actions > #characte
 }
 @media (min-width: 769px) {
     body.neconyan #right-nav-panel .sb-character-library-primary-actions > #character_import_button { display: none; }
-    body.neconyan #right-nav-panel #sb_character_tab_import,
-    body.neconyan #right-nav-panel .sb-entity-empty-actions > [data-empty-action='import-character'] { display: none; }
     body.neconyan #right-nav-panel.openDrawer.pinnedOpen:not(.sb-character-editor-fullscreen) {
         left: auto !important;
         width: min(400px, 38vw) !important;

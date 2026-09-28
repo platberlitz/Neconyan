@@ -383,4 +383,11 @@ describe('Neconyan character and group workflows', () => {
         expect(styles).toContain('.sb-group-members-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));');
         expect(styles).not.toContain('.sb-group-members-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }');
     });
+
+    test('keeps the Import tab and empty-list import action visible on desktop', () => {
+        expect(html).toContain('id="sb_character_tab_import"');
+        expect(tabs).toContain('importTab.addEventListener(\'click\', () => openCharacterImportTab());');
+        expect(styles).not.toMatch(/#sb_character_tab_import\s*[,{]/);
+        expect(styles).not.toMatch(/\[data-empty-action='import-character'\]\s*\{\s*display:\s*none/);
+    });
 });
