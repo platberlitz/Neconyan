@@ -122,6 +122,7 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             await miso.locator('input[value="miso-neutral"]').check();
             await miso.locator('[data-assistant-open]').click();
             await expect.poll(() => page.evaluate(() => window.SillyTavern.getContext().characterId)).toBeDefined();
+            await expect(page.locator('body')).not.toHaveClass(/neconyan-home-visible/, { timeout: 30000 });
             await page.evaluate(() => window.NeconyanShell.activateMode('meower'));
             await expect(page.locator('html')).toHaveAttribute('data-neconyan-chat-mode', 'meower');
             await expect(page.locator('link[rel="icon"]').first()).toHaveAttribute('href', '/img/neconyan-paw-192.png');

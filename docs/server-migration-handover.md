@@ -84,6 +84,29 @@ all 120 tests. The subsequent full run passed 355 suites and 4,668 tests, with t
 skipped; root lint, changed-test lint, frontend limits and a fresh build also pass.
 The next candidate still needs complete browser and signed Android validation.
 
+The third candidate, `4eef59e0078ea0144de6233b7344b6c668bb511d`, passed all four
+Android jobs in run `36358201151`. Browser run `36358200917` has nine failed checks
+across three completed batches; four other batches have passed and one is still
+running at this checkpoint.
+
+I reproduced a real group-reply problem in that run. The page confirmed its settings
+before saving the chat, and chat-save listeners could make that confirmation stale.
+Group replies now confirm settings after the chat save. A definitive stale-settings
+refusal refreshes the confirmation and repeats the same turn key once. Uncertain
+responses, other refusals and stopped turns are not repeated. Desktop and phone
+browser checks pass, including a real racing settings save that produces a refusal
+followed by acceptance and exactly one model request, even after reopening the chat.
+
+The other failed checks now use completed assistant activation, current connection
+state and an already-running archive scan rather than racing those transitions.
+Undo uses the built-in read-only prompts instead of inheriting a preset that writes
+extra metadata during the test. Both strict save-count regressions pass. The help
+reference check now uses a controlled HTTP provider for both chat and text completion;
+it passes without function tools and keeps the hidden reference out of saved messages.
+The subsequent full unit run passed 355 suites and 4,673 tests, with two skipped.
+Root lint, changed-test lint, frontend limits and a fresh frontend build pass.
+The next staging checkpoint still needs complete browser and Android validation.
+
 - Automatic and manual captions now compare the same settings fingerprint, excluding
   save counters and account bookkeeping. All 42 caption tests pass. All six desktop
   and phone browser cases pass for captions, translation, Pawthfinder, speech, image

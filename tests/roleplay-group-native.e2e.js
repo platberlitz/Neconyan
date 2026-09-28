@@ -52,16 +52,36 @@ async function closeEveryPage(browser) {
     expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
 }
 
-for (const [viewport, phone] of [['desktop', false], ['phone', true]]) {
+for (const [viewport, phone, raceSettings] of [['desktop', false, false], ['phone', true, false], ['phone with a raced settings save', true, true]]) {
     test(`${viewport} group turn finishes on the server after every page closes`, async ({ app, browser }) => {
         const fixture = await prepare(app, phone);
         const page = await openGroup(fixture);
-        const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit'));
+        const submissions = [];
+        if (raceSettings) {
+            await page.route('**/api/roleplay/group/submit', async route => {
+                const body = route.request().postDataJSON();
+                if (!submissions.length) {
+                    // Move the real saved revision after the browser captured its proof.
+                    await page.evaluate(async () => {
+                        if (!await (await import('/script.js')).saveSettings(0, { returnResult: true })) throw new Error('The racing settings save failed.');
+                    });
+                }
+                const response = await route.fetch();
+                submissions.push({ body, status: response.status() });
+                await route.fulfill({ response });
+            });
+        }
+        const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit') && (!raceSettings || response.status() === 202));
         await page.locator('#send_textarea').fill('Tell the group about the moon.');
         await page.locator('#send_textarea').press('Enter');
         const response = await submitted;
         expect(response.status(), await response.text()).toBe(202);
         const accepted = await response.json();
+        if (raceSettings) {
+            expect(submissions.map(entry => entry.status)).toEqual([409, 202]);
+            expect(submissions[1].body).toEqual({ ...submissions[0].body, acknowledgement: submissions[1].body.acknowledgement });
+            expect(submissions[1].body.acknowledgement.settingsRevision).toBeGreaterThan(submissions[0].body.acknowledgement.settingsRevision);
+        }
         await expect.poll(() => app.provider.calls.length).toBe(1);
         await closeEveryPage(browser);
         await app.release();

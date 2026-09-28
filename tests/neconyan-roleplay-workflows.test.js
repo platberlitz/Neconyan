@@ -8,6 +8,7 @@ let accountStamp = { accountId: 'a-1', dataEpoch: 1 };
 let settingsRevision = 4;
 let submitHandler = null;
 let receiptHandler = null;
+let chatSaveHandler = null;
 const requests = [];
 const observers = new Map();
 const saved = [];
@@ -64,7 +65,7 @@ jest.unstable_mockModule('../public/script.js', () => ({
         if (settingsPending) throw new Error('Save the active connection settings before generating a reply.');
         return { account, settingsRevision };
     },
-    saveChatConditional: async options => { saved.push(options); return true; },
+    saveChatConditional: async options => { saved.push(options); await chatSaveHandler?.(); return true; },
     saveSettings,
     reloadCurrentChat: async () => { reloads.push(chat.length); },
     isGenerating: () => generating,
@@ -77,7 +78,7 @@ jest.unstable_mockModule('../public/script.js', () => ({
 globalThis.fetch = async (url, options = {}) => {
     const body = options.body ? JSON.parse(options.body) : null;
     requests.push({ url, body, method: options.method || 'GET' });
-    if (url.endsWith('/workflow/submit')) return submitHandler(body, requests.length);
+    if (url.endsWith('/workflow/submit') || url.endsWith('/group/submit')) return submitHandler(body, requests.length);
     if (url.includes('/workflow/receipt')) return receiptHandler(requests.length);
     throw new Error(`unexpected fetch ${url}`);
 };
@@ -97,6 +98,7 @@ beforeEach(() => {
     accountStamp = { accountId: 'a-1', dataEpoch: 1 };
     settingsRevision = 4;
     settingsPending = false;
+    chatSaveHandler = null;
     generating = false;
     for (const key of Object.keys(extensionPrompts)) delete extensionPrompts[key];
     for (const key of Object.keys(extensionSettings)) delete extensionSettings[key];
@@ -274,6 +276,57 @@ test('a settings save still queued in the page is finished before the workflow i
     expect(submits[0].body.acknowledgement).toEqual({ account: 'alice', settingsRevision: 5 });
     await observers.get('job-1').onStop('done');
     expect((await pending).state).toBe('closed');
+});
+
+test('a group turn saves its settings proof after chat-save listeners finish', async () => {
+    chatSaveHandler = async () => { settingsRevision += 1; };
+    submitHandler = async body => body.acknowledgement.settingsRevision === settingsRevision
+        ? response(202, { key: body.key, jobId: 'group-after-save', created: true })
+        : response(409, { code: 'roleplay_settings_ack_required', error: 'Save first.' });
+    const pending = workflows.submitRoleplayGroupTurn({ groupId: 'group-1', forcedAvatars: ['nova.png'], generationId: 'turn-1' }).catch(error => error);
+    await settle();
+    const submits = requests.filter(entry => entry.url.endsWith('/group/submit'));
+    expect(submits).toHaveLength(1);
+    expect(submits[0].body.acknowledgement.settingsRevision).toBe(settingsRevision);
+    await observers.get('group-after-save').onStop('done');
+    expect(await pending).toMatchObject({ accepted: true, state: 'closed' });
+});
+
+test('a group turn refreshes a definitively refused proof using the same turn key', async () => {
+    let attempts = 0;
+    submitHandler = async body => ++attempts === 1
+        ? response(409, { code: 'roleplay_settings_ack_required', error: 'Save first.' })
+        : response(202, { key: body.key, jobId: 'group-refreshed', created: true });
+    const pending = workflows.submitRoleplayGroupTurn({ groupId: 'group-1', forcedAvatars: ['nova.png'], generationId: 'turn-2' }).catch(error => error);
+    await settle();
+    const submits = requests.filter(entry => entry.url.endsWith('/group/submit'));
+    expect(submits).toHaveLength(2);
+    expect(submits[1].body).toEqual({ ...submits[0].body, acknowledgement: { account: 'alice', settingsRevision: 6 } });
+    await observers.get('group-refreshed').onStop('done');
+    expect(await pending).toMatchObject({ accepted: true, state: 'closed' });
+});
+
+test.each([
+    [503, 'response_unknown'],
+    [409, 'roleplay_workflow_anchor'],
+])('a group turn does not repeat a %s %s outcome', async (status, code) => {
+    submitHandler = async () => response(status, { code, error: 'Do not repeat this turn.' });
+    await expect(workflows.submitRoleplayGroupTurn({ groupId: 'group-1', forcedAvatars: ['nova.png'], generationId: 'turn-3' }))
+        .rejects.toThrow('Do not repeat this turn.');
+    expect(requests.filter(entry => entry.url.endsWith('/group/submit'))).toHaveLength(1);
+    expect(saveSettings).toHaveBeenCalledTimes(1);
+});
+
+test('a stopped group turn is not revived after a stale-proof refusal', async () => {
+    const controller = new AbortController();
+    submitHandler = async () => {
+        controller.abort();
+        return response(409, { code: 'roleplay_settings_ack_required', error: 'Save first.' });
+    };
+    await expect(workflows.submitRoleplayGroupTurn({ groupId: 'group-1', forcedAvatars: ['nova.png'], generationId: 'turn-4', signal: controller.signal }))
+        .rejects.toMatchObject({ name: 'AbortError' });
+    expect(requests.filter(entry => entry.url.endsWith('/group/submit'))).toHaveLength(1);
+    expect(saveSettings).toHaveBeenCalledTimes(1);
 });
 
 test('a settings save the page cannot finish yet is tried again before the workflow is submitted', async () => {

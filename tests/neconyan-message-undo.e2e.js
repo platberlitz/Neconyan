@@ -48,6 +48,8 @@ async function openUndoFixture(page, { light = false, group = false } = {}) {
             settings = JSON.parse(envelope.settings);
             settings.active_character = '';
             settings.active_group = '';
+            // Use the built-in read-only prompts, not inherited presets that initialise chat variables.
+            Object.assign(settings.oai_settings, { prompts: [], prompt_order: [] });
             // Automatic filesystem snapshots are outside this mocked chat fixture.
             settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
             if (light) {

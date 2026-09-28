@@ -470,11 +470,22 @@ export async function submitRoleplayGroupTurn({ groupId, forcedAvatars, generati
         forcedAvatars,
         generationId,
         account: stamp,
-        acknowledgement: { account, settingsRevision: await acknowledgedSettingsRevision() },
     };
     const finished = awaitFinished(payload.key);
     await saveChatConditional({ throwOnError: true, account });
-    const accepted = await postSubmission({ ...payload, name: 'group.reply' }, account, '/api/roleplay/group/submit');
+    // Chat-save listeners may change settings, so confirm them after that write.
+    payload.acknowledgement = { account, settingsRevision: await acknowledgedSettingsRevision() };
+    let accepted;
+    try {
+        accepted = await postSubmission({ ...payload, name: 'group.reply' }, account, '/api/roleplay/group/submit');
+    } catch (error) {
+        // This refusal happens before admission. An uncertain outcome must not be repeated.
+        if (error.status !== 409 || error.body?.code !== 'roleplay_settings_ack_required') throw error;
+        signal?.throwIfAborted();
+        payload.acknowledgement = { account, settingsRevision: await acknowledgedSettingsRevision() };
+        signal?.throwIfAborted();
+        accepted = await postSubmission({ ...payload, name: 'group.reply' }, account, '/api/roleplay/group/submit');
+    }
     const onAbort = () => { if (accepted?.jobId) void cancelJob(accepted.jobId, { reason: 'user_cancelled' }).catch(() => {}); };
     signal?.addEventListener('abort', onAbort, { once: true });
     try {

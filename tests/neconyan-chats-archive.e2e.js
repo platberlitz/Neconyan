@@ -1139,10 +1139,10 @@ test('stops accepted orphan work without displaying an incomplete result', async
     });
 
     await openArchive(page);
-    await page.getByRole('combobox', { name: 'Search indexed chats' }).fill('orphan');
     await expect(page.getByRole('button', { name: 'Find orphaned files' })).toBeEnabled();
     await page.getByRole('button', { name: 'Find orphaned files' }).click();
     await latePageStarted;
+    await page.getByRole('combobox', { name: 'Search indexed chats' }).fill('orphan');
     await new Promise(resolve => setTimeout(resolve, SEARCH_CONTENT_DEBOUNCE_MS + 50));
     expect(searchRequests).toBe(0);
     await expect(page.getByText('partial-orphan', { exact: true })).toHaveCount(0);

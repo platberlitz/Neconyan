@@ -807,15 +807,14 @@ test.describe('mobile shell smoke at narrow 320x568', () => {
     });
 
     test('composer fits and the send target keeps its current floor', async ({ page }) => {
-        await openQuietChatForSmoke(page, { selectCharacter: false });
+        await openQuietChatForSmoke(page);
 
         // Compact mode and connection state come from the linked user profile;
         // normalize both so this measures the stylesheet contract, not the
-        // profile. The displayNone class on #send_but is only a connection
-        // visibility gate (RossAscends-mods.js), not a sizing rule.
-        await page.evaluate(() => {
+        // profile. Use the real connection state to expose the Send control.
+        await page.evaluate(async () => {
             document.documentElement.setAttribute('data-sb-compact-mode', 'false');
-            document.getElementById('send_but')?.classList.remove('displayNone');
+            (await import('/script.js')).setOnlineStatus('Narrow composer fixture connection');
         });
         await waitForAnimationFrames(page, 2);
 
