@@ -1078,7 +1078,8 @@ export function openConversationWorkspaceForAvatar(avatar, { branchId = '', grou
         setTimeout(() => {
             document.getElementById(CHROME_IDS.input)?.focus?.({ preventScroll: true });
         }, 100);
-        return false;
+        // Opening without a character is valid on a fresh install; a missing requested character is not.
+        return !avatar;
     }
 
     if (branchId) {
@@ -1104,10 +1105,10 @@ export function openConversationWorkspaceForAvatar(avatar, { branchId = '', grou
 }
 
 export function openConversationWorkspaceFromWelcome() {
-    const avatar = conversationState.conversationSelectedAvatar || getDefaultConversationAvatar();
+    const avatar = getDefaultConversationAvatar();
     const selectedGroupId = conversationState.conversationSelectedGroupId || '';
     const groupId = selectedGroupId && avatar && isAvatarInConversationGroup(avatar, selectedGroupId) ? selectedGroupId : null;
-    if (!avatar || !openConversationWorkspaceForAvatar(avatar, { groupId, showToast: false })) {
+    if (!openConversationWorkspaceForAvatar(avatar, { groupId, showToast: false })) {
         toastr.warning('Pick or import a character before opening Conversation Mode.');
         return false;
     }
