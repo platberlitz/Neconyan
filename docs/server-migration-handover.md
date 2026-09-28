@@ -125,6 +125,28 @@ swipe keeps its own expression across reloads. All four repeated desktop and pho
 checks pass. Changed-test lint passes. These test-only changes still need a complete
 browser run and signed Android validation from their committed checkpoint.
 
+The fifth candidate, `5693a1b4ec225c129f7dde04d75f205cb1db809b`, is on staging.
+GitHub refused to start both Android run `36370388501` and browser run `36370388632`.
+Every job stopped before its first step. The check annotation reports failed account
+payments or an Actions spending limit and directs the account owner to 'Billing &
+plans'. This is an external validation blocker, not a failed build or test assertion.
+No billing or spending settings were changed.
+
+The final results available from the preceding browser run are four successful batches,
+two failed batches and two batches cancelled when the next run superseded them. The
+six completed batches recorded 817 passes, four failures and nine skips. One cancelled
+batch also recorded the NanoGPT protocol failure described above; the other recorded
+no failed test. All five known failures have passing focused follow-ups in the fifth
+candidate, but this does not replace a complete green run.
+
+The account owner must resolve the GitHub billing or spending restriction before the
+complete checks and final signed build can run. Main remains at
+`86b5475f5a3a668855634d95dc3e855400442ba7`; no `v1.0.0` tag or official release has been
+published. Once validation passes, promote that exact staging commit, rebuild and
+verify the final release assets from main, publish the release, then advance staging
+to `1.0.1` with its relevant lockfile. The version bump has not been applied. No Oracle
+application deployment or restart was performed.
+
 - Automatic and manual captions now compare the same settings fingerprint, excluding
   save counters and account bookkeeping. All 42 caption tests pass. All six desktop
   and phone browser cases pass for captions, translation, Pawthfinder, speech, image
