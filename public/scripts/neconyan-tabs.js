@@ -14064,8 +14064,12 @@ async function handleSillyTavernFolderImport() {
     setServerAdminMessage(refs.note, 'Importing folder data… This may take a moment for larger libraries.');
 
     try {
-        const { importAccountData } = await import('./account-import.js');
+        const { importAccountData, describeAccountImportSkips } = await import('./account-import.js');
         const { result } = await importAccountData({ mode: 'folder', path: sourcePath }, { onProgress: showNativeImportProgress });
+
+        if (showSkippedImportFiles(refs, 'Folder import finished.', describeAccountImportSkips(result), result)) {
+            return;
+        }
 
         setServerAdminMessage(refs.note, result?.message || 'Folder import finished. Reloading…', 'good');
         toastr.success(result?.message || 'Folder import finished. Reloading…', 'Import SillyTavern');
@@ -14158,8 +14162,12 @@ async function handleSillyTavernZipImport(file) {
     setServerAdminMessage(refs.note, 'Importing backup ZIP… This may take a moment for larger libraries.');
 
     try {
-        const { importAccountData } = await import('./account-import.js');
+        const { importAccountData, describeAccountImportSkips } = await import('./account-import.js');
         const { result } = await importAccountData({ mode: 'zip' }, { file, onProgress: showNativeImportProgress });
+
+        if (showSkippedImportFiles(refs, 'Backup ZIP imported.', describeAccountImportSkips(result), result)) {
+            return;
+        }
 
         setServerAdminMessage(refs.note, result?.message || 'Backup ZIP imported. Reloading…', 'good');
         toastr.success(result?.message || 'Backup ZIP imported. Reloading…', 'Import SillyTavern');
@@ -14176,6 +14184,28 @@ async function handleSillyTavernZipImport(file) {
 
         setSillyTavernImportBusy(false);
     }
+}
+
+/**
+ * Keeps the list of damaged files on screen instead of reloading straight away.
+ * @returns {boolean} True when files were skipped and the list is showing.
+ */
+function showSkippedImportFiles(refs, heading, skips, result) {
+    if (!skips) {
+        return false;
+    }
+
+    console.warn('Account import skipped damaged files.', result?.skipped);
+    setServerAdminMessage(refs.note, `${heading}\n\n${skips}`, 'warn');
+    const reload = document.createElement('button');
+    reload.type = 'button';
+    reload.className = 'menu_button';
+    reload.textContent = 'Reload to use the imported data';
+    reload.addEventListener('click', () => location.reload());
+    refs.note.append('\n', reload);
+    const count = Number(result?.skippedCount) || 0;
+    toastr.warning(`${count === 1 ? '1 damaged file was' : `${count} damaged files were`} skipped. Everything else was imported.`, 'Import SillyTavern');
+    return true;
 }
 
 function showNativeImportProgress(progress) {

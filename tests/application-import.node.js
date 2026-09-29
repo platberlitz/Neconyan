@@ -4,6 +4,9 @@ import path from 'node:path';
 import { finished } from 'node:stream/promises';
 import { test } from 'node:test';
 import archiver from 'archiver';
+import extractChunks from 'png-chunks-extract';
+import PNGtext from 'png-chunk-text';
+import encodeChunks from '../src/png/encode.js';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 
 const { retainUploadedArchive, capturedArchiveInput, readUploadedArchive } = await import('../src/operations/input-files.js');
@@ -128,22 +131,114 @@ test('whole folder import validates retained inputs before replacing chats, card
     assert.equal(duplicate.record.state, 'completed');
 });
 
-test('invalid imported history and later destination edits refuse before any replacement', async t => {
+test('invalid imported history is skipped while later destination edits still refuse before any replacement', async t => {
     const p = setup(t);
     const original = fs.readFileSync(p.f.filename);
     sourceFile(p, 'chats/Nova/Source.jsonl', 'not valid JSON');
-    sourceFile(p, 'user/files/new.txt', 'Must not be published');
+    sourceFile(p, 'user/files/new.txt', 'Healthy file');
     const bad = await accept(p, 'invalid');
-    await assert.rejects(runOperation(bad.context), /needs recovery/);
+    await runOperation(bad.context);
     assert.deepEqual(fs.readFileSync(p.f.filename), original);
-    assert.equal(fs.existsSync(path.join(p.base.directories.root, 'user/files/new.txt')), false);
-    assert.equal(readOperation(p.base, 'invalid').state, 'refused');
+    assert.equal(fs.readFileSync(path.join(p.base.directories.root, 'user/files/new.txt'), 'utf8'), 'Healthy file');
+    const record = readOperation(p.base, 'invalid');
+    assert.equal(record.state, 'completed');
+    assert.equal(record.result.skippedCount, 1);
+    assert.deepEqual(record.result.skipped, [{ file: 'chats/Nova/Source.jsonl', reason: 'Cannot read \'chats/Nova/Source.jsonl\': Line 1 of the chat file is not valid JSON.' }]);
+    fs.rmSync(p.sourceRoot, { recursive: true }); fs.mkdirSync(p.sourceRoot);
     sourceFile(p, 'chats/Nova/Source.jsonl', original);
+    sourceFile(p, 'user/files/late.txt', 'Must not be published');
     const late = await accept(p, 'late-edit');
     fs.writeFileSync(p.f.filename, Buffer.concat([original, Buffer.from('\n{"name":"User","is_user":true,"mes":"Newer message"}') ]));
     await assert.rejects(runOperation(late.context), /destination changed/);
     assert.match(fs.readFileSync(p.f.filename, 'utf8'), /Newer message/);
-    assert.equal(fs.existsSync(path.join(p.base.directories.root, 'user/files/new.txt')), false);
+    assert.equal(fs.existsSync(path.join(p.base.directories.root, 'user/files/late.txt')), false);
+});
+
+function rawCard(data) {
+    const chunks = extractChunks(png);
+    chunks.splice(-1, 0, PNGtext.encode('chara', Buffer.from(data).toString('base64')));
+    return Buffer.from(encodeChunks(chunks));
+}
+
+function damageStoredEntry(zip, marker) {
+    const offset = zip.indexOf(marker);
+    assert.ok(offset > 0, 'Stored ZIP entries keep their bytes readable');
+    zip[offset] ^= 1;
+    return zip;
+}
+
+test('damaged backup files are skipped by name and reason while healthy files import', async t => {
+    const v2 = { spec: 'chara_card_v2', spec_version: '2.0', data: {
+        name: 'Nova', description: '', personality: '', scenario: '', first_mes: '', mes_example: '', creator_notes: '',
+        system_prompt: '', post_history_instructions: '', alternate_greetings: [], tags: [], creator: '', character_version: '', extensions: {},
+    } };
+    const missing = structuredClone(v2); delete missing.data.first_mes;
+    const wrongType = structuredClone(v2); wrongType.data.tags = 'not a list';
+    const corruptPng = Buffer.from(png); corruptPng[29] ^= 1;
+    const cases = [
+        ['characters/Plain portrait.png', png, /no embedded character data/],
+        ['characters/Cut off.png', png.subarray(0, 40), /incomplete or cut off/],
+        ['characters/Corrupt.png', corruptPng, /failed its corruption check/],
+        ['characters/Not PNG.png', Buffer.from('bad'), /not a valid PNG image/],
+        ['characters/Broken JSON.png', rawCard('PRIVATE CARD CONTENT'), /character data is not valid JSON/],
+        ['characters/Missing greeting.png', rawCard(JSON.stringify(missing)), /field 'data.first_mes' is missing or invalid/],
+        ['characters/Wrong tags.png', rawCard(JSON.stringify(wrongType)), /field 'data.tags' is missing or invalid/],
+        ['groups/group.json', Buffer.from(JSON.stringify({ id: 'group', members: 'PRIVATE GROUP CONTENT' })), /field 'members' must be a list/],
+        ['groups/renamed.json', Buffer.from(JSON.stringify({ id: 'different', members: [] })), /field 'id' does not match its filename/],
+        ['groups/invalid.json', Buffer.from('PRIVATE GROUP CONTENT'), /group data is not valid JSON/],
+        ['groups/encoding.json', Buffer.from([0xff]), /not valid UTF-8 text/],
+        ['chats/Nova/Damaged.jsonl', Buffer.from('PRIVATE CHAT CONTENT'), /Line 1 of the chat file is not valid JSON/],
+        ['chats/Nova/Empty.jsonl', Buffer.alloc(0), /The chat file is empty/],
+        ['settings.json', Buffer.from('PRIVATE SETTINGS'), /The file is not valid JSON/],
+        ['user/files/zip-damaged.txt', Buffer.from('ORDINARY-DAMAGE-MARKER'), /damaged/, 'ORDINARY-DAMAGE-MARKER'],
+        ['chats/Nova/Zip damaged.jsonl', null, /damaged/, 'CHECKED-DAMAGE-MARKER'],
+    ];
+    for (const mode of ['zip', 'folder']) for (const [index, [relative, content, reason, zipDamage]] of cases.entries()) {
+        if (zipDamage && mode !== 'zip') continue;
+        await t.test(`${mode}: ${relative}`, async t => {
+            const p = setup(t, `${mode}-${index}`);
+            const originalChat = fs.readFileSync(p.f.filename);
+            const originalCard = fs.readFileSync(path.join(p.base.directories.characters, 'Nova.png'));
+            const originalGroup = fs.readFileSync(path.join(p.base.directories.groups, 'group.json'));
+            const originalSettings = JSON.stringify({ name1: 'Current' });
+            fs.writeFileSync(path.join(p.base.directories.root, 'settings.json'), originalSettings);
+            const bytes = zipDamage === 'CHECKED-DAMAGE-MARKER'
+                ? Buffer.from(p.f.records.map((row, i) => JSON.stringify(i === 1 ? { ...row, mes: zipDamage } : row)).join('\n'))
+                : content;
+            const entries = new Map([['settings.json', '{"name1":"Imported"}'], ['user/files/new.txt', 'Healthy file'], [relative, bytes]]);
+            let input;
+            if (mode === 'zip') {
+                const upload = path.join(p.sourceRoot, 'broken.zip');
+                await zipFile(upload, [...entries].map(([name, value]) => [`data/default-user/${name}`, value]), { store: true });
+                if (zipDamage) fs.writeFileSync(upload, damageStoredEntry(fs.readFileSync(upload), Buffer.from(zipDamage)));
+                const retained = await retainUploadedArchive(p.base, p.f.scope, 'diagnostic', upload);
+                input = { mode, inputId: retained.id };
+            } else {
+                for (const [name, value] of entries) sourceFile(p, name, value);
+                input = { mode, path: p.sourceRoot };
+            }
+            const accepted = await accept(p, 'diagnostic', input);
+            await runOperation(accepted.context);
+            const record = readOperation(p.base, 'diagnostic');
+            assert.equal(record.state, 'completed');
+            assert.equal(record.result.skippedCount, 1);
+            assert.equal(record.result.skipped.length, 1);
+            const [skip] = record.result.skipped;
+            assert.equal(skip.file, relative);
+            assert.ok(skip.reason.startsWith(`Cannot read '${relative}': `), skip.reason);
+            assert.match(skip.reason, reason);
+            assert.doesNotMatch(skip.reason, /PRIVATE|neconyan-roleplay-transaction/);
+            assert.doesNotMatch(JSON.stringify(record), /PRIVATE/);
+            const destination = path.join(p.base.directories.root, relative);
+            if (relative === 'groups/group.json') assert.deepEqual(fs.readFileSync(destination), originalGroup);
+            else if (relative !== 'settings.json') assert.equal(fs.existsSync(destination), false, 'Damaged files must not be published');
+            assert.deepEqual(fs.readFileSync(p.f.filename), originalChat);
+            assert.deepEqual(fs.readFileSync(path.join(p.base.directories.characters, 'Nova.png')), originalCard);
+            const settings = JSON.parse(fs.readFileSync(path.join(p.base.directories.root, 'settings.json'), 'utf8'));
+            assert.equal(settings.name1, relative === 'settings.json' ? 'Current' : 'Imported');
+            assert.equal(fs.readFileSync(path.join(p.base.directories.root, 'user/files/new.txt'), 'utf8'), 'Healthy file');
+        });
+    }
 });
 
 test('published chat and card receipts recover without resurrecting later deletions', async t => {

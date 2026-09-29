@@ -132,32 +132,60 @@ function groupChatIds(group) {
 }
 
 export function assertRoleplayGroupData(data, id, { storage = false } = {}) {
-    if (!data || typeof data !== 'object' || Array.isArray(data)
-        || (typeof data.id !== 'string' && !Number.isSafeInteger(data.id)) || String(data.id) !== id
-        || !Array.isArray(data.members) || (!storage && !Array.isArray(data.chats))
-        || (data.chats !== undefined && !Array.isArray(data.chats))
-        || (data.disabled_members !== undefined && !Array.isArray(data.disabled_members))) {
-        throw roleplayError('ROLEPLAY_INVALID', 'Invalid saved group metadata.', 400);
+    const invalid = message => roleplayError('ROLEPLAY_INVALID', message, 400);
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        throw invalid('The group data must be a JSON object.');
     }
-    if (data.chats !== undefined) groupChatIds(data);
+    if (typeof data.id !== 'string' && !Number.isSafeInteger(data.id)) throw invalid('The group field \'id\' must be text or a whole number.');
+    if (String(data.id) !== id) throw invalid('The group field \'id\' does not match its filename.');
+    for (const field of ['members', 'chats', 'disabled_members']) {
+        const required = field === 'members' || (field === 'chats' && !storage);
+        if ((required || data[field] !== undefined) && !Array.isArray(data[field])) throw invalid(`The group field '${field}' must be a list.`);
+    }
+    if (data.chats !== undefined) {
+        try { groupChatIds(data); } catch { throw invalid('The group field \'chats\' contains an invalid chat filename.'); }
+    }
     return data;
 }
 
 /** Parses saved character or group bytes and returns the content hash protected resources record. */
 export function roleplayEntityContent(kind, id, bytes, { storage = false } = {}) {
+    const filename = kind === 'character' ? `characters/${id}` : `groups/${id}.json`;
+    const damaged = (reason, cause) => Object.assign(roleplayError('ROLEPLAY_SOURCE_DAMAGED', `Cannot read '${filename}': ${reason}`), { cause, reason });
+    let text;
+    try {
+        text = kind === 'character' ? readCharacterCard(bytes) : new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch (cause) {
+        let reason = 'The group file is not valid UTF-8 text.';
+        if (kind === 'character') {
+            reason = 'The PNG image could not be read.';
+            if (cause.message === 'No PNG metadata.') reason = 'The PNG image has no embedded character data. An ordinary portrait cannot be used as a character card.';
+            else if (/Truncated PNG|ended prematurely/.test(cause.message)) reason = 'The PNG image is incomplete or cut off.';
+            else if (/Invalid .png file header|IHDR header missing/.test(cause.message)) reason = 'The file is not a valid PNG image.';
+            else if (/CRC values/.test(cause.message)) reason = 'The PNG image failed its corruption check.';
+        }
+        throw damaged(reason, cause);
+    }
     let data;
     try {
-        data = JSON.parse(kind === 'character' ? readCharacterCard(bytes) : new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-        if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid resource');
-        if (kind === 'character') {
-            const validator = new TavernCardValidator(data);
-            const valid = data.spec === 'chara_card_v3' ? validator.validateV3()
-                : data.spec === 'chara_card_v2' ? validator.validateV2() : validator.validateV1();
-            if (!valid || (data.spec && Array.isArray(data.data))) throw new Error('Invalid character card');
-        }
-        if (kind === 'group') assertRoleplayGroupData(data, id, { storage });
+        data = JSON.parse(text);
     } catch (cause) {
-        throw Object.assign(roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'A required Roleplay character or group is damaged.'), { cause });
+        // JSON parser errors can contain private card text; report the format, not a data excerpt.
+        throw damaged(`The ${kind} data is not valid JSON.`, cause);
+    }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw damaged(`The ${kind} data must be a JSON object.`);
+    if (kind === 'character') {
+        const validator = new TavernCardValidator(data);
+        const valid = data.spec === 'chara_card_v3' ? validator.validateV3()
+            : data.spec === 'chara_card_v2' ? validator.validateV2() : validator.validateV1();
+        if (!valid || (data.spec && Array.isArray(data.data))) {
+            const field = validator.lastValidationError === 'No tavern card data found' || (data.spec && Array.isArray(data.data))
+                ? 'data' : validator.lastValidationError;
+            throw damaged(field ? `The character card field '${field}' is missing or invalid.` : 'The character card structure is invalid.');
+        }
+    }
+    if (kind === 'group') {
+        try { assertRoleplayGroupData(data, id, { storage }); } catch (cause) { throw damaged(cause.message, cause); }
     }
     return { data, contentHash: kind === 'group' ? roleplayGroupContentHash(data) : roleplayHash(data) };
 }

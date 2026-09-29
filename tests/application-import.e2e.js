@@ -9,7 +9,11 @@ import { test } from './neconyan-conversation-durable-fixture.js';
 test.setTimeout(300000);
 
 async function showImporter(account) {
-    const page = await account.open({ workspace: false, readyTimeout: 60000 });
+    const page = await account.open({ workspace: false, readyTimeout: 60000, timeout: 60000 });
+    await page.waitForFunction(async () => {
+        const { eventSource, event_types } = await import('/scripts/events.js');
+        return eventSource.autoFireLastArgs.has(event_types.APP_READY);
+    }, undefined, { timeout: 60000 });
     await page.evaluate(() => window.NeconyanShell.openTab('right', 'settings'));
     const categories = page.locator('.sb-settings-category-select');
     if (await categories.isVisible()) await categories.selectOption('system-device');
@@ -72,6 +76,52 @@ async function closeAll(page, browser) {
 
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
+    test(`${viewport} backup ZIP skips a damaged file, imports the rest and lists the skip after reopening`, async ({ app }) => {
+        const account = await app.account({ phone });
+        const relative = `characters/${'LongCharacterName'.repeat(6)}.png`;
+        const archive = archiver('zip'); const chunks = [];
+        archive.on('data', chunk => chunks.push(chunk));
+        archive.append(Buffer.alloc(8), { name: `data/default-user/${relative}` });
+        archive.append('Healthy file', { name: 'data/default-user/user/files/healthy.txt' });
+        await archive.finalize();
+        const { page, card } = await showImporter(account);
+        await page.evaluate(() => { window.__importPageMarker = true; });
+        const submitted = await submit(page, () => card.getByLabel('Choose a SillyTavern backup ZIP').setInputFiles({
+            name: 'damaged-card.zip', mimeType: 'application/zip', buffer: Buffer.concat(chunks),
+        }));
+        const note = card.locator('.sb-import-note');
+        await expect(note).toContainText(relative, { timeout: 60000 });
+        await expect(note).toContainText('Backup ZIP imported.');
+        await expect(note).toContainText('1 file was damaged and could not be imported:');
+        await expect(note).toContainText('The file is not a valid PNG image.');
+        await expect(note).toContainText('Everything else was imported.');
+        await expect(note.getByRole('button', { name: 'Reload to use the imported data' })).toBeVisible();
+        expect(await page.evaluate(() => window.__importPageMarker)).toBe(true);
+        expect(await fs.readFile(path.join(app.directory, 'data/default-user/user/files/healthy.txt'), 'utf8')).toBe('Healthy file');
+        await note.scrollIntoViewIfNeeded();
+        const geometry = await note.evaluate(element => ({
+            width: element.clientWidth, scrollWidth: element.scrollWidth,
+            height: element.clientHeight, scrollHeight: element.scrollHeight,
+            whiteSpace: getComputedStyle(element).whiteSpace,
+            right: element.getBoundingClientRect().right, viewportWidth: window.innerWidth,
+        }));
+        expect(geometry.width).toBeGreaterThan(200);
+        expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.width + 1);
+        expect(geometry.scrollHeight).toBeLessThanOrEqual(geometry.height + 1);
+        expect(geometry.right).toBeLessThanOrEqual(geometry.viewportWidth);
+        expect(geometry.whiteSpace).not.toBe('nowrap');
+        await test.info().attach(`${viewport}-import-diagnostic`, { body: await page.screenshot(), contentType: 'image/png' });
+        await page.close();
+        const reopened = await showImporter(account);
+        await reopened.card.getByLabel('Saved account imports').selectOption(submitted.record.key);
+        const savedStatus = reopened.card.getByRole('status').filter({ hasText: relative });
+        await expect(savedStatus).toContainText('1 file was damaged and could not be imported:');
+        await expect(savedStatus).toContainText(`Cannot read '${relative}': The file is not a valid PNG image.`);
+        const savedGeometry = await savedStatus.evaluate(element => ({ width: element.clientWidth, scrollWidth: element.scrollWidth }));
+        expect(savedGeometry.scrollWidth).toBeLessThanOrEqual(savedGeometry.width + 1);
+        expect(await fs.access(path.join(app.directory, 'data/default-user', relative)).then(() => true, () => false)).toBe(false);
+    });
+
     for (const mode of ['folder', 'zip']) test(`${viewport} whole ${mode} account import finishes with pages closed and does not repeat after deletion`, async ({ app, browser }) => {
         const account = await app.account({ phone });
         const fields = { avatar_url: account.avatar, file_name: 'Imported history' };

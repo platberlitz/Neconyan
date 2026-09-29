@@ -124,6 +124,7 @@ describe('TavernCardValidator', () => {
             card.data.alternate_greetings = 'not an array';
             const v = new TavernCardValidator(card);
             expect(v.validateV2()).toBe(false);
+            expect(v.lastValidationError).toBe('data.alternate_greetings');
         });
 
         test('rejects non-array tags', () => {
@@ -131,6 +132,7 @@ describe('TavernCardValidator', () => {
             card.data.tags = 'not an array';
             const v = new TavernCardValidator(card);
             expect(v.validateV2()).toBe(false);
+            expect(v.lastValidationError).toBe('data.tags');
         });
 
         test('rejects non-object extensions', () => {
@@ -138,6 +140,7 @@ describe('TavernCardValidator', () => {
             card.data.extensions = 'not an object';
             const v = new TavernCardValidator(card);
             expect(v.validateV2()).toBe(false);
+            expect(v.lastValidationError).toBe('data.extensions');
         });
 
         test('accepts card with optional character_book', () => {
@@ -171,6 +174,7 @@ describe('TavernCardValidator', () => {
             card.data.character_book = { extensions: {}, entries: 'not array' };
             const v = new TavernCardValidator(card);
             expect(v.validateV2()).toBe(false);
+            expect(v.lastValidationError).toBe('data.character_book.entries');
         });
 
         test('rejects character_book with non-object extensions', () => {
@@ -178,6 +182,7 @@ describe('TavernCardValidator', () => {
             card.data.character_book = { extensions: 'not object', entries: [] };
             const v = new TavernCardValidator(card);
             expect(v.validateV2()).toBe(false);
+            expect(v.lastValidationError).toBe('data.character_book.extensions');
         });
     });
 

@@ -10,7 +10,7 @@ import { captureFolderImport, captureZipImport, openImportArchive } from './acco
 import { capturedArchiveInput } from './input-files.js';
 import { captureImportInput } from './import-inputs.js';
 import { captureExtensionReport } from './import-extension-report.js';
-import { captureImportTarget, assertImportTarget, importNeedsCheck, prepareImportValue, stageImportFile, publishImportFile } from './import-publication.js';
+import { captureImportTarget, assertImportTarget, importNeedsCheck, importSkipReason, prepareImportValue, stageImportFile, publishImportFile } from './import-publication.js';
 import { importBatches, publishImportBatches, readPlannedInput, stageImportBatch } from './import-batches.js';
 import { publishFileDeletions } from './file-deletion.js';
 import { BINARY_FILE_LIMIT } from './binary-files.js';
@@ -19,6 +19,7 @@ import { operationError, withOperation } from './store.js';
 
 const BATCHED_PIPELINE = 2;
 const MAX_AUTOMATIC_ATTEMPTS = 6;
+const SKIPPED_REPORT_LIMIT = 200;
 
 function extensionRemovals(lease, files) {
     const root = roleplayLease(lease).scope.directories.root;
@@ -131,36 +132,51 @@ async function runBatchedImport(context, plan, dependencies) {
             dependencies.afterImportInputs?.();
             const checked = [...plan.files.entries()].filter(([, file]) => importNeedsCheck(file));
             const prepared = {};
+            // Damaged files are listed and left out; every healthy file still imports.
+            const skipped = [];
             if (checked.length) await report('Checking chats, characters and settings', 0, checked.length);
             for (const [position, [index, file]] of checked.entries()) {
                 context.signal.throwIfAborted();
-                const value = prepareImportValue(context, file, index, await readPlannedInput(context, archive, file, index));
-                if (value?.bytes !== undefined) prepared[index] = { bytes: value.bytes };
+                try {
+                    const value = prepareImportValue(context, file, index, await readPlannedInput(context, archive, file, index));
+                    if (value?.bytes !== undefined) prepared[index] = { bytes: value.bytes };
+                } catch (error) {
+                    const reason = importSkipReason(file, error);
+                    if (!reason) throw error;
+                    skipped.push({ index, relative: file.relative, reason });
+                }
                 await report('Checking chats, characters and settings', position + 1, checked.length);
             }
+            const assertTargets = lease => {
+                const skip = new Set(skipped.map(item => item.index));
+                for (const [index, file] of plan.files.entries()) if (!skip.has(index)) assertImportTarget(lease, file.target);
+                for (const file of plan.removals) assertImportTarget(lease, { ...file, resource: null });
+            };
             withOperation(context, ({ lease }) => {
                 context.signal.throwIfAborted();
-                for (const file of plan.files) assertImportTarget(lease, file.target);
-                for (const file of plan.removals) assertImportTarget(lease, { ...file, resource: null });
+                assertTargets(lease);
                 const root = roleplayLease(lease).scope.directories.root;
                 for (const directory of plan.directories) createRoleplayDirectory(path.join(root, directory), root);
             });
-            const staged = [...plan.files.entries()].filter(([, file]) => !file.target.resource).map(([index, file]) => ({ file, index }));
+            const unchecked = new Set(skipped.map(item => item.index));
+            const staged = [...plan.files.entries()].filter(([index, file]) => !file.target.resource && !unchecked.has(index)).map(([index, file]) => ({ file, index }));
             let done = 0;
             if (staged.length) await report('Preparing imported files', 0, staged.length);
             for (const batch of importBatches(staged, item => item.file.size)) {
-                await stageImportBatch(context, batch, { archive, prepared });
+                skipped.push(...await stageImportBatch(context, batch, { archive, prepared }));
                 done += batch.length;
                 await report('Preparing imported files', done, staged.length);
             }
             record = withOperation(context, ({ lease, value, save }) => {
                 context.signal.throwIfAborted();
-                for (const file of plan.files) assertImportTarget(lease, file.target);
-                for (const file of plan.removals) assertImportTarget(lease, { ...file, resource: null });
+                assertTargets(lease);
+                const skippedImports = skipped.filter(item => plan.files[item.index].defaultIndex === undefined).length;
                 value.importPrepared = null;
+                value.importSkipped = skipped;
                 value.importReady = true;
-                value.importResult = { ...plan.extensionsReport, imported: plan.importedCount, defaults: plan.files.length - plan.importedCount,
-                    removed: plan.removals.length, sourceRoot: plan.sourceRoot, mode: plan.mode };
+                value.importResult = { ...plan.extensionsReport, imported: plan.importedCount - skippedImports, defaults: plan.files.length - plan.importedCount,
+                    removed: plan.removals.length, sourceRoot: plan.sourceRoot, mode: plan.mode,
+                    skippedCount: skipped.length, skipped: skipped.slice(0, SKIPPED_REPORT_LIMIT).map(item => ({ file: item.relative, reason: item.reason })) };
                 save();
                 return value;
             });
@@ -168,6 +184,7 @@ async function runBatchedImport(context, plan, dependencies) {
         }
         await report('Saving imported files', record.effects['import-publish']?.next ?? 0, plan.files.length);
         await publishImportBatches(context, plan, { archive, afterImportPublication: dependencies.afterImportPublication,
+            skipped: new Set((record.importSkipped ?? []).map(item => item.index)),
             onProgress: (completed, total) => report('Saving imported files', completed, total) });
     } finally { archive?.close(); }
     if (plan.removals.length) publishFileDeletions(context, plan.removals, record.importResult, dependencies);

@@ -58,12 +58,24 @@ export function assertImportTarget(lease, target) {
     else if (!same(captureImportTarget(lease, target.relative), target)) throw changed();
 }
 
-function object(bytes, label) {
+/** Marks a failure that affects only one backup file, so the import can skip that file and continue. */
+export const importDamage = (error, reason) => Object.assign(error, { importDamage: reason });
+
+/** Explains why one backup file is skipped, or returns null when the whole import must stop instead. */
+export function importSkipReason(file, error) {
+    return typeof error?.importDamage === 'string' ? `Cannot read '${file.relative}': ${error.importDamage}` : null;
+}
+
+function object(bytes, label, current = false) {
     try {
         const value = JSON.parse(bytes.toString('utf8'));
         if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Not an object');
         return value;
-    } catch { throw operationError(`The imported ${label} is not valid JSON. No account files were replaced.`, 400); }
+    } catch {
+        throw importDamage(operationError(`The imported ${label} is not valid JSON.`, 400), current
+            ? 'The copy already in this account is not valid JSON, so the backup copy could not be merged into it.'
+            : 'The file is not valid JSON.');
+    }
 }
 
 const MERGED_FILES = ['settings.json', 'secrets.json', ENTITY_DATE_ADDED_FILE, ENTITY_LAST_CHAT_FILE];
@@ -74,9 +86,19 @@ export const importNeedsCheck = file => Boolean(file.target.resource) || MERGED_
 export const importInputLimit = file => file.target.resource?.kind === 'chat' ? CHAT_IMPORT_LIMIT : STRUCTURED_LIMIT;
 
 /** Chat records are derived again from the same retained bytes, so they never need to be stored in the record. */
+const CHAT_DAMAGE = {
+    'invalid-utf8': () => 'The chat file is not valid UTF-8 text.',
+    'invalid-json': line => `Line ${line} of the chat file is not valid JSON.`,
+    'non-object': line => `Line ${line} of the chat file is not a chat message.`,
+    empty: () => 'The chat file is empty.',
+    'missing-chat-metadata': () => 'The first line of the chat file is not a chat header.',
+};
+
 export function importChatRecords(bytes) {
     const parsed = parseChatJsonl(bytes);
-    if (parsed.status !== 'ok') throw operationError('An imported chat needs recovery. No account files were replaced.', 400);
+    if (parsed.status !== 'ok') {
+        throw importDamage(operationError('An imported chat needs recovery.', 400), CHAT_DAMAGE[parsed.reason]?.(parsed.line) ?? 'The chat file needs recovery.');
+    }
     const records = parsed.records;
     delete records[0].chat_metadata[ROLEPLAY_METADATA_KEY];
     return records;
@@ -92,7 +114,11 @@ export function prepareImportValue(context, file, index, input) {
             const records = importChatRecords(bytes);
             return input ? { chat: true } : { records: structuredClone(records) };
         }
-        roleplayEntityContent(resource.kind, resource.kind === 'character' ? resource.locator.avatar : resource.locator.groupId, bytes, { storage: true });
+        try {
+            roleplayEntityContent(resource.kind, resource.kind === 'character' ? resource.locator.avatar : resource.locator.groupId, bytes, { storage: true });
+        } catch (error) {
+            throw error.code === 'ROLEPLAY_SOURCE_DAMAGED' ? importDamage(error, error.reason) : error;
+        }
         return { entity: true };
     }
     if (!MERGED_FILES.includes(file.relative)) return null;
@@ -101,7 +127,7 @@ export function prepareImportValue(context, file, index, input) {
         assertImportTarget(lease, file.target);
         const { scope } = roleplayLease(lease);
         const current = readRoleplayFile(path.join(scope.directories.root, file.relative), STRUCTURED_LIMIT, { allowMissingParent: true });
-        const existing = current ? object(current.bytes, `current ${file.relative}`) : {};
+        const existing = current ? object(current.bytes, `current ${file.relative}`, true) : {};
         let result = incoming;
         if (file.relative === 'settings.json') {
             // Settings exported before the rename arrive with the old key names.

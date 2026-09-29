@@ -3,6 +3,19 @@ import { getCurrentUserHandle } from './user.js';
 import { getOperationClient, mountOperationRecovery } from './operations-client.js';
 import { createAccountImportClient } from './account-import-client.js';
 
+const SKIPPED_SHOWN = 20;
+
+/** Lists the damaged files a finished import left out, or returns an empty string when nothing was skipped. */
+export function describeAccountImportSkips(result) {
+    const count = Number(result?.skippedCount) || 0;
+    if (!count) return '';
+    const listed = (Array.isArray(result.skipped) ? result.skipped : []).slice(0, SKIPPED_SHOWN).map(item => `• ${item.reason}`);
+    const more = count - listed.length;
+    return [`${count === 1 ? '1 file was' : `${count} files were`} damaged and could not be imported:`, ...listed,
+        ...(more > 0 ? [`…and ${more} more.`] : []),
+        'Everything else was imported. To bring a skipped item back, re-export it from the original app and import it again.'].join('\n');
+}
+
 export async function importAccountData(input, options = {}) {
     const owner = getCurrentUserHandle();
     const client = await getOperationClient();
@@ -35,7 +48,7 @@ export async function mountSavedAccountImports(container, { onResult, onBusy, si
     const select = document.createElement('select'); select.className = 'text_pole'; select.setAttribute('aria-label', 'Saved account imports');
     const stop = document.createElement('button'); stop.type = 'button'; stop.className = 'menu_button'; stop.textContent = 'Stop import'; stop.style.display = 'none';
     const reload = document.createElement('button'); reload.type = 'button'; reload.className = 'menu_button'; reload.textContent = 'Reload imported account'; reload.style.display = 'none';
-    const status = document.createElement('div'); status.setAttribute('role', 'status');
+    const status = document.createElement('div'); status.setAttribute('role', 'status'); status.style.whiteSpace = 'pre-line'; status.style.overflowWrap = 'anywhere';
     wrapper.append(select, stop, reload, status); container.append(wrapper);
     mountOperationRecovery(wrapper, { signal, onError: error => { status.textContent = error.message; } });
     let controller;
@@ -56,7 +69,8 @@ export async function mountSavedAccountImports(container, { onResult, onBusy, si
         try {
             const record = await client.observe(await client.read(select.value), { signal: controller.signal,
                 onProgress: progress => { status.textContent = progress?.stage || 'Importing retained files'; } });
-            status.textContent = `${record.result.imported} imported files are saved. Reload to use the imported settings.`;
+            const skips = describeAccountImportSkips(record.result);
+            status.textContent = `${record.result.imported} imported files are saved. Reload to use the imported settings.${skips ? `\n\n${skips}` : ''}`;
             reload.style.display = '';
             onResult?.(record.result);
         } catch (error) { status.textContent = error.cancelled ? 'Import stopped. Saved local changes remain available for recovery.' : error.message; } finally { controller = null; select.disabled = false; stop.style.display = 'none'; onBusy?.(false); }

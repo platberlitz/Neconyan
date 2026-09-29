@@ -18,6 +18,11 @@ const ROOT_DIRECTORIES = [...new Set(Object.values(USER_DIRECTORY_TEMPLATE).filt
 const MARKERS = [SETTINGS_FILE, 'characters', 'chats', 'group chats', 'groups', 'OpenAI Settings', 'themes', 'extensions'];
 const within = (candidate, parent) => candidate === parent || candidate.startsWith(parent + path.sep);
 const evidence = file => ({ rawHash: file.rawHash, physical: file.physical });
+// Marks a ZIP entry whose own compressed bytes are unreadable, so the import skips only that file.
+const damagedEntry = error => {
+    if (error && error.name !== 'AbortError') error.importDamage ??= 'The file is damaged inside the ZIP.';
+    return error;
+};
 
 export function importRelativePath(value) {
     if (typeof value !== 'string' || !value || value.length > 1000 || value.includes('\\') || value.includes('\0') || value.startsWith('/')) return null;
@@ -185,18 +190,19 @@ export async function openImportArchive(source) {
             || entry.compressedSize !== captured.compressedSize) { reject(operationError('The captured ZIP entry changed.')); return; }
         if (!unchanged()) { reject(operationError('The retained ZIP changed.')); return; }
         zip.openReadStream(entry, (error, stream) => {
-            if (error) { reject(error); return; }
+            if (error) { reject(damagedEntry(error)); return; }
+            stream.once('error', damagedEntry);
             let size = 0, checksum = 0;
             const check = new Transform({
                 transform(chunk, _encoding, callback) {
                     size += chunk.length;
-                    if (size > captured.size) return callback(operationError('The captured ZIP entry exceeded its size.'));
+                    if (size > captured.size) return callback(damagedEntry(operationError('The captured ZIP entry exceeded its size.')));
                     checksum = (zlib.crc32 ?? crc32)(chunk, checksum);
                     callback(null, chunk);
                 },
                 flush(callback) {
                     if (!unchanged()) return callback(operationError('The retained ZIP changed.'));
-                    if (size !== captured.size || checksum !== captured.crc32) return callback(operationError('The ZIP contains a damaged file.', 400));
+                    if (size !== captured.size || checksum !== captured.crc32) return callback(damagedEntry(operationError('The ZIP contains a damaged file.', 400)));
                     callback();
                 },
             });

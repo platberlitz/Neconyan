@@ -134,7 +134,10 @@ export class TavernCardValidator {
             return true;
         });
 
-        return isAllRequiredFieldsPresent && Array.isArray(data.alternate_greetings) && Array.isArray(data.tags) && typeof data.extensions === 'object';
+        if (!isAllRequiredFieldsPresent) return false;
+        return this.#validateFieldType(Array.isArray(data.alternate_greetings), 'data.alternate_greetings')
+            && this.#validateFieldType(Array.isArray(data.tags), 'data.tags')
+            && this.#validateFieldType(typeof data.extensions === 'object', 'data.extensions');
     }
 
     #validateCharacterBookV2() {
@@ -153,7 +156,14 @@ export class TavernCardValidator {
             return true;
         });
 
-        return isAllRequiredFieldsPresent && Array.isArray(characterBook.entries) && typeof characterBook.extensions === 'object';
+        if (!isAllRequiredFieldsPresent) return false;
+        return this.#validateFieldType(Array.isArray(characterBook.entries), 'data.character_book.entries')
+            && this.#validateFieldType(typeof characterBook.extensions === 'object', 'data.character_book.extensions');
+    }
+
+    #validateFieldType(valid, field) {
+        if (!valid) this.#lastValidationError = field;
+        return valid;
     }
 
     #validateSpecV3() {

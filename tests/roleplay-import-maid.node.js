@@ -36,11 +36,14 @@ test('imports replace tracked chats and cards with recorded writes', async t => 
     assert.equal(readRoleplayAccount(f.scope).pending, null);
 });
 
-test('imports refuse damaged replacements for tracked files and keep the current file', async t => {
+test('imports skip damaged replacements for tracked files and keep the current file', async t => {
     const f = fixture(t, false, 'import-damaged');
     readRoleplayChat(f.scope, f.locator);
     const bytes = fs.readFileSync(f.filename);
-    await assert.rejects(importTestFile(f.scope, f.filename, Buffer.from('not json')), /needs recovery/);
+    const record = await importTestFile(f.scope, f.filename, Buffer.from('not json'));
+    assert.equal(record.state, 'completed');
+    assert.equal(record.result.skippedCount, 1);
+    assert.match(record.result.skipped[0].reason, /Line 1 of the chat file is not valid JSON/);
     assert.deepEqual(fs.readFileSync(f.filename), bytes);
 });
 
