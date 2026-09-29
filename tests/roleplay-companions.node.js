@@ -234,10 +234,12 @@ test('a length-limited continued companion retains its last good selected note a
     assert.equal(limited.rows().at(-1).extra.inChatAgentCompanionResults.side.content, 'Last good note');
     assert.equal(readArtifact(limited.directories, limited.jobId, 'roleplay-companions').results.side.content, 'Last good note');
     assert.match(limited.rows().at(-1).extra.inChatAgentCompanionResults.side.lastRunError, /output limit/);
+    assert.equal(limited.rows().at(-1).extra.inChatAgentCompanionResults.side.lastRunFailureKind, 'limit');
     const cycle = prepared(t, [companion('a', { dependencies: ['b'], waitForDependencies: true }), companion('b', { dependencies: ['a'], waitForDependencies: true })]);
     await cycle.run({ generate: paid('main', 'Reply survives known dependency failure'), generateAgent: () => assert.fail('cyclic dependency reached a provider') });
     assert.equal(cycle.rows().at(-1).extra.inChatAgentCompanionResults.a.status, 'error');
     assert.match(cycle.rows().at(-1).extra.inChatAgentCompanionResults.b.error, /cycle/);
+    assert.equal(cycle.rows().at(-1).extra.inChatAgentCompanionResults.b.failureKind, 'cycle');
 });
 
 test('retained hidden companion notes use their original host and frozen prompt regex without exposing hidden message text', async t => {

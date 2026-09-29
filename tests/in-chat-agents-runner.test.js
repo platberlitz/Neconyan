@@ -3518,6 +3518,208 @@ describe('in-chat agent post-processing runner', () => {
             expect(stored.content).toBe('Fresh note');
             expect(stored.lastRunError).toBeUndefined();
         });
+
+        test('records why a rerun failed so only fixable failures are retried', async () => {
+            const { companion, companionRunner } = await seedDoneNote();
+            const { isRetryableCompanionFailure } = await import('../public/scripts/extensions/in-chat-agents/companion/companion-shared.js');
+            const stored = () => chat[0].extra.inChatAgentCompanionResults[companion.id];
+
+            generateQuietPrompt.mockRejectedValueOnce(new Error('quota exceeded'));
+            await companionRunner.runCompanionAgentOnMessage(companion.id, 0);
+            expect(stored().lastRunFailureKind).toBe('api');
+            expect(isRetryableCompanionFailure(stored())).toBe(true);
+
+            generateQuietPrompt.mockResolvedValueOnce('   ');
+            await companionRunner.runCompanionAgentOnMessage(companion.id, 0);
+            expect(stored()).toMatchObject({ content: 'Useful earlier note', lastRunFailureKind: 'empty' });
+            expect(isRetryableCompanionFailure(stored())).toBe(true);
+
+            generateQuietPrompt.mockResolvedValueOnce('Fresh note');
+            await companionRunner.runCompanionAgentOnMessage(companion.id, 0);
+            expect(stored().lastRunFailureKind).toBeUndefined();
+            expect(isRetryableCompanionFailure(stored())).toBe(false);
+        });
+
+        test('a cancelled rerun is not offered for retry', async () => {
+            const { companion, companionRunner } = await seedDoneNote();
+            const { isRetryableCompanionFailure } = await import('../public/scripts/extensions/in-chat-agents/companion/companion-shared.js');
+            const { cancelAgentGeneration } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+            let resolveRun;
+            generateQuietPrompt.mockImplementationOnce(async () => await new Promise(resolve => {
+                resolveRun = resolve;
+            }));
+
+            const running = companionRunner.runCompanionAgentOnMessage(companion.id, 0);
+            await waitFor(() => generateQuietPrompt.mock.calls.length === 1);
+            cancelAgentGeneration();
+            resolveRun('Late replacement note');
+            await running;
+
+            const stored = chat[0].extra.inChatAgentCompanionResults[companion.id];
+            expect(stored.lastRunFailureKind).toBe('cancelled');
+            expect(isRetryableCompanionFailure(stored)).toBe(false);
+        });
+
+        test('a first run that hits a provider error is saved as a retryable failure', async () => {
+            const companion = createCompanionAgent({ id: 'first-run-companion' });
+            enabledAgents = [companion];
+            const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+            chat.push({ mes: 'Assistant reply', name: 'Assistant', is_user: false, is_system: false, extra: {} });
+            generateQuietPrompt.mockRejectedValueOnce(new Error('503 Service Unavailable'));
+
+            await companionRunner.runCompanionAgentOnMessage(companion.id, 0);
+
+            expect(companionRunner.getCompanionResults(chat[0])[companion.id]).toMatchObject({
+                status: 'error', error: '503 Service Unavailable', failureKind: 'api',
+            });
+            expect(companionRunner.getRetryableCompanionAgents(0).map(agent => agent.id)).toEqual([companion.id]);
+        });
+    });
+
+    describe('retrying failed companions, automatic runs and note clean-up', () => {
+        const runnerPath = '../public/scripts/extensions/in-chat-agents/companion/companion-runner.js';
+        const assistantMessage = (mes, extra = {}) => ({ mes, name: 'Assistant', is_user: false, is_system: false, extra });
+
+        test('retry reruns only connection, blank, interrupted and blocked failures', async () => {
+            const { COMPANION_FAILURE_MESSAGES } = await import('../public/scripts/extensions/in-chat-agents/companion/companion-shared.js');
+            const ids = ['api', 'blank', 'interrupted', 'blocked', 'legacy', 'manual', 'cancelled', 'limit', 'healthy'];
+            enabledAgents = ids.map(id => createCompanionAgent({ id, name: id, companion: { trigger: id === 'manual' ? 'manual' : 'auto' } }));
+            const companionRunner = await import(runnerPath);
+            chat.push(assistantMessage('Assistant reply', {
+                inChatAgentCompanionResults: {
+                    api: { status: 'error', content: '', error: 'Provider unavailable', failureKind: 'api' },
+                    blank: { status: 'error', content: '', error: COMPANION_FAILURE_MESSAGES.empty, failureKind: 'empty' },
+                    interrupted: { status: 'done', content: 'Kept note', lastRunError: COMPANION_FAILURE_MESSAGES.interrupted, lastRunFailureKind: 'interrupted' },
+                    blocked: { status: 'error', content: '', error: COMPANION_FAILURE_MESSAGES.dependency, failureKind: 'dependency' },
+                    legacy: { status: 'error', content: '', error: 'HTTP 502 from the provider' },
+                    manual: { status: 'error', content: '', error: 'Request timed out', failureKind: 'api' },
+                    cancelled: { status: 'cancelled', content: '', error: COMPANION_FAILURE_MESSAGES.cancelled, failureKind: 'cancelled' },
+                    limit: { status: 'error', content: '', error: COMPANION_FAILURE_MESSAGES.limit, failureKind: 'limit' },
+                    healthy: { status: 'done', content: 'Fine note' },
+                },
+            }));
+            chat.push({ mes: 'Next question', name: 'User', is_user: true, is_system: false, extra: {} });
+            expect(companionRunner.getLatestCompanionResultsMessageIndex()).toBe(0);
+            chat.pop();
+
+            const retryIds = ['api', 'blank', 'interrupted', 'blocked', 'legacy', 'manual'];
+            expect(companionRunner.getRetryableCompanionAgents(0).map(agent => agent.id)).toEqual(retryIds);
+            generateQuietPrompt.mockResolvedValue('Fresh note');
+
+            const results = await companionRunner.retryFailedCompanionsOnMessage(0);
+
+            expect(generateQuietPrompt).toHaveBeenCalledTimes(retryIds.length);
+            expect(results).toHaveLength(retryIds.length);
+            const stored = companionRunner.getCompanionResults(chat[0]);
+            for (const id of retryIds) {
+                expect(stored[id]).toMatchObject({ status: 'done', content: 'Fresh note' });
+                expect(stored[id].failureKind).toBeUndefined();
+                expect(stored[id].lastRunFailureKind).toBeUndefined();
+            }
+            expect(stored.cancelled.status).toBe('cancelled');
+            expect(stored.limit.status).toBe('error');
+            expect(stored.healthy.content).toBe('Fine note');
+            expect(saveChatDebounced).toHaveBeenCalled();
+            expect(companionRunner.getRetryableCompanionAgents(0)).toEqual([]);
+        });
+
+        test('the automatic run skips manual companions and ones hidden from automatic runs', async () => {
+            enabledAgents = [
+                createCompanionAgent({ id: 'auto', name: 'Auto' }),
+                createCompanionAgent({ id: 'manual', name: 'Manual', companion: { trigger: 'manual' } }),
+                createCompanionAgent({ id: 'hidden', name: 'Hidden' }),
+            ];
+            globalSettings.hiddenCompanionAgentIds = ['hidden'];
+            const companionRunner = await import(runnerPath);
+            chat.push({ mes: 'Question', name: 'User', is_user: true, is_system: false, extra: {} }, assistantMessage('Answer'));
+            expect(companionRunner.getAutomaticCompanionAgents(1).map(agent => agent.id)).toEqual(['auto']);
+            await expect(companionRunner.runAutomaticCompanionsOnMessage(0)).resolves.toEqual([]);
+            generateQuietPrompt.mockResolvedValue('Automatic note');
+
+            const results = await companionRunner.runAutomaticCompanionsOnMessage(1);
+
+            expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+            expect(results).toEqual([expect.objectContaining({ status: 'done', content: 'Automatic note' })]);
+            expect(Object.keys(companionRunner.getCompanionResults(chat[1]))).toEqual(['auto']);
+        });
+
+        test('batch groups follow the rules a real run uses', async () => {
+            const agents = [
+                createCompanionAgent({ id: 'a', companion: { batch: true, batchAgentIds: ['b'] } }),
+                createCompanionAgent({ id: 'b', companion: { batch: true, batchAgentIds: ['a'] } }),
+                createCompanionAgent({ id: 'c', companion: { batch: true, batchAgentIds: ['a'], contextMessages: 3 } }),
+                createCompanionAgent({ id: 'd', companion: { batch: true, batchAgentIds: [] } }),
+            ];
+            enabledAgents = agents;
+            const companionRunner = await import(runnerPath);
+            chat.push(assistantMessage('Answer'));
+
+            const { groups, mismatched } = companionRunner.getCompanionBatchGroups(agents);
+
+            expect(groups).toEqual([['a', 'b']]);
+            expect([...mismatched].sort()).toEqual(['a', 'c']);
+        });
+
+        test('clean-up keeps each companion\'s newest note, reaches every swipe and undo survives a swipe', async () => {
+            const scene = createCompanionAgent({ id: 'scene', name: 'Scene' });
+            const mood = createCompanionAgent({ id: 'mood', name: 'Mood' });
+            enabledAgents = [scene, mood];
+            const companionRunner = await import(runnerPath);
+            chat.push(assistantMessage('Reply 0'), assistantMessage('Reply 1'), assistantMessage('Reply 2'));
+            Object.assign(chat[0], { swipe_id: 0, swipes: ['Reply 0', 'Reply 0 alt'], swipe_info: [{ extra: {} }, { extra: {} }] });
+            companionRunner.setCompanionResult(chat[0], scene, { status: 'done', content: 'Scene 0' });
+            companionRunner.setCompanionResult(chat[0], mood, { status: 'done', content: 'Mood 0' });
+            switchToSwipe(chat[0], 1);
+            companionRunner.setCompanionResult(chat[0], scene, { status: 'done', content: 'Scene 0 alt' });
+            switchToSwipe(chat[0], 0);
+            companionRunner.setCompanionResult(chat[1], scene, { status: 'done', content: 'Scene 1' });
+            companionRunner.setCompanionResult(chat[2], scene, { status: 'done', content: 'Scene 2' });
+            saveChatDebounced.mockClear();
+
+            const cleanup = await companionRunner.cleanUpCompanionNotes({ keepLatest: true });
+
+            expect(cleanup).toMatchObject({ removed: 2, messages: 2 });
+            expect(Object.keys(companionRunner.getCompanionResults(chat[0]))).toEqual(['mood']);
+            expect(chat[0].swipe_info[1].extra.inChatAgentCompanionResults).toBeUndefined();
+            expect(chat[1].extra.inChatAgentCompanionResults).toBeUndefined();
+            expect(companionRunner.getCompanionResults(chat[2]).scene.content).toBe('Scene 2');
+            expect(saveChatDebounced).toHaveBeenCalled();
+
+            chat[0].swipe_info[0].extra = structuredClone(chat[0].extra);
+            switchToSwipe(chat[0], 1);
+            await expect(cleanup.undo()).resolves.toBe(2);
+
+            expect(companionRunner.getCompanionResults(chat[0]).scene.content).toBe('Scene 0 alt');
+            expect(chat[0].extra.inChatAgentCompanionResults.scene.content).toBe('Scene 0 alt');
+            expect(chat[0].swipe_info[0].extra.inChatAgentCompanionResults.scene.content).toBe('Scene 0');
+            expect(companionRunner.getCompanionResults(chat[1]).scene.content).toBe('Scene 1');
+            await expect(cleanup.undo()).resolves.toBe(0);
+        });
+
+        test('clean-up can clear every note from chosen companions, spares pending runs and will not undo into another chat', async () => {
+            const scene = createCompanionAgent({ id: 'scene', name: 'Scene' });
+            const mood = createCompanionAgent({ id: 'mood', name: 'Mood' });
+            enabledAgents = [scene, mood];
+            const companionRunner = await import(runnerPath);
+            chat.push(assistantMessage('Reply 0'), assistantMessage('Reply 1'), assistantMessage('Reply 2'));
+            for (const index of [0, 1]) {
+                companionRunner.setCompanionResult(chat[index], scene, { status: 'done', content: `Scene ${index}` });
+                companionRunner.setCompanionResult(chat[index], mood, { status: 'done', content: `Mood ${index}` });
+            }
+            companionRunner.setCompanionResult(chat[2], mood, { status: 'pending', content: '' });
+
+            const cleanup = await companionRunner.cleanUpCompanionNotes({ agentIds: ['mood'], keepLatest: false });
+
+            expect(cleanup).toMatchObject({ removed: 2, messages: 2 });
+            for (const index of [0, 1]) {
+                expect(Object.keys(companionRunner.getCompanionResults(chat[index]))).toEqual(['scene']);
+            }
+            expect(companionRunner.getCompanionResults(chat[2]).mood.status).toBe('pending');
+
+            currentChatId = 'chat-b';
+            await expect(cleanup.undo()).resolves.toBe(0);
+            expect(companionRunner.getCompanionResults(chat[0]).mood).toBeUndefined();
+        });
     });
 
     test('repairs only runnable tracker companions', async () => {

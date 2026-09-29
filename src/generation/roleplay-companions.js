@@ -8,7 +8,7 @@ import { isNativeCompanion } from './agent-definition.js';
 import { runAgentModelStep } from './agent-model-step.js';
 import { runRoleplayAgentPostprocessing } from './roleplay-agent-processing.js';
 import { companionMessageTokens, previousCompanionNotes, resolveCompanionText, singleCompanionPrompt, batchCompanionPrompt } from './companion-context.js';
-import { getActiveCompanionResults, isEmptyOutputSentinel, MEMORY_SHARD_TEMPLATE_ID } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { classifyCompanionFailureMessage, getActiveCompanionResults, isEmptyOutputSentinel, MEMORY_SHARD_TEMPLATE_ID } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { normalizeCompanionTrackerRepairPayload } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
 import { captureCompanionCapacity, MAX_COMPANION_RESULT_BYTES } from './companion-capacity.js';
 
@@ -188,8 +188,9 @@ export async function runRoleplayCompanions(context, options) {
         const cached = saved(context, snapshot.account, `roleplay-companion:${agent.id}`, runIdentity);
         if (cached) return cached;
         const prior = Object.hasOwn(hostResults, agent.id) ? hostResults[agent.id] : null;
-        const record = prior?.status === 'done' ? { ...prior, lastRunError: reason }
-            : { ...baseRecord(agent, model), status: 'error', content: '', error: reason, tokenUsage: null, updatedAt: Date.now() };
+        const failureKind = classifyCompanionFailureMessage(reason) || 'other';
+        const record = prior?.status === 'done' ? { ...prior, lastRunError: reason, lastRunFailureKind: failureKind }
+            : { ...baseRecord(agent, model), status: 'error', content: '', error: reason, failureKind, tokenUsage: null, updatedAt: Date.now() };
         return storeResult(agent, runIdentity, record, false);
     };
     const finishResult = async (agent, raw, model, prompt, runIdentity, tokenUsage, coverage) => {
@@ -208,7 +209,7 @@ export async function runRoleplayCompanions(context, options) {
         const prior = Object.hasOwn(hostResults, agent.id) ? hostResults[agent.id] : {};
         const record = { ...prior, ...baseRecord(agent, model), status: 'done', content: text, error: '', tokenUsage: tokenUsage ?? {
             inputTokens: await count(JSON.stringify(prompt.messages)), outputTokens: await count(JSON.stringify({ role: 'assistant', content: content(raw) })) }, updatedAt: model.completedAt };
-        delete record.lastRunError; delete record.previousResult;
+        delete record.lastRunError; delete record.lastRunFailureKind; delete record.failureKind; delete record.previousResult;
         if (references(agent).includes(MEMORY_SHARD_TEMPLATE_ID) && coverage) record.contextCoverage = coverage;
         return storeResult(agent, runIdentity, record, true);
     };
@@ -225,7 +226,7 @@ export async function runRoleplayCompanions(context, options) {
             const normalised = normalizeCompanionTrackerRepairPayload(agent, prior.content).payload;
             if (normalised) {
                 const record = { ...prior, ...baseRecord(agent, null), status: 'done', content: normalised, error: '', updatedAt: Date.now() };
-                delete record.lastRunError; delete record.previousResult;
+                delete record.lastRunError; delete record.lastRunFailureKind; delete record.failureKind; delete record.previousResult;
                 return storeResult(agent, runIdentity, record, true);
             }
         }

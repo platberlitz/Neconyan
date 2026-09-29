@@ -2593,6 +2593,20 @@ async function setAgentsChatHistory(ids, enabled) {
     await refreshSavedAgents(changes.map(agent => agent.id));
 }
 
+async function saveCompanionAgentDrafts(drafts, name) {
+    const changes = drafts.filter(agent => agent && isCompanionAgent(agent));
+    if (!changes.length) return;
+    changes.forEach(draft => lockBundledAgentCustomization(draft));
+    await saveAgentBatch(changes, name);
+    await refreshSavedAgents(changes.map(agent => agent.id));
+}
+
+async function reorderCompanionAgents(orderedIds) {
+    await reorderAgentsIntoOrderSlots(orderedIds);
+    renderAgentList();
+    refreshCompanionPanel();
+}
+
 function exitSelectMode() {
     selectModeActive = false;
     selectedAgentIds.clear();
@@ -6368,6 +6382,8 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         convertAgent: applyAgentExecutionConversion,
         getVisibleAgents: getVisibleInChatAgents,
         getLastAssistantMessageIndex,
+        saveCompanionAgents: saveCompanionAgentDrafts,
+        reorderCompanionAgents,
     });
     initCompanionWandMenuItem();
     configureCompanionPanel({

@@ -8,6 +8,8 @@ describe('companion tracker panel', () => {
     let companionResultsByMessage;
     let globallyEnabled;
     let chatTokenEstimate;
+    let automaticCompanionAgents;
+    let retryableCompanionAgents;
     let accountStorageValues;
     let accountStorage;
     let hiddenAgentIds;
@@ -107,10 +109,16 @@ describe('companion tracker panel', () => {
         await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js', () => ({
             COMPANION_RESULTS_UPDATED_EVENT: 'companion_results_updated',
             captureCompanionResultTarget: jest.fn(() => () => true),
+            getAutomaticCompanionAgents: jest.fn(() => automaticCompanionAgents),
             getCompanionCoveredMessageIndices: jest.fn((index, agentId) => companionResultsByMessage.get(chat[index])?.[agentId]?.contextCoverage ?? []),
             getCompanionResults: jest.fn(message => companionResultsByMessage.get(message) ?? {}),
+            getLatestAssistantCompanionMessageIndex: jest.fn(() => chat.length - 1),
+            getLatestCompanionResultsMessageIndex: jest.fn(() => chat.length - 1),
             getLatestValidCompanionMessageIndex: jest.fn(() => chat.length - 1),
+            getRetryableCompanionAgents: jest.fn(() => retryableCompanionAgents),
             meetsCompanionContextThreshold: jest.fn(agent => !agent?.companion?.minContextTokens || agent.companion.minContextTokens <= chatTokenEstimate),
+            retryFailedCompanionsOnMessage: jest.fn(async () => retryableCompanionAgents.map(() => ({ status: 'done' }))),
+            runAutomaticCompanionsOnMessage: jest.fn(async () => automaticCompanionAgents.map(() => ({ status: 'done' }))),
             runCompanionAgentOnMessage: jest.fn(async () => ({ status: 'done' })),
             runCompanionsOnMessage: jest.fn(async () => ({})),
         }));
@@ -141,6 +149,8 @@ describe('companion tracker panel', () => {
         companionResultsByMessage = new Map();
         globallyEnabled = true;
         chatTokenEstimate = 0;
+        automaticCompanionAgents = [];
+        retryableCompanionAgents = [];
         accountStorageValues = new Map();
         accountStorage = {
             getItem: jest.fn(key => accountStorageValues.get(key) ?? null),
@@ -336,6 +346,31 @@ describe('companion tracker panel', () => {
         // already produced state, otherwise manual companions can only regenerate the first run
         // and never pick up a newer assistant reply from the draggable panel.
         expect(html).toMatch(/<section class="ica--tpanel-agent"[\s\S]*?data-message-index="0"[\s\S]*?data-action="panel-run-latest"[\s\S]*?<\/section>/);
+    });
+
+    test('offers automatic runs and a failed-companion retry in the panel header', async () => {
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { displayMode: 'panel' } }];
+        chat.push({ is_user: false, is_system: false, mes: 'reply' });
+        const panel = await importPanel();
+
+        let html = panel.buildPanelHtml();
+        expect(html).toMatch(/data-action="panel-run-auto"[^>]*disabled/);
+        expect(html).not.toContain('data-action="panel-retry-failed"');
+
+        automaticCompanionAgents = [agents[0]];
+        retryableCompanionAgents = [agents[0], { id: 'other' }];
+        html = panel.buildPanelHtml();
+
+        expect(html).not.toMatch(/data-action="panel-run-auto"[^>]*disabled/);
+        expect(html).toContain('Run the 1 automatic companion on the last reply');
+        expect(html).toContain('data-action="panel-retry-failed"');
+        expect(html).toContain('Retry 2 failed companions on message #0');
+        expect(html).toContain('<span class="ica--tpanel-action-count">2</span>');
+
+        globallyEnabled = false;
+        html = panel.buildPanelHtml();
+        expect(html).toMatch(/data-action="panel-regenerate-all"[^>]*disabled/);
+        expect(html).not.toContain('data-action="panel-run-auto"');
     });
 
     test('keeps the visible companion anchored while pending cards replace completed content', async () => {

@@ -54,14 +54,18 @@ import {
     DIRECTORS_COMMENTARY_TEMPLATE_ID,
     EMPTY_OUTPUT_SENTINEL_LINE_PATTERN,
     EMPTY_OUTPUT_SENTINEL_LINE_PROBE,
+    COMPANION_FAILURE_MESSAGES,
     MEMORY_SHARD_TEMPLATE_ID,
     PLOT_COMPASS_TEMPLATE_ID,
+    classifyCompanionFailureMessage,
     getCompanionReferenceIds,
     holdsReadableCompanionResults,
     isAssistantMessage,
     isEmptyOutputSentinel,
+    isRetryableCompanionFailure,
     isValidCompanionMessage,
     normalizePlotCompassObjective,
+    planCompanionNoteCleanup,
     TRACKER_EMPTY_OUTPUT_INSTRUCTION,
 } from './companion-shared.js';
 import { resolveCompanionContentMacros } from './companion-macros.js';
@@ -530,6 +534,8 @@ export function setCompanionResult(message, agent, update = {}) {
     };
     if (update.status === 'done' || update.status === 'pending') {
         delete nextResults[agent.id].lastRunError;
+        delete nextResults[agent.id].lastRunFailureKind;
+        delete nextResults[agent.id].failureKind;
     }
     if (update.status && update.status !== 'pending') {
         delete nextResults[agent.id].previousResult;
@@ -563,6 +569,8 @@ export function updateCompanionResult(message, agentId, update = {}) {
     if (editsContent) {
         delete nextResults[agentId].previousResult;
         delete nextResults[agentId].lastRunError;
+        delete nextResults[agentId].lastRunFailureKind;
+        delete nextResults[agentId].failureKind;
         delete nextResults[agentId].contextCoverage;
     }
 
@@ -658,20 +666,31 @@ function restoreCompanionResult(message, agentId, previousResult) {
 // A failed or cancelled regeneration must not erase the last good note: keep it and record
 // the failure on the restored result so the views can say why nothing new appeared.
 function settleFailedCompanionRun(message, agent, previousResult, { cancelled = false, error = null, profileId = '' } = {}) {
-    const failure = cancelled ? 'Cancelled.' : (error instanceof Error ? error.message : String(error || 'Companion run failed.'));
+    const failure = cancelled ? COMPANION_FAILURE_MESSAGES.cancelled : (error instanceof Error ? error.message : String(error || 'Companion run failed.'));
+    // The kind decides whether 'Retry failed' picks this run up again.
+    const failureKind = cancelled ? 'cancelled' : (error?.companionFailureKind || classifyCompanionFailureMessage(failure) || 'other');
     if (previousResult?.status === 'done') {
-        restoreCompanionResult(message, agent.id, { ...previousResult, lastRunError: failure });
+        restoreCompanionResult(message, agent.id, { ...previousResult, lastRunError: failure, lastRunFailureKind: failureKind });
         return;
     }
     setCompanionResult(message, agent, {
         status: cancelled ? 'cancelled' : 'error',
         content: '',
         error: failure,
+        failureKind,
         tokenUsage: null,
         profileId,
         profileLabel: getProfileLabel(agent, profileId),
         modelLabel: getModelLabel(agent),
     });
+}
+
+// A request that fails without being cancelled is a connection or provider problem.
+function markCompanionConnectionFailure(error) {
+    if (error?.name === 'AbortError') throw error;
+    const failure = error instanceof Error ? error : new Error(String(error || 'Companion request failed.'));
+    failure.companionFailureKind ??= 'api';
+    throw failure;
 }
 
 const companionRuns = new WeakMap();
@@ -731,8 +750,8 @@ export function recoverInterruptedCompanionRuns() {
                 if (result?.status !== 'pending' || companionRuns.get(message)?.get(`${swipeId}:${agentId}`)?.isCurrent()) continue;
                 const previous = result.previousResult;
                 results[agentId] = previous?.status === 'done'
-                    ? { ...previous, lastRunError: 'Interrupted before completion.' }
-                    : { ...result, status: 'cancelled', content: '', error: 'Interrupted before completion.' };
+                    ? { ...previous, lastRunError: COMPANION_FAILURE_MESSAGES.interrupted, lastRunFailureKind: 'interrupted' }
+                    : { ...result, status: 'cancelled', content: '', error: COMPANION_FAILURE_MESSAGES.interrupted, failureKind: 'interrupted' };
                 delete results[agentId].previousResult;
                 messageChanged = true;
             }
@@ -1719,7 +1738,7 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
         if (!areAgentsGloballyEnabled() || !isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
             throw new DOMException('Companion run cancelled.', 'AbortError');
         }
-        const response = await requestPromptTransform(agent, promptMessages, companion.maxTokens);
+        const response = await requestPromptTransform(agent, promptMessages, companion.maxTokens).catch(markCompanionConnectionFailure);
 
         if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
             throw new DOMException('Companion run cancelled.', 'AbortError');
@@ -1887,7 +1906,7 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
             throw new DOMException('A batch companion became unavailable.', 'AbortError');
         }
         const maxTokens = Math.min(MAX_AGENT_MAX_TOKENS, agents.reduce((sum, agent) => sum + getCompanionConfig(agent).maxTokens, 0));
-        const response = await requestPromptTransform(agents[0], promptMessages, maxTokens, { runtimeAgents: agents });
+        const response = await requestPromptTransform(agents[0], promptMessages, maxTokens, { runtimeAgents: agents }).catch(markCompanionConnectionFailure);
         if (!isTargetCurrent()) return getResults();
 
         if (getAgentGenerationCancelRevision() !== cancelRevision) {
@@ -2522,6 +2541,229 @@ export function getLatestValidCompanionMessageIndex() {
     }
 
     return -1;
+}
+
+/**
+ * The newest reply, which is where automatic companions attach their notes.
+ * @returns {number}
+ */
+export function getLatestAssistantCompanionMessageIndex() {
+    for (let index = chat.length - 1; index >= 0; index--) {
+        if (isAssistantMessage(chat[index])) {
+            return index;
+        }
+    }
+
+    return -1;
+}
+
+/**
+ * The newest visible message that holds any companion results, so a retry acts on the latest
+ * batch of runs even after the user has started typing the next message.
+ * @returns {number}
+ */
+export function getLatestCompanionResultsMessageIndex() {
+    for (let index = chat.length - 1; index >= 0; index--) {
+        const message = chat[index];
+        if (isValidCompanionTargetMessage(message, { allowUserMessage: true }) && Object.keys(getCompanionResults(message)).length > 0) {
+            return index;
+        }
+    }
+
+    return -1;
+}
+
+/**
+ * Enabled companions set to run automatically after a reply. Manual companions, companions hidden
+ * from automatic runs and companions still under their minimum chat length are left out.
+ * @param {number} messageIndex
+ * @returns {object[]}
+ */
+export function getAutomaticCompanionAgents(messageIndex) {
+    if (!areAgentsGloballyEnabled()) return [];
+    return getRunnableCompanionAgents(getEnabledAgents(), { messageIndex });
+}
+
+/**
+ * Runs the automatic companions on a reply again, the same set a new reply would start.
+ * @param {number} messageIndex
+ * @returns {Promise<object[]>}
+ */
+export async function runAutomaticCompanionsOnMessage(messageIndex) {
+    const message = chat[messageIndex];
+    const isTargetCurrent = captureCompanionTarget(messageIndex);
+    if (!areAgentsGloballyEnabled() || !isAssistantMessage(message)) {
+        return [];
+    }
+
+    const agents = getAutomaticCompanionAgents(messageIndex);
+    if (agents.length === 0) {
+        return [];
+    }
+
+    const cancelRevision = getAgentGenerationCancelRevision();
+    const contextSourceAgents = getRunnableCompanionAgents(getEnabledAgents(), { manual: true, messageIndex, includeHidden: false });
+    await runCompanionAgentsWithDependencyDelay(agents, messageIndex, 'normal', cancelRevision, { contextSourceAgents });
+
+    if (!isTargetCurrent()) return [];
+    saveChatDebounced({ deferBackup: false });
+    return agents.map(agent => getCompanionResults(message)[agent.id]);
+}
+
+/**
+ * Enabled companions whose latest run on this message failed for a reason worth retrying:
+ * a connection or provider error, a blank reply, an interrupted run, or a companion they
+ * depend on failing first.
+ * @param {number} messageIndex
+ * @returns {object[]}
+ */
+export function getRetryableCompanionAgents(messageIndex) {
+    const message = chat[messageIndex];
+    if (!areAgentsGloballyEnabled() || !isValidCompanionTargetMessage(message, { allowUserMessage: true })) {
+        return [];
+    }
+
+    const results = getCompanionResults(message);
+    return getRunnableCompanionAgents(getEnabledAgents(), { manual: true, messageIndex })
+        .filter(agent => isRetryableCompanionFailure(results[agent.id]));
+}
+
+/**
+ * Runs only the retryable failed companions on a message again.
+ * @param {number} messageIndex
+ * @returns {Promise<object[]>}
+ */
+export async function retryFailedCompanionsOnMessage(messageIndex) {
+    const message = chat[messageIndex];
+    const isTargetCurrent = captureCompanionTarget(messageIndex);
+    const agents = getRetryableCompanionAgents(messageIndex);
+    if (agents.length === 0) {
+        return [];
+    }
+
+    const cancelRevision = getAgentGenerationCancelRevision();
+    const contextSourceAgents = getRunnableCompanionAgents(getEnabledAgents(), { manual: true, messageIndex });
+    await runCompanionAgentsWithDependencyDelay(agents, messageIndex, 'normal', cancelRevision, { allowUserMessage: true, contextSourceAgents });
+
+    if (!isTargetCurrent()) return [];
+    saveChatDebounced({ deferBackup: false });
+    return agents.map(agent => getCompanionResults(message)[agent.id]);
+}
+
+/**
+ * How companions group into shared requests, using the same rules as a real run. Linked
+ * companions only share a request when their connection, model and context settings match;
+ * `mismatched` holds the companions linked to a peer they cannot share with.
+ * @param {object[]} agents
+ * @returns {{ groups: string[][], mismatched: Set<string> }}
+ */
+export function getCompanionBatchGroups(agents = []) {
+    const companions = agents.filter(agent => agent && isCompanionAgent(agent));
+    const messageIndex = Math.max(0, chat.length - 1);
+    const groups = partitionCompanionRuns(companions, messageIndex)
+        .filter(unit => unit.type === 'batch')
+        .map(unit => unit.agents.map(agent => agent.id));
+    const agentByReferenceId = buildCompanionReferenceMap(companions);
+    const mismatched = new Set();
+
+    for (const agent of companions) {
+        if (!getCompanionConfig(agent).batch) continue;
+        const key = getBatchKey(agent, messageIndex);
+        for (const selectedId of getCompanionBatchAgentIdSet(agent)) {
+            const peer = agentByReferenceId.get(selectedId);
+            if (peer && peer.id !== agent.id && getBatchKey(peer, messageIndex) !== key) {
+                mismatched.add(agent.id);
+                mismatched.add(peer.id);
+            }
+        }
+    }
+
+    return { groups, mismatched };
+}
+
+/**
+ * Deletes saved companion notes from the open chat, from the message and every swipe copy.
+ * The returned undo puts the removed notes back while the same chat is still open.
+ * @param {{ agentIds?: Iterable<string>|null, keepLatest?: boolean }} [options]
+ * @returns {Promise<{ removed: number, messages: number, undo: () => Promise<number> }>}
+ */
+export async function cleanUpCompanionNotes({ agentIds = null, keepLatest = true } = {}) {
+    const chatId = getCurrentChatId();
+    const plan = planCompanionNoteCleanup(chat, { agentIds, keepLatest });
+    const removedCopies = [];
+
+    for (const { messageIndex, agentIds: removeIds } of plan.targets) {
+        const message = chat[messageIndex];
+        const holders = [
+            { holder: message.extra, swipeIndex: null },
+            ...(message.is_user ? [] : (message.swipe_info ?? []).map((swipe, swipeIndex) => ({ holder: swipe?.extra, swipeIndex }))),
+        ];
+        for (const { holder, swipeIndex } of holders) {
+            const stored = holder?.[COMPANION_RESULTS_EXTRA_KEY];
+            if (!stored || typeof stored !== 'object' || Array.isArray(stored)) continue;
+            const removed = Object.fromEntries(removeIds.filter(id => Object.hasOwn(stored, id)).map(id => [id, stored[id]]));
+            if (Object.keys(removed).length === 0) continue;
+            const kept = { ...stored };
+            for (const id of Object.keys(removed)) delete kept[id];
+            if (Object.keys(kept).length > 0) {
+                holder[COMPANION_RESULTS_EXTRA_KEY] = kept;
+            } else {
+                delete holder[COMPANION_RESULTS_EXTRA_KEY];
+            }
+            removedCopies.push({ message, swipeIndex, swipeId: message.swipe_id, removed });
+        }
+    }
+
+    // Swiping replaces these objects with copies, so look each one up again when undoing. The
+    // message copy belongs to whichever swipe is showing, so only refill it on the same swipe.
+    const resolveHolder = ({ message, swipeIndex, swipeId }) => {
+        const holder = swipeIndex === null
+            ? (message.swipe_id === swipeId ? message.extra : null)
+            : message.swipe_info?.[swipeIndex]?.extra;
+        return holder && typeof holder === 'object' ? holder : null;
+    };
+
+    if (removedCopies.length > 0) {
+        saveChatDebounced({ deferBackup: false });
+        await emitCompanionResultsUpdated();
+    }
+
+    const undo = async () => {
+        if (getCurrentChatId() !== chatId) return 0;
+        const restoredNotes = new Map();
+        for (const copy of removedCopies) {
+            const { message, removed } = copy;
+            if (!chat.includes(message)) continue;
+            const holder = resolveHolder(copy);
+            if (!holder) continue;
+            const stored = holder[COMPANION_RESULTS_EXTRA_KEY];
+            const current = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+            // A note written since the clean-up wins over the one being put back.
+            const missing = Object.entries(removed).filter(([id]) => !Object.hasOwn(current, id));
+            if (missing.length === 0) continue;
+            holder[COMPANION_RESULTS_EXTRA_KEY] = { ...Object.fromEntries(missing), ...current };
+            // A reply keeps a copy on the message and on its swipe; count each note once.
+            const restoredIds = restoredNotes.get(message) ?? new Set();
+            missing.forEach(([id]) => restoredIds.add(id));
+            restoredNotes.set(message, restoredIds);
+        }
+        removedCopies.length = 0;
+        for (const message of restoredNotes.keys()) {
+            const activeSwipe = !message.is_user && Number.isInteger(message.swipe_id) ? message.swipe_info?.[message.swipe_id]?.extra : null;
+            const activeStore = activeSwipe?.[COMPANION_RESULTS_EXTRA_KEY];
+            if (activeStore && message.extra && typeof message.extra === 'object') {
+                message.extra[COMPANION_RESULTS_EXTRA_KEY] = structuredClone(activeStore);
+            }
+        }
+        const restored = [...restoredNotes.values()].reduce((sum, ids) => sum + ids.size, 0);
+        if (restored > 0) {
+            saveChatDebounced({ deferBackup: false });
+            await emitCompanionResultsUpdated();
+        }
+        return restored;
+    };
+
+    return { removed: plan.total, messages: plan.targets.length, undo };
 }
 
 /**

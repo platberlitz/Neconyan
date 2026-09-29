@@ -112,8 +112,9 @@ describe('in-chat agents workspace redesign', () => {
     test('gives companion activity the same labelled action language', () => {
         expect(dashboardSource).toContain('Activity &amp; companion results');
         expect(dashboardSource).toContain('Run enabled companions');
-        expect(dashboardSource).toContain('<span>Run</span>');
-        expect(dashboardSource).toContain('<span>Edit</span>');
+        expect(dashboardSource).toContain('<span>${escapeHtml(label)}</span></button>');
+        expect(dashboardSource).toContain('buildRowActionHtml(\'run\', \'fa-play\', \'Run\'');
+        expect(dashboardSource).toContain('buildRowActionHtml(\'edit\', \'fa-pen-to-square\', \'Edit\'');
         expect(dashboardSource).toContain('Latest results');
     });
 });

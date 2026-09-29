@@ -22,9 +22,15 @@ import {
 import {
     COMPANION_RESULTS_UPDATED_EVENT,
     captureCompanionResultTarget,
+    getAutomaticCompanionAgents,
     getCompanionCoveredMessageIndices,
     getCompanionResults,
+    getLatestAssistantCompanionMessageIndex,
+    getLatestCompanionResultsMessageIndex,
     getLatestValidCompanionMessageIndex,
+    getRetryableCompanionAgents,
+    retryFailedCompanionsOnMessage,
+    runAutomaticCompanionsOnMessage,
     runCompanionAgentOnMessage,
     runCompanionsOnMessage,
 } from './companion-runner.js';
@@ -813,6 +819,26 @@ function buildCompactionButton(state) {
     `;
 }
 
+function buildPanelRunButtonsHtml() {
+    if (!areAgentsGloballyEnabled()) {
+        return '<button type="button" class="ica--cdash-action" data-action="panel-regenerate-all" title="Regenerate every companion on the last reply" aria-label="Regenerate all companions" disabled><i class="fa-solid fa-rotate-right"></i></button>';
+    }
+
+    const automaticCount = getAutomaticCompanionAgents(getLatestAssistantCompanionMessageIndex()).length;
+    const retryIndex = getLatestCompanionResultsMessageIndex();
+    const retryCount = getRetryableCompanionAgents(retryIndex).length;
+    const automaticLabel = automaticCount > 0
+        ? `Run the ${automaticCount} automatic companion${automaticCount === 1 ? '' : 's'} on the last reply`
+        : 'No automatic companions are ready to run on the last reply';
+    const retryLabel = `Retry ${retryCount} failed companion${retryCount === 1 ? '' : 's'} on message #${retryIndex}`;
+
+    return `
+        ${retryCount > 0 ? `<button type="button" class="ica--cdash-action ica--tpanel-retry" data-action="panel-retry-failed" title="${escapeHtml(retryLabel)}" aria-label="${escapeHtml(retryLabel)}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span class="ica--tpanel-action-count">${retryCount}</span></button>` : ''}
+        <button type="button" class="ica--cdash-action" data-action="panel-run-auto" title="${escapeHtml(automaticLabel)}" aria-label="${escapeHtml(automaticLabel)}"${automaticCount > 0 ? '' : ' disabled'}><i class="fa-solid fa-bolt" aria-hidden="true"></i></button>
+        <button type="button" class="ica--cdash-action" data-action="panel-regenerate-all" title="Regenerate every companion on the last reply" aria-label="Regenerate all companions"><i class="fa-solid fa-rotate-right"></i></button>
+    `;
+}
+
 export function buildPanelHtml() {
     const states = collectPanelAgentStates();
     const body = states.length > 0
@@ -824,7 +850,7 @@ export function buildPanelHtml() {
             <span class="ica--tpanel-title"><i class="fa-solid fa-cat"></i> Companions</span>
             <span class="ica--tpanel-agent-actions">
                 <button type="button" class="ica--cdash-action${panelLocked ? ' is-active' : ''}" data-action="panel-lock" title="${panelLocked ? 'Unlock panel auto-close' : 'Keep panel open until unlocked'}" aria-label="${panelLocked ? 'Unlock panel' : 'Lock panel'}" aria-pressed="${panelLocked}"><i class="fa-solid ${panelLocked ? 'fa-lock' : 'fa-lock-open'}"></i></button>
-                <button type="button" class="ica--cdash-action" data-action="panel-regenerate-all" title="Regenerate every companion on the last reply" aria-label="Regenerate all companions"${areAgentsGloballyEnabled() ? '' : ' disabled'}><i class="fa-solid fa-rotate-right"></i></button>
+                ${buildPanelRunButtonsHtml()}
                 ${panelLauncher === 'handle' ? '<button type="button" class="ica--cdash-action" data-action="panel-hide-handle" title="Hide the floating button" aria-label="Hide the floating button"><i class="fa-solid fa-eye-slash"></i></button>' : ''}
                 <button type="button" class="ica--cdash-action" data-action="panel-close" title="Close panel" aria-label="Close panel"><i class="fa-solid fa-xmark"></i></button>
             </span>
@@ -1029,6 +1055,53 @@ async function handlePanelAction(event) {
         setCompanionPanelHandleHidden(true);
         closeCompanionPanel();
         toastr.info('Floating button hidden. Open Companion Panel from the Extensions menu to bring it back.');
+        return;
+    }
+
+    if (action === 'panel-run-auto') {
+        const replyIndex = getLatestAssistantCompanionMessageIndex();
+        if (replyIndex < 0) {
+            toastr.warning('No reply yet to run companions on.');
+            return;
+        }
+        button.prop('disabled', true);
+        try {
+            const results = await runAutomaticCompanionsOnMessage(replyIndex);
+            if (!results.length) {
+                toastr.info('No automatic companions are ready to run on the latest reply.');
+            }
+        } finally {
+            button.prop('disabled', false);
+            if (panelOpen) {
+                renderPanel();
+            }
+        }
+        return;
+    }
+
+    if (action === 'panel-retry-failed') {
+        const retryIndex = getLatestCompanionResultsMessageIndex();
+        if (retryIndex < 0 || getRetryableCompanionAgents(retryIndex).length === 0) {
+            toastr.info('Nothing to retry on the latest message.');
+            return;
+        }
+        button.prop('disabled', true);
+        try {
+            const results = await retryFailedCompanionsOnMessage(retryIndex);
+            const failedAgain = results.filter(result => result?.status !== 'done' || result?.lastRunError).length;
+            if (!results.length) {
+                toastr.info('The chat changed before the retry finished.');
+            } else if (failedAgain > 0) {
+                toastr.warning(`${failedAgain} companion${failedAgain === 1 ? '' : 's'} failed again. Check the connection, then retry.`);
+            } else {
+                toastr.success(`Retried ${results.length} companion${results.length === 1 ? '' : 's'}.`);
+            }
+        } finally {
+            button.prop('disabled', false);
+            if (panelOpen) {
+                renderPanel();
+            }
+        }
         return;
     }
 

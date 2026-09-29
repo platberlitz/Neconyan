@@ -352,3 +352,166 @@ export function projectCompanionChatHistory(message, resolveMacros = content => 
 
     return [includeOriginal ? originalMessage : '', ...retainedContent].filter(Boolean).join('\n\n');
 }
+
+// Neconyan: the fixed messages a companion run can fail with. New failures also store their kind
+// on the result; notes saved before kinds existed are classified from these texts instead.
+export const COMPANION_FAILURE_MESSAGES = Object.freeze({
+    cancelled: 'Cancelled.',
+    interrupted: 'Interrupted before completion.',
+    empty: 'Companion returned no output.',
+    limit: 'The reply reached its output limit. Increase the limit and try again.',
+    dependency: 'A required companion did not complete. Run it successfully before retrying.',
+    cycle: 'These companion dependencies form a cycle. Remove a circular dependency and try again.',
+    invalid: 'Tracker repair returned invalid output.',
+});
+
+// Shorter wordings the server-side roleplay runner saves for the same failures.
+const COMPANION_FAILURE_MESSAGE_ALIASES = Object.freeze({
+    'The reply reached its output limit.': 'limit',
+    'A required companion did not complete.': 'dependency',
+    'Companion dependencies form a cycle.': 'cycle',
+});
+
+export const COMPANION_FAILURE_KINDS = Object.freeze([...Object.keys(COMPANION_FAILURE_MESSAGES), 'api', 'other']);
+
+// Failures that another attempt can fix without the user changing anything first.
+export const RETRYABLE_COMPANION_FAILURE_KINDS = Object.freeze(['api', 'empty', 'interrupted', 'dependency']);
+
+function normalizeCompanionFailureKind(kind) {
+    const value = String(kind ?? '').trim();
+    return COMPANION_FAILURE_KINDS.includes(value) ? value : '';
+}
+
+/**
+ * The failure kind named by one of the fixed failure messages, or an empty string.
+ * @param {string} message
+ * @returns {string}
+ */
+export function classifyCompanionFailureMessage(message) {
+    const text = String(message ?? '').trim();
+    return Object.entries(COMPANION_FAILURE_MESSAGES).find(([, known]) => known === text)?.[0]
+        ?? (Object.hasOwn(COMPANION_FAILURE_MESSAGE_ALIASES, text) ? COMPANION_FAILURE_MESSAGE_ALIASES[text] : '');
+}
+
+/**
+ * Why the latest run of a companion failed, whether it left no note or kept an older one.
+ * Failures saved before kinds existed and with an unfamiliar message came from the connection.
+ * @param {object} [result]
+ * @returns {{ kind: string, message: string, keptNote: boolean }|null}
+ */
+export function getCompanionResultFailure(result) {
+    if (!result || typeof result !== 'object') {
+        return null;
+    }
+
+    if (result.status === 'error' || result.status === 'cancelled') {
+        const message = String(result.error ?? '').trim()
+            || (result.status === 'cancelled' ? COMPANION_FAILURE_MESSAGES.cancelled : 'Companion run failed.');
+        const kind = normalizeCompanionFailureKind(result.failureKind)
+            || classifyCompanionFailureMessage(message)
+            || (result.status === 'cancelled' ? 'cancelled' : 'api');
+        return { kind, message, keptNote: false };
+    }
+
+    const lastRunError = String(result.lastRunError ?? '').trim();
+    if (result.status === 'done' && lastRunError) {
+        const kind = normalizeCompanionFailureKind(result.lastRunFailureKind)
+            || classifyCompanionFailureMessage(lastRunError)
+            || 'api';
+        return { kind, message: lastRunError, keptNote: true };
+    }
+
+    return null;
+}
+
+/**
+ * Whether the latest run failed for a reason that running it again can fix.
+ * @param {object} [result]
+ * @returns {boolean}
+ */
+export function isRetryableCompanionFailure(result) {
+    const failure = getCompanionResultFailure(result);
+    return Boolean(failure && RETRYABLE_COMPANION_FAILURE_KINDS.includes(failure.kind));
+}
+
+function isPlainCompanionResults(value) {
+    return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+/**
+ * Every stored copy of a message's companion results: the message itself and each swipe.
+ * @param {object} message
+ * @returns {object[]}
+ */
+export function getCompanionResultStores(message) {
+    const stores = [];
+    if (isPlainCompanionResults(message?.extra?.[COMPANION_RESULTS_EXTRA_KEY])) {
+        stores.push(message.extra[COMPANION_RESULTS_EXTRA_KEY]);
+    }
+    if (!message?.is_user && Array.isArray(message?.swipe_info)) {
+        for (const swipeInfo of message.swipe_info) {
+            const stored = swipeInfo?.extra?.[COMPANION_RESULTS_EXTRA_KEY];
+            if (isPlainCompanionResults(stored) && !stores.includes(stored)) {
+                stores.push(stored);
+            }
+        }
+    }
+    return stores;
+}
+
+function isKeepableCompanionNote(agentId, result) {
+    return Boolean(
+        result?.status === 'done'
+        && String(result.content ?? '').trim()
+        && !isSuppressedCompanionResult(agentId, result),
+    );
+}
+
+/**
+ * Works out which saved companion notes a clean-up removes. With keepLatest, each companion keeps
+ * the message holding its newest readable note and everything after it; only older messages lose
+ * that companion's notes. Without it, every note from the chosen companions goes. A companion that
+ * is running on a message is never touched there.
+ * @param {object[]} messages
+ * @param {{ agentIds?: Iterable<string>|null, keepLatest?: boolean }} [options]
+ * @returns {{ targets: { messageIndex: number, agentIds: string[] }[], counts: Map<string, number>, names: Map<string, string>, total: number }}
+ */
+export function planCompanionNoteCleanup(messages = [], { agentIds = null, keepLatest = true } = {}) {
+    const chosen = agentIds ? new Set(agentIds) : null;
+    const newestNoteIndex = new Map();
+    const names = new Map();
+
+    if (keepLatest) {
+        for (let index = messages.length - 1; index >= 0; index--) {
+            for (const [agentId, result] of Object.entries(getActiveCompanionResults(messages[index]))) {
+                if (!newestNoteIndex.has(agentId) && isKeepableCompanionNote(agentId, result)) {
+                    newestNoteIndex.set(agentId, index);
+                }
+            }
+        }
+    }
+
+    const targets = [];
+    const counts = new Map();
+    for (let index = 0; index < messages.length; index++) {
+        const stores = getCompanionResultStores(messages[index]);
+        const agentsHere = new Set(stores.flatMap(store => Object.keys(store)));
+        const removable = [];
+        for (const agentId of agentsHere) {
+            if (chosen && !chosen.has(agentId)) continue;
+            const copies = stores.map(store => store[agentId]).filter(Boolean);
+            const name = copies.map(result => String(result?.agentName ?? '').trim()).find(Boolean);
+            if (name && !names.has(agentId)) names.set(agentId, name);
+            if (copies.some(result => result?.status === 'pending')) continue;
+            if (keepLatest && !(index < (newestNoteIndex.get(agentId) ?? -1))) continue;
+            removable.push(agentId);
+            counts.set(agentId, (counts.get(agentId) ?? 0) + 1);
+        }
+        if (removable.length) {
+            targets.push({ messageIndex: index, agentIds: removable });
+        }
+    }
+
+    const total = targets.reduce((sum, target) => sum + target.agentIds.length, 0);
+    return { targets, counts, names, total };
+}
