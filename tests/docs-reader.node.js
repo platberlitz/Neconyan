@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { DOCS_READER_PAGES, renderDocsMarkdown, renderDocsPage, renderRegisteredDocsPage } from '../src/docs-reader.js';
+import { DOCS_READER_PAGES, readAssistantGender, renderDocsMarkdown, renderDocsPage, renderRegisteredDocsPage } from '../src/docs-reader.js';
 
 const serverDirectory = fileURLToPath(new URL('../', import.meta.url));
 const glossary = readFileSync(new URL('../docs/in-chat-agents-glossary.md', import.meta.url), 'utf8');
@@ -66,6 +68,43 @@ test('only registered pages render, and the glossary uses current Agents labels'
         assert.ok(html.includes(label), `missing ${label}`);
     }
     assert.doesNotMatch(glossary, /sillybunny/i);
+});
+
+test('Taro hosts the glossary in the assistant gender the user picked', () => {
+    const neutral = renderRegisteredDocsPage(serverDirectory, 'in-chat-agents-glossary');
+    assert.match(neutral, /<header class="hero cat-panel has-host">/);
+    assert.match(neutral, /class="hero-speech" role="note" aria-label="Taro says"/);
+    assert.match(neutral, /<img class="hero-host" src="\/img\/neconyan\/tour\/tour-05-taro-agents-neutral\.webp\?v=[^"]+"/);
+    assert.match(neutral, /<img class="empty-host" src="\/img\/neconyan\/assistant-icons\/taro-neutral\.png\?v=[^"]+"/);
+    assert.match(neutral, /I checked twice\. Nothing matches that search\./);
+
+    const userRoot = mkdtempSync(join(tmpdir(), 'docs-reader-'));
+    try {
+        assert.equal(readAssistantGender(userRoot, 'taro'), 'neutral');
+        writeFileSync(join(userRoot, 'settings.json'), JSON.stringify({ accountStorage: { 'neconyanAssistantGender:taro': 'female' } }));
+        assert.equal(readAssistantGender(userRoot, 'taro'), 'female');
+        const female = renderRegisteredDocsPage(serverDirectory, 'in-chat-agents-glossary', { userRoot });
+        assert.match(female, /tour-05-taro-agents-female\.webp/);
+        assert.match(female, /assistant-icons\/taro-female\.png/);
+        assert.doesNotMatch(female, /-neutral\.(webp|png)/);
+        writeFileSync(join(userRoot, 'settings.json'), JSON.stringify({ accountStorage: { 'neconyanAssistantGender:taro': '../etc' } }));
+        assert.equal(readAssistantGender(userRoot, 'taro'), 'neutral');
+        writeFileSync(join(userRoot, 'settings.json'), '{ broken');
+        assert.equal(readAssistantGender(userRoot, 'taro'), 'neutral');
+    } finally {
+        rmSync(userRoot, { recursive: true, force: true });
+    }
+
+    for (const gender of ['male', 'female', 'neutral']) {
+        assert.ok(existsSync(join(serverDirectory, `public/img/neconyan/tour/tour-05-taro-agents-${gender}.webp`)), `missing ${gender} Taro`);
+        assert.ok(existsSync(join(serverDirectory, `public/img/neconyan/assistant-icons/taro-${gender}.png`)), `missing ${gender} Taro icon`);
+    }
+});
+
+test('pages without a host keep the plain hero and empty state', () => {
+    const html = renderDocsPage('# Plain\n\n## Part\n\nText.', { rawHref: '/docs/x.md' });
+    assert.doesNotMatch(html, /class="hero[^"]*has-host"|<img class="(hero|empty)-host"/);
+    assert.match(html, /id="empty-state"/);
 });
 
 test('the Agents panel links to the reader page', () => {

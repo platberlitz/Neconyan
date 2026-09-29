@@ -14,6 +14,16 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
             await page.evaluate(() => document.fonts.ready);
             expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(viewport.width);
             expect(await page.locator('.doc').evaluate(element => getComputedStyle(element).fontFamily)).toContain('Nunito');
+            expect(await page.locator('.hero h1').evaluate(element => getComputedStyle(element).fontFamily)).toContain('Fredoka One');
+
+            const taro = page.locator('img.hero-host');
+            await expect(taro).toBeVisible();
+            await expect.poll(() => taro.evaluate(image => image.complete && image.naturalWidth)).toBeGreaterThan(0);
+            await expect(page.getByRole('note', { name: 'Taro says' })).toContainText('Taro');
+            expect(await page.locator('.hero').evaluate(element => getComputedStyle(element, '::before').backgroundImage)).toContain('ear-left');
+            const heroBox = await page.locator('.hero').boundingBox();
+            const taroBox = await taro.boundingBox();
+            expect(taroBox.x + taroBox.width).toBeLessThanOrEqual(heroBox.x + heroBox.width + 1);
 
             const search = page.getByRole('searchbox');
             await search.fill('depth');
@@ -22,6 +32,8 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
             await expect(page.locator('#core-terms')).toBeHidden();
             await search.fill('nothing-matches-this-term');
             await expect(page.locator('#empty-state')).toBeVisible();
+            await expect(page.locator('#empty-state')).toContainText('I checked twice');
+            await expect.poll(() => page.locator('#empty-state img.empty-host').evaluate(image => image.complete && image.naturalWidth)).toBeGreaterThan(0);
             await search.press('Escape');
             await expect(page.locator('#empty-state')).toBeHidden();
             await expect(page.locator('#core-terms')).toBeVisible();

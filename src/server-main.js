@@ -468,7 +468,9 @@ app.get('/docs/in-chat-agents-glossary.md', (_request, response) => {
 });
 app.get('/docs/:slug', (request, response, next) => {
     try {
-        const html = renderRegisteredDocsPage(serverDirectory, String(request.params.slug || ''));
+        const html = renderRegisteredDocsPage(serverDirectory, String(request.params.slug || ''), {
+            userRoot: request.user?.directories?.root,
+        });
         if (html === null) {
             return next();
         }
