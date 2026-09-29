@@ -330,7 +330,7 @@ test('Built-in Extensions omits Included Tools while their settings remain searc
     for (const name of ['BotSearcher', 'Dialogue Colors', 'Preset Tools', 'Prompt Tags', 'Time Machine', 'Meower', 'Story Mode', 'Pawthfinder']) {
         await expect(entries.filter({ hasText: new RegExp(`^${name}$`) })).toHaveCount(0);
     }
-    for (const name of ['TTS', 'Quick Reply', 'Quick Image Gen', 'Vector Storage']) {
+    for (const name of ['TTS', 'Quick Reply', 'Quick Image Gen', 'Vectorization']) {
         await expect(entries.filter({ hasText: new RegExp(`^${name}$`) })).toHaveCount(1);
     }
     // Pawthfinder keeps its settings page through the Included Tools route.

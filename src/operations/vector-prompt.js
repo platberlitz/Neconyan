@@ -14,11 +14,11 @@ export async function projectVectorPrompt(context, plan, replacements, chatQuery
     const indexes = replacements.map(({ snapshot, data }) => ({ ...snapshot, data }));
     const baseQuery = plan.query || '';
     const embedding = new Map();
-    const query = async (ids, text, count, step) => {
+    const query = async (ids, text, count, step, selection) => {
         if (!text.trim() || !ids.length) return {};
         if (!embedding.has(text)) embedding.set(text, await vectorBatch(context, plan, `prompt-query:${step}`, [text],
             { ...dependencies, isQuery: true, beforeDispatch: verify }));
-        return queryVectorIndexes(indexes.filter(index => ids.includes(index.collectionId)), embedding.get(text).vectors[0], count, plan.threshold);
+        return queryVectorIndexes(indexes.filter(index => ids.includes(index.collectionId)), embedding.get(text).vectors[0], count, plan.threshold, selection);
     };
     const rows = plan.chatRecords;
     const environment = createMacroEnvironment(plan.macros);
@@ -26,11 +26,15 @@ export async function projectVectorPrompt(context, plan, replacements, chatQuery
     const descriptor = (row, index) => ({ index, hash: roleplayHash(row), name: row.name, original: row.mes });
     if (options.chatsEnabled && rows.length >= options.protect) {
         const id = plan.collections.find(collection => collection.kind === 'chat')?.id;
-        const result = id ? await query([id], chatQuery || '', options.insert, 'chat') : {};
+        const eligible = new Set(rows.slice(0, Math.max(0, rows.length - options.protect))
+            .filter(row => row.mes && (!row.is_system || options.keepHidden)).map(row => getStringHash(environment.evaluate(row.mes))));
+        const result = id ? await query([id], chatQuery || '', options.insert, 'chat', {
+            accept: row => eligible.has(row.metadata.hash), distinctHashes: true,
+        }) : {};
         const hashes = distinct(result[id]?.hashes || []);
         const used = new Set();
         const selected = rows.flatMap((row, index) => {
-            if (index >= rows.length - options.protect || !row.mes) return [];
+            if (index >= rows.length - options.protect || !row.mes || row.is_system && !options.keepHidden) return [];
             const hash = getStringHash(environment.evaluate(row.mes));
             if (!hashes.includes(hash) || used.has(hash)) return [];
             used.add(hash);
@@ -66,7 +70,9 @@ export async function projectVectorPrompt(context, plan, replacements, chatQuery
         const books = plan.collections.filter(collection => collection.kind === 'world');
         const result = await query(books.map(collection => collection.id), baseQuery, options.worldCount, 'world');
         for (const book of books) for (const item of book.items) {
-            if (result[book.id]?.hashes.includes(item.hash)) output.worldInfo.push({ world: book.book, uid: item.index, hash: item.hash });
+            if (result[book.id]?.metadata.some(row => row.hash === item.hash && row.index === item.index)) {
+                output.worldInfo.push({ world: book.book, uid: item.index, hash: item.hash });
+            }
         }
     }
     return output;

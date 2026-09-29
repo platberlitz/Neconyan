@@ -19,12 +19,12 @@ import { operationError, withOperation } from './store.js';
 import { requestBrowserWork } from './browser-work.js';
 
 const models = {
-    transformers: '', openai: 'text-embedding-ada-002', mistral: 'mistral-embed',
+    transformers: '', openai: 'text-embedding-3-small', mistral: 'mistral-embed',
     togetherai: 'togethercomputer/m2-bert-80M-32k-retrieval', nomicai: 'nomic-embed-text-v1.5',
     cohere: 'embed-english-v3.0', electronhub: 'text-embedding-3-small', openrouter: 'openai/text-embedding-3-large',
     chutes: 'chutes-qwen-qwen3-embedding-8b', nanogpt: 'text-embedding-3-small', siliconflow: 'Qwen/Qwen3-Embedding-0.6B',
     workers_ai: '@cf/baai/bge-m3', ollama: 'mxbai-embed-large', vllm: '', llamacpp: '', koboldcpp: '',
-    palm: 'text-embedding-005', vertexai: 'text-embedding-005', webllm: '',
+    palm: 'gemini-embedding-001', vertexai: 'gemini-embedding-001', webllm: '',
 };
 const secrets = { openai: 'OPENAI', mistral: 'MISTRALAI', togetherai: 'TOGETHERAI', nomicai: 'NOMICAI',
     cohere: 'COHERE', electronhub: 'ELECTRONHUB', openrouter: 'OPENROUTER', chutes: 'CHUTES', nanogpt: 'NANOGPT',

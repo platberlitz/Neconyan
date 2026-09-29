@@ -8,19 +8,16 @@ import {
     is_send_press,
     saveSettingsDebounced,
     setExtensionPrompt,
-    substituteParams,
 } from '../../../script.js';
 import {
     ModuleWorkerWrapper,
     extension_settings,
-    getContext,
-    renderExtensionTemplateAsync,
     openThirdPartyExtensionMenu,
 } from '../../extensions.js';
 import { registerDebugFunction } from '../../power-user.js';
 import { SECRET_KEYS, secret_state } from '../../secrets.js';
 import { getDataBankAttachments, getDataBankAttachmentsForSource } from '../../chats.js';
-import { debounce, getStringHash as calculateHash, onlyUnique, escapeHtml, isTrueBoolean } from '../../utils.js';
+import { debounce, getStringHash as calculateHash, onlyUnique, isTrueBoolean } from '../../utils.js';
 import { debounce_timeout } from '../../constants.js';
 import { getSortedEntries } from '../../world-info.js';
 import { SlashCommandParser } from '../../slash-commands/SlashCommandParser.js';
@@ -32,7 +29,10 @@ import { slashCommandReturnHelper } from '../../slash-commands/SlashCommandRetur
 import { WebLlmVectorProvider } from './webllm.js';
 import { applyLegacyVectorEnabledSetting, bindVectorEnabledSettingsStore, getPersistableVectorSettings, getVectorEnabledState, normalizeVectorEnabledOptions, normalizeVectorSources, stripLegacyVectorEnabledSetting } from './settings-utils.js';
 import { oai_settings } from '../../openai.js';
-import { runVectorWork, mountSavedVectorWork } from './native.js';
+import { runVectorWork } from './native.js';
+import { t } from '../../i18n.js';
+import { renderTemplateAsync } from '../../templates.js';
+import { mountVectorWorkspace } from './workspace.js';
 
 /**
  * @typedef {object} HashedMessage
@@ -41,8 +41,6 @@ import { runVectorWork, mountSavedVectorWork } from './native.js';
  * @property {number} index - The index of the message in the chat
  * @property {boolean} [summaryFailed] - Whether summarization failed for this message (used internally to skip messages that fail summarization)
  */
-
-const MODULE_NAME = 'vectors';
 
 export const EXTENSION_PROMPT_TAG = '3_vectors';
 export const EXTENSION_PROMPT_TAG_DB = '4_vectors_data_bank';
@@ -54,7 +52,7 @@ const settings = {
     use_alt_endpoint: false,
     include_wi: false,
     togetherai_model: 'togethercomputer/m2-bert-80M-32k-retrieval',
-    openai_model: 'text-embedding-ada-002',
+    openai_model: 'text-embedding-3-small',
     electronhub_model: 'text-embedding-3-small',
     openrouter_model: 'openai/text-embedding-3-large',
     cohere_model: 'embed-english-v3.0',
@@ -62,14 +60,14 @@ const settings = {
     ollama_keep: false,
     vllm_model: '',
     webllm_model: '',
-    google_model: 'text-embedding-005',
+    google_model: 'gemini-embedding-001',
     chutes_model: 'chutes-qwen-qwen3-embedding-8b',
     nanogpt_model: 'text-embedding-3-small',
     siliconflow_model: 'Qwen/Qwen3-Embedding-0.6B',
     summarize: false,
     summarize_sent: false,
     summary_source: 'main',
-    summary_prompt: 'Ignore previous instructions. Summarize the most important parts of the message. Limit yourself to 250 words or less. Your response should include nothing but the summary.',
+    summary_prompt: 'Summarise the facts, names, events and commitments in the supplied message in 250 words or fewer. Preserve details useful for later retrieval. Return only the summary.',
     summary_retries: 2,
     summary_threshold: 200,
     force_chunk_delimiter: '',
@@ -175,22 +173,6 @@ const remoteEmbeddingEndpoints = {
  */
 function getFileCollectionId(fileUrl) {
     return `file_${getStringHash(fileUrl)}`;
-}
-
-async function onVectorizeAllClick() {
-    try {
-        if (!settings.enabled_chats || !getCurrentChatId()) return;
-        $('#vectorize_progress').show();
-        await runVectorWork('sync-chat', {}, { onProgress: progress => {
-            $('#vectorize_progress_percent').text(progress.total ? Math.round(100 * progress.completed / progress.total) : 0);
-            $('#vectorize_progress_eta').text(progress.stage);
-        } });
-        toastr.success('The saved chat vector index is ready.');
-    } catch (error) {
-        toastr.error(error.message, 'Vector work retained');
-    } finally {
-        $('#vectorize_progress').hide();
-    }
 }
 
 let syncBlocked = false;
@@ -399,24 +381,11 @@ exposeVectorStorageApi();
 const onChatEvent = debounce(async () => await moduleWorker.update(), debounce_timeout.relaxed);
 
 /**
- * Gets the saved hashes for a collection
-* @param {string} collectionId
-* @returns {Promise<number[]>} Saved hashes
-*/
-async function getSavedHashes(collectionId) {
-    return (await runVectorWork('list', { collectionIds: [collectionId] }))[collectionId] || [];
-}
-
-/**
  * Purges the vector index for a file.
  * @param {string} fileUrl File URL to purge
  */
 async function purgeFileVectorIndex(fileUrl) {
     try {
-        if (!settings.enabled_files) {
-            return;
-        }
-
         console.log(`Vectors: Purging file vector index for ${fileUrl}`);
         const collectionId = getFileCollectionId(fileUrl);
 
@@ -435,10 +404,6 @@ async function purgeFileVectorIndex(fileUrl) {
  */
 async function purgeVectorIndex(collectionId) {
     try {
-        if (!settings.enabled_chats) {
-            return true;
-        }
-
         await runVectorWork('purge', { collectionIds: [collectionId] });
 
         console.log(`Vectors: Purged vector index for collection ${collectionId}`);
@@ -464,10 +429,14 @@ async function purgeAllVectorIndexes() {
     }
 }
 
+let workspace;
+let lastModelSource;
+const loadedModelSources = new Set();
+const pendingModelSources = new Set();
+const modelStatuses = new Map();
+
 function toggleSettings() {
-    $('#vectors_files_settings').toggle(!!settings.enabled_files);
-    $('#vectors_chats_settings').toggle(!!settings.enabled_chats);
-    $('#vectors_world_info_settings').toggle(!!settings.enabled_world_info);
+    workspace?.updateState();
     $('#together_vectorsModel').toggle(settings.source === 'togetherai');
     $('#openai_vectorsModel').toggle(settings.source === 'openai');
     $('#electronhub_vectorsModel').toggle(settings.source === 'electronhub');
@@ -482,29 +451,53 @@ function toggleSettings() {
     $('#webllm_vectorsModel').toggle(settings.source === 'webllm');
     $('#koboldcpp_vectorsModel').toggle(settings.source === 'koboldcpp');
     $('#google_vectorsModel').toggle(settings.source === 'palm' || settings.source === 'vertexai');
+    if (['palm', 'vertexai'].includes(settings.source) && lastModelSource !== settings.source) {
+        const models = settings.source === 'palm' ? ['gemini-embedding-2', 'gemini-embedding-001']
+            : ['gemini-embedding-001', 'text-embedding-005', 'text-multilingual-embedding-002', 'text-embedding-004'];
+        const select = $('#vectors_google_model').empty();
+        if (!models.includes(settings.google_model)) select.append(new Option(t`${settings.google_model} (saved selection)`, settings.google_model));
+        for (const model of models) select.append(new Option(model, model));
+        select.val(settings.google_model);
+    }
     $('#siliconflow_vectorsModel').toggle(settings.source === 'siliconflow');
     $('#workers_ai_vectorsModel').toggle(settings.source === 'workers_ai');
     $('#vector_altEndpointUrl').toggle(vectorApiRequiresUrl.includes(settings.source));
-    if (settings.source === 'webllm') {
+    const remote = settings.source in remoteEmbeddingEndpoints;
+    $('#vectors_refresh_models').toggle(remote);
+    $('#vectors_models_status').toggle(remote);
+    if (remote) $('#vectors_models_status').text(modelStatuses.get(settings.source) || '');
+    const help = settings.source === 'transformers'
+        ? t`Runs on the Neconyan server. The first use may download its configured embedding model. No API key is needed.`
+        : vectorApiRequiresUrl.includes(settings.source) ? t`Uses the server URL in Connections unless you choose a separate embedding server below.`
+            : settings.source === 'webllm' ? t`Runs on this device through WebLLM.` : t`Set the provider credentials in Connections. Indexing and searches use this provider, independently of the chat model.`;
+    $('[data-vectors-provider-help]').text(help);
+    if (settings.source === 'webllm' && lastModelSource !== settings.source) {
         loadWebLlmModels();
-    } else if (settings.source in remoteEmbeddingEndpoints) {
+    } else if (remote) {
         loadRemoteEmbeddingModels(settings.source);
     }
+    lastModelSource = settings.source;
 }
 
 /**
  * Loads models from a remote embedding endpoint and populates the corresponding select element.
  * @param {string} source - The source key matching a remoteEmbeddingEndpoints entry
  */
-async function loadRemoteEmbeddingModels(source) {
+async function loadRemoteEmbeddingModels(source, refresh = false) {
     const config = remoteEmbeddingEndpoints[source];
-    if (!config) {
+    if (!config || pendingModelSources.has(source) || !refresh && loadedModelSources.has(source)) {
         return;
     }
+    loadedModelSources.add(source);
+    pendingModelSources.add(source);
 
     const { url, settingsKey, selectId, getBody, filter } = config;
     const valueProperty = config.valueProperty || 'id';
     const textProperty = config.textProperty;
+    const report = message => {
+        modelStatuses.set(source, message);
+        if (source === settings.source) $('#vectors_models_status').text(message);
+    };
 
     /**
      * Populates the select element with the given models.
@@ -513,6 +506,10 @@ async function loadRemoteEmbeddingModels(source) {
     function populateSelect(models) {
         const select = $(`#${selectId}`);
         select.empty();
+        const saved = settings[settingsKey];
+        if (saved && !models.some(model => model[valueProperty] === saved)) {
+            select.append(new Option(t`${saved} (saved selection)`, saved));
+        }
         for (const m of models) {
             const option = document.createElement('option');
             option.value = m[valueProperty];
@@ -528,6 +525,7 @@ async function loadRemoteEmbeddingModels(source) {
     }
 
     try {
+        report(t`Loading available embedding models…`);
         const body = typeof getBody === 'function' ? getBody() : {};
 
         /** @type {RequestInit} */
@@ -550,10 +548,12 @@ async function loadRemoteEmbeddingModels(source) {
         }
 
         populateSelect(models);
+        report(t`${models.length} models listed. Your saved selection is preserved.`);
     } catch (err) {
         console.warn(`${source} models fetch failed`, err);
-        populateSelect([]);
-    }
+        if (!$(`#${selectId} option`).length) populateSelect([]);
+        report(t`Could not load models. Check the provider key in Connections, then refresh. Your saved model is still selected.`);
+    } finally { pendingModelSources.delete(source); }
 }
 
 /**
@@ -602,71 +602,6 @@ function loadWebLlmModels() {
     });
 }
 
-async function onPurgeClick() {
-    const chatId = getCurrentChatId();
-    if (!chatId) {
-        toastr.info('No chat selected', 'Purge aborted');
-        return;
-    }
-    if (await purgeVectorIndex(chatId)) {
-        toastr.success('Vector index purged', 'Purge successful');
-    } else {
-        toastr.error('Failed to purge vector index', 'Purge failed');
-    }
-}
-
-async function onViewStatsClick() {
-    const chatId = getCurrentChatId();
-    if (!chatId) {
-        toastr.info('No chat selected');
-        return;
-    }
-
-    const hashesInCollection = await getSavedHashes(chatId);
-    const totalHashes = hashesInCollection.length;
-    const uniqueHashes = hashesInCollection.filter(onlyUnique).length;
-
-    toastr.info(`Total hashes: <b>${totalHashes}</b><br>
-    Unique hashes: <b>${uniqueHashes}</b><br><br>
-    I'll mark collected messages with a green circle.`,
-    `Stats for chat ${escapeHtml(chatId)}`,
-    { timeOut: 10000, escapeHtml: false },
-    );
-
-    $('#chat .mes.vectorized').removeClass('vectorized');
-    const chat = getContext().chat;
-    for (const message of chat) {
-        if (hashesInCollection.includes(getStringHash(substituteParams(message.mes)))) {
-            const messageElement = $(`#chat .mes[mesid="${chat.indexOf(message)}"]`);
-            messageElement.addClass('vectorized');
-        }
-    }
-}
-
-async function onVectorizeAllFilesClick() {
-    try {
-        await runVectorWork('sync-files');
-        toastr.success('All selected saved files indexed.', 'Vector Storage');
-    } catch (error) {
-        toastr.error(error.message, 'Vector work retained');
-    }
-}
-
-async function onPurgeFilesClick() {
-    try {
-        const dataBank = getDataBankAttachments();
-        const chatAttachments = getContext().chat.filter(x => Array.isArray(x.extra?.files)).map(x => x.extra.files).flat();
-        const allFiles = [...dataBank, ...chatAttachments];
-
-        await runVectorWork('purge', { collectionIds: allFiles.map(file => getFileCollectionId(file.url)).filter(onlyUnique) });
-
-        toastr.success('All files purged', 'Purge successful');
-    } catch (error) {
-        console.error('Vectors: Failed to purge all files', error);
-        toastr.error('Failed to purge all files', 'Purge failed');
-    }
-}
-
 export async function init() {
     const savedVectorSettings = ensureVectorSettingsStore();
     Object.assign(settings, savedVectorSettings);
@@ -678,9 +613,8 @@ export async function init() {
     }
     stripLegacyVectorEnabledSetting(settings);
 
-    const template = await renderExtensionTemplateAsync(MODULE_NAME, 'settings');
+    const template = await renderTemplateAsync('/scripts/extensions/vectors/settings.html?v=20260929-vectors1', {}, true, true, true);
     $('#vectors_container').append(template);
-    mountSavedVectorWork(document.querySelector('#vectors_container .inline-drawer-content') || document.querySelector('#vectors_container'));
     const migratedSources = normalizeVectorSources(settings, Array.from(document.querySelectorAll('#vectors_source option'), option => option.value));
     stripLegacyVectorEnabledSetting(savedVectorSettings);
     Object.assign(savedVectorSettings, getPersistableVectorSettings(settings));
@@ -810,11 +744,7 @@ export async function init() {
         Object.assign(extension_settings.vectors, settings);
         saveSettingsDebounced();
     });
-    $('#vectors_vectorize_all').on('click', onVectorizeAllClick);
-    $('#vectors_purge').on('click', onPurgeClick);
-    $('#vectors_view_stats').on('click', onViewStatsClick);
-    $('#vectors_files_vectorize_all').on('click', onVectorizeAllFilesClick);
-    $('#vectors_files_purge').on('click', onPurgeFilesClick);
+    $('#vectors_refresh_models').on('click', () => loadRemoteEmbeddingModels(settings.source, true));
 
     $('#vectors_size_threshold').val(settings.size_threshold).on('input', () => {
         settings.size_threshold = Number($('#vectors_size_threshold').val());
@@ -1027,6 +957,7 @@ export async function init() {
         });
     });
 
+    workspace = mountVectorWorkspace(settings);
     toggleSettings();
     eventSource.on(event_types.MESSAGE_DELETED, onChatEvent);
     eventSource.on(event_types.MESSAGE_EDITED, onChatEvent);

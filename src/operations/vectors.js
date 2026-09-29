@@ -60,7 +60,7 @@ async function summarizeText(context, plan, text, step, verify, dependencies) {
 async function prepareItems(context, plan, collection, collectionIndex, original, verify, dependencies) {
     const options = plan.options;
     if (collection.kind === 'world') return collection.items;
-    const savedHashes = new Set(original.data.items.map(item => item.metadata.hash));
+    const savedHashes = new Set(plan.rebuild ? [] : original.data.items.map(item => item.metadata.hash));
     if (collection.kind === 'chat') {
         const items = [];
         for (const [index, item] of collection.items.entries()) {
@@ -98,7 +98,7 @@ async function prepareItems(context, plan, collection, collectionIndex, original
         chunks = chunks.map((chunk, index, all) => [index ? trimToStartSentence(all[index - 1].slice(-half)) : '', chunk,
             index + 1 < all.length ? trimToEndSentence(all[index + 1].slice(0, half)) : ''].filter(Boolean).join(' '));
     }
-    return chunks.map((text, index) => ({ text, index, hash: getStringHash(text) }));
+    return chunks.filter(text => text.trim()).map((text, index) => ({ text, index, hash: getStringHash(text) }));
 }
 
 export async function runVectors(context, plan, dependencies = {}) {
@@ -110,7 +110,10 @@ export async function runVectors(context, plan, dependencies = {}) {
     const snapshots = plan.collections.map(collection => snapshotFor(context, plan, collection, model));
     const verify = lease => { assertVectorSources(lease, plan); for (const snapshot of snapshots) assertVectorIndex(lease, snapshot); };
     withOperation(context, ({ lease }) => verify(lease));
-    if (plan.action === 'list') return Object.fromEntries(snapshots.map(snapshot => [snapshot.collectionId, [...new Set(snapshot.data.items.map(item => item.metadata.hash))]]));
+    if (plan.action === 'list') return Object.fromEntries(snapshots.map(snapshot => {
+        const hashes = [...new Set(snapshot.data.items.map(item => item.metadata.hash))];
+        return [snapshot.collectionId, plan.details ? { hashes, chunks: snapshot.data.items.length, model: snapshot.model } : hashes];
+    }));
     let query = plan.query;
     if (plan.summarizeQuery) {
         const parts = [];
@@ -121,7 +124,11 @@ export async function runVectors(context, plan, dependencies = {}) {
         if (!query.trim() || !snapshots.length) return {};
         const result = await vectorBatch(context, plan, 'query', [query], { ...dependencies, isQuery: true, beforeDispatch: verify });
         withOperation(context, ({ lease }) => verify(lease));
-        return queryVectorIndexes(snapshots, result.vectors[0], plan.topK, plan.threshold);
+        const matches = queryVectorIndexes(snapshots, result.vectors[0], plan.topK, plan.threshold);
+        for (const collection of plan.collections) {
+            if (matches[collection.id]) matches[collection.id].label = collection.book || collection.url || collection.id;
+        }
+        return matches;
     }
     const replacements = [];
     for (const [collectionIndex, collection] of plan.collections.entries()) {
@@ -130,12 +137,17 @@ export async function runVectors(context, plan, dependencies = {}) {
         const metadata = await cached(context, `vector-items:${collectionIndex}`,
             () => prepareItems(context, plan, collection, collectionIndex, snapshot, verify, dependencies));
         if (metadata.length > 100000) throw operationError('This vector collection exceeds the saved item limit.', 413);
-        const hashes = new Set(metadata.map(item => item.hash));
-        const oldHashes = new Set(snapshot.data.items.map(item => item.metadata.hash));
-        const fresh = metadata.filter(item => !oldHashes.has(item.hash));
-        const items = snapshot.data.items.filter(item => hashes.has(item.metadata.hash));
-        for (let offset = 0; offset < fresh.length; offset += 10) {
-            const batch = fresh.slice(offset, offset + 10);
+        const key = item => collection.kind === 'chat' ? item.hash : `${item.hash}:${item.index}`;
+        const keys = new Set(metadata.map(key));
+        const oldKeys = new Set(plan.rebuild ? [] : snapshot.data.items.map(item => key(item.metadata)));
+        const fresh = metadata.filter(item => !oldKeys.has(key(item)));
+        const positions = new Map(metadata.map(item => [key(item), item.index]));
+        const items = plan.rebuild ? [] : snapshot.data.items.filter(item => keys.has(key(item.metadata))).map(item => ({
+            ...item, metadata: { ...item.metadata, index: positions.get(key(item.metadata)) },
+        }));
+        const batchSize = plan.batchSize ?? 10;
+        for (let offset = 0; offset < fresh.length; offset += batchSize) {
+            const batch = fresh.slice(offset, offset + batchSize);
             const vectors = await vectorBatch(context, plan, `collection:${collectionIndex}:${offset}`, batch.map(item => item.text), {
                 ...dependencies, beforeDispatch: verify,
             });

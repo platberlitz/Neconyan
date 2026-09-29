@@ -77,7 +77,7 @@ export async function runVectorWork(action, input = {}, { signal, onProgress, au
     try { return await promise; } finally { active.delete(activeKey); }
 }
 
-export function mountSavedVectorWork(container) {
+export function mountSavedVectorWork(container, { onResult = () => {} } = {}) {
     const wrapper = document.createElement('div');
     const select = document.createElement('select'); select.className = 'text_pole'; select.setAttribute('aria-label', 'Saved vector work');
     const stop = document.createElement('button'); stop.type = 'button'; stop.className = 'menu_button'; stop.textContent = 'Stop vector work'; stop.style.display = 'none';
@@ -108,6 +108,7 @@ export function mountSavedVectorWork(container) {
                 } });
             status.textContent = record.kind === 'vector-purge' ? `${record.result.removed} saved vector files cleared.`
                 : `${record.result.collections?.length ?? Object.keys(record.result).length} saved vector collections ready.`;
+            onResult(record.result);
         } catch (error) { report(error); } finally { controller = null; select.disabled = false; stop.style.display = 'none'; }
     });
     void refresh().catch(report);

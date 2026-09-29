@@ -212,3 +212,138 @@ test('file indexing reads attached server files and vector queries filter hashes
     assert.deepEqual(readOperation(p.base, 'query').result, {});
     await assert.rejects(acceptApplicationOperation(p.request, { key: 'unattached', kind: 'vectors', action: 'sync-files', urls: ['/user/files/other.txt'] }), /no longer attached/);
 });
+
+test('chat recall counts distinct older messages before limiting, excluding protected and hidden messages', async t => {
+    const p = prepared(t);
+    const older = ['An earlier promise has several searchable pieces.', 'A second useful detail.'];
+    const records = [p.f.records[0], ...older.map(mes => ({ name: 'User', is_user: true, mes })),
+        { name: 'Nova', mes: 'Protected recent answer.' }, { name: 'System', is_system: true, mes: 'Hidden system note.' }];
+    fs.writeFileSync(p.f.filename, records.map(JSON.stringify).join('\n'));
+    Object.assign(p.settings.extension_settings.vectors, { enabled_chats: true, protect: 2, insert: 2,
+        message_chunk_size: 12, query: 1, score_threshold: 0.1 });
+    p.saveSettings();
+    const accepted = await acceptApplicationOperation(p.request, { ...p.body('distinct-recall'), action: 'prompt' });
+    const calls = [];
+    await runOperation(p.context(accepted.job), { fetchImpl: async (_url, request) => {
+        const input = JSON.parse(request.body).input;
+        calls.push(input);
+        return new Response(JSON.stringify({ data: input.map((text, index) => ({ index,
+            embedding: text.includes('Protected') ? [1, 0] : text.includes('second') ? [0.8, 0.6] : [0.99, 0.1] })) }));
+    } });
+    const result = readOperation(p.base, 'distinct-recall').result;
+    assert.deepEqual(result.projection.removed.map(row => row.original).sort(), older.sort());
+    assert.deepEqual(calls.at(-1), ['Protected recent answer.']);
+    assert.ok(!calls.flat().some(text => text.includes('Hidden')));
+    assert.deepEqual(fs.readFileSync(p.f.filename, 'utf8'), records.map(JSON.stringify).join('\n'));
+});
+
+test('rebuild applies new chat chunks atomically and a failed rebuild preserves the previous index', async t => {
+    const p = prepared(t);
+    const first = await acceptApplicationOperation(p.request, p.body('initial'));
+    await runOperation(p.context(first.job), { fetchImpl: embeddings });
+    const initial = fs.readFileSync(p.filename, 'utf8');
+    p.settings.extension_settings.vectors.message_chunk_size = 3; p.saveSettings();
+    const sync = await acceptApplicationOperation(p.request, p.body('unchanged'));
+    await runOperation(p.context(sync.job), { fetchImpl: async () => assert.fail('Catch-up must reuse saved message vectors') });
+    assert.deepEqual(JSON.parse(fs.readFileSync(p.filename, 'utf8')), JSON.parse(initial));
+    const broken = await acceptApplicationOperation(p.request, { ...p.body('broken-rebuild'), rebuild: true });
+    await assert.rejects(runOperation(p.context(broken.job), { fetchImpl: async () => { throw new Error('Provider unavailable'); } }), /Provider unavailable/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(p.filename, 'utf8')), JSON.parse(initial));
+    const rebuild = await acceptApplicationOperation(p.request, { ...p.body('rebuild'), rebuild: true });
+    await runOperation(p.context(rebuild.job), { fetchImpl: async (...args) => {
+        assert.deepEqual(JSON.parse(fs.readFileSync(p.filename, 'utf8')), JSON.parse(initial));
+        return embeddings(...args);
+    } });
+    const result = JSON.parse(fs.readFileSync(p.filename, 'utf8'));
+    assert.ok(result.items.length > 2);
+    assert.ok(result.items.every(item => item.metadata.text.length <= 3));
+    const details = await acceptApplicationOperation(p.request, { ...p.body('details'), action: 'list', collectionIds: [p.f.locator.chat], details: true });
+    await runOperation(p.context(details.job), { fetchImpl: async () => assert.fail('Index inspection does not embed text') });
+    assert.equal(readOperation(p.base, 'details').result[p.f.locator.chat].chunks, result.items.length);
+    assert.equal(readOperation(p.base, 'details').result[p.f.locator.chat].hashes.length, 2);
+});
+
+test('scoped search reads saved indexes while retrieval is off without requiring summaries or modifying history', async t => {
+    const p = prepared(t);
+    Object.assign(p.settings.extension_settings.vectors, { enabled_chats: false, summarize: true, summary_threshold: 0 }); p.saveSettings();
+    const before = fs.readFileSync(p.f.filename, 'utf8');
+    const saved = fs.readFileSync(p.filename, 'utf8');
+    const accepted = await acceptApplicationOperation(p.request, { ...p.body('preview'), action: 'query', queryScope: 'chat', query: 'Old indexed text', topK: 5, threshold: 0 });
+    let calls = 0;
+    await runOperation(p.context(accepted.job), { fetchImpl: async (_url, request) => {
+        assert.deepEqual(JSON.parse(request.body).input, ['Old indexed text']); calls++;
+        return new Response(JSON.stringify({ data: [{ index: 0, embedding: [1, 0] }] }));
+    } });
+    assert.equal(calls, 1);
+    const match = readOperation(p.base, 'preview').result[p.f.locator.chat];
+    assert.equal(match.label, p.f.locator.chat);
+    assert.deepEqual(match.scores, [1]);
+    assert.equal(match.metadata[0].text, 'Old indexed text');
+    assert.equal(fs.readFileSync(p.f.filename, 'utf8'), before);
+    assert.equal(fs.readFileSync(p.filename, 'utf8'), saved);
+    for (const threshold of [-1.1, 1.1, 'invalid']) {
+        await assert.rejects(acceptApplicationOperation(p.request, { ...p.body(`invalid-${threshold}`), action: 'query', queryScope: 'chat', query: 'x', threshold }), /similarity threshold/);
+    }
+});
+
+test('custom file boundaries skip empty pieces, keep repeated positions and search without a translation connection', async t => {
+    const p = prepared(t);
+    const url = '/user/files/repeated.txt';
+    p.settings.extension_settings.attachments = [{ url }];
+    Object.assign(p.settings.extension_settings.vectors, { only_custom_boundary: true, force_chunk_delimiter: '|||', size_threshold_db: 0 });
+    p.saveSettings();
+    fs.writeFileSync(path.join(p.base.directories.files, 'repeated.txt'), '|||Repeated fact||||||Repeated fact|||');
+    const accepted = await acceptApplicationOperation(p.request, { ...p.body('repeated'), action: 'sync-files' });
+    await runOperation(p.context(accepted.job), { fetchImpl: async (url, request) => {
+        assert.deepEqual(JSON.parse(request.body).input, ['Repeated fact', 'Repeated fact']); return embeddings(url, request);
+    } });
+    const second = await acceptApplicationOperation(p.request, { ...p.body('repeated-again'), action: 'sync-files' });
+    await runOperation(p.context(second.job), { fetchImpl: async () => assert.fail('Unchanged repeated chunks must retain both positions') });
+    assert.equal(readOperation(p.base, 'repeated-again').result.collections[0].count, 2);
+    p.settings.extension_settings.vectors.translate_files = true; p.saveSettings();
+    const query = await acceptApplicationOperation(p.request, { ...p.body('file-preview'), action: 'query', queryScope: 'files', query: 'Fact', threshold: -1 });
+    await runOperation(p.context(query.job), { fetchImpl: embeddings });
+    const matches = readOperation(p.base, 'file-preview').result[`file_${getStringHash(url)}`];
+    assert.equal(matches.label, url);
+    assert.deepEqual(matches.metadata.map(item => item.index).sort(), [0, 1]);
+});
+
+test('equal lorebook contents still respect the entry limit and preserve both entries across indexing', async t => {
+    const p = prepared(t);
+    p.base.directories.worlds = path.join(p.base.directories.root, 'worlds');
+    fs.mkdirSync(p.base.directories.worlds);
+    const book = 'Repeated lore';
+    fs.writeFileSync(path.join(p.base.directories.worlds, `${book}.json`), JSON.stringify({ entries: {
+        1: { uid: 1, content: 'Same detail', vectorized: true }, 2: { uid: 2, content: 'Same detail', vectorized: true },
+        3: { uid: 3, content: 'Disabled detail', vectorized: true, disable: true },
+    } }));
+    p.settings.world_info_settings = { world_info: { globalSelect: [book] } };
+    Object.assign(p.settings.extension_settings.vectors, { enabled_world_info: true, max_entries: 1, score_threshold: -1 }); p.saveSettings();
+    for (const key of ['lore-first', 'lore-again']) {
+        const accepted = await acceptApplicationOperation(p.request, { ...p.body(key), action: 'prompt' });
+        await runOperation(p.context(accepted.job), { fetchImpl: embeddings });
+        const result = readOperation(p.base, key).result;
+        assert.equal(result.collections[0].count, 2);
+        assert.equal(result.projection.worldInfo.length, 1);
+        assert.ok([1, 2].includes(result.projection.worldInfo[0].uid));
+    }
+});
+
+test('Vertex Gemini indexes one text per paid step and does not repeat completed steps on recovery', async t => {
+    const p = prepared(t);
+    const { writeSecret, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
+    writeSecret(p.base.directories, SECRET_KEYS.VERTEXAI, 'fixture-key');
+    Object.assign(p.settings.extension_settings.vectors, { source: 'vertexai', google_model: 'gemini-embedding-001' }); p.saveSettings();
+    const accepted = await acceptApplicationOperation(p.request, p.body('vertex'));
+    const calls = [];
+    const fetchImpl = async (_url, request) => {
+        const { instances } = JSON.parse(request.body); calls.push(instances);
+        assert.equal(instances.length, 1);
+        if (calls.length === 2) throw new Error('Lost second response');
+        return new Response(JSON.stringify({ predictions: [{ embeddings: { values: [1, 0] } }] }));
+    };
+    await assert.rejects(runOperation(p.context(accepted.job), { fetchImpl }), /Lost second/);
+    await assert.rejects(runOperation(p.context(accepted.job), { fetchImpl }), /unknown/i);
+    assert.equal(calls.length, 2);
+    assert.deepEqual(JSON.parse(fs.readFileSync(p.filename, 'utf8')), p.old);
+});

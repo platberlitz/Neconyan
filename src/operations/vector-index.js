@@ -97,7 +97,7 @@ export function publishVectorIndexes(context, replacements, result, { verifySour
     });
 }
 
-export function queryVectorIndexes(snapshots, vector, topK, threshold) {
+export function queryVectorIndexes(snapshots, vector, topK, threshold, { accept = () => true, distinctHashes = false } = {}) {
     if (!Number.isSafeInteger(topK) || topK < 1 || topK > 1000 || !Number.isFinite(threshold) || threshold < -1 || threshold > 1) {
         throw operationError('The vector query limit or similarity threshold is invalid.', 400);
     }
@@ -106,11 +106,17 @@ export function queryVectorIndexes(snapshots, vector, topK, threshold) {
         if (item.vector.length !== vector.length) throw operationError('The saved vector dimensions do not match the selected model. The old index was kept.');
         const score = item.vector.reduce((sum, value, index) => sum + value * vector[index], 0) / (item.norm * magnitude);
         return { collectionId: snapshot.collectionId, id: item.id, metadata: item.metadata, score };
-    })).filter(row => row.score >= threshold).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)).slice(0, topK);
+    })).filter(row => row.score >= threshold && accept(row)).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
     const result = {};
+    const seen = new Set();
+    let count = 0;
     for (const row of rows) {
+        const key = `${row.collectionId}:${row.metadata.hash}`;
+        if (distinctHashes && seen.has(key)) continue;
+        seen.add(key);
         const collection = result[row.collectionId] ??= { hashes: [], metadata: [], scores: [] };
         collection.hashes.push(row.metadata.hash); collection.metadata.push(row.metadata); collection.scores.push(row.score);
+        if (++count >= topK) break;
     }
     return result;
 }

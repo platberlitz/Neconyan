@@ -116,6 +116,10 @@ export async function captureVectors(base, account, input, captured = {}) {
     const settings = readLabSettings(base);
     const policy = captureVectorPolicy(base, settings);
     const options = vectorOptions(settings.extension_settings?.vectors || {});
+    const threshold = Number(input.threshold ?? settings.extension_settings?.vectors?.score_threshold ?? 0.25);
+    if (!Number.isFinite(threshold) || threshold < -1 || threshold > 1) throw operationError('Choose a similarity threshold between -1 and 1.', 400);
+    const queryScope = input.action === 'query' ? input.queryScope : undefined;
+    if (queryScope && !['chat', 'files', 'world'].includes(queryScope)) throw operationError('Choose a valid search source.', 400);
     const chat = captured.chat ?? (input.locator ? captureLabChat(base, account, input.locator) : null);
     const macros = captured.macros ?? chat?.macros ?? { names: { user: settings.username || 'User', char: 'Character' }, character: {}, variables: {}, extra: {} };
     const environment = createMacroEnvironment(macros);
@@ -124,17 +128,18 @@ export async function captureVectors(base, account, input, captured = {}) {
         evidence: { rawHash: chat.rawHash, physical: chat.physical } });
     let collections = [];
     withRoleplayAccount(base, account, lease => {
-        if (input.action === 'sync-chat' || input.action === 'prompt' && options.chatsEnabled) {
+        if (input.action === 'sync-chat' || queryScope === 'chat' || input.action === 'prompt' && options.chatsEnabled) {
             if (!chat) throw operationError('Choose a saved chat before indexing it.', 400);
             const items = chat.records.slice(1).flatMap((row, index) => {
                 if (row.is_system && !options.keepHidden) return [];
                 const text = environment.evaluate(String(row.mes ?? ''));
+                if (!text.trim()) return [];
                 return [{ text, hash: getStringHash(text), index }];
             });
             collections.push({ id: chat.locator.chat, kind: 'chat', items });
         }
-        if (input.action === 'sync-files' || input.action === 'prompt' && options.filesEnabled) collections.push(...fileCollections(base, settings, chat, input, sources));
-        if (input.action === 'sync-world-info' || input.action === 'prompt' && options.worldEnabled) {
+        if (input.action === 'sync-files' || queryScope === 'files' || input.action === 'prompt' && options.filesEnabled) collections.push(...fileCollections(base, settings, chat, input, sources));
+        if (input.action === 'sync-world-info' || queryScope === 'world' || input.action === 'prompt' && options.worldEnabled) {
             const world = { ...settings, ...settings.world_info_settings }.world_info || {};
             const character = chat?.macros.character;
             const books = input.books ?? unique([...(world.globalSelect || []), chat?.records[0].chat_metadata?.world_info,
@@ -149,7 +154,7 @@ export async function captureVectors(base, account, input, captured = {}) {
                 return { id: `world_${getStringHash(name)}`, kind: 'world', book: name, items };
             }));
         }
-        if (input.action === 'query' || input.action === 'list') {
+        if (input.action === 'query' && !queryScope || input.action === 'list') {
             if (!Array.isArray(input.collectionIds) || input.collectionIds.length > 1000 || unique(input.collectionIds).length !== input.collectionIds.length) {
                 throw operationError('Choose valid vector collections to search.', 400);
             }
@@ -158,25 +163,29 @@ export async function captureVectors(base, account, input, captured = {}) {
         for (const collection of collections) collection.indexes = choices(lease, policy, collection.id);
     });
     let query = input.query ?? null;
-    const queryItems = chat ? chat.records.slice(1).map(row =>
+    const queryItems = chat ? chat.records.slice(1).filter(row => !row.is_system || options.keepHidden).map(row =>
         environment.evaluate(String(row.mes ?? '').slice(row.extra?.fileLength || 0).trim())).filter(Boolean).reverse().slice(0, options.queryCount) : [];
     if (query === null && (['query', 'prompt'].includes(input.action) || input.withQuery) && chat) query = queryItems.join('\n');
     if (query !== null && (typeof query !== 'string' || Buffer.byteLength(query) > 1024 * 1024)) throw operationError('The vector search text is too large.', 413);
     if (input.action === 'query' && query === null) throw operationError('Enter text or choose a saved chat to search.', 400);
     const summarizeQuery = options.summarize && options.summarizeSent && (input.queryKind === 'chat' || input.action === 'prompt' && options.chatsEnabled) && query !== null;
-    const needsSummary = options.summarize && (collections.some(collection => collection.kind === 'chat'
+    const needsSummary = options.summarize && (input.action !== 'query' && collections.some(collection => collection.kind === 'chat'
         && collection.items.some(item => item.text.length >= options.summaryThreshold)) || summarizeQuery);
     let summary = null;
     if (needsSummary && options.summarySource === 'main') {
         const maxTokens = number(settings.amount_gen, 300, 1, 32768);
         summary = captured.summary ?? { ...await captureLabConnection(base, { acknowledgement: input.acknowledgement, maxTokens }, macros), maxTokens };
     } else if (needsSummary && options.summarySource !== 'webllm') throw operationError('The vector summary provider is unavailable.', 400);
-    const translation = options.translateFiles && collections.some(collection => collection.kind === 'file')
+    const translation = input.action !== 'query' && options.translateFiles && collections.some(collection => collection.kind === 'file')
         ? captureSavedTranslationPolicy(base.directories, settings, { manual: true, target: 'en' }) : null;
     return { account, policy, options, collections, sources, macros, summary, translation, query, action: input.action,
+        rebuild: input.rebuild === true, details: input.details === true,
+        // Vertex predict accepts one Gemini text, or up to five texts for its older models.
+        // Capture this limit so an already accepted operation keeps its original batch boundaries.
+        batchSize: policy.source === 'vertexai' ? (policy.settings.model.startsWith('gemini-embedding-') ? 1 : 5) : 10,
         ...(input.action === 'prompt' ? { chatRecords: chat?.records.slice(1) ?? [] } : {}),
         queryItems: input.query === undefined ? queryItems : [input.query], summarizeQuery,
-        topK: number(input.topK, 3, 1, 1000), threshold: Number(input.threshold ?? settings.extension_settings?.vectors?.score_threshold ?? 0.25) };
+        topK: number(input.topK, 3, 1, 1000), threshold };
 }
 
 export function assertVectorSources(lease, plan) {
