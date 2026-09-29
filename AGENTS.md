@@ -27,6 +27,7 @@ Read `PRODUCT.md` (what it is, who it is for, tone) and `DESIGN.md` (tokens, typ
 
 - Reproduce before fixing: read the cascade or the code path end to end, then change the one place all callers route through.
 - Verify in a browser, not by reading alone: drive Chromium (the Playwright copy in `tests/node_modules`) at 393x852 with touch for phones and 1280x900 for desktop, and measure computed styles and geometry. WebKit cannot run on this machine, so iOS behaviour is inferred from Chromium and must be labelled as such.
+- For anything an iPhone user reports, emulate iOS with `tests/ios-safari-emulation.js`: `IPHONE_SAFARI_CONTEXT` + `installIPhoneSafari(context, { standalone })` spoof the user agent, `navigator.platform`, touch points and home-screen mode (so `body.safari`, `body.PWA` and `isIOSWebKitPlatform()` behave as on a phone), and `applyIOSOnlyCss(page)` re-applies the `@supports (-webkit-touch-callout: none)` / `-webkit-overflow-scrolling` rules Chromium skips. Call it again after late sheets such as `world-info.css` load. Those rules lift the right-hand drawers to `--sb-z-popout` (4000), so floating UI that looks fine in plain Chromium can sit hidden underneath on iPhones.
 - Run the unit suite, lint and budgets before calling anything done. Add or update the test that pins the behaviour you changed.
 - Never report a guess as a result. Say what was verified, how, and what is inferred.
 
