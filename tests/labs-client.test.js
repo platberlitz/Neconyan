@@ -18,6 +18,18 @@ function fixture() {
 }
 const observe = async f => { for (let index = 0; index < 12 && !f.observer; index++) await Promise.resolve(); };
 
+test('progress includes the saved job stage alongside its file counts', async () => {
+    const f = fixture(), onProgress = jest.fn();
+    const done = f.client.run('account-import', {}, { onProgress });
+    await observe(f);
+    const job = { state: 'running', stage: 'Saving imported files', progress: { completed: 7, total: 20 } };
+    await f.observer.onSnapshot(job);
+    expect(onProgress).toHaveBeenCalledWith({ stage: job.stage, completed: 7, total: 20 }, job);
+    await f.observer.onSnapshot({ state: 'completed' });
+    f.observer.onDone({ state: 'completed' });
+    await done;
+});
+
 test('listing all saved work does not send an undefined kind filter', async () => {
     const f = fixture();
     const records = [{ kind: 'distill', key: 'one' }, { kind: 'lorestitch', key: 'two' }];

@@ -24,6 +24,40 @@ async function showImporter(account) {
     return { page, card };
 }
 
+test('phone ZIP import resumes automatically after the server process is killed', async ({ app, browser }) => {
+    const account = await app.account({ phone: true });
+    const archive = archiver('zip'); const chunks = [];
+    archive.on('data', chunk => chunks.push(chunk));
+    const folder = account.avatar.replace(/\.png$/i, '');
+    for (let index = 0; index < 120; index++) {
+        archive.append([
+            { user_name: 'User', character_name: 'Durable Nova', chat_metadata: {} },
+            { name: 'Durable Nova', is_user: false, mes: `Imported reply ${index}` },
+        ].map(row => JSON.stringify(row)).join('\n'), { name: `default-user/chats/${folder}/Restart ${index}.jsonl` });
+    }
+    await archive.finalize();
+    const { page, card } = await showImporter(account);
+    const submitted = await submit(page, () => card.getByLabel('Choose a SillyTavern backup ZIP').setInputFiles({
+        name: 'restart.zip', mimeType: 'application/zip', buffer: Buffer.concat(chunks),
+    }));
+    await expect(card).toContainText('Saving imported files', { timeout: 60000 });
+    await closeAll(page, browser);
+    await app.restart();
+    // The import resumes during startup, without submitting another operation or pressing Recover.
+    const csrf = await (await account.context.request.get('/csrf-token')).json();
+    Object.assign(account.headers, { 'X-CSRF-Token': csrf.token });
+    await account.post('/api/users/login', { handle: 'default-user', password: '' });
+    const job = await account.settled(submitted.job.id);
+    expect(job.attempt).toBeGreaterThan(1);
+    for (let index = 0; index < 120; index++) {
+        const rows = (await fs.readFile(path.join(app.directory, 'data/default-user/chats', folder, `Restart ${index}.jsonl`), 'utf8')).trim().split('\n').map(row => JSON.parse(row));
+        expect(rows[1].mes).toBe(`Imported reply ${index}`);
+    }
+    const reopened = await showImporter(account);
+    await reopened.card.getByLabel('Saved account imports').selectOption(submitted.record.key);
+    await expect(reopened.card.getByRole('button', { name: 'Reload imported account', exact: true })).toBeVisible();
+});
+
 async function submit(page, action) {
     const response = page.waitForResponse(value => value.url().endsWith('/api/operations/submit') && value.request().postDataJSON()?.kind === 'account-import');
     await action();

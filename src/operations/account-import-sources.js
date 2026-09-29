@@ -1,5 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { Transform, pipeline } from 'node:stream';
+import zlib from 'node:zlib';
+import crc32 from 'crc/crc32';
 import yauzl from 'yauzl';
 import { SETTINGS_FILE, USER_DIRECTORY_TEMPLATE } from '../constants.js';
 import { SECRETS_FILE } from '../endpoints/secrets.js';
@@ -20,6 +23,7 @@ export function importRelativePath(value) {
     if (typeof value !== 'string' || !value || value.length > 1000 || value.includes('\\') || value.includes('\0') || value.startsWith('/')) return null;
     const parts = value.replace(/\/$/, '').split('/');
     if (parts.some(part => !part || part === '.' || part === '..')) return null;
+    if (parts.some(part => /^\.neconyan-chat-[a-f0-9]{64}\.lock(?:\.owner)?$/.test(part))) return null;
     if (!(parts.length === 1 && ROOT_FILES.includes(parts[0])) && !ROOT_DIRECTORIES.includes(parts[0])) return null;
     if (parts.at(-1).endsWith(FILE_WRITE_RECOVERY_SUFFIX) || parts.at(-1).endsWith('.sillybunny-write-recovery') || (parts[0] === USER_DIRECTORY_TEMPLATE.extensions && parts.includes('.git'))) return null;
     return parts.join('/');
@@ -86,7 +90,7 @@ function openZip(source) {
         fs.closeSync(fd); throw operationError('The retained ZIP changed before it was opened.');
     }
     return new Promise((resolve, reject) => yauzl.fromFd(fd, { lazyEntries: true, strictFileNames: true, autoClose: false }, (error, zip) => {
-        if (error) { fs.closeSync(fd); reject(error); } else resolve(zip);
+        if (error) { fs.closeSync(fd); reject(error); } else resolve(Object.assign(zip, { descriptor: fd }));
     }));
 }
 
@@ -147,6 +151,77 @@ export async function captureZipImport(source) {
         while (parts.length > 1) { parts.pop(); if (seen.has(parts.join('/'))) throw operationError('A ZIP file also occupies a destination folder.', 400); }
     }
     return { source, sourceRoot: selected, files, directories: [...new Set(directories)], total };
+}
+
+/**
+ * Verify the retained ZIP once and index its central directory, so each captured
+ * entry can be read without hashing the whole archive or rescanning it again.
+ */
+export async function openImportArchive(source) {
+    const snapshot = stat => `${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+    const before = snapshot(fs.lstatSync(source.filename, { bigint: true }));
+    const actual = inspectRoleplayFile(source.filename, BINARY_FILE_LIMIT);
+    if (!actual || roleplayHash(evidence(actual)) !== roleplayHash(source.evidence)) throw operationError('The retained ZIP changed.');
+    const zip = await openZip(source);
+    const opened = snapshot(fs.fstatSync(zip.descriptor, { bigint: true }));
+    const unchanged = () => zip.isOpen && snapshot(fs.fstatSync(zip.descriptor, { bigint: true })) === opened;
+    const entries = new Map();
+    try {
+        if (before !== opened) throw operationError('The retained ZIP changed.');
+        await new Promise((resolve, reject) => {
+            zip.on('error', reject);
+            zip.on('end', resolve);
+            zip.on('entry', entry => {
+                if (entries.size >= 100000) { reject(operationError('The ZIP exceeds its entry capacity.', 413)); return; }
+                entries.set(entry.relativeOffsetOfLocalHeader, entry);
+                zip.readEntry();
+            });
+            zip.readEntry();
+        });
+    } catch (error) { zip.close(); throw error; }
+    const open = captured => new Promise((resolve, reject) => {
+        const entry = entries.get(captured.offset);
+        if (!entry || entry.fileName !== captured.name || entry.uncompressedSize !== captured.size || entry.crc32 !== captured.crc32
+            || entry.compressedSize !== captured.compressedSize) { reject(operationError('The captured ZIP entry changed.')); return; }
+        if (!unchanged()) { reject(operationError('The retained ZIP changed.')); return; }
+        zip.openReadStream(entry, (error, stream) => {
+            if (error) { reject(error); return; }
+            let size = 0, checksum = 0;
+            const check = new Transform({
+                transform(chunk, _encoding, callback) {
+                    size += chunk.length;
+                    if (size > captured.size) return callback(operationError('The captured ZIP entry exceeded its size.'));
+                    checksum = (zlib.crc32 ?? crc32)(chunk, checksum);
+                    callback(null, chunk);
+                },
+                flush(callback) {
+                    if (!unchanged()) return callback(operationError('The retained ZIP changed.'));
+                    if (size !== captured.size || checksum !== captured.crc32) return callback(operationError('The ZIP contains a damaged file.', 400));
+                    callback();
+                },
+            });
+            // pipeline forwards source errors and closes the source when the consumer stops.
+            pipeline(stream, check, () => {});
+            resolve(check);
+        });
+    });
+    return {
+        open,
+        async read(captured, limit) {
+            if (captured.size > limit) throw operationError('An imported file exceeds its structured capacity.', 413);
+            const stream = await open(captured);
+            // Use events for compatibility with yauzl's stored-entry streams.
+            const bytes = await new Promise((resolve, reject) => {
+                const chunks = [];
+                stream.on('data', chunk => chunks.push(chunk));
+                stream.once('error', reject);
+                stream.once('end', () => resolve(Buffer.concat(chunks)));
+            });
+            if (bytes.length !== captured.size) throw operationError('The captured ZIP entry changed.');
+            return bytes;
+        },
+        close() { if (zip.isOpen) zip.close(); },
+    };
 }
 
 /** Stream only the exact captured entry from the immutable, account-owned ZIP. */

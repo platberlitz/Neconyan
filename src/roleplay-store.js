@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual, TextDecoder, types } from 'node:util';
 import sanitize from 'sanitize-filename';
-import { acquireChatFileLock } from './chat-file-lock.js';
+import { acquireChatFileLock, getChatFileLockPath } from './chat-file-lock.js';
 import { canonical, retireJobStore, validateOwner } from './jobs/store.js';
 import { preserveMeowerReceipts } from './meower-retirement.js';
 import { saveResetContent, loadResetContent, installResetContent } from './account-reset-content.js';
@@ -858,7 +858,8 @@ export function initialiseRoleplayAccount(scope) {
             return stamp(scope, loaded.state);
         }
         if (marker === undefined) {
-            if (fs.readdirSync(root).some(name => name !== path.basename(path.join(root, 'state.json')) && !name.endsWith('.lock'))
+            const lockOwner = path.basename(getChatFileLockPath(path.join(root, 'state.json'))) + '.owner';
+            if (fs.readdirSync(root).some(name => name !== 'state.json' && name !== lockOwner && !name.endsWith('.lock'))
                 || fs.existsSync(path.join(root, 'state.json'))) throw damaged();
             marker = { schema: 1, owner: scope.owner, storageId: crypto.randomUUID(), initialAccountId: crypto.randomUUID(), phase: 'initialising' };
             markerFile = writeJson(markerPath, marker);

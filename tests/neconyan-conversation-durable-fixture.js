@@ -40,7 +40,11 @@ export async function acknowledgeActiveSettings(page) {
 export const test = base.extend({
     libraryCache: [async ({}, use) => {
         const directory = await fs.mkdtemp('/tmp/opencode/conversation-libraries-');
-        try { await use(directory); }
+        try {
+            // Seed a previously compiled bundle on slow hosts; the server still checks its input-derived cache key.
+            if (process.env.NECONYAN_TEST_LIBRARY_CACHE) await fs.cp(process.env.NECONYAN_TEST_LIBRARY_CACHE, directory, { recursive: true });
+            await use(directory);
+        }
         finally { await fs.rm(directory, { recursive: true, force: true }); }
     }, { scope: 'worker' }],
     app: [async ({ browser, libraryCache }, use, info) => {

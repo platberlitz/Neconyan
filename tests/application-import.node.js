@@ -7,12 +7,15 @@ import archiver from 'archiver';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 
 const { retainUploadedArchive, capturedArchiveInput, readUploadedArchive } = await import('../src/operations/input-files.js');
-const { captureFolderImport, captureZipImport, openCapturedZipEntry } = await import('../src/operations/account-import-sources.js');
+const { captureFolderImport, captureZipImport, openCapturedZipEntry, openImportArchive } = await import('../src/operations/account-import-sources.js');
 const { roleplayStoreDirectory, resetRoleplayAccount } = await import('../src/roleplay-store.js');
 const { captureAccountImport } = await import('../src/operations/account-import.js');
 const { admitOperation, finalizeOperation, readOperation } = await import('../src/operations/store.js');
 const { runOperation, acceptApplicationOperation } = await import('../src/operations/jobs.js');
 const { write: writeCard, read: readCard } = await import('../src/character-card-parser.js');
+const { getJob, updateJob, recoverJobs } = await import('../src/jobs/store.js');
+const { stageImportBatch } = await import('../src/operations/import-batches.js');
+const { prepareBinaryOutput } = await import('../src/operations/binary-files.js');
 
 function setup(t, owner = 'fixture') {
     const f = fixture(t, false, owner);
@@ -28,6 +31,19 @@ function sourceFile(p, relative, content) {
     fs.writeFileSync(filename, content);
     return filename;
 }
+
+test('cached plan verification still refuses a changed saved import plan', async t => {
+    const p = setup(t);
+    sourceFile(p, 'settings.json', JSON.stringify({ name1: 'Imported' }));
+    await accept(p, 'cached-plan');
+    const record = readOperation(p.base, 'cached-plan');
+    assert.deepEqual(readOperation(p.base, 'cached-plan').plan, record.plan);
+    const directory = path.join(roleplayStoreDirectory(p.base), 'operations');
+    const filename = path.join(directory, fs.readdirSync(directory).find(name => name.endsWith('.json')));
+    record.plan.files[0].relative = 'secrets.json';
+    fs.writeFileSync(filename, JSON.stringify(record));
+    assert.throws(() => readOperation(p.base, 'cached-plan'), /record needs recovery/);
+});
 
 async function accept(p, key, input = { mode: 'folder', path: p.sourceRoot }, defaults = { directories: [], files: [] }) {
     const plan = await captureAccountImport(p.base, p.f.scope, input, { defaults });
@@ -191,10 +207,10 @@ test('extension replacement keeps old files until new files are durable and neve
     assert.equal(fs.readFileSync(path.join(target, 'obsolete.js'), 'utf8'), 'Later helper');
 });
 
-async function zipFile(filename, entries) {
+async function zipFile(filename, entries, options = {}) {
     const output = fs.createWriteStream(filename);
     const done = finished(output);
-    const zip = archiver('zip');
+    const zip = archiver('zip', options);
     zip.on('error', error => output.destroy(error));
     zip.pipe(output);
     for (const [name, bytes] of entries) zip.append(bytes, { name });
@@ -254,10 +270,123 @@ test('folder capture uses the data allowlist, excludes protected records and ref
     fs.mkdirSync(path.join(p.sourceRoot, 'extensions/Example/.git'), { recursive: true });
     fs.writeFileSync(path.join(p.sourceRoot, 'extensions/Example/index.js'), 'extension bytes');
     fs.writeFileSync(path.join(p.sourceRoot, 'extensions/Example/.git/config'), 'git metadata');
+    const staleLock = path.join(p.sourceRoot, 'characters', `.neconyan-chat-${'a'.repeat(64)}.lock`);
+    fs.mkdirSync(staleLock);
+    fs.writeFileSync(staleLock + '.owner', '{"pid":123}');
     const captured = captureFolderImport(p.base, p.sourceRoot);
     assert.deepEqual(captured.files.map(file => file.relative), ['settings.json', 'extensions/Example/index.js']);
     assert.throws(() => captureFolderImport(p.base, p.base.directories.root), /belongs to this account/);
     fs.symlinkSync(p.f.filename, path.join(p.sourceRoot, 'characters/linked.png'));
     assert.throws(() => captureFolderImport(p.base, p.sourceRoot), /Linked or special/);
     assert.equal(fs.readFileSync(path.join(p.sourceRoot, 'hopper/store.json'), 'utf8'), '{"private":"proof"}');
+});
+
+test('ZIP entries are checked for payload corruption and changes while the archive is open', async t => {
+    const p = setup(t); const upload = path.join(p.sourceRoot, 'stored.zip');
+    await zipFile(upload, [['settings.json', '{"name1":"Original"}']], { store: true });
+    const raw = fs.readFileSync(upload);
+    raw[raw.indexOf(Buffer.from('Original'))] = 'X'.charCodeAt(0);
+    fs.writeFileSync(upload, raw);
+    const source = await retainUploadedArchive(p.base, p.f.scope, 'corrupt-payload', upload);
+    const captured = await captureZipImport(source);
+    const archive = await openImportArchive(source);
+    t.after(() => archive.close());
+    await assert.rejects(archive.read(captured.files[0].zip, 1024), /damaged file/);
+    fs.appendFileSync(source.filename, 'changed');
+    await assert.rejects(archive.read(captured.files[0].zip, 1024), /retained ZIP changed/);
+});
+
+test('an import interrupted before publication is automatically queued and finishes from its saved ZIP', async t => {
+    for (const stage of ['Checking chats, characters and settings', 'Preparing imported files', 'Saving imported files']) {
+        const p = setup(t, stage.split(' ')[0]); const upload = path.join(p.sourceRoot, 'resume.zip');
+        await zipFile(upload, [['settings.json', '{"name1":"Resumed"}'], ['user/files/one.txt', 'Retained bytes']]);
+        const input = await retainUploadedArchive(p.base, p.f.scope, 'resume', upload);
+        const accepted = await accept(p, 'resume', { mode: 'zip', inputId: input.id });
+        fs.rmSync(p.sourceRoot, { recursive: true });
+        updateJob(p.base.directories, accepted.job.id, { state: 'running' });
+        await assert.rejects(runOperation({ ...accepted.context, progress: async progress => {
+            if (progress.stage === stage && (stage !== 'Preparing imported files' || progress.completed === progress.total)) throw new Error('simulated process stop');
+        } }), /simulated process stop/);
+        assert.equal(getJob(p.base.directories, accepted.job.id).resume, 'account-import');
+        await recoverJobs(p.base.directories);
+        assert.equal(getJob(p.base.directories, accepted.job.id).state, 'queued');
+        await runOperation(accepted.context);
+        assert.equal(readOperation(p.base, 'resume').state, 'completed');
+        assert.equal(JSON.parse(fs.readFileSync(path.join(p.base.directories.root, 'settings.json'))).name1, 'Resumed');
+        assert.equal(fs.readFileSync(path.join(p.base.directories.root, 'user/files/one.txt'), 'utf8'), 'Retained bytes');
+    }
+});
+
+test('ZIP import recovers a rename made before the batch acknowledgement without making extra input copies', async t => {
+    const p = setup(t); const upload = path.join(p.sourceRoot, 'rename.zip');
+    await zipFile(upload, Array.from({ length: 40 }, (_, index) => [`user/files/${index}.txt`, `File ${index}`]), { store: true });
+    const input = await retainUploadedArchive(p.base, p.f.scope, 'rename', upload);
+    const accepted = await accept(p, 'rename', { mode: 'zip', inputId: input.id });
+    await assert.rejects(runOperation(accepted.context, { afterImportPublication({ index }) {
+        if (index === 5) throw new Error('lost batch acknowledgement');
+    } }), /lost batch acknowledgement/);
+    const first = path.join(p.base.directories.root, 'user/files/0.txt');
+    const inode = fs.statSync(first).ino;
+    await runOperation(accepted.context);
+    assert.equal(fs.statSync(first).ino, inode);
+    for (let index = 0; index < 40; index++) assert.equal(fs.readFileSync(path.join(p.base.directories.root, `user/files/${index}.txt`), 'utf8'), `File ${index}`);
+    const record = readOperation(p.base, 'rename');
+    assert.equal(Object.keys(record.effects).some(key => key.startsWith('binary:')), false);
+    assert.equal(record.effects['import-publish'].state, 'done');
+});
+
+test('chat content larger than the old combined record limit imports with a small saved operation', async t => {
+    const p = setup(t); const upload = path.join(p.sourceRoot, 'large-chats.zip');
+    const message = 'Large imported message. '.repeat(Math.ceil(5 * 1024 * 1024 / 24));
+    const entries = Array.from({ length: 8 }, (_, index) => [`chats/Nova/Large${index}.jsonl`, [
+        { user_name: 'User', character_name: 'Nova', chat_metadata: {} },
+        { name: 'Nova', is_user: false, mes: message },
+    ].map(JSON.stringify).join('\n')]);
+    await zipFile(upload, entries);
+    entries.length = 0;
+    const input = await retainUploadedArchive(p.base, p.f.scope, 'large', upload);
+    const accepted = await accept(p, 'large', { mode: 'zip', inputId: input.id });
+    await runOperation(accepted.context);
+    for (let index = 0; index < 8; index++) {
+        const rows = fs.readFileSync(path.join(p.base.directories.chats, `Nova/Large${index}.jsonl`), 'utf8').trim().split('\n').map(JSON.parse);
+        assert.equal(rows[1].mes, message);
+    }
+    const record = readOperation(p.base, 'large');
+    assert.equal(record.state, 'completed');
+    assert.ok(Buffer.byteLength(JSON.stringify(record)) < 64 * 1024, 'Chat contents must not accumulate inside the operation record');
+});
+
+test('a prepared temporary file lost before its contents were durable is recreated from the saved ZIP', async t => {
+    const p = setup(t); const upload = path.join(p.sourceRoot, 'temporary.zip');
+    await zipFile(upload, [['user/files/one.txt', 'Retained bytes']]);
+    const input = await retainUploadedArchive(p.base, p.f.scope, 'temporary', upload);
+    const accepted = await accept(p, 'temporary', { mode: 'zip', inputId: input.id });
+    const file = accepted.record.plan.files[0];
+    await assert.rejects(stageImportBatch(accepted.context, [{ file, index: 0 }], { prepared: {}, archive: {
+        open: async () => { throw new Error('stopped before copying'); },
+    } }), /stopped before copying/);
+    const effect = readOperation(p.base, 'temporary').effects['stage:0'];
+    assert.equal(effect.state, 'prepared');
+    fs.unlinkSync(path.join(p.base.directories.root, effect.temporary));
+    await runOperation(accepted.context);
+    assert.equal(fs.readFileSync(path.join(p.base.directories.root, file.relative), 'utf8'), 'Retained bytes');
+});
+
+test('an older import stopped while retaining inputs upgrades without changing its accepted plan', async t => {
+    const p = setup(t); const upload = path.join(p.sourceRoot, 'older.zip');
+    await zipFile(upload, [['settings.json', '{"name1":"Recovered older import"}'], ['user/files/one.txt', 'Retained bytes']]);
+    const archive = await retainUploadedArchive(p.base, p.f.scope, 'older', upload);
+    const input = { mode: 'zip', inputId: archive.id };
+    const plan = await captureAccountImport(p.base, p.f.scope, input, { defaults: { directories: [], files: [] } });
+    delete plan.pipeline;
+    const accepted = admitOperation(p.base, p.f.scope, { key: 'older', kind: 'account-import', input, plan, label: 'Older import' });
+    const context = { ...p.base, job: accepted.job, signal: new AbortController().signal, progress: async () => {} };
+    finalizeOperation(context);
+    prepareBinaryOutput(context, 'import:0', plan.files[0].size);
+    await assert.rejects(runOperation(context, { afterImportStaged: () => { throw new Error('stop again after preparing'); } }), /stop again/);
+    await runOperation(context);
+    const record = readOperation(p.base, 'older');
+    assert.deepEqual(record.plan, plan);
+    assert.equal(record.state, 'completed');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(p.base.directories.root, 'settings.json'))).name1, 'Recovered older import');
 });

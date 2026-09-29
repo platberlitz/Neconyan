@@ -5,8 +5,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { test } from 'node:test';
-import { acquireChatFileLock, acquireChatFileLocks, getChatFileLockPath, withChatFileLocks } from '../src/chat-file-lock.js';
+import { acquireChatFileLock, acquireChatFileLocks, acquireLocalFileLock, getChatFileLockPath, withChatFileLocks } from '../src/chat-file-lock.js';
 
 const graceful = createRequire(new URL('../src/chat-file-lock.js', import.meta.url))('graceful-fs');
 
@@ -15,6 +17,32 @@ function fixture(t) {
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     return ['one', 'two', 'three'].map(name => path.join(root, name));
 }
+
+test('a killed process releases its locks immediately without stealing a live process lock', async t => {
+    const [filename] = fixture(t);
+    const metadata = filename + '.metadata';
+    const options = { lockfilePath: metadata + '.lock', realpath: false, stale: 30000, update: 10000 };
+    const module = new URL('../src/chat-file-lock.js', import.meta.url).href;
+    const child = spawn(process.execPath, ['--input-type=module', '-e', `
+        import { acquireChatFileLock, acquireLocalFileLock } from ${JSON.stringify(module)};
+        acquireChatFileLock(${JSON.stringify(filename)});
+        acquireLocalFileLock(${JSON.stringify(metadata)}, ${JSON.stringify(options)});
+        process.stdout.write('locked');
+        setInterval(() => {}, 1000);
+    `], { stdio: ['ignore', 'pipe', 'pipe'] });
+    t.after(() => child.kill('SIGKILL'));
+    await once(child.stdout, 'data');
+    assert.throws(() => acquireChatFileLock(filename), { code: 'ELOCKED' });
+    assert.throws(() => acquireLocalFileLock(metadata, options), { code: 'ELOCKED' });
+    const exited = once(child, 'exit');
+    child.kill('SIGKILL');
+    await exited;
+    const started = Date.now();
+    acquireChatFileLock(filename)();
+    acquireLocalFileLock(metadata, options)();
+    assert.ok(Date.now() - started < 1000, 'Dead-owner recovery must not wait for the five-minute stale timeout');
+    assert.equal(fs.existsSync(getChatFileLockPath(filename) + '.owner'), false);
+});
 
 for (const count of [1, 3]) {
     test(`all locks receive a release attempt when ${count} cleanup calls throw`, t => {

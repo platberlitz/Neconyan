@@ -1,18 +1,24 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { setImmediate as yieldToServer } from 'node:timers/promises';
 import { USER_DIRECTORY_TEMPLATE } from '../constants.js';
 import { captureUserResetContent } from '../endpoints/content-manager.js';
 import { createRoleplayDirectory, inspectRoleplayFile, prepareRoleplayResetContent, roleplayLease, withRoleplayAccount } from '../roleplay-store.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
-import { captureFolderImport, captureZipImport } from './account-import-sources.js';
+import { setJobResume } from '../jobs/store.js';
+import { captureFolderImport, captureZipImport, openImportArchive } from './account-import-sources.js';
 import { capturedArchiveInput } from './input-files.js';
 import { captureImportInput } from './import-inputs.js';
 import { captureExtensionReport } from './import-extension-report.js';
-import { captureImportTarget, assertImportTarget, prepareImportValue, stageImportFile, publishImportFile } from './import-publication.js';
+import { captureImportTarget, assertImportTarget, importNeedsCheck, prepareImportValue, stageImportFile, publishImportFile } from './import-publication.js';
+import { importBatches, publishImportBatches, readPlannedInput, stageImportBatch } from './import-batches.js';
 import { publishFileDeletions } from './file-deletion.js';
 import { BINARY_FILE_LIMIT } from './binary-files.js';
 import { registerOperation } from './jobs.js';
 import { operationError, withOperation } from './store.js';
+
+const BATCHED_PIPELINE = 2;
+const MAX_AUTOMATIC_ATTEMPTS = 6;
 
 function extensionRemovals(lease, files) {
     const root = roleplayLease(lease).scope.directories.root;
@@ -62,17 +68,110 @@ export async function captureAccountImport(base, account, input, { defaults } = 
         // Saved settings become visible only after all other imported files are durable.
         files.sort((left, right) => Number(left.relative === 'settings.json') - Number(right.relative === 'settings.json'));
         const removals = input.mode === 'extensions' ? extensionRemovals(lease, files) : [];
-        return { ...captured, mode: input.mode, account, files, defaults: defaultsHash, removals, extensionsReport,
+        return { ...captured, mode: input.mode, account, files, defaults: defaultsHash, removals, extensionsReport, pipeline: BATCHED_PIPELINE,
             directories: [...new Set([...captured.directories, ...content.directories])], importedCount: captured.files.length };
     });
 }
 
 export async function runAccountImport(context, plan, dependencies = {}) {
-    try { return await runCapturedImport(context, plan, dependencies); } catch (error) {
+    try {
+        // Older imports which have not begun publication can also use the bounded-memory path.
+        // Keep their accepted plan untouched; the record remembers which publication format to resume.
+        const batched = plan.pipeline === BATCHED_PIPELINE || withOperation(context, ({ value }) => value.importPipeline === BATCHED_PIPELINE || !value.importReady);
+        return batched ? await runBatchedImport(context, plan, dependencies) : await runCapturedImport(context, plan, dependencies);
+    } catch (error) {
         const pending = withOperation(context, ({ value }) => value.importReady);
         if (!pending && [400, 409].includes(error.status)) error.operationRefused = true;
         throw error;
     }
+}
+
+function progressReporter(context) {
+    let last = 0, lastStage;
+    return async (stage, completed, total) => {
+        // Even synchronous folder validation must let cancellation and progress requests run.
+        await yieldToServer();
+        context.signal.throwIfAborted();
+        const now = Date.now();
+        if (stage === lastStage && completed < total && now - last < 500) return;
+        last = now; lastStage = stage;
+        await context.progress({ stage, completed, total });
+    };
+}
+
+/**
+ * Imports captured by this version read ZIP entries straight from the retained archive and
+ * save their progress once per batch rather than repeatedly copying the whole record.
+ * A restart resumes the saved work; repeated crashes stop resuming automatically.
+ */
+async function runBatchedImport(context, plan, dependencies) {
+    const attempts = withOperation(context, ({ value, save }) => {
+        value.importPipeline = BATCHED_PIPELINE;
+        value.importAttempts = (value.importAttempts ?? 0) + 1;
+        save();
+        return value.importAttempts;
+    });
+    // A restart resumes this import unless it keeps stopping at the same point.
+    await setJobResume(context.directories, context.job.id, attempts <= MAX_AUTOMATIC_ATTEMPTS ? 'account-import' : null);
+    const report = progressReporter(context);
+    let record = withOperation(context, ({ value }) => value);
+    await report('Opening saved backup', 0, plan.files.length);
+    const archive = plan.archive && plan.files.some(file => file.zip) ? await openImportArchive(plan.archive) : null;
+    try {
+        if (!record.importReady) {
+            const retained = [...plan.files.entries()].filter(([index, file]) => !(archive && file.zip)
+                // Finish a single in-flight copy from an older interrupted import, preserving its evidence.
+                || record.effects[`binary:import:${index}`] && record.effects[`binary:import:${index}`].state !== 'done');
+            if (retained.length) await report('Copying import files', 0, retained.length);
+            for (const [position, [index, file]] of retained.entries()) {
+                context.signal.throwIfAborted();
+                await captureImportInput(context, plan, file, index);
+                await report('Copying import files', position + 1, retained.length);
+            }
+            dependencies.afterImportInputs?.();
+            const checked = [...plan.files.entries()].filter(([, file]) => importNeedsCheck(file));
+            const prepared = {};
+            if (checked.length) await report('Checking chats, characters and settings', 0, checked.length);
+            for (const [position, [index, file]] of checked.entries()) {
+                context.signal.throwIfAborted();
+                const value = prepareImportValue(context, file, index, await readPlannedInput(context, archive, file, index));
+                if (value?.bytes !== undefined) prepared[index] = { bytes: value.bytes };
+                await report('Checking chats, characters and settings', position + 1, checked.length);
+            }
+            withOperation(context, ({ lease }) => {
+                context.signal.throwIfAborted();
+                for (const file of plan.files) assertImportTarget(lease, file.target);
+                for (const file of plan.removals) assertImportTarget(lease, { ...file, resource: null });
+                const root = roleplayLease(lease).scope.directories.root;
+                for (const directory of plan.directories) createRoleplayDirectory(path.join(root, directory), root);
+            });
+            const staged = [...plan.files.entries()].filter(([, file]) => !file.target.resource).map(([index, file]) => ({ file, index }));
+            let done = 0;
+            if (staged.length) await report('Preparing imported files', 0, staged.length);
+            for (const batch of importBatches(staged, item => item.file.size)) {
+                await stageImportBatch(context, batch, { archive, prepared });
+                done += batch.length;
+                await report('Preparing imported files', done, staged.length);
+            }
+            record = withOperation(context, ({ lease, value, save }) => {
+                context.signal.throwIfAborted();
+                for (const file of plan.files) assertImportTarget(lease, file.target);
+                for (const file of plan.removals) assertImportTarget(lease, { ...file, resource: null });
+                value.importPrepared = null;
+                value.importReady = true;
+                value.importResult = { ...plan.extensionsReport, imported: plan.importedCount, defaults: plan.files.length - plan.importedCount,
+                    removed: plan.removals.length, sourceRoot: plan.sourceRoot, mode: plan.mode };
+                save();
+                return value;
+            });
+            dependencies.afterImportStaged?.();
+        }
+        await report('Saving imported files', record.effects['import-publish']?.next ?? 0, plan.files.length);
+        await publishImportBatches(context, plan, { archive, afterImportPublication: dependencies.afterImportPublication,
+            onProgress: (completed, total) => report('Saving imported files', completed, total) });
+    } finally { archive?.close(); }
+    if (plan.removals.length) publishFileDeletions(context, plan.removals, record.importResult, dependencies);
+    return record.importResult;
 }
 
 async function runCapturedImport(context, plan, dependencies) {
@@ -126,5 +225,5 @@ async function runCapturedImport(context, plan, dependencies) {
 }
 
 registerOperation('account-import', { label: 'Import saved account data', capture: captureAccountImport, run: runAccountImport,
-    target: () => ({ kind: 'account', id: 'import' }), canRecover: value => value.importReady === true,
+    target: () => ({ kind: 'account', id: 'import' }), canRecover: () => true,
     canRefuse: value => value.importReady !== true });

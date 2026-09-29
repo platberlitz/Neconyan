@@ -32,7 +32,7 @@ export function createLabClient({ request, observeJob, account, storage, uuid = 
             let completed;
             observeJob(record.jobId, { account, signal, intervalMs: 750,
                 onSnapshot: async job => {
-                    await onProgress?.(job.progress, job);
+                    await onProgress?.({ ...job.progress, stage: job.stage ?? job.progress?.stage }, job);
                     if (['completed', 'failed', 'interrupted', 'cancelled'].includes(job.state)) completed = await read(record.key);
                 },
                 onDone: job => completed?.state === 'completed' ? resolve(completed)

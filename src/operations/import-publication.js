@@ -66,23 +66,37 @@ function object(bytes, label) {
     } catch { throw operationError(`The imported ${label} is not valid JSON. No account files were replaced.`, 400); }
 }
 
+const MERGED_FILES = ['settings.json', 'secrets.json', ENTITY_DATE_ADDED_FILE, ENTITY_LAST_CHAT_FILE];
+const CHAT_IMPORT_LIMIT = 64 * 1024 * 1024;
+
+/** Files whose bytes are read and checked before any destination is published. */
+export const importNeedsCheck = file => Boolean(file.target.resource) || MERGED_FILES.includes(file.relative);
+export const importInputLimit = file => file.target.resource?.kind === 'chat' ? CHAT_IMPORT_LIMIT : STRUCTURED_LIMIT;
+
+/** Chat records are derived again from the same retained bytes, so they never need to be stored in the record. */
+export function importChatRecords(bytes) {
+    const parsed = parseChatJsonl(bytes);
+    if (parsed.status !== 'ok') throw operationError('An imported chat needs recovery. No account files were replaced.', 400);
+    const records = parsed.records;
+    delete records[0].chat_metadata[ROLEPLAY_METADATA_KEY];
+    return records;
+}
+
 /** Validate every structured input before any destination is published. */
-export function prepareImportValue(context, file, index) {
+export function prepareImportValue(context, file, index, input) {
     const resource = file.target.resource;
+    const read = () => input ?? readImportInput(context, index, STRUCTURED_LIMIT);
     if (resource) {
-        const bytes = readImportInput(context, index, STRUCTURED_LIMIT);
+        const bytes = read();
         if (resource.kind === 'chat') {
-            const parsed = parseChatJsonl(bytes);
-            if (parsed.status !== 'ok') throw operationError('An imported chat needs recovery. No account files were replaced.', 400);
-            const records = structuredClone(parsed.records);
-            delete records[0].chat_metadata[ROLEPLAY_METADATA_KEY];
-            return { records };
+            const records = importChatRecords(bytes);
+            return input ? { chat: true } : { records: structuredClone(records) };
         }
         roleplayEntityContent(resource.kind, resource.kind === 'character' ? resource.locator.avatar : resource.locator.groupId, bytes, { storage: true });
         return { entity: true };
     }
-    if (!['settings.json', 'secrets.json', ENTITY_DATE_ADDED_FILE, ENTITY_LAST_CHAT_FILE].includes(file.relative)) return null;
-    const incoming = object(readImportInput(context, index, STRUCTURED_LIMIT), file.relative);
+    if (!MERGED_FILES.includes(file.relative)) return null;
+    const incoming = object(read(), file.relative);
     return withOperation(context, ({ lease }) => {
         assertImportTarget(lease, file.target);
         const { scope } = roleplayLease(lease);

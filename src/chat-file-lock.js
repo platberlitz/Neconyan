@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import process from 'node:process';
@@ -12,6 +13,50 @@ const LOCK_RETRY_DELAY_MS = 25;
 const LOCK_RETRY_LIMIT = 200;
 const LOCK_STALE_MS = 300_000;
 const activeLocks = new Set();
+const hostname = os.hostname();
+
+const lockIdentity = stat => `${stat.dev}:${stat.ino}:${stat.birthtimeMs}:${stat.ctimeMs}`;
+
+// Keep the normal stale timeout for live, remote or unidentified owners. Only a
+// matching lock left by a provably dead local process can be reclaimed early.
+function ownerAwareStat(filename, ...args) {
+    const stat = fs.statSync(filename, ...args);
+    try {
+        const ownerPath = filename + '.owner';
+        const info = fs.lstatSync(ownerPath);
+        if (!info.isFile() || info.size > 4096) return stat;
+        const owner = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
+        if (owner.hostname !== hostname || !Number.isSafeInteger(owner.pid) || owner.pid < 1 || owner.identity !== lockIdentity(stat)) return stat;
+        try { process.kill(owner.pid, 0); } catch (error) { if (error.code === 'ESRCH') stat.mtime = new Date(0); }
+    } catch { /* Old locks and incomplete owner records use the normal timeout. */ }
+    return stat;
+}
+const ownerAwareFs = new Proxy(require('graceful-fs'), {
+    get(target, name) { return name === 'statSync' ? ownerAwareStat : target[name]; },
+});
+
+function recordLockOwner(lockPath) {
+    // This is a recovery hint, not write-ahead evidence. Losing it falls back to
+    // the ordinary stale timeout; it must not add a disk flush to every lock.
+    try {
+        const identity = lockIdentity(fs.statSync(lockPath));
+        const fd = fs.openSync(lockPath + '.owner', fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW, 0o600);
+        try { fs.writeFileSync(fd, JSON.stringify({ hostname, pid: process.pid, identity })); } finally { fs.closeSync(fd); }
+    } catch { /* Locking remains valid without the recovery hint. */ }
+}
+
+/** Retain the existing lock policy while allowing immediate recovery of dead local owners. */
+export function acquireLocalFileLock(filePath, options) {
+    const release = lockfile.lockSync(filePath, { ...options, fs: ownerAwareFs });
+    recordLockOwner(options.lockfilePath);
+    let released = false;
+    return () => {
+        if (released) return;
+        released = true;
+        try { fs.unlinkSync(options.lockfilePath + '.owner'); } catch { /* Optional recovery hint. */ }
+        release();
+    };
+}
 
 export function getChatFileLockPath(filePath) {
     const resolvedPath = path.resolve(filePath);
@@ -29,7 +74,7 @@ export function acquireChatFileLock(filePath) {
     let release;
     for (let attempt = 0; attempt <= LOCK_RETRY_LIMIT; attempt++) {
         try {
-            release = lockfile.lockSync(filePath, {
+            release = acquireLocalFileLock(filePath, {
                 lockfilePath: lockPath,
                 realpath: false,
                 stale: LOCK_STALE_MS,

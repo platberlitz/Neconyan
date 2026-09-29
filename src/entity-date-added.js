@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import lockfile from 'proper-lockfile';
+import { acquireLocalFileLock } from './chat-file-lock.js';
 import { tryWriteFileSync } from './util.js';
 
 export const ENTITY_DATE_ADDED_FILE = 'entity-date-added.json';
@@ -114,7 +114,7 @@ function withStoreLock(userRoot, callback) {
 
     for (let attempt = 0; attempt <= LOCK_RETRY_LIMIT; attempt++) {
         try {
-            release = lockfile.lockSync(userRoot, {
+            release = acquireLocalFileLock(userRoot, {
                 lockfilePath: lockPath,
                 realpath: false,
                 stale: 30_000,

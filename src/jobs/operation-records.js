@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { acceptJob, getJob, releaseJob } from './store.js';
 import { readRoleplayFile, roleplayError, roleplayHash, roleplayLease, roleplayStoreDirectory,
     createRoleplayDirectory, withRoleplayAccount } from '../roleplay-store.js';
@@ -23,6 +24,17 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
         return path.join(directoryFor(base), `${roleplayHash([account.accountId, key])}.json`);
     }
 
+    // Plans never change after admission; a byte-identical plan was already proven to match its canonical hash.
+    const checkedPlans = new Map();
+    const planChecked = value => {
+        if (typeof value.planHash !== 'string') return false;
+        const serialised = createHash('sha256').update(JSON.stringify(value.plan)).digest('hex');
+        if (checkedPlans.get(value.planHash) === serialised) return true;
+        if (value.planHash !== roleplayHash(value.plan)) return false;
+        checkedPlans.set(value.planHash, serialised);
+        if (checkedPlans.size > 64) checkedPlans.delete(checkedPlans.keys().next().value);
+        return true;
+    };
     function read(filename) {
         const file = readRoleplayFile(filename, maximumRecordBytes, { allowMissingParent: true });
         if (!file) return { file: null, value: null };
@@ -30,29 +42,34 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
         try { value = JSON.parse(file.bytes.toString('utf8')); } catch { throw labError('The saved Labs record is unreadable.'); }
         if (file.bytes.length > recordLimit(value?.kind) || value?.version !== 1 || !states.has(value.state) || typeof value.key !== 'string'
         || !value.account || typeof value.requestHash !== 'string' || !value.plan
-        || value.planHash !== roleplayHash(value.plan) || !value.effects || Array.isArray(value.effects)
+        || !planChecked(value) || !value.effects || Array.isArray(value.effects)
         || value.state !== 'preparing' && typeof value.jobId !== 'string'
         || value.state === 'completed' && value.resultHash !== roleplayHash(value.result)) throw labError('The saved Labs record needs recovery.');
         return { file, value };
     }
 
-    function save(filename, value, before) {
+    const open = state => ['preparing', 'accepted'].includes(state);
+    function save(filename, value, before, { wasOpen = false } = {}) {
         const bytes = JSON.stringify(value);
         if (Buffer.byteLength(bytes) > recordLimit(value.kind)) throw labError('The saved Labs result exceeds its reserved space.', 413);
-        let reserved = ['preparing', 'accepted'].includes(value.state) ? recordLimit(value.kind) : Buffer.byteLength(bytes);
-        for (const name of fs.readdirSync(path.dirname(filename))) {
-            const other = path.join(path.dirname(filename), name);
-            if (other === filename || !/^[a-f0-9]{64}\.json$/.test(name)) continue;
-            const item = read(other);
-            if (!item.file) throw labError('A saved Labs record disappeared.');
-            reserved += ['preparing', 'accepted'].includes(item.value.state) ? recordLimit(item.value.kind) : item.file.bytes.length;
+        // An open record already holds its full reservation, so rewriting it cannot change the store total.
+        if (!(before && wasOpen && open(value.state))) {
+            let reserved = open(value.state) ? recordLimit(value.kind) : Buffer.byteLength(bytes);
+            for (const name of fs.readdirSync(path.dirname(filename))) {
+                const other = path.join(path.dirname(filename), name);
+                if (other === filename || !/^[a-f0-9]{64}\.json$/.test(name)) continue;
+                const item = read(other);
+                if (!item.file) throw labError('A saved Labs record disappeared.');
+                reserved += open(item.value.state) ? recordLimit(item.value.kind) : item.file.bytes.length;
+            }
+            if (reserved > storeLimit) throw labError('Labs storage is full. Existing evidence was retained.', 413);
         }
-        if (reserved > storeLimit) throw labError('Labs storage is full. Existing evidence was retained.', 413);
         const validate = () => {
             if (roleplayHash(evidence(readRoleplayFile(filename, maximumRecordBytes, { allowMissingParent: true })))
             !== roleplayHash(evidence(before))) throw labError('The Labs record changed before it could be saved.');
         };
-        validate();
+        // A replacement is validated inside the write itself, immediately before the rename.
+        if (!before) validate();
         tryWriteFileSync(filename, bytes, { encoding: 'utf8', mode: 0o600 }, before ? {
             replaceFileOnly: true, expectedFileIdentity: { dev: BigInt(before.physical.dev), ino: BigInt(before.physical.ino) },
             validateBeforeReplace: validate,
@@ -140,7 +157,8 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
             if (!value || !belongs(value, currentAccount) || value.jobId !== context.job.id || value.planHash !== identity.planHash
             || roleplayHash(value.account) !== roleplayHash(identity.account)
             || value.kind !== context.job.type.slice(namespace.length + 1)) throw labError('The job does not own this Labs record.');
-            return operation({ lease, value, save: () => { file = save(filename, value, file); }, base, account: identity.account });
+            let wasOpen = open(value.state);
+            return operation({ lease, value, save: () => { file = save(filename, value, file, { wasOpen }); wasOpen = open(value.state); }, base, account: identity.account });
         });
     }
 
