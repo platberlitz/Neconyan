@@ -4899,7 +4899,7 @@ function getMessageIconLabel(extra) {
  * @param {string} model - Model id as stored on the message.
  * @returns {string} The last path segment without leading bracket tags, or the original id when that would be empty
  */
-function getShortModelName(model) {
+export function getShortModelName(model) {
     const lastSegment = String(model ?? '').trim().split('/').filter(Boolean).pop() ?? '';
     const short = lastSegment.replace(/^(?:\s*\[[^\]]*\]\s*)+/, '').trim();
     return short || String(model ?? '').trim();

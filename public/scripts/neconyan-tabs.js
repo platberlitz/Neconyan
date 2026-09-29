@@ -23,10 +23,10 @@ import {
     TOPBAR_ADOPTION_ATTRIBUTE,
     TOPBAR_EXTENSION_SLOT_ID,
 } from './topbar-extension-slot/index.js';
-import { setCharacterSpoilerFreeFieldsHidden } from './power-user.js';
+import { power_user, setCharacterSpoilerFreeFieldsHidden } from './power-user.js';
 import { escapeRegex } from './util/escape-regex.js';
 import { copyText, flashHighlight, showFontAwesomePicker } from './utils.js';
-import { characters, chat, flushCharacterSaveDebounced, getChatGeneration, getCurrentChatId, getOneCharacter, getThumbnailUrl, is_send_press, parseAvatarSource, refreshCsrfToken, saveSettingsDebounced, scrollReopenedChatToBottom, selectCharacterById, selectRightMenuWithAnimation, this_chid } from '../script.js';
+import { characters, chat, flushCharacterSaveDebounced, getChatGeneration, getCurrentChatId, getGeneratingModel, getOneCharacter, getShortModelName, getThumbnailUrl, is_send_press, parseAvatarSource, refreshCsrfToken, saveSettingsDebounced, scrollReopenedChatToBottom, selectCharacterById, selectRightMenuWithAnimation, this_chid } from '../script.js';
 import { is_group_generating } from './group-chats.js';
 import { eventSource, event_types } from './events.js';
 import { extensionNames, findExtension, getExtensionManifest, getExtensionType } from './extensions.js';
@@ -418,6 +418,11 @@ const NN_TOPBAR_LABEL_PARTS = Object.freeze([
         id: 'char',
         label: 'Character Name',
         description: 'Show the active character name, or the group name while a group chat is open.',
+    },
+    {
+        id: 'model',
+        label: 'Current Model',
+        description: 'Show the model selected in Connections. Uses the short name when Short Model Name is on in Visual Toggles.',
     },
     {
         id: 'custom',
@@ -5605,6 +5610,9 @@ function getTopbarLabelCycleParts(context = getSillyTavernContext()) {
     if (hasActiveTopBarChat(context) && context?.mainApi === 'openai') {
         cycleParts.push('ctx');
     }
+    if (getTopBarModelLabel()) {
+        cycleParts.push('model');
+    }
     if (nnState.topbarLabel.customText) {
         cycleParts.push('custom');
     }
@@ -5612,8 +5620,25 @@ function getTopbarLabelCycleParts(context = getSillyTavernContext()) {
     return cycleParts;
 }
 
+function getTopBarModelLabel() {
+    let model = '';
+    try {
+        model = String(getGeneratingModel() ?? '').trim();
+    } catch {
+        return '';
+    }
+
+    if (!model || model === 'no_connection') {
+        return '';
+    }
+
+    return power_user?.timestamp_model_name_short ? getShortModelName(model) : model;
+}
+
 function getTopBarLabelPartText(partId, context = getSillyTavernContext()) {
     switch (partId) {
+        case 'model':
+            return getTopBarModelLabel();
         case 'ctx':
             if (!hasActiveTopBarChat(context) || context?.mainApi !== 'openai') {
                 return '';
@@ -5740,6 +5765,12 @@ function bindTopBarBrandWindowEvents() {
         bindTopBarBrand();
     };
 
+    document.addEventListener('input', event => {
+        const targetId = event.target instanceof HTMLElement ? event.target.id : '';
+        if (targetId === 'messageModelNameShortEnabled' || targetId.endsWith('_model_id')) {
+            window.requestAnimationFrame(updateTopBarBrand);
+        }
+    });
     window.addEventListener('pageshow', refreshWithContext, { passive: true });
     window.addEventListener('focus', refreshWithContext, { passive: true });
     document.addEventListener('visibilitychange', () => {
@@ -5797,6 +5828,16 @@ function bindTopBarBrand() {
 
     for (const eventName of new Set(events)) {
         eventSource.on(eventName, refreshWithContext);
+    }
+
+    const modelEvents = [
+        eventTypes.CHATCOMPLETION_MODEL_CHANGED,
+        eventTypes.CHATCOMPLETION_SOURCE_CHANGED,
+        eventTypes.ONLINE_STATUS_CHANGED,
+    ].filter(Boolean);
+
+    for (const eventName of new Set(modelEvents)) {
+        eventSource.on(eventName, refresh);
     }
 
     if (eventTypes.CHAT_COMPLETION_PROMPT_READY) {

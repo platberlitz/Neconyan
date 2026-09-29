@@ -32,6 +32,23 @@ describe('topbar label tap cycle', () => {
         expect(cyclePartsSource).toContain('cycleParts.push(\'custom\');');
     });
 
+    test('offers the current model and respects the Short Model Name toggle', () => {
+        expect(tabsSource).toMatch(/id: 'model',\n\s*label: 'Current Model',/);
+
+        const modelSource = getFunctionSource('getTopBarModelLabel');
+        expect(modelSource).toContain('getGeneratingModel()');
+        expect(modelSource).toContain('model === \'no_connection\'');
+        expect(modelSource).toContain('power_user?.timestamp_model_name_short ? getShortModelName(model) : model');
+
+        expect(getFunctionSource('getTopBarLabelPartText')).toContain('return getTopBarModelLabel();');
+        expect(getFunctionSource('getTopbarLabelCycleParts')).toContain('cycleParts.push(\'model\');');
+
+        const bindSource = getFunctionSource('bindTopBarBrand');
+        expect(bindSource).toContain('eventTypes.CHATCOMPLETION_MODEL_CHANGED');
+        expect(bindSource).toContain('eventTypes.ONLINE_STATUS_CHANGED');
+        expect(tabsSource).toContain('targetId === \'messageModelNameShortEnabled\' || targetId.endsWith(\'_model_id\')');
+    });
+
     test('a tap saves the next label part for the current device', () => {
         const cycleSource = getFunctionSource('cycleTopBarLabel');
         expect(cycleSource).toContain('const configuredParts = getConfiguredTopbarLabelParts();');
