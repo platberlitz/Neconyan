@@ -2,6 +2,26 @@
 
 ## Release preparation: 1.0.0
 
+### 30 September: 1.0.3 released from main, staging moves to 1.0.4
+
+`main` was fast-forwarded to staging at `100f6b0`, then both branches received
+`268bc57` to fix two browser checks: scroll the Agents Edit button into view
+before checking its click target, and wait for colour transitions before
+sampling accents. All nine focused browser tests passed. Release E2E run
+`36589113980` passed all 16 batches after rerunning a dropped connection and a
+browser screenshot capture failure. Unit tests passed after one connection
+retry; all 1,503 server tests, root lint, frontend budgets and the frontend
+build passed. The optional tests-folder lint still reports existing errors;
+lint on the two edited browser tests has no errors.
+
+Android run `36589135776` passed the signed build and the Android 11 and 15
+emulator checks. The downloaded artifacts' checksums, provenance commit
+`268bc5717835070126f64879a051b3f8a0ab7f7a` and unchanged signing certificate
+were verified before publication. Neconyan 1.0.3 is published at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.0.3 with the annotated
+tag `v1.0.3`, both signed APKs, source ZIP, provenance and checksums. It hasn't
+been tested on a real phone. Staging now moves to `1.0.4`.
+
 ### 29 September: 1.0.2 released from main, staging moves to 1.0.3
 
 `main` was fast-forwarded to staging at `a645ddd` (no merge commit). Android run
