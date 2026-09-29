@@ -15,6 +15,11 @@
     --sb-shell-shadow: none;
 }
 
+/* A chosen accent replaces the ink line, so active marks and the send button carry it. */
+:root[data-sb-theme='clean-minimal'][data-neconyan-accent='custom'] body.neconyan:not(.sbterm) {
+    --clean-line-strong: var(--neco-ginger);
+}
+
 /* Wallpaper: this style's own scene, still behind the Calico paw prints and cat decorations. */
 :root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm)::before {
     background-image: url('../../img/neconyan/shell-clean-minimal.webp?v=20260929a');
@@ -96,20 +101,27 @@
 }
 
 /* Controls: outlined, square, monochrome. Colour is reserved for the Calico cats and links. */
-:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control) {
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset) {
     background: transparent;
     border: 1px solid var(--clean-line);
     border-radius: 3px;
     box-shadow: none;
 }
 
-:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control):hover {
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset):hover {
     background: transparent;
     border-color: var(--clean-line-strong);
     color: var(--neco-ink);
 }
 
-:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) .neconyan-cat-control {
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) .neconyan-home-actions > .neconyan-home-primary,
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) .neconyan-home-actions > .neconyan-home-primary:is(:hover, :focus-visible) {
+    background: var(--neco-ginger);
+    border: 1px solid var(--neco-ginger);
+    box-shadow: none;
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) .neconyan-cat-control:not(.neconyan-home-primary) {
     background: var(--neco-surface);
     border: 1px solid var(--clean-line);
     box-shadow: none;
@@ -147,6 +159,11 @@
     border-radius: 3px;
     background: var(--neco-ink);
     color: var(--neco-canvas);
+}
+
+:root[data-sb-theme='clean-minimal'][data-neconyan-accent='custom'] body.neconyan:not(.sbterm) #send_but {
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
 }
 
 /* Drawers: same canvas, hairline header, underline tabs. */
@@ -207,4 +224,30 @@
     background: var(--neco-canvas);
     border: 1px solid var(--clean-line-strong);
     border-radius: 4px;
+}
+
+/* Accent-filled primary buttons keep their fill and label colour; only this style's finish is added. */
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]),
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]):hover {
+    border-radius: 3px;
+    box-shadow: none;
+}
+
+/* Phones: the whole bottom bar is one box (see neconyan-calico.css), so this style dresses that
+   outer box and the chat-name row inside it drops its own frame instead of doubling the edge. */
+@media (max-width: 768px) {
+    :root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel {
+        --neco-surface: var(--neco-canvas);
+        border-top: 1px solid var(--clean-line);
+        border-radius: 4px 4px 0 0;
+        box-shadow: none;
+    }
+    :root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel #sb-bottom-chat-bar {
+        background-image: none;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
 }

@@ -23,6 +23,11 @@
     --cozy-shadow: 0 10px 30px color-mix(in srgb, var(--cozy-amber) 28%, rgb(90 50 10 / 0.18));
 }
 
+/* A chosen accent becomes the lamplight: every warmed surface leans towards it. */
+:root[data-sb-theme='cozy-warm'][data-neconyan-accent='custom'] body.neconyan:not(.sbterm) {
+    --cozy-amber: color-mix(in srgb, var(--neco-ginger) 82%, #f2b45a);
+}
+
 /* Wallpaper: this style's own scene, still behind the Calico paw prints and cat decorations. */
 :root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm)::before {
     background-image: url('../../img/neconyan/shell-cozy-warm.webp?v=20260929a');
@@ -83,14 +88,14 @@
 }
 
 /* Controls: pillowy pills with a warm inner highlight. */
-:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control) {
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset) {
     background: linear-gradient(180deg, color-mix(in srgb, var(--cozy-raised) 88%, #fff), var(--cozy-raised));
     border: 1px solid color-mix(in srgb, var(--cozy-amber) 25%, var(--neco-border));
     border-radius: 999px;
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.2), 0 2px 6px rgb(0 0 0 / 0.12);
 }
 
-:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control):hover {
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset):hover {
     background: linear-gradient(180deg, color-mix(in srgb, var(--cozy-amber) 30%, var(--cozy-raised)), var(--cozy-raised));
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 3px 10px var(--cozy-glow);
 }
@@ -175,4 +180,30 @@
     border: 2px dashed var(--cozy-thread);
     border-radius: 22px;
     box-shadow: var(--cozy-shadow), inset 0 0 0 5px var(--cozy-surface);
+}
+
+/* Accent-filled primary buttons keep their fill and label colour; only this style's finish is added. */
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]),
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]):hover {
+    border-radius: 999px;
+    box-shadow: var(--cozy-shadow);
+}
+
+/* Phones: the whole bottom bar is one box (see neconyan-calico.css), so this style dresses that
+   outer box and the chat-name row inside it drops its own frame instead of doubling the edge. */
+@media (max-width: 768px) {
+    :root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel {
+        --neco-surface: var(--cozy-surface);
+        border-top: 2px dashed var(--cozy-thread);
+        border-radius: 22px 22px 0 0;
+        box-shadow: var(--cozy-shadow);
+    }
+    :root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel #sb-bottom-chat-bar {
+        background-image: none;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
 }

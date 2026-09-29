@@ -101,6 +101,15 @@
     color: var(--neco-on-accent);
 }
 
+/* Sidebar glyphs take the accent colour, as Finder's sidebar does, and turn to the label colour on the selected row. */
+:root[data-sb-theme='macos-minimal'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action) > i:not(.neconyan-whiskers) {
+    color: var(--neco-ginger);
+}
+
+:root[data-sb-theme='macos-minimal'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action):is([aria-current='page'], .is-active) > i:not(.neconyan-whiskers) {
+    color: inherit;
+}
+
 :root[data-sb-theme='macos-minimal'] body.neconyan:not(.sbterm) #sb-mobile-nav-content {
     background: var(--mac-vibrancy-strong);
     backdrop-filter: blur(30px) saturate(180%);
@@ -111,14 +120,14 @@
 }
 
 /* Controls: flat hairline buttons and fields with the soft focus halo. */
-:root[data-sb-theme='macos-minimal'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control) {
+:root[data-sb-theme='macos-minimal'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset) {
     background: var(--mac-control);
     border: 1px solid var(--mac-hairline-strong);
     border-radius: 7px;
     box-shadow: 0 1px 1px rgb(0 0 0 / 0.12);
 }
 
-:root[data-sb-theme='macos-minimal'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control):hover {
+:root[data-sb-theme='macos-minimal'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset):hover {
     background: color-mix(in srgb, var(--mac-control) 85%, var(--neco-ink));
 }
 
@@ -230,4 +239,32 @@
     border: 1px solid var(--mac-hairline);
     border-radius: 14px;
     box-shadow: var(--mac-shadow), 0 24px 60px rgb(0 0 0 / 0.35);
+}
+
+/* Accent-filled primary buttons keep their fill and label colour; only this style's finish is added. */
+:root[data-sb-theme='macos-minimal'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]),
+:root[data-sb-theme='macos-minimal'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]):hover {
+    background-image: linear-gradient(180deg, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0));
+    border-radius: 6px;
+    box-shadow: 0 1px 1px rgb(0 0 0 / 0.2), inset 0 0.5px 0 rgb(255 255 255 / 0.35);
+}
+
+/* Phones: the whole bottom bar is one box (see neconyan-calico.css), so this style dresses that
+   outer box and the chat-name row inside it drops its own frame instead of doubling the edge. */
+@media (max-width: 768px) {
+    :root[data-sb-theme='macos-minimal'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel {
+        --neco-surface: var(--mac-vibrancy);
+        backdrop-filter: blur(30px) saturate(180%);
+        -webkit-backdrop-filter: blur(30px) saturate(180%);
+        border-top: 1px solid var(--mac-hairline);
+        border-radius: 14px 14px 0 0;
+    }
+    :root[data-sb-theme='macos-minimal'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel #sb-bottom-chat-bar {
+        background-image: none;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
 }

@@ -94,40 +94,61 @@ describe('shell style runtime stylesheets', () => {
 
         const version = readShellScriptVersion();
         expect(headScript).toContain(`'css/shell-styles/' + shellStyle + '.css?v=${version}'`);
-        expect(headScript).toContain("link.setAttribute('data-sb-shell-style', shellStyle)");
-        expect(headScript).toContain("document.documentElement.setAttribute('data-sb-theme', shellStyle)");
+        expect(headScript).toContain('link.setAttribute(\'data-sb-shell-style\', shellStyle)');
+        expect(headScript).toContain('document.documentElement.setAttribute(\'data-sb-theme\', shellStyle)');
     });
 
     test('the shell script injects and removes the runtime link when the style changes', () => {
         expect(tabsSource).toMatch(/function syncShellStyleStylesheet\(themeId\)/);
         expect(tabsSource).toMatch(/function setShellTheme\([\s\S]*?syncShellStyleStylesheet\(nextTheme\)/);
-        expect(tabsSource).toContain("return `css/shell-styles/${themeId}.css?v=${NN_SHELL_STYLE_STYLESHEET_VERSION}`");
+        expect(tabsSource).toContain('return `css/shell-styles/${themeId}.css?v=${NN_SHELL_STYLE_STYLESHEET_VERSION}`');
     });
 
-    test.each(runtimeIds)('%s only styles its own shell and layers over Calico', (id) => {
-        const source = readSource('public', 'css', 'shell-styles', `${id}.css`);
-        const stripped = stripCssBlockComments(source);
+    for (const id of runtimeIds) {
+        test(`${id} only styles its own shell and layers over Calico`, () => {
+            const source = readSource('public', 'css', 'shell-styles', `${id}.css`);
+            const stripped = stripCssBlockComments(source);
 
-        const prefix = `:root[data-sb-theme='${id}']`;
-        const selectors = collectSelectors(source);
-        expect(selectors.length).toBeGreaterThan(10);
-        const unscoped = selectors.flatMap(splitSelectorList).filter(part => !part.startsWith(prefix));
-        expect(unscoped).toEqual([]);
+            const prefix = `:root[data-sb-theme='${id}']`;
+            const selectors = collectSelectors(source);
+            expect(selectors.length).toBeGreaterThan(10);
+            const unscoped = selectors.flatMap(splitSelectorList).filter(part => !part.startsWith(prefix));
+            expect(unscoped).toEqual([]);
 
-        // The Calico identity stays: the sheet must not replace the palette tokens, fonts,
-        // message tints or cat decorations, only the chrome around them.
-        for (const forbidden of ['--neco-canvas:', '--neco-ink:', '--neco-muted:', '--neco-ginger:', '--neco-user:', '--mainFontFamily:', '--sb-font-display:', '--SmartThemeBotMesBlurTintColor', '--SmartThemeUserMesBlurTintColor', '.neconyan-whiskers', '.neconyan-cat-panel::before']) {
-            expect(stripped).not.toContain(forbidden);
+            // The Calico identity stays: the sheet must not replace the palette tokens, fonts,
+            // message tints or cat decorations, only the chrome around them. Excluding the
+            // whiskers from an icon selector is allowed; styling them is not.
+            const withoutExclusions = stripped.replaceAll(':not(.neconyan-whiskers)', '');
+            for (const forbidden of ['--neco-canvas:', '--neco-ink:', '--neco-muted:', '--neco-ginger:', '--neco-user:', '--mainFontFamily:', '--sb-font-display:', '--SmartThemeBotMesBlurTintColor', '--SmartThemeUserMesBlurTintColor', '.neconyan-whiskers', '.neconyan-cat-panel::before']) {
+                expect(withoutExclusions).not.toContain(forbidden);
+            }
+
+            // Runtime sheets sit outside the !important budget, so they must not lean on it,
+            // and any motion would need a reduced-motion guard the sheets do not carry.
+            expect(stripped).not.toMatch(/!important/);
+            expect(stripped).not.toMatch(/\b(transition|animation)\s*:/);
+            expect(stripped).not.toMatch(/(^|[^:])\/\//m);
+
+            for (const [, asset] of stripped.matchAll(/url\('\.\.\/\.\.\/([^'?]+)(?:\?[^']*)?'\)/g)) {
+                expect(existsSync(path.join(repoRoot, 'public', asset))).toBe(true);
+            }
+        });
+    }
+
+    test('every style, Calico included, follows the chosen accent colour', () => {
+        const signatureHues = { 'windows-aero': '--aero-hue:', 'cozy-warm': '--cozy-amber:', 'hypr-glow': '--hypr-b:', 'slate-flat': '--slate-cool:', 'clean-minimal': '--clean-line-strong:' };
+        for (const [id, hueVar] of Object.entries(signatureHues)) {
+            const source = stripCssBlockComments(readSource('public', 'css', 'shell-styles', `${id}.css`));
+            const customBlock = source.match(new RegExp(`:root\\[data-sb-theme='${id}'\\]\\[data-neconyan-accent='custom'\\] body\\.neconyan:not\\(\\.sbterm\\) \\{([^}]*)\\}`));
+            expect(customBlock).not.toBeNull();
+            expect(customBlock[1]).toContain(hueVar);
+            expect(customBlock[1]).toContain('var(--neco-ginger)');
         }
+        expect(readSource('public', 'css', 'shell-styles', 'macos-minimal.css')).toMatch(/> i:not\(\.neconyan-whiskers\) \{\s*color: var\(--neco-ginger\);/);
 
-        // Runtime sheets sit outside the !important budget, so they must not lean on it,
-        // and any motion would need a reduced-motion guard the sheets do not carry.
-        expect(stripped).not.toMatch(/!important/);
-        expect(stripped).not.toMatch(/\b(transition|animation)\s*:/);
-        expect(stripped).not.toMatch(/(^|[^:])\/\//m);
-
-        for (const [, asset] of stripped.matchAll(/url\('\.\.\/\.\.\/([^'?]+)(?:\?[^']*)?'\)/g)) {
-            expect(existsSync(path.join(repoRoot, 'public', asset))).toBe(true);
-        }
+        const calico = stripCssBlockComments(readSource('public', 'css', 'neconyan-calico.css'));
+        expect(calico).toContain('--neco-pink: color-mix(in oklch, var(--SmartThemeQuoteColor) 55%, #efb0bd);');
+        expect(calico).toMatch(/\[data-neconyan-calico-tone='light'\]\[data-neconyan-accent='custom'\] body\.neconyan :is\(#neconyan-workspace-rail, #sb-mobile-nav-content\) \{[^}]*--neco-ginger: color-mix\(in oklch, var\(--SmartThemeQuoteColor\)/);
+        expect(calico).toMatch(/body\.neconyan ::selection \{[^}]*var\(--neco-ginger\)/);
     });
 });

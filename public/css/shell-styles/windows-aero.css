@@ -3,16 +3,18 @@
    caption glow and glossy Win7 controls on top, all mixed from the Calico tokens. */
 
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) {
-    --aero-tint: color-mix(in srgb, var(--neco-rail) 68%, #3d8ff0 32%);
+    --aero-hue: #3d8ff0;
+    --aero-hue-light: #a9d2fb;
+    --aero-tint: color-mix(in srgb, var(--neco-rail) 68%, var(--aero-hue) 32%);
     --aero-glass: color-mix(in srgb, var(--aero-tint) 74%, transparent);
     --aero-glass-strong: color-mix(in srgb, var(--aero-tint) 90%, transparent);
     --aero-shine: linear-gradient(180deg, rgb(255 255 255 / 0.28) 0, rgb(255 255 255 / 0.1) 50%, rgb(255 255 255 / 0) 50.5%);
     --aero-edge: rgb(255 255 255 / 0.36);
-    --aero-glow: rgb(140 196 255 / 0.85);
+    --aero-glow: color-mix(in srgb, var(--aero-hue) 55%, rgb(255 255 255 / 0.85));
     --aero-select: linear-gradient(180deg, color-mix(in srgb, var(--neco-ginger) 18%, transparent), color-mix(in srgb, var(--neco-ginger) 40%, transparent));
     --aero-select-border: color-mix(in srgb, var(--neco-ginger) 65%, transparent);
     --aero-button: linear-gradient(180deg, color-mix(in srgb, var(--neco-raised) 72%, #fff 28%) 0, var(--neco-raised) 50%, color-mix(in srgb, var(--neco-raised) 88%, #000) 100%);
-    --aero-button-hover: linear-gradient(180deg, color-mix(in srgb, var(--neco-raised) 60%, #8ec5ff 40%) 0, color-mix(in srgb, var(--neco-raised) 78%, #3d8ff0 22%) 50%, color-mix(in srgb, var(--neco-raised) 70%, #1f5fb8 30%) 100%);
+    --aero-button-hover: linear-gradient(180deg, color-mix(in srgb, var(--neco-raised) 60%, var(--aero-hue-light) 40%) 0, color-mix(in srgb, var(--neco-raised) 78%, var(--aero-hue) 22%) 50%, color-mix(in srgb, var(--neco-raised) 70%, color-mix(in srgb, var(--aero-hue) 70%, #000) 30%) 100%);
     --sb-radius-button: 3px;
     --sb-radius-sm: 3px;
     --sb-radius-md: 4px;
@@ -22,12 +24,18 @@
 }
 
 :root[data-sb-theme='windows-aero'][data-sb-surface-tone='light'] body.neconyan:not(.sbterm) {
-    --aero-tint: color-mix(in srgb, var(--neco-surface) 56%, #a9d2fb 44%);
+    --aero-tint: color-mix(in srgb, var(--neco-surface) 56%, var(--aero-hue-light) 44%);
     --aero-shine: linear-gradient(180deg, rgb(255 255 255 / 0.55) 0, rgb(255 255 255 / 0.22) 50%, rgb(255 255 255 / 0) 50.5%);
     --aero-edge: rgb(255 255 255 / 0.8);
     --aero-glow: rgb(255 255 255 / 0.95);
     --aero-button: linear-gradient(180deg, #fbfbfb 0, #ececec 50%, color-mix(in srgb, var(--neco-raised) 70%, #cfcfcf) 100%);
-    --aero-button-hover: linear-gradient(180deg, #eaf6fd 0, #d9f0fc 50%, #bee6fd 51%, #a7d9f5 100%);
+    --aero-button-hover: linear-gradient(180deg, color-mix(in srgb, var(--aero-hue-light) 22%, #fff) 0, color-mix(in srgb, var(--aero-hue-light) 38%, #fff) 50%, color-mix(in srgb, var(--aero-hue-light) 70%, #fff) 51%, var(--aero-hue-light) 100%);
+}
+
+/* A chosen accent recolours the glass, like the Window Color setting in Windows 7. */
+:root[data-sb-theme='windows-aero'][data-neconyan-accent='custom'] body.neconyan:not(.sbterm) {
+    --aero-hue: var(--neco-ginger);
+    --aero-hue-light: color-mix(in srgb, var(--neco-ginger) 45%, #fff);
 }
 
 /* Wallpaper: this style's own scene, still behind the Calico paw prints and cat decorations. */
@@ -98,26 +106,34 @@
 }
 
 /* Win7 glossy push buttons everywhere except the top bar and cat-shaped controls. */
-:root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control) {
+:root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset) {
     background: var(--aero-button);
     border: 1px solid color-mix(in srgb, var(--neco-border) 80%, #000);
     border-radius: 3px;
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35);
 }
 
-:root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control):hover {
+:root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset):hover {
     background: var(--aero-button-hover);
-    border-color: #3c7fb1;
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 0 8px rgb(61 143 240 / 0.45);
+    border-color: color-mix(in srgb, var(--aero-hue) 70%, #000);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 0 8px color-mix(in srgb, var(--aero-hue) 45%, transparent);
 }
 
-:root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control):active {
+:root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset):active {
     box-shadow: inset 0 2px 4px rgb(0 0 0 / 0.35);
 }
 
-:root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) .neconyan-cat-control {
+:root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) .neconyan-cat-control:not(.neconyan-home-primary) {
     background: var(--aero-shine), var(--neco-raised);
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35);
+}
+
+/* The accent-filled primary action keeps its fill and dark label, with Aero gloss on top. */
+:root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) .neconyan-home-actions > .neconyan-home-primary,
+:root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) .neconyan-home-actions > .neconyan-home-primary:is(:hover, :focus-visible) {
+    background: var(--aero-shine), var(--neco-action-gradient);
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 55%, #000);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 0 12px color-mix(in srgb, var(--neco-ginger) 45%, transparent);
 }
 
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) :is(input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea:not(#send_textarea)) {
@@ -208,4 +224,35 @@
     border: 1px solid var(--aero-edge);
     border-radius: 6px;
     box-shadow: 0 0 0 1px rgb(0 0 0 / 0.4), 0 12px 40px rgb(0 0 0 / 0.45);
+}
+
+/* Accent-filled primary buttons keep their fill and label colour; only this style's finish is added. */
+:root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]),
+:root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]):hover {
+    background-image: var(--aero-shine);
+    border: 1px solid color-mix(in srgb, var(--color-primary, var(--sb-accent)) 55%, #000);
+    border-radius: 3px;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 0 10px color-mix(in srgb, var(--color-primary, var(--sb-accent)) 45%, transparent);
+}
+
+/* Phones: the whole bottom bar is one box (see neconyan-calico.css), so this style dresses that
+   outer box and the chat-name row inside it drops its own frame instead of doubling the edge. */
+@media (max-width: 768px) {
+    :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel {
+        --neco-surface: color-mix(in srgb, var(--aero-tint) 82%, transparent);
+        background-image: var(--aero-shine);
+        backdrop-filter: blur(14px) saturate(160%);
+        -webkit-backdrop-filter: blur(14px) saturate(160%);
+        border-top: 1px solid var(--aero-edge);
+        border-radius: 8px 8px 0 0;
+        box-shadow: inset 0 1px 0 var(--aero-edge), 0 -4px 14px rgb(0 0 0 / 0.22);
+    }
+    :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel #sb-bottom-chat-bar {
+        background-image: none;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
 }

@@ -54,6 +54,35 @@
     --neco-ginger-hover: var(--SmartThemeUnderlineColor);
     --neco-on-accent: var(--neco-accent-ink, var(--neco-charcoal));
     --neco-action-gradient: var(--neco-accent-gradient);
+    --neco-pink: color-mix(in oklch, var(--SmartThemeQuoteColor) 55%, #efb0bd);
+}
+
+:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'][data-neconyan-accent='custom'] body.neconyan :is(#neconyan-workspace-rail, #sb-mobile-nav-content) {
+    --neco-ginger: color-mix(in oklch, var(--SmartThemeQuoteColor) 72%, #fff);
+    --neco-ginger-hover: color-mix(in oklch, var(--SmartThemeQuoteColor) 40%, #fff);
+}
+
+/* Accent touches every shell style shares: the current page, section labels, top bar edge and selected text. */
+body.neconyan #neconyan-workspace-rail button:is([aria-current='page'], .is-active) {
+    background: color-mix(in oklch, var(--neco-ginger) 18%, var(--neco-raised));
+    box-shadow: inset 3px 0 0 var(--neco-ginger);
+}
+
+body.neconyan #neconyan-workspace-rail button:is([aria-current='page'], .is-active) > i:not(.neconyan-whiskers) {
+    color: var(--neco-ginger);
+}
+
+body.neconyan :is(.neconyan-rail-section-label, .neconyan-rail-section-heading) {
+    color: color-mix(in oklch, var(--neco-muted) 62%, var(--neco-ginger));
+}
+
+body.neconyan #top-bar {
+    border-bottom-color: color-mix(in oklch, var(--neco-border) 55%, var(--neco-ginger));
+}
+
+body.neconyan ::selection {
+    background: color-mix(in srgb, var(--neco-ginger) 38%, transparent);
+    color: inherit;
 }
 
 :root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan #neconyan-workspace-rail,
@@ -238,7 +267,7 @@ body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel
         background-color: var(--neco-surface) !important;
         border-top: 1px solid var(--neco-border);
         border-radius: 18px 18px 0 0;
-        padding-top: 6px !important;
+        padding-top: 2px !important;
     }
     /* The outer bar supplies the solid surface; an inner fill would cover its edge. */
     body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel #sb-bottom-chat-bar { background-color: transparent !important; padding-inline: 3px; }
