@@ -1,0 +1,373 @@
+/* The /? help guide. Chat messages prefix every class with custom-. */
+#chat .custom-necoHelp {
+    --neco-help-miso: var(--neco-ginger);
+    --neco-help-taro: color-mix(in oklch, var(--neco-muted) 55%, oklch(66% 0.06 235));
+    --neco-help-nori: var(--neco-pink);
+    --neco-help-tint: var(--neco-ginger);
+    container: neco-help / inline-size;
+    display: grid;
+    gap: 12px;
+    max-width: 760px;
+    color: var(--neco-ink);
+    line-height: 1.5;
+    white-space: normal;
+}
+
+#chat .custom-necoHelp :is(p, h3, h4, dl, dd) {
+    margin: 0;
+}
+
+#chat .custom-necoHelp code {
+    padding: 1px 6px;
+    border: 1px solid color-mix(in oklch, var(--neco-border) 70%, transparent);
+    border-radius: 6px;
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+    font-size: 0.88em;
+    overflow-wrap: anywhere;
+}
+
+#chat .custom-necoHelp .custom-necoHelpHero {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 18px;
+    border: 1px solid var(--neco-border);
+    border-radius: 18px;
+    background: var(--neco-surface);
+}
+
+#chat .custom-necoHelp .custom-necoHelpCast {
+    display: flex;
+    flex: none;
+}
+
+#chat .custom-necoHelp .custom-necoHelpFace {
+    width: 44px;
+    height: 44px;
+    max-height: none;
+    flex: none;
+    border: 2px solid var(--neco-help-tint);
+    border-radius: 999px;
+    background: var(--neco-raised);
+    object-fit: cover;
+}
+
+#chat .custom-necoHelp .custom-necoHelpFace--miso { --neco-help-tint: var(--neco-help-miso); }
+#chat .custom-necoHelp .custom-necoHelpFace--taro { --neco-help-tint: var(--neco-help-taro); }
+#chat .custom-necoHelp .custom-necoHelpFace--nori { --neco-help-tint: var(--neco-help-nori); }
+
+#chat .custom-necoHelp .custom-necoHelpCast .custom-necoHelpFace {
+    width: 52px;
+    height: 52px;
+    box-shadow: 0 0 0 3px var(--neco-surface);
+}
+
+#chat .custom-necoHelp .custom-necoHelpCast .custom-necoHelpFace + .custom-necoHelpFace {
+    margin-left: -14px;
+}
+
+#chat .custom-necoHelp .custom-necoHelpHeroText {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+#chat .custom-necoHelp .custom-necoHelpTitle {
+    color: var(--neco-ink);
+    font-size: 1.45em;
+    font-weight: 400;
+    line-height: 1.15;
+}
+
+#chat .custom-necoHelp .custom-necoHelpLead,
+#chat .custom-necoHelp .custom-necoHelpFooter,
+#chat .custom-necoHelp .custom-necoHelpFine {
+    color: var(--neco-muted);
+}
+
+#chat .custom-necoHelp :is(.custom-necoHelpJump, .custom-necoHelpActions) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+#chat .custom-necoHelp .custom-necoHelpChip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    width: max-content;
+    max-width: 100%;
+    padding: 6px 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 999px;
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+    font: inherit;
+    font-size: 0.87em;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color 160ms ease-out, background-color 160ms ease-out, color 160ms ease-out;
+}
+
+#chat .custom-necoHelp .custom-necoHelpChip i {
+    color: var(--neco-ginger);
+}
+
+#chat .custom-necoHelp .custom-necoHelpChip:hover {
+    border-color: var(--neco-ginger);
+    background: color-mix(in oklch, var(--neco-ginger) 14%, var(--neco-raised));
+}
+
+#chat .custom-necoHelp .custom-necoHelpChip--primary {
+    border-color: var(--neco-ginger);
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+#chat .custom-necoHelp .custom-necoHelpChip--primary i {
+    color: inherit;
+}
+
+#chat .custom-necoHelp .custom-necoHelpChip--primary:hover {
+    border-color: var(--neco-ginger-hover);
+    background: var(--neco-ginger-hover);
+}
+
+#chat .custom-necoHelp :is(.custom-necoHelpChip, .custom-necoHelpHostHead):focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+#chat .custom-necoHelp .custom-necoHelpHost {
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: var(--neco-surface);
+}
+
+#chat .custom-necoHelp .custom-necoHelpHost--miso { --neco-help-tint: var(--neco-help-miso); }
+#chat .custom-necoHelp .custom-necoHelpHost--taro { --neco-help-tint: var(--neco-help-taro); }
+#chat .custom-necoHelp .custom-necoHelpHost--nori { --neco-help-tint: var(--neco-help-nori); }
+
+#chat .custom-necoHelp .custom-necoHelpHost[open] {
+    border-color: color-mix(in oklch, var(--neco-help-tint) 55%, var(--neco-border));
+}
+
+#chat .custom-necoHelp .custom-necoHelpHostHead {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 44px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    list-style: none;
+    cursor: pointer;
+}
+
+#chat .custom-necoHelp .custom-necoHelpHostHead::-webkit-details-marker {
+    display: none;
+}
+
+#chat .custom-necoHelp .custom-necoHelpHostHead::after {
+    content: '';
+    flex: none;
+    width: 8px;
+    height: 8px;
+    margin: 0 4px 4px auto;
+    border-right: 2px solid var(--neco-muted);
+    border-bottom: 2px solid var(--neco-muted);
+    transform: rotate(45deg);
+    transition: transform 180ms ease-out;
+}
+
+#chat .custom-necoHelp .custom-necoHelpHost[open] > .custom-necoHelpHostHead::after {
+    margin-bottom: -4px;
+    transform: rotate(-135deg);
+}
+
+#chat .custom-necoHelp .custom-necoHelpHostHead:hover {
+    background: color-mix(in oklch, var(--neco-help-tint) 8%, var(--neco-surface));
+}
+
+#chat .custom-necoHelp .custom-necoHelpHostText {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+#chat .custom-necoHelp .custom-necoHelpHostName {
+    color: var(--neco-ink);
+    font-family: var(--sb-font-display);
+    font-size: 1.15em;
+    line-height: 1.2;
+}
+
+#chat .custom-necoHelp .custom-necoHelpHostTopic {
+    color: var(--neco-muted);
+    font-size: 0.87em;
+}
+
+#chat .custom-necoHelp .custom-necoHelpBody {
+    display: grid;
+    gap: 12px;
+    padding: 4px 16px 16px;
+}
+
+#chat .custom-necoHelp .custom-necoHelpSays {
+    position: relative;
+    margin-top: 6px;
+    padding: 12px 16px;
+    border: 1px solid color-mix(in oklch, var(--neco-help-tint) 45%, var(--neco-border));
+    border-radius: 18px;
+    border-top-left-radius: 6px;
+    background: color-mix(in oklch, var(--neco-help-tint) 13%, var(--neco-surface));
+    color: var(--neco-ink);
+}
+
+#chat .custom-necoHelp .custom-necoHelpSays::before {
+    content: '';
+    position: absolute;
+    top: -7px;
+    left: 14px;
+    width: 12px;
+    height: 12px;
+    border-top: 1px solid color-mix(in oklch, var(--neco-help-tint) 45%, var(--neco-border));
+    border-left: 1px solid color-mix(in oklch, var(--neco-help-tint) 45%, var(--neco-border));
+    background: inherit;
+    transform: rotate(45deg);
+}
+
+#chat .custom-necoHelp .custom-necoHelpHeading {
+    margin-top: 6px;
+    color: var(--neco-ink);
+    font-size: 1.05em;
+    font-weight: 400;
+}
+
+#chat .custom-necoHelp .custom-necoHelpList {
+    display: grid;
+    gap: 4px 16px;
+}
+
+#chat .custom-necoHelp .custom-necoHelpList dt {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: baseline;
+    font-weight: 400;
+}
+
+#chat .custom-necoHelp .custom-necoHelpList dd {
+    margin: 0 0 8px;
+    color: var(--neco-muted);
+}
+
+#chat .custom-necoHelp .custom-necoHelpList dd code {
+    color: var(--neco-ink);
+}
+
+#chat .custom-necoHelp .custom-necoHelpList--swap dt code {
+    border-color: color-mix(in oklch, var(--neco-help-tint) 55%, var(--neco-border));
+}
+
+#chat .custom-necoHelp kbd {
+    min-width: 28px;
+    padding: 2px 8px;
+    border: 1px solid var(--neco-border);
+    border-bottom-width: 3px;
+    border-radius: 6px;
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+    font-family: inherit;
+    font-size: 0.8em;
+    font-weight: 600;
+    text-align: center;
+}
+
+#chat .custom-necoHelp .custom-necoHelpTip {
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--neco-raised);
+}
+
+#chat .custom-necoHelp .custom-necoHelpSamples {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 6px;
+}
+
+#chat .custom-necoHelp .custom-necoHelpSample {
+    display: grid;
+    gap: 4px;
+    justify-items: start;
+    padding: 8px 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-canvas);
+}
+
+#chat .custom-necoHelp .custom-necoHelpSample > span {
+    padding-left: 8px;
+    border-left: 3px solid var(--neco-ginger);
+    color: var(--neco-muted);
+}
+
+#chat .custom-necoHelp .custom-necoHelpFine {
+    font-size: 0.87em;
+}
+
+#chat .custom-necoHelp .custom-necoHelpFooter {
+    padding: 0 4px;
+    font-size: 0.87em;
+}
+
+@container neco-help (min-width: 560px) {
+    #chat .custom-necoHelp .custom-necoHelpList {
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    }
+
+    #chat .custom-necoHelp .custom-necoHelpList dd {
+        margin-bottom: 4px;
+        padding-top: 1px;
+    }
+
+    #chat .custom-necoHelp .custom-necoHelpList--keys {
+        grid-template-columns: max-content minmax(0, 1fr);
+    }
+}
+
+@container neco-help (max-width: 420px) {
+    #chat .custom-necoHelp .custom-necoHelpHero {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 16px;
+    }
+
+    #chat .custom-necoHelp .custom-necoHelpChip {
+        min-height: 44px;
+    }
+}
+
+@media (pointer: coarse) {
+    #chat .custom-necoHelp .custom-necoHelpChip {
+        min-height: 44px;
+    }
+}
+
+/* The guide's hero already shows the cast, so phones give it the avatar column too. */
+@media (max-width: 768px) {
+    #chat .mes:has(.custom-necoHelp) > :is(.mesAvatarWrapper, .swipe_left, .swipeRightBlock) {
+        display: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #chat .custom-necoHelp .custom-necoHelpChip,
+    #chat .custom-necoHelp .custom-necoHelpHostHead::after {
+        transition: none;
+    }
+}

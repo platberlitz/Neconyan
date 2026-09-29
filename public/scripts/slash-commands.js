@@ -6280,6 +6280,24 @@ $(document).on('click', '[data-displayHelp]', function (e) {
     helpCommandCallback(null, page);
 });
 
+$(document).on('click', '[data-neconyan-help-action="workbench"]', async function (e) {
+    e.preventDefault();
+    const command = SlashCommandParser.commands['me-workbench'];
+    if (!command) {
+        toastr.info(t`Switch on Macro Enhanced in Extensions to use the Macro Workbench.`);
+        return;
+    }
+    try {
+        const result = await command.callback({}, '');
+        if (typeof result === 'string' && result.trim()) {
+            toastr.info(result);
+        }
+    } catch (error) {
+        console.error('Could not open the Macro Workbench', error);
+        toastr.error(t`Could not open the Macro Workbench.`);
+    }
+});
+
 function setBackgroundCallback(_, bg) {
     if (!bg) {
         // allow reporting of the background name if called without args

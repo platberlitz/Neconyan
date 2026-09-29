@@ -17,6 +17,10 @@ const stylesheets = [
         url: new URL('../public/css/neconyan-menus.css', import.meta.url),
     },
     {
+        name: 'help guide',
+        url: new URL('../public/css/neconyan-help.css', import.meta.url),
+    },
+    {
         name: 'input history',
         url: new URL('../public/scripts/extensions/input-history/style.css', import.meta.url),
     },

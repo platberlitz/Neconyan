@@ -6,6 +6,7 @@ import { getSlashCommandsHelp } from './slash-commands.js';
 import { SlashCommandBrowser } from './slash-commands/SlashCommandBrowser.js';
 import { MacroBrowser, getMacrosHelp } from './macros/engine/MacroBrowser.js';
 import { renderTemplateAsync } from './templates.js';
+import { getAssistantIconSrc } from './neconyan-assistant-art.js';
 
 /** @type {Record<string, ChatMessage>} */
 export const system_messages = {};
@@ -109,6 +110,16 @@ export async function initSystemMessages() {
     SAFETY_CHAT.splice(0, SAFETY_CHAT.length, safetyMessage);
 }
 
+const ASSISTANT_HELP_FACE_PATTERN = /img\/neconyan\/assistant-icons\/(miso|taro|nori)-(?:male|female|neutral)\.png(?:\?[^"'\s]*)?/g;
+
+/**
+ * Points the help guide's assistant faces at each assistant's chosen art.
+ * @param {string} html Rendered help template
+ * @returns {string} The same markup with the current face for each assistant
+ */
+export function withAssistantHelpFaces(html) {
+    return String(html ?? '').replace(ASSISTANT_HELP_FACE_PATTERN, (_, personality) => getAssistantIconSrc(personality));
+}
 
 /**
  * Gets a system message by type.
@@ -138,6 +149,10 @@ export function getSystemMessageByType(type, text, extra = {}) {
 
     if (type === system_message_types.MACROS) {
         newMessage.mes = getMacrosHelp();
+    }
+
+    if (type === system_message_types.HELP && !text) {
+        newMessage.mes = withAssistantHelpFaces(newMessage.mes);
     }
 
     if (!newMessage.extra || typeof newMessage.extra !== 'object') {
