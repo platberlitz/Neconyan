@@ -78,6 +78,15 @@ test('Taro hosts the glossary in the assistant gender the user picked', () => {
     assert.match(neutral, /<img class="empty-host" src="\/img\/neconyan\/assistant-icons\/taro-neutral\.png\?v=[^"]+"/);
     assert.match(neutral, /I checked twice\. Nothing matches that search\./);
 
+    const asides = [...neutral.matchAll(/<\/section>\s*<aside class="host-aside host-aside-(left|right)" role="note" aria-label="Taro says" data-after="([^"]+)">[\s\S]*?<img class="host-aside-art" src="([^"]+)"/g)];
+    assert.deepEqual(asides.map(match => match[2]), ['main-agents-panel', 'companion-output', 'agent-regex', 'companion-panel', 'storage-and-recovery']);
+    assert.deepEqual(asides.map(match => match[1]), ['right', 'left', 'right', 'left', 'right']);
+    for (const [, , after, src] of asides) {
+        assert.match(src, /^\/img\/neconyan\/tour\/tour-0[358]-taro-[a-z]+-neutral\.webp\?v=/);
+        assert.ok(neutral.indexOf(`data-section="${after}"`) < neutral.indexOf(`data-after="${after}"`), `${after} aside sits after its section`);
+    }
+    assert.match(neutral, /History Depth does nothing unless Include prior notes is on/);
+
     const userRoot = mkdtempSync(join(tmpdir(), 'docs-reader-'));
     try {
         assert.equal(readAssistantGender(userRoot, 'taro'), 'neutral');
@@ -87,6 +96,7 @@ test('Taro hosts the glossary in the assistant gender the user picked', () => {
         assert.match(female, /tour-05-taro-agents-female\.webp/);
         assert.match(female, /assistant-icons\/taro-female\.png/);
         assert.doesNotMatch(female, /-neutral\.(webp|png)/);
+        assert.equal(female.match(/<img class="host-aside-art" src="\/img\/neconyan\/tour\/[^"]+-female\.webp/g)?.length, 5);
         writeFileSync(join(userRoot, 'settings.json'), JSON.stringify({ accountStorage: { 'neconyanAssistantGender:taro': '../etc' } }));
         assert.equal(readAssistantGender(userRoot, 'taro'), 'neutral');
         writeFileSync(join(userRoot, 'settings.json'), '{ broken');
@@ -96,14 +106,16 @@ test('Taro hosts the glossary in the assistant gender the user picked', () => {
     }
 
     for (const gender of ['male', 'female', 'neutral']) {
-        assert.ok(existsSync(join(serverDirectory, `public/img/neconyan/tour/tour-05-taro-agents-${gender}.webp`)), `missing ${gender} Taro`);
+        for (const scene of ['tour-03-taro-modes', 'tour-05-taro-agents', 'tour-08-taro-sampling']) {
+            assert.ok(existsSync(join(serverDirectory, `public/img/neconyan/tour/${scene}-${gender}.webp`)), `missing ${gender} ${scene}`);
+        }
         assert.ok(existsSync(join(serverDirectory, `public/img/neconyan/assistant-icons/taro-${gender}.png`)), `missing ${gender} Taro icon`);
     }
 });
 
 test('pages without a host keep the plain hero and empty state', () => {
     const html = renderDocsPage('# Plain\n\n## Part\n\nText.', { rawHref: '/docs/x.md' });
-    assert.doesNotMatch(html, /class="hero[^"]*has-host"|<img class="(hero|empty)-host"/);
+    assert.doesNotMatch(html, /class="hero[^"]*has-host"|<img class="(hero|empty)-host"|<aside class="host-aside/);
     assert.match(html, /id="empty-state"/);
 });
 

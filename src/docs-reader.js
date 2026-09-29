@@ -20,6 +20,13 @@ export const DOCS_READER_PAGES = Object.freeze({
             pose: 'Taro pointing at you with a clipboard',
             greeting: 'Every button and setting in the Agents panel, named and explained in the order you meet it. Search for the word you saw on screen, change one thing, then check what it did. I wrote it all down so you do not have to paw through the settings yourself. … That one was good. Do not look at me like that.',
             emptyLine: 'I checked twice. Nothing matches that search.',
+            asides: Object.freeze([
+                Object.freeze({ after: 'main-agents-panel', scene: 'tour-03-taro-modes', line: 'Switch agents on one at a time and read a reply after each. When something breaks, you will know which one did it. You will not need to ask me.' }),
+                Object.freeze({ after: 'companion-output', scene: 'tour-08-taro-sampling', line: 'Longest section done. The one everyone misses: History Depth does nothing unless Include prior notes is on. I once watched someone tune it for an hour. Do not be that someone.' }),
+                Object.freeze({ after: 'agent-regex', scene: 'tour-03-taro-modes', line: 'Try new regex on a message you do not care about first. It will happily eat formatting you wanted to keep, and I am not fishing it back out.' }),
+                Object.freeze({ after: 'companion-panel', scene: 'tour-08-taro-sampling', line: 'Play runs on the newest reply. Regenerate goes back to the message the note came from. Mix them up and you will blame the wrong Companion.' }),
+                Object.freeze({ after: 'storage-and-recovery', scene: 'tour-05-taro-agents', line: 'That is the lot. You read all of it? … Hm. Not bad. Now go change one thing and see what it does.' }),
+            ]),
         }),
     }),
 });
@@ -181,7 +188,7 @@ export function renderDocsMarkdown(markdown) {
 /**
  * Build the full themed HTML reader page for a Markdown document.
  * @param {string} markdown
- * @param {{ rawHref?: string, kicker?: string, summary?: string, host?: { name: string, pose: string, greeting: string, emptyLine: string, gender: string, image: string, icon: string } | null }} [options]
+ * @param {{ rawHref?: string, kicker?: string, summary?: string, host?: { name: string, pose: string, greeting: string, emptyLine: string, gender: string, image: string, icon: string, asides?: Array<{ after: string, line: string, image: string }> } | null }} [options]
  * @returns {string}
  */
 export function renderDocsPage(markdown, options = {}) {
@@ -202,6 +209,14 @@ export function renderDocsPage(markdown, options = {}) {
     const emptyState = host
         ? `<img class="empty-host" src="${escapeHtml(host.icon)}" alt="" width="64" height="64"><span><strong>${escapeHtml(host.emptyLine)}</strong> Try a shorter word, such as <strong>companion</strong> or <strong>depth</strong>.</span>`
         : 'Nothing matches that search. Try a shorter word, such as <strong>companion</strong> or <strong>depth</strong>.';
+    const asides = new Map((host?.asides || []).map((aside, index) => [aside.after, `
+<aside class="host-aside host-aside-${index % 2 ? 'left' : 'right'}" role="note" aria-label="${hostName} says" data-after="${escapeHtml(aside.after)}">
+    <div class="host-aside-bubble"><p class="hero-speaker">${hostName}</p><p>${escapeHtml(aside.line)}</p></div>
+    <img class="host-aside-art" src="${escapeHtml(aside.image)}" alt="" width="512" height="768" loading="lazy" decoding="async">
+</aside>`]));
+    const bodyHtml = asides.size
+        ? doc.bodyHtml.replace(/<section class="doc-section" data-section="([^"]+)">[\s\S]*?<\/section>/g, (section, id) => section + (asides.get(id) || ''))
+        : doc.bodyHtml;
 
     return `<!DOCTYPE html>
 <html lang="en" data-theme="dark">
@@ -269,7 +284,7 @@ ${DOCS_READER_CSS}
         </header>
         <p class="search-status" id="search-status" role="status" aria-live="polite" hidden></p>
         <article class="doc">
-${doc.bodyHtml}
+${bodyHtml}
         </article>
         <p class="empty-state" id="empty-state" hidden>${emptyState}</p>
     </main>
@@ -312,6 +327,11 @@ function resolveDocsHost(host, gender) {
         pose: host.pose,
         greeting: host.greeting,
         emptyLine: host.emptyLine,
+        asides: (host.asides || []).map(aside => ({
+            after: aside.after,
+            line: aside.line,
+            image: `/img/neconyan/tour/${aside.scene}-${gender}.webp?v=${ASSISTANT_ART_VERSION}`,
+        })),
         gender,
         image: `/img/neconyan/tour/${host.scene}-${gender}.webp?v=${ASSISTANT_ART_VERSION}`,
         icon: `/img/neconyan/assistant-icons/${host.personality}-${gender}.png?v=${ASSISTANT_ART_VERSION}`,
@@ -568,6 +588,36 @@ a { color: var(--accent); text-underline-offset: 3px; }
 .hero-speech p { margin: 0; color: var(--ink); font-size: 15px; line-height: 1.6; }
 .hero-speech .hero-speaker { margin-bottom: 2px; color: var(--accent); font: 400 16px/1.3 'Fredoka One', 'Nunito', sans-serif; }
 .hero-host { grid-area: host; align-self: end; display: block; width: 190px; height: auto; margin-top: 8px; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.25)); }
+.host-aside { display: flex; align-items: center; gap: 16px; max-width: var(--measure); margin: -4px 0 14px; padding: 0 18px; }
+.host-aside-left { flex-direction: row-reverse; }
+.host-aside-bubble {
+    position: relative;
+    flex: 1;
+    max-width: 520px;
+    margin-left: auto;
+    padding: 12px 16px 14px;
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    background: var(--raised);
+    box-shadow: var(--shadow);
+}
+.host-aside-left .host-aside-bubble { margin: 0 auto 0 0; }
+.host-aside-bubble::after {
+    content: '';
+    position: absolute;
+    top: calc(50% - 7px);
+    right: -8px;
+    width: 14px;
+    height: 14px;
+    border: solid var(--panel-border);
+    border-width: 1px 1px 0 0;
+    background: var(--raised);
+    transform: rotate(45deg);
+}
+.host-aside-left .host-aside-bubble::after { right: auto; left: -8px; border-width: 0 0 1px 1px; }
+.doc .host-aside-bubble p { margin: 0; color: var(--ink); font-size: 15px; line-height: 1.6; }
+.doc .host-aside-bubble .hero-speaker { margin-bottom: 2px; color: var(--accent); font: 400 16px/1.3 'Fredoka One', 'Nunito', sans-serif; }
+.host-aside-art { flex: none; display: block; width: 120px; height: auto; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.25)); }
 
 .doc-intro, .doc-section {
     margin: 0 0 18px;
@@ -747,6 +797,10 @@ mark { padding: 0 2px; border-radius: 4px; background: var(--mark); color: inher
     .doc td:not(.cell-lead)[data-label="Meaning"]::before { display: none; }
     .doc tbody tr:hover td { background: none; }
     .empty-host { width: 52px; height: 52px; }
+    .host-aside { gap: 10px; margin: -6px 0 12px; padding: 0 2px; }
+    .host-aside-bubble { padding: 10px 12px 12px; }
+    .doc .host-aside-bubble p { font-size: 14.5px; }
+    .host-aside-art { width: 84px; }
     .back-to-top { right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); }
 }
 @keyframes docs-ear-twitch-left {
@@ -769,7 +823,7 @@ mark { padding: 0 2px; border-radius: 4px; background: var(--mark); color: inher
     }
 }
 @media print {
-    .topbar, .toc, .back-to-top, .search-status, .hero-host, .cat-panel::before, .cat-panel::after { display: none !important; }
+    .topbar, .toc, .back-to-top, .search-status, .hero-host, .host-aside, .cat-panel::before, .cat-panel::after { display: none !important; }
     body::before { display: none; }
     .layout { display: block; }
     body { background: #fff; color: #000; }
@@ -789,6 +843,7 @@ const DOCS_READER_SCRIPT = `
     var toc = document.getElementById('doc-toc');
     var topButton = document.getElementById('back-to-top');
     var sections = Array.prototype.slice.call(document.querySelectorAll('.doc-section'));
+    var hostAsides = Array.prototype.slice.call(document.querySelectorAll('.host-aside'));
     var intro = document.querySelector('.doc-intro');
     var tocLinks = Array.prototype.slice.call(toc.querySelectorAll('a[data-target]'));
     var headings = Array.prototype.slice.call(document.querySelectorAll('.doc h2[id], .doc h3[id]'));
@@ -867,6 +922,7 @@ const DOCS_READER_SCRIPT = `
             empty.hidden = true;
             return;
         }
+        hostAsides.forEach(function (aside) { aside.classList.add('is-filtered-out'); });
         var total = 0;
         var visibleSections = 0;
         var containers = intro ? [intro].concat(sections) : sections;

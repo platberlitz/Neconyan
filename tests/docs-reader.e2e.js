@@ -19,7 +19,17 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
             const taro = page.locator('img.hero-host');
             await expect(taro).toBeVisible();
             await expect.poll(() => taro.evaluate(image => image.complete && image.naturalWidth)).toBeGreaterThan(0);
-            await expect(page.getByRole('note', { name: 'Taro says' })).toContainText('Taro');
+            await expect(page.locator('.hero').getByRole('note', { name: 'Taro says' })).toContainText('Taro');
+
+            const asides = page.locator('.doc .host-aside');
+            await expect(asides).toHaveCount(5);
+            const lastAside = asides.last();
+            await lastAside.scrollIntoViewIfNeeded();
+            await expect(lastAside).toBeVisible();
+            await expect.poll(() => lastAside.locator('img.host-aside-art').evaluate(image => image.complete && image.naturalWidth)).toBeGreaterThan(0);
+            const asideBox = await lastAside.boundingBox();
+            expect(asideBox.x + asideBox.width).toBeLessThanOrEqual(viewport.width);
+            await page.evaluate(() => window.scrollTo(0, 0));
             expect(await page.locator('.hero').evaluate(element => getComputedStyle(element, '::before').backgroundImage)).toContain('ear-left');
             const heroBox = await page.locator('.hero').boundingBox();
             const taroBox = await taro.boundingBox();
@@ -30,6 +40,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
             await expect(page.locator('#search-status')).toContainText('matches');
             await expect(page.locator('mark').first()).toHaveText(/depth/i);
             await expect(page.locator('#core-terms')).toBeHidden();
+            await expect(page.locator('.doc .host-aside:visible')).toHaveCount(0);
             await search.fill('nothing-matches-this-term');
             await expect(page.locator('#empty-state')).toBeVisible();
             await expect(page.locator('#empty-state')).toContainText('I checked twice');
@@ -38,6 +49,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
             await expect(page.locator('#empty-state')).toBeHidden();
             await expect(page.locator('#core-terms')).toBeVisible();
             await expect(page.locator('mark')).toHaveCount(0);
+            await expect(page.locator('.doc .host-aside:visible')).toHaveCount(5);
 
             await page.getByRole('button', { name: 'Switch to light theme' }).click();
             await page.reload();
