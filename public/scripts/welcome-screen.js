@@ -1423,6 +1423,7 @@ async function sendWelcomePanel(chats, expand, requestId, assistantPersonalities
 
 const NECONYAN_RAIL_COLLAPSED_KEY = 'NeconyanWorkspaceRailCollapsed.v1';
 const NECONYAN_RAIL_ORDER_KEY = 'NeconyanWorkspaceRailOrder.v1';
+const NECONYAN_ISSUES_URL = 'https://github.com/platberlitz/Neconyan/issues';
 let neconyanRailOrder;
 const neconyanRailGroups = {};
 let neconyanRailRefreshId = 0;
@@ -1777,7 +1778,7 @@ function ensureNeconyanRail() {
                     <div data-neconyan-advanced-nav></div>
                 </section>
                 <section class="neconyan-rail-advanced neconyan-rail-finer" aria-labelledby="neconyan-rail-finer-title">
-                    <div id="neconyan-rail-finer-title" class="neconyan-rail-section-heading"><span>Finer-tuning</span></div>
+                    <div id="neconyan-rail-finer-title" class="neconyan-rail-section-heading"><span>Troubleshooting</span></div>
                     <div data-neconyan-finer-nav></div>
                 </section>
                 <div class="neconyan-rail-section-label neconyan-rail-modes-label">Modes</div>
@@ -1859,6 +1860,17 @@ function ensureNeconyanRail() {
             onClick: () => activateNeconyanRailRoute(route),
         }));
     }
+    const reportIssueButton = createNeconyanRailButton({
+        label: 'Report an Issue',
+        icon: 'fa-bug',
+        route: 'report-issue',
+        onClick: () => {
+            globalThis.NeconyanShell?.closeMobileNav?.();
+            window.open(NECONYAN_ISSUES_URL, '_blank', 'noopener,noreferrer');
+        },
+    });
+    reportIssueButton.title = 'Opens the Neconyan GitHub issues page in a new tab';
+    finerNav.appendChild(reportIssueButton);
 
     rail.querySelector('[data-neconyan-route="new-chat"]').addEventListener('click', () => activateNeconyanRailRoute('new-chat'));
     rail.querySelectorAll('[data-neconyan-route="search"], [data-neconyan-route="settings"]').forEach(button => {

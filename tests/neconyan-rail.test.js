@@ -112,9 +112,16 @@ describe('Neconyan workspace rail behavior', () => {
         expect(build.indexOf('data-neconyan-primary-nav')).toBeLessThan(build.indexOf('data-neconyan-advanced-nav'));
         expect(build.indexOf('data-neconyan-advanced-nav')).toBeLessThan(build.indexOf('data-neconyan-finer-nav'));
         expect(build.indexOf('data-neconyan-finer-nav')).toBeLessThan(build.indexOf('data-neconyan-mode-nav'));
-        expect(build).toContain('>Finer-tuning<');
+        expect(build).toContain('>Troubleshooting<');
+        expect(build).not.toContain('Finer-tuning');
         expect(build).toContain('[\'server\', \'Server\', \'fa-server\']');
         expect(build).toContain('[\'console-logs\', \'Console Logs\', \'fa-terminal\']');
+        expect(build.indexOf('\'console-logs\'')).toBeLessThan(build.indexOf('route: \'report-issue\''));
+        expect(build).toContain('window.open(NECONYAN_ISSUES_URL, \'_blank\', \'noopener,noreferrer\')');
+        // Opening an outside page shows no in-app surface, so the phone drawer has to close itself.
+        expect(build.indexOf('NeconyanShell?.closeMobileNav?.()')).toBeGreaterThan(build.indexOf('route: \'report-issue\''));
+        expect(tabsSource).toMatch(/globalThis\.NeconyanShell = Object\.assign\(neconyanShell, \{[\s\S]*?\n {8}closeMobileNav,\n/);
+        expect(welcomeSource).toContain('const NECONYAN_ISSUES_URL = \'https://github.com/platberlitz/Neconyan/issues\';');
         expect(tabsSource).toContain('createRailOrderSettingsGroup(\'desktop\')');
         expect(tabsSource).toContain('createRailOrderSettingsGroup(\'mobile\')');
         expect(tabsSource).toContain('desktopBottomChatBarSettingsGroup,\n            desktopRailOrderSettingsGroup,');

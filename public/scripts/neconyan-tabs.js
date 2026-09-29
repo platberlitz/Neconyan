@@ -19619,6 +19619,7 @@ function initAll() {
             if (isShellTabOpen('left', 'agents')) closeShell('left');
         },
         closeWorkspace,
+        closeMobileNav,
         isMobileViewport,
         highlightCharacterEditorTab() {
             const editorTab = document.querySelector('[data-sb-character-tab="editor"]');
