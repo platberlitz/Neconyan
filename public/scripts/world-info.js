@@ -29,6 +29,9 @@ import { escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharact
 import { detectEmbeddedLorebookCandidates, findMatchingLorebookName, getLinkedAuxBooks, isEmbeddedBookLinked } from './world-info-batch-helpers.js';
 import { applyWorldInfoTimedEffects, filterWorldInfoInclusionGroups, getTimedEffectWindow, matchesWorldInfoEntry, normalizeWorldInfoKey, parseWorldInfoKeyRegex, passesWorldInfoProbability, prepareWorldInfoEntries, resolveWorldInfoTimedEffects } from './world-info-scan-core.js';
 import { parseLorebookImport } from './neconyan-lorebook-tools-core.js';
+import { planLorebookRepair, repairChangeText, repairDefectText } from './neconyan-lorebook-repair.js';
+import { classifyKey } from './neconyan-lorebook-keytest.js';
+import { createKeyTestSection } from './neconyan-lorebook-keytest-panel.js';
 import { createEntryFolderUI } from './world-info-entry-folders-ui.js';
 import {
     NECONYAN_LOREBOOK_FOLDERS_KEY,
@@ -3395,6 +3398,10 @@ function enableKeysInputHelper({ template, entry, entryPropName, name, data }) {
         if (isRegex) {
             content.html(highlightRegex(item.text));
             content.addClass('regex_item').prepend($('<span>').addClass('regex_icon').text('•*').attr('title', 'Regex'));
+        } else if (classifyKey(item.text) === 'invalid-regex') {
+            const warning = t`Looks like a regex but is not valid, so SillyTavern matches it as plain text.`;
+            content.addClass('invalid_regex_item').attr('title', `${item.text}\n\n${warning}\n\nClick to edit`)
+                .prepend($('<span>').addClass('regex_icon invalid_regex_icon fa-solid fa-triangle-exclamation').attr({ title: warning, 'aria-label': warning }));
         }
         if (searchStyle && item.count) {
             const wrapper = $('<span>').addClass('result_block').append(content);
@@ -4025,7 +4032,10 @@ export async function getWorldEntry(name, data, entry, options = {}) {
         advancedBody.append($('<h4></h4>').text(t`Inclusion and timing`), extraRows);
         advancedBody.append($('<h4></h4>').text(t`Additional matching sources`), $('<div class="neconyan-entry-flags"></div>').append(matching));
         advanced.append(advancedBody);
-        editTemplate.empty().append($('<div class="neconyan-entry-editor"></div>').append(contentBlock, keywords, placement, memo, advanced));
+        const keyTest = createKeyTestSection(() => data.entries[entry.uid], () => ({
+            caseSensitive: world_info_case_sensitive, matchWholeWords: world_info_match_whole_words,
+        }));
+        editTemplate.empty().append($('<div class="neconyan-entry-editor"></div>').append(contentBlock, keywords, keyTest, placement, memo, advanced));
 
         // UID display
         editTemplate.find('.world_entry_form_uid_value').text(`(UID: ${entry.uid})`);
@@ -6696,6 +6706,44 @@ export function onWorldInfoChange(args, text) {
 }
 
 /**
+ * Lists broken entry ids before import, as LoreStitch does, and lets the user choose.
+ * @param {object} book Native World Info or Character Book data
+ * @param {string} fileName Imported file name
+ * @returns {Promise<object|null>} The book to import, or null when the import is cancelled
+ */
+async function reviewLorebookRepair(book, fileName) {
+    const plan = planLorebookRepair(book);
+    if (!plan.changes.length && !plan.defects.length) return book;
+    const container = document.createElement('div');
+    container.className = 'neco-lore-repair';
+    const heading = document.createElement('h3');
+    const intro = document.createElement('p');
+    const list = document.createElement('ul');
+    container.append(heading, intro, list);
+    const lines = plan.defects.length ? plan.defects.map(repairDefectText) : plan.changes.map(repairChangeText);
+    for (const line of lines) {
+        const item = document.createElement('li');
+        item.textContent = line;
+        list.append(item);
+    }
+    if (plan.defects.length) {
+        heading.textContent = t`This lorebook cannot be imported`;
+        intro.textContent = t`${fileName} has problems that cannot be fixed automatically:`;
+        await new Popup(container, POPUP_TYPE.TEXT, '', { okButton: t`Close` }).show();
+        return null;
+    }
+    heading.textContent = t`Broken entry ids found`;
+    intro.textContent = t`${fileName} has entries with duplicate, text or missing ids. These fixes keep every entry under its own id:`;
+    const result = await new Popup(container, POPUP_TYPE.CONFIRM, '', {
+        okButton: t`Apply fixes and import`,
+        cancelButton: t`Cancel`,
+        customButtons: [{ text: t`Import as-is`, result: POPUP_RESULT.CUSTOM1 }],
+    }).show();
+    if (result === POPUP_RESULT.AFFIRMATIVE) return plan.book;
+    return result === POPUP_RESULT.CUSTOM1 ? book : null;
+}
+
+/**
  * Imports world info from a file.
  * @param {File} file File to import
  */
@@ -6727,10 +6775,15 @@ export async function importWorldInfo(file) {
 
         if (jsonData.format === 'lorestitch-project') {
             const imported = parseLorebookImport(jsonData, convertCharacterBook);
-            formData.set('convertedData', JSON.stringify(imported.book));
+            const book = await reviewLorebookRepair(imported.book, file.name);
+            if (!book) return;
+            formData.set('convertedData', JSON.stringify(book));
             formData.set('history', JSON.stringify(imported.history));
         } else if (isNativeWorldInfo) {
             console.log('Importing native World Info');
+            const book = await reviewLorebookRepair(jsonData, file.name);
+            if (!book) return;
+            if (book !== jsonData) formData.set('convertedData', JSON.stringify(book));
         } else if (jsonData.lorebookVersion !== undefined) {
             console.log('Converting Novel Lorebook');
             formData.set('convertedData', JSON.stringify(convertNovelLorebook(jsonData)));
@@ -6742,7 +6795,9 @@ export async function importWorldInfo(file) {
             formData.set('convertedData', JSON.stringify(convertRisuLorebook(jsonData)));
         } else if (Array.isArray(characterBook?.entries)) {
             console.log('Converting CharacterBook');
-            formData.set('convertedData', JSON.stringify(convertCharacterBook(characterBook)));
+            const book = await reviewLorebookRepair(characterBook, file.name);
+            if (!book) return;
+            formData.set('convertedData', JSON.stringify(convertCharacterBook(book)));
         } else {
             throw new Error('Unsupported World Info format');
         }

@@ -15,6 +15,7 @@ import {
     appendWorldInfoCommit, deleteWorldInfoHistory, mergeWorldInfoHistory, newWorldInfoHistory,
     readWorldInfoHistory, renameWorldInfoHistory, validateWorldInfoHistory, worldInfoRevision, writeWorldInfoHistory,
 } from '../world-info-history.js';
+import { sanitizeHealthPrefs } from '../../public/scripts/neconyan-lorebook-health.js';
 
 const WORLD_INFO_EXTENSION = '.json';
 // Neconyan divergence: canonical World Info filenames are UTF-8 bounded and written through the fork's safe persistence path.
@@ -175,15 +176,22 @@ export const router = express.Router();
 // Neconyan: synchronous revision checks and writes keep native authoring operations from interleaving.
 router.post('/history', authoringRoute((request, response, lease) => {
     const { name, action = 'get', revision, headCommitId, message, commitId } = request.body ?? {};
-    if (typeof name !== 'string' || !name || !['get', 'commit', 'restore'].includes(action)) return response.sendStatus(400);
+    if (typeof name !== 'string' || !name || !['get', 'commit', 'restore', 'lint'].includes(action)) return response.sendStatus(400);
     try {
         const filename = getExistingWorldInfoFilename(request.user.directories, name);
         if (!filename) return response.sendStatus(404);
         const bookPath = path.join(request.user.directories.worlds, filename);
-        if (action !== 'get') assertNativeMediaTargetIdle(lease, { kind: 'lorebook', id: filename });
+        if (action === 'commit' || action === 'restore') assertNativeMediaTargetIdle(lease, { kind: 'lorebook', id: filename });
         let data = JSON.parse(readAuthoringFileLocked(lease, bookPath).bytes.toString('utf8'));
         let history = readWorldInfoHistory(bookPath, lease) ?? newWorldInfoHistory();
-        if (action !== 'get') {
+        if (action === 'lint') {
+            // Health check choices live beside the commits so .stproj exports carry them as workspace.lintPrefs.
+            const lintPrefs = sanitizeHealthPrefs(request.body.lintPrefs);
+            history = { ...history };
+            delete history.lintPrefs;
+            if (lintPrefs && (lintPrefs.ignoredSignatures.length || lintPrefs.mutedRules.length)) history.lintPrefs = lintPrefs;
+            writeWorldInfoHistory(bookPath, history, lease);
+        } else if (action !== 'get') {
             if (revision !== worldInfoRevision(data) || headCommitId !== history.headCommitId) return response.sendStatus(409);
             if (action === 'commit') {
                 if (typeof message !== 'string' || !message.trim() || message.length > 2000) return response.sendStatus(400);

@@ -1,15 +1,25 @@
-import { eventSource, event_types, getRequestHeaders } from '../script.js';
+import { eventSource, event_types, getMaxPromptTokens, getRequestHeaders } from '../script.js';
 import { renderTemplateAsync } from './templates.js';
 import { debounce, download } from './utils.js';
+import { getTokenCountAsync } from './tokenizers.js';
 import {
     convertCharacterBook, flushWorldInfoEditor, getWorldInfoEditorSnapshot, loadWorldInfo,
-    restoreWorldInfoCommit, selectWorldInfoEntry, showWorldEditor, world_names,
+    restoreWorldInfoCommit, selectWorldInfoEntry, showWorldEditor, world_info_budget, world_info_budget_cap,
+    world_info_case_sensitive, world_info_match_whole_words, world_names,
 } from './world-info.js';
 import {
     exportLorebookProject, lorebookChanges, lorebookDigest, lorebookEntryTitle,
     lorebookMergeCandidates, lorebookToCharacterBook, parseLorebookImport, serializeLorebook,
 } from './neconyan-lorebook-tools-core.js';
+import { malformedWrapperChip } from './neconyan-lorebook-delimiters.js';
+import {
+    HEALTH_RULES, HEALTH_SEVERITIES, healthSignature, quickHealthCount, runLorebookHealth, sanitizeHealthPrefs,
+} from './neconyan-lorebook-health.js';
+import { planLorebookRepair, repairChangeText, repairDefectText } from './neconyan-lorebook-repair.js';
+import { formatTokenCount, measureTokenFootprint, tokenFootprintTitle, worldInfoTokenBudget } from './neconyan-lorebook-tokens.js';
 import { getLabClient, mountLabRecovery } from './labs-client.js';
+
+const CHOSEN_SCOPE = '__chosen__';
 
 function node(tag, text = '', className = '') {
     const element = document.createElement(tag);
@@ -33,6 +43,29 @@ async function historyRequest(name, options = {}) {
     return response.json();
 }
 
+function delimiterNote(delimiter) {
+    if (!delimiter) return '';
+    const chip = delimiter.malformed ? malformedWrapperChip(delimiter.malformed) : '';
+    if (chip) return ` - ${chip}, repaired`;
+    return delimiter.replaced ? ` - replaces ${delimiter.replaced}` : '';
+}
+
+/**
+ * Checks a lorebook for broken entry ids before it leaves Neconyan.
+ * @param {object} book Native World Info or Character Book data
+ * @returns {object} The same object when clean, or the repaired copy
+ */
+export function repairForExport(book) {
+    const plan = planLorebookRepair(book);
+    if (plan.defects.length) {
+        throw new Error(`Export stopped: this lorebook has problems that cannot be fixed automatically. ${plan.defects.map(repairDefectText).join('; ')}.`);
+    }
+    if (plan.changes.length) {
+        globalThis.toastr?.info(plan.changes.map(repairChangeText).join('\n'), `Fixed ${plan.changes.length} broken entr${plan.changes.length === 1 ? 'y' : 'ies'} for export`);
+    }
+    return plan.book;
+}
+
 function renderDiff(host, changes) {
     host.replaceChildren();
     if (!changes.length) {
@@ -42,7 +75,7 @@ function renderDiff(host, changes) {
     const controls = node('div', '', 'neco-lore-diff-controls');
     const select = node('select', '', 'text_pole');
     select.setAttribute('aria-label', 'Changes');
-    for (const [index, change] of changes.entries()) select.add(new Option(`${index + 1}. ${change.title}${change.matches === undefined ? '' : ` (${change.matches})`}`, String(index)));
+    for (const [index, change] of changes.entries()) select.add(new Option(`${index + 1}. ${change.title}${change.matches === undefined ? '' : ` (${change.matches})`}${delimiterNote(change.delimiter)}`, String(index)));
     const previous = button('Previous change', () => { select.selectedIndex--; render(); });
     const next = button('Next change', () => { select.selectedIndex++; render(); });
     const counter = node('span');
@@ -179,6 +212,200 @@ export async function mountLorebookTools(root) {
         focus.setAttribute('aria-pressed', 'false');
         root.querySelector('.world_popup_editor_actions').prepend(focus);
 
+        const healthButton = button('', event => open('health', event.currentTarget));
+        healthButton.id = 'neco-lore-health-button';
+        healthButton.classList.add('neco-lore-health-button');
+        healthButton.setAttribute('aria-controls', panel.id);
+        const healthIcon = node('i', '', 'fa-solid fa-shield-halved');
+        healthIcon.setAttribute('aria-hidden', 'true');
+        const healthBadge = node('span', '', 'neco-lore-badge');
+        healthBadge.hidden = true;
+        healthButton.append(healthIcon, node('span', 'Health'), healthBadge);
+        const tokenButton = button('', event => open('tokens', event.currentTarget));
+        tokenButton.id = 'neco-lore-token-meter';
+        tokenButton.classList.add('neco-lore-token-meter');
+        tokenButton.setAttribute('aria-controls', panel.id);
+        tokenButton.setAttribute('aria-label', 'Always active token footprint - open token inspector');
+        const battery = node('span', '', 'neco-lore-battery');
+        const batteryFill = node('span', '', 'neco-lore-battery-fill');
+        battery.setAttribute('aria-hidden', 'true');
+        battery.append(batteryFill);
+        const tokenLabel = node('span', '', 'neco-lore-token-label');
+        const tokenWarning = node('i', '', 'fa-solid fa-triangle-exclamation');
+        tokenWarning.setAttribute('aria-hidden', 'true');
+        tokenWarning.hidden = true;
+        tokenButton.append(battery, tokenLabel, tokenWarning);
+        historyButton.after(healthButton, tokenButton);
+
+        const noPrefs = () => ({ ignoredSignatures: [], mutedRules: [] });
+        const currentPrefs = name => sanitizeHealthPrefs(histories.get(name)?.lintPrefs) ?? noPrefs();
+        const healthDefaults = () => ({ caseSensitive: world_info_case_sensitive, matchWholeWords: world_info_match_whole_words });
+        const healthKey = (name, data) => `${name}\n${JSON.stringify(currentPrefs(name))}\n${serializeLorebook(data)}`;
+        const countTokens = text => getTokenCountAsync(text);
+        let fullHealth = null;
+        let healthResult = null;
+        let healthRun = 0;
+        let meterRequest = 0;
+
+        function tokenBudget() {
+            try {
+                return worldInfoTokenBudget({ percent: world_info_budget, maxPromptTokens: getMaxPromptTokens(), cap: world_info_budget_cap });
+            } catch {
+                return null;
+            }
+        }
+
+        function renderHealthBadge(count) {
+            healthBadge.textContent = count ? String(count) : '';
+            healthBadge.hidden = !count;
+            healthButton.classList.toggle('neco-lore-has-issues', count > 0);
+            healthButton.title = count
+                ? `Health check: ${count} error${count === 1 ? '' : 's'} or warning${count === 1 ? '' : 's'}. Click to review.`
+                : 'Health check: no errors or warnings found yet. Click for the full check.';
+        }
+
+        function renderTokenMeter(footprint) {
+            const usage = footprint.budget ? Math.min(1, footprint.usage) : 0;
+            batteryFill.style.width = `${Math.round(usage * 100)}%`;
+            tokenButton.classList.toggle('neco-lore-near-budget', footprint.nearBudget && !footprint.overBudget);
+            tokenButton.classList.toggle('neco-lore-over-budget', footprint.overBudget);
+            tokenWarning.hidden = !footprint.overBudget;
+            tokenLabel.textContent = `~${formatTokenCount(footprint.total)}`;
+            tokenButton.title = tokenFootprintTitle(footprint);
+        }
+
+        async function updateMeters() {
+            const editor = getWorldInfoEditorSnapshot();
+            const request = ++meterRequest;
+            healthButton.hidden = !editor?.data;
+            tokenButton.hidden = !editor?.data;
+            if (!editor?.data) return;
+            const key = healthKey(editor.name, editor.data);
+            renderHealthBadge(fullHealth?.key === key ? fullHealth.count
+                : quickHealthCount(editor.data, { prefs: currentPrefs(editor.name), defaults: healthDefaults() }));
+            const footprint = await measureTokenFootprint(editor.data, { count: countTokens, budget: tokenBudget() });
+            if (request === meterRequest) renderTokenMeter(footprint);
+        }
+        const scheduleMeters = debounce(() => void updateMeters().catch(error => console.error('Lorebook meters:', error)), 300);
+
+        async function jumpToEntry(uid) {
+            close(false);
+            await selectWorldInfoEntry(uid);
+        }
+
+        function entryTitleFor(data, uid) {
+            return data?.entries?.[uid] ? lorebookEntryTitle(data.entries[uid]) : `Entry ${uid}`;
+        }
+
+        async function runHealth() {
+            const editor = getWorldInfoEditorSnapshot();
+            if (!editor?.data) return;
+            const request = ++healthRun;
+            const progress = panel.querySelector('.neco-lore-health-progress');
+            const bar = progress.querySelector('progress');
+            progress.hidden = false;
+            bar.value = 0;
+            panel.querySelector('.neco-lore-health-results').replaceChildren();
+            panel.querySelector('.neco-lore-health-summary p').textContent = '';
+            const result = await runLorebookHealth(editor.data, {
+                defaults: healthDefaults(),
+                onProgress: fraction => { bar.value = Math.round(fraction * 100); },
+                isCancelled: () => request !== healthRun || mode !== 'health',
+            });
+            if (!result) return;
+            progress.hidden = true;
+            healthResult = { name: editor.name, data: editor.data, diagnostics: result.diagnostics };
+            renderHealthResults();
+        }
+
+        function renderHealthResults() {
+            if (!healthResult) return;
+            const { name, data, diagnostics } = healthResult;
+            const prefs = currentPrefs(name);
+            const muted = new Set(prefs.mutedRules);
+            const ignored = new Set(prefs.ignoredSignatures);
+            const counts = new Map();
+            for (const item of diagnostics) counts.set(item.rule, (counts.get(item.rule) ?? 0) + 1);
+            const rules = panel.querySelector('.neco-lore-health-rules');
+            rules.replaceChildren();
+            for (const [rule, label] of Object.entries(HEALTH_RULES)) {
+                const chip = button(`${label} (${counts.get(rule) ?? 0})`, () => void savePrefs(name, {
+                    ...prefs, mutedRules: muted.has(rule) ? prefs.mutedRules.filter(item => item !== rule) : [...prefs.mutedRules, rule],
+                }));
+                chip.classList.add('neco-lore-chip');
+                chip.setAttribute('aria-pressed', String(!muted.has(rule)));
+                chip.title = muted.has(rule) ? `Show ${label.toLowerCase()} findings` : `Hide ${label.toLowerCase()} findings`;
+                rules.append(chip);
+            }
+            const unmuted = diagnostics.filter(item => !muted.has(item.rule));
+            const shown = unmuted.filter(item => !ignored.has(healthSignature(item)));
+            const hidden = unmuted.length - shown.length;
+            fullHealth = { key: healthKey(name, data), count: shown.filter(item => item.severity !== 'info').length };
+            renderHealthBadge(fullHealth.count);
+            const tally = HEALTH_SEVERITIES.map(([severity, heading]) => [heading, shown.filter(item => item.severity === severity).length])
+                .filter(([, count]) => count).map(([heading, count]) => `${count} ${heading.toLowerCase()}`);
+            const summary = shown.length ? `Found ${tally.join(', ')}.` : 'No issues found - lorebook looks healthy.';
+            panel.querySelector('.neco-lore-health-summary p').textContent = hidden
+                ? `${summary} ${hidden} finding${hidden === 1 ? '' : 's'} marked not an issue.` : summary;
+            panel.querySelector('[data-health-restore]').hidden = !hidden;
+            panel.querySelector('[data-health-unmute]').hidden = !muted.size;
+            const results = panel.querySelector('.neco-lore-health-results');
+            results.replaceChildren();
+            for (const [severity, heading] of HEALTH_SEVERITIES) {
+                const items = shown.filter(item => item.severity === severity);
+                if (!items.length) continue;
+                const section = node('section', '', `neco-lore-health-group neco-lore-health-${severity}`);
+                const list = node('ul');
+                section.append(node('h4', `${heading} (${items.length})`), list);
+                for (const item of items) {
+                    const row = node('li');
+                    row.append(node('strong', HEALTH_RULES[item.rule] ?? item.rule), node('p', item.message));
+                    if (item.details) row.append(node('code', item.details));
+                    const actions = node('div', '', 'neco-lore-actions');
+                    for (const uid of item.entryIds) {
+                        const jump = button(item.entryIds.length === 1 ? 'Go to entry' : `Go to ${entryTitleFor(data, uid)}`, () => void jumpToEntry(uid));
+                        actions.append(jump);
+                    }
+                    actions.append(button('Not an issue', () => void savePrefs(name, {
+                        ...prefs, ignoredSignatures: [...prefs.ignoredSignatures, healthSignature(item)],
+                    })));
+                    row.append(actions);
+                    list.append(row);
+                }
+                results.append(section);
+            }
+        }
+
+        function savePrefs(name, next) {
+            return run(async () => {
+                const lintPrefs = sanitizeHealthPrefs(next) ?? noPrefs();
+                const result = await historyRequest(name, { action: 'lint', lintPrefs });
+                histories.set(name, result.history);
+                if (state?.name === name) state = { ...state, history: result.history };
+                renderHealthResults();
+                scheduleMeters();
+            });
+        }
+
+        async function renderTokens() {
+            const editor = getWorldInfoEditorSnapshot();
+            if (!editor?.data) return;
+            const footprint = await measureTokenFootprint(editor.data, { count: countTokens, budget: tokenBudget() });
+            renderTokenMeter(footprint);
+            panel.querySelector('.neco-lore-token-summary').textContent = footprint.items.length
+                ? tokenFootprintTitle(footprint).replace(/ ?Click to inspect\.$/, '')
+                : 'No always-active entries - this lorebook adds nothing to every reply by itself.';
+            const list = panel.querySelector('.neco-lore-token-list');
+            list.replaceChildren();
+            for (const item of footprint.items) {
+                const row = node('li');
+                const jump = button(item.title, () => void jumpToEntry(item.uid));
+                const share = footprint.total ? Math.round(item.tokens / footprint.total * 100) : 0;
+                row.append(jump, node('span', `~${formatTokenCount(item.tokens)} tokens (${share}%)`));
+                list.append(row);
+            }
+        }
+
         function close(restoreFocus = true) {
             mode = '';
             panel.hidden = true;
@@ -231,12 +458,22 @@ export async function mountLorebookTools(root) {
             previews.delete(toolMode);
             panel.querySelector(`[data-apply="${toolMode}"]`).disabled = true;
             panel.querySelector(`[data-preview="${toolMode}"]`).replaceChildren();
+            if (toolMode === 'delimiters') panel.querySelector('.neco-lore-delimiter-banner').hidden = true;
         }
 
         function preview(toolMode, result) {
             previews.set(toolMode, result);
             renderDiff(panel.querySelector(`[data-preview="${toolMode}"]`), result.changes);
             panel.querySelector(`[data-apply="${toolMode}"]`).disabled = !result.changes.length;
+            if (toolMode === 'delimiters') {
+                const banner = panel.querySelector('.neco-lore-delimiter-banner');
+                const count = result.changes.length;
+                const repaired = result.changes.filter(change => change.delimiter?.malformed).length;
+                banner.textContent = count
+                    ? `${count} entr${count === 1 ? 'y' : 'ies'} will change.${repaired ? ` ${repaired} broken wrapper${repaired === 1 ? '' : 's'} (mismatched, unclosed or broken heading) will be repaired.` : ''}`
+                    : '';
+                banner.hidden = !count;
+            }
         }
 
         function showMode(nextMode) {
@@ -262,9 +499,23 @@ export async function mountLorebookTools(root) {
                 renderHistory();
                 const scope = panel.querySelector('#neco-lore-delimiter-scope');
                 const scopeValue = scope.value;
-                scope.replaceChildren(new Option('All entries', ''));
+                scope.replaceChildren(new Option('All entries', ''), new Option('Chosen entries', CHOSEN_SCOPE));
                 for (const [uid, entry] of Object.entries(state.data.entries)) scope.add(new Option(lorebookEntryTitle(entry), uid));
-                scope.value = Object.hasOwn(state.data.entries, scopeValue) ? scopeValue : '';
+                scope.value = scopeValue === CHOSEN_SCOPE || Object.hasOwn(state.data.entries, scopeValue) ? scopeValue : '';
+                const checklist = panel.querySelector('.neco-lore-delimiter-checklist');
+                const chosen = new Set([...checklist.querySelectorAll('input:checked')].map(input => input.value));
+                checklist.replaceChildren();
+                for (const [uid, entry] of Object.entries(state.data.entries)) {
+                    const label = node('label', '', 'checkbox_label');
+                    const input = node('input');
+                    input.type = 'checkbox';
+                    input.name = 'chosenUid';
+                    input.value = uid;
+                    input.checked = chosen.has(uid);
+                    label.append(input, document.createTextNode(lorebookEntryTitle(entry)));
+                    checklist.append(label);
+                }
+                syncDelimiterForm();
                 const book = panel.querySelector('#neco-lore-merge-book');
                 const previous = book.value;
                 book.replaceChildren(new Option('--- Pick a lorebook ---', ''));
@@ -273,6 +524,8 @@ export async function mountLorebookTools(root) {
                 await refreshSaved();
             });
             panel.querySelector(`[data-mode="${nextMode}"]`)?.focus();
+            if (mode === 'health' && nextMode === 'health') await runHealth();
+            if (mode === 'tokens' && nextMode === 'tokens') await run(renderTokens);
         }
 
         function renderHistory() {
@@ -309,6 +562,7 @@ export async function mountLorebookTools(root) {
         }
 
         function updateDirty() {
+            scheduleMeters();
             const editor = getWorldInfoEditorSnapshot();
             if (!editor?.data) { historyButton.disabled = true; entryTabs.replaceChildren(); return; }
             const history = histories.get(editor.name);
@@ -448,19 +702,46 @@ export async function mountLorebookTools(root) {
             });
         });
         const delimiterForm = panel.querySelector('.neco-lore-delimiter-form');
+        function syncDelimiterForm() {
+            const chosenScope = panel.querySelector('#neco-lore-delimiter-scope').value === CHOSEN_SCOPE;
+            const source = panel.querySelector('#neco-lore-delimiter-source');
+            const custom = source.querySelector('option[value="fixed"]');
+            // Chosen entries are each wrapped under their own name, like LoreStitch's selection mode.
+            custom.disabled = chosenScope;
+            if (chosenScope && source.value === 'fixed') source.value = 'title';
+            panel.querySelector('#neco-lore-delimiter-name').disabled = source.value !== 'fixed';
+            panel.querySelector('.neco-lore-delimiter-chosen').hidden = !chosenScope;
+            const markdown = panel.querySelector('#neco-lore-delimiter-style').value === 'markdown';
+            for (const element of delimiterForm.querySelectorAll('[data-markdown-only]')) element.hidden = !markdown;
+        }
         delimiterForm.addEventListener('input', () => {
             clearPreview('delimiters');
-            panel.querySelector('#neco-lore-delimiter-name').disabled = panel.querySelector('#neco-lore-delimiter-source').value !== 'fixed';
+            syncDelimiterForm();
+        });
+        for (const choice of delimiterForm.querySelectorAll('[data-choose]')) choice.addEventListener('click', () => {
+            for (const input of delimiterForm.querySelectorAll('input[name="chosenUid"]')) input.checked = choice.dataset.choose === 'all';
+            clearPreview('delimiters');
         });
         delimiterForm.addEventListener('submit', event => {
             event.preventDefault();
             void run(async () => {
                 const values = new FormData(delimiterForm);
+                const chosenScope = values.get('uid') === CHOSEN_SCOPE;
+                const uids = values.getAll('chosenUid').map(String);
+                if (chosenScope && !uids.length) throw new Error('Choose at least one entry to change.');
                 await nativePreview('delimiters', 'delimit', {
                     style: values.get('delimiterStyle'), name: values.get('delimiterName') ?? '',
-                    nameSource: values.get('nameSource'), uid: values.get('uid'),
+                    nameSource: values.get('nameSource'), uid: chosenScope ? '' : values.get('uid'),
+                    ...(chosenScope ? { uids } : {}),
+                    level: Number(values.get('level') ?? 2), trailingSeparator: values.has('trailingSeparator'),
                 });
             });
+        });
+        panel.querySelector('[data-health-restore]').addEventListener('click', () => {
+            if (healthResult) void savePrefs(healthResult.name, { ...currentPrefs(healthResult.name), ignoredSignatures: [] });
+        });
+        panel.querySelector('[data-health-unmute]').addEventListener('click', () => {
+            if (healthResult) void savePrefs(healthResult.name, { ...currentPrefs(healthResult.name), mutedRules: [] });
         });
         panel.querySelector('#neco-lore-merge-book').addEventListener('change', event => {
             const name = event.target.value;
@@ -495,8 +776,8 @@ export async function mountLorebookTools(root) {
                 return;
             }
             const type = action.dataset.export;
-            const exported = type === 'project' ? exportLorebookProject(name, data, history)
-                : type === 'character' ? lorebookToCharacterBook(data) : data;
+            const exported = type === 'project' ? exportLorebookProject(name, repairForExport(data), history)
+                : type === 'character' ? repairForExport(lorebookToCharacterBook(data)) : repairForExport(data);
             download(JSON.stringify(exported, null, 2), `${name}${type === 'project' ? '.stproj' : type === 'character' ? '-lorebook.json' : '.json'}`, 'application/json');
         }));
 
@@ -525,6 +806,9 @@ export async function mountLorebookTools(root) {
                 close(false);
                 state = null;
                 incoming = null;
+                healthResult = null;
+                fullHealth = null;
+                healthRun++;
                 panel.querySelector('#neco-lore-merge-book').value = '';
                 panel.querySelector('#neco-lore-merge-file').value = '';
                 panel.querySelector('.neco-lore-merge-list').replaceChildren();

@@ -9,6 +9,7 @@ import { StructuredCloneMap } from '../public/scripts/util/StructuredCloneMap.js
 import { escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharacterBookPosition, serializeWorldInfoEntry } from '../public/scripts/world-info-character-book.js';
 import { NECONYAN_LOREBOOK_FOLDERS_KEY, normalizeNeconyanLorebookFolders, renameNeconyanLorebookAssignment, unfileNeconyanLorebook } from '../public/scripts/neconyan-lorebook-folders.js';
 import { sendCompanionResultToLorebook } from '../public/scripts/extensions/in-chat-agents/companion/lorebook-sender.js';
+import { planLorebookRepair, repairChangeText, repairDefectText } from '../public/scripts/neconyan-lorebook-repair.js';
 
 const source = readFileSync(new URL('../public/scripts/world-info.js', import.meta.url), 'utf8');
 
@@ -46,6 +47,7 @@ function createHost(initialBook = book()) {
         lodash, structuredClone, Map, WeakMap, Set, TextEncoder, FormData, console,
         escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharacterBookPosition, serializeWorldInfoEntry,
         NECONYAN_LOREBOOK_FOLDERS_KEY, normalizeNeconyanLorebookFolders, renameNeconyanLorebookAssignment, unfileNeconyanLorebook,
+        planLorebookRepair, repairChangeText, repairDefectText,
         setTimeout, clearTimeout, event_types,
         worldInfoCache: new StructuredCloneMap({ cloneOnGet: true, cloneOnSet: false }),
         worldInfoEditorLoadId: 0,
@@ -133,7 +135,7 @@ function createHost(initialBook = book()) {
         'reloadEditor', 'showWorldEditor', 'hideWorldEditor', 'loadWorldInfo',
         'cloneWorldInfoData', 'getWorldInfoCachedData', 'mergeWorldInfoData', 'mergeWorldInfoChanges', 'trackWorldInfoEntryRender', 'invalidateWorldInfoCache', '_save', 'cancelPendingWorldInfoSave',
         'settleWorldInfoSave', 'blockWorldInfoSaves', 'getCanonicalWorldInfoName', 'saveWorldInfo',
-        'replaceWorldInfoData', 'renameWorldInfo', 'deleteWorldInfo', 'importWorldInfo',
+        'replaceWorldInfoData', 'renameWorldInfo', 'deleteWorldInfo', 'reviewLorebookRepair', 'importWorldInfo',
         'getNeconyanLorebookFolders', 'updateNeconyanLorebookFolders', 'warnNeconyanFolderSaveFailure',
         'getWIOriginalDataIndex', 'setWIOriginalDataValue', 'deleteWIOriginalDataValue', 'syncWIOriginalDataEntry', 'duplicateWorldInfoEntry',
         'getFreeWorldEntryUid', 'createWorldInfoEntry', 'appendWIOriginalDataEntry', 'handleNumberInputHelper',
@@ -824,6 +826,26 @@ describe('World Info lifecycle coordination', () => {
         expect(saved.originalData).toEqual(characterBook);
         expect(host.context.worldInfoCache.get('Lore')).toEqual(saved);
         expect(host.context.eventSource.emit).toHaveBeenLastCalledWith(event_types.WORLDINFO_UPDATED, 'Lore', saved, { replaced: true });
+    });
+
+    test.each([
+        ['Apply fixes and import', 'AFFIRMATIVE', [7, 8]],
+        ['Import as-is', 'CUSTOM1', ['7', 7]],
+    ])('broken entry ids are listed before import: %s', async (_label, choice, uids) => {
+        const host = createHost();
+        const shown = [];
+        const element = () => ({ textContent: '', className: '', children: [], append(...items) { this.children.push(...items); } });
+        host.context.document = { activeElement: null, createElement: element };
+        host.context.POPUP_TYPE = { TEXT: 1, CONFIRM: 2 };
+        host.context.POPUP_RESULT = { AFFIRMATIVE: 1, CUSTOM1: 1001 };
+        host.context.Popup = class { constructor(content, type, _text, options) { shown.push({ content, type, options }); } async show() { return host.context.POPUP_RESULT[choice]; } };
+        const broken = { entries: { 0: { uid: '7', content: 'Tavern', comment: 'Tavern' }, 1: { uid: 7, content: 'Inn', comment: 'Inn' } } };
+        await host.context.importWorldInfo(new File([JSON.stringify(broken)], 'Lore.json'));
+        expect(shown).toHaveLength(1);
+        const [, , list] = shown[0].content.children;
+        expect(list.children.map(item => item.textContent)).toEqual(['Tavern: id "7" → 8', 'Inn: slot "1" → "7"']);
+        expect(shown[0].options.customButtons[0].text).toBe('Import as-is');
+        expect(Object.values(host.books.get('Lore').entries).map(entry => entry.uid).sort()).toEqual(uids);
     });
 
     test('a save redirected by rename also honours a subsequent target deletion block', async () => {

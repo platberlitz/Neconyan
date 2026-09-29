@@ -211,6 +211,289 @@
     max-width: 45ch;
 }
 
+.neco-lore-hint {
+    margin: 8px 0;
+    font-size: 0.85em;
+    opacity: 0.8;
+}
+
+.neco-lore-delimiter-chosen {
+    align-items: stretch;
+    flex-direction: column;
+}
+
+.neco-lore-delimiter-checklist {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+    gap: 0 12px;
+    max-height: 40vh;
+    overflow-y: auto;
+    overflow-wrap: anywhere;
+}
+
+.neco-lore-delimiter-banner {
+    margin: 12px 0 0;
+    font-weight: 600;
+}
+
+#WorldInfo #neco-lore-health-button,
+#WorldInfo #neco-lore-token-meter {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: auto;
+    min-height: 44px;
+    padding-inline: 10px;
+    white-space: nowrap;
+}
+
+#WorldInfo #neco-lore-health-button[hidden],
+#WorldInfo #neco-lore-token-meter[hidden],
+#WorldInfo .neco-lore-badge[hidden],
+#WorldInfo #neco-lore-token-meter i[hidden] {
+    display: none;
+}
+
+.neco-lore-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.5em;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--golden);
+    color: #1b1b1b;
+    font-size: 0.8em;
+    font-weight: 700;
+    line-height: 1.5;
+}
+
+.neco-lore-battery {
+    position: relative;
+    display: inline-block;
+    width: 26px;
+    height: 13px;
+    border: 2px solid currentColor;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.neco-lore-battery-fill {
+    position: absolute;
+    inset: 1px auto 1px 1px;
+    max-width: calc(100% - 2px);
+    border-radius: 1px;
+    background: var(--SmartThemeQuoteColor, currentColor);
+}
+
+#WorldInfo #neco-lore-token-meter.neco-lore-near-budget .neco-lore-battery-fill {
+    background: var(--golden);
+}
+
+#WorldInfo #neco-lore-token-meter.neco-lore-over-budget {
+    color: var(--warning);
+    border-color: var(--warning);
+}
+
+#WorldInfo #neco-lore-token-meter.neco-lore-over-budget .neco-lore-battery-fill {
+    background: var(--warning);
+}
+
+.neco-lore-health-progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.neco-lore-health-progress progress {
+    flex: 1 1 auto;
+    max-width: 320px;
+}
+
+.neco-lore-health-rules {
+    margin-bottom: 8px;
+}
+
+#neconyan-lorebook-tools .neco-lore-chip[aria-pressed='false'] {
+    opacity: 0.55;
+    text-decoration: line-through;
+}
+
+.neco-lore-health-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.neco-lore-health-group h4 {
+    margin: 16px 0 6px;
+}
+
+.neco-lore-health-group ul,
+.neco-lore-token-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.neco-lore-health-group li,
+.neco-lore-token-list li {
+    padding-block: 10px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+    overflow-wrap: anywhere;
+}
+
+.neco-lore-health-group li p {
+    margin: 4px 0;
+}
+
+.neco-lore-health-error h4 {
+    color: var(--warning);
+}
+
+.neco-lore-token-list li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.neco-lore-keytest {
+    width: 100%;
+    margin-block: 6px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 10px;
+    padding: 4px 10px;
+}
+
+.neco-lore-keytest[hidden],
+.neco-lore-keytest [hidden] {
+    display: none;
+}
+
+.neco-lore-keytest > summary {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-weight: 600;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.neco-lore-keytest-warning {
+    color: var(--warning);
+    font-size: 0.9em;
+}
+
+.neco-lore-keytest-warning::before {
+    content: '\f071';
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    margin-inline-end: 4px;
+}
+
+.neco-lore-keytest-body label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.neco-lore-keytest-verdict {
+    margin: 8px 0;
+    font-weight: 600;
+}
+
+.neco-lore-keytest-verdict[data-outlook='blocked'] {
+    color: var(--warning);
+}
+
+.neco-lore-keytest-verdict[data-outlook='probabilistic']::before {
+    content: '\f522';
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    margin-inline-end: 6px;
+}
+
+.neco-lore-keytest-rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.neco-lore-keytest-row {
+    padding-block: 6px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+    overflow-wrap: anywhere;
+}
+
+.neco-lore-keytest-row-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.neco-lore-keytest-state {
+    font-weight: 600;
+    opacity: 0.7;
+}
+
+.neco-lore-keytest-row.is-match .neco-lore-keytest-state {
+    opacity: 1;
+}
+
+.neco-lore-keytest-row.is-invalid .neco-lore-keytest-state {
+    color: var(--warning);
+}
+
+.neco-lore-chip {
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 999px;
+    padding: 0 8px;
+    font-size: 0.8em;
+}
+
+.neco-lore-keytest-excerpt {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.85em;
+    opacity: 0.8;
+}
+
+.neco-lore-keytest-preview {
+    margin-top: 8px;
+    padding: 8px;
+    border-radius: 8px;
+    background: var(--black30a);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 30vh;
+    overflow-y: auto;
+}
+
+.neco-lore-keytest-preview mark {
+    color: inherit;
+    border-radius: 3px;
+}
+
+.neco-lore-mark-primary {
+    background: rgb(210 125 45 / 45%);
+}
+
+.neco-lore-mark-secondary {
+    background: rgb(70 140 220 / 45%);
+}
+
+.neco-lore-repair ul {
+    max-height: 50vh;
+    overflow-y: auto;
+    text-align: start;
+}
+
 .neco-lore-entry-tabs {
     display: flex;
     gap: 6px;
@@ -1076,6 +1359,16 @@ span.select2-container .select2-results__option:has(> .result_block .regex_item)
 
 .select2-results__option .regex_item .regex_icon {
     margin-right: 6px;
+}
+
+span.select2-container .select2-selection__choice__display:has(> .invalid_regex_item) {
+    outline: 1px dashed var(--warning);
+}
+
+.invalid_regex_item .invalid_regex_icon {
+    color: var(--warning);
+    font-size: calc(var(--mainFontSize) * 0.75);
+    margin-right: 4px;
 }
 
 .select2-results__option .item_count {

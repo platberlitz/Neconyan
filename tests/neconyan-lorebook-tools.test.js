@@ -50,17 +50,38 @@ describe('native lorebook authoring', () => {
     test('delimiter changes are idempotent, preserve plain content, and support a single-entry scope', () => {
         const content = '  text\nwith whitespace  ';
         expect(changeLorebookDelimiter(content, 'none')).toBe(content);
-        for (const style of ['tag', 'bracket', 'separator']) {
+        for (const style of ['tag', 'bracket', 'separator', 'markdown']) {
             const wrapped = changeLorebookDelimiter(content, style, 'Name');
             expect(changeLorebookDelimiter(wrapped, style, 'Name')).toBe(wrapped);
-            expect(changeLorebookDelimiter(wrapped, 'none')).toBe(content);
+            expect(changeLorebookDelimiter(wrapped, 'none', 'Name').trim()).toBe(content.trim());
             expect(changeLorebookDelimiter(changeLorebookDelimiter('', style, 'Name'), style, 'Name')).toBe(changeLorebookDelimiter('', style, 'Name'));
         }
-        expect(changeLorebookDelimiter('<Wrong>\ntext\n</Other>', 'none')).toBe('<Wrong>\ntext\n</Other>');
+        expect(changeLorebookDelimiter('<Wrong>\ntext\n</Other>', 'none')).toBe('text');
+        expect(() => changeLorebookDelimiter('text', 'fancy')).toThrow(TypeError);
         const original = book();
         const result = delimitLorebook(original, { uid: '8', style: 'bracket', nameSource: 'fixed', name: '<A/B>\n' });
-        expect(result.book.entries[8].content).toBe('[A B=\nUnchanged]');
+        expect(result.book.entries[8].content).toBe('[A/B=\nUnchanged]');
         expect(result.book.entries[0]).toEqual(original.entries[0]);
+        expect(result.changes[0].delimiter).toEqual({ replaced: '<Other>', malformed: null });
+    });
+
+    test('delimiters repair broken wrappers, support Markdown headings, and batch chosen entries', () => {
+        expect(changeLorebookDelimiter('<test>\nbody\n</universe>', 'tag', 'Test')).toBe('<Test>\nbody\n</Test>');
+        expect(changeLorebookDelimiter('<Lonely>\nbody', 'none', 'Lonely')).toBe('body');
+        expect(changeLorebookDelimiter('body', 'markdown', 'Paris', { level: 3, trailingSeparator: true })).toBe('### Paris\n\nbody\n\n---');
+        expect(changeLorebookDelimiter('## Paris\n\nbody\n\n---', 'tag', 'Paris')).toBe('<Paris>\nbody\n</Paris>');
+        expect(changeLorebookDelimiter('## Rome\nbody', 'none', 'Paris')).toBe('## Rome\nbody');
+        expect(changeLorebookDelimiter('##Paris\nbody', 'none', 'Paris')).toBe('body');
+        expect(changeLorebookDelimiter('<Paris>\nscene\n---\nafter\n</Paris>', 'none', 'Paris')).toBe('scene\n---\nafter');
+        const original = book();
+        original.entries[3] = { uid: 3, comment: 'Rome', content: 'Roman text', key: ['Rome'] };
+        const batch = delimitLorebook(original, { uids: ['0', '3'], style: 'tag' });
+        expect(batch.book.entries[0].content).toBe('<Paris>\nParis, PARIS, Parisian, 巴黎Paris. $1\n</Paris>');
+        expect(batch.book.entries[3].content).toBe('<Rome>\nRoman text\n</Rome>');
+        expect(batch.book.entries[8]).toEqual(original.entries[8]);
+        const broken = book();
+        broken.entries[8].content = '<Other>\nUnchanged\n</Wrong>';
+        expect(delimitLorebook(broken, { uid: '8', style: 'tag' }).changes[0].delimiter.malformed).toMatchObject({ kind: 'mismatched', openingName: 'Other', closingName: 'Wrong' });
     });
 
     test('legacy character books without a UID map keep their existing records', () => {

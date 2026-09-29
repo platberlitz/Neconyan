@@ -226,6 +226,22 @@ describe('World Info endpoints', () => {
         expect(persisted).not.toHaveProperty('commits');
     });
 
+    test('health check choices are sanitised, kept beside commits, and cleared when empty', async () => {
+        await postJson('/api/worldinfo/edit', { name: 'Health', data: { entries: {} } });
+        const initial = await (await postJson('/api/worldinfo/history', { name: 'Health' })).json();
+        await postJson('/api/worldinfo/history', { name: 'Health', action: 'commit', revision: initial.revision, headCommitId: null, message: 'Base' });
+        const saved = await (await postJson('/api/worldinfo/history', {
+            name: 'Health', action: 'lint', lintPrefs: { ignoredSignatures: ['duplicate-key|0,1|paris', '', 4], mutedRules: ['self-trigger', 'made-up'] },
+        })).json();
+        expect(saved.history.lintPrefs).toEqual({ ignoredSignatures: ['duplicate-key|0,1|paris'], mutedRules: ['self-trigger'] });
+        expect(saved.history.commits).toHaveLength(1);
+        expect(saved.history.commits[0]).not.toHaveProperty('lintPrefs');
+        const summary = await (await postJson('/api/worldinfo/history', { name: 'Health', summary: true })).json();
+        expect(summary.history.lintPrefs).toEqual(saved.history.lintPrefs);
+        const cleared = await (await postJson('/api/worldinfo/history', { name: 'Health', action: 'lint', lintPrefs: { ignoredSignatures: [], mutedRules: [] } })).json();
+        expect(cleared.history).not.toHaveProperty('lintPrefs');
+    });
+
     test('history follows renames and does not attach to a newly created book after deletion', async () => {
         const data = { entries: {} };
         await postJson('/api/worldinfo/edit', { name: 'Old history', data });

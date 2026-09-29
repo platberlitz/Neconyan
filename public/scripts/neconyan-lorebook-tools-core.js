@@ -1,4 +1,8 @@
 import { getFreeCharacterBookEntryId, serializeWorldInfoEntry } from './world-info-character-book.js';
+import {
+    DELIMITER_STYLES, entryDelimiterName, entryDelimiterNameFromKey, planEntryDelimiter, sanitizeDelimiterName,
+} from './neconyan-lorebook-delimiters.js';
+import { sanitizeHealthPrefs } from './neconyan-lorebook-health.js';
 
 const positions = { before: 0, after: 1, ANTop: 2, ANBottom: 3, atDepth: 4, EMTop: 5, EMBottom: 6, outlet: 7 };
 
@@ -79,33 +83,35 @@ export function searchReplaceLorebook(data, { search, replacement = '', regex = 
     return { book, changes: lorebookChanges(data, book).map(change => ({ ...change, matches: entryMatches.get(change.uid) ?? 0 })), matches };
 }
 
-export function changeLorebookDelimiter(content, style, name = '') {
-    const text = String(content ?? '');
-    const trimmed = text.trim();
-    const tag = trimmed.match(/^<([^<>\r\n]{1,80})>\r?\n?([\s\S]*?)\r?\n?<\/\1>$/);
-    const bracket = trimmed.match(/^\[([^\]\r\n=]{1,80})=\r?\n?([\s\S]*?)\r?\n?\]$/);
-    const separator = text.match(/^(?:([\s\S]*?)\r?\n)?[ \t]*-{3,}[ \t]*(?:\r?\n)?$/);
-    const body = tag ? tag[2] : bracket ? bracket[2] : separator ? (separator[1] ?? '').replace(/\r?\n$/, '') : text;
-    const safeName = String(name).replace(/[<>=[\]/\r\n]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'entry';
-    switch (style) {
-        case 'none': return body;
-        case 'tag': return `<${safeName}>\n${body}\n</${safeName}>`;
-        case 'bracket': return `[${safeName}=\n${body}]`;
-        case 'separator': return body ? `${body}\n\n---` : '---';
-        default: throw new TypeError('Unsupported delimiter');
-    }
+/** Rewraps one entry body. `options`: `{ level, trailingSeparator }` for the markdown style. */
+export function changeLorebookDelimiter(content, style, name = '', options = {}) {
+    if (!DELIMITER_STYLES.includes(style)) throw new TypeError('Unsupported delimiter');
+    return planEntryDelimiter({ content, comment: name }, { ...options, style, name }).next;
 }
 
-export function delimitLorebook(data, { style, nameSource = 'title', name = '', uid = '' }) {
+function delimiterNameFor(entry, nameSource, name) {
+    if (nameSource === 'fixed') return sanitizeDelimiterName(name) || 'entry';
+    return nameSource === 'key' ? entryDelimiterNameFromKey(entry) : entryDelimiterName(entry);
+}
+
+/**
+ * Applies a delimiter style to one entry (`uid`), a checked selection (`uids`) or the whole book.
+ * Each change carries `delimiter: { replaced, malformed }` so the preview can say what it removes.
+ */
+export function delimitLorebook(data, { style, nameSource = 'title', name = '', uid = '', uids, level, trailingSeparator = false }) {
+    if (!DELIMITER_STYLES.includes(style)) throw new TypeError('Unsupported delimiter');
+    const scope = Array.isArray(uids) && uids.length ? new Set(uids.map(String)) : uid !== '' && uid !== undefined ? new Set([String(uid)]) : null;
     const book = structuredClone(data);
+    const notes = new Map();
     for (const [entryUid, entry] of Object.entries(book.entries)) {
-        if (uid !== '' && String(uid) !== entryUid) continue;
-        const delimiterName = nameSource === 'fixed' ? name : nameSource === 'key'
-            ? entry.key?.find(key => key.trim()) || lorebookEntryTitle(entry) : lorebookEntryTitle(entry);
-        entry.content = changeLorebookDelimiter(entry.content, style, delimiterName);
+        if (scope && !scope.has(entryUid)) continue;
+        const plan = planEntryDelimiter(entry, { style, name: delimiterNameFor(entry, nameSource, name), level, trailingSeparator });
+        if (!plan.changed) continue;
+        entry.content = plan.next;
+        notes.set(entryUid, { replaced: plan.replaced, malformed: plan.malformed });
         syncOriginalEntry(book, entryUid);
     }
-    return { book, changes: lorebookChanges(data, book) };
+    return { book, changes: lorebookChanges(data, book).map(change => ({ ...change, delimiter: notes.get(change.uid) ?? null })) };
 }
 
 export function lorebookMergeCandidates(current, incoming) {
@@ -217,9 +223,11 @@ export function parseLorebookImport(json, convertCharacterBook) {
     if (json?.format === 'lorestitch-project') {
         const workspace = json.workspace;
         if (json.version !== 1 || !workspace || !Array.isArray(workspace.commits)) throw new TypeError('Unsupported World Info format');
-        const { activeBook, nativeBook, commits, ...metadata } = workspace;
+        const { activeBook, nativeBook, commits, lintPrefs, ...metadata } = workspace;
+        const prefs = sanitizeHealthPrefs(lintPrefs);
         const history = {
             ...metadata,
+            ...(prefs ? { lintPrefs: prefs } : {}),
             version: 1,
             archiveMetadata: Object.fromEntries(Object.entries(json).filter(([key]) => key !== 'workspace')),
             commits: commits.map(({ snapshot, nativeSnapshot, ...commit }) => ({

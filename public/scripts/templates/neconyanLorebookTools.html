@@ -5,6 +5,8 @@
             <button type="button" class="neco-lore-tab" role="tab" id="neco-lore-tab-search" aria-controls="neco-lore-search" data-mode="search">Search &amp; replace</button>
             <button type="button" class="neco-lore-tab" role="tab" id="neco-lore-tab-delimiters" aria-controls="neco-lore-delimiters" data-mode="delimiters">Delimiters</button>
             <button type="button" class="neco-lore-tab" role="tab" id="neco-lore-tab-merge" aria-controls="neco-lore-merge" data-mode="merge">Merge lorebook</button>
+            <button type="button" class="neco-lore-tab" role="tab" id="neco-lore-tab-health" aria-controls="neco-lore-health" data-mode="health">Health check</button>
+            <button type="button" class="neco-lore-tab" role="tab" id="neco-lore-tab-tokens" aria-controls="neco-lore-tokens" data-mode="tokens">Always active tokens</button>
             <button type="button" class="neco-lore-tab" role="tab" id="neco-lore-tab-export" aria-controls="neco-lore-export" data-mode="export">Export</button>
         </div>
         <button type="button" class="menu_button" data-close>Close</button>
@@ -50,12 +52,22 @@
         <form class="neco-lore-delimiter-form">
             <div class="neco-lore-fields">
                 <label for="neco-lore-delimiter-scope">Scope<select id="neco-lore-delimiter-scope" name="uid" class="text_pole"><option value="">All entries</option></select></label>
-                <label for="neco-lore-delimiter-style">Delimiter<select id="neco-lore-delimiter-style" name="delimiterStyle" class="text_pole"><option value="tag">&lt;Name&gt; … &lt;/Name&gt;</option><option value="bracket">[Name= … ]</option><option value="separator">---</option><option value="none">None</option></select></label>
+                <label for="neco-lore-delimiter-style">Delimiter<select id="neco-lore-delimiter-style" name="delimiterStyle" class="text_pole"><option value="tag">&lt;Name&gt; … &lt;/Name&gt;</option><option value="bracket">[Name= … ]</option><option value="markdown">## Name (Markdown heading)</option><option value="separator">---</option><option value="none">None</option></select></label>
+                <label for="neco-lore-delimiter-level" data-markdown-only hidden>Heading level<select id="neco-lore-delimiter-level" name="level" class="text_pole"><option value="1">#</option><option value="2" selected>##</option><option value="3">###</option><option value="4">####</option><option value="5">#####</option><option value="6">######</option></select></label>
                 <label for="neco-lore-delimiter-source">Name source<select id="neco-lore-delimiter-source" name="nameSource" class="text_pole"><option value="title">Entry name</option><option value="key">First primary key</option><option value="fixed">Custom</option></select></label>
                 <label for="neco-lore-delimiter-name">Name<input id="neco-lore-delimiter-name" name="delimiterName" class="text_pole" maxlength="80" disabled></label>
             </div>
+            <div class="neco-lore-options" data-markdown-only hidden>
+                <label class="checkbox_label"><input type="checkbox" name="trailingSeparator">End with a --- line</label>
+            </div>
+            <fieldset class="neco-lore-options neco-lore-delimiter-chosen" hidden>
+                <legend>Chosen entries (each keeps its own name)</legend>
+                <div class="neco-lore-actions"><button type="button" class="menu_button" data-choose="all">Choose all</button><button type="button" class="menu_button" data-choose="none">Choose none</button></div>
+                <div class="neco-lore-delimiter-checklist"></div>
+            </fieldset>
             <div class="neco-lore-actions"><button type="submit" class="menu_button">Preview</button><button type="button" class="menu_button" data-apply="delimiters" disabled>Apply</button></div>
         </form>
+        <p class="neco-lore-delimiter-banner" role="status" hidden></p>
         <div data-preview="delimiters"></div>
     </div>
     <div id="neco-lore-merge" role="tabpanel" aria-labelledby="neco-lore-tab-merge" hidden>
@@ -66,6 +78,25 @@
         <div class="neco-lore-merge-list"></div>
         <div class="neco-lore-actions"><button type="button" class="menu_button" data-merge-preview disabled>Preview</button><button type="button" class="menu_button" data-apply="merge" disabled>Apply merge</button></div>
         <div data-preview="merge"></div>
+    </div>
+    <div id="neco-lore-health" role="tabpanel" aria-labelledby="neco-lore-tab-health" hidden>
+        <div class="neco-lore-health-progress" hidden>
+            <progress max="100" value="0" aria-label="Health check progress"></progress>
+            <span>Checking lorebook health…</span>
+        </div>
+        <div class="neco-lore-options neco-lore-health-rules" role="group" aria-label="Show findings for"></div>
+        <div class="neco-lore-health-summary">
+            <p role="status" aria-live="polite"></p>
+            <button type="button" class="menu_button" data-health-unmute hidden>Show all checks</button>
+            <button type="button" class="menu_button" data-health-restore hidden>Undo all</button>
+        </div>
+        <div class="neco-lore-health-results"></div>
+        <p class="neco-lore-hint">Uses SillyTavern's matching rules. Findings you mark as not an issue, and checks you hide, are saved with the lorebook and its project archive.</p>
+    </div>
+    <div id="neco-lore-tokens" role="tabpanel" aria-labelledby="neco-lore-tab-tokens" hidden>
+        <p class="neco-lore-token-summary" role="status" aria-live="polite"></p>
+        <ol class="neco-lore-token-list"></ol>
+        <p class="neco-lore-hint">Always-active (constant) entries are inserted into every reply, so they use the World Info budget before any keyword-triggered entry. Counts use the current tokenizer.</p>
     </div>
     <div id="neco-lore-export" role="tabpanel" aria-labelledby="neco-lore-tab-export" hidden>
         <div class="neco-lore-export-options">
