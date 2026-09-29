@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 import { constructScopedTextPrompt, createRawPrompt } from '../public/scripts/generation-format.js';
 import { scanWorldInfo } from '../src/generation/world-info-scan.js';
-import { assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertRoleplayChatSystem, insertRoleplayPostHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets } from '../src/generation/roleplay-prompt.js';
+import { activeRoleplayAuthorNote, assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertRoleplayChatSystem, insertRoleplayPostHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets } from '../src/generation/roleplay-prompt.js';
 import { write as writeCard } from '../src/character-card-parser.js';
 
 const { assertRoleplayWorldInfoCurrent, captureRoleplayWorldInfo, prepareRoleplayWorldInfo } = await import('../src/generation/world-info.js');
@@ -2467,4 +2467,36 @@ test('a saved timed window refuses delivery after the chat grows while the provi
         output: { text: 'Later swipe', timedWorldInfo: saved.timedWorldInfo,
             timedBaseline: saved.timedBaseline, timedChatLength: saved.chatLength } }, roleplayNativeHost), { code: 'ROLEPLAY_SOURCE_CHANGED' });
     assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length + 1);
+});
+
+test('server replies use the saved character profile and persona Author\'s Note', t => {
+    const f = fixture(t);
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const note = {
+        chara: [{ name: 'individual:Nova', useChara: true, prompt: 'Calm pacing.', position: 1, perPersona: true,
+            activeProfile: 'calm', personaProfiles: { 'sam.png': 'chaos' }, profiles: [
+                { id: 'calm', name: 'Calm', prompt: 'Calm pacing.', position: 1 },
+                { id: 'chaos', name: 'Chaos', prompt: 'Everything explodes.', position: 2 },
+            ] }],
+        persona: { 'sam.png': { useNote: true, prompt: 'Sam speaks formally.', position: 1 } },
+    };
+    const capture = settings => {
+        fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify(settings));
+        return captureRoleplayWorldInfo(f.scope, account, f.source(), { avatar: 'Nova.png', maxContext: 100 }).authorNote;
+    };
+
+    // The browser saves the note as individual:Nova, without the file extension.
+    const sam = capture({ user_avatar: 'sam.png', extension_settings: { note: { ...note, default: 'Chat note' } } });
+    assert.deepEqual(sam.scoped, { useChara: true, prompt: 'Everything explodes.', position: 2 });
+    assert.deepEqual(sam.persona, { useNote: true, prompt: 'Sam speaks formally.', position: 1 });
+    assert.equal(activeRoleplayAuthorNote(sam), 'Sam speaks formally.\nChat note\nEverything explodes.');
+
+    const alex = capture({ user_avatar: 'alex.png', extension_settings: { note: { ...note, default: 'Chat note' } } });
+    assert.equal(alex.persona, null);
+    assert.equal(activeRoleplayAuthorNote(alex), 'Calm pacing.\nChat note');
+
+    assert.throws(() => capture({ user_avatar: 'sam.png', extension_settings: { note: { ...note, persona: [] } } }),
+        { code: 'ROLEPLAY_INVALID' });
+    assert.throws(() => activeRoleplayAuthorNote({ ...sam, persona: { useNote: true, prompt: 'x', position: 7 } }),
+        { code: 'ROLEPLAY_INVALID' });
 });

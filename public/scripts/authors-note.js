@@ -11,7 +11,9 @@ import {
 } from '../script.js';
 import { getGroupMembers, getSelectedGroupSpeakerAvatar, selected_group } from './group-chats.js';
 import { extension_settings, getContext, saveMetadataDebounced } from './extensions.js';
-import { getCharaFilename, debounce, delay } from './utils.js';
+import { getCharaFilename, debounce, delay, uuidv4 } from './utils.js';
+import { POPUP_RESULT, Popup } from './popup.js';
+import { DEFAULT_NOTE_PROFILE_ID, composeAuthorsNote, getActiveNoteProfileId, getNoteProfiles, getPersonaNoteEntry, isValidNotePosition } from './authors-note-profiles.js';
 import { getTokenCountAsync } from './tokenizers.js';
 import { debounce_timeout } from './constants.js';
 import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
@@ -109,19 +111,75 @@ function getCharacterNoteByAvatar(avatarId, groupId = '') {
     return getCharacterNoteByKey(legacyName);
 }
 
+function getPersonaAvatar() {
+    return getContext().userAvatar || '';
+}
+
+function normalizeNoteProfile(profile) {
+    const position = Number(profile?.position);
+    return {
+        id: String(profile?.id || DEFAULT_NOTE_PROFILE_ID),
+        name: String(profile?.name ?? '').trim() || t`Default`,
+        prompt: String(profile?.prompt ?? ''),
+        position: isValidNotePosition(position) ? position : chara_note_position.replace,
+    };
+}
+
+/**
+ * Profile fields for a character or persona note, with notes saved before profiles existed read as
+ * one Default profile. `perPersona` fields only apply to character notes.
+ */
+function normalizeNoteProfiles(entry, { perPersona = false } = {}) {
+    const profiles = getNoteProfiles(entry ?? {}).map(normalizeNoteProfile);
+    const ids = new Set(profiles.map(profile => profile.id));
+    const state = {
+        profiles,
+        activeProfile: ids.has(entry?.activeProfile) ? entry.activeProfile : profiles[0].id,
+    };
+
+    if (perPersona) {
+        const saved = entry?.personaProfiles && typeof entry.personaProfiles === 'object' ? entry.personaProfiles : {};
+        state.perPersona = Boolean(entry?.perPersona);
+        state.personaProfiles = Object.fromEntries(Object.entries(saved).filter(([avatar, id]) => avatar && ids.has(id)));
+    }
+
+    return state;
+}
+
+function ensureNoteProfiles(entry, options) {
+    return Object.assign(entry, normalizeNoteProfiles(entry, options));
+}
+
+function getNoteView(entry, options) {
+    const state = normalizeNoteProfiles(entry, options);
+    const activeId = getActiveNoteProfileId({ ...entry, ...state }, getPersonaAvatar());
+    return { ...state, profile: state.profiles.find(profile => profile.id === activeId) ?? state.profiles[0] };
+}
+
+function getCurrentNoteProfile(entry) {
+    const activeId = getActiveNoteProfileId(entry, getPersonaAvatar());
+    return entry.profiles.find(profile => profile.id === activeId) ?? entry.profiles[0];
+}
+
+// The top-level prompt and position mirror the profile in use, for readers that predate profiles.
+function syncNoteMirror(entry) {
+    const profile = getCurrentNoteProfile(entry);
+    entry.prompt = profile.prompt;
+    entry.position = profile.position;
+}
+
 function normalizeCharacterNote(note, noteKey = '') {
     if (!note || typeof note !== 'object') {
         return null;
     }
 
-    const position = Number(note.position);
-
-    return {
+    const normalized = {
         name: noteKey || note.name || '',
-        prompt: String(note.prompt ?? ''),
         useChara: Boolean(note.useChara),
-        position: Object.values(chara_note_position).includes(position) ? position : chara_note_position.replace,
+        ...normalizeNoteProfiles(note, { perPersona: true }),
     };
+    syncNoteMirror(normalized);
+    return normalized;
 }
 
 function getLegacyGroupCharacterNote(groupId) {
@@ -192,27 +250,350 @@ function getEditableCharacterNote(options = {}) {
     return avatarId ? getCharacterNoteByAvatar(avatarId) : null;
 }
 
-function applyCharacterNote(prompt, charaNote) {
-    if (!charaNote?.useChara) {
-        return prompt;
-    }
-
-    switch (charaNote.position) {
-        case chara_note_position.before:
-            return [charaNote.prompt, prompt].filter(Boolean).join('\n');
-        case chara_note_position.after:
-            return [prompt, charaNote.prompt].filter(Boolean).join('\n');
-        default:
-            return charaNote.prompt;
-    }
-}
-
 function getActiveGroupCharacterNote(context) {
     if (!context.groupId) {
         return null;
     }
 
     return getGroupChatCharacterNote({ migrate: true });
+}
+
+function getWritableCharacterNote() {
+    const context = getContext();
+    const noteKey = getEditableCharacterNoteName();
+    if (!noteKey) {
+        return null;
+    }
+
+    if (context.groupId) {
+        const groupNote = getGroupChatCharacterNote() ?? normalizeCharacterNote({ useChara: false }, noteKey);
+        chat_metadata[metadata_keys.chara] = groupNote;
+        return groupNote;
+    }
+
+    let note = getEditableCharacterNote();
+    if (!note) {
+        note = { name: noteKey, prompt: '', useChara: false, position: chara_note_position.replace };
+        ensureCharacterNoteStore().push(note);
+    } else if (note.name !== noteKey) {
+        // Notes saved under the bare file name move to the individual key on their first edit.
+        note.name = noteKey;
+    }
+
+    return ensureNoteProfiles(note, { perPersona: true });
+}
+
+function isUnusedNote(note, enabledKey) {
+    return !note[enabledKey] && !note.perPersona && note.profiles.length === 1 && !note.profiles[0].prompt;
+}
+
+function commitCharacterNote(note) {
+    syncNoteMirror(note);
+
+    if (getContext().groupId) {
+        chat_metadata[metadata_keys.chara] = note;
+        saveMetadataDebounced();
+        updateSettings({ saveExtensionSettings: false });
+        return;
+    }
+
+    const store = ensureCharacterNoteStore();
+    const index = store.indexOf(note);
+    if (index >= 0 && isUnusedNote(note, 'useChara')) {
+        store.splice(index, 1);
+    }
+
+    updateSettings();
+}
+
+function ensurePersonaNoteStore() {
+    const store = extension_settings.note.persona;
+    if (!store || typeof store !== 'object' || Array.isArray(store)) {
+        extension_settings.note.persona = {};
+    }
+
+    return extension_settings.note.persona;
+}
+
+function getPersonaNote() {
+    return getPersonaNoteEntry(extension_settings.note?.persona, getPersonaAvatar());
+}
+
+function getWritablePersonaNote() {
+    const avatar = getPersonaAvatar();
+    if (!avatar) {
+        return null;
+    }
+
+    const store = ensurePersonaNoteStore();
+    if (!getPersonaNoteEntry(store, avatar)) {
+        store[avatar] = { useNote: false, prompt: '', position: chara_note_position.replace };
+    }
+
+    return ensureNoteProfiles(store[avatar]);
+}
+
+function commitPersonaNote(note) {
+    syncNoteMirror(note);
+
+    const store = ensurePersonaNoteStore();
+    const avatar = getPersonaAvatar();
+    if (avatar && store[avatar] === note && isUnusedNote(note, 'useNote')) {
+        delete store[avatar];
+    }
+
+    updateSettings();
+}
+
+/**
+ * The character and persona note panels share their profile controls; these describe what differs.
+ */
+const noteSlots = {
+    chara: {
+        enabledKey: 'useChara',
+        checkbox: '#extension_use_floating_chara',
+        radioName: 'extension_floating_char_position',
+        perPersona: true,
+        getReadable: () => getEditableCharacterNote({ migrate: true }),
+        getWritable: getWritableCharacterNote,
+        commit: commitCharacterNote,
+        canEdit: () => Boolean(getContext().groupId || getEditableCharacterNoteAvatar()),
+        setTokenCounter: value => setCharaPromptTokenCounterDebounced(value),
+    },
+    persona: {
+        enabledKey: 'useNote',
+        checkbox: '#extension_use_floating_persona',
+        radioName: 'extension_floating_persona_position',
+        perPersona: false,
+        getReadable: getPersonaNote,
+        getWritable: getWritablePersonaNote,
+        commit: commitPersonaNote,
+        canEdit: () => Boolean(getPersonaAvatar()),
+        setTokenCounter: value => setPersonaPromptTokenCounterDebounced(value),
+    },
+};
+
+function getNotePart(slotName, entry) {
+    const slot = noteSlots[slotName];
+    if (!entry?.[slot.enabledKey]) {
+        return { enabled: false, prompt: '', position: chara_note_position.replace };
+    }
+
+    const { profile } = getNoteView(entry, { perPersona: slot.perPersona });
+    return { enabled: true, prompt: profile.prompt, position: profile.position };
+}
+
+function getActiveNotePrompt(slotName) {
+    const entry = noteSlots[slotName].getReadable();
+    return entry ? getNoteView(entry, { perPersona: noteSlots[slotName].perPersona }).profile.prompt : '';
+}
+
+function editNote(slotName, mutate) {
+    const slot = noteSlots[slotName];
+    const note = slot.getWritable();
+    if (!note) {
+        console.warn(`Author's Note: no ${slotName} is selected to save this note for.`);
+        toastr.error(slotName === 'persona'
+            ? t`Select a persona before editing the persona author's note.`
+            : t`Something went wrong. Could not save character's author's note.`);
+        return false;
+    }
+
+    mutate(note, getCurrentNoteProfile(note));
+    slot.commit(note);
+    return true;
+}
+
+function selectNoteProfile(note, profileId) {
+    const persona = getPersonaAvatar();
+    if (note.perPersona && persona) {
+        note.personaProfiles[persona] = profileId;
+    } else {
+        note.activeProfile = profileId;
+    }
+}
+
+function refreshNoteTokenCounter(slotName) {
+    noteSlots[slotName].setTokenCounter(getActiveNotePrompt(slotName));
+}
+
+function onNotePromptInput(slotName, value) {
+    noteSlots[slotName].setTokenCounter(value);
+    editNote(slotName, (_note, profile) => {
+        profile.prompt = value;
+    });
+}
+
+function onNoteEnabledChanged(slotName, value) {
+    editNote(slotName, (note) => {
+        note[noteSlots[slotName].enabledKey] = value;
+    });
+}
+
+function onNotePositionChanged(slotName, value) {
+    editNote(slotName, (_note, profile) => {
+        profile.position = Number(value);
+    });
+}
+
+function onNoteProfileSelected(slotName, profileId) {
+    editNote(slotName, (note) => {
+        if (note.profiles.some(profile => profile.id === profileId)) {
+            selectNoteProfile(note, profileId);
+        }
+    });
+    refreshNoteTokenCounter(slotName);
+}
+
+function onCharaPerPersonaChanged(value) {
+    editNote('chara', (note, profile) => {
+        const persona = getPersonaAvatar();
+        note.perPersona = value;
+        if (value && persona) {
+            note.personaProfiles[persona] = profile.id;
+        } else if (!value) {
+            // Keep showing the profile that was on screen when the persona link is switched off.
+            note.activeProfile = profile.id;
+        }
+    });
+}
+
+async function onNewNoteProfile(slotName) {
+    const slot = noteSlots[slotName];
+    if (!slot.canEdit()) {
+        return;
+    }
+
+    const current = getNoteView(slot.getReadable(), { perPersona: slot.perPersona });
+    const name = await Popup.show.input(
+        t`Save as a new profile`,
+        t`Name the new profile. It starts as a copy of the one on screen.`,
+        t`${current.profile.name} copy`,
+    );
+    if (!String(name ?? '').trim()) {
+        return;
+    }
+
+    editNote(slotName, (note, profile) => {
+        const created = { id: uuidv4(), name: String(name).trim(), prompt: profile.prompt, position: profile.position };
+        note.profiles.push(created);
+        selectNoteProfile(note, created.id);
+    });
+    refreshNoteTokenCounter(slotName);
+}
+
+async function onRenameNoteProfile(slotName) {
+    const slot = noteSlots[slotName];
+    if (!slot.canEdit()) {
+        return;
+    }
+
+    const current = getNoteView(slot.getReadable(), { perPersona: slot.perPersona });
+    const name = await Popup.show.input(t`Rename profile`, t`Enter a new name for this profile.`, current.profile.name);
+    if (!String(name ?? '').trim()) {
+        return;
+    }
+
+    editNote(slotName, (_note, profile) => {
+        profile.name = String(name).trim();
+    });
+}
+
+async function onDeleteNoteProfile(slotName) {
+    const slot = noteSlots[slotName];
+    if (!slot.canEdit()) {
+        return;
+    }
+
+    const current = getNoteView(slot.getReadable(), { perPersona: slot.perPersona });
+    if (current.profiles.length <= 1) {
+        toastr.info(t`This is the only profile. Clear its text instead if you no longer need it.`);
+        return;
+    }
+
+    const confirmed = await Popup.show.confirm(t`Delete profile`, t`Delete the profile "${current.profile.name}"? This cannot be undone.`);
+    if (confirmed !== POPUP_RESULT.AFFIRMATIVE) {
+        return;
+    }
+
+    editNote(slotName, (note, profile) => {
+        note.profiles = note.profiles.filter(item => item.id !== profile.id);
+        if (note.activeProfile === profile.id) {
+            note.activeProfile = note.profiles[0].id;
+        }
+        for (const [avatar, id] of Object.entries(note.personaProfiles ?? {})) {
+            if (id === profile.id) {
+                delete note.personaProfiles[avatar];
+            }
+        }
+    });
+    refreshNoteTokenCounter(slotName);
+}
+
+function renderNoteSlot(slotName) {
+    const slot = noteSlots[slotName];
+    const canEdit = slot.canEdit();
+    const entry = canEdit ? slot.getReadable() : null;
+    const view = getNoteView(entry, { perPersona: slot.perPersona });
+    const $select = $(`#extension_floating_${slotName}_profile`);
+    const optionsChanged = $select.children('option').length !== view.profiles.length
+        || view.profiles.some((profile, index) => {
+            const option = $select.children('option').get(index);
+            return option?.value !== profile.id || option?.textContent !== profile.name;
+        });
+
+    if (optionsChanged) {
+        $select.empty();
+        for (const profile of view.profiles) {
+            $select.append(new Option(profile.name, profile.id));
+        }
+    }
+
+    $select.val(view.profile.id);
+    $(`#extension_floating_${slotName}`).val(canEdit ? view.profile.prompt : '');
+    $(slot.checkbox).prop('checked', Boolean(entry?.[slot.enabledKey]));
+    $(`input[name="${slot.radioName}"][value="${view.profile.position}"]`).prop('checked', true);
+    if (slot.perPersona) {
+        $('#extension_floating_chara_per_persona').prop('checked', Boolean(canEdit && view.perPersona));
+    }
+}
+
+function setNoteSlotDisabled(slotName) {
+    const slot = noteSlots[slotName];
+    const disabled = !slot.canEdit();
+    $(`#extension_floating_${slotName}, #extension_floating_${slotName}_profile, ${slot.checkbox}, input[name="${slot.radioName}"]`).prop('disabled', disabled);
+    $(`[data-an-profile-slot="${slotName}"]`).toggleClass('disabled', disabled).attr('aria-disabled', String(disabled));
+    if (slot.perPersona) {
+        $('#extension_floating_chara_per_persona').prop('disabled', disabled);
+    }
+}
+
+function onPersonaDeleted({ avatarId } = {}) {
+    if (!avatarId) {
+        return;
+    }
+
+    let changed = false;
+    const personaStore = extension_settings.note.persona;
+    if (getPersonaNoteEntry(personaStore, avatarId)) {
+        delete personaStore[avatarId];
+        changed = true;
+    }
+    for (const note of extension_settings.note.chara ?? []) {
+        if (note?.personaProfiles && Object.hasOwn(note.personaProfiles, avatarId)) {
+            delete note.personaProfiles[avatarId];
+            changed = true;
+        }
+    }
+    if (changed) {
+        saveSettingsDebounced();
+    }
+}
+
+function renderPersonaNoteLabel() {
+    const avatar = getPersonaAvatar();
+    const name = avatar ? power_user.personas?.[avatar] || avatar : '';
+    $('#extension_floating_persona_name').text(name ? t`Saved for ${name}.` : t`Select a persona to use this note.`);
 }
 
 function setNoteTextCommand(_, text) {
@@ -307,6 +688,7 @@ function updateSettings({ saveExtensionSettings = true } = {}) {
 
 const setMainPromptTokenCounterDebounced = debounce(async (value) => $('#extension_floating_prompt_token_counter').text(await getTokenCountAsync(value)), debounce_timeout.relaxed);
 const setCharaPromptTokenCounterDebounced = debounce(async (value) => $('#extension_floating_chara_token_counter').text(await getTokenCountAsync(value)), debounce_timeout.relaxed);
+const setPersonaPromptTokenCounterDebounced = debounce(async (value) => $('#extension_floating_persona_token_counter').text(await getTokenCountAsync(value)), debounce_timeout.relaxed);
 const setDefaultPromptTokenCounterDebounced = debounce(async (value) => $('#extension_floating_default_token_counter').text(await getTokenCountAsync(value)), debounce_timeout.relaxed);
 
 async function onExtensionFloatingPromptInput() {
@@ -374,113 +756,6 @@ function onExtensionDefaultRoleInput(e) {
     saveSettingsDebounced();
 }
 
-async function onExtensionFloatingCharPositionInput(e) {
-    const value = e.target.value;
-    const charaNote = getEditableCharacterNote();
-
-    if (charaNote) {
-        charaNote.position = Number(value);
-        const context = getContext();
-        updateSettings({ saveExtensionSettings: !context.groupId });
-        if (context.groupId) {
-            saveMetadataDebounced();
-        }
-    }
-}
-
-function onExtensionFloatingCharaPromptInput() {
-    const tempPrompt = $(this).val();
-    const context = getContext();
-
-    setCharaPromptTokenCounterDebounced(tempPrompt);
-
-    if (context.groupId) {
-        const tempCharaNote = {
-            name: getEditableCharacterNoteName(),
-            prompt: tempPrompt,
-            useChara: Boolean($('#extension_use_floating_chara').prop('checked')),
-            position: Number($('input[name="extension_floating_char_position"]:checked').val() ?? chara_note_position.replace),
-        };
-
-        chat_metadata[metadata_keys.chara] = tempCharaNote;
-
-        updateSettings({ saveExtensionSettings: false });
-        saveMetadataDebounced();
-        return;
-    }
-
-    const avatarName = getEditableCharacterNoteName();
-    let tempCharaNote = {
-        name: avatarName,
-        prompt: tempPrompt,
-        useChara: Boolean($('#extension_use_floating_chara').prop('checked')),
-        position: Number($('input[name="extension_floating_char_position"]:checked').val() ?? chara_note_position.replace),
-    };
-
-    let existingCharaNoteIndex;
-    let existingCharaNote;
-
-    if (extension_settings.note.chara) {
-        existingCharaNoteIndex = extension_settings.note.chara.findIndex((e) => e.name === avatarName);
-        existingCharaNote = extension_settings.note.chara[existingCharaNoteIndex];
-    }
-
-    if (tempPrompt.length === 0 &&
-        extension_settings.note.chara &&
-        existingCharaNote &&
-        !existingCharaNote.useChara
-    ) {
-        extension_settings.note.chara.splice(existingCharaNoteIndex, 1);
-    } else if (extension_settings.note.chara && existingCharaNote) {
-        Object.assign(existingCharaNote, tempCharaNote);
-    } else if (avatarName && tempPrompt.length > 0) {
-        ensureCharacterNoteStore().push(tempCharaNote);
-    } else {
-        console.log('Character author\'s note error: No avatar name key could be found.');
-        toastr.error(t`Something went wrong. Could not save character's author's note.`);
-
-        // Don't save settings if something went wrong
-        return;
-    }
-
-    updateSettings();
-}
-
-function onExtensionFloatingCharaCheckboxChanged() {
-    const value = !!$(this).prop('checked');
-    const context = getContext();
-
-    if (context.groupId) {
-        const charaNote = getGroupChatCharacterNote() ?? {
-            name: getEditableCharacterNoteName(),
-            prompt: '',
-            useChara: false,
-            position: chara_note_position.replace,
-        };
-
-        charaNote.useChara = value;
-
-        chat_metadata[metadata_keys.chara] = charaNote;
-
-        updateSettings({ saveExtensionSettings: false });
-        saveMetadataDebounced();
-        return;
-    }
-
-    let charaNote = getEditableCharacterNote();
-    const avatarName = getEditableCharacterNoteName();
-
-    if (!charaNote && avatarName && value) {
-        charaNote = { name: avatarName, prompt: '', useChara: false, position: chara_note_position.replace };
-        ensureCharacterNoteStore().push(charaNote);
-    }
-
-    if (charaNote) {
-        charaNote.useChara = value;
-        updateSettings();
-    }
-}
-
 function onExtensionFloatingDefaultInput() {
     extension_settings.note.default = $(this).val();
     setDefaultPromptTokenCounterDebounced(extension_settings.note.default);
@@ -511,19 +786,9 @@ function loadSettings() {
     $('#extension_floating_role').val(getAuthorsNoteRole());
     $(`input[name="extension_floating_position"][value="${getAuthorsNotePosition()}"]`).prop('checked', true);
 
-    const context = getContext();
-    const canEditCharacterNote = Boolean(context.groupId || getEditableCharacterNoteAvatar());
-    if (canEditCharacterNote) {
-        const charaNote = getEditableCharacterNote({ migrate: true });
-
-        $('#extension_floating_chara').val(charaNote ? charaNote.prompt : '');
-        $('#extension_use_floating_chara').prop('checked', charaNote ? charaNote.useChara : false);
-        $(`input[name="extension_floating_char_position"][value="${charaNote?.position ?? chara_note_position.replace}"]`).prop('checked', true);
-    } else {
-        $('#extension_floating_chara').val('');
-        $('#extension_use_floating_chara').prop('checked', false);
-        $(`input[name="extension_floating_char_position"][value="${chara_note_position.replace}"]`).prop('checked', true);
-    }
+    renderNoteSlot('chara');
+    renderNoteSlot('persona');
+    renderPersonaNoteLabel();
 
     $('#extension_floating_default').val(extension_settings.note.default);
     $('#extension_default_depth').val(extension_settings.note.defaultDepth);
@@ -575,7 +840,7 @@ export function setFloatingPrompt() {
     let prompt = shouldAddPrompt ? $('#extension_floating_prompt').val() : '';
     if (shouldAddPrompt) {
         const charaNote = context.groupId ? getActiveGroupCharacterNote(context) : getEditableCharacterNote();
-        prompt = applyCharacterNote(prompt, charaNote);
+        prompt = composeAuthorsNote(prompt, [getNotePart('chara', charaNote), getNotePart('persona', getPersonaNote())]);
     }
     context.setExtensionPrompt(
         MODULE_NAME,
@@ -638,27 +903,18 @@ function onANMenuItemClick() {
 async function onChatChanged() {
     loadSettings();
     setFloatingPrompt();
-    const context = getContext();
-
-    const canEditCharacterNote = Boolean(context.groupId || getEditableCharacterNoteAvatar());
-    $('#extension_floating_chara').prop('disabled', !canEditCharacterNote);
-    $('#extension_use_floating_chara').prop('disabled', !canEditCharacterNote);
-    $('input[name="extension_floating_char_position"]').prop('disabled', !canEditCharacterNote);
+    setNoteSlotDisabled('chara');
+    setNoteSlotDisabled('persona');
 
     const authorsNotePrompt = getAuthorsNotePrompt();
     const tokenCounter1 = authorsNotePrompt ? await getTokenCountAsync(authorsNotePrompt) : 0;
     $('#extension_floating_prompt_token_counter').text(tokenCounter1);
 
-    let tokenCounter2;
-    if (context.characterId !== undefined || context.groupId) {
-        const charaNote = getEditableCharacterNote({ migrate: true });
+    const charaPrompt = getActiveNotePrompt('chara');
+    $('#extension_floating_chara_token_counter').text(charaPrompt ? await getTokenCountAsync(charaPrompt) : 0);
 
-        if (charaNote) {
-            tokenCounter2 = await getTokenCountAsync(charaNote.prompt);
-        }
-    }
-
-    $('#extension_floating_chara_token_counter').text(tokenCounter2 || 0);
+    const personaPrompt = getActiveNotePrompt('persona');
+    $('#extension_floating_persona_token_counter').text(personaPrompt ? await getTokenCountAsync(personaPrompt) : 0);
 
     const tokenCounter3 = extension_settings.note.default ? await getTokenCountAsync(extension_settings.note.default) : 0;
     $('#extension_floating_default_token_counter').text(tokenCounter3);
@@ -677,8 +933,31 @@ export function initAuthorsNote() {
     $('#extension_floating_prompt').on('input', onExtensionFloatingPromptInput);
     $('#extension_floating_interval').on('input', onExtensionFloatingIntervalInput);
     $('#extension_floating_depth').on('input', onExtensionFloatingDepthInput);
-    $('#extension_floating_chara').on('input', onExtensionFloatingCharaPromptInput);
-    $('#extension_use_floating_chara').on('input', onExtensionFloatingCharaCheckboxChanged);
+    for (const slotName of Object.keys(noteSlots)) {
+        const slot = noteSlots[slotName];
+        $(`#extension_floating_${slotName}`).on('input', function () { onNotePromptInput(slotName, String($(this).val() ?? '')); });
+        $(slot.checkbox).on('input', function () { onNoteEnabledChanged(slotName, !!$(this).prop('checked')); });
+        $(`input[name="${slot.radioName}"]`).on('change', function () { onNotePositionChanged(slotName, $(this).val()); });
+        $(`#extension_floating_${slotName}_profile`).on('change', function () { onNoteProfileSelected(slotName, String($(this).val() ?? '')); });
+    }
+    $('#extension_floating_chara_per_persona').on('input', function () { onCharaPerPersonaChanged(!!$(this).prop('checked')); });
+    $(document).on('click', '[data-an-profile-action]', function () {
+        if ($(this).hasClass('disabled')) {
+            return;
+        }
+        const slotName = String($(this).data('an-profile-slot'));
+        const action = String($(this).data('an-profile-action'));
+        if (!noteSlots[slotName]) {
+            return;
+        }
+        if (action === 'new') {
+            onNewNoteProfile(slotName);
+        } else if (action === 'rename') {
+            onRenameNoteProfile(slotName);
+        } else if (action === 'delete') {
+            onDeleteNoteProfile(slotName);
+        }
+    });
     $('#extension_floating_default').on('input', onExtensionFloatingDefaultInput);
     $('#extension_default_depth').on('input', onDefaultDepthInput);
     $('#extension_default_interval').on('input', onDefaultIntervalInput);
@@ -687,7 +966,6 @@ export function initAuthorsNote() {
     $('#extension_default_role').on('input', onExtensionDefaultRoleInput);
     $('input[name="extension_floating_position"]').on('change', onExtensionFloatingPositionInput);
     $('input[name="extension_default_position"]').on('change', onDefaultPositionInput);
-    $('input[name="extension_floating_char_position"]').on('change', onExtensionFloatingCharPositionInput);
     $('#ANClose').on('click', function () {
         $('#floatingPrompt').transition({
             opacity: 0,
@@ -781,6 +1059,8 @@ export function initAuthorsNote() {
     }));
     eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
     eventSource.on(event_types.GROUP_UPDATED, onChatChanged);
+    eventSource.on(event_types.PERSONA_CHANGED, onChatChanged);
+    eventSource.on(event_types.PERSONA_DELETED, onPersonaDeleted);
 
     registerAuthorsNoteMacros();
 }
@@ -795,7 +1075,12 @@ function registerAuthorsNoteMacros() {
         macros.register('charAuthorsNote', {
             category: MacroCategory.PROMPTS,
             description: t`The contents of the Character Author's Note`,
-            handler: () => getEditableCharacterNote()?.prompt ?? '',
+            handler: () => getActiveNotePrompt('chara'),
+        });
+        macros.register('personaAuthorsNote', {
+            category: MacroCategory.PROMPTS,
+            description: t`The contents of the Persona Author's Note`,
+            handler: () => getActiveNotePrompt('persona'),
         });
         macros.register('defaultAuthorsNote', {
             category: MacroCategory.PROMPTS,
@@ -809,8 +1094,12 @@ function registerAuthorsNoteMacros() {
             t`The contents of the Author's Note`,
         );
         MacrosParser.registerMacro('charAuthorsNote',
-            () => getEditableCharacterNote()?.prompt ?? '',
+            () => getActiveNotePrompt('chara'),
             t`The contents of the Character Author's Note`,
+        );
+        MacrosParser.registerMacro('personaAuthorsNote',
+            () => getActiveNotePrompt('persona'),
+            t`The contents of the Persona Author's Note`,
         );
         MacrosParser.registerMacro('defaultAuthorsNote',
             () => extension_settings.note.default ?? '',

@@ -6,7 +6,7 @@ import { captureGenerationBinding, captureProfilePresetBinding, resolveGeneratio
 import { captureSavedRoleplayImages, savedAttachments, selectSavedRoleplayPersona } from '../generation/world-info.js';
 import { getSettingsRevision } from '../settings-version.js';
 import { readLabSettings } from './sources.js';
-import { captureWorldInfoLab } from './world-info.js';
+import { captureWorldInfoLab, labScopedAuthorsNotes } from './world-info.js';
 import { labError } from './store.js';
 import { capturePromptingTags } from './prompting-tags.js';
 import { capturePromptingMemory } from './prompting-memory.js';
@@ -100,8 +100,8 @@ export function capturePromptingContext(base, account, pins, { maxTokens = 300, 
             max_additions: power.reasoning?.max_additions ?? 1,
         }, metadata, authorNote: { prompt: metadata.note_prompt ?? note.default ?? '', interval: metadata.note_interval ?? note.defaultInterval ?? 1,
             position: metadata.note_position ?? note.defaultPosition ?? 1, depth: metadata.note_depth ?? note.defaultDepth ?? 4,
-            role: metadata.note_role ?? note.defaultRole ?? 0, scoped: note.chara?.find(item => item.name === `individual:${avatar}`)
-                ?? note.chara?.find(item => item.name === path.parse(avatar).name) ?? null,
+            role: metadata.note_role ?? note.defaultRole ?? 0,
+            ...labScopedAuthorsNotes(note, avatar, persona.evidence?.avatar ?? settings.user_avatar ?? ''),
             userMessages: records.slice(1).filter(item => item.is_user).length },
         global: { ...scan.globalScanData, inject: scan.injections },
     };

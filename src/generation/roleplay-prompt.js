@@ -6,6 +6,7 @@ import { selectToolHistoryReasoning } from '../../public/scripts/chat-input-capa
 import { shouldRetainContextAtDepth, stripHtmlTagsFromContext, stripOocBlocksFromContext } from '../../public/scripts/ooc-blocks.js';
 import { formatRoleplayTextExamples } from '../../public/scripts/roleplay-text-format.js';
 import { formatPromptReasoning } from '../../public/scripts/reasoning-prompt-format.js';
+import { composeAuthorsNote, isValidNotePosition } from '../../public/scripts/authors-note-profiles.js';
 import { applyAgentHistoryRegex, prepareCompanionPromptHistory } from './agent-history.js';
 
 const ROLES = ['system', 'user', 'assistant'];
@@ -133,7 +134,7 @@ export function prepareRoleplayHistoryContent(records, snapshot, environment, ag
         if (!settings.add_to_prompts || state.counter >= settings.max_additions) break;
     }
     const authorNote = { ...snapshot.authorNote, prompt: isWorldInfoAuthorNoteActive(snapshot.authorNote)
-        ? substitute(activeRoleplayAuthorNote(snapshot.authorNote)) : '', scoped: null };
+        ? substitute(activeRoleplayAuthorNote(snapshot.authorNote)) : '', scoped: null, persona: null };
     const depthPrompt = { ...snapshot.depthPrompt, prompt: global.characterDepthPrompt };
     const inject = [];
     if (snapshot.noteScanEnabled) {
@@ -194,16 +195,18 @@ export const isWorldInfoAuthorNoteActive = note => note?.interval === 1
 /** Resolve the saved note once for both World Info scanning and prompt placement. */
 export function activeRoleplayAuthorNote(note) {
     if (!isWorldInfoAuthorNoteActive(note)) return '';
-    let prompt = note.prompt;
     const scoped = note.scoped;
-    if (scoped?.useChara) {
-        if (typeof scoped.prompt !== 'string' || ![0, 1, 2].includes(Number(scoped.position))) {
-            throw roleplayError('ROLEPLAY_INVALID', 'The saved character Author\'s Note is invalid.', 409);
-        }
-        prompt = Number(scoped.position) === 1 ? [scoped.prompt, prompt].filter(Boolean).join('\n')
-            : Number(scoped.position) === 2 ? [prompt, scoped.prompt].filter(Boolean).join('\n') : scoped.prompt;
+    const persona = note.persona;
+    if (scoped?.useChara && (typeof scoped.prompt !== 'string' || !isValidNotePosition(scoped.position))) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The saved character Author\'s Note is invalid.', 409);
     }
-    return prompt;
+    if (persona?.useNote && (typeof persona.prompt !== 'string' || !isValidNotePosition(persona.position))) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The saved persona Author\'s Note is invalid.', 409);
+    }
+    return composeAuthorsNote(note.prompt, [
+        { enabled: Boolean(scoped?.useChara), prompt: scoped?.prompt, position: scoped?.position },
+        { enabled: Boolean(persona?.useNote), prompt: persona?.prompt, position: persona?.position },
+    ]);
 }
 
 /** Render named lore only where the saved story template explicitly requests it. */

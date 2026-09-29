@@ -11,6 +11,7 @@ import { applyRegexScriptList, AGENT_REGEX_PLACEMENT } from '../../public/script
 import { scanWorldInfo } from './world-info-scan.js';
 import { normalizeExtensionBootId } from '../../public/scripts/extension-boot-lifecycle/index.js';
 import { getStringHash } from '../../public/scripts/macro-primitives.js';
+import { captureScopedAuthorsNotes, findCharacterNoteEntry, getPersonaNoteEntry } from '../../public/scripts/authors-note-profiles.js';
 import { captureWorldInfoHookPolicy, worldInfoActivationActions } from './world-info-hook-policy.js';
 import { capturePathfinderSource } from './world-info-pathfinder.js';
 import { captureIncomingRoleplayTranslation, captureRoleplayInputTranslation } from './roleplay-translation.js';
@@ -308,12 +309,13 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             ...(extensions.regex ?? []), ...scopedRegex,
         ];
         const note = extensions.note ?? {};
-        if (!note || typeof note !== 'object' || !Array.isArray(note.chara ?? [])) {
+        if (!note || typeof note !== 'object' || !Array.isArray(note.chara ?? [])
+            || (note.persona != null && (typeof note.persona !== 'object' || Array.isArray(note.persona)))) {
             throw roleplayError('ROLEPLAY_INVALID', 'Saved Author\'s Note settings are invalid.', 409);
         }
-        const scoped = saved.locator.group ? saved.records[0].chat_metadata?.note_chara
-            : note.chara?.find(item => item?.name === `individual:${avatar}`)
-                ?? note.chara?.find(item => item?.name === path.parse(avatar).name);
+        const personaAvatar = persona.evidence?.avatar ?? settings.user_avatar ?? '';
+        const scopedNotes = captureScopedAuthorsNotes(saved.locator.group ? saved.records[0].chat_metadata?.note_chara
+            : findCharacterNoteEntry(note.chara, avatar), getPersonaNoteEntry(note.persona, personaAvatar), personaAvatar);
         const attachments = agentContext ? [] : savedAttachments(base.directories, promptRecords);
         const images = agentContext ? [] : captureSavedRoleplayImages(base.directories, promptRecords, settings.power_user?.media_display ?? 'list', extensions.caption);
         const captions = agentContext ? null : captureRoleplayCaptions(base.directories, savedSettings, { records: promptRecords, images,
@@ -329,7 +331,8 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             position: saved.records[0].chat_metadata?.note_position ?? note.defaultPosition ?? 1,
             depth: saved.records[0].chat_metadata?.note_depth ?? note.defaultDepth ?? 4,
             role: saved.records[0].chat_metadata?.note_role ?? note.defaultRole ?? 0,
-            scoped: scoped ? structuredClone(scoped) : null,
+            scoped: scopedNotes.scoped ? structuredClone(scopedNotes.scoped) : null,
+            persona: scopedNotes.persona ? structuredClone(scopedNotes.persona) : null,
             userMessages: promptRecords.slice(1).filter(message => message.is_user).length };
         const depthPrompt = character.data?.data?.extensions?.depth_prompt?.prompt
             ?? character.data?.extensions?.depth_prompt?.prompt ?? '';

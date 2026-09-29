@@ -8819,7 +8819,22 @@
                         <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
                     </div>
                     <div class="inline-drawer-content">
-                        <small data-i18n="Will be saved with this chat and automatically added as the author's note. Individual chats and group chats keep separate private character author's notes.">Will be saved with this chat and automatically added as the author's note. Individual chats and group chats keep separate private character author's notes.</small>
+                        <small data-i18n="Saved for this character and added to the author's note. Keep several profiles and switch between them; group chats keep their own.">Saved for this character and added to the author's note. Keep several profiles and switch between them; group chats keep their own.</small>
+                        <div><label for="extension_floating_chara_profile" data-i18n="Profile">Profile</label></div>
+                        <div class="flex-container flexNoGap alignItemsCenter">
+                            <select id="extension_floating_chara_profile" class="flex1 text_pole"></select>
+                            <div class="flex-container marginLeft5 gap3px">
+                                <div class="menu_button menu_button_icon" role="button" tabindex="0" data-an-profile-slot="chara" data-an-profile-action="rename" title="Rename profile" data-i18n="[title]Rename profile">
+                                    <i class="fa-fw fa-solid fa-pencil"></i>
+                                </div>
+                                <div class="menu_button menu_button_icon" role="button" tabindex="0" data-an-profile-slot="chara" data-an-profile-action="new" title="Save as a new profile" data-i18n="[title]Save as a new profile">
+                                    <i class="fa-fw fa-solid fa-file-circle-plus"></i>
+                                </div>
+                                <div class="menu_button menu_button_icon" role="button" tabindex="0" data-an-profile-slot="chara" data-an-profile-action="delete" title="Delete profile" data-i18n="[title]Delete profile">
+                                    <i class="fa-fw fa-solid fa-trash-can"></i>
+                                </div>
+                            </div>
+                        </div>
                         <textarea id="extension_floating_chara" data-macros class="text_pole textarea_compact" rows="8" placeholder="Example:&#10;[Scenario: wacky adventures; Genre: romantic comedy; Style: verbose, creative]"></textarea>
                         <div class="extension_token_counter">
                             <span data-i18n="extension_token_counter">Tokens:</span> <span id="extension_floating_chara_token_counter">0</span>
@@ -8827,6 +8842,10 @@
                         <label class="checkbox_label" for="extension_use_floating_chara">
                             <input id="extension_use_floating_chara" type="checkbox" />
                             <span data-i18n="Use character author's note">Use character author's note</span>
+                        </label>
+                        <label class="checkbox_label" for="extension_floating_chara_per_persona" title="Each persona keeps its own profile choice for this character. Switching persona switches the profile." data-i18n="[title]Each persona keeps its own profile choice for this character. Switching persona switches the profile.">
+                            <input id="extension_floating_chara_per_persona" type="checkbox" />
+                            <span data-i18n="Remember a profile for each persona">Remember a profile for each persona</span>
                         </label>
                         <div class="floating_prompt_radio_group">
                             <label>
@@ -8839,6 +8858,61 @@
                             </label>
                             <label>
                                 <input type="radio" name="extension_floating_char_position" value="2" />
+                                <span data-i18n="Bottom of Author's Note">Bottom of Author's Note</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <hr class="sysHR">
+                <div class="inline-drawer">
+                    <div id="personaANBlockToggle" class="inline-drawer-toggle inline-drawer-header">
+                        <div class="flex-container flexFlowColumn">
+                            <b data-i18n="Persona Author's Note (Private)">
+                                Persona Author's Note (Private)
+                            </b>
+                            <small data-i18n="Follows your persona across characters.">
+                                Follows your persona across characters.
+                            </small>
+                        </div>
+                        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                    </div>
+                    <div class="inline-drawer-content">
+                        <small data-i18n="Added to the author's note in every chat while this persona is selected. Combine it with any character profile.">Added to the author's note in every chat while this persona is selected. Combine it with any character profile.</small>
+                        <div><small id="extension_floating_persona_name" class="opacity50p"></small></div>
+                        <div><label for="extension_floating_persona_profile" data-i18n="Profile">Profile</label></div>
+                        <div class="flex-container flexNoGap alignItemsCenter">
+                            <select id="extension_floating_persona_profile" class="flex1 text_pole"></select>
+                            <div class="flex-container marginLeft5 gap3px">
+                                <div class="menu_button menu_button_icon" role="button" tabindex="0" data-an-profile-slot="persona" data-an-profile-action="rename" title="Rename profile" data-i18n="[title]Rename profile">
+                                    <i class="fa-fw fa-solid fa-pencil"></i>
+                                </div>
+                                <div class="menu_button menu_button_icon" role="button" tabindex="0" data-an-profile-slot="persona" data-an-profile-action="new" title="Save as a new profile" data-i18n="[title]Save as a new profile">
+                                    <i class="fa-fw fa-solid fa-file-circle-plus"></i>
+                                </div>
+                                <div class="menu_button menu_button_icon" role="button" tabindex="0" data-an-profile-slot="persona" data-an-profile-action="delete" title="Delete profile" data-i18n="[title]Delete profile">
+                                    <i class="fa-fw fa-solid fa-trash-can"></i>
+                                </div>
+                            </div>
+                        </div>
+                        <textarea id="extension_floating_persona" data-macros class="text_pole textarea_compact" rows="8" placeholder="Example:&#10;[{{user}} speaks formally and never swears.]"></textarea>
+                        <div class="extension_token_counter">
+                            <span data-i18n="extension_token_counter">Tokens:</span> <span id="extension_floating_persona_token_counter">0</span>
+                        </div>
+                        <label class="checkbox_label" for="extension_use_floating_persona">
+                            <input id="extension_use_floating_persona" type="checkbox" />
+                            <span data-i18n="Use persona author's note">Use persona author's note</span>
+                        </label>
+                        <div class="floating_prompt_radio_group">
+                            <label>
+                                <input type="radio" name="extension_floating_persona_position" value="0" />
+                                <span data-i18n="Replace Author's Note">Replace Author's Note</span>
+                            </label>
+                            <label>
+                                <input type="radio" name="extension_floating_persona_position" value="1" />
+                                <span data-i18n="Top of Author's Note">Top of Author's Note</span>
+                            </label>
+                            <label>
+                                <input type="radio" name="extension_floating_persona_position" value="2" />
                                 <span data-i18n="Bottom of Author's Note">Bottom of Author's Note</span>
                             </label>
                         </div>

@@ -4,6 +4,7 @@ import { currentChatMessages } from '../../public/scripts/extensions/third-party
 import { GENERATION_TRIGGERS } from '../../public/scripts/extensions/third-party/Neconyan-WorldInfo-Lab/src/constants.js';
 import { captureSavedTokenizer as captureTokenizer, savedTokenCounter as labTokenCounter } from '../generation/saved-token-counter.js';
 import { activeRoleplayAuthorNote, isWorldInfoAuthorNoteActive } from '../generation/roleplay-prompt.js';
+import { captureScopedAuthorsNotes, findCharacterNoteEntry, getPersonaNoteEntry } from '../../public/scripts/authors-note-profiles.js';
 import { roleplayHash } from '../roleplay-store.js';
 import { captureLabBook } from './books.js';
 import { captureLabChat, readLabSettings } from './sources.js';
@@ -11,6 +12,11 @@ import { computeLab } from './compute.js';
 import { labError } from './store.js';
 
 export { labTokenCounter };
+
+/** Character and persona Author's Notes as the chat would use them, for Labs previews of solo chats. */
+export function labScopedAuthorsNotes(note, avatar, personaAvatar) {
+    return captureScopedAuthorsNotes(findCharacterNoteEntry(note?.chara, avatar), getPersonaNoteEntry(note?.persona, personaAvatar), personaAvatar);
+}
 
 export function captureWorldInfoLab(base, account, input, kind, captured = {}) {
     if (kind === 'world-info.batch') {
@@ -50,7 +56,7 @@ export function captureWorldInfoLab(base, account, input, kind, captured = {}) {
     const note = extensions.note ?? {}, depthPrompt = card.extensions?.depth_prompt?.prompt ?? '';
     const authorNote = { prompt: metadata.note_prompt ?? note.default ?? '', interval: metadata.note_interval ?? note.defaultInterval ?? 1,
         userMessages: chat?.records.slice(1).filter(item => item.is_user).length ?? 0,
-        scoped: note.chara?.find(item => item.name === `individual:${avatar}`) ?? note.chara?.find(item => item.name === path.parse(avatar).name) ?? null };
+        ...labScopedAuthorsNotes(note, avatar, persona.evidence?.avatar ?? saved.user_avatar ?? '') };
     let notePrompt = activeRoleplayAuthorNote(authorNote);
     if (persona.description && persona.position === 2) notePrompt = `${persona.description}\n${notePrompt}`;
     if (persona.description && persona.position === 3) notePrompt = `${notePrompt}\n${persona.description}`;
