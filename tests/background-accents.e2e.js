@@ -1,4 +1,4 @@
-/* global document, window, getComputedStyle, NeconyanShell */
+/* global document, window, getComputedStyle, NeconyanShell, CSSTransition */
 import { test, expect } from '@playwright/test';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
@@ -84,7 +84,15 @@ for (const phone of [false, true]) {
                         document.documentElement.dataset.sbSurfaceTone = tone;
                         document.documentElement.dataset.neconyanCalicoTone = tone;
                     }, { colour, tone });
-                    samples.push(await page.evaluate(([selector, pseudo, property]) => getComputedStyle(document.querySelector(selector), pseudo)[property], decoration));
+                    samples.push(await page.evaluate(async ([selector, pseudo, property]) => {
+                        const element = document.querySelector(selector);
+                        // Resolve the new style, then sample the completed colour transition.
+                        const initial = getComputedStyle(element, pseudo)[property];
+                        const transitions = element.getAnimations().filter(animation => animation instanceof CSSTransition);
+                        if (!transitions.length) return initial;
+                        await Promise.all(transitions.map(animation => animation.finished));
+                        return getComputedStyle(element, pseudo)[property];
+                    }, decoration));
                 }
                 expect(samples[1], `${theme} ${tone} secondary decoration`).not.toBe(samples[0]);
                 expect((await readAccents()).primary).toBe(profile.primary);

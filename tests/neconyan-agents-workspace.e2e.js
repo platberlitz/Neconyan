@@ -235,6 +235,9 @@ for (const width of [1280, 1024, 997, 768, 390, 393, 320]) {
                 expect((await page.request.post('/api/in-chat-agents/save', { headers: await headers(page), data: seeded })).ok()).toBe(true);
                 await openAgents(page, true);
                 await page.locator('#ica--search').fill(name);
+                // The filtered card can sit below the phone viewport's setup controls.
+                await page.locator('#ica--agentList .ica--btn-edit').scrollIntoViewIfNeeded();
+                await expect(page.locator('#ica--agentList .ica--btn-edit')).toBeInViewport();
                 expect(await page.locator('#ica--agentList .ica--btn-edit').evaluate(element => {
                     const box = element.getBoundingClientRect();
                     const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
