@@ -9063,23 +9063,6 @@ function ensureCharacterEditorLayout() {
         advanced.prepend(promptOverrides);
     }
 
-    const pinnedActions = document.getElementById('character-editor-pinned-actions');
-    if (pinnedActions instanceof HTMLElement) {
-        let tools = advanced.querySelector('.sb-character-editor-advanced-tools');
-        if (!(tools instanceof HTMLElement)) {
-            tools = createElement('section', {
-                className: 'sb-character-editor-advanced-tools',
-                attrs: { 'aria-labelledby': 'sb_character_advanced_tools_title' },
-            });
-            const heading = createElement('h3', { id: 'sb_character_advanced_tools_title', text: 'Advanced tools' });
-            tools.append(heading);
-            advanced.append(tools);
-        }
-        if (pinnedActions.parentElement !== tools) {
-            tools.append(pinnedActions);
-        }
-    }
-
     if (commitBar instanceof HTMLElement) {
         const commitActions = commitBar.querySelector('.sb-character-commit-actions');
         const createButton = document.getElementById('create_button_label');

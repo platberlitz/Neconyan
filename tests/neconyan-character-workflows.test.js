@@ -49,6 +49,56 @@ function saveContext() {
 }
 
 describe('Neconyan save behaviour', () => {
+    test('keeps character actions beside the identity in Basics across repeated layout setup', () => {
+        class HTMLElement {
+            children = [];
+            parentElement = null;
+            selectors = {};
+            append(child) {
+                if (child.parentElement) {
+                    child.parentElement.children = child.parentElement.children.filter(node => node !== child);
+                }
+                this.children.push(child);
+                child.parentElement = this;
+            }
+            prepend(child) {
+                this.append(child);
+                this.children.unshift(this.children.pop());
+            }
+            querySelector(selector) { return this.selectors[selector] ?? null; }
+        }
+        const ids = Object.fromEntries([
+            'form_create', 'sb_character_editor_panel_char_info', 'sb_character_editor_panel_metadata',
+            'sb_character_commit_bar', 'descriptionWrapper', 'personality_div', 'tags_div',
+            'character-editor-pinned-actions', 'create_button_label', 'rm_button_back',
+        ].map(id => [id, new HTMLElement()]));
+        const basics = ids.sb_character_editor_panel_char_info;
+        const identity = new HTMLElement();
+        const overrides = new HTMLElement();
+        const commitActions = new HTMLElement();
+        basics.append(identity);
+        basics.append(overrides);
+        basics.selectors['.sb-character-editor-prompt-overrides'] = overrides;
+        identity.append(ids['character-editor-pinned-actions']);
+        ids['character-editor-pinned-actions'].append(ids.create_button_label);
+        ids['character-editor-pinned-actions'].append(ids.rm_button_back);
+        ids.sb_character_commit_bar.selectors['.sb-character-commit-actions'] = commitActions;
+        const context = vm.createContext({
+            HTMLElement,
+            document: { getElementById: id => ids[id] },
+            createElement: () => new HTMLElement(),
+        });
+        loadFunctions(context, tabs, ['ensureCharacterEditorLayout']);
+        context.ensureCharacterEditorLayout();
+        context.ensureCharacterEditorLayout();
+        expect(ids['character-editor-pinned-actions'].parentElement).toBe(identity);
+        expect(identity.parentElement).toBe(basics);
+        expect(ids.descriptionWrapper.parentElement).toBe(basics);
+        expect(ids.personality_div.parentElement).toBe(basics);
+        expect(overrides.parentElement).toBe(ids.sb_character_editor_panel_metadata);
+        expect(commitActions.children).toEqual([ids.rm_button_back, ids.create_button_label]);
+    });
+
     test('spoiler mode hides definition fields moved into otherwise visible editor sections', () => {
         class HTMLElement {}
         const active = Object.assign(new HTMLElement(), { dataset: { sbCharacterEditorPanel: 'char-info' } });

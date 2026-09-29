@@ -6074,27 +6074,18 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 }
 
 #right-nav-panel .sb-character-editor-side-actions #favorite_button {
-    width: auto;
-    min-width: max(var(--sb-control-icon-physical-size, 40px), 4.5rem);
+    width: 40px;
+    min-width: 40px;
     height: 40px;
     min-height: 40px;
     max-height: 40px;
     max-width: none;
-    aspect-ratio: auto;
+    aspect-ratio: 1;
     padding-inline: 10px !important;
     gap: 4px;
     color: var(--SmartThemeBodyColor);
     border: 1px solid color-mix(in srgb, var(--color-primary, var(--sb-accent)) 20%, transparent);
     background: color-mix(in srgb, var(--color-primary, var(--sb-accent)) 8%, transparent);
-}
-
-#right-nav-panel .sb-character-editor-side-actions #favorite_button::after {
-    content: attr(data-label);
-    font-family: var(--mainFontFamily);
-    font-size: calc(var(--mainFontSize) * 0.68);
-    font-weight: 700;
-    line-height: 1;
-    white-space: nowrap;
 }
 
 /* !important: themes (e.g. MoonlitEchoes) pin .menu_button colors with !important,

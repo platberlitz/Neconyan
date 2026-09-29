@@ -1800,23 +1800,6 @@ body.neconyan #right-nav-panel .sb-entity-empty-actions .menu_button { min-heigh
 /* Character editor field ownership stays in the existing form and IDs. */
 body.neconyan #right-nav-panel .sb-character-editor-panel { gap: 14px; }
 body.neconyan #right-nav-panel .sb-character-editor-panel > :is(#descriptionWrapper, #personality_div, #scenario_div, #depth_prompt_div, #talkativeness_div, #mes_example_div) { min-width: 0; }
-body.neconyan #right-nav-panel .sb-character-editor-advanced-tools {
-    display: grid;
-    gap: 10px;
-    margin-top: 8px;
-    padding-top: 14px;
-    border-top: 1px solid var(--neco-border);
-}
-body.neconyan #right-nav-panel .sb-character-editor-advanced-tools > h3 { margin: 0; color: var(--neco-muted); font-size: 12px; font-weight: 500; }
-body.neconyan #right-nav-panel .sb-character-editor-advanced-tools #character-editor-pinned-actions { display: flex !important; min-width: 0; }
-body.neconyan #right-nav-panel .sb-character-editor-advanced-tools .char-button-group-icons {
-    display: flex !important;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-}
-body.neconyan #right-nav-panel .sb-character-editor-advanced-tools .char-button-group-icons .menu_button { min-height: 44px; width: auto; padding: 8px 10px !important; }
-body.neconyan #right-nav-panel .sb-character-editor-advanced-tools #tags_div { min-width: 0; }
 body.neconyan #right-nav-panel .sb-editor-field-label { display: block; margin-bottom: 4px; color: var(--neco-muted); font-size: 12px; }
 body.neconyan #right-nav-panel .sb-character-commit-bar,
 body.neconyan #right-nav-panel .sb-group-commit-bar {

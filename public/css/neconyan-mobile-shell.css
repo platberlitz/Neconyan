@@ -2366,6 +2366,15 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         overflow: visible;
     }
 
+    #right-nav-panel.openDrawer #avatar_controls .char-button-group-icons .menu_button {
+        width: 44px;
+        min-width: 44px;
+        max-width: 44px;
+        height: 44px;
+        min-height: 44px;
+        max-height: 44px;
+    }
+
     #right-nav-panel.openDrawer > .scrollableInner,
     #right-nav-panel.openDrawer > .scrollableInnerFull {
         flex: 1 1 auto;
@@ -2586,7 +2595,11 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
     }
 
     #right-nav-panel.openDrawer .sb-character-editor-side-actions #favorite_button {
-        min-width: 0 !important;
+        width: 44px;
+        min-width: 44px !important;
+        height: 44px;
+        min-height: 44px;
+        max-height: 44px;
     }
 
     #right-nav-panel.openDrawer .char-button-group-primary .menu_button[data-label]::after {

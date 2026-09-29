@@ -25,6 +25,18 @@ function getLastRuleIndex(cssSource, selector) {
 }
 
 describe('mobile character editor css', () => {
+    test('keeps the favourite star icon-only with its tooltip and a phone-sized touch target', () => {
+        const html = readFileSync(path.join(repoRoot, 'public', 'index.html'), 'utf8');
+        const favourite = html.match(/<div id="favorite_button"[^>]*>/)?.[0];
+        expect(favourite).toContain('fa-star');
+        expect(favourite).toContain('title="Add to Favorites"');
+        expect(favourite).not.toContain('data-label');
+        expect(tabsCss).not.toContain('#favorite_button::after');
+        const phoneRule = getRuleBody(mobileShellCss, '#right-nav-panel.openDrawer .sb-character-editor-side-actions #favorite_button');
+        expect(phoneRule).toContain('width: 44px;');
+        expect(phoneRule).toContain('min-height: 44px;');
+    });
+
     test('keeps the favorite control in the name column on mobile', () => {
         expect(mobileShellCss).toContain(`grid-template-areas:
             'avatar name'
