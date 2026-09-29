@@ -2,6 +2,19 @@
 
 ## Release preparation: 1.0.0
 
+### 29 September: 1.0.2 released from main, staging moves to 1.0.3
+
+`main` was fast-forwarded to staging at `a645ddd` (no merge commit). Android run
+`36502755050` passed the signed build and both emulator checks; the artifact's
+checksums, provenance commit and signing certificate were verified before
+upload. Release E2E run `36502749981` failed three tests on its first attempt
+(two connection resets in `neconyan-roleplay-workflow-browser.e2e.js`, one
+closed browser in `neconyan-rail-order.e2e.js`) and passed all 16 shards when the
+failed shards were rerun. Neconyan 1.0.2 is published at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.0.2 with the annotated
+tag `v1.0.2`. It has not been run on a real phone yet. Staging now moves to
+`1.0.3`.
+
 ### 28 September: Android hotfix 1.0.1, staging moves to 1.0.2
 
 The 1.0.0 APK refused to start on real phones: Android formats f2fs without
