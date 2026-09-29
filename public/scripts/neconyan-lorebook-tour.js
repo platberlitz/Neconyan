@@ -14,7 +14,7 @@ const LOREBOOK_TOUR_STEPS = Object.freeze([
         view: 'library',
         targets: ['#neconyan-lorebook-library'],
         title: 'What a lorebook does',
-        body: 'A lorebook is a notebook of facts about your story: people, places, secrets. Each fact is an **entry** with a few **keywords**.\nWhen one of those words comes up in the chat, Neconyan quietly hands that entry to the model, so it remembers the detail without you repeating it.',
+        body: 'A lorebook is a notebook of facts about your story: people, places, secrets. Each fact is an **entry** with a few **keywords**.\nWhen one of those words comes up in the chat, Neconyan quietly hands that entry to the model, so it remembers the detail without you repeating it.\nPress **Next** to go step by step. If you open a book or an entry yourself, I will follow along.',
         hint: 'I keep mine in a very expensive leather notebook. Well, I will, once someone buys me one.',
     },
     {
@@ -38,7 +38,6 @@ const LOREBOOK_TOUR_STEPS = Object.freeze([
         id: 'open',
         view: 'library',
         needs: 'book',
-        advanceOnClick: true,
         targets: ['.neconyan-lorebook-book-open', '.neconyan-lorebook-books'],
         title: 'Open a book',
         body: 'Press a book\'s name to open it and see its entries. Try it now, or press **Next** and I will open the first one for you.',
@@ -58,7 +57,6 @@ const LOREBOOK_TOUR_STEPS = Object.freeze([
         id: 'edit-entry',
         view: 'book',
         needs: 'entry',
-        advanceOnClick: true,
         targets: [ENTRY_EDIT_BUTTON],
         title: 'Open an entry',
         body: 'Press **Edit** on an entry to see what is inside it. Try it now, or press **Next** and I will open the first one.',
@@ -126,6 +124,22 @@ export function getLorebookTourSteps({ hasBooks = false, hasEntries = true } = {
 }
 
 /**
+ * Works out which step the tour should jump to after the user moves around on their own.
+ * @param {string} stepId The step on screen
+ * @param {{ view: string, entryOpened?: boolean, steps: { id: string }[] }} state What the user did and the steps available
+ * @returns {string} Step id to show, or '' to stay put
+ */
+export function followLorebookTourStep(stepId, { view, entryOpened = false, steps }) {
+    const step = LOREBOOK_TOUR_STEPS.find(item => item.id === stepId);
+    const has = id => steps.some(item => item.id === id);
+    if (!step) return '';
+    if (step.view === 'library' && view === 'book' && has('add-entry')) return 'add-entry';
+    if (step.view === 'book' && view === 'library') return has('open') ? 'open' : 'create';
+    if (entryOpened && (stepId === 'add-entry' || stepId === 'edit-entry') && has('keywords')) return 'keywords';
+    return '';
+}
+
+/**
  * Splits tour copy into paragraphs of text and bold runs, so it never needs HTML strings.
  * @param {string} text Copy with newline paragraphs and **bold** runs
  * @returns {{ text: string, bold: boolean }[][]} Paragraphs of runs
@@ -143,6 +157,11 @@ const tour = {
     watch: 0,
     token: 0,
     opener: null,
+    preparing: false,
+    entryWasOpen: false,
+    followTimer: 0,
+    observer: null,
+    spacer: null,
 };
 
 function element(tag, className = '', text = '') {
@@ -215,15 +234,37 @@ function currentSteps() {
 
 function clearTarget() {
     tour.target?.classList.remove('neconyan-lorebook-tour-target');
-    tour.target?.removeEventListener('click', onTargetClick, true);
     tour.target = null;
 }
 
-function onTargetClick() {
-    const stepId = tour.stepId;
-    setTimeout(() => {
-        if (tour.card && tour.stepId === stepId) void move(1);
-    }, 350);
+function entryIsOpen() {
+    return Boolean(tour.root && findShown(tour.root, ENTRY_KEYWORDS));
+}
+
+function followUser() {
+    clearTimeout(tour.followTimer);
+    if (!tour.card) return;
+    if (tour.preparing) {
+        scheduleFollow();
+        return;
+    }
+    const entryOpen = entryIsOpen();
+    const next = followLorebookTourStep(tour.stepId, {
+        view: libraryView(),
+        entryOpened: entryOpen && !tour.entryWasOpen,
+        steps: currentSteps(),
+    });
+    tour.entryWasOpen = entryOpen;
+    if (next && next !== tour.stepId) void show(next);
+}
+
+function scheduleFollow() {
+    clearTimeout(tour.followTimer);
+    tour.followTimer = setTimeout(followUser, 450);
+}
+
+function onRootClick(event) {
+    if (event.isTrusted) scheduleFollow();
 }
 
 async function prepare(step) {
@@ -267,8 +308,14 @@ async function show(stepId) {
     clearTarget();
     tour.stepId = step.id;
     tour.card.setAttribute('aria-busy', 'true');
-    await prepare(step);
+    tour.preparing = true;
+    try {
+        await prepare(step);
+    } finally {
+        if (token === tour.token) tour.preparing = false;
+    }
     if (token !== tour.token || !tour.card) return;
+    tour.entryWasOpen = entryIsOpen();
     steps = currentSteps();
     step = steps.find(item => item.id === step.id) || step;
     const index = Math.max(0, steps.findIndex(item => item.id === step.id));
@@ -282,12 +329,15 @@ async function show(stepId) {
     const next = card.querySelector('[data-lorebook-tour-next]');
     next.textContent = index === steps.length - 1 ? t`Done` : t`Next`;
     card.removeAttribute('aria-busy');
+    if (tour.spacer) {
+        tour.root.append(tour.spacer);
+        tour.spacer.style.height = `${Math.ceil(card.getBoundingClientRect().height) + 24}px`;
+    }
 
     const target = step.targets.map(selector => findShown(tour.root, selector)).find(Boolean);
     if (target) {
         tour.target = target;
         target.classList.add('neconyan-lorebook-tour-target');
-        if (step.advanceOnClick) target.addEventListener('click', onTargetClick, true);
         await waitForStill(target);
         if (token !== tour.token) return;
         const reduced = prefersReducedMotion();
@@ -388,6 +438,18 @@ export function startLorebookTour(root = document.getElementById('WorldInfo')) {
         document.addEventListener('keydown', onKeydown);
     }
     document.body.classList.add('neconyan-lorebook-tour-active');
+    if (!tour.spacer) {
+        tour.spacer = element('div', 'neconyan-lorebook-tour-spacer');
+        tour.spacer.setAttribute('aria-hidden', 'true');
+    }
+    tour.observer?.disconnect();
+    root.removeEventListener('click', onRootClick, true);
+    root.addEventListener('click', onRootClick, true);
+    const library = root.querySelector('#neconyan-lorebook-library');
+    if (library) {
+        tour.observer = new MutationObserver(scheduleFollow);
+        tour.observer.observe(library, { attributes: true, attributeFilter: ['data-view'] });
+    }
     clearInterval(tour.watch);
     tour.watch = setInterval(() => {
         if (!isShown(tour.root?.querySelector('#neconyan-lorebook-library'))) endLorebookTour({ restoreFocus: false });
@@ -401,7 +463,14 @@ export function startLorebookTour(root = document.getElementById('WorldInfo')) {
  */
 export function endLorebookTour({ restoreFocus = true } = {}) {
     tour.token++;
+    tour.preparing = false;
     clearInterval(tour.watch);
+    clearTimeout(tour.followTimer);
+    tour.observer?.disconnect();
+    tour.observer = null;
+    tour.root?.removeEventListener('click', onRootClick, true);
+    tour.spacer?.remove();
+    tour.spacer = null;
     clearTarget();
     tour.card?.remove();
     tour.card = null;

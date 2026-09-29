@@ -5,6 +5,7 @@ const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 
 let getLorebookTourSteps;
 let parseLorebookTourCopy;
+let followLorebookTourStep;
 
 beforeAll(async () => {
     await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({
@@ -12,7 +13,31 @@ beforeAll(async () => {
     }));
     await jest.unstable_mockModule('../public/scripts/util/AccountStorage.js', () => ({ accountStorage: { getItem: jest.fn(), setItem: jest.fn() } }));
     await jest.unstable_mockModule('../public/scripts/neconyan-assistant-art.js', () => ({ getAssistantIconSrc: () => 'nori.png' }));
-    ({ getLorebookTourSteps, parseLorebookTourCopy } = await import('../public/scripts/neconyan-lorebook-tour.js'));
+    ({ getLorebookTourSteps, parseLorebookTourCopy, followLorebookTourStep } = await import('../public/scripts/neconyan-lorebook-tour.js'));
+});
+
+describe('Lorebooks tour follows the user', () => {
+    const full = getSteps => getSteps({ hasBooks: true, hasEntries: true });
+
+    test('opening a book from any library step jumps to adding an entry', () => {
+        for (const stepId of ['welcome', 'folders', 'create', 'open']) {
+            expect(followLorebookTourStep(stepId, { view: 'book', steps: full(getLorebookTourSteps) })).toBe('add-entry');
+        }
+    });
+
+    test('opening an entry jumps to keywords, going back to the library returns to picking a book', () => {
+        const steps = full(getLorebookTourSteps);
+        expect(followLorebookTourStep('edit-entry', { view: 'book', entryOpened: true, steps })).toBe('keywords');
+        expect(followLorebookTourStep('add-entry', { view: 'book', entryOpened: true, steps })).toBe('keywords');
+        expect(followLorebookTourStep('keywords', { view: 'library', steps })).toBe('open');
+    });
+
+    test('stays put when nothing relevant changed', () => {
+        const steps = full(getLorebookTourSteps);
+        expect(followLorebookTourStep('welcome', { view: 'library', steps })).toBe('');
+        expect(followLorebookTourStep('health', { view: 'book', entryOpened: true, steps })).toBe('');
+        expect(followLorebookTourStep('add-entry', { view: 'book', steps })).toBe('');
+    });
 });
 
 describe('Lorebooks tour steps', () => {

@@ -152,7 +152,7 @@ const NN_SHORTCUT_LABELS = Object.freeze({
 });
 const NN_PANEL_STYLESHEETS = Object.freeze({
     'characters:world-info': [
-        { href: 'css/world-info.css?v=20260929g', id: 'deferred-world-info-css' },
+        { href: 'css/world-info.css?v=20260929j', id: 'deferred-world-info-css' },
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20260912h', id: 'deferred-personas-css' },

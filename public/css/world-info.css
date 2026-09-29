@@ -2728,8 +2728,9 @@ body.neconyan #WorldInfo.sb-shell-embedded-content #world_popup_entries_list .wo
     100% { box-shadow: 0 0 0 14px color-mix(in srgb, var(--neco-ginger) 0%, transparent); }
 }
 
-body.neconyan-lorebook-tour-active #WorldInfo {
-    padding-bottom: min(60dvh, 520px);
+.neconyan-lorebook-tour-spacer {
+    flex: none;
+    pointer-events: none;
 }
 
 body.neconyan-lorebook-tour-active #neconyan-tour-coachmark {
