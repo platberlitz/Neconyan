@@ -17829,13 +17829,13 @@ function ensureNeconyanRailDrawerBindings() {
         setNeconyanRailDrawerOpen(false, { restoreFocus: true });
     });
 
-    const rail = document.getElementById('neconyan-workspace-rail');
-    rail?.addEventListener('click', event => {
+    // Delegated from the document because the topbar is built before welcome-screen.js creates the rail.
+    document.addEventListener('click', event => {
         if (!isNeconyanRailDrawerOpen() || !(event.target instanceof Element)) {
             return;
         }
-        const button = event.target.closest('button');
-        if (!(button instanceof HTMLElement) || button.id === 'neconyan-sidebar-toggle') {
+        const button = event.target.closest('#neconyan-workspace-rail button');
+        if (!(button instanceof HTMLElement) || button.matches('#neconyan-sidebar-toggle, [data-neconyan-refresh-recent]')) {
             return;
         }
         window.setTimeout(() => setNeconyanRailDrawerOpen(false), 0);
@@ -19619,7 +19619,6 @@ function initAll() {
             if (isShellTabOpen('left', 'agents')) closeShell('left');
         },
         closeWorkspace,
-        closeMobileNav,
         isMobileViewport,
         highlightCharacterEditorTab() {
             const editorTab = document.querySelector('[data-sb-character-tab="editor"]');

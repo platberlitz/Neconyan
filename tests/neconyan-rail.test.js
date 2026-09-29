@@ -107,6 +107,53 @@ describe('Neconyan workspace rail behavior', () => {
         expect(state.enabled).toBe(true);
     });
 
+    test('closes the phone drawer after rail button taps even when the rail is built after the bindings', () => {
+        const bindings = tabsSource.match(/^function ensureNeconyanRailDrawerBindings\(\) \{[\s\S]*?^}/m)?.[0] ?? '';
+        expect(bindings).not.toContain('getElementById(\'neconyan-workspace-rail\')');
+        const listeners = {};
+        const closes = [];
+        let drawerOpen = true;
+        class Element {
+            constructor(selectorMatches = [], buttonMatches = []) {
+                this.selectorMatches = selectorMatches;
+                this.buttonMatches = buttonMatches;
+            }
+            closest(selector) {
+                return this.selectorMatches.includes(selector) ? this : null;
+            }
+            matches(selector) {
+                return this.buttonMatches.some(match => selector.split(', ').includes(match));
+            }
+        }
+        const context = vm.createContext({
+            Element,
+            HTMLElement: Element,
+            document: { addEventListener: (type, listener) => { listeners[type] = listener; } },
+            window: {
+                setTimeout: callback => callback(),
+                matchMedia: () => ({ addEventListener() {} }),
+            },
+            NN_MOBILE_MEDIA_QUERY: '(max-width: 768px)',
+            neconyanRailDrawerBound: false,
+            isNeconyanRailDrawerOpen: () => drawerOpen,
+            setNeconyanRailDrawerOpen: open => closes.push(open),
+        });
+        vm.runInContext(`${bindings}; ensureNeconyanRailDrawerBindings();`, context);
+        closes.length = 0;
+
+        const railButton = new Element(['#neconyan-workspace-rail button']);
+        listeners.click({ target: railButton });
+        expect(closes).toEqual([false]);
+
+        closes.length = 0;
+        listeners.click({ target: new Element(['#neconyan-workspace-rail button'], ['#neconyan-sidebar-toggle']) });
+        listeners.click({ target: new Element(['#neconyan-workspace-rail button'], ['[data-neconyan-refresh-recent]']) });
+        listeners.click({ target: new Element() });
+        drawerOpen = false;
+        listeners.click({ target: railButton });
+        expect(closes).toEqual([]);
+    });
+
     test('places Modes below Fine-tuning and mounts order settings in both outlets', () => {
         const build = getWelcomeFunctionSource('ensureNeconyanRail');
         expect(build.indexOf('data-neconyan-primary-nav')).toBeLessThan(build.indexOf('data-neconyan-advanced-nav'));
@@ -118,9 +165,6 @@ describe('Neconyan workspace rail behavior', () => {
         expect(build).toContain('[\'console-logs\', \'Console Logs\', \'fa-terminal\']');
         expect(build.indexOf('\'console-logs\'')).toBeLessThan(build.indexOf('route: \'report-issue\''));
         expect(build).toContain('window.open(NECONYAN_ISSUES_URL, \'_blank\', \'noopener,noreferrer\')');
-        // Opening an outside page shows no in-app surface, so the phone drawer has to close itself.
-        expect(build.indexOf('NeconyanShell?.closeMobileNav?.()')).toBeGreaterThan(build.indexOf('route: \'report-issue\''));
-        expect(tabsSource).toMatch(/globalThis\.NeconyanShell = Object\.assign\(neconyanShell, \{[\s\S]*?\n {8}closeMobileNav,\n/);
         expect(welcomeSource).toContain('const NECONYAN_ISSUES_URL = \'https://github.com/platberlitz/Neconyan/issues\';');
         expect(tabsSource).toContain('createRailOrderSettingsGroup(\'desktop\')');
         expect(tabsSource).toContain('createRailOrderSettingsGroup(\'mobile\')');

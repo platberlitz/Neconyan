@@ -1864,10 +1864,7 @@ function ensureNeconyanRail() {
         label: 'Report an Issue',
         icon: 'fa-bug',
         route: 'report-issue',
-        onClick: () => {
-            globalThis.NeconyanShell?.closeMobileNav?.();
-            window.open(NECONYAN_ISSUES_URL, '_blank', 'noopener,noreferrer');
-        },
+        onClick: () => window.open(NECONYAN_ISSUES_URL, '_blank', 'noopener,noreferrer'),
     });
     reportIssueButton.title = 'Opens the Neconyan GitHub issues page in a new tab';
     finerNav.appendChild(reportIssueButton);
