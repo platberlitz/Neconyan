@@ -2624,7 +2624,7 @@ body.neconyan #WorldInfo.sb-shell-embedded-content #world_popup_entries_list .wo
     position: fixed;
     right: max(24px, env(safe-area-inset-right));
     bottom: max(24px, env(safe-area-inset-bottom));
-    z-index: calc(var(--sb-z-modal-content, 3100) + 20);
+    z-index: calc(var(--sb-z-popout, 4000) + 20);
     display: grid;
     gap: 12px;
     width: min(400px, calc(100vw - 24px));

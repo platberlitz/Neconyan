@@ -102,4 +102,11 @@ describe('Lorebooks tour wiring', () => {
         expect(css).toMatch(/\.neconyan-lorebook-tour-target\s*\{[^}]*animation:\s*neconyan-lorebook-tour-glow/);
         expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.neconyan-lorebook-tour-target\s*\{\s*animation:\s*none;/);
     });
+
+    test('the card stacks above the drawer layer that iOS lifts to --sb-z-popout', () => {
+        const tabsCss = read('../public/css/neconyan-tabs.css');
+        expect(tabsCss).toMatch(/@supports \(-webkit-touch-callout: none\)\s*\{\s*#top-settings-holder\s*\{[^}]*z-index:\s*var\(--sb-z-popout\)/);
+        const card = read('../public/css/world-info.css').match(/#neconyan-lorebook-tour\.neconyan-lorebook-tour\s*\{([^}]*)\}/)[1];
+        expect(card).toMatch(/z-index:\s*calc\(var\(--sb-z-popout, 4000\) \+ \d+\)/);
+    });
 });
