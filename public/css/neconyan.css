@@ -16,12 +16,13 @@ body.neconyan {
     --neco-muted: var(--SmartThemeEmColor, oklch(70% 0.024 62));
     --neco-ginger: var(--SmartThemeQuoteColor, oklch(75% 0.115 52));
     --neco-ginger-hover: var(--SmartThemeUnderlineColor, oklch(81% 0.096 59));
+    --neco-accent-secondary: var(--neco-ginger);
     --neco-border: var(--SmartThemeBorderColor, oklch(34% 0.015 55));
     --neco-user: var(--SmartThemeUserMesBlurTintColor, oklch(29% 0.024 51));
     --neco-on-accent: var(--neco-accent-ink, var(--neco-canvas));
     --neco-cream: oklch(91% 0.023 77);
     --neco-charcoal: oklch(18.5% 0.008 55);
-    --neco-accent-gradient: linear-gradient(105deg, color-mix(in srgb, var(--neco-ginger) 14%, var(--neco-cream)), color-mix(in srgb, var(--neco-ginger) 40%, var(--neco-cream)) 55%, color-mix(in srgb, var(--neco-ginger) 72%, var(--neco-cream)));
+    --neco-accent-gradient: linear-gradient(105deg, color-mix(in srgb, var(--neco-ginger) 14%, var(--neco-cream)), color-mix(in srgb, var(--neco-ginger) 40%, var(--neco-cream)) 55%, color-mix(in srgb, var(--neco-accent-secondary) 72%, var(--neco-cream)));
     --neco-action-gradient: var(--neco-accent-gradient);
     --neco-sidebar-width: 244px;
     --neco-sidebar-offset: 0px;
@@ -49,6 +50,14 @@ body.neconyan {
     text-shadow: none;
 }
 :root[data-sb-surface-tone='light'] body.neconyan { color-scheme: light; }
+:root[data-neconyan-accent='custom'] body.neconyan { --neco-accent-secondary: var(--SmartThemeUnderlineColor); }
+body.neconyan #bg-header-fixed .bg-header-row-1 > h3 { flex: 0 1 auto; padding: 0; border: 0; background: transparent; }
+body.neconyan #background_fitting { flex: 1 0 auto; width: auto; min-width: calc(7ch + 52px); max-width: none; }
+/* The built-in wallpaper follows the same fit as selected images. */
+body.neconyan:has(#bg1.cover)::before { background-size: cover; background-position: center; }
+body.neconyan:has(#bg1.contain)::before { background-size: contain; background-position: center; }
+body.neconyan:has(#bg1.stretch)::before { background-size: 100% 100%; }
+body.neconyan:has(#bg1.center)::before { background-size: auto; background-position: center; }
 body.neconyan {
     --sb-accent: var(--neco-ginger);
     --sb-accent-soft: var(--neco-user);

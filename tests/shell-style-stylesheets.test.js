@@ -142,7 +142,7 @@ describe('shell style runtime stylesheets', () => {
             const customBlock = source.match(new RegExp(`:root\\[data-sb-theme='${id}'\\]\\[data-neconyan-accent='custom'\\] body\\.neconyan:not\\(\\.sbterm\\) \\{([^}]*)\\}`));
             expect(customBlock).not.toBeNull();
             expect(customBlock[1]).toContain(hueVar);
-            expect(customBlock[1]).toContain('var(--neco-ginger)');
+            expect(customBlock[1]).toContain(id === 'hypr-glow' ? 'var(--neco-accent-secondary)' : 'var(--neco-ginger)');
         }
         expect(readSource('public', 'css', 'shell-styles', 'macos-minimal.css')).toMatch(/> i:not\(\.neconyan-whiskers\) \{\s*color: var\(--neco-ginger\);/);
 
@@ -150,5 +150,11 @@ describe('shell style runtime stylesheets', () => {
         expect(calico).toContain('--neco-pink: color-mix(in oklch, var(--SmartThemeQuoteColor) 55%, #efb0bd);');
         expect(calico).toMatch(/\[data-neconyan-calico-tone='light'\]\[data-neconyan-accent='custom'\] body\.neconyan :is\(#neconyan-workspace-rail, #sb-mobile-nav-content\) \{[^}]*--neco-ginger: color-mix\(in oklch, var\(--SmartThemeQuoteColor\)/);
         expect(calico).toMatch(/body\.neconyan ::selection \{[^}]*var\(--neco-ginger\)/);
+    });
+
+    test('every runtime style uses the second accent in its own decoration', () => {
+        for (const id of runtimeIds) {
+            expect(readSource('public', 'css', 'shell-styles', `${id}.css`)).toContain('var(--neco-accent-secondary)');
+        }
     });
 });

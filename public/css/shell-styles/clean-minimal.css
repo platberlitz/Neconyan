@@ -17,6 +17,7 @@
 
 /* A chosen accent replaces the ink line, so active marks and the send button carry it. */
 :root[data-sb-theme='clean-minimal'][data-neconyan-accent='custom'] body.neconyan:not(.sbterm) {
+    --clean-line: color-mix(in srgb, var(--neco-accent-secondary) 40%, transparent);
     --clean-line-strong: var(--neco-ginger);
 }
 

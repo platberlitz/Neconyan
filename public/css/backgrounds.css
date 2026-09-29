@@ -1,7 +1,8 @@
 /* Main Page Backgrounds */
 #bg1 {
     background-repeat: no-repeat;
-    background-attachment: fixed;
+    /* This viewport-sized layer stays still without iOS Safari's broken fixed attachment. */
+    background-attachment: scroll;
     background-size: cover;
     position: absolute;
     width: 100%;
@@ -20,11 +21,6 @@
 body.sb-bg-blur #bg1,
 body.sb-bg-blur #bg_custom {
     filter: blur(calc(var(--customCSS-bg-blur, 0) * 1px));
-}
-
-/* Fitting options */
-#background_fitting {
-    max-width: 8em;
 }
 
 /* Fill/Cover - scales to fill width while maintaining aspect ratio */

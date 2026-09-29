@@ -28,13 +28,14 @@
 /* A chosen accent tints the slate, so the cool greys carry a hint of it. */
 :root[data-sb-theme='slate-flat'][data-neconyan-accent='custom'] body.neconyan:not(.sbterm) {
     --slate-cool: color-mix(in srgb, #46556b 76%, var(--neco-ginger));
+    --slate-border: color-mix(in srgb, var(--neco-border) 60%, var(--neco-accent-secondary));
 }
 
 :root[data-sb-theme='slate-flat'][data-neconyan-accent='custom'][data-sb-surface-tone='light'] body.neconyan:not(.sbterm) {
     --slate-cool: color-mix(in srgb, #cbd5e1 80%, var(--neco-ginger));
     --slate-surface: color-mix(in srgb, var(--neco-surface) 70%, color-mix(in srgb, #f1f5f9 90%, var(--neco-ginger)));
     --slate-raised: color-mix(in srgb, var(--neco-raised) 60%, var(--slate-cool));
-    --slate-border: color-mix(in srgb, var(--neco-border) 55%, color-mix(in srgb, #94a3b8 80%, var(--neco-ginger)));
+    --slate-border: color-mix(in srgb, var(--neco-border) 55%, color-mix(in srgb, #94a3b8 80%, var(--neco-accent-secondary)));
 }
 
 /* Wallpaper: this style's own scene, still behind the Calico paw prints and cat decorations. */

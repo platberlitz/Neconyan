@@ -84,4 +84,13 @@ describe('Neconyan accent color profiles', () => {
         expect(neconyanCssSource).toContain('--neco-action-gradient: var(--neco-accent-gradient);');
         expect(calicoCssSource).toContain(':root[data-neconyan-palette=\'calico\'][data-neconyan-accent=\'custom\'] body.neconyan {');
     });
+
+    test('uses the secondary colour for paired gradients and persistent shell highlights', () => {
+        const css = readSource('public', 'css', 'neconyan.css');
+        const calico = readSource('public', 'css', 'neconyan-calico.css');
+        expect(css).toContain(':root[data-neconyan-accent=\'custom\'] body.neconyan { --neco-accent-secondary: var(--SmartThemeUnderlineColor); }');
+        expect(css.match(/--neco-accent-gradient: ([^;]+);/)[1]).toContain('var(--neco-accent-secondary)');
+        expect(calico).toContain('box-shadow: inset 3px 0 0 var(--neco-accent-secondary);');
+        expect(calico).toContain('--neco-ginger-hover: color-mix(in oklch, var(--SmartThemeUnderlineColor) 40%, #fff);');
+    });
 });

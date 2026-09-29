@@ -23,6 +23,10 @@
     --mac-control: #fff;
 }
 
+:root[data-sb-theme='macos-minimal'][data-neconyan-accent='custom'] body.neconyan:not(.sbterm) {
+    --mac-hairline-strong: color-mix(in srgb, var(--neco-accent-secondary) 45%, transparent);
+}
+
 /* Wallpaper: this style's own scene, still behind the Calico paw prints and cat decorations. */
 :root[data-sb-theme='macos-minimal'] body.neconyan:not(.sbterm)::before {
     background-image: url('../../img/neconyan/shell-macos-minimal.webp?v=20260929a');

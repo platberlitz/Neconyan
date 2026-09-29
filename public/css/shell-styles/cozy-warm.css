@@ -8,7 +8,7 @@
     --cozy-surface: color-mix(in srgb, var(--neco-surface) 88%, var(--cozy-amber));
     --cozy-rail: color-mix(in srgb, var(--neco-rail) 90%, var(--cozy-amber));
     --cozy-raised: color-mix(in srgb, var(--neco-raised) 84%, var(--cozy-amber));
-    --cozy-thread: color-mix(in srgb, var(--neco-ginger) 55%, var(--neco-border));
+    --cozy-thread: color-mix(in srgb, var(--neco-accent-secondary) 55%, var(--neco-border));
     --cozy-shadow: 0 10px 30px color-mix(in srgb, var(--cozy-amber) 18%, rgb(0 0 0 / 0.35));
     --neco-panel-gradient: linear-gradient(180deg, color-mix(in srgb, var(--cozy-surface) 92%, var(--cozy-amber)), var(--cozy-surface));
     --sb-radius-button: 999px;

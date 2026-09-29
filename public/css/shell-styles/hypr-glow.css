@@ -19,9 +19,9 @@
     --sb-message-radius: 12px;
 }
 
-/* A chosen accent leads the gradient, and its partner hue is the accent turned around the colour wheel. */
+/* A chosen accent pair supplies both ends of the gradient. */
 :root[data-sb-theme='hypr-glow'][data-neconyan-accent='custom'] body.neconyan:not(.sbterm) {
-    --hypr-b: oklch(from var(--neco-ginger) l c calc(h + 70));
+    --hypr-b: var(--neco-accent-secondary);
 }
 
 /* Wallpaper: this style's own scene, still behind the Calico paw prints and cat decorations. */

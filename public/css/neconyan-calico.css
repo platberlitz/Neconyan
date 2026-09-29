@@ -59,13 +59,13 @@
 
 :root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'][data-neconyan-accent='custom'] body.neconyan :is(#neconyan-workspace-rail, #sb-mobile-nav-content) {
     --neco-ginger: color-mix(in oklch, var(--SmartThemeQuoteColor) 72%, #fff);
-    --neco-ginger-hover: color-mix(in oklch, var(--SmartThemeQuoteColor) 40%, #fff);
+    --neco-ginger-hover: color-mix(in oklch, var(--SmartThemeUnderlineColor) 40%, #fff);
 }
 
 /* Accent touches every shell style shares: the current page, section labels, top bar edge and selected text. */
 body.neconyan #neconyan-workspace-rail button:is([aria-current='page'], .is-active) {
     background: color-mix(in oklch, var(--neco-ginger) 18%, var(--neco-raised));
-    box-shadow: inset 3px 0 0 var(--neco-ginger);
+    box-shadow: inset 3px 0 0 var(--neco-accent-secondary);
 }
 
 body.neconyan #neconyan-workspace-rail button:is([aria-current='page'], .is-active) > i:not(.neconyan-whiskers) {
@@ -73,11 +73,11 @@ body.neconyan #neconyan-workspace-rail button:is([aria-current='page'], .is-acti
 }
 
 body.neconyan :is(.neconyan-rail-section-label, .neconyan-rail-section-heading) {
-    color: color-mix(in oklch, var(--neco-muted) 62%, var(--neco-ginger));
+    color: color-mix(in oklch, var(--neco-muted) 62%, var(--neco-accent-secondary));
 }
 
 body.neconyan #top-bar {
-    border-bottom-color: color-mix(in oklch, var(--neco-border) 55%, var(--neco-ginger));
+    border-bottom-color: color-mix(in oklch, var(--neco-border) 55%, var(--neco-accent-secondary));
 }
 
 body.neconyan ::selection {
@@ -145,7 +145,7 @@ body.neconyan :is(#sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner) { back
 
 :root[data-neconyan-palette='calico'] body.neconyan :is(.sb-shell-tab.is-active, .sb-character-shell-tab.is-active, .sb-settings-tab-btn.active, [aria-pressed='true']) {
     background: color-mix(in oklch, var(--neco-ginger) 15%, var(--neco-raised));
-    border-color: color-mix(in oklch, var(--neco-ginger) 50%, var(--neco-border));
+    border-color: color-mix(in oklch, var(--neco-accent-secondary) 50%, var(--neco-border));
 }
 
 :root[data-neconyan-palette='calico'] body.neconyan .neconyan-home-actions > .neconyan-home-primary,
