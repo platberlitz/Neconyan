@@ -129,6 +129,16 @@ export async function retryJob(id, { base = '', account = getCurrentUserHandle()
     return requestJson(endpoint(base, `/${encodeURIComponent(id)}/retry`), { account, method: 'POST', body: '{}' });
 }
 
+export function getJobApproval(id, approvalId, { base = '', account = getCurrentUserHandle() } = {}) {
+    return requestJson(endpoint(base, `/${encodeURIComponent(id)}/approval/${encodeURIComponent(approvalId)}`), { account });
+}
+
+export function decideJobApproval(id, approval, { base = '', account = getCurrentUserHandle() } = {}) {
+    return requestJson(endpoint(base, `/${encodeURIComponent(id)}/approval/${encodeURIComponent(approval.id)}`), {
+        account, method: 'POST', body: JSON.stringify({ proposalHash: approval.proposalHash, decision: approval.decision }),
+    });
+}
+
 export const TERMINAL = new Set(['completed', 'cancelled', 'failed', 'interrupted', 'conflict']);
 
 /**

@@ -64,7 +64,6 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/thread-s
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/typing.js', () => ({
     splitChatroomMessages: value => String(value || '').split(/\n\s*\n+/).map(part => part.trim()).filter(Boolean),
-    waitForReplyDelay: jest.fn(),
     withTypingParticipant: (_participant, task) => task(),
 }));
 

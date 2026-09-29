@@ -53,18 +53,12 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/media.js
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/message-writer.js', () => ({ appendConversationMessage: jest.fn() }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/pals-rail.js', () => ({
-    buildGroupChatContext: () => '',
     getConversationRailItems: () => [],
     getCurrentGroupConversationMembers: () => [],
-    getGroupAsideKey: () => '',
     getSelectedConversationGroup: () => null,
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/partners.js', () => ({
-    chooseConversationPartner: () => null,
     getAllowedPartnerCharacters: () => [],
-    getConversationPartnerSettings: (_avatar, settings) => settings,
-    getLeastRecentPartner: () => null,
-    getRecentlySilentMentionedPartner: () => null,
     isCharacterMentionedInText: () => false,
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/personas.js', () => ({

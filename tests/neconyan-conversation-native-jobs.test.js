@@ -6,6 +6,8 @@ const refresh = jest.fn();
 const repaint = jest.fn();
 const cancel = jest.fn();
 const list = jest.fn();
+const review = jest.fn();
+jest.unstable_mockModule('../public/scripts/neconyan-assistant-job-review.js', () => ({ reviewAssistantJobChildren: review }));
 jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => account }));
 jest.unstable_mockModule('../public/scripts/jobs.js', () => ({
     cancelJob: cancel, listJobs: list,

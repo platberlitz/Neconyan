@@ -50,6 +50,17 @@ describe('Neconyan Custom CSS AI helper', () => {
         expect(messages[1].content).toContain('Make chat bubbles softer.');
         expect(messages[1].content).toContain('.mes { padding: 1rem; }');
         expect(messages[1].content).toContain('--SmartThemeBodyColor: white;');
+        expect(messages[1].content).toContain('Replace mode: return the complete updated stylesheet');
+    });
+
+    test('append requests only additions and describes the current shell and both chat renderers', async () => {
+        const { helper } = await importHelper();
+        const [system, user] = helper.buildCustomCssAIMessages({ instruction: 'Larger DM text', mode: 'append', currentCss: '.existing {}' });
+        expect(user.content).toContain('Append mode: return only the new rules');
+        expect(user.content).toContain('.existing {}');
+        for (const hook of ['data-sb-theme', 'windows-aero', '#sb-mobile-nav-content', '#neconyan-workspace-rail', '#sb-bottom-chat-bar', '#chat .mes', '.sb-conversation-message-text', ':focus-visible', ':not(.reduced-motion)', '44px']) {
+            expect(system.content).toContain(hook);
+        }
     });
 
     test('submits one retained server job and adopts its settings write', async () => {

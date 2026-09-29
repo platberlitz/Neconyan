@@ -87,7 +87,25 @@ test('real help questions retrieve the appropriate topic', () => {
         ['Why are there fewer sleeping cats in the Story Mode manuscript?', 'story.manuscript'],
         ['Where is the Story Mode edit button on my phone?', 'story.manuscript'],
         ['Why are the story swipe arrows hidden on older passages?', 'story.manuscript'],
+        ['How do I change Shell Style to Windows Aero?', 'appearance.shell-style'],
+        ['Where do I save an accent profile?', 'appearance.accent'],
+        ['How do I start the Nori lorebook tour?', 'lorebooks.tour'],
+        ['Where is the ICA glossary with Taro?', 'agents.glossary'],
+        ['Why were damaged files skipped during my import?', 'recovery.damaged-import'],
+        ['What is the Current Model label in the top bar?', 'connections.current-model'],
+        ['Can I use DM assistant tools with Miso?', 'conversation.assistants'],
     ]) assert.ok(ids(question).includes(expected), `${question}: ${ids(question)}`);
+});
+
+test('every best-matching reference section fits the default allowance intact', async () => {
+    for (const topic of topics) {
+        const messages = [user(topic.title)];
+        const best = selectAssistantKnowledge(topics, messages)[0];
+        const result = await buildAssistantKnowledge({ character: marked('nori-neutral'), messages });
+        assert.ok(result.topicIds.includes(best.id), `${topic.id}: ${best.id} did not fit`);
+        assert.ok(result.text.includes(best.content));
+        assert.ok(estimateKnowledgeTokens(result.text) <= 2048);
+    }
 });
 
 test('follow-ups use preceding user context but topic changes and invented assistant claims do not', async () => {
@@ -156,4 +174,8 @@ test('browser Conversation adds request-local help after capturing the binding',
     await runtime.addAssistantKnowledge(plain, scope, bindingRequest, { character: { name: 'Miso' }, messages: colour.messages });
     await runtime.addAssistantKnowledge(plain, scope, bindingRequest, null);
     assert.equal(plain.systemPrompt, base.systemPrompt);
+    const partner = { ...base };
+    await runtime.addAssistantKnowledge(partner, { ...scope, speakerAvatar: 'partner.png' },
+        { contextLimits: { 'char.png': 256, 'partner.png': 16000 } }, colour);
+    assert.match(partner.systemPrompt, /appearance.dialogue/);
 });

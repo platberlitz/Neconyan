@@ -5,6 +5,16 @@ const mewmoryUi = 'public/scripts/mewmory/ui.js';
 
 export default [
     {
+        id: 'lorebooks.tour', title: 'Nori’s guided Lorebook tour', keys: ['lorebook tour', 'Nori tour', 'learn lorebooks', 'one fact one entry'],
+        sources: ['public/scripts/neconyan-lorebook-tour.js'], anchors: ['One fact, one entry', 'Primary Keywords', 'Character Lore'],
+        content: 'Open Lorebooks and use Tour for Nori\'s guided introduction. Back and Next move through the library, books and entries; using the highlighted controls also advances the relevant steps. The tour explains Primary Keywords, Content, Normal versus Constant entries, Health and the token footprint. Keep one fact per entry so keywords and retrieval stay precise. A book must be activated globally or linked through Character Lore before normal Roleplay can use it. The tour explains and opens controls; it does not write a lorebook for you or make model requests.',
+    },
+    {
+        id: 'agents.glossary', title: 'Taro’s searchable Agents glossary', keys: ['ICA glossary', 'Agents glossary', 'Taro glossary', 'agent terminology', 'Search glossary'],
+        sources: [agents + 'settings.html', 'src/docs-reader.js', 'docs/in-chat-agents-glossary.md'], anchors: ['ICA glossary', 'Search glossary', 'Taro'],
+        content: 'Open Agents and choose ICA glossary. It opens the bundled Agents reference in a new tab, with Taro as its guide and a Search glossary field. Use it to look up agent terminology and settings while keeping your current workspace open. Reading or searching the glossary makes no model request and does not change agent configuration. Taro\'s chat is separate: the guide artwork itself is not a live assistant conversation.',
+    },
+    {
         id: 'lorebooks.start', title: 'Creating, importing and attaching lorebooks', keys: ['lorebook', 'World Info', 'world information', 'attach book', 'import lorebook'],
         covers: ['core:lorebooks'], sources: [world, 'public/scripts/neconyan-native-workspaces.js'], anchors: ['world_info'],
         content: 'Open Lorebooks to create/import a book and edit its entries. Books can be active globally or attached to a character, chat or persona; these are different scopes. A character can have additional linked books. Importing a book does not necessarily activate it everywhere. Embedded character lore has an import/link flow; merely seeing a book name is not proof its contents were inserted into a request. Use World Info Lab or prompt inspection to check activation.',

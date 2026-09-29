@@ -2,37 +2,28 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { acceptJob, getJob } from '../jobs/store.js';
 import { assertRoleplaySourceLocked } from './roleplay-source.js';
+import { assertConversationAssistantSourceLocked } from './conversation-assistant-source.js';
 import { assertUntrackedRoleplayFiles, confirmRoleplayAccount, createRoleplayDirectory, readRoleplayFile,
-    roleplayError, roleplayHash, roleplayLease, roleplayStoreDirectory, withRoleplayAccount } from '../roleplay-store.js';
+    roleplayError, roleplayHash, roleplayStoreDirectory, withRoleplayAccount } from '../roleplay-store.js';
 import { fsyncDirectorySync, tryWriteFileSync } from '../util.js';
 import { reserveJobApprovalCapacityLocked } from './job-approvals.js';
-import { assertLabsTargetIdle } from '../labs/store.js';
-import { assertOperationTargetIdle } from '../operations/store.js';
+import { MEDIA_RECEIPT_LIMIT as RECEIPT_LIMIT, readMediaReceipt as readReceipt } from './media-receipts.js';
+export { assertNativeMediaTargetIdle } from './media-receipts.js';
 
 // Reserve enough for every allowed sprite replacement or 256-part speech result
 // before accepting work, including file evidence and the final completion list.
-const RECEIPT_LIMIT = 512 * 1024;
 const STORE_LIMIT = 16 * 1024 * 1024;
 const HASH = /^[a-f0-9]{64}$/;
 const fail = (message, code = 'MEDIA_RECOVERY_REQUIRED') => roleplayError(code, message);
 const stamp = media => ({ accountId: media.accountId, dataEpoch: media.dataEpoch });
 
-function receiptPath(base, account, operationKey) {
-    return path.join(roleplayStoreDirectory(base), 'media', `${roleplayHash([account.accountId, operationKey])}.json`);
+function assertMediaSourceLocked(lease, source, kind) {
+    if (kind === 'assistant-tool' && source.kind === 'conversation-assistant') return assertConversationAssistantSourceLocked(lease, source);
+    return assertRoleplaySourceLocked(lease, source);
 }
 
-function readReceipt(filename) {
-    const file = readRoleplayFile(filename, RECEIPT_LIMIT, { allowMissingParent: true });
-    if (!file) return { file: null, value: null };
-    let value;
-    try { value = JSON.parse(file.bytes.toString('utf8')); } catch { throw fail('The saved media receipt is unreadable.'); }
-    if (value?.version !== 1 || !HASH.test(value.intentHash) || !HASH.test(value.targetHash)
-        || !['preparing', 'accepted', 'closed'].includes(value.state)
-        || !value.account || typeof value.effects !== 'object' || !value.effects || Array.isArray(value.effects)
-        || value.state !== 'preparing' && typeof value.jobId !== 'string') {
-        throw fail('The saved media receipt is invalid.');
-    }
-    return { file, value };
+function receiptPath(base, account, operationKey) {
+    return path.join(roleplayStoreDirectory(base), 'media', `${roleplayHash([account.accountId, operationKey])}.json`);
 }
 
 function saveReceipt(filename, value, baseline) {
@@ -75,23 +66,6 @@ function reserveReceipt(base, filename, targetHash) {
     }
 }
 
-/** An ordinary cooperating writer cannot replace an accepted native media target. */
-export function assertNativeMediaTargetIdle(lease, target) {
-    assertLabsTargetIdle(lease, target);
-    assertOperationTargetIdle(lease, target);
-    const { scope } = roleplayLease(lease);
-    const directory = path.join(roleplayStoreDirectory(scope), 'media');
-    readRoleplayFile(path.join(directory, '.media-path-check'), 1, { allowMissingParent: true });
-    if (!fs.existsSync(directory)) return;
-    const hash = roleplayHash([scope.accountId, scope.dataEpoch, target]);
-    for (const name of fs.readdirSync(directory)) {
-        if (!/^[a-f0-9]{64}\.json$/.test(name)) continue;
-        const { value } = readReceipt(path.join(directory, name));
-        if (!value) throw fail('A saved media receipt disappeared.');
-        if (value.targetHash === hash && value.state !== 'closed') throw fail('This media target has unfinished accepted work.', 'MEDIA_TARGET_BUSY');
-    }
-}
-
 /** Private admission for media work. Ownership survives job history and imported account settings. */
 export function admitNativeMediaJob(base, account, { operationKey, source, kind, request, target, approvalReservation = null }) {
     if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 200
@@ -112,7 +86,7 @@ export function admitNativeMediaJob(base, account, { operationKey, source, kind,
         let { file, value } = readReceipt(filename);
         if (value && value.intentHash !== intentHash) throw fail('This media key already names different work.', 'MEDIA_INTENT_CONFLICT');
         if (value && value.state !== 'preparing') return { jobId: value.jobId, state: value.state, created: false, result: value.result ?? null };
-        assertRoleplaySourceLocked(lease, source);
+        assertMediaSourceLocked(lease, source, kind);
         if (!value) {
             if (approvalReservation) reserveJobApprovalCapacityLocked(lease, approvalReservation);
             reserveReceipt(base, filename, targetHash);
@@ -143,7 +117,7 @@ export function withNativeMediaReceipt(context, operation, { checkSource = true 
             || roleplayHash(value.account) !== roleplayHash(stamp(intent.media))) throw fail('The media job does not own this receipt.');
         const savedJob = getJob(context.directories, context.job.id);
         if (!savedJob || roleplayHash(savedJob.intent) !== value.intentHash) throw fail('The accepted media job changed.');
-        if (checkSource && value.state !== 'closed') assertRoleplaySourceLocked(lease, intent.source);
+        if (checkSource && value.state !== 'closed') assertMediaSourceLocked(lease, intent.source, intent.kind);
         const save = () => { file = saveReceipt(filename, value, file); };
         return operation({ lease, value, save, base, account: stamp(intent.media) });
     });

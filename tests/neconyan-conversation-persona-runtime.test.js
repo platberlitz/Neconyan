@@ -78,7 +78,6 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/notifica
     updateConversationNotificationIndicators: jest.fn(),
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/pals-rail.js', () => ({
-    getCharacterForGroupChatMessage: () => null,
     getCurrentGroupConversationMembers: () => [],
     getConversationRailItems: () => [],
 }));

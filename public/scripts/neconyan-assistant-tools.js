@@ -14,6 +14,7 @@ import {
 import { selected_group } from './group-chats.js';
 import { ToolManager } from './tool-calling.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
+import { buildAssistantReview } from './neconyan-assistant-review.js';
 import { loadWorldInfo, world_names } from './world-info.js';
 import { updateEntry } from './extensions/in-chat-agents/pathfinder/entry-manager.js';
 import {
@@ -265,36 +266,9 @@ function enqueueAssistantEdit(task) {
     return run;
 }
 
-function reviewNode(review) {
-    if (typeof document === 'undefined') throw new Error('Assistant confirmation is unavailable without a document.');
-    const root = document.createElement('div');
-    root.className = 'neconyan-assistant-review';
-    const heading = document.createElement('p');
-    heading.textContent = `Allow ${review.resource} edit?`;
-    const target = document.createElement('p');
-    target.textContent = `Target: ${review.target}`;
-    const field = document.createElement('p');
-    field.textContent = `Field: ${review.field}`;
-    const beforeLabel = document.createElement('strong');
-    beforeLabel.textContent = 'Before';
-    const before = document.createElement('pre');
-    before.textContent = String(review.before ?? '');
-    const afterLabel = document.createElement('strong');
-    afterLabel.textContent = 'After';
-    const after = document.createElement('pre');
-    after.textContent = String(review.after ?? '');
-    [before, after].forEach(element => {
-        element.style.whiteSpace = 'pre-wrap';
-        element.style.overflowWrap = 'anywhere';
-        element.style.maxHeight = 'none';
-    });
-    root.append(heading, target, field, beforeLabel, before, afterLabel, after);
-    return root;
-}
-
 async function confirmEdit(review, guard) {
     guard.assert();
-    const result = await callGenericPopup(reviewNode(review), POPUP_TYPE.CONFIRM, '', { wide: true, large: true });
+    const result = await callGenericPopup(buildAssistantReview(review), POPUP_TYPE.CONFIRM, '', { wide: true, large: true });
     guard.assert();
     return result === POPUP_RESULT.AFFIRMATIVE;
 }

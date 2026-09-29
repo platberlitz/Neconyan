@@ -36,7 +36,7 @@ export async function captureConversationTextBinding(providedScope = {}, options
 
 async function addAssistantKnowledge(requestOptions, scope, bindingRequest, assistantContext) {
     if (!isNeconyanAssistant(assistantContext?.character)) return;
-    const limit = bindingRequest.contextLimits?.[scope.target.avatar];
+    const limit = bindingRequest.contextLimits?.[scope.speakerAvatar || scope.target.avatar];
     const knowledge = await buildAssistantKnowledge({ ...assistantContext,
         maxTokens: limit ? getAssistantKnowledgeBudget(limit - Number(requestOptions.responseLength || 0)) : 2048 });
     requestOptions.systemPrompt = [requestOptions.systemPrompt, knowledge.text].filter(Boolean).join('\n\n');

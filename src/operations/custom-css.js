@@ -35,7 +35,7 @@ export async function captureCustomCss(base, account, input = {}) {
     const { binding } = await captureLabConnection(base, { profileId: typeof input.profileId === 'string' ? input.profileId : '',
         acknowledgement: input.acknowledgement, maxTokens: CUSTOM_CSS_AI_MAX_TOKENS }, macros);
     return { account, binding, mode, currentCss, macros,
-        messages: buildCustomCssAIMessages({ instruction, currentCss, paletteSnapshot }) };
+        messages: buildCustomCssAIMessages({ instruction, currentCss, paletteSnapshot, mode }) };
 }
 
 function nextCss(plan, css) {

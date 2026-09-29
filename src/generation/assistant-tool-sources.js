@@ -11,6 +11,7 @@ import { assertQuickImageGenConfigured, readQuickImageGenSettings } from './quic
 import { captureQuickImageReferenceSources } from './quick-image-gen-reference.js';
 import { quickImageGenSettingsFingerprint } from './quick-image-gen-job.js';
 import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay-source.js';
+import { assertConversationAssistantSourceLocked } from './conversation-assistant-source.js';
 import { EDITABLE_AGENT_FIELDS, EDITABLE_CHARACTER_FIELDS, PRESET_FIELDS, assistantToolName,
     projectAssistantAgent, projectAssistantCharacter, projectAssistantPreset, validateAssistantPresetValue } from './assistant-tool-data.js';
 
@@ -27,23 +28,34 @@ const toResult = result => {
     return value;
 };
 
-function readSettings(lease) {
+export function readAssistantSettingsLocked(lease, source) {
     const { scope } = roleplayLease(lease);
     const file = readRoleplayFile(path.join(scope.directories.root, 'settings.json'), 8 * 1024 * 1024);
     let settings;
     try { settings = JSON.parse(file.bytes.toString('utf8')); } catch { throw invalid('The saved account settings are unavailable.'); }
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw invalid('The saved account settings are invalid.');
+    if (source.kind === 'conversation-assistant') {
+        // Conversation read markers, delivery and appearance share settings.json.
+        // Bind only settings consumed by these tools; image settings/references
+        // have their own captured fingerprints in character creation below.
+        const hash = roleplayHash({ profiles: settings.extension_settings?.connectionManager?.profiles ?? [] });
+        return { settings, evidence: { scope: 'conversation-assistant-settings', hash }, hash };
+    }
     return { settings, evidence: authoringEvidence(file), hash: roleplayHash(settings) };
 }
 
 export function readBoundAssistantContextLocked(lease, source, avatar) {
-    if (source.locator.group || !source.dependencies?.some(item => item.kind === 'character' && item.locator.avatar === avatar)) {
+    if (source.kind === 'conversation-assistant') {
+        if (source.avatar !== avatar) throw invalid('The tool call belongs to a different Conversation assistant.');
+        assertConversationAssistantSourceLocked(lease, source);
+    } else if (source.locator?.group || !source.dependencies?.some(item => item.kind === 'character' && item.locator.avatar === avatar)) {
         throw invalid('The assistant tool call belongs to an individual assistant chat only.');
+    } else {
+        assertRoleplaySourceLocked(lease, source);
     }
-    assertRoleplaySourceLocked(lease, source);
     const assistant = characterResource(lease, avatar);
     if (!isNeconyanAssistant(assistant.saved.data)) throw invalid('The selected character is not a Neconyan assistant.');
-    const { settings, evidence: settingsEvidence, hash: settingsHash } = readSettings(lease);
+    const { settings, evidence: settingsEvidence, hash: settingsHash } = readAssistantSettingsLocked(lease, source);
     return { assistant: assistant.resource, assistantId: assistant.saved.data?.data?.extensions?.neconyan_assistant?.id
         ?? assistant.saved.data?.extensions?.neconyan_assistant?.id, settings, settingsHash, settingsEvidence };
 }

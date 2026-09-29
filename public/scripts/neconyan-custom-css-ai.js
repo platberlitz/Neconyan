@@ -25,8 +25,8 @@ export function getCustomCssPaletteSnapshot(root = typeof document === 'undefine
         .join('\n');
 }
 
-export function buildCustomCssAIMessages({ instruction = '', currentCss = '', paletteSnapshot = getCustomCssPaletteSnapshot() } = {}) {
-    return buildCustomCssMessages({ instruction, currentCss, paletteSnapshot });
+export function buildCustomCssAIMessages({ instruction = '', currentCss = '', paletteSnapshot = getCustomCssPaletteSnapshot(), mode = 'replace' } = {}) {
+    return buildCustomCssMessages({ instruction, currentCss, paletteSnapshot, mode });
 }
 
 export function resolveCustomCssAIProfile(profileId = '') {

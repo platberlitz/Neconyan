@@ -11,6 +11,7 @@ import { getCurrentUserHandle } from '../user.js';
 import { presentPendingConversationClaims } from './presentation.js';
 import { scheduleInterfaceRefresh } from './render-scheduler.js';
 import { refreshConversationStore } from './store-sync.js';
+import { reviewAssistantJobChildren } from '../neconyan-assistant-job-review.js';
 
 const OBSERVED_ROOT_TYPES = new Set(['conversation.reply', 'conversation.rewrite', 'conversation.selfie', 'conversation.schedule', 'conversation.summary']);
 const observed = new Map();
@@ -49,7 +50,7 @@ export function observeNativeConversationJob(jobId, account = getCurrentUserHand
     }
     const stop = observeJob(jobId, {
         account,
-        onSnapshot: () => readback(account),
+        onSnapshot: async job => { await readback(account); await reviewAssistantJobChildren(job, account); },
         // Drop the registry entry once polling really stops, so a retried job
         // that reuses the id (or a later resume) can be observed again.
         onStop: (reason) => {

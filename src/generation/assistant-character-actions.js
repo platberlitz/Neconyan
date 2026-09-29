@@ -8,14 +8,14 @@ import { readRoleplayFile, roleplayError, roleplayHash, roleplayLease } from '..
 import { readRoleplayEntityLocked, captureRoleplayStorageSourceLocked } from './roleplay-source.js';
 import { generateQuickImageGenJobImage } from './quick-image-gen-job.js';
 import { withNativeMediaReceipt } from './media-jobs.js';
-import { readBoundAssistantContextLocked, captureAssistantToolSourceLocked } from './assistant-tool-sources.js';
+import { readAssistantSettingsLocked, readBoundAssistantContextLocked, captureAssistantToolSourceLocked } from './assistant-tool-sources.js';
 import { projectAssistantCharacter } from './assistant-tool-data.js';
+import { assertConversationAssistantSourceLocked } from './conversation-assistant-source.js';
 
 const invalid = message => roleplayError('ASSISTANT_CHARACTER_RECOVERY', message, 409);
 const MAX_CARD = 64 * 1024 * 1024;
 const rawHash = bytes => createHash('sha256').update(bytes).digest('hex');
 const account = media => ({ accountId: media.accountId, dataEpoch: media.dataEpoch });
-const evidence = file => file ? { rawHash: file.rawHash, physical: file.physical } : null;
 
 export function planAssistantCharacter(context, request) {
     return withNativeMediaReceipt(context, ({ lease }) => {
@@ -84,16 +84,22 @@ function assertCharacterSource(lease, context, request, ownEffect = null) {
     if (source.dependencies.length !== 1 || source.dependencies[0].locator.avatar !== request.avatar) {
         throw invalid('The selected assistant has unexpected protected dependencies.');
     }
-    const current = captureRoleplayStorageSourceLocked(lease, source.locator).source;
-    if (roleplayHash({ accountId: current.accountId, dataEpoch: current.dataEpoch, instanceId: current.instanceId,
-        revision: current.revision, rawHash: current.rawHash, locator: current.locator })
-        !== roleplayHash({ accountId: source.accountId, dataEpoch: source.dataEpoch, instanceId: source.instanceId,
-            revision: source.revision, rawHash: source.rawHash, locator: source.locator })) {
-        throw invalid('The assistant chat changed while its character was being edited.');
+    if (source.kind === 'conversation-assistant') {
+        assertConversationAssistantSourceLocked(lease, source, { ownCharacterEdit: true });
+    } else {
+        const current = captureRoleplayStorageSourceLocked(lease, source.locator).source;
+        if (roleplayHash({ accountId: current.accountId, dataEpoch: current.dataEpoch, instanceId: current.instanceId,
+            revision: current.revision, rawHash: current.rawHash, locator: current.locator })
+            !== roleplayHash({ accountId: source.accountId, dataEpoch: source.dataEpoch, instanceId: source.instanceId,
+                revision: source.revision, rawHash: source.rawHash, locator: source.locator })) {
+            throw invalid('The assistant chat changed while its character was being edited.');
+        }
     }
     const { scope } = roleplayLease(lease);
-    const file = readRoleplayFile(path.join(scope.directories.root, 'settings.json'), 8 * 1024 * 1024);
-    if (roleplayHash(evidence(file)) !== roleplayHash(request.settingsEvidence)) throw invalid('The saved account settings changed.');
+    const settings = readAssistantSettingsLocked(lease, source);
+    if (settings.hash !== request.settingsHash || roleplayHash(settings.evidence) !== roleplayHash(request.settingsEvidence)) {
+        throw invalid('The saved assistant settings changed.');
+    }
     const selected = readRoleplayEntityLocked(lease, 'character', request.avatar);
     const actual = readRoleplayFile(path.join(scope.directories.characters, request.avatar), MAX_CARD);
     if (ownEffect.state === 'done' && (actual?.rawHash !== ownEffect.rawHash

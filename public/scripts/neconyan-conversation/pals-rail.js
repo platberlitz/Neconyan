@@ -1,13 +1,11 @@
 import {
     characters,
-    chat,
     default_user_avatar,
     getThumbnailUrl,
-    name1,
 } from '../../script.js';
 import { selected_group } from '../group-chats.js';
 import { user_avatar } from '../personas.js';
-import { DEFAULT_BRANCH_ID, DEFAULT_SETTINGS, GROUP_ASIDE_CONTEXT_LIMIT } from './constants.js';
+import { DEFAULT_BRANCH_ID, DEFAULT_SETTINGS } from './constants.js';
 import {
     getActiveConversationBranch,
     getConversationGroupById,
@@ -25,11 +23,9 @@ import {
 } from './context.js';
 import { getCharacterForAvatar, getCharacterIndexForAvatar, getConversationParticipants } from './media.js';
 import { getActiveConversationThreadKey } from './notifications.js';
-import { formatPromptText } from './shared-helpers.js';
 import { getSettings } from './settings-store.js';
 import { conversationState } from './state.js';
 import { getConversationSeenAt, getConversationThread } from './thread-store.js';
-import { stripPreviewText } from './typing.js';
 
 export function getConversationSettingsForCharacter(character, { groupId = getConversationGroupIdForAvatar(character?.avatar), personaId = getConversationPersonaId() } = {}) {
     return character?.avatar ? getSettings(character.avatar, { groupId, personaId }) : { ...DEFAULT_SETTINGS };
@@ -187,32 +183,6 @@ export function getScheduleEditorTargets(baseAvatar = getCurrentCharAvatar()) {
     }
 
     return targets;
-}
-
-export function getCharacterForGroupChatMessage(message) {
-    const avatar = String(message?.original_avatar || message?.extra?.original_avatar || message?.extra?.avatar || '').trim();
-    return avatar ? getCharacterForAvatar(avatar) : null;
-}
-
-export function buildGroupChatContext(limit = GROUP_ASIDE_CONTEXT_LIMIT) {
-    const startIndex = Math.max(0, chat.length - limit);
-    const lines = [];
-    for (let index = startIndex; index < chat.length; index++) {
-        const message = chat[index];
-        const text = stripPreviewText(message?.mes || '');
-        if (!text) {
-            continue;
-        }
-
-        const speaker = message?.name || (message?.is_user || message?.role === 'user' ? name1 || 'User' : 'Character');
-        lines.push(`${speaker}: ${formatPromptText(text, 600)}`);
-    }
-
-    return lines.join('\n');
-}
-
-export function getGroupAsideKey(avatar, groupId = selected_group, personaId = getConversationPersonaId()) {
-    return `${personaId || 'persona'}:${groupId || 'group'}:${avatar || 'unknown'}`;
 }
 
 export function getConversationMessageAvatar(message, avatar = getCurrentCharAvatar()) {

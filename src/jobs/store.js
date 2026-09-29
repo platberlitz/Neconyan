@@ -480,7 +480,10 @@ export function attachOwnedChild(directories, parentId, childId, { parentIntentH
             throw fail(409, 'JOB_FAMILY_CONFLICT', 'The saved workflow child does not belong to its accepted parent.');
         }
         const vectorChild = ['roleplay.reply', 'roleplay.candidate'].includes(parent.type) && child.type === 'operations.vectors';
-        if (parent.type !== 'media.roleplay-workflow' && !vectorChild || child.parentId && child.parentId !== parentId
+        const conversationTool = ['conversation.participant', 'conversation.reply'].includes(parent.type)
+            && child.type === 'media.assistant-tool' && child.intent?.source?.kind === 'conversation-assistant'
+            && child.intent.source.instanceId === parentId;
+        if (parent.type !== 'media.roleplay-workflow' && !vectorChild && !conversationTool || child.parentId && child.parentId !== parentId
             || isTerminal(parent) || parent.cancellation?.requested || child.cancellation?.requested) {
             throw fail(409, 'JOB_FAMILY_CONFLICT', 'The saved workflow family changed before a child could run.');
         }
@@ -658,17 +661,24 @@ export function retryConversationFamily(directories, id) {
         const root = store.jobs[jobKey(id)];
         if (!root) throw fail(404, 'JOB_NOT_FOUND', 'No such job.');
         let changed = false;
-        for (const childId of root.children ?? []) {
-            const child = store.jobs[jobKey(childId)];
-            if (!child || !['failed', 'interrupted'].includes(child.state)) continue;
-            child.state = 'queued';
-            child.stage = null;
+        const retryChild = child => {
+            if (!child || !['failed', 'interrupted'].includes(child.state)) return;
+            for (const nestedId of child.children ?? []) {
+                const nested = store.jobs[jobKey(nestedId)];
+                if (nested?.parentId === child.id && nested.type === 'media.assistant-tool') retryChild(nested);
+            }
+            child.state = child.children?.length ? 'waiting' : 'queued';
+            child.stage = child.children?.length ? 'children' : null;
             child.error = null;
             child.result = null;
+            child.finishedAt = null;
             Object.assign(child, explicitRetryRecovery(child));
             child.attempt += 1;
             child.updatedAt = now();
             changed = true;
+        };
+        for (const childId of root.children ?? []) {
+            retryChild(store.jobs[jobKey(childId)]);
         }
         if (!changed) throw fail(409, 'JOB_NOT_RETRYABLE', 'No participant in this Conversation reply can be retried.');
         root.state = 'waiting';

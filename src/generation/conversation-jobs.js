@@ -12,6 +12,7 @@ import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { appendConversationJobMessage, applyConversationBookkeeping, captureConversationTarget, prepareConversationTarget, commitConversationEffect, commitConversationJobCommands, commitConversationReplyNotice, readConversationEffectReceipt, readConversationTarget, retainConversationAutomaticAcceptance, wasConversationAutomaticOccurrenceAccepted, acceptedConversationOccurrenceOwner } from './conversation-effects.js';
 import { runChatProfile } from './service.js';
+import { generateConversationAssistantReply } from './conversation-assistant-tools.js';
 import { getChatProfileContextLimit } from './profiles.js';
 import { createConversationImageGenerator, conversationReplyWantsImage, lastUserMessageText } from './conversation-images.js';
 import { createConversationNarrator } from './conversation-narration.js';
@@ -876,10 +877,14 @@ async function runConversationParticipantJob(context, deps) {
             captureConversationRoleplaySource({ user: { directories } }, automation.roleplaySource, { characterName: speaker.name, userName });
         }
         const separateSystem = binding.kind === 'active' && snapshot.messages[0]?.role === 'system';
-        response = await deps.generate({ context, jobContext: context, binding, messages: separateSystem ? snapshot.messages.slice(1) : snapshot.messages,
+        const options = { context, jobContext: context, binding, messages: separateSystem ? snapshot.messages.slice(1) : snapshot.messages,
             maxTokens: settings.reply_max_tokens, userName, characterName: speaker.name,
             groupNames: snapshot.groupNames || [], rawOptions: separateSystem ? { systemPrompt: snapshot.messages[0].content } : {},
-            macroEnvironment: createMacroEnvironment(snapshot.macros) });
+            macroEnvironment: createMacroEnvironment(snapshot.macros) };
+        response = snapshot.assistantTools
+            ? await generateConversationAssistantReply(context, snapshot, options, deps.generate)
+            : await deps.generate(options);
+        if (response === null) return { waiting: true };
         writeArtifact(directories, context.job.id, 'reply', response);
     }
     if (typeof response.text !== 'string' || !response.text.trim()) fail('The model returned an empty Conversation reply.', 502);

@@ -372,6 +372,11 @@ export async function buildConversationParticipantSnapshot(request, current, tar
                 chatMetadata: {}, powerUser: current.settings.power_user || {} },
         },
     };
+    if (isNeconyanAssistant(character) && (!material.backend || material.backend === 'chat')) {
+        const base = roleplayAccountBase(directories);
+        if (!base) throw Object.assign(new Error('Assistant tools require a protected account.'), { status: 409 });
+        snapshot.assistantTools = { id: character.extensions.neconyan_assistant.id, account: roleplayAccountStamp(base) };
+    }
     if (imageSettings && Array.isArray(imageSettings._backupContextualFilters)
         && imageSettings._backupContextualFilters.some(filter => filter?.enabled !== false && filter?.matchMode === 'LLM')) {
         const environment = createMacroEnvironment(snapshot.macros, {}, { readOnly: true });

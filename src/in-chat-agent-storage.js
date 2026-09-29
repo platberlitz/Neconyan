@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { fsyncDirectorySync, tryWriteFileSync } from './util.js';
 import { assertUntrackedRoleplayFiles, createRoleplayDirectory, readRoleplayFile, roleplayAccountBase,
     roleplayAccountStamp, roleplayHash, roleplayLease, withRoleplayAccount } from './roleplay-store.js';
-import { assertNativeMediaTargetIdle } from './generation/media-jobs.js';
+import { assertNativeMediaTargetIdle } from './generation/media-receipts.js';
 import { AGENT_STORAGE_LIMITS, getAgentRecordError, isAgentRecordId, isAgentSetupId, normalizeAgentGroup, normalizeAgentSetupPreset, serializeAgentRecord } from '../public/scripts/extensions/in-chat-agents/setup-presets.js';
 
 export function agentRecordRevision(record) {

@@ -6,6 +6,6 @@ import tools from './tools.js';
 import connections from './connections.js';
 
 // Knowledge revisions are independent of the assistant cards and artwork.
-export const KNOWLEDGE_REVISION = 3;
+export const KNOWLEDGE_REVISION = 4;
 export const topics = Object.freeze([...core, ...appearance, ...modes, ...memory, ...tools, ...connections]
     .map(topic => Object.freeze({ ...topic, verification: 'source' })));

@@ -11,6 +11,7 @@ import { finalizeConversationRewriteSubmission } from './conversation-rewrite.js
 import { finalizeConversationSelfieSubmission } from './conversation-selfie.js';
 import { MEMORY_SUMMARY_INTERVAL_MESSAGES, MEMORY_SUMMARY_MIN_MESSAGES } from '../../public/scripts/neconyan-conversation/constants.js';
 import { resolveConversationPartners } from './conversation-participants.js';
+import { reconcileConversationAssistantTools } from './conversation-assistant-tools.js';
 import { backfillConversationAutomaticAcceptances, wasConversationAutomaticOccurrenceAccepted } from './conversation-effects.js';
 import { getConversationSummarySubmissionKey, REMINDER_RETRY_DELAY_MS, resolveAutomationActivity, selectConversationReminder, selectNextConversationThreadAutomation } from './conversation-auto-policy.js';
 
@@ -142,9 +143,11 @@ export async function runConversationWorkerTick({ directoriesFor, owners, now = 
             continue;
         }
         for (const job of jobs) {
-            if (!['conversation.reply', 'conversation.summary', 'conversation.schedule', 'conversation.rewrite', 'conversation.selfie'].includes(job.type)) continue;
+            if (!['conversation.reply', 'conversation.participant', 'conversation.summary', 'conversation.schedule', 'conversation.rewrite', 'conversation.selfie'].includes(job.type)) continue;
             try {
-                if (job.stage === 'preparing' && job.state === 'waiting' && !job.cancellation?.requested && !(Number(job.coalesce?.deadline) > now)
+                if (job.type === 'conversation.participant' || job.type === 'conversation.reply' && job.children?.some(id => getJob(directories, id)?.type === 'media.assistant-tool')) {
+                    reconcileConversationAssistantTools(directories, job);
+                } else if (job.stage === 'preparing' && job.state === 'waiting' && !job.cancellation?.requested && !(Number(job.coalesce?.deadline) > now)
                     // A composer send batch must have every submitted message saved
                     // before it is finalised; a crash mid-append leaves it waiting for
                     // repair. Autonomous/reply jobs submit no composer messages.
