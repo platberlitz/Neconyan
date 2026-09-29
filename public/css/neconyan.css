@@ -3014,7 +3014,8 @@ body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell
 .ica--quick-settings :is(button, summary), #ica--bulkBar :is(button, summary) { min-height: 44px; }
 .ica--quick-settings :is(input, select, button):focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
 #ica--settings .ica--bulk-bar-top { flex-wrap: wrap; align-items: center; }
-#ica--settings .ica--card-actions { flex-wrap: wrap; }
+#ica--settings .ica--card-actions { flex-wrap: nowrap; align-items: flex-end; }
+#ica--settings .ica--card-primary-actions { flex: 1 1 auto; min-width: 0; }
 #ica--settings .ica--card-primary-actions .ica--card-btn { min-height: 44px; gap: 5px; opacity: 1; border: 1px solid var(--neco-border); border-radius: 10px; background: var(--neco-raised); }
 #ica--settings .ica--card-primary-actions .ica--btn-history[aria-pressed='true'] { background: var(--neco-ginger); color: var(--neco-on-accent); }
 

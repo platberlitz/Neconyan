@@ -3216,13 +3216,13 @@ function renderAgentList() {
                         <div class="ica--card-primary-actions">
                             ${isPathfinderAgent(agent) ? '' : `<button type="button" class="ica--card-btn ica--btn-run ica--quick-chip-apply" title="${escapeHtml(applyTitle)}" aria-label="${escapeHtml(applyAria)}"><i class="fa-solid ${applyIcon}"></i><span>${applyLabel}</span></button>`}
                             <button type="button" class="ica--card-btn ica--btn-settings" title="Agent settings"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span>Settings</span></button>
+                            <button type="button" class="ica--card-btn ica--btn-edit" title="Edit agent" aria-label="Edit agent"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span>Edit</span></button>
                             ${companionExecution ? `<button type="button" class="ica--card-btn ica--btn-connect"><i class="fa-solid fa-link" aria-hidden="true"></i><span>Batch &amp; connect</span></button>
                             <button type="button" class="ica--card-btn ica--btn-history" aria-pressed="${getCompanionConfig(agent).includeInChatHistory}" title="Use saved notes as context for future replies"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><span>${getCompanionConfig(agent).includeInChatHistory ? 'In chat history' : 'Keep in history'}</span></button>` : ''}
                         </div>
                         <details class="ica--card-secondary">
                             <summary class="ica--card-more"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i><span>More actions</span></summary>
                             <div class="ica--card-secondary-actions">
-                                <button type="button" class="ica--card-btn ica--btn-edit" title="Edit agent" aria-label="Edit agent"><i class="fa-solid fa-pen-to-square"></i><span>Edit</span></button>
                                 ${previewCompanionButton}
                                 ${previewPromptButton}
                                 ${canApplyToChosenTarget ? '<button type="button" class="ica--card-btn ica--btn-run-target ica--quick-chip-apply-target" title="Apply this agent to a chosen target: the last reply, the composer text, or a companion note" aria-label="Apply to target"><i class="fa-solid fa-crosshairs"></i><span>Apply to target</span></button>' : ''}

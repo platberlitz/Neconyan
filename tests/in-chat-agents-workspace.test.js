@@ -109,6 +109,17 @@ describe('in-chat agents workspace redesign', () => {
         expect(styleSource).toContain('.ica--card-actions .ica--card-btn:not(:has(> i:only-child))');
     });
 
+    test('keeps Edit visible on the card and opens More actions inside the card on phones', () => {
+        const primary = indexSource.slice(indexSource.indexOf('<div class="ica--card-primary-actions">'), indexSource.indexOf('<details class="ica--card-secondary">'));
+        const secondary = indexSource.slice(indexSource.indexOf('<details class="ica--card-secondary">'), indexSource.indexOf('</details>', indexSource.indexOf('<details class="ica--card-secondary">')));
+        expect(primary).toContain('ica--btn-edit');
+        expect(secondary).not.toContain('ica--btn-edit');
+        const mobileShell = readRepoFile('public/css/neconyan-mobile-shell.css');
+        expect(mobileShell).toContain('body.neconyan #ica--settings .ica--card-primary-actions { display: contents; }');
+        expect(mobileShell).toContain('body.neconyan #ica--settings .ica--card-primary-actions .ica--btn-edit { order: 2; }');
+        expect(mobileShell).toContain('body.neconyan #ica--settings .ica--card-secondary-actions { left: 0; right: auto; }');
+    });
+
     test('gives companion activity the same labelled action language', () => {
         expect(dashboardSource).toContain('Activity &amp; companion results');
         expect(dashboardSource).toContain('Run enabled companions');
