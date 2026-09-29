@@ -54,6 +54,20 @@
     <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20260929e">
     <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20260929e">
     <link href="css/neconyan-menus.css?v=20260926a" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
+    <script>
+        (function () {
+            try {
+                var shellStyle = localStorage.getItem('sb-theme');
+                if (['windows-aero', 'clean-minimal', 'macos-minimal', 'cozy-warm', 'hypr-glow', 'slate-flat'].indexOf(shellStyle) === -1) return;
+                var link = document.createElement('link');
+                link.rel = 'stylesheet';
+                link.href = 'css/shell-styles/' + shellStyle + '.css?v=20260929a';
+                link.setAttribute('data-sb-shell-style', shellStyle);
+                document.documentElement.setAttribute('data-sb-theme', shellStyle);
+                document.head.appendChild(link);
+            } catch (error) { /* Storage can be blocked; the shell applies the style after boot. */ }
+        })();
+    </script>
     <link rel="stylesheet" type="text/css" href="css/user.css">
     <!-- Scripts are loaded at the end of the body to improve page load speed -->
 </head>

@@ -463,6 +463,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20260929a';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -4933,11 +4934,59 @@ function initChatAvatarVariables() {
     document.addEventListener('sb:chat-style-updated', () => scheduleChatAvatarVariableUpdate(0));
 }
 
+function getShellStyleStylesheetHref(themeId) {
+    return `css/shell-styles/${themeId}.css?v=${NN_SHELL_STYLE_STYLESHEET_VERSION}`;
+}
+
+// Calico is the base look in the core sheets; every other shell style layers one lazy sheet on top.
+// The inline head script in index.html inserts the same link before first paint for a saved style.
+function syncShellStyleStylesheet(themeId) {
+    const links = [...document.querySelectorAll('link[data-sb-shell-style]')];
+
+    if (themeId === 'calico') {
+        links.forEach(link => link.remove());
+        return;
+    }
+
+    const href = getShellStyleStylesheetHref(themeId);
+    const current = links.find(link => link.getAttribute('href') === href);
+
+    if (current) {
+        links.filter(link => link !== current).forEach(link => link.remove());
+        return;
+    }
+
+    const stylesheet = document.createElement('link');
+    stylesheet.rel = 'stylesheet';
+    stylesheet.href = href;
+    stylesheet.dataset.sbShellStyle = themeId;
+
+    const settle = () => {
+        if (document.documentElement.dataset.sbTheme !== themeId) {
+            stylesheet.remove();
+            return;
+        }
+        document.querySelectorAll('link[data-sb-shell-style]').forEach(link => {
+            if (link !== stylesheet) link.remove();
+        });
+    };
+    stylesheet.addEventListener('load', settle, { once: true });
+    stylesheet.addEventListener('error', settle, { once: true });
+
+    const userStylesheet = document.querySelector('link[href^="css/user.css"]');
+    if (userStylesheet) {
+        userStylesheet.before(stylesheet);
+    } else {
+        document.head.append(stylesheet);
+    }
+}
+
 function setShellTheme(themeId, { persist = true } = {}) {
     const nextTheme = normalizeTheme(themeId);
 
     nnState.theme = nextTheme;
     document.documentElement.dataset.sbTheme = nextTheme;
+    syncShellStyleStylesheet(nextTheme);
 
     if (persist) {
         safeSetItem(NN_STORAGE_KEYS.theme, nextTheme);

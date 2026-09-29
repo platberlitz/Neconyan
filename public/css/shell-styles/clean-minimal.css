@@ -1,0 +1,210 @@
+/* Shell Style: Clean Minimal. Loaded at runtime only while this style is active.
+   Keeps the Calico palette and cats; strips every gradient, shadow and blur, squares
+   the corners, and marks the active state with a single ink line instead of a fill. */
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) {
+    --clean-line: color-mix(in srgb, var(--neco-ink) 14%, transparent);
+    --clean-line-strong: var(--neco-ink);
+    --neco-panel-gradient: var(--neco-surface);
+    --sb-radius-button: 3px;
+    --sb-radius-sm: 2px;
+    --sb-radius-md: 3px;
+    --sb-radius-lg: 4px;
+    --sb-radius-xl: 4px;
+    --sb-message-radius: 4px;
+    --sb-shell-shadow: none;
+}
+
+/* Wallpaper: this style's own scene, still behind the Calico paw prints and cat decorations. */
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm)::before {
+    background-image: url('../../img/neconyan/shell-clean-minimal.webp?v=20260929a');
+    opacity: .16;
+}
+
+:root[data-sb-theme='clean-minimal'][data-sb-surface-tone='light'] body.neconyan:not(.sbterm)::before {
+    opacity: .9;
+}
+
+/* Nothing floats: solid surfaces, hairline dividers, no blur anywhere. */
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(#top-bar, #sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner, #neconyan-workspace-rail, #sb-mobile-nav-content, .sb-shell-frame, .sb-shell-main, .sb-shell-nav, .sb-character-shell-nav, .sb-shell-header, dialog.popup) {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(#top-bar, #sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner) {
+    background: var(--neco-canvas);
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) #top-bar {
+    border-bottom: 1px solid var(--clean-line);
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) #sb-topbar-title {
+    font-weight: 600;
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) #sb-topbar-inner :is(button, .sb-proxy-button):is(:hover, [aria-pressed='true']) {
+    background: transparent;
+    color: var(--neco-ink);
+    box-shadow: inset 0 -2px 0 var(--clean-line-strong);
+    border-radius: 0;
+}
+
+/* Rail: same canvas as the page, one divider, active item marked by a left ink bar. */
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) #neconyan-workspace-rail {
+    background: var(--neco-canvas);
+    border-right: 1px solid var(--clean-line);
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) #neconyan-workspace-rail .neconyan-rail-section-label {
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--neco-muted);
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item) {
+    border-radius: 0;
+    background: transparent;
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item):hover {
+    background: transparent;
+    color: var(--neco-ink);
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action):is([aria-current='page'], .is-active),
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) .neconyan-mode-button[aria-pressed='true'] {
+    background: transparent;
+    color: var(--neco-ink);
+    box-shadow: inset 2px 0 0 var(--clean-line-strong);
+    font-weight: 700;
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) #sb-mobile-nav .sb-nav-item:is([aria-current='page'], .is-active) {
+    background: transparent;
+    color: var(--neco-ink);
+    box-shadow: inset 0 2px 0 var(--clean-line-strong);
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) #sb-mobile-nav-content {
+    background: var(--neco-canvas);
+    border-top: 1px solid var(--clean-line);
+    border-radius: 0;
+}
+
+/* Controls: outlined, square, monochrome. Colour is reserved for the Calico cats and links. */
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control) {
+    background: transparent;
+    border: 1px solid var(--clean-line);
+    border-radius: 3px;
+    box-shadow: none;
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control):hover {
+    background: transparent;
+    border-color: var(--clean-line-strong);
+    color: var(--neco-ink);
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) .neconyan-cat-control {
+    background: var(--neco-surface);
+    border: 1px solid var(--clean-line);
+    box-shadow: none;
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea:not(#send_textarea)) {
+    border-radius: 2px;
+    border: 1px solid var(--clean-line);
+    background: transparent;
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(input, select, textarea, button):focus-visible {
+    outline: 2px solid var(--clean-line-strong);
+    outline-offset: 1px;
+}
+
+/* Composer: a bare field with a single line under it. */
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) #sb-bottom-chat-bar {
+    --neco-surface: var(--neco-canvas);
+    border-top: 1px solid var(--clean-line);
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) #send_form {
+    border: 1px solid var(--clean-line);
+    border-radius: 4px;
+    box-shadow: none;
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) #send_form:focus-within {
+    border-color: var(--clean-line-strong);
+    box-shadow: none;
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) #send_but {
+    border-radius: 3px;
+    background: var(--neco-ink);
+    color: var(--neco-canvas);
+}
+
+/* Drawers: same canvas, hairline header, underline tabs. */
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(.sb-shell-root, #right-nav-panel).openDrawer {
+    --neco-rail: var(--neco-canvas);
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(.sb-shell-frame, .sb-shell-main, .sb-shell-nav, .sb-character-shell-nav, .sb-shell-header) {
+    background: var(--neco-canvas);
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(.sb-shell-header, .sb-shell-nav, .sb-character-shell-nav) {
+    border-bottom: 1px solid var(--clean-line);
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) .sb-shell-title {
+    font-weight: 600;
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(.sb-shell-tab, .sb-settings-tab-btn, #right-nav-panel .sb-character-editor-subtab) {
+    border-radius: 0;
+    background: transparent;
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(.sb-shell-tab, .sb-settings-tab-btn, #right-nav-panel .sb-character-editor-subtab):hover {
+    background: transparent;
+    color: var(--neco-ink);
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) .sb-shell-tab.is-active,
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) .sb-settings-tab-btn.active,
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) #right-nav-panel .sb-character-editor-subtab.is-active {
+    background: transparent;
+    color: var(--neco-ink);
+    box-shadow: inset 0 -2px 0 var(--clean-line-strong);
+    font-weight: 700;
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) .sb-shell-close {
+    background: transparent;
+    border: 1px solid var(--clean-line);
+    border-radius: 3px;
+    min-width: 44px;
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) .sb-shell-close:hover {
+    border-color: var(--clean-line-strong);
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(.sb-theme-card, .sb-settings-group, .sb-shell-callout, .sb-admin-card) {
+    background: transparent;
+    border: 1px solid var(--clean-line);
+    border-radius: 4px;
+    box-shadow: none;
+}
+
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) dialog.popup {
+    background: var(--neco-canvas);
+    border: 1px solid var(--clean-line-strong);
+    border-radius: 4px;
+}

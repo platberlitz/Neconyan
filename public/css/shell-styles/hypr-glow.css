@@ -1,0 +1,261 @@
+/* Shell Style: Hypr Glow. Loaded at runtime only while this style is active.
+   Keeps the Calico palette and cats; turns the chrome into tiled windows with gaps,
+   gradient neon borders in ginger and pink, soft glow, and monospace window labels. */
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) {
+    --hypr-a: var(--neco-ginger);
+    --hypr-b: var(--neco-pink, #efb0bd);
+    --hypr-edge: linear-gradient(135deg, var(--hypr-a), var(--hypr-b));
+    --hypr-glow: 0 0 14px color-mix(in srgb, var(--hypr-a) 40%, transparent), 0 0 30px color-mix(in srgb, var(--hypr-b) 22%, transparent);
+    --hypr-tile: color-mix(in srgb, var(--neco-rail) 86%, transparent);
+    --hypr-inner: color-mix(in srgb, var(--neco-surface) 92%, transparent);
+    --hypr-mono: 'Noto Sans Mono', ui-monospace, 'JetBrains Mono', Menlo, monospace;
+    --neco-panel-gradient: var(--hypr-tile);
+    --sb-radius-button: 8px;
+    --sb-radius-sm: 6px;
+    --sb-radius-md: 8px;
+    --sb-radius-lg: 12px;
+    --sb-radius-xl: 12px;
+    --sb-message-radius: 12px;
+}
+
+/* Wallpaper: this style's own scene, still behind the Calico paw prints and cat decorations. */
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm)::before {
+    background-image: url('../../img/neconyan/shell-hypr-glow.webp?v=20260929a');
+    opacity: .85;
+}
+
+:root[data-sb-theme='hypr-glow'][data-sb-surface-tone='light'] body.neconyan:not(.sbterm)::before {
+    opacity: .5;
+}
+
+/* Monospace labels on the window chrome, with the rice-style hash prefix on section titles. */
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) :is(.neconyan-rail-brand, .neconyan-rail-section-label, .neconyan-rail-button, .neconyan-rail-footer-action, .sb-topbar-brand, #sb-topbar-title, #sb-topbar-clock, .sb-shell-tab, .sb-shell-title, .sb-settings-tab-btn, #sb-mobile-nav .sb-nav-item) {
+    font-family: var(--hypr-mono);
+    letter-spacing: -0.01em;
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) #neconyan-workspace-rail .neconyan-rail-section-label::before {
+    content: '# ';
+    color: var(--hypr-a);
+}
+
+/* Top bar: a status-bar tile with a gradient neon underline. */
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) :is(#top-bar, #sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner) {
+    background: var(--hypr-tile);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) :is(#sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner) {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) #top-bar {
+    border-bottom: 0;
+    box-shadow: var(--hypr-glow);
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) #top-bar::after {
+    content: '';
+    display: block;
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 2px;
+    background: var(--hypr-edge);
+    pointer-events: none;
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) #sb-topbar-inner :is(button, .sb-proxy-button):is(:hover, [aria-pressed='true']) {
+    background: color-mix(in srgb, var(--hypr-a) 16%, transparent);
+    color: var(--hypr-a);
+    border-radius: 8px;
+}
+
+/* Rail: a floating tile with window gaps and a gradient border, the glow doing the separating. */
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) #neconyan-workspace-rail {
+    border: 2px solid transparent;
+    background: linear-gradient(var(--hypr-tile), var(--hypr-tile)) padding-box, var(--hypr-edge) border-box;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: var(--hypr-glow);
+    border-right-width: 2px;
+}
+
+/* The window gaps only make sense next to a desktop canvas; the phone drawer stays full height. */
+@media (min-width: 769px) {
+    :root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) #neconyan-workspace-rail {
+        inset: 8px auto 8px 8px;
+        width: calc(var(--neco-sidebar-width) - 16px);
+        border-radius: 12px;
+    }
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) #neconyan-workspace-rail .neconyan-rail-section-label {
+    color: var(--neco-muted);
+    text-transform: lowercase;
+    letter-spacing: 0.02em;
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item) {
+    border-radius: 8px;
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item):hover {
+    background: color-mix(in srgb, var(--hypr-a) 14%, transparent);
+    color: var(--hypr-a);
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item):is([aria-current='page'], .is-active),
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .neconyan-mode-button[aria-pressed='true'],
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .sb-shell-tab.is-active,
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .sb-settings-tab-btn.active,
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) #right-nav-panel .sb-character-editor-subtab.is-active {
+    background: linear-gradient(var(--neco-raised), var(--neco-raised)) padding-box, var(--hypr-edge) border-box;
+    border: 1px solid transparent;
+    box-shadow: 0 0 10px color-mix(in srgb, var(--hypr-a) 35%, transparent);
+    color: var(--neco-ink);
+    border-radius: 8px;
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) #sb-mobile-nav-content {
+    border: 2px solid transparent;
+    border-radius: 12px;
+    background: linear-gradient(var(--hypr-tile), var(--hypr-tile)) padding-box, var(--hypr-edge) border-box;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: var(--hypr-glow);
+}
+
+/* Controls: dark tiles that light up along their edges on hover. */
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control) {
+    background: var(--neco-raised);
+    border: 1px solid color-mix(in srgb, var(--hypr-a) 35%, var(--neco-border));
+    border-radius: 8px;
+    box-shadow: none;
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control):hover {
+    background: linear-gradient(var(--neco-raised), var(--neco-raised)) padding-box, var(--hypr-edge) border-box;
+    border-color: transparent;
+    box-shadow: 0 0 12px color-mix(in srgb, var(--hypr-a) 40%, transparent);
+    color: var(--neco-ink);
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .neconyan-cat-control {
+    background: var(--neco-raised);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--hypr-a) 25%, transparent);
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) :is(input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea:not(#send_textarea)) {
+    border-radius: 6px;
+    border: 1px solid color-mix(in srgb, var(--hypr-a) 30%, var(--neco-border));
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) :is(input, select, textarea, button):focus-visible {
+    outline: 2px solid var(--hypr-a);
+    outline-offset: 1px;
+    box-shadow: 0 0 10px color-mix(in srgb, var(--hypr-a) 45%, transparent);
+}
+
+/* Composer: the focused window, gradient border and glow, gap above the bottom edge. */
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) #sb-bottom-chat-bar {
+    --neco-surface: var(--hypr-tile);
+    border-radius: 12px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) #send_form {
+    --neco-surface: var(--hypr-inner);
+    border: 2px solid transparent;
+    border-radius: 12px;
+    background: linear-gradient(var(--hypr-inner), var(--hypr-inner)) padding-box, var(--hypr-edge) border-box;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: var(--hypr-glow);
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) #send_form:focus-within {
+    border-color: transparent;
+    box-shadow: 0 0 18px color-mix(in srgb, var(--hypr-a) 55%, transparent), 0 0 40px color-mix(in srgb, var(--hypr-b) 30%, transparent);
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) #send_but {
+    border-radius: 8px;
+    background: var(--hypr-edge);
+    color: var(--neco-on-accent);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--hypr-a) 50%, transparent);
+}
+
+/* Drawers: another tile, same gradient rim, tabs as small tiles. */
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) :is(.sb-shell-root, #right-nav-panel).openDrawer {
+    --neco-rail: var(--hypr-tile);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) :is(.sb-shell-frame, .sb-shell-main, .sb-shell-nav, .sb-character-shell-nav, .sb-shell-header) {
+    background: transparent;
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .sb-shell-header {
+    border-bottom: 0;
+    position: relative;
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .sb-shell-header::after {
+    content: '';
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 2px;
+    background: var(--hypr-edge);
+    pointer-events: none;
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .sb-shell-title::before {
+    content: '# ';
+    color: var(--hypr-a);
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) :is(.sb-shell-tab, .sb-settings-tab-btn, #right-nav-panel .sb-character-editor-subtab) {
+    border-radius: 8px;
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .sb-shell-tab:hover {
+    background: color-mix(in srgb, var(--hypr-a) 14%, transparent);
+    color: var(--hypr-a);
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .sb-shell-panel-scroller {
+    background: var(--hypr-inner);
+    border: 1px solid color-mix(in srgb, var(--hypr-a) 25%, var(--neco-border));
+    border-radius: 12px;
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .sb-shell-close {
+    border-radius: 8px;
+    min-width: 44px;
+    background: var(--neco-raised);
+    border: 1px solid color-mix(in srgb, var(--hypr-b) 45%, var(--neco-border));
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .sb-shell-close:hover {
+    background: color-mix(in srgb, var(--hypr-b) 25%, var(--neco-raised));
+    box-shadow: 0 0 12px color-mix(in srgb, var(--hypr-b) 50%, transparent);
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) :is(.sb-theme-card, .sb-settings-group, .sb-shell-callout, .sb-admin-card) {
+    background: linear-gradient(var(--hypr-inner), var(--hypr-inner)) padding-box, var(--hypr-edge) border-box;
+    border: 1px solid transparent;
+    border-radius: 12px;
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) dialog.popup {
+    background: linear-gradient(var(--neco-surface), var(--neco-surface)) padding-box, var(--hypr-edge) border-box;
+    border: 2px solid transparent;
+    border-radius: 12px;
+    box-shadow: var(--hypr-glow), 0 20px 50px rgb(0 0 0 / 0.5);
+}

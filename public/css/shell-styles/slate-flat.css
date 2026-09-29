@@ -1,0 +1,199 @@
+/* Shell Style: Slate Flat. Loaded at runtime only while this style is active.
+   Keeps the Calico palette and cats; cools every surface towards slate, removes all
+   gradients, blur and shadows, and uses solid accent fills with near-square corners. */
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) {
+    --slate-cool: #46556b;
+    --slate-surface: color-mix(in srgb, var(--neco-surface) 78%, var(--slate-cool));
+    --slate-rail: color-mix(in srgb, var(--neco-rail) 74%, var(--slate-cool));
+    --slate-raised: color-mix(in srgb, var(--neco-raised) 70%, var(--slate-cool));
+    --slate-border: color-mix(in srgb, var(--neco-border) 60%, var(--slate-cool));
+    --neco-panel-gradient: var(--slate-surface);
+    --sb-radius-button: 2px;
+    --sb-radius-sm: 2px;
+    --sb-radius-md: 2px;
+    --sb-radius-lg: 3px;
+    --sb-radius-xl: 3px;
+    --sb-message-radius: 3px;
+    --sb-shell-shadow: none;
+}
+
+:root[data-sb-theme='slate-flat'][data-sb-surface-tone='light'] body.neconyan:not(.sbterm) {
+    --slate-cool: #cbd5e1;
+    --slate-surface: color-mix(in srgb, var(--neco-surface) 70%, #f1f5f9);
+    --slate-raised: color-mix(in srgb, var(--neco-raised) 60%, #cbd5e1);
+    --slate-border: color-mix(in srgb, var(--neco-border) 55%, #94a3b8);
+}
+
+/* Wallpaper: this style's own scene, still behind the Calico paw prints and cat decorations. */
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm)::before {
+    background-image: url('../../img/neconyan/shell-slate-flat.webp?v=20260929a');
+    opacity: .55;
+}
+
+/* Flat everywhere: no blur, no shadow, no gradient. */
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) :is(#top-bar, #sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner, #neconyan-workspace-rail, #sb-mobile-nav-content, .sb-shell-frame, .sb-shell-main, .sb-shell-nav, .sb-character-shell-nav, .sb-shell-header, #send_form, dialog.popup) {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) :is(#top-bar, #sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner) {
+    background: var(--slate-rail);
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) #top-bar {
+    border-bottom: 3px solid var(--neco-ginger);
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) #sb-topbar-inner :is(button, .sb-proxy-button):is(:hover, [aria-pressed='true']) {
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+    border-radius: 2px;
+}
+
+/* Rail: a solid slate column; the active item is a solid accent block. */
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) #neconyan-workspace-rail {
+    background: var(--slate-rail);
+    border-right: 1px solid var(--slate-border);
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) #neconyan-workspace-rail .neconyan-rail-section-label {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 700;
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item) {
+    border-radius: 2px;
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item):hover {
+    background: var(--slate-raised);
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item):is([aria-current='page'], .is-active),
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) .neconyan-mode-button[aria-pressed='true'],
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) .sb-shell-tab.is-active,
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) .sb-settings-tab-btn.active,
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) #right-nav-panel .sb-character-editor-subtab.is-active {
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+    border-radius: 2px;
+    box-shadow: none;
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) #sb-mobile-nav-content {
+    background: var(--slate-rail);
+    border-top: 3px solid var(--neco-ginger);
+    border-radius: 0;
+}
+
+/* Controls: solid blocks, no outlines; pressed state is the accent. */
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control) {
+    background: var(--slate-raised);
+    border: 0;
+    border-radius: 2px;
+    box-shadow: none;
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control):hover {
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) .neconyan-cat-control {
+    background: var(--slate-raised);
+    box-shadow: none;
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) :is(input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea:not(#send_textarea)) {
+    border-radius: 2px;
+    border: 1px solid var(--slate-border);
+    background: var(--slate-surface);
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) :is(input, select, textarea, button):focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 0;
+}
+
+/* Composer: a solid slate block with an accent bar on top. */
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) #sb-bottom-chat-bar {
+    --neco-surface: var(--slate-rail);
+    border-radius: 0;
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) #send_form {
+    --neco-surface: var(--slate-surface);
+    border: 0;
+    border-top: 3px solid var(--neco-ginger);
+    border-radius: 3px;
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) #send_form:focus-within {
+    border-top-color: var(--neco-ginger-hover);
+    box-shadow: none;
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) #send_but {
+    border-radius: 2px;
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+/* Drawers: slate panels, header with the same accent rule, accent-filled active tab. */
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) :is(.sb-shell-root, #right-nav-panel).openDrawer {
+    --neco-rail: var(--slate-rail);
+    --neco-raised: var(--slate-raised);
+    --neco-surface: var(--slate-surface);
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) .sb-shell-header {
+    border-bottom: 3px solid var(--neco-ginger);
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) :is(.sb-shell-nav, .sb-character-shell-nav) {
+    border-bottom: 1px solid var(--slate-border);
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) :is(.sb-shell-tab, .sb-settings-tab-btn, #right-nav-panel .sb-character-editor-subtab) {
+    border-radius: 2px;
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) .sb-shell-tab:hover {
+    background: var(--slate-raised);
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) .sb-shell-panel-scroller {
+    background: var(--slate-surface);
+    border-radius: 3px;
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) .sb-shell-close {
+    border-radius: 2px;
+    min-width: 44px;
+    background: var(--slate-raised);
+    border: 0;
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) .sb-shell-close:hover {
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) :is(.sb-theme-card, .sb-settings-group, .sb-shell-callout, .sb-admin-card) {
+    background: var(--slate-raised);
+    border: 0;
+    border-left: 3px solid var(--neco-ginger);
+    border-radius: 3px;
+    box-shadow: none;
+}
+
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) dialog.popup {
+    background: var(--slate-surface);
+    border: 0;
+    border-top: 4px solid var(--neco-ginger);
+    border-radius: 3px;
+}

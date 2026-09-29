@@ -1,0 +1,178 @@
+/* Shell Style: Cozy Warm. Loaded at runtime only while this style is active.
+   Keeps the Calico palette and cats; warms every surface towards amber lamplight,
+   rounds the chrome into pills and pillows, and stitches cards with dashed thread. */
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) {
+    --cozy-amber: color-mix(in srgb, var(--neco-ginger) 55%, #f2b45a);
+    --cozy-glow: color-mix(in srgb, var(--cozy-amber) 22%, transparent);
+    --cozy-surface: color-mix(in srgb, var(--neco-surface) 88%, var(--cozy-amber));
+    --cozy-rail: color-mix(in srgb, var(--neco-rail) 90%, var(--cozy-amber));
+    --cozy-raised: color-mix(in srgb, var(--neco-raised) 84%, var(--cozy-amber));
+    --cozy-thread: color-mix(in srgb, var(--neco-ginger) 55%, var(--neco-border));
+    --cozy-shadow: 0 10px 30px color-mix(in srgb, var(--cozy-amber) 18%, rgb(0 0 0 / 0.35));
+    --neco-panel-gradient: linear-gradient(180deg, color-mix(in srgb, var(--cozy-surface) 92%, var(--cozy-amber)), var(--cozy-surface));
+    --sb-radius-button: 999px;
+    --sb-radius-sm: 10px;
+    --sb-radius-md: 14px;
+    --sb-radius-lg: 18px;
+    --sb-radius-xl: 22px;
+    --sb-message-radius: 18px;
+}
+
+:root[data-sb-theme='cozy-warm'][data-sb-surface-tone='light'] body.neconyan:not(.sbterm) {
+    --cozy-shadow: 0 10px 30px color-mix(in srgb, var(--cozy-amber) 28%, rgb(90 50 10 / 0.18));
+}
+
+/* Wallpaper: this style's own scene, still behind the Calico paw prints and cat decorations. */
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm)::before {
+    background-image: url('../../img/neconyan/shell-cozy-warm.webp?v=20260929a');
+    opacity: .7;
+}
+
+/* Lamplight pooled in the corner of the screen, behind everything. */
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm)::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    pointer-events: none;
+    background: radial-gradient(ellipse at 88% 92%, var(--cozy-glow) 0, transparent 55%);
+}
+
+/* Top bar and rail: soft warm gradients, rounded inner edges, a glow instead of a line. */
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) #top-bar {
+    border-bottom: 1px solid color-mix(in srgb, var(--cozy-amber) 35%, var(--neco-border));
+    box-shadow: 0 4px 18px var(--cozy-glow);
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) #sb-topbar-inner :is(button, .sb-proxy-button):is(:hover, [aria-pressed='true']) {
+    background: var(--cozy-glow);
+    border-radius: 999px;
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) #neconyan-workspace-rail {
+    background: linear-gradient(180deg, var(--cozy-rail), color-mix(in srgb, var(--cozy-rail) 92%, var(--cozy-amber)));
+    border-right: 1px solid color-mix(in srgb, var(--cozy-amber) 30%, var(--neco-border));
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) #neconyan-workspace-rail .neconyan-rail-section-label {
+    font-family: var(--sb-font-display);
+    letter-spacing: 0.02em;
+    color: var(--cozy-amber);
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item) {
+    border-radius: 999px;
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item):hover {
+    background: var(--cozy-glow);
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item):is([aria-current='page'], .is-active),
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) .neconyan-mode-button[aria-pressed='true'] {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--cozy-amber) 32%, var(--cozy-raised)), var(--cozy-raised));
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18), 0 2px 8px var(--cozy-glow);
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) #sb-mobile-nav-content {
+    background: var(--cozy-rail);
+    border: 1px solid color-mix(in srgb, var(--cozy-amber) 30%, var(--neco-border));
+    border-radius: 22px;
+    box-shadow: var(--cozy-shadow);
+}
+
+/* Controls: pillowy pills with a warm inner highlight. */
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control) {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--cozy-raised) 88%, #fff), var(--cozy-raised));
+    border: 1px solid color-mix(in srgb, var(--cozy-amber) 25%, var(--neco-border));
+    border-radius: 999px;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.2), 0 2px 6px rgb(0 0 0 / 0.12);
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control):hover {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--cozy-amber) 30%, var(--cozy-raised)), var(--cozy-raised));
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 3px 10px var(--cozy-glow);
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) :is(input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea:not(#send_textarea)) {
+    border-radius: 12px;
+    border: 1px solid color-mix(in srgb, var(--cozy-amber) 22%, var(--neco-border));
+}
+
+/* Composer: a quilted cushion with stitched edges and a lamplit send button. */
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) #sb-bottom-chat-bar {
+    --neco-surface: var(--cozy-surface);
+    border-radius: 18px 18px 0 0;
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) #send_form {
+    --neco-surface: var(--cozy-surface);
+    border: 2px dashed var(--cozy-thread);
+    border-radius: 22px;
+    padding: 8px;
+    box-shadow: var(--cozy-shadow), inset 0 0 0 4px var(--cozy-surface);
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) #send_form:focus-within {
+    border-color: var(--cozy-amber);
+    box-shadow: 0 0 0 4px var(--cozy-glow), var(--cozy-shadow), inset 0 0 0 4px var(--cozy-surface);
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) #send_but {
+    border-radius: 999px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--cozy-amber) 80%, #fff), var(--cozy-amber));
+    color: var(--neco-on-accent);
+    box-shadow: 0 0 14px var(--cozy-glow);
+}
+
+/* Drawers: warm rail tint, rounded panels, stitched cards inside. */
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) :is(.sb-shell-root, #right-nav-panel).openDrawer {
+    --neco-rail: var(--cozy-rail);
+    --neco-raised: var(--cozy-raised);
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) .sb-shell-header {
+    border-bottom: 1px solid color-mix(in srgb, var(--cozy-amber) 30%, var(--neco-border));
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) .sb-shell-title {
+    font-family: var(--sb-font-display);
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) :is(.sb-shell-tab, .sb-settings-tab-btn, #right-nav-panel .sb-character-editor-subtab) {
+    border-radius: 999px;
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) .sb-shell-tab.is-active,
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) .sb-settings-tab-btn.active,
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) #right-nav-panel .sb-character-editor-subtab.is-active {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--cozy-amber) 32%, var(--cozy-raised)), var(--cozy-raised));
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18);
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) .sb-shell-panel-scroller {
+    background: color-mix(in srgb, var(--cozy-surface) 70%, transparent);
+    border-radius: 18px;
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) .sb-shell-close {
+    border-radius: 999px;
+    min-width: 44px;
+    background: var(--cozy-raised);
+    border: 1px solid color-mix(in srgb, var(--cozy-amber) 25%, var(--neco-border));
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) :is(.sb-theme-card, .sb-settings-group, .sb-shell-callout, .sb-admin-card) {
+    background: color-mix(in srgb, var(--cozy-surface) 80%, transparent);
+    border: 2px dashed var(--cozy-thread);
+    border-radius: 18px;
+    box-shadow: inset 0 0 0 4px color-mix(in srgb, var(--cozy-surface) 80%, transparent);
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) dialog.popup {
+    background: var(--cozy-surface);
+    border: 2px dashed var(--cozy-thread);
+    border-radius: 22px;
+    box-shadow: var(--cozy-shadow), inset 0 0 0 5px var(--cozy-surface);
+}

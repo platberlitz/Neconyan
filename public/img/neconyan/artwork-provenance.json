@@ -68,6 +68,72 @@
       "prompt": "Use case: illustration-story\nAsset type: wide background artwork behind the entire Neconyan chat application.\nPrimary request: a cute, muted pastel pink and purple kitty-cloud background.\nScene and subject: soft clouds shaped like sleepy round cats, with tiny cat ears and simple peaceful faces, drifting through a quiet blush-pink and lilac sky.\nStyle: original soft storybook illustration, rounded shapes, gentle matte colour, very low contrast and sparse detail.\nComposition: wide 16:9 canvas, airy open centre, loosely scattered kitty clouds mainly around the outer edges. It must crop gracefully to a tall phone viewport.\nPalette and mood: muted pastel pink, dusty lilac, pale lavender and warm cream; cosy, sleepy and calm.\nConstraints: background artwork only, no UI, lettering, logos, borders or watermark. No sharp contrasts, saturated colours or busy patterns. The application will show the finished image at low opacity under its readable UI surfaces.\n",
       "generated_at": "2026-09-13T00:36:28.632729+00:00",
       "processing": "Converted to RGB WebP at quality 88; the application controls backdrop opacity in CSS."
+    },
+    {
+      "path": "output/imagegen/neconyan-shell-styles/windows-aero-sunburst.png",
+      "sha256": "d00171a8ff2aa5a1329c59043ff3d326d89f4c21279cfcf1ee322f91db2a1925",
+      "generated_at": "2026-09-29",
+      "model": "gpt-image-2.5-sunburst",
+      "references": [
+        "public/img/neconyan/kitty-clouds.webp",
+        "public/img/neconyan/sleeping-calico-left.webp"
+      ],
+      "prompt": "Desktop wallpaper, 3:2 landscape. Recreate the classic early-2000s Windows 'Bliss' wallpaper: a bright green rolling grassy hill under a vivid blue sky with soft white cumulus clouds. A gigantic sleepy calico cat (white body with large orange and dark grey-brown patches, pink inner ears, closed eyes, tiny smile) lies stretched along the crest of the hill on the right side, resting its chin on its paws, as if it were part of the landscape, tail draped down the slope. Painted in the same soft, gentle illustrated style as the first reference image (the cloud cats); the calico's markings follow the second reference image. Keep the centre-left of the image as calm open sky and grass with no details so text can sit over it. No text, no watermark, no borders."
+    },
+    {
+      "path": "output/imagegen/neconyan-shell-styles/macos-minimal-sunburst.png",
+      "sha256": "a888542385493c92f25b955ebdb85f32dc8127d3122cf1231d2c2be23dc33ea5",
+      "generated_at": "2026-09-29",
+      "model": "gpt-image-2.5-sunburst",
+      "references": [
+        "public/img/neconyan/kitty-clouds.webp",
+        "public/img/neconyan/sleeping-calico-left.webp"
+      ],
+      "prompt": "Desktop wallpaper, 3:2 landscape. In the spirit of macOS Big Sur wallpapers: layered smooth rounded mountain ridges in soft dusk gradients of peach, cream and dusty lavender, a wide clear gradient sky. On the right ridge a gigantic sleepy calico cat (white body with large orange and dark grey-brown patches, pink inner ears, closed eyes, tiny smile) is curled up asleep like it is one of the hills, tail wrapped around itself. Smooth minimal vector-like shapes with soft painterly shading, same gentle style as the first reference image (the cloud cats); the calico's markings follow the second reference image. Keep the centre of the image calm and empty so text can sit over it. No text, no watermark."
+    },
+    {
+      "path": "output/imagegen/neconyan-shell-styles/clean-minimal-sunburst.png",
+      "sha256": "39095be1c003bbaa2b852d4292d9e19b8b1aaf78f16268e60dee81b23e425a30",
+      "generated_at": "2026-09-29",
+      "model": "gpt-image-2.5-sunburst",
+      "references": [
+        "public/img/neconyan/kitty-clouds.webp",
+        "public/img/neconyan/sleeping-calico-left.webp"
+      ],
+      "prompt": "Desktop wallpaper, 3:2 landscape. Extremely minimal: an almost empty very pale warm off-white background with a barely visible soft cream vignette. In the bottom right corner a small gigantic-feeling but simple line-and-flat-colour sleepy calico cat (white body with a few orange and dark grey-brown patches, pink inner ears, closed eyes) loafs peacefully, drawn with thin clean ink outlines and flat fills, like a modern minimalist illustration. Everything else is empty space. Same gentle sensibility as the first reference image (the cloud cats); the calico's markings follow the second reference image. No text, no watermark, no borders."
+    },
+    {
+      "path": "output/imagegen/neconyan-shell-styles/cozy-warm-sunburst.png",
+      "sha256": "ca3c0c47ff3e7b5912dd8347e319c1482652a783db3806399d0bcf7594001f40",
+      "generated_at": "2026-09-29",
+      "model": "gpt-image-2.5-sunburst",
+      "references": [
+        "public/img/neconyan/kitty-clouds.webp",
+        "public/img/neconyan/sleeping-calico-left.webp"
+      ],
+      "prompt": "Desktop wallpaper, 3:2 landscape. A cosy warm evening scene: the soft-focus interior of a wooden cabin reading nook with a rain-speckled window on the far left, a glowing amber lamp, stacked books, a steaming mug and a knitted blanket. A gigantic sleepy calico cat (white body with large orange and dark grey-brown patches, pink inner ears, closed eyes, tiny smile) is curled up on the blanket at the bottom right, glowing in lamplight. Warm cocoa, parchment, honey and amber colours, soft painterly illustrated style like the first reference image (the cloud cats); the calico's markings follow the second reference image. Keep the centre of the image as a calm, low-detail warm wall so text can sit over it. No text, no watermark."
+    },
+    {
+      "path": "output/imagegen/neconyan-shell-styles/hypr-glow-sunburst.png",
+      "sha256": "9a6db4fa07c9eeeacba269878e1363c92082022b7fd76359b08dfaa3e002425e",
+      "generated_at": "2026-09-29",
+      "model": "gpt-image-2.5-sunburst",
+      "references": [
+        "public/img/neconyan/kitty-clouds.webp",
+        "public/img/neconyan/sleeping-calico-left.webp"
+      ],
+      "prompt": "Desktop wallpaper, 3:2 landscape. A dark Linux-rice style wallpaper: deep charcoal night with a low horizon of dark misty mountains, a thin glowing neon gradient line along the ridge fading from warm peach-orange to soft pink, and faint glowing grid or particle dots. A gigantic sleepy calico cat (white body with large orange and dark grey-brown patches, pink inner ears, closed eyes, tiny smile) lies along the mountain ridge on the right, softly rim-lit by the neon glow, glowing edges on its fur. Moody, clean, minimal, cinematic; painterly style like the first reference image (the cloud cats); the calico's markings follow the second reference image. Keep the centre of the image dark and calm so text can sit over it. No text, no watermark."
+    },
+    {
+      "path": "output/imagegen/neconyan-shell-styles/slate-flat-sunburst.png",
+      "sha256": "08eee310f3e6c05e4e83aaf443825d1f14a4e62bd1e7823115d49d9ed6433a67",
+      "generated_at": "2026-09-29",
+      "model": "gpt-image-2.5-sunburst",
+      "references": [
+        "public/img/neconyan/kitty-clouds.webp",
+        "public/img/neconyan/sleeping-calico-left.webp"
+      ],
+      "prompt": "Desktop wallpaper, 3:2 landscape. Flat design vector illustration: geometric low-detail slate-blue and grey-blue mountains in flat colour bands, a flat pale sky, simple flat clouds, no gradients or textures. A gigantic sleepy calico cat (white body with large orange and dark grey-brown patches, pink inner ears, closed eyes, tiny smile) rests along the mountains on the right, drawn in the same flat vector style with simple shapes and a couple of shading tones. Muted cool slate palette with the cat's warm orange as the only warm accent. Keep the centre of the image calm and low-detail so text can sit over it. The calico's markings follow the second reference image; gentle feeling like the first reference image. No text, no watermark."
     }
   ],
   "outputs": [
@@ -628,6 +694,60 @@
       "model": "gpt-image-2.5-sunburst",
       "reference": "public/img/neconyan/kitty-clouds.webp",
       "visualBrief": "A nocturnal version of the existing sleepy kitty-cloud background with a dark starry sky and an open centre."
+    },
+    {
+      "path": "public/img/neconyan/shell-windows-aero.webp",
+      "size": [1536, 1024],
+      "frames": 1,
+      "sha256": "68e68ca10b98811739b9ee719a2d0e089c541e470ca0c1c7d74b2a09dd382e3d",
+      "model": "gpt-image-2.5-sunburst",
+      "processing": "Lossy WebP quality 78 from the generated PNG, no crop.",
+      "visualBrief": "Default wallpaper for the windows-aero Shell Style: a giant sleepy calico resting in a scene that matches the style, with a calm centre for chat text."
+    },
+    {
+      "path": "public/img/neconyan/shell-macos-minimal.webp",
+      "size": [1536, 1024],
+      "frames": 1,
+      "sha256": "5ebf530832f4e7cf28a4009017c721e14ea87f617ffe5cd3023cfdfa26f5830c",
+      "model": "gpt-image-2.5-sunburst",
+      "processing": "Lossy WebP quality 78 from the generated PNG, no crop.",
+      "visualBrief": "Default wallpaper for the macos-minimal Shell Style: a giant sleepy calico resting in a scene that matches the style, with a calm centre for chat text."
+    },
+    {
+      "path": "public/img/neconyan/shell-clean-minimal.webp",
+      "size": [1536, 1024],
+      "frames": 1,
+      "sha256": "ee2c12ce98d199ccab82b2454360a9b3d1de9b44738957ae8142048729694cb0",
+      "model": "gpt-image-2.5-sunburst",
+      "processing": "Lossy WebP quality 78 from the generated PNG, no crop.",
+      "visualBrief": "Default wallpaper for the clean-minimal Shell Style: a giant sleepy calico resting in a scene that matches the style, with a calm centre for chat text."
+    },
+    {
+      "path": "public/img/neconyan/shell-cozy-warm.webp",
+      "size": [1536, 1024],
+      "frames": 1,
+      "sha256": "f71189a8712ee5a53f27900f139f3535cc3454d42c1b9807528f47f6b636919e",
+      "model": "gpt-image-2.5-sunburst",
+      "processing": "Lossy WebP quality 78 from the generated PNG, no crop.",
+      "visualBrief": "Default wallpaper for the cozy-warm Shell Style: a giant sleepy calico resting in a scene that matches the style, with a calm centre for chat text."
+    },
+    {
+      "path": "public/img/neconyan/shell-hypr-glow.webp",
+      "size": [1536, 1024],
+      "frames": 1,
+      "sha256": "7244ecae1c6c478511a292e849fb208b39f9ae26dd770eb022b413b2a538f5be",
+      "model": "gpt-image-2.5-sunburst",
+      "processing": "Lossy WebP quality 78 from the generated PNG, no crop.",
+      "visualBrief": "Default wallpaper for the hypr-glow Shell Style: a giant sleepy calico resting in a scene that matches the style, with a calm centre for chat text."
+    },
+    {
+      "path": "public/img/neconyan/shell-slate-flat.webp",
+      "size": [1536, 1024],
+      "frames": 1,
+      "sha256": "dba988d7abcd970c73323ca33d2441acaaf81d46a88f5962fd678f322b8a2476",
+      "model": "gpt-image-2.5-sunburst",
+      "processing": "Lossy WebP quality 78 from the generated PNG, no crop.",
+      "visualBrief": "Default wallpaper for the slate-flat Shell Style: a giant sleepy calico resting in a scene that matches the style, with a calm centre for chat text."
     }
   ]
 }
