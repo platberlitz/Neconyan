@@ -2556,3 +2556,203 @@ body.neconyan #WorldInfo.sb-shell-embedded-content #world_popup_entries_list .wo
 .neco-entry-folder-picks { max-height: 45dvh; overflow-y: auto; }
 .neco-entry-folder-picks > label { min-height: 44px; overflow-wrap: anywhere; }
 .neco-entry-folder-picks > label[hidden] { display: none; }
+
+/* Neconyan: Nori's Lorebooks tour and its first-visit invitation. */
+.neconyan-lorebook-tour-invite {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px 12px;
+    padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-ginger) 8%, var(--neco-surface));
+    color: var(--neco-ink);
+}
+
+.neconyan-lorebook-tour-invite[hidden] {
+    display: none;
+}
+
+.neconyan-lorebook-tour-invite p {
+    margin: 0;
+    line-height: 1.5;
+}
+
+.neconyan-lorebook-tour-invite-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    grid-column: 1 / -1;
+}
+
+.neconyan-lorebook-tour-portrait {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--neco-raised, var(--neco-surface));
+}
+
+#neconyan-lorebook-library .neconyan-lorebook-tour-button,
+.neconyan-lorebook-tour :is(.menu_button, button),
+.neconyan-lorebook-tour-invite .menu_button {
+    min-height: 44px;
+    width: auto;
+    margin: 0;
+    padding: 8px 16px;
+}
+
+#neconyan-lorebook-library .neconyan-lorebook-tour-button i {
+    color: var(--neco-ginger);
+}
+
+.neconyan-lorebook-tour .menu_button.neconyan-lorebook-tour-next:not([disabled]),
+.neconyan-lorebook-tour-invite .menu_button.neconyan-lorebook-tour-next:not([disabled]) {
+    border-color: var(--neco-ginger);
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+    font-weight: 700;
+}
+
+.neconyan-lorebook-tour .menu_button.neconyan-lorebook-tour-next:not([disabled]):hover,
+.neconyan-lorebook-tour-invite .menu_button.neconyan-lorebook-tour-next:not([disabled]):hover {
+    background: var(--neco-ginger-hover, var(--neco-ginger));
+}
+
+#neconyan-lorebook-tour.neconyan-lorebook-tour {
+    position: fixed;
+    right: max(24px, env(safe-area-inset-right));
+    bottom: max(24px, env(safe-area-inset-bottom));
+    z-index: calc(var(--sb-z-modal-content, 3100) + 20);
+    display: grid;
+    gap: 12px;
+    width: min(400px, calc(100vw - 24px));
+    max-height: min(60dvh, 520px);
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: 16px;
+    border: 1px solid var(--neco-border);
+    border-radius: 14px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    font-family: var(--mainFontFamily, inherit);
+    text-shadow: none;
+    box-shadow: 0 8px 32px color-mix(in oklch, var(--neco-charcoal, black) 30%, transparent);
+}
+
+#neconyan-lorebook-tour:focus-visible,
+.neconyan-lorebook-tour button:focus-visible,
+.neconyan-lorebook-tour-invite button:focus-visible,
+#neconyan-lorebook-library .neconyan-lorebook-tour-button:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+.neconyan-lorebook-tour-head {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 12px;
+}
+
+.neconyan-lorebook-tour-heading {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.neconyan-lorebook-tour-speaker,
+.neconyan-lorebook-tour-count {
+    color: var(--neco-muted);
+    font-size: 12px;
+}
+
+.neconyan-lorebook-tour-count {
+    color: var(--neco-ginger);
+}
+
+.neconyan-lorebook-tour-title {
+    font-family: var(--sb-font-display, inherit);
+    font-size: 18px;
+    font-weight: 400;
+    line-height: 1.25;
+}
+
+.neconyan-lorebook-tour .neconyan-lorebook-tour-close {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+}
+
+.neconyan-lorebook-tour-body p,
+.neconyan-lorebook-tour-hint {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.55;
+}
+
+.neconyan-lorebook-tour-body p + p {
+    margin-top: 8px;
+}
+
+.neconyan-lorebook-tour-hint {
+    padding-left: 12px;
+    border-left: 2px solid color-mix(in srgb, var(--neco-ginger) 60%, transparent);
+    color: var(--neco-muted);
+    font-style: italic;
+}
+
+.neconyan-lorebook-tour-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.neconyan-lorebook-tour-actions button:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.neconyan-lorebook-tour-target {
+    scroll-margin-top: 96px;
+    outline: 3px solid var(--neco-ginger);
+    outline-offset: 3px;
+    border-radius: 10px;
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--neco-ginger) 22%, transparent);
+    animation: neconyan-lorebook-tour-glow 1.6s ease-out infinite;
+}
+
+@keyframes neconyan-lorebook-tour-glow {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--neco-ginger) 45%, transparent); }
+    100% { box-shadow: 0 0 0 14px color-mix(in srgb, var(--neco-ginger) 0%, transparent); }
+}
+
+body.neconyan-lorebook-tour-active #WorldInfo {
+    padding-bottom: min(60dvh, 520px);
+}
+
+body.neconyan-lorebook-tour-active #neconyan-tour-coachmark {
+    visibility: hidden;
+}
+
+@media (max-width: 768px) {
+    #neconyan-lorebook-tour.neconyan-lorebook-tour {
+        right: max(12px, env(safe-area-inset-right));
+        left: max(12px, env(safe-area-inset-left));
+        bottom: max(12px, env(safe-area-inset-bottom));
+        width: auto;
+        max-height: 48dvh;
+        padding: 14px;
+    }
+
+    .neconyan-lorebook-tour-actions button {
+        flex: 1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .neconyan-lorebook-tour-target {
+        animation: none;
+    }
+}

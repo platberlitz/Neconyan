@@ -602,6 +602,8 @@ export function mountNeconyanLorebookWorkspace(root = document) {
     syncLorebookSelectedWorkspace(worldInfo);
     void import('./neconyan-lorebook-tools.js').then(({ mountLorebookTools }) => mountLorebookTools(worldInfo))
         .catch(error => console.error('Lorebook tools failed to load:', error));
+    void import('./neconyan-lorebook-tour.js').then(({ mountLorebookTour }) => mountLorebookTour(worldInfo))
+        .catch(error => console.error('Lorebook tour failed to load:', error));
     if (worldInfo.dataset.neconyanNativeObserver !== 'true') {
         worldInfo.dataset.neconyanNativeObserver = 'true';
         window.addEventListener('neconyan:lorebooks-updated', () => renderLorebookLibrary(library));

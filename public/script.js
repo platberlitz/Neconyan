@@ -19527,6 +19527,8 @@ jQuery(async function () {
             '.popup',
             // Dialogue Colors mounts confirmations outside their settings drawer.
             '.dc-dialog-backdrop',
+            // Nori's Lorebooks tour card floats beside the drawer it explains.
+            '#neconyan-lorebook-tour',
             '#world_popup',
             '.ui-widget',
             '.text_pole',
