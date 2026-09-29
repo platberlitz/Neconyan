@@ -62,7 +62,7 @@ describe('Neconyan Lorebook folders', () => {
             if (captured.length === 1) { started(); await new Promise(resolve => { release = resolve; }); return false; }
             return true;
         };
-        vm.runInContext('let settingsSaveQueue = Promise.resolve(); let pendingSettingsAcknowledgements = 0;\n' + saveSettings, context);
+        vm.runInContext('let settingsSaveQueue = Promise.resolve(); let pendingSettingsAcknowledgements = 0; let accountImportSettingsPause = null;\n' + saveSettings, context);
         const mutation = context.updateNeconyanLorebookFolders(metadata => moveNeconyanLorebook(metadata, 'Notes', ''));
         const failure = mutation.catch(error => error);
         await reached;

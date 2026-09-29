@@ -76,6 +76,40 @@ async function closeAll(page, browser) {
 
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
+    test(`${viewport} backup import keeps pending background settings saves from changing its destination`, async ({ app }) => {
+        const account = await app.account({ phone });
+        const { page, card } = await showImporter(account);
+        const settings = JSON.parse((await account.post('/api/settings/get')).settings);
+        settings.username = 'Imported backup user';
+        const archive = archiver('zip'); const chunks = [];
+        archive.on('data', chunk => chunks.push(chunk));
+        archive.append(JSON.stringify(settings), { name: 'default-user/settings.json' });
+        // Keep the result open until Reload, so stale settings saves are checked after completion too.
+        archive.append(Buffer.alloc(8), { name: 'default-user/characters/Damaged.png' });
+        for (let index = 0; index < 120; index++) {
+            archive.append([
+                { user_name: 'User', character_name: 'Durable Nova', chat_metadata: {} },
+                { name: 'Durable Nova', is_user: false, mes: `Imported reply ${index}` },
+            ].map(JSON.stringify).join('\n'), { name: `default-user/chats/Imported/History ${index}.jsonl` });
+        }
+        await archive.finalize();
+        await page.route('**/api/operations/submit', async route => {
+            await page.evaluate(async () => { (await import('/script.js')).saveSettingsDebounced(); });
+            await route.continue();
+        });
+        const submitted = await submit(page, () => card.getByLabel('Choose a SillyTavern backup ZIP').setInputFiles({
+            name: 'default-user.zip', mimeType: 'application/zip', buffer: Buffer.concat(chunks),
+        }));
+        await expect(card).toContainText('Saving imported files', { timeout: 60000 });
+        await expect(card.locator('progress')).not.toHaveAttribute('value', /.+/);
+        await account.settled(submitted.job.id);
+        await expect(card.getByRole('button', { name: 'Reload to use the imported data' })).toBeVisible();
+        await expect(card.locator('progress')).toBeHidden();
+        expect(await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }))).toBe(false);
+        expect(JSON.parse(await fs.readFile(path.join(app.directory, 'data/default-user/settings.json'), 'utf8')).username).toBe('Imported backup user');
+        expect(await fs.readFile(path.join(app.directory, 'data/default-user/chats/Imported/History 119.jsonl'), 'utf8')).toContain('Imported reply 119');
+    });
+
     test(`${viewport} backup ZIP skips a damaged file, imports the rest and lists the skip after reopening`, async ({ app }) => {
         const account = await app.account({ phone });
         const relative = `characters/${'LongCharacterName'.repeat(6)}.png`;

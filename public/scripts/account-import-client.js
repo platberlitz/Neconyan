@@ -28,8 +28,8 @@ export function createAccountImportClient({ client, owner, storage, upload, uuid
     return async (input, { file, prepareInput = value => value, ...options } = {}) => {
         try {
             const record = await client.run('account-import', input, { ...options, scope: `account-import:${input.mode}`, prepareInput: async value => {
-                const prepared = await prepareInput(value);
-                return prepared.mode === 'zip' ? { mode: 'zip', inputId: await retainedZip(file) } : prepared;
+                const prepared = value.mode === 'zip' ? { mode: 'zip', inputId: await retainedZip(file) } : value;
+                return prepareInput(prepared);
             } });
             if (input.mode === 'zip') storage.removeItem(storageKey);
             return record;
