@@ -2,6 +2,23 @@
 
 ## Release preparation: 1.0.0
 
+### 30 September: 1.0.5 released from main, staging moves to 1.0.6
+
+`main` was fast-forwarded to staging at `3d5c367` without a merge commit.
+All 373 unit-test suites passed (4,825 tests, two skipped), all 1,542 server
+tests passed, and root lint, tests-folder lint, frontend budgets, the production
+build and Bun server initialisation passed. Release E2E run `36687808683`
+passed all 16 browser-test groups without a workflow rerun.
+
+Android run `36687808404` passed the signed build and Android 11 and 15 emulator
+lifecycle checks. The downloaded checksums, embedded payloads, provenance for
+`3d5c367989730d2915df436cd2de7badf4be1a27`, signing-certificate records and
+16 KiB alignment checks were verified. All source ZIP contents and file modes
+match the release commit. Neconyan 1.0.5 is published at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.0.5 with the annotated
+tag `v1.0.5` and all nine release assets. It has not been tested on a physical
+phone. Staging now moves to `1.0.6`, including the version displayed in the app.
+
 ### 30 September: 1.0.3 released from main, staging moves to 1.0.4
 
 `main` was fast-forwarded to staging at `100f6b0`, then both branches received
