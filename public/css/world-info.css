@@ -1807,6 +1807,12 @@ body.neconyan #WorldInfo.sb-shell-embedded-content #world_popup_entries_list .WI
     font-size: 13px;
 }
 
+/* One 18px line centred in the 44px box; the compact 2px padding left titles hugging the top edge. */
+body.neconyan #WorldInfo.sb-shell-embedded-content #world_popup_entries_list .WIEntryTitleAndStatus textarea {
+    padding-block: 12px;
+    line-height: 18px;
+}
+
 body.neconyan #WorldInfo.sb-shell-embedded-content #world_popup_entries_list .world_entry .killSwitch {
     width: auto;
     min-width: 44px;
