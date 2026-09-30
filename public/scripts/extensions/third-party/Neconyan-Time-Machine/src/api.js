@@ -175,7 +175,7 @@ export async function captureLorebook(name, data, { force = false } = {}) {
 /**
  * Every named preset, from every API family that has them.
  *
- * One call: /api/settings/get assembles all of them from their directories, so
+ * One call: the presets section of /api/settings/get assembles all of them, so
  * this is the whole preset collection in a single round trip rather than one per
  * preset. The four completion families return file CONTENTS as strings beside a
  * parallel array of names; instruct, context, sysprompt and reasoning return
@@ -184,7 +184,7 @@ export async function captureLorebook(name, data, { force = false } = {}) {
  * @returns {Promise<{apiId: string, name: string, preset: object}[]>}
  */
 export async function readAllPresets() {
-    const response = await post('/api/settings/get', {});
+    const response = await post('/api/settings/get', { sections: ['presets'] });
     const settings = await response.json();
     const presets = [];
 

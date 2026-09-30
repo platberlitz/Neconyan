@@ -56,7 +56,7 @@ const loadSets = async () => {
     const response = await fetch('/api/settings/get', {
         method: 'POST',
         headers: getRequestHeaders(),
-        body: JSON.stringify({}),
+        body: JSON.stringify({ sections: ['quickReplies'] }),
     });
 
     if (response.ok) {

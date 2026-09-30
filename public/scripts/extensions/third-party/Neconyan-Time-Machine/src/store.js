@@ -167,8 +167,13 @@ async function post(url, body) {
 }
 
 async function readPersistedSettings() {
-    const response = await post('/api/settings/get', { settingsOnly: true });
+    // Only this module's block is needed to compare commits; the whole settings
+    // file can be several megabytes. Older servers answer with the full file.
+    const response = await post('/api/settings/get', { extensionSettings: [MODULE_NAME] });
     const body = await response.json();
+    if (isPlainObject(body?.extension_settings)) {
+        return { extension_settings: body.extension_settings };
+    }
     const source = typeof body?.settings === 'string' ? JSON.parse(body.settings) : body?.settings ?? body;
     if (!isPlainObject(source)) {
         throw new Error('Neconyan returned malformed settings');

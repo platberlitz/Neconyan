@@ -195,7 +195,7 @@ function pairUp(payloads, names) {
  * is what publishing has to check against.
  */
 export async function readPresetCatalog({ signal } = {}) {
-    const data = await requestJson('/api/settings/get', {}, { signal });
+    const data = await requestJson('/api/settings/get', { sections: ['presets'] }, { signal });
     return {
         openai: pairUp(data.openai_settings ?? [], data.openai_setting_names ?? []),
         textgenerationwebui: pairUp(data.textgenerationwebui_presets ?? [], data.textgenerationwebui_preset_names ?? []),

@@ -1534,7 +1534,9 @@ async function fetchExtensionSettingsFromServer() {
     const response = await fetch('/api/settings/get', {
         method: 'POST',
         headers: getRequestHeaders(),
-        body: JSON.stringify({}),
+        // Only this extension's block: auto-sync polls every few seconds and the
+        // whole settings file can be several megabytes.
+        body: JSON.stringify({ extensionSettings: [MODULE_NAME] }),
         cache: 'no-cache',
     });
 
@@ -1543,6 +1545,7 @@ async function fetchExtensionSettingsFromServer() {
     }
 
     const data = await response.json();
+    if (data?.extension_settings && typeof data.extension_settings === 'object') return data.extension_settings;
     if (data.result === 'file not find' || !data.settings) return null;
 
     let parsedSettings = null;
@@ -3030,6 +3033,11 @@ function enumerateLegacyColorStorageKeys() {
     return keys;
 }
 
+function hasLegacyLocalStorageSettings() {
+    return [LEGACY_GLOBAL_SETTINGS_KEY, GLOBAL_SETTINGS_V2_KEY, PRESETS_KEY, CUSTOM_PALETTE_KEY, CUSTOM_PALETTE_META_KEY, LEGEND_POSITION_KEY]
+        .some(key => localStorage.getItem(key) !== null);
+}
+
 export function migrateLegacyLocalStorageIfNeeded() {
     const existing = extension_settings?.[MODULE_NAME];
     const unsupported = unsupportedSchemaVersionResult(existing, { moduleRecord: true });
@@ -3050,6 +3058,20 @@ export function migrateLegacyLocalStorageIfNeeded() {
     }
 
     const record = getAutoSyncRecord(true);
+    // A browser with no old local data has nothing to move. Marking it done without the
+    // migration stamp avoids a whole-settings save and read-back on every fresh browser.
+    if (!legacyColorKeys.length && !hasLegacyLocalStorageSettings()
+        && isPlainObject(record.globalSettings) && Object.keys(record.globalSettings).length) {
+        applyStoredSettingsSnapshot(readStoredGlobalSettings(record), { includeColorSchemaVersion: false });
+        if (identitySchemaMigrated) persistModuleStore(record);
+        try {
+            localStorage.setItem(LEGACY_LOCAL_STORAGE_MIGRATION_KEY, 'true');
+        } catch {
+            // Not fatal: the next load checks again and still finds nothing to move.
+        }
+        return { ok: true, migrated: false };
+    }
+
     const identityMigration = createStorageIdentityMigration();
     let legacyPaletteMappings = null;
 

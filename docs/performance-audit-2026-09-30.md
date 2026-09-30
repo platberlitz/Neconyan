@@ -35,6 +35,9 @@ Three things combined to cause it:
 
 - Skip unchanged automatic preset snapshots before entering the snapshot store. Batch repeated preset-change notifications into one capture after three quiet seconds. Explicit captures still check stored snapshots and can repair missing files.
 - Let settings-confirmation requests retrieve only the current settings file. These requests still read the latest file from disk, but no longer enumerate and return every preset, theme and other catalogue. Normal startup retains the full settings response.
+- Added two narrower settings requests: `sections` returns only presets, lorebook names, Quick Reply sets or agents, and `extensionSettings` returns only the named extension blocks. Agents, Quick Reply, lorebooks, Prompting Lab, Time Machine, Quick Image Gen and Dialogue Colors now use them, with a fallback for older servers. On a copy of a large real account (a 5.5 MB settings file) this cut settings downloads after startup from about 29 MB per page load to about 2 MB.
+- Dialogue Colors no longer saves the whole settings file and reads it back on every fresh browser that has no old local colour data to move.
+- Conversation mode now stores per-character settings only where they differ from the defaults. It used to write a full copy of every default, including the long chat prompt, into every character's entry. Characters that keep a default value now follow future default changes.
 
 ### Time to first token
 
@@ -102,6 +105,8 @@ In the 120-message test, five to six seconds still pass between pressing Enter a
 - Removing the oldest rendered message when a new one arrives costs 0.35 to 0.5 seconds of style work. Dropping `:has()`, sibling-combinator, position (`:nth-child` and similar), attribute, `.mes`, `#chat` and `:not()` rules in turn did not remove it, so no single stylesheet rule is responsible. The chat's scroll-position capture and restore make the browser do that work twice per send.
 - Before submitting, the browser waits for message statistics, saves the chat twice (about 130 KB each for this chat) and saves settings (about 170 KB). The saves protect replies that finish after the tab closes, so they were kept.
 - The Prompting Lab reloads its saved cases several times during a send.
+- The settings save before each send uploads the whole settings file, so its size follows the account: about 170 KB in the test, several megabytes on a large account.
+- With auto-sync on, Dialogue Colors still reads its own settings block every 5 seconds (every 30 while the tab is hidden). That block holds every saved colour and was about 650 KB on the large account tested.
 - Agents' tracker button, the stop button and character colour detection each read computed styles in response to message events, which forces a style pass each time.
 - After a reply, the server re-reads and parses its job list on every check. Each job keeps its full request for crash recovery (about 92 KB each here), so this parsing grows with job history.
 

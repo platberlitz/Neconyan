@@ -144,6 +144,8 @@ let agents = [];
 /** @type {Map<string, (agent: InChatAgent) => boolean>} */
 const runtimeAgentFilters = new Map();
 
+const AGENT_LIBRARY_REQUEST_BODY = JSON.stringify({ sections: ['agents'] });
+
 /** @type {AgentGroup[]} */
 let builtinGroups = [];
 
@@ -1824,7 +1826,7 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
         try {
             if (await saveSettings(0, { returnResult: true }) !== true) throw new Error('Save the current settings before loading a setup.');
             assertCurrent();
-            const response = await fetch('/api/settings/get', { method: 'POST', headers: getRequestHeaders(), body: '{}' });
+            const response = await fetch('/api/settings/get', { method: 'POST', headers: getRequestHeaders(), body: AGENT_LIBRARY_REQUEST_BODY });
             if (!response.ok) throw new Error('The current agent library could not be read.');
             const data = await response.json();
             assertCurrent();
@@ -1885,7 +1887,7 @@ export function applyAgentSetupPreset(rawPreset, { isCurrent = () => true, canPe
                 // Re-read the server library so rollback only touches records that still hold this operation's write.
                 let currentById = null;
                 try {
-                    const currentResponse = await fetch('/api/settings/get', { method: 'POST', headers: getRequestHeaders(), body: '{}' });
+                    const currentResponse = await fetch('/api/settings/get', { method: 'POST', headers: getRequestHeaders(), body: AGENT_LIBRARY_REQUEST_BODY });
                     const currentData = currentResponse.ok ? await currentResponse.json() : null;
                     if (Array.isArray(currentData?.inChatAgents) && !currentData.inChatAgentLoadErrors?.length
                         && (context.account === null || currentData.inChatAgentAccount === undefined || currentData.inChatAgentAccount === context.account)) {

@@ -529,6 +529,23 @@ export function pickConversationSettings(settings, keys) {
     }, {});
 }
 
+/**
+ * Picks thread settings and drops values equal to the defaults, which every reader merges back in.
+ * Storing full copies made each character carry every default prompt in settings.json.
+ * @param {object} settings Normalised settings.
+ * @param {Iterable<string>} keys Keys the thread may store.
+ * @returns {object} Only the values that differ from DEFAULT_SETTINGS.
+ */
+export function compactConversationSettings(settings, keys) {
+    const picked = pickConversationSettings(settings, keys);
+    for (const key of Object.keys(picked)) {
+        if (Object.is(picked[key], DEFAULT_SETTINGS[key])) {
+            delete picked[key];
+        }
+    }
+    return picked;
+}
+
 export function normalizeGroupConversationSettings(settings = {}) {
     let parsedSource = {};
     try {
@@ -919,7 +936,7 @@ export function getCharacterConversationStore(avatar, { create = true, personaId
     }
     if (!store.characters[storeKey]) {
         store.characters[storeKey] = {
-            settings: { ...DEFAULT_SETTINGS },
+            settings: {},
             schedule: null,
             activeBranchId: DEFAULT_BRANCH_ID,
             branches: {
@@ -931,7 +948,7 @@ export function getCharacterConversationStore(avatar, { create = true, personaId
     const characterStore = store.characters[storeKey];
     const normalizedSettings = safeParseSettings(characterStore.settings);
     const migratedGlobalIdle = migrateGlobalIdleActionSettings(store, normalizedSettings);
-    characterStore.settings = pickConversationSettings(
+    characterStore.settings = compactConversationSettings(
         normalizedSettings,
         parseConversationThreadKey(storeKey).groupId ? CHARACTER_CONVERSATION_SETTINGS_KEYS : THREAD_CONVERSATION_SETTINGS_KEYS,
     );

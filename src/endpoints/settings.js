@@ -302,64 +302,124 @@ router.post('/save', function (request, response) {
     }
 });
 
+const SETTINGS_SECTION_NAMES = new Set(['settings', 'presets', 'worlds', 'quickReplies', 'agents']);
+
+/**
+ * Reads the parts of the settings bootstrap one caller asked for. Each section
+ * touches its own directories only, so a caller that needs the agent list does
+ * not also re-read settings.json and every preset on disk.
+ * @param {import('express').Request} request
+ * @param {Set<string>} sections
+ */
+function readSettingsSections(request, sections) {
+    const directories = request.user.directories;
+    const result = {};
+
+    if (sections.has('settings')) {
+        result.settings = fs.readFileSync(path.join(directories.root, SETTINGS_FILE), 'utf8');
+    }
+
+    if (sections.has('presets')) {
+        const families = [
+            ['novelai_settings', 'novelai_setting_names', directories.novelAI_Settings],
+            ['openai_settings', 'openai_setting_names', directories.openAI_Settings],
+            ['textgenerationwebui_presets', 'textgenerationwebui_preset_names', directories.textGen_Settings],
+            ['koboldai_settings', 'koboldai_setting_names', directories.koboldAI_Settings],
+        ];
+        for (const [contentsKey, namesKey, directory] of families) {
+            const { fileContents, fileNames } = readPresetsFromDirectory(directory, {
+                sortFunction: sortByName(directory), removeFileExtension: true,
+            });
+            result[contentsKey] = fileContents;
+            result[namesKey] = fileNames;
+        }
+        result.instruct = readAndParseFromDirectory(directories.instruct);
+        result.context = readAndParseFromDirectory(directories.context);
+        result.sysprompt = readAndParseFromDirectory(directories.sysprompt);
+        result.reasoning = readAndParseFromDirectory(directories.reasoning);
+    }
+
+    if (sections.has('worlds')) {
+        result.world_names = fs
+            .readdirSync(directories.worlds)
+            .filter(file => path.extname(file).toLowerCase() === '.json')
+            .sort((a, b) => a.localeCompare(b))
+            .map(item => path.parse(item).name);
+    }
+
+    if (sections.has('quickReplies')) {
+        result.quickReplyPresets = readAndParseFromDirectory(directories.quickreplies);
+    }
+
+    if (sections.has('agents')) {
+        const agentLibrary = readAgentCollection(directories.inChatAgents, 'agent',
+            { owner: request.user.profile.handle, directories });
+        result.inChatAgents = agentLibrary.records;
+        result.inChatAgentLoadErrors = agentLibrary.errors;
+        result.inChatAgentRevisions = agentLibrary.revisions;
+        result.inChatAgentAccount = request.user.profile.handle;
+    }
+
+    return result;
+}
+
+/**
+ * Reads the saved settings of the named extensions from the current settings
+ * file. Extensions that poll or confirm their own block use this so they do not
+ * download the whole settings file, which can run to several megabytes.
+ * @param {import('express').Request} request
+ * @param {string[]} names
+ * @returns {Record<string, any>} Only the names that exist in the file.
+ */
+function readExtensionSettings(request, names) {
+    const text = fs.readFileSync(path.join(request.user.directories.root, SETTINGS_FILE), 'utf8');
+    const source = JSON.parse(text)?.extension_settings;
+    const result = {};
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return result;
+    for (const name of names) {
+        if (Object.hasOwn(source, name)) result[name] = source[name];
+    }
+    return result;
+}
+
 // Wintermute's code
 router.post('/get', (request, response) => {
-    let settings;
+    // Persistence checks need the current on-disk version only; extensions can
+    // name the sections they use. Without either field the full bootstrap is sent.
+    const extensionNames = request.body?.extensionSettings;
+    if (Array.isArray(extensionNames)) {
+        if (!extensionNames.length || extensionNames.some(name => typeof name !== 'string' || !name)) {
+            return response.status(400).send({ error: 'unknown_settings_section' });
+        }
+        try {
+            return response.send({ extension_settings: readExtensionSettings(request, extensionNames) });
+        } catch (error) {
+            console.error('Extension settings could not be read:', error);
+            return response.sendStatus(500);
+        }
+    }
+
+    const requested = request.body?.settingsOnly === true ? ['settings'] : request.body?.sections;
+    if (Array.isArray(requested)) {
+        if (!requested.length || requested.some(name => !SETTINGS_SECTION_NAMES.has(name))) {
+            return response.status(400).send({ error: 'unknown_settings_section' });
+        }
+        try {
+            return response.send(readSettingsSections(request, new Set(requested)));
+        } catch (error) {
+            console.error('Settings sections could not be read:', error);
+            return response.sendStatus(500);
+        }
+    }
+
+    let full;
     try {
-        const pathToSettings = path.join(request.user.directories.root, SETTINGS_FILE);
-        settings = fs.readFileSync(pathToSettings, 'utf8');
+        full = readSettingsSections(request, new Set(['settings']));
     } catch (e) {
         return response.sendStatus(500);
     }
+    Object.assign(full, readSettingsSections(request, new Set(['presets', 'worlds', 'quickReplies', 'agents'])));
 
-    // Persistence checks need the current on-disk version, not every preset,
-    // lorebook name and agent collection. Keep the full bootstrap response as default.
-    if (request.body?.settingsOnly === true) {
-        return response.send({ settings });
-    }
-
-    // NovelAI Settings
-    const { fileContents: novelai_settings, fileNames: novelai_setting_names }
-        = readPresetsFromDirectory(request.user.directories.novelAI_Settings, {
-            sortFunction: sortByName(request.user.directories.novelAI_Settings),
-            removeFileExtension: true,
-        });
-
-    // OpenAI Settings
-    const { fileContents: openai_settings, fileNames: openai_setting_names }
-        = readPresetsFromDirectory(request.user.directories.openAI_Settings, {
-            sortFunction: sortByName(request.user.directories.openAI_Settings), removeFileExtension: true,
-        });
-
-    // TextGenerationWebUI Settings
-    const { fileContents: textgenerationwebui_presets, fileNames: textgenerationwebui_preset_names }
-        = readPresetsFromDirectory(request.user.directories.textGen_Settings, {
-            sortFunction: sortByName(request.user.directories.textGen_Settings), removeFileExtension: true,
-        });
-
-    //Kobold
-    const { fileContents: koboldai_settings, fileNames: koboldai_setting_names }
-        = readPresetsFromDirectory(request.user.directories.koboldAI_Settings, {
-            sortFunction: sortByName(request.user.directories.koboldAI_Settings), removeFileExtension: true,
-        });
-
-    const worldFiles = fs
-        .readdirSync(request.user.directories.worlds)
-        .filter(file => path.extname(file).toLowerCase() === '.json')
-        .sort((a, b) => a.localeCompare(b));
-    const world_names = worldFiles.map(item => path.parse(item).name);
-
-    const themes = readAndParseFromDirectory(request.user.directories.themes);
-    const movingUIPresets = readAndParseFromDirectory(request.user.directories.movingUI);
-    const quickReplyPresets = readAndParseFromDirectory(request.user.directories.quickreplies);
-
-    const instruct = readAndParseFromDirectory(request.user.directories.instruct);
-    const context = readAndParseFromDirectory(request.user.directories.context);
-    const sysprompt = readAndParseFromDirectory(request.user.directories.sysprompt);
-    const reasoning = readAndParseFromDirectory(request.user.directories.reasoning);
-    const agentLibrary = readAgentCollection(request.user.directories.inChatAgents, 'agent',
-        { owner: request.user.profile.handle, directories: request.user.directories });
-    const inChatAgents = agentLibrary.records;
     let roleplayAccount = null;
     try {
         roleplayAccount = withRoleplayAccount({ owner: request.user.profile.handle, directories: request.user.directories }, null, (_lease, current) => current);
@@ -368,27 +428,27 @@ router.post('/get', (request, response) => {
     }
 
     response.send({
-        settings,
-        koboldai_settings,
-        koboldai_setting_names,
-        world_names,
-        novelai_settings,
-        novelai_setting_names,
-        openai_settings,
-        openai_setting_names,
-        textgenerationwebui_presets,
-        textgenerationwebui_preset_names,
-        themes,
-        movingUIPresets,
-        quickReplyPresets,
-        instruct,
-        context,
-        sysprompt,
-        reasoning,
-        inChatAgents,
-        inChatAgentLoadErrors: agentLibrary.errors,
-        inChatAgentRevisions: agentLibrary.revisions,
-        inChatAgentAccount: request.user.profile.handle,
+        settings: full.settings,
+        koboldai_settings: full.koboldai_settings,
+        koboldai_setting_names: full.koboldai_setting_names,
+        world_names: full.world_names,
+        novelai_settings: full.novelai_settings,
+        novelai_setting_names: full.novelai_setting_names,
+        openai_settings: full.openai_settings,
+        openai_setting_names: full.openai_setting_names,
+        textgenerationwebui_presets: full.textgenerationwebui_presets,
+        textgenerationwebui_preset_names: full.textgenerationwebui_preset_names,
+        themes: readAndParseFromDirectory(request.user.directories.themes),
+        movingUIPresets: readAndParseFromDirectory(request.user.directories.movingUI),
+        quickReplyPresets: full.quickReplyPresets,
+        instruct: full.instruct,
+        context: full.context,
+        sysprompt: full.sysprompt,
+        reasoning: full.reasoning,
+        inChatAgents: full.inChatAgents,
+        inChatAgentLoadErrors: full.inChatAgentLoadErrors,
+        inChatAgentRevisions: full.inChatAgentRevisions,
+        inChatAgentAccount: full.inChatAgentAccount,
         roleplayAccount,
         enable_extensions: ENABLE_EXTENSIONS,
         enable_extensions_auto_update: ENABLE_EXTENSIONS_AUTO_UPDATE,

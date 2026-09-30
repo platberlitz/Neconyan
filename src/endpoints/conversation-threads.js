@@ -6,7 +6,6 @@
 
 import {
     DEFAULT_BRANCH_ID,
-    DEFAULT_SETTINGS,
     MAX_THREAD_MESSAGES,
 } from '../../public/scripts/neconyan-conversation/constants.js';
 import { safeParseThread } from '../../public/scripts/neconyan-conversation/thread-store-utils.js';
@@ -432,7 +431,7 @@ export function getConversationThreadStore(store, avatar, groupId = '', { create
         }
 
         store.characters[threadKey] = {
-            settings: { ...DEFAULT_SETTINGS },
+            settings: {},
             schedule: null,
             activeBranchId: DEFAULT_BRANCH_ID,
             branches: {

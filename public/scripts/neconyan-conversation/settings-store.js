@@ -25,6 +25,7 @@ import {
     getGroupConversationSettings,
     normalizeConversationBranch,
     parseConversationThreadKey,
+    compactConversationSettings,
     parsePositiveInt,
     persistConversationStore,
     pickConversationSettings,
@@ -289,8 +290,8 @@ export function saveSettings(avatar, settings, { groupId = getConversationGroupI
     getConversationStore().settings = normalizeGlobalConversationSettings(normalizedSettings);
     if (threadStore) {
         threadStore.settings = groupId
-            ? pickConversationSettings(normalizedSettings, CHARACTER_CONVERSATION_SETTINGS_KEYS)
-            : pickConversationSettings(normalizedSettings, THREAD_CONVERSATION_SETTINGS_KEYS);
+            ? compactConversationSettings(normalizedSettings, CHARACTER_CONVERSATION_SETTINGS_KEYS)
+            : compactConversationSettings(normalizedSettings, THREAD_CONVERSATION_SETTINGS_KEYS);
     }
     invalidateConversationUsageCache();
     persistConversationStore();

@@ -2253,7 +2253,7 @@ export async function updateWorldInfoList() {
     const result = await fetch('/api/settings/get', {
         method: 'POST',
         headers: getRequestHeaders(),
-        body: JSON.stringify({}),
+        body: JSON.stringify({ sections: ['worlds'] }),
     });
 
     if (result.ok) {

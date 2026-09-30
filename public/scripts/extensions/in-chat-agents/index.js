@@ -335,7 +335,7 @@ async function refreshAgentSetupList() {
 
 async function fetchAgentLibrary() {
     const handle = getCurrentUserHandle();
-    const response = await fetch('/api/settings/get', { method: 'POST', headers: getRequestHeaders(), body: '{}' });
+    const response = await fetch('/api/settings/get', { method: 'POST', headers: getRequestHeaders(), body: JSON.stringify({ sections: ['agents'] }) });
     if (!response.ok) throw new Error('The agent library could not be loaded. Try again.');
     const settings = await response.json();
     if (handle !== getCurrentUserHandle()) throw new Error('The active account changed.');
