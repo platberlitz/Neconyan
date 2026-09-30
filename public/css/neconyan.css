@@ -255,10 +255,12 @@ body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer {
     border-radius: 0 !important; background: var(--neco-rail) !important; box-shadow: none !important;
     transform: none !important; animation: none !important; pointer-events: auto !important;
 }
-body.neconyan:has(:is(.sb-shell-root, #right-nav-panel).openDrawer) #sheld {
+/* Anchored on the drawer holder, not body: a body-level :has() here made Chromium restyle the
+   whole page on every small DOM change (about 350ms each with a long chat open). */
+body.neconyan :where(#top-settings-holder):has(:is(.sb-shell-root, #right-nav-panel).openDrawer) ~ #sheld {
     visibility: hidden !important; pointer-events: none !important;
 }
-body.neconyan:has(:is(.sb-shell-root, #right-nav-panel).openDrawer) #neconyan-home-host {
+body.neconyan :where(#top-settings-holder):has(:is(.sb-shell-root, #right-nav-panel).openDrawer) ~ :where(#sheld) #neconyan-home-host {
     visibility: hidden !important; pointer-events: none !important;
 }
 body.neconyan #left-nav-panel[data-sb-active-tab='agents'] .sb-shell-nav-wrapper { display: none; }
@@ -432,9 +434,9 @@ body.neconyan.neconyan-home-visible #sheld { display: flex; flex-direction: colu
 body.neconyan #neconyan-home-host { display: none; }
 body.neconyan.neconyan-home-visible #neconyan-home-host { display: block; flex: 1; min-height: 0; background: var(--neco-canvas); overflow: auto; overscroll-behavior: contain; }
 body.neconyan.neconyan-home-visible #sheld > :not(#neconyan-home-host) { display: none !important; }
-/* Hide chrome until Home or clearChat removes the boot skeleton. */
-body.neconyan:has(#neconyan-home-skeleton) :is(#top-bar, #form_sheld, #ica--tracker-panel, #ica--tracker-panel-handle) { visibility: hidden !important; }
-body.neconyan:has(#neconyan-home-skeleton) #sheld { background: var(--neco-canvas); }
+/* Hide chrome until Home or clearChat removes the boot skeleton; welcome-screen.js drops the class. */
+body.neconyan.neconyan-home-booting :is(#top-bar, #form_sheld, #ica--tracker-panel, #ica--tracker-panel-handle) { visibility: hidden !important; }
+body.neconyan.neconyan-home-booting #sheld { background: var(--neco-canvas); }
 body.neconyan .welcomePanel {
     width: 100%; max-width: 900px; margin: 0 auto; padding: 72px 32px 40px; gap: 36px;
     border: 0; border-radius: 0; background: transparent; box-shadow: none; text-shadow: none;
@@ -1648,12 +1650,12 @@ body.neconyan #right-nav-panel .sb-character-library-primary-actions > #characte
         width: min(400px, 38vw) !important;
         border-left: 1px solid var(--neco-border) !important;
     }
-    body.neconyan:has(#right-nav-panel.openDrawer.pinnedOpen) #sheld {
+    body.neconyan :where(#top-settings-holder):has(#right-nav-panel.openDrawer.pinnedOpen) ~ #sheld {
         right: min(400px, 38vw);
         visibility: visible !important;
         pointer-events: auto !important;
     }
-    body.neconyan:has(#right-nav-panel.openDrawer.pinnedOpen) #neconyan-home-host {
+    body.neconyan :where(#top-settings-holder):has(#right-nav-panel.openDrawer.pinnedOpen) ~ :where(#sheld) #neconyan-home-host {
         visibility: visible !important;
         pointer-events: auto !important;
     }

@@ -323,6 +323,43 @@ describe('assistant shortcuts without shipped characters', () => {
         await context.openPermanentAssistantChat();
         expect(calls).toEqual([['select', 0], ['new', { deleteCurrentChat: false }]]);
     });
+    test('shows the chrome only once the boot skeleton leaves #chat', () => {
+        const bodyClasses = new Set(['neconyan', 'neconyan-home-booting']);
+        const elements = new Map([['chat', { id: 'chat' }], ['neconyan-home-skeleton', { id: 'neconyan-home-skeleton' }]]);
+        const observers = [];
+        const context = vm.createContext({
+            document: {
+                body: { classList: { remove: name => bodyClasses.delete(name) } },
+                getElementById: id => elements.get(id) ?? null,
+            },
+            MutationObserver: class {
+                constructor(callback) { this.callback = callback; this.disconnected = false; observers.push(this); }
+                observe(target, options) { this.target = target; this.options = options; }
+                disconnect() { this.disconnected = true; }
+            },
+        });
+        vm.runInContext(extract('releaseChromeAfterBootSkeleton'), context);
+
+        context.releaseChromeAfterBootSkeleton();
+        expect(bodyClasses.has('neconyan-home-booting')).toBe(true);
+        expect(observers).toHaveLength(1);
+        expect(observers[0].target).toBe(elements.get('chat'));
+        expect({ ...observers[0].options }).toEqual({ childList: true });
+
+        observers[0].callback([]);
+        expect(bodyClasses.has('neconyan-home-booting')).toBe(true);
+        expect(observers[0].disconnected).toBe(false);
+
+        elements.delete('neconyan-home-skeleton');
+        observers[0].callback([]);
+        expect(bodyClasses.has('neconyan-home-booting')).toBe(false);
+        expect(observers[0].disconnected).toBe(true);
+
+        bodyClasses.add('neconyan-home-booting');
+        context.releaseChromeAfterBootSkeleton();
+        expect(bodyClasses.has('neconyan-home-booting')).toBe(false);
+        expect(observers).toHaveLength(1);
+    });
     for (const activeChat of [false, true]) {
         test(`resumes the tour independently of an active chat: ${activeChat}`, async () => {
             const handlers = new Map();
@@ -330,7 +367,7 @@ describe('assistant shortcuts without shipped characters', () => {
             let toolsSynced = false;
             let tourResumed = false;
             const context = vm.createContext({
-                PinnedChatsManager: { init() {} }, ensureNeconyanRail() {},
+                releaseChromeAfterBootSkeleton() {}, PinnedChatsManager: { init() {} }, ensureNeconyanRail() {},
                 window: { addEventListener() {} }, concealWelcomeHome() {},
                 eventSource: { on: (key, handler) => handlers.set(key, handler), makeFirst() {} },
                 event_types: { APP_READY: 'ready' }, getCurrentChatId: () => activeChat ? 'existing' : undefined, chat: [],

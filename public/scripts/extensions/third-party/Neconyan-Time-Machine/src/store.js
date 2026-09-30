@@ -167,7 +167,7 @@ async function post(url, body) {
 }
 
 async function readPersistedSettings() {
-    const response = await post('/api/settings/get', {});
+    const response = await post('/api/settings/get', { settingsOnly: true });
     const body = await response.json();
     const source = typeof body?.settings === 'string' ? JSON.parse(body.settings) : body?.settings ?? body;
     if (!isPlainObject(source)) {

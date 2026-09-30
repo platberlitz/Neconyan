@@ -548,7 +548,7 @@ function markExtensionInactive(name) {
  */
 async function discoverExtensions() {
     try {
-        const response = await fetch('/api/extensions/discover');
+        const response = await fetch('/api/extensions/discover?manifests=1');
 
         if (response.ok) {
             const extensions = await response.json();
@@ -912,9 +912,12 @@ function observeExtensionSettingsDrawers() {
  * @param {string[]} names Array of extension names
  * @returns {Promise<Record<string, object>>} Object with extension names as keys and their manifests as values
  */
-async function getManifests(names) {
+async function getManifests(names, discovered = []) {
+    const included = new Map(discovered.filter(item => item.manifest && typeof item.manifest === 'object' && !Array.isArray(item.manifest))
+        .map(item => [item.name, item.manifest]));
     const results = await Promise.all(names.map(async name => {
         try {
+            if (included.has(name)) return { name, ok: true, manifest: included.get(name) };
             const response = await fetch(getExtensionAssetUrl(name, 'manifest.json'));
             if (!response.ok) {
                 return { name, ok: false };
@@ -2133,7 +2136,7 @@ export async function loadExtensionSettings(settings, versionChanged, enableAuto
         .filter(([alias, canonical]) => alias && canonical));
     extensionNames = extensions.map(x => x.name);
     extensionTypes = Object.fromEntries(extensions.map(x => [x.name, x.type]));
-    manifests = await getManifests(extensionNames);
+    manifests = await getManifests(extensionNames, extensions);
 
     // Clean stale entries from disabledExtensions list
     const originalDisabledCount = extension_settings.disabledExtensions.length;

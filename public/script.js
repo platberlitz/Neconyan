@@ -298,7 +298,7 @@ import {
     updatePersonaConnectionsAvatarList,
     isPersonaPanelOpen,
 } from './scripts/personas.js';
-import { getBackgrounds, initBackgrounds, loadBackgroundSettings, background_settings } from './scripts/backgrounds.js';
+import { initBackgrounds, loadBackgroundSettings, background_settings } from './scripts/backgrounds.js';
 import { cleanupActionLoaderArtifacts, loader } from './scripts/action-loader.js';
 import { BulkEditOverlay } from './scripts/BulkEditOverlay.js';
 import { initTextGenModels } from './scripts/textgen-models.js';
@@ -1305,6 +1305,8 @@ async function firstLoadInit() {
         ToolManager.initToolSlashCommands();
         await initPresetManager();
         await initSystemMessages();
+        // Settings and extensions count prompts during startup. Load their saved cache first.
+        await initTokenizers();
         await getSettings(initLoaderHandle);
         await checkOpenRouterAuth();
         initKeyboard();
@@ -1315,8 +1317,6 @@ async function firstLoadInit() {
         await releaseStartupLoader('startup loader release');
         await getUserAvatars(true, user_avatar);
         await getCharacters();
-        await getBackgrounds();
-        await initTokenizers();
         initBackgrounds();
         initAuthorsNote();
         await initPersonas();

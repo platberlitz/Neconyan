@@ -5,6 +5,7 @@ import { roleplayError } from '../roleplay-store.js';
 import { encodeTextProfilePrompt, resolveTextTokenizer } from './text-request.js';
 import { mergeChatPresetSettings } from '../../public/scripts/chat-preset-request.js';
 import { bindChatInputSettings } from '../../public/scripts/chat-input-capabilities.js';
+import { createTextTokenCache } from './token-count-cache.js';
 
 export async function createRoleplayTextCounter(context, material, { tokenizer, signal, modelOverride = '' } = {}) {
     if (material.backend === 'text' && material.profile && material.power) {
@@ -29,6 +30,7 @@ export async function createRoleplayChatCounter(material, { images = [], models 
     const model = getTokenizerModel(queryModel);
     // Verify availability before using the endpoint counter, which otherwise permits estimates.
     await getCounter(model);
+    const countText = createTextTokenCache();
     return Object.assign(async messages => {
         if (!Array.isArray(messages)) throw roleplayError('ROLEPLAY_INVALID', 'The formatted Chat Completion prompt is invalid.', 409);
         let mediaTokens = 0;
@@ -49,6 +51,6 @@ export async function createRoleplayChatCounter(material, { images = [], models 
             for (const key of Object.keys(result)) if (result[key] == null) delete result[key];
             return result;
         });
-        return mediaTokens + await countOpenAIChatTokens(model, queryModel, text, { strict: true });
+        return mediaTokens + await countOpenAIChatTokens(model, queryModel, text, { strict: true, countText });
     }, { tokenizer: { tokenizerKey: model } });
 }

@@ -1106,7 +1106,7 @@ router.post('/openai/decode', async function (req, res) {
  * @param {object[]} messages Messages to count
  * @returns {Promise<number>} Token count
  */
-export async function countOpenAIChatTokens(model, queryModel, messages, { strict = false } = {}) {
+export async function countOpenAIChatTokens(model, queryModel, messages, { strict = false, countText = null } = {}) {
     if (model === 'claude') {
         const instance = await claude_tokenizer.get();
         if (!instance) throw new Error('Failed to load the Claude tokenizer');
@@ -1181,7 +1181,7 @@ export async function countOpenAIChatTokens(model, queryModel, messages, { stric
         try {
             num_tokens += tokensPerMessage;
             for (const [key, value] of Object.entries(msg)) {
-                num_tokens += tokenizer.encode(value).length;
+                num_tokens += countText ? countText(value, tokenizer) : tokenizer.encode(value).length;
                 if (key == 'name') {
                     num_tokens += tokensPerName;
                 }

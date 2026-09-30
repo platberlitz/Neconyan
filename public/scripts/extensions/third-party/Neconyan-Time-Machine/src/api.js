@@ -12,8 +12,8 @@
  * backup folder. For those this reads the host's own backups and puts one safe
  * extension-owned block back without replacing the whole settings file.
  */
-import { cardFromCharacter, isPlainObject, restorePayload } from './core.js';
-import { commitSettings, getSettings, MODULE_NAME, save } from './store.js';
+import { cardFromCharacter, hashOf, isPlainObject, restorePayload } from './core.js';
+import { commitSettings, getSettings, lastHashOf, MODULE_NAME, save } from './store.js';
 
 const RESERVED_EXTENSION_KEYS = new Set([
     MODULE_NAME,
@@ -228,11 +228,8 @@ export async function readAllPresets() {
 /**
  * Snapshots every preset whose contents have changed.
  *
- * Presets have no save event of any kind — PRESET_CHANGED fires when one is
- * selected, not when one is saved, and the instruct/context/sysprompt families
- * emit nothing at all. So this runs on the coarse triggers instead (startup,
- * preset switch, and the manual button) and leans on hashing: a sweep where
- * nothing changed stores nothing and costs one local request.
+ * Automatic sweeps skip unchanged content before entering the mutation queue.
+ * A forced manual sweep still verifies the stored files and repairs missing blobs.
  */
 export async function capturePresets({ force = false } = {}) {
     const result = { taken: 0, skipped: 0, failed: 0 };
@@ -247,6 +244,13 @@ export async function capturePresets({ force = false } = {}) {
             continue;
         }
         try {
+            if (!force) {
+                const hash = await hashOf({ data: preset });
+                if (hash && hash === lastHashOf('preset', `${apiId}/${name}`)) {
+                    result.skipped++;
+                    continue;
+                }
+            }
             const row = await save({
                 kind: 'preset',
                 target: `${apiId}/${name}`,

@@ -2535,7 +2535,33 @@ export function assignCharacterAsAssistant(characterId) {
     printCharactersDebounced();
 }
 
+/**
+ * Shows the top bar and composer once Home or clearChat removes the boot skeleton from #chat.
+ * A body-level :has(#neconyan-home-skeleton) rule did this before, but it made Chromium restyle
+ * the whole page on every later DOM change.
+ */
+function releaseChromeAfterBootSkeleton() {
+    const release = () => {
+        if (document.getElementById('neconyan-home-skeleton')) {
+            return false;
+        }
+        document.body.classList.remove('neconyan-home-booting');
+        return true;
+    };
+    const chatElement = document.getElementById('chat');
+    if (release() || !chatElement) {
+        return;
+    }
+    const observer = new MutationObserver(() => {
+        if (release()) {
+            observer.disconnect();
+        }
+    });
+    observer.observe(chatElement, { childList: true });
+}
+
 export function initWelcomeScreen() {
+    releaseChromeAfterBootSkeleton();
     PinnedChatsManager.init();
     ensureNeconyanRail();
     window.addEventListener('sb:conversation-workspace-state-changed', concealWelcomeHome);

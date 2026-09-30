@@ -797,7 +797,7 @@ router.post('/delete', async (request, response) => {
  * Discover the extension folders
  * If the folder is called third-party, search for subfolders instead
  */
-router.get('/discover', function (request, response) {
+router.get('/discover', async function (request, response) {
     if (!fs.existsSync(path.join(request.user.directories.extensions))) {
         fs.mkdirSync(path.join(request.user.directories.extensions));
     }
@@ -851,6 +851,20 @@ router.get('/discover', function (request, response) {
         allExtensions.push(extension);
     }
     console.debug('Extensions available for', request.user.profile.handle, allExtensions);
+
+    if (request.query?.manifests === '1') {
+        await Promise.all(allExtensions.map(async extension => {
+            const native = getNativeExtension(extension.name);
+            const directory = native ? nativeRuntimePath(native)
+                : extension.type === 'local' ? path.join(request.user.directories.extensions, extension.name.replace(/^third-party\//, ''))
+                    : path.join(PUBLIC_DIRECTORIES.extensions, extension.name);
+            try {
+                extension.manifest = JSON.parse(await fs.promises.readFile(path.join(directory, 'manifest.json'), 'utf8'));
+            } catch {
+                // Leave malformed/missing manifests to the existing client fallback.
+            }
+        }));
+    }
 
     return response.send(allExtensions);
 });

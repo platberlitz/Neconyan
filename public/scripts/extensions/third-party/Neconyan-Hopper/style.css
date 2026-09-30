@@ -99,13 +99,10 @@
     pointer-events: none !important;
 }
 
-/* Companion Agents is a body sibling, not part of the chat workspace. */
-body:has(> #sheld[data-sbtw-mode='on']) :is(
-    #ica--tracker-panel,
-    #ica--tracker-panel-handle,
-    #ica_tracker_panel_wand_item,
-    #ica_companions_wand_item
-) {
+/* Companion Agents is a body sibling, not part of the chat workspace. Sibling selectors, not a
+   body-level :has(), which would restyle the whole page on every small DOM change. */
+body > #sheld[data-sbtw-mode='on'] ~ :is(#ica--tracker-panel, #ica--tracker-panel-handle, #ica_tracker_panel_wand_item, #ica_companions_wand_item),
+body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tracker-panel-handle, #ica_tracker_panel_wand_item, #ica_companions_wand_item) {
     display: none !important;
 }
 

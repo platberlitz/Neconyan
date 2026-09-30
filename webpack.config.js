@@ -7,9 +7,10 @@ import webpack from 'webpack';
 import { isBunRuntime } from './src/runtime.js';
 import { serverDirectory } from './src/server-directory.js';
 import { getVersion, color } from './src/util.js';
+import { ValidatedMinificationPlugin } from './src/frontend-lib-optimizer.js';
 
-const BUN_LIB_BUNDLE_SIGNATURE = 'bun-no-minify-v1';
-const PUBLIC_LIB_CONFIG_SIGNATURE = 'chevrotain-esm-alias-v1';
+const BUN_LIB_BUNDLE_SIGNATURE = 'bun-validated-minify-v2';
+const PUBLIC_LIB_CONFIG_SIGNATURE = 'chevrotain-validated-minify-v2';
 const WEBPACK_CACHE_KEEP_COUNT = 3;
 const PUBLIC_LIB_FILENAME = 'lib.js';
 
@@ -182,10 +183,6 @@ export default function getPublicLibConfig({ forceDist = false, pruneCache = fal
         pruneWebpackCache(webpackRoot, cacheVersion);
     }
 
-    // Bun's Webpack/Terser path can emit invalid syntax in the generated lib.js bundle.
-    // Keeping the vendor bundle unminified avoids the bad output while preserving Bun at runtime.
-    const minimize = !isBunRuntime();
-
     return {
         mode: 'production',
         entry: path.join(serverDirectory, 'public/lib.js'),
@@ -218,8 +215,9 @@ export default function getPublicLibConfig({ forceDist = false, pruneCache = fal
             hints: false,
         },
         optimization: {
-            minimize,
+            minimize: true,
         },
+        plugins: [new ValidatedMinificationPlugin()],
         output: {
             path: outputPath ?? outputDirectory,
             filename: PUBLIC_LIB_FILENAME,

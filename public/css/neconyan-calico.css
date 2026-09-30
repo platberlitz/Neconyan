@@ -405,10 +405,6 @@ body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='chara
 ) {
     background: var(--neco-surface) !important;
 }
-/* Full workspaces share the ambient canvas without showing the mounted chat
-   through them. Visibility preserves its layout, messages and draft. */
-body.neconyan:has(.sb-shell-root.openDrawer) #sheld { visibility: hidden; }
-
 /* Flat roleplay keeps the fork's existing Bubble, Document, and native styles
    free to own their layout classes. */
 body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar,

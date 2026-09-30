@@ -513,6 +513,7 @@ async function measurePage(page) {
         const longTasks = browserGlobal.performance.getEntriesByType('longtask');
 
         return {
+            appReady: browserGlobal.__neconyanPerfReadyAt,
             navigation: navigation ? {
                 domContentLoaded: navigation.domContentLoadedEventEnd,
                 load: navigation.loadEventEnd,
@@ -555,16 +556,20 @@ async function measurePage(page) {
     };
 }
 
-async function waitForAppReady(page) {
-    await page.waitForFunction('document.getElementById("preloader") === null', { timeout: 60000 });
+export async function waitForAppReady(page) {
     await page.waitForFunction(() => {
         const browserGlobal = globalThis;
-        return typeof browserGlobal.SillyTavern?.getContext === 'function'
+        return browserGlobal.__neconyanPerfReadyAt > 0
+            && typeof browserGlobal.SillyTavern?.getContext === 'function'
             && browserGlobal.document.getElementById('chat') instanceof browserGlobal.HTMLElement;
-    }, { timeout: 60000 });
+    }, null, { timeout: 60000 });
 }
 
 function installResourceTimingBuffer(size) {
+    globalThis.__neconyanPerfReadyAt = 0;
+    globalThis.addEventListener('neconyan:ready', () => {
+        globalThis.__neconyanPerfReadyAt = globalThis.performance.now();
+    }, { once: true });
     if (typeof globalThis.performance?.setResourceTimingBufferSize === 'function') {
         globalThis.performance.setResourceTimingBufferSize(size);
     }

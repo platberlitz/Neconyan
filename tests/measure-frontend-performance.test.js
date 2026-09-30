@@ -18,6 +18,7 @@ import {
     STREAM_RENDER_STEP_COUNT,
     summarizeRequestByteFields,
     summarizeRequests,
+    waitForAppReady,
 } from '../scripts/measure-frontend-performance.js';
 
 function createScrollMeasurementPage(scroller) {
@@ -52,6 +53,26 @@ function createScrollMeasurementPage(scroller) {
 }
 
 describe('frontend performance measurement helpers', () => {
+    test('waits for completed startup even when the chat exists before settings finish', async () => {
+        const original = { document: globalThis.document, HTMLElement: globalThis.HTMLElement,
+            SillyTavern: globalThis.SillyTavern, ready: globalThis.__neconyanPerfReadyAt };
+        try {
+            globalThis.HTMLElement = class {};
+            globalThis.document = { getElementById: () => new globalThis.HTMLElement() };
+            globalThis.SillyTavern = { getContext: () => ({}) };
+            globalThis.__neconyanPerfReadyAt = 0;
+            await waitForAppReady({ waitForFunction: async (ready, arg, options) => {
+                expect(ready()).toBe(false);
+                expect(options.timeout).toBe(60000);
+                globalThis.__neconyanPerfReadyAt = 1234;
+                expect(ready()).toBe(true);
+            } });
+        } finally {
+            Object.assign(globalThis, { document: original.document, HTMLElement: original.HTMLElement,
+                SillyTavern: original.SillyTavern, __neconyanPerfReadyAt: original.ready });
+        }
+    });
+
     test('records the long-chat render fixture size used for baseline measurements', () => {
         const fixture = createLongChatRenderFixture();
 

@@ -18,6 +18,7 @@ let prepared = false;
 let preparing = false;
 let lastWarningAt = 0;
 let lifecycle = 0;
+let presetCaptureTimer;
 
 function ctx() {
     return globalThis.SillyTavern.getContext();
@@ -121,6 +122,7 @@ function prepareHistory() {
 }
 
 function unsubscribeAll() {
+    clearTimeout(presetCaptureTimer);
     while (subscriptions.length) {
         const { eventSource, eventType, handler } = subscriptions.pop();
         eventSource.removeListener(eventType, handler);
@@ -266,9 +268,14 @@ function init() {
             }
         });
 
-        // Presets have no save event at all. Switching preset is the nearest
-        // thing: the previous one has been written by then.
-        subscribe(context, events.PRESET_CHANGED, () => guard(capturePresets()));
+        // Preset editing can emit a burst of changes. Capture the settled state
+        // once, rather than re-reading every preset for each input event.
+        subscribe(context, events.PRESET_CHANGED, () => {
+            clearTimeout(presetCaptureTimer);
+            presetCaptureTimer = setTimeout(() => {
+                if (active) guard(capturePresets());
+            }, 3_000);
+        });
         subscribe(context, events.CHARACTER_RENAMED, (oldAvatar, newAvatar) => {
             guard(renameTarget('character', oldAvatar, newAvatar), 'character history rename');
         });

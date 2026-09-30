@@ -18,7 +18,7 @@ describe('Neconyan workspace frame', () => {
         expect(cssSource).not.toContain('width: 520px');
         expect(cssSource).toContain('left: var(--neco-sidebar-offset) !important; right: 0 !important;');
         expect(cssSource).toContain('width: auto !important; max-width: none !important;');
-        expect(cssSource).toContain('body.neconyan:has(:is(.sb-shell-root, #right-nav-panel).openDrawer) #sheld');
+        expect(cssSource).toContain('body.neconyan :where(#top-settings-holder):has(:is(.sb-shell-root, #right-nav-panel).openDrawer) ~ #sheld');
         expect(cssSource).toContain('visibility: hidden !important; pointer-events: none !important;');
     });
 

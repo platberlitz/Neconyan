@@ -120,7 +120,7 @@ function installExtensionModuleMocks() {
 function installExtensionDiscovery(extensions) {
     globalThis.fetch = jest.fn(async (url) => {
         const text = String(url);
-        if (text.endsWith('/api/extensions/discover')) {
+        if (text.split('?')[0].endsWith('/api/extensions/discover')) {
             return {
                 ok: true,
                 json: async () => extensions.map(({ name, type = 'system', aliases }) => ({ name, type, ...(Array.isArray(aliases) ? { aliases } : {}) })),
@@ -189,12 +189,27 @@ describe('disabled extensions', () => {
         expect(saveSettingsDebounced).not.toHaveBeenCalled();
     });
 
+    test('uses discovered manifests without requesting them again', async () => {
+        installExtensionModuleMocks();
+        globalThis.fetch = jest.fn(async (url) => {
+            expect(String(url)).toBe('/api/extensions/discover?manifests=1');
+            return { ok: true, json: async () => [{ name: 'vectors', type: 'system', manifest: {
+                display_name: 'Vector Storage', loading_order: 100, generate_interceptor: 'vectors_rearrangeChat',
+            } }] };
+        });
+        const { loadExtensionSettings, findExtension, getExtensionManifest } = await import('../public/scripts/extensions.js');
+        await loadExtensionSettings({ extension_settings: { disabledExtensions: ['vectors'] } }, false, false);
+        expect(findExtension('vectors')).toEqual({ name: 'vectors', enabled: false });
+        expect(getExtensionManifest('vectors').generate_interceptor).toBe('vectors_rearrangeChat');
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+
     test('does not run generate interceptors for disabled extensions', async () => {
         installExtensionModuleMocks();
 
         globalThis.fetch = jest.fn(async (url) => {
             const text = String(url);
-            if (text.endsWith('/api/extensions/discover')) {
+            if (text.split('?')[0].endsWith('/api/extensions/discover')) {
                 return { ok: true, json: async () => [{ name: 'vectors', type: 'system' }] };
             }
             if (text.includes('/scripts/extensions/vectors/manifest.json')) {
@@ -220,7 +235,7 @@ describe('disabled extensions', () => {
 
         globalThis.fetch = jest.fn(async (url) => {
             const text = String(url);
-            if (text.endsWith('/api/extensions/discover')) {
+            if (text.split('?')[0].endsWith('/api/extensions/discover')) {
                 return { ok: true, json: async () => [{ name, type }] };
             }
             if (text.includes(`/scripts/extensions/${name}/manifest.json`)) {

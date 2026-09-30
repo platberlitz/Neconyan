@@ -516,7 +516,7 @@ test('Extensions separates third-party panels and reveals hidden built-in search
         { name: 'third-party/neconyan-global-fixture', type: 'global', label: 'Global fixture', count: 1 },
         { name: 'third-party/neconyan-empty-fixture', type: 'global', label: 'No settings fixture', count: 0 },
     ];
-    await page.route('**/api/extensions/discover', async route => {
+    await page.route('**/api/extensions/discover?*', async route => {
         const response = await route.fetch();
         await route.fulfill({ response, json: [...await response.json(), ...fixtures.map(({ name, type }) => ({ name, type }))] });
     });

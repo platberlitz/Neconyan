@@ -312,6 +312,12 @@ router.post('/get', (request, response) => {
         return response.sendStatus(500);
     }
 
+    // Persistence checks need the current on-disk version, not every preset,
+    // lorebook name and agent collection. Keep the full bootstrap response as default.
+    if (request.body?.settingsOnly === true) {
+        return response.send({ settings });
+    }
+
     // NovelAI Settings
     const { fileContents: novelai_settings, fileNames: novelai_setting_names }
         = readPresetsFromDirectory(request.user.directories.novelAI_Settings, {

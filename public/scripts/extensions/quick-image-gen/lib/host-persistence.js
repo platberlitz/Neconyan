@@ -31,7 +31,7 @@ async function readHostPersistenceJson(url, body, {
 
 export async function confirmSettingsValues({ settingsKey, expectedValues, ...options }) {
     if (!settingsKey || !expectedValues || !Object.keys(expectedValues).length) return false;
-    const payload = await readHostPersistenceJson("/api/settings/get", {}, options);
+    const payload = await readHostPersistenceJson("/api/settings/get", { settingsOnly: true }, options);
     try {
         const settings = typeof payload?.settings === "string" ? JSON.parse(payload.settings) : payload?.settings;
         const entry = settings?.extension_settings?.[settingsKey];

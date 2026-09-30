@@ -57,7 +57,7 @@ export function createStorageTransport({ request, readJson, localStorage = () =>
             return { ...store, account, warnings };
         }
         if (fileEvidence()) throw new Error('The saved Meower file is missing. Restore it before saving; old history will not be reimported.');
-        const response = await request('/api/settings/get', { method: 'POST', body: '{}' });
+        const response = await request('/api/settings/get', { method: 'POST', body: JSON.stringify({ settingsOnly: true }) });
         if (!response.ok) throw new Error(`The existing host settings could not be read (${response.status}).`);
         const data = await readJson(response, 'The host settings');
         if (typeof data?.settings !== 'string') throw new Error('The host settings could not be read safely.');

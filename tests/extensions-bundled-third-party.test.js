@@ -62,7 +62,7 @@ test('native discovery owns aliases once, protects every mutation, and preserves
     for (const directory of [local, global]) fs.mkdirSync(directory, { recursive: true });
     PUBLIC_DIRECTORIES.extensions = core;
     PUBLIC_DIRECTORIES.globalExtensions = global;
-    const request = async (method, routePath, body = {}) => {
+    const request = async (method, routePath, body = {}, query = {}) => {
         const handler = router.stack.find(layer => layer.route?.path === routePath && layer.route.methods[method]).route.stack[0].handle;
         const result = { status: 200, body: undefined };
         const response = {
@@ -70,7 +70,7 @@ test('native discovery owns aliases once, protects every mutation, and preserves
             send(value) { result.body = value; return this; },
             sendStatus(value) { result.status = value; return this; },
         };
-        await handler({ body, user: { profile: { admin: true, handle: 'native-test' }, directories: { extensions: local } } }, response);
+        await handler({ body, query, user: { profile: { admin: true, handle: 'native-test' }, directories: { extensions: local } } }, response);
         return result;
     };
     try {
@@ -89,6 +89,15 @@ test('native discovery owns aliases once, protects every mutation, and preserves
         expect(native.find(entry => entry.name === 'neconyan-debugger').aliases).toContain('Neconyan-Debugger');
         expect(discovered.body.filter(entry => entry.type === 'local')).toEqual([{ type: 'local', name: 'third-party/CustomTool' }]);
         expect(fs.readFileSync(path.join(local, 'Neconyan-MacroEnhanced/retained.txt'), 'utf8')).toBe('Retain this user copy');
+        fs.writeFileSync(path.join(global, 'MacroEnhanced/manifest.json'), JSON.stringify({ version: 'native' }));
+        fs.writeFileSync(path.join(local, 'Neconyan-MacroEnhanced/manifest.json'), JSON.stringify({ version: 'shadowed' }));
+        fs.writeFileSync(path.join(local, 'CustomTool/manifest.json'), JSON.stringify({ version: 'local' }));
+        fs.writeFileSync(path.join(core, 'neconyan-debugger/manifest.json'), JSON.stringify({ version: 'core' }));
+        const withManifests = (await request('get', '/discover', {}, { manifests: '1' })).body;
+        expect(withManifests.find(entry => entry.name === 'third-party/MacroEnhanced').manifest).toEqual({ version: 'native' });
+        expect(withManifests.find(entry => entry.name === 'third-party/CustomTool').manifest).toEqual({ version: 'local' });
+        expect(withManifests.find(entry => entry.name === 'neconyan-debugger').manifest).toEqual({ version: 'core' });
+        expect(withManifests.find(entry => entry.name === 'third-party/Neconyan-Time-Machine').manifest).toBeUndefined();
         for (const extension of NECONYAN_NATIVE_EXTENSIONS) {
             const extensionName = extension.directory.toLowerCase();
             for (const route of ['/install', '/update', '/branches', '/switch', '/move', '/delete', '/sync']) {

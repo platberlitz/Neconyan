@@ -577,7 +577,8 @@ input[type='checkbox']:focus-visible {
 }
 
 /** If hidden reasoning should not be shown, we hide all blocks that don't have content */
-#chat:not([data-show-hidden-reasoning="true"]):not(:has(.reasoning_edit_textarea)) .mes:has(.mes_reasoning:empty) .mes_reasoning_details {
+/* Scoped per message: a #chat-level :has() made Chromium restyle the whole chat (about 0.4s) whenever a message was added. */
+#chat:not([data-show-hidden-reasoning="true"]) .mes:has(.mes_reasoning:empty):not(:has(.reasoning_edit_textarea)) .mes_reasoning_details {
     display: none;
 }
 

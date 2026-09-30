@@ -25,6 +25,7 @@ import {
 } from './topbar-extension-slot/index.js';
 import { power_user, setCharacterSpoilerFreeFieldsHidden } from './power-user.js';
 import { escapeRegex } from './util/escape-regex.js';
+import { hasChangedAttributeValue } from './util/attribute-mutations.js';
 import { copyText, flashHighlight, showFontAwesomePicker } from './utils.js';
 import { characters, chat, flushCharacterSaveDebounced, getChatGeneration, getCurrentChatId, getGeneratingModel, getOneCharacter, getShortModelName, getThumbnailUrl, is_send_press, parseAvatarSource, refreshCsrfToken, saveSettingsDebounced, scrollReopenedChatToBottom, selectCharacterById, selectRightMenuWithAnimation, this_chid } from '../script.js';
 import { is_group_generating } from './group-chats.js';
@@ -468,7 +469,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20260930-bulk-loader';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261001-perf';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -969,10 +970,15 @@ function bindNeconyanModeStateEvents() {
     window.addEventListener('neconyan:home-hidden', queueReopenedChatBottomScroll);
 
     if (document.body instanceof HTMLElement && typeof MutationObserver !== 'undefined') {
-        neconyanModeObserver = new MutationObserver(queueNeconyanModeSync);
+        neconyanModeObserver = new MutationObserver(records => {
+            if (hasChangedAttributeValue(records)) {
+                queueNeconyanModeSync();
+            }
+        });
         neconyanModeObserver.observe(document.body, {
             attributes: true,
             attributeFilter: ['class', 'data-generating'],
+            attributeOldValue: true,
             subtree: true,
         });
     } else {
@@ -8951,9 +8957,14 @@ function bindNeconyanTopbarStateEvents() {
         eventSource.on(name, refresh);
     }
     if (typeof MutationObserver !== 'undefined') {
-        new MutationObserver(() => syncTopbarEditCardButton()).observe(document.body, {
+        new MutationObserver(records => {
+            if (hasChangedAttributeValue(records)) {
+                syncTopbarEditCardButton();
+            }
+        }).observe(document.body, {
             attributes: true,
             attributeFilter: ['class', 'data-neconyan-chat-mode'],
+            attributeOldValue: true,
         });
     }
 }
@@ -10497,7 +10508,12 @@ function preloadPanelStylesheets(shellKey, tabId = null) {
 }
 
 function isLandingPageVisible() {
-    return isActuallyVisible(document.querySelector('.welcomePanel'));
+    const panel = document.querySelector('.welcomePanel');
+    // Body class watchers call this often; checkVisibility needs up-to-date styles
+    // but, unlike getClientRects, does not also force a layout pass.
+    return typeof panel?.checkVisibility === 'function'
+        ? panel.checkVisibility()
+        : isActuallyVisible(panel);
 }
 
 function syncHomeButtonState() {
@@ -10532,13 +10548,16 @@ function queueLandingPageStateSync() {
 function bindLandingPageObserver() {
     nnState.landingPageObserver?.disconnect();
 
-    const observer = new MutationObserver(() => {
-        queueLandingPageStateSync();
+    const observer = new MutationObserver(records => {
+        if (hasChangedAttributeValue(records)) {
+            queueLandingPageStateSync();
+        }
     });
 
     observer.observe(document.body, {
         attributes: true,
         attributeFilter: ['class'],
+        attributeOldValue: true,
     });
 
     nnState.landingPageObserver = observer;

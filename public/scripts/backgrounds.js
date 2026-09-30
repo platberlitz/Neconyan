@@ -107,6 +107,8 @@ let lazyLoadObserver = null;
  * @type {Array<{filename: string, isAnimated: boolean}>}
  */
 let cachedSystemBackgrounds = [];
+let backgroundLibraryLoaded = false;
+let backgroundLibraryPromise;
 
 export let background_settings = {
     name: '__transparent.png',
@@ -650,6 +652,7 @@ async function onDeleteBackgroundClick(e) {
 const autoBgPrompt = 'Ignore previous instructions and choose a location ONLY from the provided list that is the most suitable for the current scene. Do not output any other text:\n{0}';
 
 async function autoBackgroundCommand() {
+    await ensureBackgroundLibrary();
     /** @type {HTMLElement[]} */
     const bgTitles = Array.from(document.querySelectorAll('#bg_menu_content .BGSampleTitle'));
     const options = bgTitles.map(x => ({ element: x, text: x.innerText.trim() })).filter(x => x.text.length > 0);
@@ -742,7 +745,20 @@ function renderChatBackgrounds(backgrounds) {
     activateLazyLoader();
 }
 
-export async function getBackgrounds() {
+export function getBackgrounds() {
+    if (!backgroundLibraryPromise) {
+        backgroundLibraryPromise = loadBackgroundLibrary().finally(() => {
+            backgroundLibraryPromise = null;
+        });
+    }
+    return backgroundLibraryPromise;
+}
+
+function ensureBackgroundLibrary() {
+    return backgroundLibraryLoaded ? Promise.resolve() : getBackgrounds();
+}
+
+async function loadBackgroundLibrary() {
     const response = await fetch('/api/backgrounds/all', {
         method: 'POST',
         headers: getRequestHeaders(),
@@ -767,6 +783,7 @@ export async function getBackgrounds() {
         // Render only filtered images if inside a folder, otherwise all
         renderSystemBackgrounds(getFilteredImages());
         highlightSelectedBackground();
+        backgroundLibraryLoaded = true;
     }
 }
 
@@ -1751,6 +1768,19 @@ export function getActiveBackgroundTab() {
 }
 
 export function initBackgrounds() {
+    // The selected background is applied by loadBackgroundSettings. Its library
+    // and thumbnail metadata are only needed when the gallery becomes visible.
+    const drawer = document.getElementById('Backgrounds');
+    if (drawer) {
+        const observer = new IntersectionObserver(entries => {
+            if (entries.some(entry => entry.isIntersecting)) {
+                void ensureBackgroundLibrary().then(() => {
+                    if (backgroundLibraryLoaded) observer.disconnect();
+                }).catch(error => console.error('Could not load backgrounds', error));
+            }
+        });
+        observer.observe(drawer);
+    }
     eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
     eventSource.on(event_types.FORCE_SET_BACKGROUND, forceSetBackground);
 

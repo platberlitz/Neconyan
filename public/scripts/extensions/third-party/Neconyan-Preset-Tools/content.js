@@ -1343,9 +1343,17 @@ function clearAnimatedBackgroundLayer() {
         return;
     }
 
-    backgroundLayerElement.innerHTML = '';
-    backgroundLayerElement.removeAttribute('data-active-key');
-    document.body.classList.remove('bpt-animated-bg-active');
+    // Runs every second from bootstrap, so only write when something is showing.
+    // A no-op body class write still wakes every observer watching the body.
+    if (backgroundLayerElement.hasChildNodes()) {
+        backgroundLayerElement.replaceChildren();
+    }
+    if (backgroundLayerElement.hasAttribute('data-active-key')) {
+        backgroundLayerElement.removeAttribute('data-active-key');
+    }
+    if (document.body.classList.contains('bpt-animated-bg-active')) {
+        document.body.classList.remove('bpt-animated-bg-active');
+    }
     renderAnimatedSourceList();
 }
 
@@ -1462,7 +1470,9 @@ function syncAnimatedBackgroundLayer() {
         }
     }
 
-    document.body.classList.add('bpt-animated-bg-active');
+    if (!document.body.classList.contains('bpt-animated-bg-active')) {
+        document.body.classList.add('bpt-animated-bg-active');
+    }
     renderAnimatedSourceList();
 }
 
@@ -1528,6 +1538,13 @@ function renderAnimatedSourceList() {
     const activeSource = getCurrentBackgroundReference();
     const sources = settings.savedAnimatedSources;
 
+    // Rebuilding the list every second made the browser re-lay out the page.
+    const renderKey = JSON.stringify([activeSource, sources]);
+    if (container.bptRenderKey === renderKey) {
+        return;
+    }
+    container.bptRenderKey = renderKey;
+
     if (!sources.length) {
         container.innerHTML = '<div class="bpt-animated-source-empty">Saved video and YouTube URLs will show up here.</div>';
         return;
@@ -1555,7 +1572,8 @@ function renderAnimatedSourceList() {
         card.querySelector('.bpt-animated-source-label').textContent = makeAnimatedSourceLabel(source);
         card.querySelector('.bpt-animated-source-main').addEventListener('click', () => applyAnimatedSource(source));
         card.querySelector('.menu_button').addEventListener('click', () => {
-            settings.savedAnimatedSources = settings.savedAnimatedSources.filter(item => item !== source);
+            const currentSettings = ensureSettings();
+            currentSettings.savedAnimatedSources = currentSettings.savedAnimatedSources.filter(item => item !== source);
             saveSettingsDebounced();
             renderAnimatedSourceList();
         });
@@ -1597,7 +1615,7 @@ function setSettingsPanelExpanded(expand) {
         return;
     }
 
-    if (header instanceof HTMLElement) {
+    if (header instanceof HTMLElement && header.getAttribute('aria-expanded') !== String(expand)) {
         header.setAttribute('aria-expanded', String(expand));
     }
 
@@ -1605,8 +1623,13 @@ function setSettingsPanelExpanded(expand) {
     icon.classList.toggle('fa-circle-chevron-down', !expand);
     icon.classList.toggle('up', expand);
     icon.classList.toggle('fa-circle-chevron-up', expand);
-    content.style.display = expand ? 'block' : 'none';
-    panel.dataset.expanded = String(expand);
+    const display = expand ? 'block' : 'none';
+    if (content.style.display !== display) {
+        content.style.display = display;
+    }
+    if (panel.dataset.expanded !== String(expand)) {
+        panel.dataset.expanded = String(expand);
+    }
 }
 
 function isSettingsPanelExpanded(panel = document.getElementById('bpt-settings')) {

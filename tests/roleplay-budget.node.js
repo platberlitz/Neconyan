@@ -33,6 +33,18 @@ test('native chat counting retains tool schema and saved image costs', async () 
     await assert.rejects(count([{ ...rich, content: [{ type: 'image_url', image_url: { url: 'unknown' } }] }]), { code: 'ROLEPLAY_INVALID' });
 });
 
+test('cached budget passes remain exact after message edits, removals and model changes', async () => {
+    for (const model of ['gpt-4o', 'gpt-4', 'gpt-3.5-turbo-0301']) {
+        const count = await createRoleplayChatCounter({ source: 'custom', active: {}, profile: { model } });
+        const messages = [{ role: 'system', content: 'Shared rules' }, { role: 'user', name: 'Visitor', content: 'Hello' }];
+        for (const change of [() => {}, () => { messages[1].content = 'Changed content'; }, () => { messages.shift(); }]) {
+            change();
+            assert.equal(await count(messages), await countOpenAIChatTokens(model, model, messages));
+            assert.equal(await count(messages), await countOpenAIChatTokens(model, model, messages));
+        }
+    }
+});
+
 test('browser and server tokenizer selection uses the same provider and catalogue rules', () => {
     for (const source of ['openai', 'openai_responses']) assert.equal(resolveChatTokenizerModel({ chat_completion_source: source,
         openai_model: 'gpt-6-astra' }), 'gpt-6-astra');
